@@ -1,0 +1,8 @@
+reference/
+secrets/
+*.xcodeproj
+App/Info.plist
+build/
+DerivedData/
+*.xcresult
+.DS_Store

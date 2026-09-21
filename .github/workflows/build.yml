@@ -1,0 +1,119 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths: ["App/**", "project.yml", "ci/**", ".github/workflows/build.yml"]
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload this build to TestFlight
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE: /Applications/Xcode_26.6.app
+  SIM_NAME: Apple TV 4K (3rd generation)
+
+jobs:
+  screens:
+    name: Simulator build and screenshots
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project
+        run: |
+          sudo xcode-select -s "$XCODE"
+          brew install xcodegen
+          xcodegen generate
+      - name: UI tests
+        run: |
+          set -o pipefail
+          xcodebuild test -project Harbor.xcodeproj -scheme Harbor \
+            -destination "platform=tvOS Simulator,name=$SIM_NAME" \
+            -resultBundlePath build/ui.xcresult \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify
+      - name: Export screenshots
+        if: always()
+        run: |
+          mkdir -p build/screens
+          xcrun xcresulttool export attachments --path build/ui.xcresult --output-path build/screens || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screens
+          path: build/screens
+          retention-days: 14
+
+  testflight:
+    name: Archive and upload to TestFlight
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight && github.actor == github.repository_owner
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project
+        run: |
+          sudo xcode-select -s "$XCODE"
+          brew install xcodegen
+          xcodegen generate
+      - name: Install signing identity and profile
+        env:
+          DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          PROFILE_B64: ${{ secrets.PROVISIONING_PROFILE }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$DIST_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            echo "$PROFILE_B64" | base64 --decode > "$dir/harbor.mobileprovision"
+          done
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          PROFILE_NAME: ${{ secrets.PROFILE_NAME }}
+        run: |
+          set -o pipefail
+          xcodebuild archive -project Harbor.xcodeproj -scheme Harbor \
+            -destination "generic/platform=tvOS" \
+            -archivePath build/Harbor.xcarchive \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" | xcbeautify
+      - name: Upload to App Store Connect
+        env:
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          PROFILE_NAME: ${{ secrets.PROFILE_NAME }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          echo "$ASC_KEY_P8" > "$KEY"
+          sed -e "s/__TEAM_ID__/$TEAM_ID/" -e "s/__PROFILE_NAME__/$PROFILE_NAME/" ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -archivePath build/Harbor.xcarchive \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath build/export \
+            -authenticationKeyPath "$KEY" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP"/dist.p12 "$RUNNER_TEMP"/AuthKey_*.p8

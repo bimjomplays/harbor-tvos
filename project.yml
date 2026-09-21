@@ -1,0 +1,56 @@
+name: Harbor
+options:
+  bundleIdPrefix: com.dltnp
+  deploymentTarget:
+    tvOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "3"
+targets:
+  Harbor:
+    type: application
+    platform: tvOS
+    sources:
+      - App/Sources
+      - App/Assets.xcassets
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Harbor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arm64]
+        UIUserInterfaceStyle: Dark
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dltnp.harbor
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        GENERATE_INFOPLIST_FILE: NO
+  HarborUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - App/UITests
+    dependencies:
+      - target: Harbor
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dltnp.harbor.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Harbor:
+    build:
+      targets:
+        Harbor: all
+        HarborUITests: [test]
+    test:
+      targets:
+        - HarborUITests
+    archive:
+      config: Release
