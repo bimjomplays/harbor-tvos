@@ -4,7 +4,9 @@
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
 ## Status (2026-09-21)
-Planning done. No code yet. Decisions: no user mods, app name "Harbor", private repo. Open: Apple TV model + tvOS version (user checking at home). Waiting on go for Stage 0.
+Stage 0.1 + 0.2 half done. Private repo `bimjomplays/harbor-tvos`. CI `Build` workflow green: XcodeGen → tvOS simulator UI test → screenshot artifact `screens` (~2 Mac minutes/run). Bundle ID `com.dltnp.harbor`, tvOS 17.0+, Xcode 26.6 on `macos-26`.
+TestFlight job written but untested: waiting on the user's App Store Connect API key, then `python3 tools/setup_signing.py` (creates bundle ID, dist cert, profile, GitHub secrets from Linux), user creates the app record, then `gh workflow run Build -f testflight=true`.
+Open: Apple TV model + tvOS version.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
@@ -20,4 +22,4 @@ Planning done. No code yet. Decisions: no user mods, app name "Harbor", private 
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next
-Stage 0.1: repo, XcodeGen skeleton, CI, signing, hello build on TestFlight.
+Finish 0.1 (signing + first TestFlight upload), then 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
