@@ -17,7 +17,6 @@ concurrency:
 
 env:
   XCODE: /Applications/Xcode_26.6.app
-  SIM_NAME: Apple TV 4K (3rd generation)
 
 jobs:
   screens:
@@ -34,8 +33,20 @@ jobs:
       - name: UI tests
         run: |
           set -o pipefail
+          xcrun simctl list devices available | grep -i "apple tv" || true
+          SIM_ID=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devs = json.load(sys.stdin)["devices"]
+          tv = [(rt, d) for rt, ds in devs.items() if "tvOS" in rt for d in ds if "4K" in d["name"]]
+          tv.sort(key=lambda x: [int(n) for n in x[0].split("tvOS-")[1].split("-")])
+          print(tv[-1][1]["udid"] if tv else "")')
+          if [ -z "$SIM_ID" ]; then
+            RUNTIME=$(xcrun simctl list runtimes --json | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="tvOS" and x["isAvailable"]]; print(r[-1]["identifier"])')
+            SIM_ID=$(xcrun simctl create "Harbor TV" "Apple TV 4K (3rd generation)" "$RUNTIME")
+          fi
+          echo "Using simulator $SIM_ID"
           xcodebuild test -project Harbor.xcodeproj -scheme Harbor \
-            -destination "platform=tvOS Simulator,name=$SIM_NAME" \
+            -destination "platform=tvOS Simulator,id=$SIM_ID" \
             -resultBundlePath build/ui.xcresult \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
       - name: Export screenshots
