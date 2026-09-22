@@ -4,7 +4,7 @@
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
 ## Status (2026-09-22)
-Stage 0: 0.1, 0.2 done; 0.3/0.4/0.5 pass in the simulator (build 7 on TestFlight, real-TV check pending); 0.6 protocol doc written (`docs/harbor-protocol.md`, 766 lines, by a subagent, spot-checked); 0.7 storage layer not started.
+**Stage 0 complete.** All spikes GO on the real Apple TV (build 7): HEVC, HDR10, HDR10+, DV P5/P8, PGS, SRT play. User's TV output is fixed "4K Dolby Vision" with Match Content off, so no mode badges appear; Stage 4 must still set `AVDisplayCriteria` for users who match content. Storage layer (0.7) done: `App/Sources/Storage/` (SecretStore=Keychain, Prefs=UserDefaults ≤400 KB, CacheStore=Caches JSON, KeyValueStore routes by key prefix); needs keychain-access-groups entitlement (sim builds ad-hoc signed). Waiting on the user's go for Stage 1.
 - Engine (JavaScriptCore): upstream `src/lib/streams` bundled by `engine/build.mjs` (esbuild, `@/` alias, Tauri stubs) → 89 KB; loads in 181 ms, 850 streams parse+trust+score+rank in 332 ms on the simulator. GO.
 - Rust: `rust/harbor-ffi` (C ABI over harbor-core, staticlib) builds for `aarch64-apple-tvos` + `-sim` on the runner via `rust/build.sh`, linked with a modulemap; pipeline works. GO.
 - mpv: MPVKit 1.0.0 (SPM), gpu-next/MoltenVK into CAMetalLayer, hwdec videotoolbox; HEVC plays in the simulator. Real-TV HDR/DV/PGS check pending (Spike menu → Player).
@@ -27,4 +27,4 @@ Stage 0: 0.1, 0.2 done; 0.3/0.4/0.5 pass in the simulator (build 7 on TestFlight
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next
-User tests build 7 on the TV (Player spike: HDR10, DV P5/P8, PGS/SRT clips) → record go/no-go → 0.7 storage layer → Stage 1. 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
+Stage 1 (shell, sign-in, profiles) on user go. First tasks: Big Picture design tokens + focus rules, engine `localStorage`/`fetch` shims over KeyValueStore, Harbor login (email+password first, QR later), read-only profile sync. 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.

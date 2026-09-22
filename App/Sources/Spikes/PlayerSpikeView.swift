@@ -12,7 +12,7 @@ struct PlayerSpikeView: View {
         ("HDR10 tone-map test", "HDR10_ToneMapping_Test_240_1000_nits.mp4"),
         ("Dolby Vision P5", "DolbyVision_P5.mp4"),
         ("Dolby Vision P8", "DolbyVision_P8.mp4"),
-        ("Big Buck Bunny 1080p30 H.264 (Blender)", "https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_normal.mp4"),
+        ("Big Buck Bunny 1080p H.264 (10 s)", "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_5MB.mp4"),
     ]
     @State private var selected: URL?
     @State private var status = MPVPlayerController.Status()

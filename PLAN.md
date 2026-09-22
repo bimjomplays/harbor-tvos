@@ -39,8 +39,8 @@ is a usable daily driver after Stage 4.
 5. **Storage:** tvOS gives apps no guaranteed disk. Rules: tokens in Keychain; small settings in
    UserDefaults/iCloud key-value; everything else in the purgeable Caches folder and **rebuildable from the
    Harbor account sync**. The app must survive waking up with an empty disk.
-6. **Account:** Harbor login (`/identity/api/*`), linked Stremio account, profile sync
-   (`sync.harbor.site/sync/v1/state|push`). TV sign-in by QR/short code, with typed email+password as fallback.
+6. **Account:** Harbor login (`harbor.site/themes/api/identity/api/*`), linked Stremio account, profile sync
+   (`harbor.site/themes/api/sync/v1/state|push`, bearer; NOT sync.harbor.site, which is the subtitle crowd DB). TV sign-in by QR/short code, with typed email+password as fallback.
 7. **No web view workarounds:** addon configuration pages, OAuth logins and long text entry happen on
    the phone via QR code. The TV also hosts upstream's phone remote (Stage 10) so the phone becomes its keyboard.
 8. **Upstream tracking:** upstream is a git submodule pinned to a commit. A `PARITY.md` matrix lists
@@ -75,6 +75,7 @@ Each stage: scope → what ships → how it is verified. Settings panels ship wi
   the sync client starts **read-only**.
 - 0.7 Storage layer per decision 5.
 - Exit: go/no-go recorded for decisions 2, 3, 4.
+- **Result (2026-09-22): all GO.** Engine: 850 streams ranked in 332 ms in JavaScriptCore. Rust: harbor-core static lib links and runs. mpv: HEVC, HDR10, HDR10+, DV P5/P8, PGS and SRT all play on the user's Apple TV 4K (3rd gen, tvOS 26.6). Storage: Keychain/Prefs/Caches layer with key routing in place. Protocol doc in `docs/harbor-protocol.md`.
 
 ### Stage 1 — Shell, sign-in, profiles
 Design tokens from Big Picture; focus engine rules (focus ≠ activate, as upstream requires); side rail;
