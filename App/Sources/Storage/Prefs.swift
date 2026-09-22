@@ -21,6 +21,13 @@ enum Prefs {
 
     static func remove(_ key: String) { defaults.removeObject(forKey: key) }
 
+    /// Every key this app owns in UserDefaults (the app's own persistent domain only, so
+    /// none of the system-wide defaults leak in). Used by `KeyValueStore.snapshot()`.
+    static func allKeys() -> [String] {
+        let domain = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
+        return Array(domain.keys)
+    }
+
     /// Approximate bytes used by everything this app stored in UserDefaults.
     static func usedBytes() -> Int {
         let dict = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]

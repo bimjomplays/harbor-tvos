@@ -33,6 +33,19 @@ enum SecretStore {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Every account name this app stored in the Keychain, so the engine can build a
+    /// synchronous `storageSnapshot()` of the whole `harbor.*` namespace at boot.
+    static func allKeys() -> [String] {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: service,
+                                    kSecReturnAttributes as String: true,
+                                    kSecMatchLimit as String: kSecMatchLimitAll]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let items = out as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
+
     static func remove(_ key: String) {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                     kSecAttrService as String: service,

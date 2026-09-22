@@ -43,6 +43,29 @@ final class KeyValueStore {
         }
     }
 
+    /// Every `harbor.*` key/value across all three tiers, in one synchronous pass.
+    /// `HarborEngine`'s `__harbor_host.storageSnapshot()` hands this to the bundle at boot so
+    /// the JS `localStorage` shim can serve every read from memory. Later tiers win over
+    /// earlier ones (an in-memory write is the freshest, then the Keychain / UserDefaults
+    /// copy, then a possibly stale Caches copy of the same key).
+    func snapshot() -> [String: String] {
+        var out: [String: String] = [:]
+        let harbor = "harbor."
+        for key in CacheStore.shared.allKeys() where key.hasPrefix(harbor) {
+            if let value = CacheStore.shared.get(String.self, for: key) { out[key] = value }
+        }
+        for key in Prefs.allKeys() where key.hasPrefix(harbor) {
+            if let value = Prefs.get(String.self, for: key) { out[key] = value }
+        }
+        for key in SecretStore.allKeys() where key.hasPrefix(harbor) {
+            if let value = SecretStore.get(key) { out[key] = value }
+        }
+        lock.lock()
+        for (key, value) in memory where key.hasPrefix(harbor) { out[key] = value }
+        lock.unlock()
+        return out
+    }
+
     func remove(_ key: String) {
         lock.lock(); memory[key] = nil; lock.unlock()
         switch Self.tier(for: key) {

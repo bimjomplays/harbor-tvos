@@ -30,6 +30,8 @@ struct SpikeMenuView: View {
                             .accessibilityIdentifier("spike-player")
                         NavigationLink { StorageSpikeView() } label: { SpikeTile(title: "Storage", subtitle: "Keychain, prefs, caches", icon: "internaldrive") }
                             .accessibilityIdentifier("spike-storage")
+                        NavigationLink { EngineHostSpikeView() } label: { SpikeTile(title: "Host", subtitle: "fetch, storage, timers", icon: "network") }
+                            .accessibilityIdentifier("spike-host")
                     }
                     .buttonStyle(.card)
                 }
@@ -48,7 +50,7 @@ struct SpikeTile: View {
             Text(title).font(.title2.weight(.semibold))
             Text(subtitle).font(.callout).foregroundStyle(.secondary)
         }
-        .frame(width: 300, height: 200, alignment: .leading)
+        .frame(width: 250, height: 190, alignment: .leading)
         .padding(30)
         .background(Color.white.opacity(0.06))
     }

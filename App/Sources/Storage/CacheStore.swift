@@ -16,9 +16,28 @@ final class CacheStore {
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
+    /// Everything outside this set is percent-escaped in the file name. "/" and "%" have to
+    /// be escaped (they cannot appear verbatim in a path component), and escaping is
+    /// reversible, which the old "/" → "_" substitution was not: `allKeys()` needs to give
+    /// the engine back the exact `harbor.*` key it wrote.
+    private static let fileNameAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+
     private func url(_ key: String) -> URL {
-        let safe = key.replacingOccurrences(of: "/", with: "_")
+        let safe = key.addingPercentEncoding(withAllowedCharacters: Self.fileNameAllowed) ?? key
         return root.appendingPathComponent(safe + ".json")
+    }
+
+    /// Every key currently on disk, decoded back from its file name.
+    func allKeys() -> [String] {
+        queue.sync {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+            return names.compactMap { name -> String? in
+                guard name.hasSuffix(".json") else { return nil }
+                let encoded = String(name.dropLast(5))
+                guard !encoded.isEmpty else { return nil }
+                return encoded.removingPercentEncoding ?? encoded
+            }
+        }
     }
 
     func set<T: Encodable>(_ value: T, for key: String) throws {

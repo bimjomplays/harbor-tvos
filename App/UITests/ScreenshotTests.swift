@@ -118,6 +118,17 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["spike-status"].label, "PASS")
     }
 
+    func testEngineHostSpike() {
+        let app = launch("spikes")
+        XCTAssertTrue(app.buttons["spike-host"].waitForExistence(timeout: 30))
+        for _ in 0..<4 { XCUIRemote.shared.press(.right) }
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["spike-status"].waitForExistence(timeout: 120))
+        capture("23-engine-host")
+        dump(app, "hierarchy-engine-host")
+        XCTAssertEqual(app.staticTexts["spike-status"].label, "PASS")
+    }
+
     func testTabHint() {
         let app = launch("shell")
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
