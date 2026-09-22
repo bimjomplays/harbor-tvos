@@ -23,6 +23,14 @@ targets:
       - App/Assets.xcassets
       - path: App/Engine
         buildPhase: resources
+      - path: App/Fonts
+        buildPhase: resources
+      - path: App/Upstream/avatars
+        type: folder
+        buildPhase: resources
+      - path: App/Upstream/kids
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MPVKit
         product: MPVKit
@@ -39,6 +47,7 @@ targets:
         UILaunchScreen: {}
         UIRequiredDeviceCapabilities: [arm64]
         UIUserInterfaceStyle: Dark
+        UIAppFonts: [Switzer-Regular.otf, Switzer-Medium.otf, Switzer-Semibold.otf, Switzer-Bold.otf, Sentient-Regular.otf, Sentient-Medium.otf, Sentient-Bold.otf, Fraunces-Medium.ttf]
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:

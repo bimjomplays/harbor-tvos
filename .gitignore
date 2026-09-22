@@ -13,3 +13,4 @@ engine/node_modules/
 engine/dist/
 App/Engine/harbor-engine.js
 App/Harbor.entitlements
+App/Upstream/

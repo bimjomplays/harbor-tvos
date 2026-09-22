@@ -36,6 +36,8 @@ jobs:
           key: ${{ runner.os }}-deps-${{ hashFiles('rust/harbor-ffi/Cargo.lock', 'engine/package-lock.json') }}
       - name: Build Rust static libraries
         run: rust/build.sh
+      - name: Copy upstream assets
+        run: tools/sync_upstream_assets.sh
       - name: Build engine bundle
         run: |
           cd engine && npm ci --no-audit --no-fund && node build.mjs
@@ -106,6 +108,8 @@ jobs:
           key: ${{ runner.os }}-deps-${{ hashFiles('rust/harbor-ffi/Cargo.lock', 'engine/package-lock.json') }}
       - name: Build Rust static libraries
         run: rust/build.sh
+      - name: Copy upstream assets
+        run: tools/sync_upstream_assets.sh
       - name: Build engine bundle
         run: |
           cd engine && npm ci --no-audit --no-fund && node build.mjs
