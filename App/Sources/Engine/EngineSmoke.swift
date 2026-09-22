@@ -10,7 +10,7 @@ enum EngineSmoke {
         let bootStart = Date()
         let engine: HarborEngine
         do {
-            engine = HarborEngine.shared
+            engine = try HarborEngine.sharedOrThrow()
         } catch {
             return ["engine failed to start: \(error)"]
         }
@@ -35,14 +35,14 @@ enum EngineSmoke {
         let cinemetaStart = Date()
         do {
             let metas = try await engine.callJSON("cinemeta.topMovies", [])
-            let names = (metas.array ?? []).prefix(3).map { describe($0["name"]) }
-            lines.append("\(line("cinemeta.topMovies", since: cinemetaStart)) — \(metas.array?.count ?? 0) metas")
-            for name in names { lines.append("  \(name)") }
+            let items = metas.array ?? []
+            lines.append("\(line("cinemeta.topMovies", since: cinemetaStart)) — \(items.count) metas")
+            for meta in items.prefix(3) { lines.append("  \(describe(meta["name"]))") }
         } catch {
             lines.append("cinemeta.topMovies failed: \(error)")
         }
 
-        // --- benchmark ------------------------------------------------------------------
+        // --- the Stage-0 stream benchmark, still synchronous ------------------------------
         do {
             let result = try engine.benchmark(rounds: 50)
             lines.append("benchmark(50): \(result["streams"] ?? 0) streams, kept \(result["kept"] ?? 0), \(result["ms"] ?? 0) ms")
@@ -51,7 +51,7 @@ enum EngineSmoke {
         }
 
         let logs = engine.recentLogs
-        if !logs.isEmpty { lines.append("engine logged \(logs.count) line(s); last: \(logs[logs.count - 1])") }
+        if let last = logs.last { lines.append("engine logged \(logs.count) line(s); last: \(last)") }
         return lines
     }
 

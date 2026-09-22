@@ -7,8 +7,6 @@ struct SearchView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            SpotlightView(meta: spotlight ?? model.topMatch, boxHeight: BP.px(200) + BP.barHeight)
-                .opacity(model.rows.isEmpty ? 0 : 1)
             HStack(alignment: .top, spacing: BP.px(40)) {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
                     queryLine
@@ -50,7 +48,10 @@ struct SearchView: View {
     private var results: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.rowGap) {
-                Color.clear.frame(height: BP.barHeight + BP.px(200))
+                Color.clear.frame(height: BP.barHeight + BP.px(20))
+                if let top = spotlight ?? model.topMatch {
+                    TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
+                }
                 ForEach(model.rows) { row in
                     BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { _ in })
                 }
@@ -58,5 +59,29 @@ struct SearchView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+
+/// Top match (use-bp-search.ts slot 1): art on the right, title, facts and overview.
+struct TopMatchPanel: View {
+    let meta: Meta
+    var body: some View {
+        HStack(alignment: .top, spacing: BP.px(18)) {
+            VStack(alignment: .leading, spacing: BP.px(6)) {
+                Text("Top match").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+                Text(meta.name).font(BP.display(26)).foregroundStyle(BP.ink).lineLimit(2)
+                if !meta.facts.isEmpty { Text(meta.facts).font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted) }
+                Text(meta.description ?? "").font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(3)
+            }
+            Spacer(minLength: 0)
+            RemoteImage(url: meta.background ?? meta.poster)
+                .frame(width: BP.px(200), height: BP.px(112))
+                .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+        }
+        .padding(BP.px(16))
+        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+        .animation(.easeOut(duration: 0.26), value: meta.id)
     }
 }

@@ -29,13 +29,15 @@ final class BrowseModel: ObservableObject {
     }
 
     private var cacheKey: String { "bp.room.\(room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
+    /// Fixture rows never touch the cache, so a screenshot run cannot poison a live one.
+    private var cacheable: Bool { !(source is FixtureBrowseSource) }
 
     func load() async {
         guard !loading else { return }
         loading = true; failed = nil
         // Last session's shelves first (bp-home-cache): a TV kills the process between
         // sessions and nobody should watch an empty screen while the live build runs.
-        if rows.isEmpty, let cached = CacheStore.shared.get([BrowseRow].self, for: cacheKey), !cached.isEmpty {
+        if cacheable, rows.isEmpty, let cached = CacheStore.shared.get([BrowseRow].self, for: cacheKey), !cached.isEmpty {
             rows = cached
             if spotlight == nil { spotlight = cached.first?.metas.first }
         }
@@ -44,9 +46,11 @@ final class BrowseModel: ObservableObject {
             async let cw = source.continueWatching()
             let live = try await r
             rows = live
-            try? CacheStore.shared.set(live, for: cacheKey)
+            if cacheable { try? CacheStore.shared.set(live, for: cacheKey) }
             continueWatching = (try? await cw) ?? []
-            if spotlight == nil { spotlight = rows.first?.metas.first }
+            // A stale spotlight (from the cache, or a title that fell off the rows) resets.
+            let known = Set(live.flatMap { $0.metas.map(\.id) })
+            if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true { spotlight = live.first?.metas.first }
             startHeroCycle()
         } catch {
             if rows.isEmpty { failed = error.localizedDescription }

@@ -60,15 +60,30 @@ final class HarborEngine {
 
     // MARK: - Lifetime
 
-    /// The process-wide engine. Building it evaluates a ~900 KB bundle (expect 0.5–1 s on an
-    /// Apple TV), so touch it off the main thread during launch.
-    static let shared: HarborEngine = {
+    private static let sharedLock = NSLock()
+    private static var sharedInstance: HarborEngine?
+
+    /// The process-wide engine, built on first use. Building it evaluates a ~900 KB bundle
+    /// (expect 0.5–1 s on an Apple TV), so ask for it off the main thread during launch.
+    /// This is the form to use anywhere the failure can be shown to the user.
+    static func sharedOrThrow() throws -> HarborEngine {
+        sharedLock.lock()
+        defer { sharedLock.unlock() }
+        if let existing = sharedInstance { return existing }
+        let engine = try HarborEngine()
+        sharedInstance = engine
+        return engine
+    }
+
+    /// The same instance, for call sites that cannot deal with a failure. A missing or
+    /// broken `harbor-engine.js` is a build problem, so it traps rather than limping on.
+    static var shared: HarborEngine {
         do {
-            return try HarborEngine()
+            return try sharedOrThrow()
         } catch {
             fatalError("HarborEngine could not start: \(error)")
         }
-    }()
+    }
 
     private let virtualMachine: JSVirtualMachine?
     private let context: JSContext

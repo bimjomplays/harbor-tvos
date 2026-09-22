@@ -23,13 +23,13 @@ struct BPKeyboardView: View {
                 }
             }
             HStack(spacing: BP.px(8)) {
-                Button { onChar(" ") } label: { Label("Space", systemImage: "space").font(BP.sans(15, .semibold)).frame(width: keySize * 5 + BP.px(32), height: keySize) }
+                Button { onChar(" ") } label: { Label("Space", systemImage: "space").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 4 + BP.px(24), height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-space")
-                Button(action: onBackspace) { Label("Backspace", systemImage: "delete.left").font(BP.sans(15, .semibold)).frame(width: keySize * 2 + BP.px(8), height: keySize) }
+                Button(action: onBackspace) { Label("Backspace", systemImage: "delete.left").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 2.6, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-backspace")
-                Button(action: onClear) { Label("Clear", systemImage: "xmark").font(BP.sans(15, .semibold)).frame(width: keySize * 2 + BP.px(8), height: keySize) }
+                Button(action: onClear) { Label("Clear", systemImage: "xmark").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 1.8, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-clear")
-                Button { symbols.toggle() } label: { Text(symbols ? "abc" : "?#+").font(BP.sans(15, .semibold)).frame(width: keySize * 1.5, height: keySize) }
+                Button { symbols.toggle() } label: { Text(symbols ? "abc" : "?#+").font(BP.sans(13, .semibold)).frame(width: keySize * 1.4, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-toggle")
             }
         }
