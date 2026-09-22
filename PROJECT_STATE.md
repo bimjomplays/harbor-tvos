@@ -8,8 +8,8 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 **Stage 1 done (simulator-verified)** and **Stage 2 mostly built**:
 - Engine (JSC): Swift host `App/Sources/Engine/EngineHost.swift` (13-fn `__harbor_host` contract, JSON-string bridge `call<T>(path,args)`), verified on the simulator (selfTest ok, cinemeta.topMovies 41 ms). Bundle 969 KB. `engine/rooms.ts` (Home/Movies/Shows builds + `rooms.page`), `engine/discover.ts` (rails, queue peek, genres+palette). `cd engine && npm test` = 117 shim + 60 smoke checks green.
 - Swift: Home/Movies/Shows (`RoomView`, spotlight, rail, poster/wide/rank tiles, CW card/row, per-room cache), Search (BP keyboard, 180 ms debounce, engine search, top-match panel), Discover (queue band, genre tiles with OKLCH→sRGB, daily rails), TMDB key onboarding step + Settings panel via `SettingsBridge` (engine `settings.*`).
-- **Uncompiled since the last green run:** `App/Sources/Discover/*` (3 files), ShellView `.discover` case, the Discover UI test. Expect small compile fixes on the first run.
-- Not started in Stage 2: Collections room, "See all" catalog pages (engine `rooms.page` exists), card badges (New/In Cinema/Rerun), Home services + addons rows, addon rows on Home need a Stremio login on the TV.
+- **Uncompiled since the last green run:** `App/Sources/Discover/*` (3 files), ShellView `.discover` case, `CatalogPageView` + "See all" chip in `BPRowView`/`BPRailView`/`RoomView`, `CardMark` in `BPTileView`, the Discover UI test. Expect small compile fixes on the first run.
+- Not started in Stage 2: Collections room, Home services + addons rows (addon rows need a Stremio login on the TV), award/DUB card marks, Movies/Shows hero pool, Discover awards/people bands.
 Docs: docs/browse-spec.md, docs/big-picture-design.md, docs/harbor-protocol.md, docs/engine-report.md.
 Gotchas: never set accessibilityIdentifier on a container; initial focus lands in room content, Up reaches the top bar; UI tests use `--fixtures onboarding|who|shell|spikes|live` (+ `--query dune`); fixture rows are never cached; CI concurrency groups are per event so a TestFlight dispatch no longer cancels a push run.
 
