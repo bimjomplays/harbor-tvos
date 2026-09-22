@@ -4,7 +4,6 @@ import SwiftUI
 /// Awards, Collections and Top People bands arrive with their features.
 struct DiscoverView: View {
     @StateObject private var model = DiscoverModel()
-    @FocusState private var genresFocused: Bool
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -24,14 +23,14 @@ struct DiscoverView: View {
                         QueueBandView(queue: model.build?.queue)
                     }
                     section("Discover", "Genres", "18 shelves, one press into any of them") {
-                        GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt)
-                            .focused($genresFocused)
+                        GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt) {
+                            Task { await model.loadGenreArt() }
+                        }
                     }
                 }
             }
         }
         .task { await model.load() }
-        .onChange(of: genresFocused) { _, on in if on { Task { await model.loadGenreArt() } } }
     }
 
     private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
@@ -111,6 +110,9 @@ struct QueueBandView: View {
 struct GenresBandView: View {
     let genres: [DiscoverModel.Build.Genre]
     let art: [String: [Meta]]
+    /// Fired the first time any genre tile takes focus (art is fetched lazily, as upstream does).
+    let onFocus: () -> Void
+    @FocusState private var focusedGenre: String?
     private let cell = BP.px(178)
 
     var body: some View {
@@ -119,6 +121,7 @@ struct GenresBandView: View {
                 ForEach(genres, id: \.genre) { g in
                     Button {} label: { tile(g) }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
+                        .focused($focusedGenre, equals: g.genre)
                         .accessibilityIdentifier("genre-\(g.genre)")
                 }
             }
@@ -126,6 +129,7 @@ struct GenresBandView: View {
         }
         .scrollClipDisabled()
         .focusSection()
+        .onChange(of: focusedGenre) { _, g in if g != nil { onFocus() } }
     }
 
     private func tile(_ g: DiscoverModel.Build.Genre) -> some View {
