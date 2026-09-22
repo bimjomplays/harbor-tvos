@@ -60,7 +60,7 @@ struct SettingsView: View {
                     row("Harbor for Apple TV", detail: "Build \(build) · upstream beta-branch")
                 }
             }
-            .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(40))
+            .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20)).padding(.bottom, BP.hintHeight + BP.px(20))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { if Fixtures.openSpikes && sheet == nil { sheet = .spikes } }

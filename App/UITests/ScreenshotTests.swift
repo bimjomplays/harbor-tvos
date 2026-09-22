@@ -55,6 +55,32 @@ final class ScreenshotTests: XCTestCase {
         capture("15-settings")
     }
 
+    func testHomeRail() {
+        let app = launch("shell")
+        XCTAssertTrue(app.buttons["tile-trending-0"].waitForExistence(timeout: 30))
+        sleep(1)
+        capture("18-home-rail")
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.down)
+        sleep(1)
+        capture("19-home-rail-second-row")
+        dump(app, "hierarchy-home")
+    }
+
+    func testMoviesRoom() {
+        let app = launch("shell")
+        XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        XCUIRemote.shared.press(.up)
+        // From wherever Up landed, walk left until Home, then right to Movies.
+        for _ in 0..<10 { XCUIRemote.shared.press(.left) }
+        for _ in 0..<4 { XCUIRemote.shared.press(.right) }
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["tile-bp-top10-0"].waitForExistence(timeout: 30))
+        XCUIRemote.shared.press(.down)
+        sleep(1)
+        capture("20-movies-top10")
+    }
+
     func testSpikesStillPass() {
         let app = launch("spikes")
         XCTAssertTrue(app.buttons["spike-engine"].waitForExistence(timeout: 30))
@@ -72,8 +98,10 @@ final class ScreenshotTests: XCTestCase {
         XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.right)
         sleep(1)
-        capture("17-tab-focus-discover")
-        dump(app, "hierarchy-shell-after-right")
-        XCTAssertTrue(app.staticTexts["Discover"].exists)
+        capture("17-tab-focus-hint")
+        let focused = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        XCTAssertTrue(focused.exists)
+        XCTAssertTrue(focused.identifier.hasPrefix("tab-"), "focus should be in the top bar, was \(focused.identifier)")
+        XCTAssertTrue(app.staticTexts[focused.label].exists, "hint label for \(focused.label) missing")
     }
 }

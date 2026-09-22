@@ -29,6 +29,9 @@ import * as upstreamRpdb from "@/lib/providers/rpdb";
 import * as upstreamOmdb from "@/lib/providers/omdb";
 import * as upstreamAnizip from "@/lib/providers/anizip";
 import * as upstreamFeed from "@/lib/feed";
+import { searchAll, searchCinemeta, searchAnime, searchLiveTvChannels, detectIntent } from "@/lib/search";
+import { searchAddonCatalogs, searchAddonGroups, mergeMetas } from "@/lib/search-addons";
+import { normalizeSearchQuery } from "@/lib/search-query";
 import { fallbackShelves } from "@/lib/feed/themes";
 import { affinityIsEmpty, score as discoverScore, topEntries as discoverTopEntries } from "@/lib/discover/affinity";
 import { profileFromDetail, profileFromMeta } from "@/lib/discover/profile";
@@ -265,6 +268,24 @@ export const secretStore = {
   getAllSecrets: upstreamSecrets.getAllSecrets,
   /** Resolves even though the desktop store is unavailable; see the note above. */
   load: upstreamSecrets.loadSecrets,
+};
+
+// ================================================================================== search
+/**
+ * The Search room. `searchAll` needs a TMDB key (it is TMDB multi-search plus everything
+ * else fused); `cinemeta` and `addonCatalogs` work with no key at all, which is what the TV
+ * falls back to before the user has entered one.
+ */
+export const search = {
+  all: searchAll,
+  cinemeta: searchCinemeta,
+  anime: searchAnime,
+  liveTv: searchLiveTvChannels,
+  addonCatalogs: searchAddonCatalogs,
+  addonGroups: searchAddonGroups,
+  mergeMetas,
+  detectIntent,
+  normalizeQuery: normalizeSearchQuery,
 };
 
 // ==================================================================================== feed

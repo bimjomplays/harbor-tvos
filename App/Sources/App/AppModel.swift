@@ -10,6 +10,8 @@ final class AppModel: ObservableObject {
     @Published var stage: Stage = .boot
     @Published var room: Room = .home
 
+    /// Rooms read through this; swapped for the engine-backed source in Stage 2.
+    var browseSource: BrowseSource = FixtureBrowseSource()
     let account = AccountStore.shared
     let profiles = ProfilesStore.shared
     let sync = SyncReader.shared

@@ -7,8 +7,6 @@ struct ShellView: View {
     var body: some View {
         ZStack(alignment: .top) {
             room
-                .padding(.top, BP.barHeight)
-                .padding(.bottom, BP.hintHeight)
             TopBarView()
             VStack { Spacer(); HintBarView(actions: hints) }
         }
@@ -18,6 +16,8 @@ struct ShellView: View {
     @ViewBuilder private var room: some View {
         switch app.room {
         case .settings: SettingsView()
+        case .home, .movies, .shows:
+            RoomView(room: app.room, source: app.browseSource).id(app.room)
         default: RoomPlaceholderView(room: app.room)
         }
     }
@@ -66,6 +66,7 @@ struct TopBarView: View {
             Button { app.room = .settings } label: { Image(systemName: Room.settings.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .accessibilityIdentifier("tab-settings")
+                .accessibilityLabel("Settings")
             ClockView().padding(.leading, BP.px(6))
         }
         .padding(.horizontal, BP.gutter)
@@ -143,7 +144,7 @@ struct RoomPlaceholderView: View {
             Text(room.label).font(BP.display(36)).foregroundStyle(BP.ink)
             Text("Coming in Stage \(room.arrivesIn).").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
         }
-        .padding(.horizontal, BP.gutter).padding(.top, BP.px(40))
+        .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .focusable()
     }

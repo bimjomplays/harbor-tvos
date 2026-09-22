@@ -59,8 +59,16 @@ r.eq("addonAccepts", [
 r.eq("isCollectionCatalog", engine.addons.isCollectionCatalog({ type: "movie", id: "tmdb.collections", name: "Collections" }), true);
 r.ok("normalizeName keeps something printable", typeof engine.addons.normalizeName("Top - movie", "movie") === "string");
 r.ok("discover starts cold", engine.discover.isCold() === true);
-engine.discover.trackEvent({ kind: "open", meta: { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", genres: ["Drama"] } });
-r.ok("discover.trackEvent records", engine.discover.store().events.length >= 1, JSON.stringify(engine.discover.store().events.length));
+// trackEvent(id, kind, meta?, ts?) - upstream's real signature.
+engine.discover.trackEvent("tt0111161", "open", engine.discover.profileFromMeta({ id: "tt0111161", type: "movie", name: "The Shawshank Redemption", genres: ["Drama"] }));
+r.ok("discover.trackEvent records an event", engine.discover.store().events.length === 1 && engine.discover.store().events[0].id === "tt0111161", JSON.stringify(engine.discover.store().events));
+r.ok("discover warms up after an event", engine.discover.isCold() === false);
+r.ok("discover.score ranks a matching profile above an unrelated one", (() => {
+  const aff = engine.discover.store().affinity;
+  const drama = engine.discover.score(engine.discover.profileFromMeta({ id: "tt1", type: "movie", name: "x", genres: ["Drama"] }), aff);
+  const other = engine.discover.score(engine.discover.profileFromMeta({ id: "tt2", type: "movie", name: "y", genres: ["Horror"] }), aff);
+  return drama > other;
+})());
 r.ok("serviceCatalog exposes categories", Array.isArray(engine.serviceCatalog.CATEGORIES) && engine.serviceCatalog.CATEGORIES.length > 0);
 r.ok("feed.fallbackShelves returns shelves", Array.isArray(engine.feed.fallbackShelves()) && engine.feed.fallbackShelves().length > 0);
 r.ok("region.localeForRegion", typeof engine.region.localeForRegion("US") === "object");
@@ -150,12 +158,19 @@ if (!OFFLINE) {
   );
   r.ok("stremio.login surfaces the API error", typeof loginErr === "string" && loginErr.length > 0, String(loginErr));
 
+  const sc = await r.timed("search.cinemeta('blade runner')", () => engine.search.cinemeta("blade runner"));
+  r.ok("search.cinemeta finds movies and series", sc && sc.movies.length > 0 && Array.isArray(sc.series), JSON.stringify(sc && { movies: sc.movies.length, series: sc.series.length, first: sc.movies[0] && sc.movies[0].name }));
+  const sa = await r.timed("search.addonCatalogs(seeded)", () => engine.search.addonCatalogs(gathered ?? [], "inception"));
+  r.ok("search.addonCatalogs uses the installed addon", sa && (sa.movies.length > 0 || sa.series.length > 0), JSON.stringify(sa && { movies: sa.movies.length, series: sa.series.length }));
+  r.eq("search.detectIntent('1994')", engine.search.detectIntent("1994").kind, "year");
+
   const anizip = await r.timed("providers.aniZipByMal(1535)", () => engine.providers.aniZipByMal(1535));
   r.ok("anizip returns a mapping", anizip && anizip.mappings && typeof anizip.mappings === "object", JSON.stringify(anizip && Object.keys(anizip)));
 }
 
 // --------------------------------------------------------------------------- report
 console.log(`\nbundle ${(app.bytes / 1024).toFixed(0)} KB, evaluated in ${app.loadMs.toFixed(0)} ms`);
-console.log(`localStorage keys the bundle touched: ${JSON.stringify(engine.runtime.storageKeys())}`);
+console.log(`localStorage keys reaching the host: ${JSON.stringify([...app.node.storage.keys()].sort())}`);
+console.log(`host: ${app.node.stats.requests} requests, ${(app.node.stats.bytes / 1024).toFixed(0)} KB downloaded`);
 app.dispose();
 r.finish();
