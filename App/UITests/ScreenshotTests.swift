@@ -45,6 +45,17 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(result, "PASS")
     }
 
+    func testStorageSpike() {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["spike-storage"].waitForExistence(timeout: 20))
+        for _ in 0..<3 { XCUIRemote.shared.press(.right) }
+        XCUIRemote.shared.press(.select)
+        let result = status(app)
+        capture("06-storage")
+        XCTAssertEqual(result, "PASS")
+    }
+
     func testPlayerSpikeMenu() {
         let app = XCUIApplication()
         app.launch()

@@ -28,6 +28,8 @@ struct SpikeMenuView: View {
                             .accessibilityIdentifier("spike-rust")
                         NavigationLink { PlayerSpikeView() } label: { SpikeTile(title: "Player", subtitle: "mpv test videos", icon: "play.rectangle") }
                             .accessibilityIdentifier("spike-player")
+                        NavigationLink { StorageSpikeView() } label: { SpikeTile(title: "Storage", subtitle: "Keychain, prefs, caches", icon: "internaldrive") }
+                            .accessibilityIdentifier("spike-storage")
                     }
                     .buttonStyle(.card)
                 }
@@ -46,7 +48,7 @@ struct SpikeTile: View {
             Text(title).font(.title2.weight(.semibold))
             Text(subtitle).font(.callout).foregroundStyle(.secondary)
         }
-        .frame(width: 380, height: 220, alignment: .leading)
+        .frame(width: 300, height: 200, alignment: .leading)
         .padding(30)
         .background(Color.white.opacity(0.06))
     }
