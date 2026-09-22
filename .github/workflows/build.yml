@@ -64,11 +64,23 @@ jobs:
             -destination "platform=tvOS Simulator,id=$SIM_ID" \
             -resultBundlePath build/ui.xcresult \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
-      - name: Export screenshots
+      - name: Export screenshots and test summary
         if: always()
         run: |
           mkdir -p build/screens
           xcrun xcresulttool export attachments --path build/ui.xcresult --output-path build/screens || true
+          xcrun xcresulttool get test-results summary --path build/ui.xcresult > build/screens/summary.json || true
+          xcrun xcresulttool get test-results tests --path build/ui.xcresult > build/screens/tests.json || true
+          python3 - <<'PY' || true
+          import json
+          s = json.load(open("build/screens/summary.json"))
+          print("result:", s.get("result"), "passed", s.get("passedTests"), "failed", s.get("failedTests"))
+          for f in s.get("testFailures", []):
+              print("FAIL", f.get("testName"), "::", f.get("failureText"))
+          PY
+          mkdir -p build/screens/crashes
+          cp -R ~/Library/Logs/DiagnosticReports/*.ips build/screens/crashes/ 2>/dev/null || true
+          ls ~/Library/Logs/CoreSimulator/*/CrashReporter 2>/dev/null | head || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
