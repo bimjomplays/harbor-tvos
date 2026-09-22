@@ -3,11 +3,14 @@ import SwiftUI
 /// bp-spotlight.tsx: a pure display surface mirroring the focused (or hero-cycled) title.
 struct SpotlightView: View {
     let meta: Meta?
+    /// Height of the hero box the copy is bottom-anchored in (RoomView passes the Home value).
+    var boxHeight: CGFloat = BP.px(260 - 56) + BP.barHeight
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             backdrop
             VStack(alignment: .leading, spacing: BP.px(10)) {
+                Spacer(minLength: 0)
                 if let logo = meta?.logo, !logo.isEmpty {
                     RemoteImage(url: logo, contentMode: .fit)
                         .frame(maxWidth: BP.px(300), maxHeight: BP.px(90), alignment: .leading)
@@ -28,7 +31,8 @@ struct SpotlightView: View {
                     .lineLimit(2).frame(maxWidth: BP.px(520), alignment: .leading)
             }
             .padding(.leading, BP.gutter)
-            .padding(.top, BP.barHeight + BP.px(16))
+            .padding(.bottom, BP.px(27))
+            .frame(height: boxHeight, alignment: .bottomLeading)
             .animation(.easeOut(duration: 0.26), value: meta?.id)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -10,7 +10,7 @@ struct RoomView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            SpotlightView(meta: model.spotlight)
+            SpotlightView(meta: model.spotlight, boxHeight: heroHeight)
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load this room.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
@@ -20,23 +20,25 @@ struct RoomView: View {
             } else if model.loading && model.rows.isEmpty {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
             } else {
-                BPRailView(rows: allRows, onFocus: { m, _ in model.focus(m) }, onSelect: { _ in }, topInset: BP.px(300))
+                BPRailView(rows: model.rows, onFocus: { m, _ in model.focus(m) }, onSelect: { _ in }, topInset: heroHeight) {
+                    if !model.continueWatching.isEmpty {
+                        ContinueRowView(items: model.continueWatching,
+                                        onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { _ in })
+                    }
+                }
             }
         }
         .task { await model.load() }
     }
 
-    /// Continue Watching leads (bp-home.tsx row 1) as a wide row until BpCwCard lands.
-    private var allRows: [BrowseRow] {
-        var rows = model.rows
-        if !model.continueWatching.isEmpty {
-            let metas = model.continueWatching.map {
-                Meta(id: $0.id, type: $0.type, name: $0.name, poster: $0.poster, background: $0.background, logo: $0.logo,
-                     description: nil, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil,
-                     runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
-            }
-            rows.insert(BrowseRow(key: "cw", title: "Jump back in", metas: metas, shape: .wide), at: 0)
-        }
-        return rows
+    /// Home hero box: clamp(260px, 34vh, 380px) − 56px give (bp-tokens.ts:227-228, 172-175).
+    private var heroHeight: CGFloat { BP.px(260 - 56) + BP.barHeight }
+}
+
+extension Meta {
+    init(continue c: ContinueItem) {
+        self.init(id: c.id, type: c.type, name: c.name, poster: c.poster, background: c.background, logo: c.logo,
+                  description: nil, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil,
+                  runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
     }
 }

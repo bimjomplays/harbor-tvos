@@ -37,11 +37,12 @@ struct BPRowView: View {
 }
 
 /// The vertical rail of rows; keeps the focused row parked near the top (use-bp-rail.ts).
-struct BPRailView: View {
+struct BPRailView<Lead: View>: View {
     let rows: [BrowseRow]
     let onFocus: (Meta, BrowseRow) -> Void
     let onSelect: (Meta) -> Void
     var topInset: CGFloat = 0
+    @ViewBuilder var lead: () -> Lead
     @State private var focusedRow: String?
     /// Where the focused row parks: just under the spotlight copy (bp rail "resting floor").
     private var parkAnchor: CGFloat { (topInset + BP.px(6)) / 1080 }
@@ -51,6 +52,7 @@ struct BPRailView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                     Color.clear.frame(height: topInset)
+                    lead().id("lead")
                     ForEach(rows) { row in
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect)
                             .id(row.key)

@@ -3,15 +3,11 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
-## Status (2026-09-22)
-**Stage 0 complete.** All spikes GO on the real Apple TV (build 7): HEVC, HDR10, HDR10+, DV P5/P8, PGS, SRT play. User's TV output is fixed "4K Dolby Vision" with Match Content off, so no mode badges appear; Stage 4 must still set `AVDisplayCriteria` for users who match content. Storage layer (0.7) done: `App/Sources/Storage/` (SecretStore=Keychain, Prefs=UserDefaults ≤400 KB, CacheStore=Caches JSON, KeyValueStore routes by key prefix); needs keychain-access-groups entitlement (sim builds ad-hoc signed). Waiting on the user's go for Stage 1.
-- Engine (JavaScriptCore): upstream `src/lib/streams` bundled by `engine/build.mjs` (esbuild, `@/` alias, Tauri stubs) → 89 KB; loads in 181 ms, 850 streams parse+trust+score+rank in 332 ms on the simulator. GO.
-- Rust: `rust/harbor-ffi` (C ABI over harbor-core, staticlib) builds for `aarch64-apple-tvos` + `-sim` on the runner via `rust/build.sh`, linked with a modulemap; pipeline works. GO.
-- mpv: MPVKit 1.0.0 (SPM), gpu-next/MoltenVK into CAMetalLayer, hwdec videotoolbox; HEVC plays in the simulator. Real-TV HDR/DV/PGS check pending (Spike menu → Player).
-- CI (`Build`): checkout with submodule → Rust libs → engine bundle → XcodeGen → sim UI tests (4 pass) → screenshots; TestFlight job on `workflow_dispatch testflight=true` (build number = run number).
-- Protocol facts that change the plan: profile sync is at `harbor.site/themes/api/sync/v1/*` (bearer), NOT sync.harbor.site (that is the subtitle-autosync crowd DB); sessions per local profile with refresh token (6 h proactive refresh); 9 live sync sections (profiles, watchedby, home, anime, nav, services, settings, theme, playerlayout); server-wins with local parking, except watchedby (LWW merge); no client-side encryption.
-- Upstream is a git submodule at `reference/harbor` pinned to `1bfcfb6` (beta-branch).
-- Gotcha: never name a bundle folder `Resources` on tvOS (flat bundle breaks); engine JS lives in `App/Engine/`.
+## Status (2026-09-22, overnight run; user asleep)
+**Stage 1 built and screenshot-verified in the simulator** (not yet on the TV): onboarding (language, TMDB, Stremio, Harbor, done), Harbor account login + refresh, read-only sync roster → profiles, who's watching + PIN pad, Big Picture shell (top bar, hint bar, fonts Switzer/Sentient/Fraunces bundled), Settings (account, Stremio, TMDB key, sync, profiles, dev spikes).
+**Stage 2 in progress:** engine bundle now covers browse (923 KB, `engine/`, `npm test` = 117 shim + 57 smoke checks, docs/engine-report.md); `engine/rooms.ts` = Home/Movies/Shows row builders mirroring use-bp-catalog/use-bp-shows; Swift tiles/rows/rail/spotlight/RoomView done with fixture rows (screens 18-20 OK); `EngineBrowseSource` + `SettingsBridge` written but **uncompiled** — they depend on `App/Sources/Engine/EngineHost.swift` (JSC host, 13-function `__harbor_host` contract) which a subagent is writing. Next push must include it or CI fails.
+Docs: docs/browse-spec.md (rooms/providers/badges/types), docs/big-picture-design.md, docs/harbor-protocol.md, docs/engine-report.md.
+Gotchas: never set accessibilityIdentifier on a container (children inherit it); initial focus lands in room content, Up reaches the top bar; UI tests use `--fixtures onboarding|who|shell|spikes`.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
@@ -27,4 +23,6 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next
-Stage 1 (shell, sign-in, profiles) on user go. First tasks: Big Picture design tokens + focus rules, engine `localStorage`/`fetch` shims over KeyValueStore, Harbor login (email+password first, QR later), read-only profile sync. 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
+1. Land EngineHost.swift, push, fix compile errors, verify Home/Movies/Shows with real Cinemeta rows in the simulator (fixtures off: add a `--live` UI test scenario).
+2. TestFlight build for the user: sign in on the TV, check roster + rows + TMDB key entry.
+3. Stage 2 remainder: Search (engine `search.*`, on-screen keyboard rows from browse-spec §4.5), Discover, Collections, Continue Watching card (design §8.2), card badges (§7), catalog "see all" pages, Home services/addons rows. 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.

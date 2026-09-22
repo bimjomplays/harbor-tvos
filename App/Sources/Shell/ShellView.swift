@@ -18,6 +18,8 @@ struct ShellView: View {
         case .settings: SettingsView()
         case .home, .movies, .shows:
             RoomView(room: app.room, source: app.browseSource).id(app.room)
+        case .search:
+            SearchView()
         default: RoomPlaceholderView(room: app.room)
         }
     }
