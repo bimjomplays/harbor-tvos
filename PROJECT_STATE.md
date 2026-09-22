@@ -3,11 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
-## Status (2026-09-22, overnight run; user asleep)
-**Stage 1 built and screenshot-verified in the simulator** (not yet on the TV): onboarding (language, TMDB, Stremio, Harbor, done), Harbor account login + refresh, read-only sync roster → profiles, who's watching + PIN pad, Big Picture shell (top bar, hint bar, fonts Switzer/Sentient/Fraunces bundled), Settings (account, Stremio, TMDB key, sync, profiles, dev spikes).
-**Stage 2 in progress:** engine bundle now covers browse (923 KB, `engine/`, `npm test` = 117 shim + 57 smoke checks, docs/engine-report.md); `engine/rooms.ts` = Home/Movies/Shows row builders mirroring use-bp-catalog/use-bp-shows; Swift tiles/rows/rail/spotlight/RoomView done with fixture rows (screens 18-20 OK); `EngineBrowseSource` + `SettingsBridge` written but **uncompiled** — they depend on `App/Sources/Engine/EngineHost.swift` (JSC host, 13-function `__harbor_host` contract) which a subagent is writing. Next push must include it or CI fails.
-Docs: docs/browse-spec.md (rooms/providers/badges/types), docs/big-picture-design.md, docs/harbor-protocol.md, docs/engine-report.md.
-Gotchas: never set accessibilityIdentifier on a container (children inherit it); initial focus lands in room content, Up reaches the top bar; UI tests use `--fixtures onboarding|who|shell|spikes`.
+## Status (2026-09-22 ~04:30, end of overnight run)
+**BLOCKER: GitHub Actions free macOS minutes are exhausted** (private repo). Every run since ~03:58 fails with "The job was not started because recent account payments have failed or your spending limit needs to be increased". Nothing compiles or ships until the user either makes the repo public (unlimited) or raises the Actions spending limit. Last green CI: run 35684169889 + the following fix run (all 10 UI tests passed, real Cinemeta rows + Search + engine host verified). TestFlight build 7 (Stage 0 spikes) is still the newest on the TV; builds 8+ never uploaded.
+**Stage 1 done (simulator-verified)** and **Stage 2 mostly built**:
+- Engine (JSC): Swift host `App/Sources/Engine/EngineHost.swift` (13-fn `__harbor_host` contract, JSON-string bridge `call<T>(path,args)`), verified on the simulator (selfTest ok, cinemeta.topMovies 41 ms). Bundle 969 KB. `engine/rooms.ts` (Home/Movies/Shows builds + `rooms.page`), `engine/discover.ts` (rails, queue peek, genres+palette). `cd engine && npm test` = 117 shim + 60 smoke checks green.
+- Swift: Home/Movies/Shows (`RoomView`, spotlight, rail, poster/wide/rank tiles, CW card/row, per-room cache), Search (BP keyboard, 180 ms debounce, engine search, top-match panel), Discover (queue band, genre tiles with OKLCH→sRGB, daily rails), TMDB key onboarding step + Settings panel via `SettingsBridge` (engine `settings.*`).
+- **Uncompiled since the last green run:** `App/Sources/Discover/*` (3 files), ShellView `.discover` case, the Discover UI test. Expect small compile fixes on the first run.
+- Not started in Stage 2: Collections room, "See all" catalog pages (engine `rooms.page` exists), card badges (New/In Cinema/Rerun), Home services + addons rows, addon rows on Home need a Stremio login on the TV.
+Docs: docs/browse-spec.md, docs/big-picture-design.md, docs/harbor-protocol.md, docs/engine-report.md.
+Gotchas: never set accessibilityIdentifier on a container; initial focus lands in room content, Up reaches the top bar; UI tests use `--fixtures onboarding|who|shell|spikes|live` (+ `--query dune`); fixture rows are never cached; CI concurrency groups are per event so a TestFlight dispatch no longer cancels a push run.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
@@ -23,6 +27,6 @@ Gotchas: never set accessibilityIdentifier on a container (children inherit it);
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next
-1. Land EngineHost.swift, push, fix compile errors, verify Home/Movies/Shows with real Cinemeta rows in the simulator (fixtures off: add a `--live` UI test scenario).
-2. TestFlight build for the user: sign in on the TV, check roster + rows + TMDB key entry.
-3. Stage 2 remainder: Search (engine `search.*`, on-screen keyboard rows from browse-spec §4.5), Discover, Collections, Continue Watching card (design §8.2), card badges (§7), catalog "see all" pages, Home services/addons rows. 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
+1. User unblocks CI (public repo or spending limit). Then: `gh workflow run Build -f testflight=true`, fix any Discover compile errors, review screens 24/25.
+2. User signs in on the TV (Harbor + Stremio + TMDB key) and reports.
+3. Stage 2 remainder: Collections room, "See all" pages (`rooms.page`), card badges, Home services/addons rows, Movies/Shows hero pool → then Stage 3 (detail page + streams). 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
