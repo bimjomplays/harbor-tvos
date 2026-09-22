@@ -11,3 +11,4 @@ rust/target/
 rust/harbor-ffi/target/
 engine/node_modules/
 engine/dist/
+App/Engine/harbor-engine.js

@@ -21,8 +21,7 @@ targets:
     sources:
       - App/Sources
       - App/Assets.xcassets
-      - path: App/Resources
-        type: folder
+      - path: App/Engine
         buildPhase: resources
     dependencies:
       - package: MPVKit
