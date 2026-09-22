@@ -33,7 +33,7 @@ struct ShellView: View {
 struct TopBarView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var profiles: ProfilesStore
-    @State private var hint: Room?
+    @FocusState private var focusedTab: Room?
 
     var body: some View {
         HStack(spacing: BP.px(9)) {
@@ -45,8 +45,8 @@ struct TopBarView: View {
             ForEach(Room.tabs) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
+                    .focused($focusedTab, equals: r)
                     .overlay(alignment: .bottom) { tabHint(r) }
-                    .onFocusChange { if $0 { hint = r } else if hint == r { hint = nil } }
                     .accessibilityIdentifier("tab-\(r.rawValue)")
                     .accessibilityLabel(r.label)
             }
@@ -78,7 +78,7 @@ struct TopBarView: View {
     }
 
     @ViewBuilder private func tabHint(_ r: Room) -> some View {
-        if hint == r {
+        if focusedTab == r {
             Text(r.label)
                 .font(BP.sans(12, .semibold)).foregroundStyle(BP.ink)
                 .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
@@ -101,21 +101,6 @@ struct BPTabStyleWide: ButtonStyle {
                 .scaleEffect(focused ? 1.04 : 1)
                 .animation(BP.easeFast, value: focused)
         }
-    }
-}
-
-extension View {
-    /// tvOS focus callback without a FocusState per button.
-    func onFocusChange(_ handler: @escaping (Bool) -> Void) -> some View {
-        modifier(FocusChangeModifier(handler: handler))
-    }
-}
-
-private struct FocusChangeModifier: ViewModifier {
-    let handler: (Bool) -> Void
-    @Environment(\.isFocused) private var focused
-    func body(content: Content) -> some View {
-        content.onChange(of: focused) { _, new in handler(new) }
     }
 }
 

@@ -25,7 +25,7 @@ struct WhoIsWatchingView: View {
                 if profiles.profiles.isEmpty {
                     emptyState
                 } else {
-                    ForEach(rows, id: \.first!.id) { row in
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                         HStack(spacing: BP.px(34)) {
                             ForEach(row) { p in tile(p) }
                         }
@@ -49,7 +49,9 @@ struct WhoIsWatchingView: View {
 
     private var rows: [[ProfilesStore.Profile]] {
         let all = profiles.profiles
-        let perRow = min(6, max(1, Int(ceil(Double(all.count) / ceil(Double(all.count) / 6)))))
+        guard !all.isEmpty else { return [] }
+        let rowCount = ceil(Double(all.count) / 6)
+        let perRow = min(6, max(1, Int(ceil(Double(all.count) / rowCount))))
         return stride(from: 0, to: all.count, by: perRow).map { Array(all[$0..<min($0 + perRow, all.count)]) }
     }
 

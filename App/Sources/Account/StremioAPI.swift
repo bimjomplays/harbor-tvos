@@ -1,6 +1,12 @@
 import Foundation
 
 /// Stremio's official API (api.strem.io), mirroring src/lib/stremio.ts and src/lib/addons.ts.
+private struct Envelope<R: Decodable>: Decodable {
+    struct Err: Decodable { var message: String? }
+    var error: Err?
+    var result: R?
+}
+
 enum StremioAPI {
     static let base = URL(string: "https://api.strem.io/api")!
 
@@ -40,11 +46,6 @@ enum StremioAPI {
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         req.timeoutInterval = 20
         let (data, resp) = try await URLSession.shared.data(for: req)
-        struct Envelope<R: Decodable>: Decodable {
-            struct Err: Decodable { var message: String? }
-            var error: Err?
-            var result: R?
-        }
         let env = try JSONDecoder().decode(Envelope<T>.self, from: data)
         if let err = env.error { throw Failure(message: err.message ?? "Stremio request failed") }
         guard let result = env.result else {
