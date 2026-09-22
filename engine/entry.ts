@@ -53,6 +53,7 @@ import { randomUuid } from "@/lib/uuid";
 import * as upstreamSecrets from "@/lib/secret-store";
 import type { Meta } from "@/lib/cinemeta";
 import * as roomBuilders from "./rooms";
+import * as discoverBuilders from "./discover";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -369,6 +370,17 @@ export const rooms = {
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
 };
 export type { RoomBuild, RoomRow, RoomKind } from "./rooms";
+
+/** Discover room: daily rails, the Discovery Queue peek/order, genre tiles (engine-added glue). */
+export const discoverRoom = {
+  buildFor: discoverBuilders.buildFor,
+  rails: discoverBuilders.rails,
+  queuePeek: discoverBuilders.queuePeek,
+  queueFor: discoverBuilders.queueFor,
+  genres: discoverBuilders.genres,
+  genreArtFor: discoverBuilders.genreArtFor,
+};
+export type { DiscoverBuild, DiscoverRail, QueuePeek, GenreTile } from "./discover";
 
 // ================================================================================== runtime
 /**

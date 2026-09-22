@@ -78,6 +78,13 @@ export const stubs = {
     // pure helpers; the hooks are never called. The stub is a CommonJS Proxy so ANY named
     // import resolves, and every one of them throws when actually called - so a mistake
     // shows up as a loud exception instead of a wrong value.
+    // Icon packs are pure UI: every named import becomes a component that renders nothing.
+    // CommonJS so named imports need no static export list.
+    b.onResolve({ filter: /^lucide-react($|\/)/ }, (a) => ({ path: a.path, namespace: "icon-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "icon-stub" }, () => ({
+      contents: "module.exports = new Proxy({}, { get: (_, name) => name === '__esModule' ? true : function IconStub() { return null; } });",
+      loader: "js",
+    }));
     b.onResolve({ filter: /^react($|\/)|^react-dom($|\/)|^scheduler($|\/)/ }, (a) => ({
       path: a.path,
       namespace: "react-stub",

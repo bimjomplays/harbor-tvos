@@ -20,6 +20,8 @@ struct ShellView: View {
             RoomView(room: app.room, source: app.browseSource).id(app.room)
         case .search:
             SearchView()
+        case .discover:
+            DiscoverView()
         default: RoomPlaceholderView(room: app.room)
         }
     }

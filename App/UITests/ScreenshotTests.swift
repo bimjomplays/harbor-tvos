@@ -109,6 +109,24 @@ final class ScreenshotTests: XCTestCase {
         dump(app, "hierarchy-search")
     }
 
+    func testDiscoverRoom() {
+        let app = launch("live")
+        XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        XCUIRemote.shared.press(.up)
+        for _ in 0..<10 { XCUIRemote.shared.press(.left) }
+        XCUIRemote.shared.press(.right)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["queue-band"].waitForExistence(timeout: 60))
+        XCTAssertTrue(app.buttons["genre-Action"].waitForExistence(timeout: 30))
+        sleep(2)
+        capture("24-discover")
+        XCUIRemote.shared.press(.down)
+        XCUIRemote.shared.press(.down)
+        sleep(2)
+        capture("25-discover-rails")
+        dump(app, "hierarchy-discover")
+    }
+
     func testSpikesStillPass() {
         let app = launch("spikes")
         XCTAssertTrue(app.buttons["spike-engine"].waitForExistence(timeout: 30))
