@@ -63,7 +63,7 @@ jobs:
           xcodebuild test -project Harbor.xcodeproj -scheme Harbor \
             -destination "platform=tvOS Simulator,id=$SIM_ID" \
             -resultBundlePath build/ui.xcresult \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= | xcbeautify
       - name: Export screenshots and test summary
         if: always()
         run: |

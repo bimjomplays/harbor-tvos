@@ -26,6 +26,10 @@ targets:
     dependencies:
       - package: MPVKit
         product: MPVKit
+    entitlements:
+      path: App/Harbor.entitlements
+      properties:
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.dltnp.harbor"]
     info:
       path: App/Info.plist
       properties:
