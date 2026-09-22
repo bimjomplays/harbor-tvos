@@ -57,14 +57,47 @@ struct BPTileView: View {
     }
 
     private func art(url: String?, size: CGSize, plateText: Bool = true) -> some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             RemoteImage(url: url)
             if url == nil && plateText {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))
+                    .frame(width: size.width, height: size.height)
+            }
+            if let mark = CardMark.identity(for: meta) {
+                Text(mark)
+                    .font(BP.sans(9.8, .bold)).textCase(.uppercase).tracking(0.5)
+                    .foregroundStyle(BP.canvas)
+                    .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(3))
+                    .background(RoundedRectangle(cornerRadius: BP.px(4), style: .continuous).fill(BP.ink))
+                    .padding(BP.px(7))
             }
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
     }
+}
+
+
+/// bp-card-marks.tsx top-start identity chip, the parts that need no extra data:
+/// New (released this year) → Rerun (in cinema but >9 months old) → In Cinema.
+/// Award and DUB chips join with the awards catalog and anime detection.
+enum CardMark {
+    static func identity(for meta: Meta) -> String? {
+        let year = Calendar.current.component(.year, from: Date())
+        let inCinema = meta.type == "movie" && meta.inTheaters == true
+        if !inCinema, meta.releaseInfo == String(year) { return "New" }
+        if inCinema {
+            if let d = meta.releaseDate, let released = ISO8601DateFormatter().date(from: d) ?? Self.dayFormatter.date(from: d),
+               Date().timeIntervalSince(released) / (60 * 60 * 24 * 30.44) > 9 {
+                return meta.releaseInfo.map { "Rerun · \($0)" } ?? "Rerun"
+            }
+            return "In Cinema"
+        }
+        return nil
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); return f
+    }()
 }

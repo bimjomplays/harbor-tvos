@@ -3,6 +3,7 @@ import SwiftUI
 /// Home / Movies / Shows: spotlight up top, Continue Watching, then the rail of rows.
 struct RoomView: View {
     @StateObject private var model: BrowseModel
+    @State private var seeAll: BrowseRow?
 
     init(room: Room, source: BrowseSource) {
         _model = StateObject(wrappedValue: BrowseModel(room: room, source: source))
@@ -20,7 +21,8 @@ struct RoomView: View {
             } else if model.loading && model.rows.isEmpty {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
             } else {
-                BPRailView(rows: model.rows, onFocus: { m, _ in model.focus(m) }, onSelect: { _ in }, topInset: heroHeight) {
+                BPRailView(rows: model.rows, onFocus: { m, _ in model.focus(m) }, onSelect: { _ in },
+                           onSeeAll: { seeAll = $0 }, topInset: heroHeight) {
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
                                         onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { _ in })
@@ -29,6 +31,9 @@ struct RoomView: View {
             }
         }
         .task { await model.load() }
+        .fullScreenCover(item: $seeAll) { row in
+            CatalogPageView(room: model.room, row: row)
+        }
     }
 
     /// Home hero box: clamp(260px, 34vh, 380px) − 56px give (bp-tokens.ts:227-228, 172-175).
