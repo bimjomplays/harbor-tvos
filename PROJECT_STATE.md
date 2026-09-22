@@ -4,9 +4,14 @@
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
 ## Status (2026-09-22)
-**Stage 0.1 + 0.2 done and confirmed on the real Apple TV (2026-09-22).** Private repo `bimjomplays/harbor-tvos`. CI `Build`: XcodeGen → tvOS simulator UI test → screenshot artifact `screens` (~2 Mac min). TestFlight job works: `gh workflow run Build -f testflight=true` (~2 min archive+upload; build number = run number). First build (3) uploaded and VALID.
-App Store Connect: app id `<asc-app-id>` "Harbor TV dltnp", bundle `com.dltnp.harbor`, internal group "Internal" `<asc-group-id>` (all builds), tester = account holder (<account-holder-email>), invite sent. `tools/setup_signing.py` holds a working ASC API client (JWT via openssl) for automation.
-Apple TV: A2737 (4K 3rd gen 2022, A15), tvOS 26.6 (23L773).
+Stage 0: 0.1, 0.2 done; 0.3/0.4/0.5 pass in the simulator (build 7 on TestFlight, real-TV check pending); 0.6 protocol doc written (`docs/harbor-protocol.md`, 766 lines, by a subagent, spot-checked); 0.7 storage layer not started.
+- Engine (JavaScriptCore): upstream `src/lib/streams` bundled by `engine/build.mjs` (esbuild, `@/` alias, Tauri stubs) → 89 KB; loads in 181 ms, 850 streams parse+trust+score+rank in 332 ms on the simulator. GO.
+- Rust: `rust/harbor-ffi` (C ABI over harbor-core, staticlib) builds for `aarch64-apple-tvos` + `-sim` on the runner via `rust/build.sh`, linked with a modulemap; pipeline works. GO.
+- mpv: MPVKit 1.0.0 (SPM), gpu-next/MoltenVK into CAMetalLayer, hwdec videotoolbox; HEVC plays in the simulator. Real-TV HDR/DV/PGS check pending (Spike menu → Player).
+- CI (`Build`): checkout with submodule → Rust libs → engine bundle → XcodeGen → sim UI tests (4 pass) → screenshots; TestFlight job on `workflow_dispatch testflight=true` (build number = run number).
+- Protocol facts that change the plan: profile sync is at `harbor.site/themes/api/sync/v1/*` (bearer), NOT sync.harbor.site (that is the subtitle-autosync crowd DB); sessions per local profile with refresh token (6 h proactive refresh); 9 live sync sections (profiles, watchedby, home, anime, nav, services, settings, theme, playerlayout); server-wins with local parking, except watchedby (LWW merge); no client-side encryption.
+- Upstream is a git submodule at `reference/harbor` pinned to `1bfcfb6` (beta-branch).
+- Gotcha: never name a bundle folder `Resources` on tvOS (flat bundle breaks); engine JS lives in `App/Engine/`.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
@@ -22,4 +27,4 @@ Apple TV: A2737 (4K 3rd gen 2022, A15), tvOS 26.6 (23L773).
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next
-Spikes: 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
+User tests build 7 on the TV (Player spike: HDR10, DV P5/P8, PGS/SRT clips) → record go/no-go → 0.7 storage layer → Stage 1. 0.3 mpv spike, 0.4 engine spike, 0.5 Rust spike, 0.6 sync protocol doc.
