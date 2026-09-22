@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
-    paths: ["App/**", "project.yml", "ci/**", ".github/workflows/build.yml"]
+    paths: ["App/**", "project.yml", "ci/**", "engine/**", "rust/**", ".github/workflows/build.yml"]
   workflow_dispatch:
     inputs:
       testflight:
@@ -25,6 +25,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            rust/harbor-ffi/target
+            ~/.cargo/registry
+            engine/node_modules
+          key: ${{ runner.os }}-deps-${{ hashFiles('rust/harbor-ffi/Cargo.lock', 'engine/package-lock.json') }}
+      - name: Build Rust static libraries
+        run: rust/build.sh
+      - name: Build engine bundle
+        run: |
+          cd engine && npm ci --no-audit --no-fund && node build.mjs
+          mkdir -p ../App/Resources && cp dist/harbor-engine.js ../App/Resources/
       - name: Generate project
         run: |
           sudo xcode-select -s "$XCODE"
@@ -68,6 +83,21 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            rust/harbor-ffi/target
+            ~/.cargo/registry
+            engine/node_modules
+          key: ${{ runner.os }}-deps-${{ hashFiles('rust/harbor-ffi/Cargo.lock', 'engine/package-lock.json') }}
+      - name: Build Rust static libraries
+        run: rust/build.sh
+      - name: Build engine bundle
+        run: |
+          cd engine && npm ci --no-audit --no-fund && node build.mjs
+          mkdir -p ../App/Resources && cp dist/harbor-engine.js ../App/Resources/
       - name: Generate project
         run: |
           sudo xcode-select -s "$XCODE"

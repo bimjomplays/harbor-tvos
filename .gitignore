@@ -1,4 +1,4 @@
-reference/
+reference/mpvkit-demo/
 secrets/
 *.xcodeproj
 App/Info.plist
@@ -6,3 +6,8 @@ build/
 DerivedData/
 *.xcresult
 .DS_Store
+rust/out/
+rust/target/
+rust/harbor-ffi/target/
+engine/node_modules/
+engine/dist/

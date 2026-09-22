@@ -10,6 +10,10 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "3"
+packages:
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit.git
+    exactVersion: 1.0.0
 targets:
   Harbor:
     type: application
@@ -17,6 +21,12 @@ targets:
     sources:
       - App/Sources
       - App/Assets.xcassets
+      - path: App/Resources
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: MPVKit
+        product: MPVKit
     info:
       path: App/Info.plist
       properties:
@@ -32,6 +42,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.dltnp.harbor
         ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
         GENERATE_INFOPLIST_FILE: NO
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/rust/harbor-ffi/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/rust/out/$(PLATFORM_NAME)
+        OTHER_LDFLAGS: -lharbor_ffi
+        MTL_ENABLE_DEBUG_INFO: NO
   HarborUITests:
     type: bundle.ui-testing
     platform: tvOS

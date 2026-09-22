@@ -1,0 +1,4 @@
+[submodule "reference/harbor"]
+	path = reference/harbor
+	url = https://github.com/harborstremio/harbor.git
+	branch = beta-branch

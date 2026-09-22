@@ -1,0 +1,5 @@
+module HarborFFI {
+    header "harbor_ffi.h"
+    link "harbor_ffi"
+    export *
+}

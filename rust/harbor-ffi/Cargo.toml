@@ -1,0 +1,18 @@
+[package]
+name = "harbor-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI over harbor-core for the tvOS app."
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+harbor-core = { path = "../../reference/harbor/harbor-core" }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
