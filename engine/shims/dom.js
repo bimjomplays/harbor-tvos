@@ -24,14 +24,29 @@ export function createDom(globals) {
     }
   }
 
+  // `document.documentElement` is a no-op attribute holder. The bundle carries no UI, so
+  // there is nothing for `dir`, `lang`, a class or a CSS custom property to affect - but
+  // upstream's i18n store writes them at import time. Anything that would need a REAL
+  // element (createElement, body, querySelector) is deliberately absent so a UI module
+  // pulled in by mistake throws instead of half-working.
+  const documentElement = {
+    dir: "ltr",
+    lang: "en",
+    style: { setProperty() {}, removeProperty() {}, getPropertyValue: () => "" },
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    setAttribute() {},
+    removeAttribute() {},
+    getAttribute: () => null,
+    dataset: {},
+  };
   const doc = new EventTargetShim();
   Object.assign(doc, {
     visibilityState: "visible",
     hidden: false,
     readyState: "complete",
     title: "Harbor",
-    // Deliberately absent: createElement, body, querySelector. A module that needs them is
-    // a UI module and does not belong in this bundle - it will throw loudly here.
+    documentElement,
+    head: documentElement,
   });
 
   const win = new HarborWindow();

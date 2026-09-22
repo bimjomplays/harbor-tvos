@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "build:min": "node build.mjs --min",
+    "test": "node build.mjs && node test/shims.test.mjs && node smoke.mjs",
+    "probe": "node test/probe.mjs"
   },
   "dependencies": {
     "core-js": "^3.50.0",

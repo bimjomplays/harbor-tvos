@@ -10,6 +10,13 @@ final class ScreenshotTests: XCTestCase {
         add(shot)
     }
 
+    private func dump(_ app: XCUIApplication, _ name: String) {
+        let a = XCTAttachment(string: app.debugDescription)
+        a.name = name
+        a.lifetime = .keepAlways
+        add(a)
+    }
+
     private func launch(_ scenario: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--fixtures", scenario]
@@ -60,9 +67,13 @@ final class ScreenshotTests: XCTestCase {
     func testTabHint() {
         let app = launch("shell")
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        sleep(1)
+        dump(app, "hierarchy-shell-initial")
+        XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.right)
         sleep(1)
         capture("17-tab-focus-discover")
+        dump(app, "hierarchy-shell-after-right")
         XCTAssertTrue(app.staticTexts["Discover"].exists)
     }
 }
