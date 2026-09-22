@@ -6,7 +6,7 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 ## Status (2026-09-21)
 Stage 0.1 + 0.2 half done. Private repo `bimjomplays/harbor-tvos`. CI `Build` workflow green: XcodeGen → tvOS simulator UI test → screenshot artifact `screens` (~2 Mac minutes/run). Bundle ID `com.dltnp.harbor`, tvOS 17.0+, Xcode 26.6 on `macos-26`.
 TestFlight job written but untested: waiting on the user's App Store Connect API key, then `python3 tools/setup_signing.py` (creates bundle ID, dist cert, profile, GitHub secrets from Linux), user creates the app record, then `gh workflow run Build -f testflight=true`.
-Open: Apple TV model + tvOS version.
+Apple TV: A2737 (4K 3rd gen, 2022, Wi-Fi+Ethernet, 128 GB — user said 64 GB; A15 chip), tvOS 26.6 (23L773). Signing done 2026-09-21: cert XYQ7W3LY4L, profile "Harbor tvOS App Store", secrets set. Waiting: user creates App Store Connect app record (API forbids it).
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.

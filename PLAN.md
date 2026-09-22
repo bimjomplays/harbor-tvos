@@ -172,7 +172,7 @@ ambient screensaver, game controllers, keyboard, accessibility, performance pass
 ## 7. Decisions needed before Stage 0
 
 1. (Answered 2026-09-21: no modified Harbor exists; copy upstream beta as-is.)
-2. **Open:** which Apple TV model and tvOS version (user will check at home). Does not block Stage 0.1/0.2.
+2. (Answered 2026-09-21: Apple TV 4K 3rd gen A2737, tvOS 26.6. HDR10/DV, A15: shaders and 4-way Multiview are realistic.)
 3. (Decided 2026-09-21: **private** repo to start; flip to public or pay per build if the free Mac minutes run out.)
 4. (Dropped: no need to ask the Harbor developers. Code is MIT. We behave like the official client toward their servers and keep sync read-only until the format is understood.)
 5. (Decided 2026-09-21: app name **Harbor**; bundle ID chosen in Stage 0.1.)
