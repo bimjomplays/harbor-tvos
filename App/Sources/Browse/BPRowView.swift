@@ -43,6 +43,8 @@ struct BPRailView: View {
     let onSelect: (Meta) -> Void
     var topInset: CGFloat = 0
     @State private var focusedRow: String?
+    /// Where the focused row parks: just under the spotlight copy (bp rail "resting floor").
+    private var parkAnchor: CGFloat { (topInset + BP.px(6)) / 1080 }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -56,9 +58,16 @@ struct BPRailView: View {
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }
             }
+            // Rows scrolling up pass under the spotlight copy; fade them out there.
+            .mask(
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: topInset)
+                    Color.black
+                }
+            )
             .onChange(of: focusedRow) { _, key in
                 guard let key else { return }
-                withAnimation(BP.easeSlow) { proxy.scrollTo(key, anchor: UnitPoint(x: 0, y: 0.08)) }
+                withAnimation(BP.easeSlow) { proxy.scrollTo(key, anchor: UnitPoint(x: 0, y: parkAnchor)) }
             }
         }
     }

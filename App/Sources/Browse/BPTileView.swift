@@ -35,7 +35,7 @@ struct BPTileView: View {
 
     private var wide: some View {
         ZStack(alignment: .bottomLeading) {
-            art(url: meta.background ?? meta.poster, size: Self.wideSize)
+            art(url: meta.background ?? meta.poster, size: Self.wideSize, plateText: false)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
             Text(meta.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1).padding(BP.px(10))
         }
@@ -46,8 +46,8 @@ struct BPTileView: View {
     private var rankCell: some View {
         HStack(alignment: .bottom, spacing: 0) {
             Text("\(rank ?? 0)")
-                .font(.custom("Switzer-Bold", size: Self.rankSize.height * 0.98))
-                .foregroundStyle(BP.ink.opacity(focused ? 0.9 : 0.55))
+                .font(.custom("Switzer-Bold", size: Self.rankSize.height * 0.9))
+                .foregroundStyle(BP.ink.opacity(focused ? 0.85 : 0.45))
                 .frame(width: Self.rankSize.width * 0.4, alignment: .trailing)
                 .offset(x: BP.px(6), y: Self.rankSize.height * 0.18)
                 .clipped()
@@ -56,10 +56,10 @@ struct BPTileView: View {
         .frame(width: Self.rankSize.width, height: Self.rankSize.height, alignment: .bottomTrailing)
     }
 
-    private func art(url: String?, size: CGSize) -> some View {
+    private func art(url: String?, size: CGSize, plateText: Bool = true) -> some View {
         ZStack {
             RemoteImage(url: url)
-            if url == nil {
+            if url == nil && plateText {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))
             }

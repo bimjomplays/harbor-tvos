@@ -8,8 +8,9 @@ struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var profiles: ProfilesStore
+    @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, stremio, harbor, done }
+    enum Step: Int, CaseIterable { case language, tmdb, stremio, harbor, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
 
@@ -38,6 +39,7 @@ struct OnboardingView: View {
     private var text: (String, String, String) {
         switch step {
         case .language: ("Language", "Choose your language", "Harbor speaks this everywhere. You can change it later in Settings.")
+        case .tmdb: ("Artwork and rows", "Connect TMDB", "Free, two minutes. Unlocks Trending, In Theaters, Top Rated and every service rail.")
         case .stremio: ("Your library", "Bring in your library", "Your Continue Watching, your watchlist and your addons.")
         case .harbor: ("Harbor account", "Sign in to Harbor", "Sync your profile, themes, lists and friends. You can do this any time.")
         case .done: ("Ready", "You are set up", "Saved on this device. Another Harbor install starts fresh.")
@@ -51,12 +53,15 @@ struct OnboardingView: View {
                 Button("English") { advance() }.buttonStyle(BPActionStyle(primary: true))
                 BPNote(text: "More languages arrive with Stage 9.")
             }
+        case .tmdb:
+            TmdbKeyForm(done: { advance() }, skip: { advance() })
         case .stremio:
             StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
         case .harbor:
             HarborSignInForm { advance() } skip: { advance() }
         case .done:
             VStack(alignment: .leading, spacing: BP.px(16)) {
+                RecapRow(ok: !settings.slice.tmdbKey.isEmpty, text: settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta. Add a TMDB key in Settings whenever you want." : "TMDB connected")
                 RecapRow(ok: stremioName != nil, text: stremioName.map { "Signed in as \($0)" } ?? "Not signed in to Stremio. Your library stays local.")
                 RecapRow(ok: account.isSignedIn, text: account.session.map { "Harbor account linked as \($0.user.username)" } ?? "No Harbor account yet")
                 Button("Start watching") { app.finishOnboarding() }

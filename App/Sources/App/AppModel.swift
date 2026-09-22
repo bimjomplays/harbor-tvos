@@ -11,7 +11,7 @@ final class AppModel: ObservableObject {
     @Published var room: Room = .home
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
-    var browseSource: BrowseSource = FixtureBrowseSource()
+    var browseSource: BrowseSource = Fixtures.active ? FixtureBrowseSource() : EngineBrowseSource()
     let account = AccountStore.shared
     let profiles = ProfilesStore.shared
     let sync = SyncReader.shared
@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
 
     func boot() async {
         Fixtures.installIfRequested(into: self)
+        if !Fixtures.active { await SettingsBridge.shared.load() }
         if account.isSignedIn && !Fixtures.active { await refreshRoster() }
         try? await Task.sleep(for: .seconds(Fixtures.active ? 0.2 : 1.2))
         if let fixed = Fixtures.stage {

@@ -28,18 +28,28 @@ final class BrowseModel: ObservableObject {
         self.source = source
     }
 
+    private var cacheKey: String { "bp.room.\(room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
+
     func load() async {
-        guard rows.isEmpty, !loading else { return }
+        guard !loading else { return }
         loading = true; failed = nil
+        // Last session's shelves first (bp-home-cache): a TV kills the process between
+        // sessions and nobody should watch an empty screen while the live build runs.
+        if rows.isEmpty, let cached = CacheStore.shared.get([BrowseRow].self, for: cacheKey), !cached.isEmpty {
+            rows = cached
+            if spotlight == nil { spotlight = cached.first?.metas.first }
+        }
         do {
             async let r = source.rows(for: room)
             async let cw = source.continueWatching()
-            rows = try await r
+            let live = try await r
+            rows = live
+            try? CacheStore.shared.set(live, for: cacheKey)
             continueWatching = (try? await cw) ?? []
             if spotlight == nil { spotlight = rows.first?.metas.first }
             startHeroCycle()
         } catch {
-            failed = error.localizedDescription
+            if rows.isEmpty { failed = error.localizedDescription }
         }
         loading = false
     }

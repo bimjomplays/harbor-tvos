@@ -9,7 +9,8 @@ struct SettingsView: View {
     @State private var sheet: Sheet?
     @State private var pinDraft = ""
 
-    enum Sheet: Identifiable { case harbor, stremio, pin, spikes; var id: Int { hashValue } }
+    @EnvironmentObject private var settings: SettingsBridge
+    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb; var id: Int { hashValue } }
 
     var body: some View {
         ScrollView {
@@ -34,6 +35,11 @@ struct SettingsView: View {
                             Button("Sign in") { sheet = .stremio }.buttonStyle(BPActionStyle(primary: true))
                         }
                     }
+                }
+                section("Artwork and rows") {
+                    row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB connected",
+                        detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : "Key saved on this device only")
+                    Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
                 }
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
@@ -86,11 +92,17 @@ struct SettingsView: View {
                         BPNote(text: "PINs stay on this Apple TV. They never sync.")
                     }
                     .frame(maxWidth: BP.px(520)).padding(BP.gutter)
+                case .tmdb:
+                    VStack(alignment: .leading, spacing: BP.px(16)) {
+                        Text("Connect TMDB").font(BP.display(30)).foregroundStyle(BP.ink)
+                        TmdbKeyForm(done: { sheet = nil }, skip: { sheet = nil })
+                    }
+                    .padding(BP.gutter)
                 case .spikes:
                     SpikeMenuView()
                 }
             }
-            .environmentObject(app).environmentObject(account).environmentObject(profiles).environmentObject(sync)
+            .environmentObject(app).environmentObject(account).environmentObject(profiles).environmentObject(sync).environmentObject(settings)
         }
     }
 

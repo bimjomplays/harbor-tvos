@@ -52,6 +52,7 @@ import { localeForRegion, isLocalizedRegion, localeLabel } from "@/lib/region/lo
 import { randomUuid } from "@/lib/uuid";
 import * as upstreamSecrets from "@/lib/secret-store";
 import type { Meta } from "@/lib/cinemeta";
+import * as roomBuilders from "./rooms";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -352,6 +353,21 @@ export const settings = {
 
 /** Region profiles: which TMDB language and watch-provider region a locale implies. */
 export const region = { localeForRegion, isLocalizedRegion, localeLabel };
+
+// ==================================================================================== rooms
+/**
+ * Finished row builds for the TV rooms (engine-added glue over upstream's row specs):
+ * `home(settings, authKey)` mirrors use-bp-catalog.ts, `catalog("movies"|"shows", settings)`
+ * mirrors use-bp-shows.ts. Swift caches the result and renders it.
+ */
+export const rooms = {
+  home: roomBuilders.home,
+  catalog: roomBuilders.catalog,
+  homeFor: roomBuilders.homeFor,
+  catalogFor: roomBuilders.catalogFor,
+  TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
+};
+export type { RoomBuild, RoomRow, RoomKind } from "./rooms";
 
 // ================================================================================== runtime
 /**

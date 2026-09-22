@@ -17,6 +17,7 @@ struct RootView: View {
         .environmentObject(app.account)
         .environmentObject(app.profiles)
         .environmentObject(app.sync)
+        .environmentObject(SettingsBridge.shared)
         .task { await app.boot() }
         .preferredColorScheme(.dark)
     }

@@ -166,6 +166,25 @@ if (!OFFLINE) {
 
   const anizip = await r.timed("providers.aniZipByMal(1535)", () => engine.providers.aniZipByMal(1535));
   r.ok("anizip returns a mapping", anizip && anizip.mappings && typeof anizip.mappings === "object", JSON.stringify(anizip && Object.keys(anizip)));
+
+  // ------------------------------------------------------------------- rooms (no TMDB key)
+  const s0 = engine.settings.load();
+  const home = await r.timed("rooms.home(cinemeta fallback)", () => engine.rooms.home(s0, null));
+  r.ok("rooms.home returns Cinemeta rows", home && home.rows.length >= 10 && !home.failed, JSON.stringify(home && { rows: home.rows.length, first: home.rows[0] && home.rows[0].name, n: home.rows[0] && home.rows[0].metas.length, hero: home.hero.length }));
+  r.ok("rooms.home rows are poster/rank with metas", home && home.rows.every((x) => (x.shape === "poster" || x.shape === "rank") && Array.isArray(x.metas)));
+  const movies = await r.timed("rooms.catalog(movies, fallback)", () => engine.rooms.catalog("movies", s0));
+  r.ok("rooms.catalog(movies) returns Top Movies + genre rows", movies && movies.rows.length >= 5 && movies.rows[0].name === "Top Movies", JSON.stringify(movies && movies.rows.map((x) => x.name).slice(0, 6)));
+  const shows = await r.timed("rooms.catalog(shows, fallback)", () => engine.rooms.catalog("shows", s0));
+  r.ok("rooms.catalog(shows) returns Top Series + genre rows", shows && shows.rows.length >= 5 && shows.rows[0].name === "Top Series", JSON.stringify(shows && shows.rows.map((x) => x.name).slice(0, 6)));
+  r.ok("rooms.catalog dedups across rows", (() => {
+    if (!movies) return false;
+    const seen = new Set(); let dup = 0;
+    for (const row of movies.rows) for (const m of row.metas) { if (seen.has(m.id)) dup++; seen.add(m.id); }
+    return dup === 0;
+  })());
+  const spec = engine.rooms; r.ok("rooms.TOP10_ROW_KEY", spec.TOP10_ROW_KEY === "bp-top10");
+  const homeP = await r.timed("rooms.homeFor(profile)", () => engine.rooms.homeFor("p_smoke", true, null));
+  r.ok("rooms.homeFor loads profile settings inside the engine", homeP && homeP.rows.length >= 10);
 }
 
 // --------------------------------------------------------------------------- report
