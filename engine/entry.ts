@@ -365,6 +365,7 @@ export const rooms = {
   catalog: roomBuilders.catalog,
   homeFor: roomBuilders.homeFor,
   catalogFor: roomBuilders.catalogFor,
+  page: roomBuilders.page,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
 };
 export type { RoomBuild, RoomRow, RoomKind } from "./rooms";

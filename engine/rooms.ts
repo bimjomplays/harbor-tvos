@@ -29,6 +29,16 @@ export type RoomRow = {
 };
 export type RoomBuild = { rows: RoomRow[]; hero: Meta[]; failed: boolean };
 
+/** The last build per room keeps its row fetchers so Swift can page a row by key. */
+const lastBuilds = new Map<string, HomeRow[]>();
+
+/** Page `rowKey` of the last `home`/`catalog` build; `page` is 1-based like upstream. */
+export async function page(room: "home" | RoomKind, rowKey: string, page: number): Promise<Meta[]> {
+  const row = lastBuilds.get(room)?.find((r) => r.key === rowKey);
+  if (!row?.fetcher) return [];
+  return row.fetcher(page).catch(() => [] as Meta[]);
+}
+
 export const BP_TOP10_ROW_KEY = "bp-top10";
 const FALLBACK_ROW_CAP = 30;
 const HERO_SLOTS = 6;
@@ -89,6 +99,7 @@ export async function home(settings: Settings, authKey: string | null): Promise<
     all.push(row);
   }
   const customized = applyHomeRowCustomization(all, settings.homeRows, false);
+  lastBuilds.set("home", customized);
   const rows = hideAnime(customized, settings).map((r) => {
     const rank = settings.homeRows?.numerals?.includes(r.key) && r.metas.length >= 10;
     return strip(r, rank ? "rank" : "poster");
@@ -149,7 +160,7 @@ export async function catalog(kind: RoomKind, settings: Settings): Promise<RoomB
     const results = await Promise.allSettled(specs.map((spec) => withTimeout(spec.fetcher(1), CATALOG_REQUEST_TIMEOUT_MS)));
     const rows: HomeRow[] = [];
     results.forEach((r, i) => {
-      if (r.status === "fulfilled" && r.value.length > 0) rows.push(specRow(kind, specs[i], r.value));
+      if (r.status === "fulfilled" && r.value.length > 0) rows.push({ ...specRow(kind, specs[i], r.value), fetcher: specs[i].noPaginate ? undefined : specs[i].fetcher });
     });
     if (rows.length > 0) built = { rows, hero: await heroP };
   }
@@ -173,6 +184,7 @@ export async function catalog(kind: RoomKind, settings: Settings): Promise<RoomB
   const custom = loadPageRows(kind);
   const titled = specRows.map((r) => ({ ...r, title: r.name }));
   const ordered = applyPageRows(titled, custom, false).map(({ title, ...rest }) => ({ ...rest, name: title }) as HomeRow);
+  lastBuilds.set(kind, ordered);
   const rows: RoomRow[] = hideAnime(ordered, settings).map((r) => strip(r));
   if (ranked.length > 0) {
     rows.unshift({ key: BP_TOP10_ROW_KEY, type: metaType(kind), name: kind === "shows" ? "Top 10 Series Today" : "Top 10 Movies Today", metas: ranked, hasMore: false, shape: "rank" });

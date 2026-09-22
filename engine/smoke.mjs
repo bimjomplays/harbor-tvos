@@ -185,6 +185,9 @@ if (!OFFLINE) {
   const spec = engine.rooms; r.ok("rooms.TOP10_ROW_KEY", spec.TOP10_ROW_KEY === "bp-top10");
   const homeP = await r.timed("rooms.homeFor(profile)", () => engine.rooms.homeFor("p_smoke", true, null));
   r.ok("rooms.homeFor loads profile settings inside the engine", homeP && homeP.rows.length >= 10);
+  const pageable = homeP.rows.find((x) => x.hasMore);
+  const pagedMetas = pageable ? await r.timed(`rooms.page(home, ${pageable.key}, 2)`, () => engine.rooms.page("home", pageable.key, 2)) : [];
+  r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 
 // --------------------------------------------------------------------------- report
