@@ -24,7 +24,11 @@ final class AppModel: ObservableObject {
         Fixtures.installIfRequested(into: self)
         if account.isSignedIn && !Fixtures.active { await refreshRoster() }
         try? await Task.sleep(for: .seconds(Fixtures.active ? 0.2 : 1.2))
-        if let fixed = Fixtures.stage { stage = fixed; return }
+        if let fixed = Fixtures.stage {
+            if Fixtures.openSpikes { room = .settings }
+            stage = fixed
+            return
+        }
         if !onboardingDone { stage = .onboarding; return }
         goToWhoOrShell()
     }

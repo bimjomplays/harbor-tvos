@@ -41,9 +41,11 @@ struct BPTileStyle: ButtonStyle {
 /// Text action button: panel face, edge border, brightens to `on` when focused.
 struct BPActionStyle: ButtonStyle {
     var primary = false
+    @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader { focused in
             configuration.label
+                .opacity(enabled ? 1 : 0.45)
                 .font(BP.sans(15, .semibold))
                 .foregroundStyle(primary ? BP.canvas : BP.ink)
                 .padding(.horizontal, BP.px(18))

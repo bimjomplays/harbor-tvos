@@ -63,6 +63,7 @@ struct SettingsView: View {
             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(40))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onAppear { if Fixtures.openSpikes && sheet == nil { sheet = .spikes } }
         .fullScreenCover(item: $sheet) { which in
             ZStack {
                 BPAmbientBackground()

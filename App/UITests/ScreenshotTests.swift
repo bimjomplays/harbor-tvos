@@ -49,22 +49,20 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testSpikesStillPass() {
-        let app = launch("shell")
-        XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
-        XCUIRemote.shared.press(.up)
-        for _ in 0..<12 { XCUIRemote.shared.press(.right) }
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["Stage 0 spikes"].waitForExistence(timeout: 10))
-        // Reach the Developer button, open spikes, run Engine.
-        for _ in 0..<8 { XCUIRemote.shared.press(.down) }
-        if app.buttons["Stage 0 spikes"].hasFocus == false {
-            for _ in 0..<4 { XCUIRemote.shared.press(.down) }
-        }
-        XCUIRemote.shared.press(.select)
-        XCTAssertTrue(app.buttons["spike-engine"].waitForExistence(timeout: 10))
+        let app = launch("spikes")
+        XCTAssertTrue(app.buttons["spike-engine"].waitForExistence(timeout: 30))
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["spike-status"].waitForExistence(timeout: 60))
         capture("16-engine-spike")
         XCTAssertEqual(app.staticTexts["spike-status"].label, "PASS")
+    }
+
+    func testTabHint() {
+        let app = launch("shell")
+        XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        XCUIRemote.shared.press(.right)
+        sleep(1)
+        capture("17-tab-focus-discover")
+        XCTAssertTrue(app.staticTexts["Discover"].exists)
     }
 }

@@ -11,10 +11,12 @@ enum Fixtures {
         switch args[i + 1] {
         case "onboarding": return .onboarding
         case "who": return .whoIsWatching
-        case "shell": return .shell
+        case "shell", "spikes": return .shell
         default: return nil
         }
     }
+
+    static var openSpikes: Bool { ProcessInfo.processInfo.arguments.contains("spikes") }
 
     static func installIfRequested(into app: AppModel) {
         guard active, let stage else { return }

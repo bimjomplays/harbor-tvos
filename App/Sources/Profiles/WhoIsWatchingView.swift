@@ -35,6 +35,7 @@ struct WhoIsWatchingView: View {
                 if let notice { BPNote(text: notice, tone: BP.accent) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(pinFor == nil ? 1 : 0)
             if let pinFor {
                 PinPadView(profile: pinFor) { ok in
                     if ok { profiles.select(pinFor.id); app.stage = .shell }

@@ -19,7 +19,7 @@ struct PinPadView: View {
 
     var body: some View {
         ZStack {
-            BP.void_.opacity(0.92).ignoresSafeArea()
+            BP.void_.ignoresSafeArea()
             VStack(spacing: BP.px(22)) {
                 Text("Enter \(profile.name)'s PIN").font(BP.display(30)).foregroundStyle(BP.ink)
                 Text(secondsLeft > 0 ? "Too many tries. Try again in \(secondsLeft)s." : "Profile is locked. Enter the 4-digit PIN to continue.")

@@ -44,8 +44,10 @@ struct BootSplashView: View {
 struct HarborMark: View {
     var size: CGFloat
     var body: some View {
-        Image(systemName: "sailboat.fill")
-            .font(.system(size: size * 0.8, weight: .semibold))
+        Image("HarborMark")
+            .resizable()
+            .renderingMode(.template)
+            .scaledToFit()
             .foregroundStyle(BP.ink)
             .frame(width: size, height: size)
     }
