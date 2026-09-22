@@ -24,7 +24,6 @@ struct OnboardingView: View {
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(40))
             Spacer()
         }
-        .accessibilityIdentifier("onboarding")
     }
 
     @ViewBuilder private var copy: some View {

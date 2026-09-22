@@ -13,7 +13,6 @@ struct ShellView: View {
             VStack { Spacer(); HintBarView(actions: hints) }
         }
         .ignoresSafeArea()
-        .accessibilityIdentifier("shell")
     }
 
     @ViewBuilder private var room: some View {

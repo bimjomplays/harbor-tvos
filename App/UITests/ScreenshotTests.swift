@@ -19,7 +19,7 @@ final class ScreenshotTests: XCTestCase {
 
     func testOnboarding() {
         let app = launch("onboarding")
-        XCTAssertTrue(app.otherElements["onboarding"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts["Choose your language"].waitForExistence(timeout: 30))
         capture("10-onboarding-language")
         XCUIRemote.shared.press(.select)
         sleep(1)

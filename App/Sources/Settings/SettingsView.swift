@@ -91,7 +91,6 @@ struct SettingsView: View {
             }
             .environmentObject(app).environmentObject(account).environmentObject(profiles).environmentObject(sync)
         }
-        .accessibilityIdentifier("settings")
     }
 
     private var syncLine: String {

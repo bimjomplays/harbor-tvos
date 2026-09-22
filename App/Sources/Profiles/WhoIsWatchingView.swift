@@ -43,7 +43,6 @@ struct WhoIsWatchingView: View {
                 .transition(.opacity)
             }
         }
-        .accessibilityIdentifier("who-is-watching")
         .animation(BP.easeFast, value: pinFor?.id)
     }
 
