@@ -11,7 +11,7 @@ final class AppModel: ObservableObject {
     @Published var room: Room = .home
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
-    var browseSource: BrowseSource = Fixtures.active ? FixtureBrowseSource() : EngineBrowseSource()
+    var browseSource: BrowseSource = (Fixtures.active && !Fixtures.liveRooms) ? FixtureBrowseSource() : EngineBrowseSource()
     let account = AccountStore.shared
     let profiles = ProfilesStore.shared
     let sync = SyncReader.shared

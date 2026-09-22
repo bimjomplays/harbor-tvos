@@ -81,6 +81,34 @@ final class ScreenshotTests: XCTestCase {
         capture("20-movies-top10")
     }
 
+    func testLiveHome() {
+        let app = launch("live")
+        XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        // Real Cinemeta rows through the engine; first tile of the first live row.
+        let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tile-'")).firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 90), "no live rows arrived")
+        sleep(3)
+        capture("21-live-home")
+        dump(app, "hierarchy-live-home")
+    }
+
+    func testSearchRoom() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--fixtures", "live", "--query", "dune"]
+        app.launch()
+        XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        XCUIRemote.shared.press(.up)
+        for _ in 0..<10 { XCUIRemote.shared.press(.left) }
+        for _ in 0..<7 { XCUIRemote.shared.press(.right) }
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["key-q"].waitForExistence(timeout: 20))
+        let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tile-'")).firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 60), "no search results for dune")
+        sleep(2)
+        capture("22-search-dune")
+        dump(app, "hierarchy-search")
+    }
+
     func testSpikesStillPass() {
         let app = launch("spikes")
         XCTAssertTrue(app.buttons["spike-engine"].waitForExistence(timeout: 30))

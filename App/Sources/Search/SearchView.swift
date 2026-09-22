@@ -23,6 +23,7 @@ struct SearchView: View {
                 results
             }
         }
+        .onAppear { if let q = Fixtures.query, model.query.isEmpty { model.query = q } }
     }
 
     private var queryLine: some View {

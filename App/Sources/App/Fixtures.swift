@@ -11,12 +11,20 @@ enum Fixtures {
         switch args[i + 1] {
         case "onboarding": return .onboarding
         case "who": return .whoIsWatching
-        case "shell", "spikes": return .shell
+        case "shell", "spikes", "live": return .shell
         default: return nil
         }
     }
 
     static var openSpikes: Bool { ProcessInfo.processInfo.arguments.contains("spikes") }
+    /// `--fixtures live`: fixture profiles, but rooms come from the real engine (network).
+    static var liveRooms: Bool { ProcessInfo.processInfo.arguments.contains("live") }
+    /// `--query <text>` prefills the Search room for screenshots.
+    static var query: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--query"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
 
     static func installIfRequested(into app: AppModel) {
         guard active, let stage else { return }

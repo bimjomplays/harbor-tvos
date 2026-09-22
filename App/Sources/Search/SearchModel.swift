@@ -8,7 +8,7 @@ final class SearchModel: ObservableObject {
     struct Results: Decodable {
         struct TopMatch: Decodable { var kind: String; var meta: Meta; var overview: String?; var backdrop: String? }
         struct Person: Decodable { var id: Int?; var name: String; var profile: String? }
-        struct AnimeHit: Decodable { var name: String; var poster: String?; var id: String?; var malId: Int?; var kitsuId: Int?; var year: Int? }
+        struct AnimeHit: Decodable { var name: String; var poster: String?; var background: String?; var malId: Int?; var kitsuId: Int?; var year: String?; var overview: String? }
         var query: String
         var topMatch: TopMatch?
         var people: [Person]?
@@ -59,7 +59,7 @@ final class SearchModel: ObservableObject {
             if !results.movies.isEmpty { out.append(BrowseRow(key: "movies", title: "Movies", metas: results.movies)) }
             if !results.series.isEmpty { out.append(BrowseRow(key: "series", title: "Series", metas: results.series)) }
             if let anime = results.anime, !anime.isEmpty {
-                let metas = anime.map { Meta(id: $0.id ?? "anime-\($0.malId ?? $0.kitsuId ?? 0)", type: "anime", name: $0.name, poster: $0.poster, background: nil, logo: nil, description: nil, releaseInfo: $0.year.map(String.init), releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
+                let metas = anime.map { Meta(id: $0.kitsuId.map { "kitsu:\($0)" } ?? "mal:\($0.malId ?? 0)", type: "anime", name: $0.name, poster: $0.poster, background: $0.background, logo: nil, description: $0.overview, releaseInfo: $0.year, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
                 out.append(BrowseRow(key: "anime", title: "Anime", metas: metas))
             }
             rows = out
