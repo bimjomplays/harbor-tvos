@@ -63,6 +63,12 @@ final class HarborEngine {
     private static let sharedLock = NSLock()
     private static var sharedInstance: HarborEngine?
 
+    /// The engine if it has already been started (never triggers the 1 s boot).
+    static var loaded: HarborEngine? {
+        sharedLock.lock(); defer { sharedLock.unlock() }
+        return sharedInstance
+    }
+
     /// The process-wide engine, built on first use. Building it evaluates a ~900 KB bundle
     /// (expect 0.5–1 s on an Apple TV), so ask for it off the main thread during launch.
     /// This is the form to use anywhere the failure can be shown to the user.

@@ -36,9 +36,24 @@ final class ProfilesStore: ObservableObject {
     private static let activeKey = "harbor.active-profile"
     private static let idMapKey = "harbor.sync.idmap"
 
+    /// Upstream's `harbor.profiles.v1` shape (`{ activeId, profiles: [...] }`, lib/profiles.tsx),
+    /// so the bundled modules that read it (addon store, settings, resume) see the same profiles.
+    private struct Blob: Codable {
+        var activeId: String?
+        var profiles: [Profile]
+    }
+
     private init() {
-        profiles = Prefs.get([Profile].self, for: Self.profilesKey) ?? []
-        activeId = Prefs.get(String.self, for: Self.activeKey)
+        if let raw = KeyValueStore.shared.get(Self.profilesKey), let data = raw.data(using: .utf8),
+           let blob = try? JSONDecoder().decode(Blob.self, from: data) {
+            profiles = blob.profiles
+            activeId = blob.activeId
+        } else {
+            // Earlier builds stored a bare array in Prefs plus a separate active-id key.
+            profiles = Prefs.get([Profile].self, for: Self.profilesKey) ?? []
+            activeId = Prefs.get(String.self, for: Self.activeKey)
+            if !profiles.isEmpty { persist() }
+        }
     }
 
     var active: Profile? { profiles.first { $0.id == activeId } }
@@ -59,8 +74,8 @@ final class ProfilesStore: ObservableObject {
         }
         profiles = next.sorted { ($0.isPrimary ? 0 : 1, $0.createdAt) < ($1.isPrimary ? 0 : 1, $1.createdAt) }
         try? Prefs.set(idMap, for: Self.idMapKey)
+        if active == nil { activeId = nil }
         persist()
-        if active == nil { activeId = nil; Prefs.remove(Self.activeKey) }
     }
 
     /// Used only when the account has no roster yet: one primary profile named after the account.
@@ -73,12 +88,13 @@ final class ProfilesStore: ObservableObject {
 
     func select(_ id: String) {
         activeId = id
-        try? Prefs.set(id, for: Self.activeKey)
+        persist()
+        HarborEngine.loaded?.emitEvent("harbor:active-profile-changed", detail: .object(["id": .string(id)]))
     }
 
     func deselect() {
         activeId = nil
-        Prefs.remove(Self.activeKey)
+        persist()
     }
 
     func setPin(_ pin: String?, for id: String) {
@@ -112,7 +128,8 @@ final class ProfilesStore: ObservableObject {
     func reset() {
         for p in profiles { SecretStore.remove("harbor.auth.\(p.id)") }
         profiles = []; activeId = nil
-        Prefs.remove(Self.profilesKey); Prefs.remove(Self.activeKey); Prefs.remove(Self.idMapKey)
+        KeyValueStore.shared.remove(Self.profilesKey); Prefs.remove(Self.activeKey); Prefs.remove(Self.idMapKey)
+        HarborEngine.loaded?.syncStorage(key: Self.profilesKey, value: nil)
     }
 
     func installFixture(_ list: [Profile], activeId: String?) {
@@ -120,7 +137,13 @@ final class ProfilesStore: ObservableObject {
         self.activeId = activeId
     }
 
-    private func persist() { try? Prefs.set(profiles, for: Self.profilesKey) }
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(Blob(activeId: activeId, profiles: profiles)),
+              let raw = String(data: data, encoding: .utf8) else { return }
+        try? KeyValueStore.shared.set(raw, for: Self.profilesKey)
+        HarborEngine.loaded?.syncStorage(key: Self.profilesKey, value: raw)
+        HarborEngine.loaded?.emitEvent("harbor:profiles-updated")
+    }
 
     static func newId() -> String {
         let t = String(Int(Date().timeIntervalSince1970 * 1000), radix: 36)
