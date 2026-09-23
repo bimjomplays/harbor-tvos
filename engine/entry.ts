@@ -54,6 +54,7 @@ import * as upstreamSecrets from "@/lib/secret-store";
 import type { Meta } from "@/lib/cinemeta";
 import * as roomBuilders from "./rooms";
 import * as discoverBuilders from "./discover";
+import * as streamGlue from "./streams";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -381,6 +382,17 @@ export const discoverRoom = {
   genreArtFor: discoverBuilders.genreArtFor,
 };
 export type { DiscoverBuild, DiscoverRail, QueuePeek, GenreTile } from "./discover";
+
+/** Streams for a title: imdb resolution, addon gathering, the ranked pipeline, debrid resolve. */
+export const streamsRoom = {
+  resolveImdb: streamGlue.resolveImdb,
+  gatherStreamAddons: streamGlue.gatherStreamAddons,
+  search: streamGlue.search,
+  cancelSearch: streamGlue.cancelSearch,
+  resolve: streamGlue.resolve,
+  forget: streamGlue.forget,
+};
+export type { StreamSearch } from "./streams";
 
 // ================================================================================== runtime
 /**

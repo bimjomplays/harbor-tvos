@@ -190,6 +190,12 @@ if (!OFFLINE) {
   const disc = await r.timed("discoverRoom.buildFor(no key)", () => engine.discoverRoom.buildFor("p_smoke", true));
   r.ok("discoverRoom rails come back without a TMDB key", disc && disc.rails.length >= 3, JSON.stringify(disc && { rails: disc.rails.map((x) => x.name), queue: disc.queue.status, genres: disc.genres.length }));
   r.ok("discoverRoom genres carry palette", disc && disc.genres.length === 18 && disc.genres[0].from.startsWith("oklch"));
+  const events = [];
+  const off = engine.runtime.onEvent((type, detail) => { if (type === "harbor-tvos:streams") events.push(detail); });
+  const shaw = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", releaseInfo: "1994" };
+  const ss = await r.timed("streamsRoom.search(tt0111161, no addons)", () => engine.streamsRoom.search("t1", "p_smoke", true, null, shaw, null));
+  off();
+  r.ok("streamsRoom.search returns a result shape", ss && ss.imdb.id === "tt0111161" && ss.streamIds.length > 0 && (ss.result === null || Array.isArray(ss.result.picker.all)), JSON.stringify(ss && { imdb: ss.imdb, ids: ss.streamIds, addons: ss.addonCount, all: ss.result && ss.result.picker.all.length, error: ss.error, events: events.length }));
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

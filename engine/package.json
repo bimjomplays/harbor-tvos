@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "core-js": "^3.50.0",
-    "parse-torrent-title": "^3.0.1"
+    "parse-torrent-title": "^3.0.1",
+    "tldts": "^7.4.12"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
