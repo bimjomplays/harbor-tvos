@@ -84,7 +84,7 @@ struct SportsArtView: View {
         .task(id: game.id) {
             guard game.artwork == nil, game.poster == nil else { return }
             try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, let a: Art = try? await HarborEngine.shared.call("sports.artwork", [game]) else { return }
+            guard !Task.isCancelled, let a: Art = try? await HarborEngine.shared.call("sports.artwork", [game.wire]) else { return }
             url = a.backdrop ?? a.poster
         }
     }

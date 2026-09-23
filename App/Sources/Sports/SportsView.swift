@@ -14,7 +14,7 @@ struct SportsView: View {
     private func open(_ g: SportsModel.Game) {
         guard g.state == "in" else { event = g; return }
         Task {
-            if let w: SportsEventModel.Watch = try? await HarborEngine.shared.call("sports.watch", [g]), w.plan == "channel", let best = w.channels.first {
+            if let w: SportsEventModel.Watch = try? await HarborEngine.shared.call("sports.watch", [g.wire]), w.plan == "channel", let best = w.channels.first {
                 _ = try? await HarborEngine.shared.callJSON("sports.recordChannelWatch", [.string(best.channelId)])
                 directPlay = best
             } else { event = g }

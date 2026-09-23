@@ -89,7 +89,7 @@ struct SportsWhoView: View {
         }
         .onExitCommand { if stack.count > 1 { _ = stack.popLast() } else { dismiss() } }
         .task {
-            if let w: Who = try? await HarborEngine.shared.call("sports.who", [game, side]) { stack = [w] }
+            if let w: Who = try? await HarborEngine.shared.call("sports.who", [game.wire, side]) { stack = [w] }
             loading = false
         }
     }

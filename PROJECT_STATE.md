@@ -59,7 +59,7 @@ Docs: browse-spec, big-picture-design, harbor-protocol, engine-report, detail-sp
 
 ## Next (pick up here — stopped 2026-09-24 ~05:00 EDT on the user's request)
 **Where things stand**
-- Pushed: everything up to the "Fix LiveChannelRow star/pin button styles" commit. Run `gh run list --workflow Build --limit 1` and `gh run view <id>` — if green, dispatch TestFlight with `gh workflow run Build -f testflight=true`; if red, `gh run view <id> --log-failed | grep -A2 '##\[error\]'` shows the Swift error (the last two failures were both in `App/Sources/Live/LiveView.swift`'s new pin/hidden-group code).
+- Pushed: everything up to the "sports calls pass game.wire" commit (the previous run failed because three new sports calls passed `SportsModel.Game` instead of `game.wire`). Run `gh run list --workflow Build --limit 1` and `gh run view <id>` — if green, dispatch TestFlight with `gh workflow run Build -f testflight=true`; if red, `gh run view <id> --log-failed | grep -A2 '##\[error\]'` shows the Swift error (the last two failures were both in `App/Sources/Live/LiveView.swift`'s new pin/hidden-group code).
 - Pushed as WIP too: commit "WIP: sports who panel" — `engine/sports.ts` `who()/whoPlayer()` + `App/Sources/Sports/SportsWhoView.swift`. Engine builds (2816 KB) and offline smoke passes (145). **Not wired yet**: `SportsEventView.sideRow(_:lost:)` (≈line 279) must become a Button that presents `SportsWhoView(game:, side: "home"|"away")` in a fullScreenCover. Wire it, then push.
 - Review 13 (batches 6–8) landed just before stopping and its three findings are applied in the last commit (star/pin styles, `@ViewBuilder watchSection`, standings read `cells[].display`). No review is outstanding.
 **Then**
