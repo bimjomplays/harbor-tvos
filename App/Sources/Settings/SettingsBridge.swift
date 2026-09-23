@@ -37,7 +37,12 @@ final class SettingsBridge: ObservableObject {
         var playerAnime4kTier: String? = "hq"
         var playerAnime4kOverride: String? = "auto"
         var simklScrobbleEnabled: Bool? = true
+        /// bp-settings "Edge margin": a fraction of the screen kept clear on every edge.
+        var bigPictureOverscan: Double? = 0
     }
+
+    /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).
+    @Published var sportsDeclined = false
 
     @Published private(set) var slice = Slice()
     @Published private(set) var loaded = false

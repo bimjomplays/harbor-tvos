@@ -62,6 +62,7 @@ struct ShellView: View {
 /// Top bar (bp-top-bar.tsx): brand at the start, icon-only tabs in the middle,
 /// profile chip + Settings cog at the end, clock last. Sits over an upward scrim.
 struct TopBarView: View {
+    @EnvironmentObject private var settings: SettingsBridge
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var profiles: ProfilesStore
     @FocusState private var focusedTab: Room?
@@ -73,7 +74,7 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
-            ForEach(Room.tabs) { r in
+            ForEach(Room.tabs.filter { !(settings.sportsDeclined && $0 == .sports) }) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)

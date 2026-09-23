@@ -209,6 +209,26 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 
+// ------------------------------------------------------------------ settings room
+{
+  const cats = engine.settingsRoom.categories("default", true);
+  r.eq("settingsRoom.categories: the 8 Big Picture categories in order", cats.categories.map((c) => c.id), ["picture", "language", "subtitles", "playback", "home", "services", "setup", "interface"]);
+  r.ok("settingsRoom.categories carry summaries", cats.categories.every((c) => typeof c.summary === "string" && c.summary.length > 0), JSON.stringify(cats.categories.map((c) => c.summary)));
+  const pb = engine.settingsRoom.controls("playback", "default", true);
+  r.ok("settingsRoom.controls(playback): options rows incl. instantPlay", pb.some((c) => c.id === "instantPlay" && c.kind === "options" && c.options.length === 2), JSON.stringify(pb.map((c) => [c.id, c.kind])));
+  const sv = engine.settingsRoom.controls("services", "default", true);
+  r.ok("settingsRoom.controls(services): multi row with tints", sv[0].kind === "multi" && sv[0].items.length > 10 && sv[0].items.every((i) => typeof i.tint === "string"), JSON.stringify(sv[0].items.slice(0, 2)));
+  r.eq("settingsRoom.commit skipIntro off", engine.settingsRoom.commit("skipIntro", "off", "default", true).ok, true);
+  r.eq("settings.load reflects the commit", engine.settings.load().autoSkipIntro, false);
+  engine.settingsRoom.commit("service", "netflix", "default", true);
+  r.eq("commit service toggles streaming.netflix", engine.settings.load().streaming.netflix, false);
+  engine.settingsRoom.commit("subLang", "French", "default", true);
+  r.ok("commit subLang appends", engine.settings.load().preferredSubLangs.includes("French"));
+  r.eq("commit sportsTab off declines consent", engine.settingsRoom.commit("sportsTab", "off", "default", true).sportsShown, false);
+  r.eq("commit sportsTab on resets consent", engine.settingsRoom.commit("sportsTab", "on", "default", true).sportsShown, true);
+  engine.settingsRoom.commit("skipIntro", "on", "default", true); engine.settingsRoom.commit("service", "netflix", "default", true); engine.settingsRoom.commit("subLang", "French", "default", true);
+}
+
 // ------------------------------------------------------------- live EPG (recorded host)
 {
   const now = Date.now();

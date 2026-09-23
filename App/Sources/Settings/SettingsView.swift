@@ -19,6 +19,8 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: BP.px(28)) {
                 Text("Settings").font(BP.display(36)).foregroundStyle(BP.ink)
+                BPSettingsView(openConnect: { sheet = account.isSignedIn ? .tmdb : .harbor })
+                    .padding(.bottom, BP.px(10))
                 section("Harbor account") {
                     if let s = account.session {
                         row("Signed in as \(s.user.username)", detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")
