@@ -189,6 +189,7 @@ struct DetailView: View {
 
     /// The rows under the hero (detail-spec §1.1 order): cast, collection, More Like This, You Might Also Like, facts.
     @ViewBuilder private var tmdbRows: some View {
+        if !model.characters.isEmpty { charactersRow }
         if let x = model.extras {
             if !x.cast.isEmpty { castRow(x.cast) }
             if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
@@ -196,6 +197,29 @@ struct DetailView: View {
             if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: "You Might Also Like", metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
             if !x.facts.isEmpty { factsCard(x.facts) }
         }
+    }
+
+    // bp-anime-characters: AniList characters, distinct from the cast row.
+    private var charactersRow: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text("Characters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: BP.trackGap) {
+                    ForEach(model.characters.prefix(20)) { c in
+                        VStack(spacing: BP.px(8)) {
+                            RemoteImage(url: c.image).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
+                            Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                            if let r = c.role, !r.isEmpty { Text(r.capitalized).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                        }
+                        .frame(width: BP.px(130))
+                        .focusable()
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
     }
 
     // bp-cast-row: round portraits, name over character, up to 20.

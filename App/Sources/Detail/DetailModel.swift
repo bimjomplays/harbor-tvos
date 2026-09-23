@@ -30,6 +30,15 @@ final class DetailModel: ObservableObject {
     @Published private(set) var watched: Set<String> = []
     /// TMDB extras (detail-spec §1.2 step 3): nil without a key or for anime ids.
     @Published private(set) var extras: Extras?
+    /// bp-anime-characters: AniList characters for an anime id (empty otherwise).
+    @Published private(set) var characters: [AnimeCharacter] = []
+    struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String? }
+    private struct AnimeDetail: Decodable {
+        struct D: Decodable { var name: String?; var overview: String?; var backdrop: String?; var poster: String?; var year: String?; var genres: [String] }
+        struct Ep: Decodable { var id: Int; var season: Int; var number: Int; var title: String; var synopsis: String; var thumbnail: String?; var airdate: String?; var length: Int?; var filler: Bool; var playEpisode: AnyJSON }
+        var canonicalId: String; var imdbId: String?; var detail: D; var episodes: [Ep]; var showSeason: Bool; var characters: [AnimeCharacter]
+    }
+    var isAnimeId: Bool { ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) } }
     @Published private(set) var collectionRow: BrowseRow?
 
     struct Extras: Decodable {
@@ -61,10 +70,31 @@ final class DetailModel: ObservableObject {
         guard !loading else { return }
         loading = true; defer { loading = false }
         let kind = isSeries ? "series" : "movie"
-        if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
+        if isAnimeId {
+            // use-bp-anime-detail: a kitsu id resolves to nothing on TMDB or Cinemeta; the Kitsu chain owns it.
+            let p = ProfilesStore.shared.active
+            if let a: AnimeDetail = try? await HarborEngine.shared.call("animeDetail.load", [meta, p?.id ?? "default", p?.linked ?? true]) {
+                var m = meta
+                if let n = a.detail.name, !n.isEmpty { m.name = n }
+                if let o = a.detail.overview, !o.isEmpty { m.description = o }
+                if let b = a.detail.backdrop { m.background = b }
+                if let po = a.detail.poster { m.poster = po }
+                if let y = a.detail.year { m.releaseInfo = y }
+                if !a.detail.genres.isEmpty { m.genres = a.detail.genres }
+                meta = m
+                let iso = ISO8601DateFormatter.dateOnly
+                episodes = a.episodes.map { e in
+                    Episode(id: "\(meta.id):\(e.season):\(e.number)", season: e.season, episode: e.number, title: e.title.isEmpty ? "Episode \(e.number)" : e.title,
+                            overview: e.synopsis.isEmpty ? nil : e.synopsis, thumbnail: e.thumbnail, released: e.airdate.flatMap { iso.date(from: $0) }, playEpisode: e.playEpisode)
+                }
+                seasons = Array(Set(episodes.map(\.season))).sorted()
+                if let first = seasons.first, !seasons.contains(season) { season = first }
+                characters = a.characters
+            }
+        } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
             meta = full
         }
-        buildEpisodes()
+        if !isAnimeId { buildEpisodes() }
         await loadResume()
         if isSeries, let authKey {
             let keys: [String] = (try? await HarborEngine.shared.call("player.watchedEpisodes", [authKey, meta])) ?? []

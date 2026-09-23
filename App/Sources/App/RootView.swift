@@ -25,6 +25,7 @@ struct RootView: View {
         .environmentObject(app.sync)
         .environmentObject(SettingsBridge.shared)
         .task { await app.boot() }
+        .onOpenURL { app.handle(url: $0) }
         .preferredColorScheme(.dark)
     }
 }

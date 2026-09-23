@@ -26,6 +26,8 @@ struct EngineBrowseSource: BrowseSource {
             var video_id: String?
             var lastWatched: String?
         }
+        struct CwExtras: Decodable { var watched: Bool; var newEpisode: Int; var upNext: Bool; var waitingForAir: Bool; var nextAirDate: String?; var watcher: String?; var external: String? }
+        var _cw: CwExtras?
         var _id: String
         var type: String
         var name: String
@@ -111,7 +113,7 @@ struct EngineBrowseSource: BrowseSource {
             let page: Page = try await HarborEngine.shared.call("animeRoom.page", [p.id, p.linked, p.authKey])
             items = page.cw
         } else {
-            items = try await HarborEngine.shared.call("rooms.continueWatchingFor", [p.id, p.linked, p.authKey])
+            items = try await HarborEngine.shared.call("rooms.continueWatchingWithExtras", [p.id, p.linked, p.authKey])
         }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -122,7 +124,9 @@ struct EngineBrowseSource: BrowseSource {
             return ContinueItem(id: i._id, type: i.type, name: i.name, poster: i.poster, background: i.background, logo: nil,
                                 season: season, episode: episode,
                                 progress: dur > 0 ? min(1, max(0, off / dur)) : 0,
-                                lastWatched: (i.state?.lastWatched ?? i._mtime).flatMap { iso.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) })
+                                lastWatched: (i.state?.lastWatched ?? i._mtime).flatMap { iso.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) },
+                                watched: i._cw?.watched ?? false, newEpisode: i._cw?.newEpisode ?? 0, upNext: i._cw?.upNext ?? false,
+                                waitingForAir: i._cw?.waitingForAir ?? false, nextAirDate: i._cw?.nextAirDate, watcher: i._cw?.watcher, external: i._cw?.external)
         }
     }
 

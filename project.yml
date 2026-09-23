@@ -52,6 +52,10 @@ targets:
         UIUserInterfaceStyle: Dark
         UIAppFonts: [Switzer-Regular.otf, Switzer-Medium.otf, Switzer-Semibold.otf, Switzer-Bold.otf, Sentient-Regular.otf, Sentient-Medium.otf, Sentient-Bold.otf, Fraunces-Medium.ttf]
         ITSAppUsesNonExemptEncryption: false
+        # lib/deep-link.ts: harbor://detail/<type>/<id>[/<videoId>], stremio://detail/..., stremio://<host>/manifest.json
+        CFBundleURLTypes:
+          - CFBundleURLName: com.dltnp.harbor.links
+            CFBundleURLSchemes: [harbor, stremio]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dltnp.harbor

@@ -36,6 +36,14 @@ struct ShellView: View {
         .focusScope(focusNS)
         .environment(\.shellFocusNamespace, focusNS)
         .onAppear { ShellFocus.shared.request = { resetFocus(in: focusNS) } }
+        .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
+        .overlay(alignment: .top) {
+            if let n = app.deepLinkNote {
+                Text(n).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))
+                    .background(Capsule().fill(BP.panel)).padding(.top, BP.barHeight + BP.px(8))
+                    .task { try? await Task.sleep(for: .seconds(4)); app.deepLinkNote = nil }
+            }
+        }
     }
 
     @ViewBuilder private var room: some View {

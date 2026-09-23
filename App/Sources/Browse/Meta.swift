@@ -64,4 +64,12 @@ struct ContinueItem: Identifiable, Equatable {
     var episode: Int?
     var progress: Double   // 0...1
     var lastWatched: Date?
+    // bp-cw-card-meta extras
+    var watched = false
+    var newEpisode = 0
+    var upNext = false
+    var waitingForAir = false
+    var nextAirDate: String? = nil
+    var watcher: String? = nil
+    var external: String? = nil
 }

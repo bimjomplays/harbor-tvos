@@ -17,6 +17,14 @@ final class CollectionsModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var failed: String?
     @Published var source = "all"
+    /// bp-collection-steps "curated": TMDB's franchise catalog, a page at a time, by category.
+    @Published private(set) var tmdb: [Card] = []
+    @Published private(set) var tmdbDone = false
+    @Published private(set) var tmdbLoading = false
+    @Published var category = "All"
+    @Published private(set) var categories: [String] = ["All"]
+    private var tmdbPage = 0
+    var hasKey: Bool { !SettingsBridge.shared.slice.tmdbKey.isEmpty }
 
     func load() async {
         loading = true; defer { loading = false }
@@ -24,13 +32,34 @@ final class CollectionsModel: ObservableObject {
             let a: All = try await HarborEngine.shared.call("collectionsRoom.all", [])
             mine = a.mine; community = a.community
         } catch { failed = error.localizedDescription }
+        categories = (try? await HarborEngine.shared.call("collectionsRoom.categories", [])) ?? ["All"]
+        if hasKey { await loadTmdb(reset: true) }
     }
+
+    func loadTmdb(reset: Bool) async {
+        if reset { tmdb = []; tmdbPage = 0; tmdbDone = false }
+        guard !tmdbLoading, !tmdbDone, hasKey else { return }
+        tmdbLoading = true; defer { tmdbLoading = false }
+        struct Page: Decodable { var cards: [Card]; var done: Bool }
+        let p = ProfilesStore.shared.active
+        let want = category
+        if let page: Page = try? await HarborEngine.shared.call("collectionsRoom.tmdb", [p?.id ?? "default", p?.linked ?? true, category, tmdbPage + 1]) {
+            guard want == category else { return }
+            tmdbPage += 1
+            let known = Set(tmdb.map(\.key))
+            tmdb += page.cards.filter { !known.contains($0.key) }
+            tmdbDone = page.done
+        } else { tmdbDone = true }
+    }
+
+    func set(category c: String) { category = c; Task { await loadTmdb(reset: true) } }
 
     var cards: [Card] {
         switch source {
         case "mine": return mine
         case "community": return community
-        default: return mine + community
+        case "tmdb": return tmdb
+        default: return mine + community + (source == "all" && category == "All" ? tmdb : [])
         }
     }
 }
@@ -48,13 +77,25 @@ struct CollectionsView: View {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
                     Text("Collections").font(BP.display(36)).foregroundStyle(BP.ink)
                     HStack(spacing: BP.px(8)) {
-                        ForEach([("all", "All"), ("mine", "Mine"), ("community", "Community")], id: \.0) { key, label in
+                        ForEach([("all", "All"), ("mine", "Mine"), ("community", "Community"), ("tmdb", "TMDB")], id: \.0) { key, label in
                             Button(label) { model.source = key }.buttonStyle(BPActionStyle(primary: model.source == key))
                         }
                         Text("\(model.cards.count) collections").font(BP.sans(13)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(8))
                     }
                     .focusSection()
-                    if model.loading && model.cards.isEmpty { ProgressView().tint(BP.inkMuted) }
+                    if model.source == "tmdb" {
+                        // bp-collection-steps categories: Sagas, Superheroes, Action…
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: BP.px(8)) {
+                                ForEach(model.categories, id: \.self) { c in Button(c) { model.set(category: c) }.buttonStyle(BPActionStyle(primary: model.category == c)) }
+                            }
+                            .padding(.vertical, BP.px(4))
+                        }
+                        .scrollClipDisabled()
+                        .focusSection()
+                        if !model.hasKey { BPNote(text: "TMDB collections need a TMDB key. Add one in Settings.") }
+                    }
+                    if (model.loading || model.tmdbLoading) && model.cards.isEmpty { ProgressView().tint(BP.inkMuted) }
                     if let f = model.failed { BPNote(text: f, tone: BP.danger) }
                     if !model.loading && model.cards.isEmpty {
                         BPNote(text: model.source == "mine" ? "No collections on this device yet. Make some in Harbor on your computer; they sync through your account later." : "Nothing here yet.")
@@ -62,6 +103,7 @@ struct CollectionsView: View {
                     LazyVGrid(columns: Self.columns, alignment: .leading, spacing: BP.px(20)) {
                         ForEach(model.cards) { c in
                             Button { open = c } label: { CollectionCardView(card: c) }
+                                .onAppear { if model.source == "tmdb", c.key == model.tmdb.last?.key { Task { await model.loadTmdb(reset: false) } } }
                                 .buttonStyle(BPTileStyle())
                                 .accessibilityIdentifier("collection-\(c.key)")
                         }

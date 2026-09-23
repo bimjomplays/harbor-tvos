@@ -235,6 +235,11 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("addonsRoom.catalogs for an unknown base", await engine.addonsRoom.catalogs("https://nowhere.invalid"), []);
   const hm = await engine.animeRoom.heroMeta({ id: "tt0388629", type: "anime", name: "One Piece", releaseInfo: "1999", imdbRating: "9.0" }, "default", true, { season: 1, episode: 3 });
   r.ok("animeRoom.heroMeta falls back to the inline score and formats the episode", hm.score === "9.0" && hm.episode === "S1 E3", JSON.stringify(hm));
+  const cwx = await engine.rooms.continueWatchingWithExtras("default", true, null);
+  r.ok("rooms.continueWatchingWithExtras attaches _cw to every item", Array.isArray(cwx) && cwx.every((i) => i._cw && typeof i._cw.watched === "boolean"), JSON.stringify(cwx.length));
+  r.eq("animeDetail.load ignores a non-anime id", await engine.animeDetail.load({ id: "tt0111161", type: "movie", name: "x" }, "default", true), null);
+  r.eq("collectionsRoom.tmdb without a TMDB key", await engine.collectionsRoom.tmdb("default", true, "All", 1), { cards: [], done: true });
+  r.ok("collectionsRoom.categories starts with All", engine.collectionsRoom.categories()[0] === "All" && engine.collectionsRoom.categories().includes("Sagas"), JSON.stringify(engine.collectionsRoom.categories()));
   r.eq("onboarding.vote records an upvote", engine.onboarding.vote("tt0000001", true, "Smoke", "movie").includes("tt0000001"), true);
   r.eq("onboarding.vote clears it again", engine.onboarding.vote("tt0000001", false, "Smoke", "movie").includes("tt0000001"), false);
   r.eq("live.loadShortEpg ignores a non-Xtream playlist", await engine.live.loadShortEpg("nope", ["a"]), { hydrated: 0 });
@@ -467,6 +472,8 @@ if (!OFFLINE) {
 
   const sc = await r.timed("search.cinemeta('blade runner')", () => engine.search.cinemeta("blade runner"));
   r.ok("search.cinemeta finds movies and series", sc && sc.movies.length > 0 && Array.isArray(sc.series), JSON.stringify(sc && { movies: sc.movies.length, series: sc.series.length, first: sc.movies[0] && sc.movies[0].name }));
+  const adl = await r.timed("animeDetail.load(kitsu:1)", () => engine.animeDetail.load({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop" }, "default", true));
+  r.ok("animeDetail.load returns Kitsu episodes with PlayEpisodes", adl && adl.episodes.length > 0 && typeof adl.episodes[0].playEpisode.episode === "number" && adl.canonicalId === "kitsu:1", JSON.stringify(adl && { eps: adl.episodes.length, chars: adl.characters.length, name: adl.detail.name }));
   const sb = await r.timed("scores.forMeta(tt0111161, card)", () => engine.scores.forMeta({ id: "tt0111161", type: "movie", name: "The Shawshank Redemption", imdbRating: "9.3" }, "default", true, "card"));
   r.ok("scores.forMeta returns an IMDb chip for a tt id", Array.isArray(sb) && sb.some((b) => b.kind === "rating" && b.source === "imdb"), JSON.stringify(sb));
   const fo = await r.timed("search.fanOut('blade runner')", () => engine.search.fanOut("blade runner", "default", true, null));

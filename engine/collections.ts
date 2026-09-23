@@ -3,6 +3,9 @@
 // feeds and TVDB lists join once a TMDB key is in play.
 import { fetchCommunityCollections, type CommunityCollection } from "@/lib/social/collections-sync";
 import { readCollections, absCollectionImage, type Collection, type CollectionItem } from "@/lib/collections";
+import { COLLECTION_CATEGORIES } from "@/lib/collections-catalog";
+import { BP_COLLECTIONS_ALL, bpCatalogFor, bpMapLimit, resolveBpCollection } from "@/views/big-picture/use-bp-collections";
+import { loadEffective } from "@/lib/settings/profile-store";
 
 export type CollectionCard = {
   key: string;
@@ -45,4 +48,28 @@ export async function all(): Promise<{ mine: CollectionCard[]; community: Collec
   const m = mine();
   const c = await community().catch(() => [] as CollectionCard[]);
   return { mine: m, community: c };
+}
+
+
+// ------------------------------------------------------------- TMDB curated collections
+// bp-collection-steps "curated" phase: the ~110-franchise catalog (lib/collections-catalog),
+// resolved against TMDB a page at a time, four lanes wide, ids healed by name when TMDB moved them.
+const TMDB_PAGE = 12;
+export function categories(): string[] { return [BP_COLLECTIONS_ALL, ...COLLECTION_CATEGORIES]; }
+
+export async function tmdb(profileId: string, linked: boolean, category: string, page: number): Promise<{ cards: CollectionCard[]; done: boolean }> {
+  const key = loadEffective(profileId, linked).tmdbKey;
+  if (!key) return { cards: [], done: true };
+  const catalog = bpCatalogFor(category || BP_COLLECTIONS_ALL);
+  const slice = catalog.slice((page - 1) * TMDB_PAGE, page * TMDB_PAGE);
+  if (slice.length === 0) return { cards: [], done: true };
+  const found = await bpMapLimit(slice, 4, (c) => resolveBpCollection(key, c.id, c.name).catch(() => null));
+  const cards: CollectionCard[] = [];
+  found.forEach((tc, i) => {
+    if (!tc || tc.parts.length < 2) return;
+    const items: CollectionItem[] = tc.parts.map((m) => ({ id: m.id, type: m.type, name: m.name, poster: m.poster } as CollectionItem));
+    cards.push({ key: `tmdb:${tc.id}`, source: "tmdb" as CollectionCard["source"], name: tc.name, image: tc.backdrop ?? tc.poster ?? tc.parts.find((m) => m.poster)?.poster ?? null,
+      count: items.length, byline: slice[i].cats[0] ?? "TMDB", description: tc.overview || null, items, hidden: 0 });
+  });
+  return { cards, done: page * TMDB_PAGE >= catalog.length };
 }

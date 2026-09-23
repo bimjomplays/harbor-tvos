@@ -11,6 +11,35 @@ final class AppModel: ObservableObject {
     @Published var room: Room = .home
     /// Quick panel "Search": the Search room opens with this query.
     @Published var searchSeed: String?
+    /// lib/deep-link.ts: a title opened from another app (harbor:// or stremio://).
+    @Published var deepLinkMeta: Meta?
+    @Published var deepLinkNote: String?
+
+    /// parseHarborOpen / parseStremioOpen / emitDeepLinkInstall, as the TV receives them.
+    func handle(url: URL) {
+        let raw = url.absoluteString
+        let scheme = (url.scheme ?? "").lowercased()
+        guard scheme == "harbor" || scheme == "stremio" else { return }
+        let path = raw.dropFirst(scheme.count + 3)   // "scheme://"
+        let parts = path.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }.filter { !$0.isEmpty }
+        if parts.first == "detail", parts.count >= 3 {
+            deepLinkMeta = Meta(id: parts[2], type: parts[1], name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
+                                inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
+            if stage != .shell, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            return
+        }
+        if scheme == "stremio", raw.hasSuffix("manifest.json") {
+            // stremio://host/path/manifest.json installs the addon at https://host/path/manifest.json.
+            let https = "https://" + String(path)
+            Task {
+                struct Result: Decodable { var replaced: Bool; var syncedToStremio: Bool }
+                if let r: Result = try? await HarborEngine.shared.call("addonStore.installFromUrl", [https]) {
+                    HarborEngine.shared.emitEvent("harbor:addons-changed")
+                    deepLinkNote = r.replaced ? "Addon updated." : "Addon installed."
+                } else { deepLinkNote = "Couldn't install that addon." }
+            }
+        }
+    }
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
     var browseSource: BrowseSource = (Fixtures.active && !Fixtures.liveRooms) ? FixtureBrowseSource() : EngineBrowseSource()

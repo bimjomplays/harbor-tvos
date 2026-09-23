@@ -49,6 +49,8 @@ final class SettingsBridge: ObservableObject {
         var screensaver: Bool? = true
         var screensaverDelayMin: Double? = 5
         var heroFeed: String? = "trending"
+        /// bp-settings "Animated backdrop": the drifting poster mosaic behind screens without art.
+        var bigPictureMosaic: Bool? = true
         /// bp-settings "Edge margin": a fraction of the screen kept clear on every edge.
         var bigPictureOverscan: Double? = 0
     }

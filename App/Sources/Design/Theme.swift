@@ -80,12 +80,70 @@ extension Color {
 
 /// The page background: void with the brand-tinted wash upstream paints in the top corner.
 struct BPAmbientBackground: View {
+    /// bp-mosaic "ambient" variant behind screens with no art of their own; off when the viewer
+    /// turned the animated backdrop off (settings.bigPictureMosaic).
+    var mosaic = true
+    @ObservedObject private var pool = AmbientPool.shared
     var body: some View {
         ZStack {
             BP.void_
+            if mosaic, SettingsBridge.shared.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
+                BPMosaicView(posters: pool.posters).opacity(0.13)
+            }
             RadialGradient(colors: [BP.accent.opacity(0.10), .clear], center: .topTrailing, startRadius: 0, endRadius: 1300)
             LinearGradient(colors: [BP.canvas.opacity(0.9), .clear], startPoint: .bottom, endPoint: .center)
         }
         .ignoresSafeArea()
+        .task { await pool.load() }
+    }
+}
+
+/// The poster pool the mosaic draws from (bp-ambient `pool`): the hero feed, fetched once.
+@MainActor
+final class AmbientPool: ObservableObject {
+    static let shared = AmbientPool()
+    @Published private(set) var posters: [String] = []
+    private var loading = false
+    func load() async {
+        guard posters.isEmpty, !loading else { return }
+        loading = true; defer { loading = false }
+        struct M: Decodable { var poster: String? }
+        let metas: [M] = (try? await HarborEngine.shared.call("feed.hero", ["trending"])) ?? []
+        var seen: Set<String> = []
+        posters = metas.compactMap(\.poster).filter { seen.insert($0).inserted }
+    }
+}
+
+/// bp-mosaic.tsx: six columns of posters, rotated −14° and scaled 1.55, each column drifting
+/// slowly (alternating directions) under a radial mask.
+struct BPMosaicView: View {
+    let posters: [String]
+    private static let columns = 6, perColumn = 4
+    @State private var phase = false
+
+    var body: some View {
+        GeometryReader { g in
+            let colW = g.size.width * 0.11
+            let gap = g.size.width * 0.016
+            let tileH = colW * 1.5
+            HStack(alignment: .top, spacing: gap) {
+                ForEach(0..<Self.columns, id: \.self) { c in
+                    let col = (0..<Self.perColumn).map { posters[(c * Self.perColumn + $0) % posters.count] }
+                    VStack(spacing: gap) {
+                        ForEach(Array((col + col).enumerated()), id: \.offset) { _, url in
+                            RemoteImage(url: url).frame(width: colW, height: tileH).clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+                    .offset(y: (phase ? -1 : 0) * (tileH + gap) * CGFloat(Self.perColumn) * (c % 2 == 0 ? 1 : -1))
+                    .animation(.linear(duration: Double(74 + c * 9)).repeatForever(autoreverses: false), value: phase)
+                }
+            }
+            .rotationEffect(.degrees(-14))
+            .scaleEffect(1.55)
+            .position(x: g.size.width / 2, y: g.size.height / 2)
+            .mask(RadialGradient(colors: [.black, .black.opacity(0.55), .clear], center: .init(x: 0.5, y: 0.4), startRadius: 0, endRadius: g.size.width * 0.75))
+        }
+        .allowsHitTesting(false)
+        .onAppear { phase = true }
     }
 }

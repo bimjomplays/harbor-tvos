@@ -78,6 +78,7 @@ import * as onboardingGlue from "./onboarding";
 import * as actionsGlue from "./actions";
 import { scores as scoreBadges } from "./scores";
 import * as addonsRoomGlue from "./addonsRoom";
+import * as animeDetailGlue from "./animeDetail";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
@@ -401,6 +402,7 @@ export const rooms = {
   catalogFor: roomBuilders.catalogFor,
   page: roomBuilders.page,
   continueWatchingFor: roomBuilders.continueWatchingFor,
+  continueWatchingWithExtras: roomBuilders.continueWatchingWithExtras,
   dismissContinueWatching: roomBuilders.dismissContinueWatching,
   anime: roomBuilders.anime,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
@@ -443,6 +445,8 @@ export type { StreamSearch } from "./streams";
 
 /** Collections: this device's lists + community collections (harbor.site). */
 export const collectionsRoom = {
+  categories: collectionsGlue.categories,
+  tmdb: collectionsGlue.tmdb,
   mine: collectionsGlue.mine,
   community: collectionsGlue.community,
   all: collectionsGlue.all,
@@ -597,6 +601,9 @@ export const homeServers = {
   reportProgress: homeGlue.reportProgress,
   stopPlayback: homeGlue.stopPlayback,
 };
+
+/** use-bp-anime-detail: the Kitsu chain for anime ids (episodes as PlayEpisodes, characters). */
+export const animeDetail = { load: animeDetailGlue.load };
 
 /** bp-home "Your addons" band and the addon page: cards, catalogs, paged feeds. */
 export const addonsRoom = {

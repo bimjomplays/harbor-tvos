@@ -21,6 +21,13 @@ import { loadEffective } from "@/lib/settings/profile-store";
 import { library, cwSortKey, isCwMember, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
 import { isCwDismissed } from "@/lib/cw-dismiss";
 import { listLocalCw, type LocalCwEntry } from "@/lib/local-cw";
+import { listExternalCw, refreshExternalCw, setExternalCwSources } from "@/lib/feed/external-cw";
+import { hasNewEpisode } from "@/lib/new-episodes";
+import { fetchWatchedKeySet } from "@/lib/trakt/history";
+import { isLibraryItemWatched } from "@/lib/trakt/library-key";
+import { isAuthenticated as traktAuthenticated } from "@/lib/trakt/session";
+import { getWatchedBy } from "@/lib/watched-by";
+import { getAnimeCwId } from "@/lib/anime-cw-ids";
 
 export type RoomKind = "movies" | "shows";
 export type RoomRow = {
@@ -229,8 +236,16 @@ function localToLibraryItem(e: LocalCwEntry): LibraryItem {
 export async function continueWatching(authKey: string | null, settings: Settings, limit = 40): Promise<LibraryItem[]> {
   const cloud = authKey ? await library(authKey).catch(() => [] as LibraryItem[]) : [];
   const local = listLocalCw().map(localToLibraryItem);
+  // lib/continue-watching: Trakt / Simkl "currently watching" joins the row unless CW is per profile.
+  let external: LibraryItem[] = [];
+  const src = settings.cwSources ?? { trakt: false, simkl: false };
+  if (!settings.cwPerProfile && (src.trakt || src.simkl)) {
+    setExternalCwSources({ trakt: !!src.trakt, simkl: !!src.simkl });
+    await Promise.race([refreshExternalCw().catch(() => undefined), new Promise((r) => setTimeout(r, 6000))]);
+    external = listExternalCw();
+  }
   const seen = new Set<string>();
-  const merged = [...cloud, ...local]
+  const merged = [...cloud, ...local, ...external]
     .filter((i) => (i.type as string) !== "other" && !i._id.startsWith("iptv:") && !isCwDismissed(i) && isCwMember(i)
       && !(settings.animeOnlyInAnimeRoom && isAnimeCwItem(i)))
     .map((i) => ({ i, k: cwSortKey(i) }))
@@ -238,6 +253,52 @@ export async function continueWatching(authKey: string | null, settings: Setting
     .map((e) => e.i)
     .filter((i) => (seen.has(i._id) ? false : (seen.add(i._id), true)));
   return merged.slice(0, limit);
+}
+
+// bp-cw-card-meta: the extras a CW card carries beyond its art and progress.
+export type CwExtras = { watched: boolean; newEpisode: number; upNext: boolean; waitingForAir: boolean; nextAirDate: string | null; watcher: string | null; external: string | null };
+const TRAKT_TTL = 10 * 60 * 1000;
+let traktKeys: { at: number; set: Set<string> } | null = null;
+
+function profileName(id: string): string | null {
+  try {
+    const blob = JSON.parse(localStorage.getItem("harbor.profiles.v1") ?? "null") as { profiles?: Array<{ id: string; name: string }> } | null;
+    return blob?.profiles?.find((p) => p.id === id)?.name ?? null;
+  } catch { return null; }
+}
+
+export async function cwExtras(items: LibraryItem[], activeProfileId: string | null): Promise<CwExtras[]> {
+  let watchedSet = new Set<string>();
+  if (traktAuthenticated()) {
+    if (!traktKeys || Date.now() - traktKeys.at > TRAKT_TTL) {
+      const set = await Promise.race([fetchWatchedKeySet().catch(() => new Set<string>()), new Promise<Set<string>>((r) => setTimeout(() => r(new Set()), 5000))]);
+      traktKeys = { at: Date.now(), set };
+    }
+    watchedSet = traktKeys.set;
+  }
+  return Promise.all(items.map(async (i) => {
+    const rec = i as unknown as Record<string, unknown>;
+    const waiting = rec.waitingForAir === true;
+    const fresh = await Promise.race([hasNewEpisode(i).catch(() => 0), new Promise<number>((r) => setTimeout(() => r(0), 4000))]);
+    const watcherId = getWatchedBy(i._id) ?? getWatchedBy(getAnimeCwId(i._id) ?? "") ?? null;
+    const watcher = watcherId && watcherId !== activeProfileId ? profileName(watcherId) : null;
+    return {
+      watched: isLibraryItemWatched(i, watchedSet),
+      newEpisode: fresh,
+      upNext: rec.upNext === true,
+      waitingForAir: waiting,
+      nextAirDate: waiting && typeof rec.nextAirDate === "string" ? rec.nextAirDate : null,
+      watcher,
+      external: typeof rec.external === "string" ? rec.external : null,
+    };
+  }));
+}
+
+/** rooms.continueWatchingFor with the card extras attached as `_cw` on each item. */
+export async function continueWatchingWithExtras(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<Array<LibraryItem & { _cw: CwExtras }>> {
+  const items = await continueWatching(authKey, loadEffective(profileId, linked), limit);
+  const extras = await cwExtras(items, profileId);
+  return items.map((i, n) => ({ ...i, _cw: extras[n] }));
 }
 
 /** bp-quick-panel "Remove from Continue watching" (lib/cw-dismiss): hides the item locally and in the cloud library. */

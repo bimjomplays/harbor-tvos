@@ -21,12 +21,19 @@ struct ContinueCardView: View {
                 }
                 HStack(spacing: BP.px(6)) {
                     HStack(spacing: BP.px(4)) {
-                        Image(systemName: "play.fill").font(.system(size: BP.px(8), weight: .bold))
+                        Image(systemName: item.external == "trakt" ? "checkmark.circle" : item.external == "simkl" ? "circle.dotted" : item.waitingForAir ? "clock" : "play.fill").font(.system(size: BP.px(8), weight: .bold))
                         Text(statusText)
                     }
                     .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink)
                     .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(4))
                     .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.void_.opacity(0.92)))
+                    // bp-cw-card-meta badges: watched on Trakt, new episodes since the last watch.
+                    if item.watched { Image(systemName: "checkmark").font(.system(size: BP.px(9), weight: .bold)).foregroundStyle(BP.canvas).padding(BP.px(4)).background(Circle().fill(BP.live)) }
+                    if item.newEpisode > 0 {
+                        Text("+\(item.newEpisode) new").font(BP.sans(9.5, .bold)).foregroundStyle(BP.canvas)
+                            .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(3)).background(Capsule().fill(BP.accent))
+                    }
+                    if let w = item.watcher { Text("Watched by \(w)").font(BP.sans(9.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 }
                 ZStack(alignment: .leading) {
                     Capsule().fill(BP.edge2)
@@ -42,8 +49,26 @@ struct ContinueCardView: View {
     }
 
     private var statusText: String {
+        if item.waitingForAir { return Self.countdown(item.nextAirDate) }
+        if item.upNext { return "Up Next" + (item.season.map { " · S\($0) E\(item.episode ?? 0)" } ?? "") }
         if let s = item.season, let e = item.episode { return "S\(s) E\(e)" }
         let left = Int((1 - item.progress) * 100)
         return item.progress > 0 ? "\(left)% left" : "Resume"
     }
+
+    /// bp-cw-card-meta useAirCountdown: "Airing now" / "Next in 2d 3h" / "Next in 40m".
+    private static func countdown(_ at: String?) -> String {
+        guard let at, let date = ISO8601DateFormatter().date(from: at) ?? ISO8601DateFormatter.dateOnly.date(from: at) else { return "Waiting for air" }
+        let diff = date.timeIntervalSinceNow
+        if diff <= 0 { return "Airing now" }
+        let days = Int(diff / 86_400), hours = Int(diff.truncatingRemainder(dividingBy: 86_400) / 3600), minutes = Int(diff.truncatingRemainder(dividingBy: 3600) / 60)
+        if days > 0 { return "Next in \(days)d \(hours)h" }
+        if hours > 0 { return "Next in \(hours)h \(minutes)m" }
+        return "Next in \(max(1, minutes))m"
+    }
+}
+
+
+extension ISO8601DateFormatter {
+    static let dateOnly: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withFullDate]; return f }()
 }
