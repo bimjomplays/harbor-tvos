@@ -170,7 +170,7 @@ struct DetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: BP.trackGap) {
                     ForEach(model.seasonEpisodes) { ep in
-                        Button { picker = (model.meta, ep.playEpisode) } label: { EpisodeCell(episode: ep) }
+                        Button { picker = (model.meta, ep.playEpisode) } label: { EpisodeCell(episode: ep, watched: model.isWatched(ep)) }
                             .buttonStyle(BPTileStyle())
                             .accessibilityIdentifier("episode-\(ep.season)-\(ep.episode)")
                     }
@@ -185,6 +185,7 @@ struct DetailView: View {
 
 struct EpisodeCell: View {
     let episode: DetailModel.Episode
+    var watched = false
     private static let size = CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded())
 
     var body: some View {
@@ -193,6 +194,11 @@ struct EpisodeCell: View {
                 RemoteImage(url: episode.thumbnail)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
                 Text("E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
+                if watched {
+                    Image(systemName: "checkmark").font(.system(size: BP.px(10), weight: .bold)).foregroundStyle(BP.canvas)
+                        .frame(width: BP.px(21), height: BP.px(21)).background(Circle().fill(BP.ink))
+                        .padding(BP.px(7)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
                 if let d = episode.released, d > Date() {
                     Text("Unaired").font(BP.sans(9.8, .bold)).textCase(.uppercase).foregroundStyle(BP.canvas)
                         .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.ink))

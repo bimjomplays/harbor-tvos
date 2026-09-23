@@ -6,6 +6,8 @@ import { saveLocalCw, clearLocalCw } from "@/lib/local-cw";
 import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
+import { canonicalVideoOrder } from "@/lib/stremio-watched";
+import { inflateSync } from "fflate";
 
 const WATCHED_RATIO = 0.85;      // use-resume-autosave.ts:33 / playback-end.ts:3
 const CREDITS_RATIO = 0.9;       // use-stremio-sync.ts:19 (cloud flaggedWatched)
@@ -97,4 +99,42 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
 
 export function localResume(metaId: string, season: number | null, episode: number | null) {
   return readResumeEntry(metaId, season ?? undefined, episode ?? undefined);
+}
+
+
+/**
+ * Which episodes the Stremio library marks watched, as "season:episode" keys.
+ * Same wire format as lib/stremio-watched.ts decodeWatchedEpisodes ("<anchorVideoId>:<anchorLength>:<base64 deflate bitfield>"),
+ * inflated with fflate because JavaScriptCore has no DecompressionStream.
+ */
+export async function watchedEpisodes(authKey: string | null, meta: Meta): Promise<string[]> {
+  if (!authKey || !meta.videos || meta.videos.length === 0) return [];
+  const item = await libraryGetOne(authKey, meta.id).catch(() => null);
+  const field = (item?.state as { watched?: string } | undefined)?.watched;
+  if (!field) return [];
+  const parts = field.split(":");
+  if (parts.length < 3) return [];
+  const b64 = parts[parts.length - 1];
+  const anchorLength = Number.parseInt(parts[parts.length - 2], 10);
+  const anchorVideoId = parts.slice(0, -2).join(":");
+  if (!Number.isFinite(anchorLength) || anchorLength <= 0) return [];
+  let bytes: Uint8Array;
+  try {
+    const bin = atob(b64);
+    const raw = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
+    bytes = inflateSync(raw);
+  } catch {
+    return [];
+  }
+  const bit = (i: number) => i >= 0 && i < bytes.length * 8 && (bytes[i >> 3] & (1 << (i & 7))) !== 0;
+  const sorted = canonicalVideoOrder(meta.videos as never);
+  const anchorIdx = sorted.findIndex((v) => v.id === anchorVideoId);
+  const offset = anchorLength - anchorIdx - 1;
+  const keys: string[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const v = sorted[i];
+    if (v?.season != null && v?.episode != null && bit(i + offset)) keys.push(`${v.season}:${v.episode}`);
+  }
+  return keys;
 }

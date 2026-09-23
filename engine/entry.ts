@@ -410,6 +410,7 @@ export const player = {
   startPosition: playerGlue.startPosition,
   saveProgress: playerGlue.saveProgress,
   localResume: playerGlue.localResume,
+  watchedEpisodes: playerGlue.watchedEpisodes,
 };
 
 // ================================================================================== runtime

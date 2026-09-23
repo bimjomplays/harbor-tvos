@@ -26,6 +26,8 @@ final class DetailModel: ObservableObject {
     @Published private(set) var inWatchlist = false
     @Published private(set) var watchlistBusy = false
     @Published private(set) var canWatchlist = false
+    /// "season:episode" keys the Stremio library marks watched.
+    @Published private(set) var watched: Set<String> = []
 
     struct Resume: Equatable {
         var season: Int?
@@ -49,7 +51,13 @@ final class DetailModel: ObservableObject {
         }
         buildEpisodes()
         await loadResume()
+        if isSeries, let authKey {
+            let keys: [String] = (try? await HarborEngine.shared.call("player.watchedEpisodes", [authKey, meta])) ?? []
+            watched = Set(keys)
+        }
     }
+
+    func isWatched(_ ep: Episode) -> Bool { watched.contains("\(ep.season):\(ep.episode)") }
 
     private var authKey: String? {
         ProfilesStore.shared.active.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
