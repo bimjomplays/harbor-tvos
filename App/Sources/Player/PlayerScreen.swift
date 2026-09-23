@@ -408,6 +408,8 @@ struct PlayerScreen: View {
                 await saveTick(flush: true)
             }
             onClose(natural)
+            // The watched check on the tiles reads the flags this session just wrote.
+            await CardMarksStore.shared.remark()
         }
     }
 }

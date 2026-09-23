@@ -16,6 +16,17 @@ final class AppModel: ObservableObject {
     let profiles = ProfilesStore.shared
     let sync = SyncReader.shared
 
+    private var bag = Set<AnyCancellable>()
+
+    init() {
+        // A pull can adopt a roster that no longer holds the active profile (deleted on another
+        // device): the engine clears the active id and the shell must go back to who-is-watching.
+        profiles.$activeId.dropFirst().receive(on: RunLoop.main).sink { [weak self] id in
+            guard let self, id == nil, self.stage == .shell else { return }
+            self.stage = .whoIsWatching
+        }.store(in: &bag)
+    }
+
     private static let onboardingKey = "harbor.onboarding.bp"
     var onboardingDone: Bool {
         get { Prefs.get(Bool.self, for: Self.onboardingKey) ?? false }

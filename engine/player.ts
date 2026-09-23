@@ -3,6 +3,7 @@
 // (docs/player-spec.md §3); cadence is the Swift side's job.
 import { readResumeEntry, saveResumeMs, clearResume } from "@/lib/resume";
 import { saveLocalCw, clearLocalCw } from "@/lib/local-cw";
+import { setMovieWatchedLocal } from "@/lib/movie-watched";
 import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
@@ -67,7 +68,11 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
   }
   const t = Date.now();
   const type = isEpisode || p.meta.type === "series" ? "series" : "movie";
-  if (watched && type === "movie") clearLocalCw(p.meta.id);
+  if (watched && type === "movie") {
+    clearLocalCw(p.meta.id);
+    // mark-watched.ts markMovieWatched: the local flag is what the card's check mark reads.
+    setMovieWatchedLocal(p.meta.id, true);
+  }
   else if (posSec >= MIN_POSITION_SEC) {
     saveLocalCw({ id: p.meta.id, type, name: p.meta.name, poster: p.meta.poster, background: p.meta.background,
       season: s, episode: e, positionMs: p.positionMs, durationMs: p.durationMs, t } as never);

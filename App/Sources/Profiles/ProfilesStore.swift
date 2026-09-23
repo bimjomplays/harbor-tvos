@@ -73,6 +73,7 @@ final class ProfilesStore: ObservableObject {
               let old = Prefs.get([String: String].self, for: Self.idMapKey), !old.isEmpty,
               let data = try? JSONEncoder().encode(old), let raw = String(data: data, encoding: .utf8) else { return }
         try? KeyValueStore.shared.set(raw, for: Self.idMapKey)
+        HarborEngine.loaded?.syncStorage(key: Self.idMapKey, value: raw)
     }
 
     private var unsubscribe: (() -> Void)?

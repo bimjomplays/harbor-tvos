@@ -60,6 +60,7 @@ import * as subtitleGlue from "./subtitles";
 import * as liveGlue from "./live";
 import * as accountGlue from "./account";
 import * as syncGlue from "./sync";
+import * as cardsGlue from "./cards";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -454,6 +455,13 @@ export const sync = {
   syncedSettingsFields: syncGlue.syncedSettingsFields,
   parked: syncGlue.parked,
   restoreParked: syncGlue.restoreParked,
+};
+
+/** Card marks for browse tiles (identity chip, watchlist, watched, Top 10 ribbon). */
+export const cards = {
+  marks: cardsGlue.marks,
+  setTop10: cardsGlue.setTop10,
+  refreshWatchlist: cardsGlue.refreshWatchlist,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

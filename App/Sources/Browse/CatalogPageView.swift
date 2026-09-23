@@ -61,5 +61,6 @@ struct CatalogPageView: View {
         page += 1
         let known = Set(metas.map(\.id))
         metas += next.filter { !known.contains($0.id) }
+        await CardMarksStore.shared.refresh(metas)
     }
 }

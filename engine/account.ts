@@ -33,14 +33,40 @@ export function session(): SessionView {
   return { user, token, hasRefresh: !!refreshTokenValue() };
 }
 
+/**
+ * lib/account/client.ts attaches `.status/.code/.reason` to its errors, but only `.message`
+ * survives the bridge. Re-throw with everything in the message, as one JSON line the host parses.
+ */
+function apiError(e: unknown): Error {
+  const err = e as { message?: unknown; status?: unknown; code?: unknown; reason?: unknown } | null;
+  const out = new Error(
+    "harbor-api:" +
+      JSON.stringify({
+        status: typeof err?.status === "number" ? err.status : 0,
+        code: typeof err?.code === "string" ? err.code : null,
+        reason: typeof err?.reason === "string" ? err.reason : null,
+        message: typeof err?.message === "string" ? err.message : String(e),
+      }),
+  );
+  return out;
+}
+
 export async function login(username: string, password: string): Promise<SessionView> {
-  await loginIdentity(username, password);
+  try {
+    await loginIdentity(username, password);
+  } catch (e) {
+    throw apiError(e);
+  }
   return session();
 }
 
 export async function register(username: string, password: string): Promise<{ recoveryCode: string; session: SessionView }> {
-  const { recoveryCode } = await registerIdentity(username, password);
-  return { recoveryCode, session: session() };
+  try {
+    const { recoveryCode } = await registerIdentity(username, password);
+    return { recoveryCode, session: session() };
+  } catch (e) {
+    throw apiError(e);
+  }
 }
 
 export async function logout(): Promise<void> {

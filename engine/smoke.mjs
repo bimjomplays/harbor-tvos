@@ -322,6 +322,29 @@ if (!OFFLINE) {
   const awardsRaw = fs.readFileSync(new URL("../reference/harbor/src/data/awards.json", import.meta.url), "utf8");
   const t0aw = Date.now(); const ver = engine.discoverRoom.installAwards(awardsRaw);
   r.ok("discoverRoom.installAwards accepts the 4 MB catalog", ver > 0, `${(awardsRaw.length / 1048576).toFixed(1)} MB in ${Date.now() - t0aw} ms`);
+  {
+    const yr = String(new Date().getFullYear());
+    engine.cards.setTop10([{ id: "tt0111161", name: "The Shawshank Redemption" }]);
+    const cm = engine.cards.marks([
+      { id: "tt15398776", type: "movie", name: "Oppenheimer", releaseInfo: "2023" },
+      { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", releaseInfo: "1994" },
+      { id: "tt9999999", type: "series", name: "Brand New Show", releaseInfo: yr },
+      { id: "tt8888888", type: "movie", name: "Cinema Now", releaseInfo: yr, releaseDate: new Date().toISOString(), inTheaters: true },
+      { id: "tt7777777", type: "movie", name: "Old Rerun", releaseInfo: "2015", releaseDate: "2015-01-01", inTheaters: true },
+    ], "default", true);
+    r.ok("cards.marks: bundled Oscar chip", /Oscar/.test(cm[0].chip || ""), JSON.stringify(cm[0]));
+    r.eq("cards.marks: Top 10 ribbon (right by default)", cm[1].top10, "right");
+    r.eq("cards.marks: New chip", cm[2].chip, "New");
+    r.eq("cards.marks: In Cinema chip", cm[3].chip, "In Cinema");
+    r.eq("cards.marks: Rerun chip", cm[4].chip, "Rerun · 2015");
+    // The saveProgress check above ran Shawshank to the credits, which sets the local movie flag.
+    r.eq("cards.marks: watched check for the title just finished (topEnd, opposite the score corner)", cm[1].watched, "topEnd");
+    r.ok("cards.marks: no bookmark/watched without state", cm.slice(2).every((m) => m.bookmark === null && m.watched === null));
+    engine.settings.patch({ badgePlacement: "top" });
+    const cm2 = engine.cards.marks([{ id: "tt0111161", type: "movie", name: "x" }], "default", true);
+    r.eq("cards.marks: watched zone follows badgePlacement", cm2[0].watched, "bottomEnd");
+    engine.settings.patch({ badgePlacement: "bottom" });
+  }
   const aw = engine.discoverRoom.awards();
   r.ok("discoverRoom.awards has bundled bodies", aw.summaries.length >= 5 && aw.overview.wins > 100, JSON.stringify({ n: aw.summaries.length, first: aw.summaries[0] && aw.summaries[0].title, overview: aw.overview }));
   const ad = engine.discoverRoom.awardDetail(aw.summaries[0].type);

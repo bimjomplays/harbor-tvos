@@ -89,13 +89,18 @@ final class AccountStore: ObservableObject {
         return nil
     }
 
-    /// Engine errors carry upstream's message: an API `error` code such as `bad_credentials`
-    /// (mapped to a sentence by HarborErrorMessages) or a sentence of its own.
+    /// `account.login/register` re-throw API failures as one `harbor-api:{json}` line carrying
+    /// upstream's status/code/reason; anything else is shown as the engine reported it.
     private static func translate(_ error: Error) -> Error {
         guard case EngineError.js(let text) = error else { return error }
         let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
         let line = first.hasPrefix("Error: ") ? String(first.dropFirst(7)) : first
-        let looksLikeCode = !line.isEmpty && line.allSatisfy { $0 == "_" || ($0.isLetter && $0.isLowercase) }
-        return HarborAPI.APIError(status: 0, code: looksLikeCode ? line : nil, reason: line)
+        struct Wire: Decodable { var status: Int; var code: String?; var reason: String?; var message: String }
+        if line.hasPrefix("harbor-api:"), let w = try? JSONDecoder().decode(Wire.self, from: Data(line.dropFirst(11).utf8)) {
+            // The identity API puts the code in `error` (the message) when `code` is absent.
+            let code = w.code ?? (w.message.allSatisfy { $0 == "_" || ($0.isLetter && $0.isLowercase) } ? w.message : nil)
+            return HarborAPI.APIError(status: w.status, code: code, reason: w.reason ?? (code == nil ? w.message : nil))
+        }
+        return HarborAPI.APIError(status: 0, code: nil, reason: line)
     }
 }

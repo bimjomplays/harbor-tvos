@@ -71,6 +71,7 @@ final class SearchModel: ObservableObject {
                 out.append(BrowseRow(key: "anime", title: "Anime", metas: metas))
             }
             rows = out
+            await CardMarksStore.shared.refresh(out.flatMap(\.metas))
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done

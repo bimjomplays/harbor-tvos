@@ -6,6 +6,7 @@ struct BPTileView: View {
     let shape: TileShape
     var rank: Int? = nil
     var focused = false
+    @ObservedObject private var marks = CardMarksStore.shared
 
     static let posterWidth = BP.px(177)
     static let wideWidth = BP.px(230)
@@ -64,14 +65,7 @@ struct BPTileView: View {
                     .multilineTextAlignment(.center).padding(BP.px(10))
                     .frame(width: size.width, height: size.height)
             }
-            if let mark = CardMark.identity(for: meta) {
-                Text(mark)
-                    .font(BP.sans(9.8, .bold)).textCase(.uppercase).tracking(0.5)
-                    .foregroundStyle(BP.canvas)
-                    .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(3))
-                    .background(RoundedRectangle(cornerRadius: BP.px(4), style: .continuous).fill(BP.ink))
-                    .padding(BP.px(7))
-            }
+            CardMarksOverlay(marks: marks.byId[meta.id], fallbackChip: marks.byId[meta.id] == nil ? CardMark.identity(for: meta) : nil, size: size)
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))

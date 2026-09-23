@@ -31,6 +31,9 @@ targets:
       - path: App/Upstream/kids
         type: folder
         buildPhase: resources
+      - path: App/Upstream/marks
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MPVKit
         product: MPVKit

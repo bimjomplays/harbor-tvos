@@ -52,6 +52,7 @@ final class BrowseModel: ObservableObject {
             let known = Set(live.flatMap { $0.metas.map(\.id) })
             if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true { spotlight = live.first?.metas.first }
             startHeroCycle()
+            await CardMarksStore.shared.refresh(live.flatMap(\.metas))
         } catch {
             if rows.isEmpty { failed = error.localizedDescription }
         }

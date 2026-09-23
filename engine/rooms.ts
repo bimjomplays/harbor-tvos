@@ -1,6 +1,7 @@
 // Room builders for the TV app: the pure parts of use-bp-catalog.ts (Home) and
 // use-bp-shows.ts (Movies/Shows), without React state. Swift owns caching and progressive
 // rendering; this returns one finished build per call.
+import { setTop10Metas } from "@/lib/top10-set";
 import type { Meta } from "@/lib/cinemeta";
 import { topMovies, topSeries } from "@/lib/cinemeta";
 import type { HomeRow, RowSpec } from "@/views/home/home-types";
@@ -192,6 +193,8 @@ export async function catalog(kind: RoomKind, settings: Settings): Promise<RoomB
   if (ranked.length > 0) {
     rows.unshift({ key: BP_TOP10_ROW_KEY, type: metaType(kind), name: kind === "shows" ? "Top 10 Series Today" : "Top 10 Movies Today", metas: ranked, hasMore: false, shape: "rank" });
   }
+  // bp-top10-feed.ts: the page that just built owns the ribbon set (isTop10 for card marks).
+  setTop10Metas(ranked.map((m) => ({ id: m.id, name: m.name })));
   const hero = settings.animeOnlyInAnimeRoom ? built.hero.filter((m) => !metaLooksAnime(m)) : built.hero;
   return { rows, hero, failed: false };
 }

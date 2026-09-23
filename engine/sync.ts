@@ -148,6 +148,11 @@ function applyRosterPlan(plan: RosterApply): void {
   const activeId = stillHere ? blob.activeId : null;
   writeBlob({ ...blob, profiles, activeId });
   window.dispatchEvent(new CustomEvent("harbor:roster-applied", { detail: { dropped: plan.dropLocalIds, activeId } }));
+  // profiles.tsx dispatches this on every active-id change; theme-auth, local-cw, watchlist,
+  // watched flags and the addon store all re-key their caches off it.
+  if (activeId !== (blob.activeId ?? null)) {
+    window.dispatchEvent(new CustomEvent("harbor:active-profile-changed", { detail: { id: activeId } }));
+  }
 }
 
 function activeId(): string {

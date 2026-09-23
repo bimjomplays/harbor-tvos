@@ -47,6 +47,7 @@ final class LibraryModel: ObservableObject {
             let other = byRecent.filter { $0.type != "movie" && $0.type != "series" }
             if !other.isEmpty { out.append(BrowseRow(key: "lib-other", title: "Everything else", metas: metas(other))) }
             rows = out
+            await CardMarksStore.shared.refresh(out.flatMap(\.metas))
         } catch {
             failed = error.localizedDescription
         }

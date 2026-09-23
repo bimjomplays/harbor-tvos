@@ -73,6 +73,7 @@ final class DetailModel: ObservableObject {
             _ = try? await HarborEngine.shared.callJSON("stremio.saveBookmark", [.string(authKey), .string(meta.id), .object(["type": .string(meta.type), "name": .string(meta.name), "poster": meta.poster.map { .string($0) } ?? .null])])
             inWatchlist = true
         }
+        await CardMarksStore.shared.refreshWatchlist()
     }
 
     /// Cloud library entry first (Stremio), else the local resume store, like bpResumeMark.
