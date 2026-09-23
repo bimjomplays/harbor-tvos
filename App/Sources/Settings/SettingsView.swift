@@ -45,6 +45,7 @@ struct SettingsView: View {
                 section("Simkl") { TraktPanel(service: "simkl", label: "Simkl") }
                 section("AniList") { PasteTrackerPanel(service: "anilist", label: "AniList") }
                 section("MyAnimeList") { PasteTrackerPanel(service: "mal", label: "MyAnimeList") }
+                section("Letterboxd") { LetterboxdPanel() }
                 section("Home servers") { HomeServersPanel() }
                 section("Addons") {
                     row("Stream and catalog addons", detail: "Installed on this TV plus the ones on your Stremio account")

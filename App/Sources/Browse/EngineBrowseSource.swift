@@ -85,6 +85,18 @@ struct EngineBrowseSource: BrowseSource {
             return rows
         case .movies, .shows:
             build = try await HarborEngine.shared.call("rooms.catalogFor", [room == .movies ? "movies" : "shows", p.id, p.linked])
+            if room == .movies {
+                // use-bp-movies.ts: Letterboxd rows (public username through Stremboxd) sit right
+                // after the Top 10 row, or first when there is none.
+                struct LetterboxdRow: Decodable { var key: String; var name: String; var metas: [Meta] }
+                let extra: [LetterboxdRow] = (try? await HarborEngine.shared.call("letterboxd.movieRows", [p.id, p.linked])) ?? []
+                if !extra.isEmpty {
+                    var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
+                    let at = build.rows.first?.shape == "rank" ? 1 : 0
+                    rows.insert(contentsOf: extra.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: .poster) }, at: min(at, rows.count))
+                    return rows
+                }
+            }
         case .anime:
             // use-bp-anime port: returns at once with whatever Jikan rows have landed; the room
             // re-reads on `harbor:anime-updated`. Rows still loading carry no metas yet.
