@@ -135,6 +135,47 @@ final class MPVPlayerController: UIViewController {
     /// Where playback should start, applied once the file is loaded.
     var startAtSeconds: Double = 0
 
+    struct Track: Identifiable, Equatable {
+        var id: Int
+        var type: String   // "audio" | "sub"
+        var lang: String?
+        var title: String?
+        var codec: String?
+        var selected: Bool
+        var label: String {
+            let base = [title, lang.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
+            return base.isEmpty ? "\(type == "sub" ? "Subtitle" : "Audio") \(id)" : base
+        }
+    }
+
+    /// mpv's track-list for audio and subtitle tracks.
+    func tracks() -> [Track] {
+        guard let mpv else { return [] }
+        var count: Int64 = 0
+        mpv_get_property(mpv, "track-list/count", MPV_FORMAT_INT64, &count)
+        var out: [Track] = []
+        for i in 0..<Int(count) {
+            let type = string("track-list/\(i)/type") ?? ""
+            guard type == "audio" || type == "sub" else { continue }
+            let id = Int(string("track-list/\(i)/id") ?? "") ?? 0
+            out.append(Track(id: id, type: type, lang: string("track-list/\(i)/lang"), title: string("track-list/\(i)/title"),
+                             codec: string("track-list/\(i)/codec"), selected: string("track-list/\(i)/selected") == "yes"))
+        }
+        return out
+    }
+
+    func select(track: Track?, type: String) {
+        guard let mpv else { return }
+        let prop = type == "sub" ? "sid" : "aid"
+        mpv_set_property_string(mpv, prop, track.map { String($0.id) } ?? "no")
+    }
+
+    func setPaused(_ paused: Bool) {
+        guard let mpv else { return }
+        var v: Int = paused ? 1 : 0
+        mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &v)
+    }
+
     private func command(_ name: String, _ args: [String]) {
         guard let mpv else { return }
         var cargs: [UnsafePointer<CChar>?] = ([name] + args).map { UnsafePointer(strdup($0)) }

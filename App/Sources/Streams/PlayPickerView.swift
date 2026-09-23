@@ -8,10 +8,13 @@ struct PlayPickerView: View {
     @StateObject private var model = StreamsModel()
     @State private var resolving: String?
     @State private var resolveError: String?
+    @State private var quality: String = "All"
+    @State private var cachedOnly = false
+    @State private var addonFilter: String?
     @Environment(\.dismiss) private var dismiss
 
-    private static let tierOrder = ["4K_DV", "4K_HDR", "4K", "1080p_HDR", "1080p", "720p", "SD", "ROUGH"]
-    private static let tierLabel: [String: String] = ["4K_DV": "4K Dolby Vision", "4K_HDR": "4K HDR", "4K": "4K", "1080p_HDR": "1080p HDR", "1080p": "1080p", "720p": "720p", "SD": "SD", "ROUGH": "Other"]
+    /// bp-stream-chips.tsx quality chips, mapped onto the parser's resolution values.
+    private static let qualities: [(String, [String])] = [("All", []), ("4K UHD", ["2160p", "4K"]), ("1080p", ["1080p"]), ("720p", ["720p"]), ("480p", ["480p"]), ("SD", ["SD", "360p", "240p"])]
 
     var body: some View {
         ZStack {
@@ -56,29 +59,59 @@ struct PlayPickerView: View {
         }
     }
 
-    private var groups: [(String, [ScoredStream])] {
-        Self.tierOrder.compactMap { tier in
-            let items = model.streams.filter { $0.tier == tier }
-            return items.isEmpty ? nil : (Self.tierLabel[tier] ?? tier, items)
+    /// Flat, cached-first list (the pipeline already ranked it), narrowed by the chips.
+    private var visible: [ScoredStream] {
+        let wanted = Self.qualities.first { $0.0 == quality }?.1 ?? []
+        let filtered = model.streams.filter { s in
+            (wanted.isEmpty || wanted.contains(s.resolution ?? "")) &&
+            (!cachedOnly || s.isCached) &&
+            (addonFilter == nil || s.addonName == addonFilter)
         }
+        return filtered.sorted { a, b in a.isCached != b.isCached ? a.isCached : a.index < b.index }
+    }
+
+    private var addons: [String] { Array(Set(model.streams.map(\.addonName))).sorted() }
+
+    private var chips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: BP.px(8)) {
+                ForEach(Self.qualities, id: \.0) { q in
+                    let n = q.1.isEmpty ? model.streams.count : model.streams.filter { q.1.contains($0.resolution ?? "") }.count
+                    if n > 0 || q.0 == "All" {
+                        Button("\(q.0) \(n)") { quality = q.0 }.buttonStyle(BPActionStyle(primary: quality == q.0))
+                    }
+                }
+                if model.streams.contains(where: \.isCached) {
+                    Button("Cached") { cachedOnly.toggle() }.buttonStyle(BPActionStyle(primary: cachedOnly))
+                }
+                if addons.count > 1 {
+                    Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(24))
+                    Button(addonFilter ?? "All addons") {
+                        let list = [nil] + addons.map { Optional($0) }
+                        let i = list.firstIndex { $0 == addonFilter } ?? 0
+                        addonFilter = list[(i + 1) % list.count]
+                    }.buttonStyle(BPActionStyle(primary: addonFilter != nil))
+                }
+            }
+            .padding(.vertical, BP.px(6))
+        }
+        .scrollClipDisabled()
+        .focusSection()
     }
 
     private var list: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: BP.px(10)) {
-                if let best = model.primary {
-                    Text("Best pick").font(BP.sans(13, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                    row(best, highlight: true)
+        VStack(alignment: .leading, spacing: BP.px(8)) {
+            chips
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: BP.px(10)) {
+                    ForEach(visible) { s in row(s, highlight: s.id == model.primary?.id) }
+                    if !model.streams.isEmpty && visible.isEmpty { BPNote(text: "Nothing matches these filters.") }
+                    Color.clear.frame(height: BP.px(60))
                 }
-                ForEach(groups, id: \.0) { title, items in
-                    Text(title).font(BP.sans(15, .bold)).foregroundStyle(BP.inkMuted).padding(.top, BP.px(10))
-                    ForEach(items) { s in row(s, highlight: false) }
-                }
-                Color.clear.frame(height: BP.px(60))
+                .padding(.vertical, BP.px(6))
             }
-            .padding(.vertical, BP.px(10))
+            .focusSection()
         }
-        .focusSection()
     }
 
     private func row(_ s: ScoredStream, highlight: Bool) -> some View {
