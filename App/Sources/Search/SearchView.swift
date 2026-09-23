@@ -27,6 +27,7 @@ struct SearchView: View {
             if let q = Fixtures.query, model.query.isEmpty { model.query = q }
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
         }
+        .task { await model.loadSuggestions() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $person) { p in PersonView(personId: p.tmdbId ?? 0, name: p.name) }
         .fullScreenCover(item: $channel) { ch in
@@ -127,6 +128,26 @@ struct SearchView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                 Color.clear.frame(height: BP.barHeight + BP.px(20))
+                if model.status == .idle {
+                    // bp-search idle: recent queries as chips, then a "Suggested" row from the hero feed.
+                    if !model.recent.isEmpty {
+                        VStack(alignment: .leading, spacing: BP.px(10)) {
+                            Text("Recent").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: BP.px(8)) {
+                                    ForEach(model.recent, id: \.self) { q in Button(q) { model.query = q }.buttonStyle(BPActionStyle()) }
+                                    Button { model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
+                                }
+                                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
+                            }
+                            .scrollClipDisabled()
+                        }
+                        .focusSection()
+                    }
+                    if !model.suggestions.isEmpty {
+                        BPRowView(row: BrowseRow(key: "suggested", title: "Suggested", metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+                    }
+                }
                 if let top = spotlight ?? model.topMatch {
                     TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
                 }

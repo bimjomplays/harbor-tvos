@@ -432,6 +432,8 @@ export const streamsRoom = {
   cancelSearch: streamGlue.cancelSearch,
   resolve: streamGlue.resolve,
   forget: streamGlue.forget,
+  autoCandidates: streamGlue.autoCandidates,
+  rememberPlayback: streamGlue.rememberPlayback,
 };
 export type { StreamSearch } from "./streams";
 
@@ -599,6 +601,7 @@ export const live = {
   playlists: liveGlue.playlists,
   addPlaylist: liveGlue.addPlaylist,
   setEpgUrl: liveGlue.setEpgUrl,
+  loadShortEpg: liveGlue.loadShortEpg,
   removePlaylist: liveGlue.removePlaylist,
   channels: liveGlue.channels,
   favorites: liveGlue.favorites,

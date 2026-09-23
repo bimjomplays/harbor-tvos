@@ -209,6 +209,11 @@ final class MPVPlayerController: UIViewController {
 
     /// `sub-add <file> select <title> <lang>` (mpv.rs:1063 uses "auto"; we select the one the viewer picked).
     /// Replace the post-processing shader chain (`glsl-shaders`, colon-separated like mpv.rs).
+    /// bp-subtitle-tune "Manual offset": mpv sub-delay in seconds (+ late, − early).
+    func setSubDelay(_ seconds: Double) { command("set", ["sub-delay", String(format: "%.2f", seconds)]) }
+    /// bp-subtitle-tune "Size": sub-scale multiplier.
+    func setSubScale(_ scale: Double) { command("set", ["sub-scale", String(format: "%.2f", min(max(scale, 0.4), 4))]) }
+
     func setShaders(_ paths: [String]) {
         guard let mpv else { return }
         queue.async { [weak self] in

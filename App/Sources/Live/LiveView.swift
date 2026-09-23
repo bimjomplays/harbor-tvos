@@ -57,11 +57,23 @@ final class LiveModel: ObservableObject {
     func loadGuide(force: Bool = false) async {
         guard let id = selectedPlaylist else { return }
         struct Out: Decodable { var channels: Int; var programs: Int; var url: String? }
+        var covered = 0
         do {
             let o: Out = try await HarborEngine.shared.call("live.loadEpg", [id, force])
+            covered = o.channels
             guideNote = o.url == nil ? "No guide for this source. Add an EPG URL under Sources." : (o.channels == 0 ? "The guide loaded but lists no channels." : nil)
         } catch { guideNote = "Guide failed: \(error.localizedDescription)" }
         await refreshNowNext()
+        // use-xtream-epg-fallback: an Xtream source with no usable XMLTV asks get_short_epg per channel.
+        let xtream = playlists.first { $0.id == id }?.kind == "xtream"
+        if xtream, covered == 0 || !visible.isEmpty && guide.values.allSatisfy({ !$0.known }) {
+            struct Hydrated: Decodable { var hydrated: Int }
+            let ids = visible.map(\.id)
+            if let h: Hydrated = try? await HarborEngine.shared.call("live.loadShortEpg", [id, ids]), h.hydrated > 0 {
+                guideNote = nil
+                await refreshNowNext()
+            }
+        }
     }
 
     func refreshNowNext() async {

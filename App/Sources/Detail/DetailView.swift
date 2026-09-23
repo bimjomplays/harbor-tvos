@@ -4,7 +4,11 @@ import SwiftUI
 struct DetailView: View {
     @StateObject private var model: DetailModel
     @State private var picker: (meta: Meta, episode: AnyJSON?)?
+    /// use-bp-stream-play autoPlay: Play and auto-advance fire the best source; "Sources" never does.
+    @State private var pickerAuto = false
     @State private var playing: PlayTarget?
+    /// bp-player-sources: the position the next pick resumes from after "Switch source".
+    @State private var switchFromSec: Double?
     @State private var related: Meta?
     @State private var person: DetailModel.Extras.Cast?
     @Environment(\.dismiss) private var dismiss
@@ -45,12 +49,13 @@ struct DetailView: View {
         .task {
             await model.load()
             if autoPlay, picker == nil {
+                pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true
                 if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
             }
         }
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {
             if let picker {
-                PlayPickerView(meta: picker.meta, episode: picker.episode) { stream, resolved in
+                PlayPickerView(meta: picker.meta, episode: picker.episode, autoPlay: pickerAuto) { stream, resolved in
                     guard let link = resolved.data, let url = URL(string: link.url) else { return }
                     let ep = picker.episode
                     let sub = ep.flatMap { e -> String? in
@@ -61,7 +66,9 @@ struct DetailView: View {
                     let ctx = PlaybackContext(meta: model.meta,
                                               season: ep?["season"]?.number.map { Int($0) }, episode: ep?["episode"]?.number.map { Int($0) },
                                               videoId: ep?["videoId"]?.string, imdbId: model.meta.id.hasPrefix("tt") ? model.meta.id : nil,
-                                              imdbVerified: model.meta.id.hasPrefix("tt"), homeServer: resolved.homeServer)
+                                              imdbVerified: model.meta.id.hasPrefix("tt"), homeServer: resolved.homeServer,
+                                              explicitStartSec: switchFromSec)
+                    switchFromSec = nil
                     // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                             var upNext: String?
@@ -78,14 +85,15 @@ struct DetailView: View {
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
-                         onChooseAnother: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
+                         onChooseAnother: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
+                         onSwitchSource: { at in switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
                 playing = nil
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
                    let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }),
                    idx + 1 < model.episodes.count {
                     let next = model.episodes[idx + 1]
-                    if next.season > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, next.playEpisode) } }
+                    if next.season > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; picker = (model.meta, next.playEpisode) } }
                 }
             }
         }
@@ -124,6 +132,7 @@ struct DetailView: View {
             }
             HStack(spacing: BP.px(8)) {
                 Button {
+                    pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true
                     if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) }
                     else { picker = (model.meta, nil) }
                 } label: {
@@ -140,6 +149,11 @@ struct DetailView: View {
                 }
                 .buttonStyle(BPActionStyle(primary: true))
                 .accessibilityIdentifier("detail-play")
+                if SettingsBridge.shared.slice.instantPlay ?? true {
+                    // bp-detail-actions "Sources": the list, never auto-fired.
+                    Button { pickerAuto = false; if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) } } label: { Label("Sources", systemImage: "list.bullet") }
+                        .buttonStyle(BPActionStyle())
+                }
                 if model.canWatchlist {
                     Button { Task { await model.toggleWatchlist() } } label: {
                         Label(model.inWatchlist ? "In Watchlist" : "Add to Watchlist", systemImage: model.inWatchlist ? "bookmark.fill" : "bookmark")

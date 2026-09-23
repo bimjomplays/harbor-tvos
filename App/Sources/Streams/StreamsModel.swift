@@ -123,7 +123,7 @@ final class StreamsModel: ObservableObject {
         var via: String?
         var code: String?
         /// Set for a home-server copy: who to report progress to, and where the server left off.
-        var homeServer: HomeServerSession?
+        var homeServer: HomeServerSession? = nil
     }
 
     /// A home-server copy resolves through the server (direct play or transcode).
@@ -138,6 +138,23 @@ final class StreamsModel: ObservableObject {
         } catch {
             return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription, homeServer: nil)
         }
+    }
+
+    /// use-auto-candidates: indexes into `streams` worth firing without asking, best first.
+    func autoCandidates(meta: Meta, episode: AnyJSON?) async -> [Int] {
+        let p = ProfilesStore.shared.active
+        let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
+        let anime = meta.type == "anime" || ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) }
+        return (try? await HarborEngine.shared.call("streamsRoom.autoCandidates", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep, anime, nil as [String]?])) ?? []
+    }
+
+    /// use-pick-handler savePlayback: remember what played for next time's instant play.
+    func remember(_ stream: ScoredStream, meta: Meta, episode: AnyJSON?, url: String?) async {
+        let p = ProfilesStore.shared.active
+        let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
+        _ = try? await HarborEngine.shared.callJSON("streamsRoom.rememberPlayback", [.string(token), .string(p?.id ?? "default"), .bool(p?.linked ?? true),
+            (try? JSONDecoder().decode(AnyJSON.self, from: JSONEncoder().encode(meta))) ?? .null, .number(Double(stream.index)), url.map { .string($0) } ?? .null,
+            season.map { .number(Double($0)) } ?? .null, ep.map { .number(Double($0)) } ?? .null])
     }
 
     func resolve(_ stream: ScoredStream) async -> Resolved {

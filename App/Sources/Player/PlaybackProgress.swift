@@ -20,6 +20,8 @@ struct PlaybackContext {
     var imdbId: String?
     var imdbVerified: Bool = false
     var homeServer: HomeServerSession? = nil
+    /// use-bridge-load hasExplicitStart: a source switch (or a server's own position) starts here.
+    var explicitStartSec: Double? = nil
 
     /// progress-sync.ts report(): position, or "watched" once, to the home server (writeProgress only).
     func reportHomeServer(positionSec: Double, durationSec: Double, watched: Bool) async {

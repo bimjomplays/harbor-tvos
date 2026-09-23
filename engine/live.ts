@@ -13,6 +13,7 @@ import { removePinsForSource } from "@/lib/iptv/pins";
 import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
+import { hydrateShortEpg } from "@/lib/iptv/xtream-short-epg";
 import { bpChannelLabel, bpGroupLabel } from "@/views/big-picture/bp-guide-title";
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
 import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
@@ -226,6 +227,27 @@ export async function loadEpg(playlistId: string, force = false): Promise<{ chan
     epgCache.set(playlistId, { index: held?.index ?? { byChannel: new Map(), fetchedAt: 0 }, url, loading: null });
     throw e;
   }
+}
+
+/**
+ * views/live/hooks/use-xtream-epg-fallback: an Xtream source with no usable XMLTV answers
+ * get_short_epg per visible channel (cap 120), merged into the guide index.
+ */
+const SHORT_EPG_CAP = 120;
+export async function loadShortEpg(playlistId: string, channelIds: string[]): Promise<{ hydrated: number }> {
+  const pl = readPlaylists().find((p) => p.id === playlistId);
+  if (!pl?.xtream) return { hydrated: 0 };
+  const all = loaded.get(playlistId) ?? [];
+  const held = epgCache.get(playlistId);
+  const base = held?.index ?? null;
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const subset = channelIds.map((id) => byId.get(id)).filter((c): c is IptvChannel => !!c).slice(0, SHORT_EPG_CAP);
+  const before = base ? base.byChannel.size : 0;
+  const creds = { base: pl.xtream.server, username: pl.xtream.username, password: pl.xtream.password };
+  const next = await hydrateShortEpg(creds, subset, base);
+  if (!next || next === base) return { hydrated: 0 };
+  epgCache.set(playlistId, { index: next, url: held?.url ?? "", loading: null });
+  return { hydrated: next.byChannel.size - before };
 }
 
 function summarize(index: EpgIndex, url: string) {

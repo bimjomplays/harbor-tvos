@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, tmdb, stremio, harbor, layout, subtitles, done }
+    enum Step: Int, CaseIterable { case language, tmdb, streaming, stremio, harbor, layout, subtitles, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
 
@@ -40,6 +40,7 @@ struct OnboardingView: View {
         switch step {
         case .language: ("Language", "Choose your language", "Harbor speaks this everywhere. You can change it later in Settings.")
         case .tmdb: ("Artwork and rows", "Connect TMDB", "Free, two minutes. Unlocks Trending, In Theaters, Top Rated and every service rail.")
+        case .streaming: ("Your services", "Which services do you have?", "Their rows show on Home and Discover. Turn off the ones you don't use.")
         case .stremio: ("Your library", "Bring in your library", "Your Continue Watching, your watchlist and your addons.")
         case .harbor: ("Harbor account", "Sign in to Harbor", "Sync your profile, themes, lists and friends. You can do this any time.")
         case .layout: ("Home", "How should the home screen read?", "Harbor leads with one big title. Classic leads with rows.")
@@ -57,6 +58,8 @@ struct OnboardingView: View {
             }
         case .tmdb:
             TmdbKeyForm(done: { advance() }, skip: { advance() })
+        case .streaming:
+            StreamingServicesStep(hasKey: !settings.slice.tmdbKey.isEmpty) { advance() }
         case .stremio:
             StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
         case .harbor:
@@ -221,5 +224,63 @@ struct HarborSignInForm: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+
+/// onboarding/steps/bp-step-streaming.tsx: every service as a chip, on/off, through the BP settings
+/// catalog's "service" control (settingsRoom.commit toggles settings.streaming).
+struct StreamingServicesStep: View {
+    let hasKey: Bool
+    let done: () -> Void
+    @State private var items: [BPSettingsModel.MultiItem] = []
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(14)) {
+            if items.isEmpty {
+                if loaded { BPNote(text: "No services to choose from on this profile.") } else { ProgressView().tint(BP.inkMuted) }
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(150)), spacing: BP.px(6)), count: 6), spacing: BP.px(6)) {
+                    ForEach(items) { i in
+                        Button { Task { await toggle(i) } } label: {
+                            HStack(spacing: BP.px(6)) {
+                                if let tint = i.tint { Circle().fill(Color(css: tint) ?? BP.ink).frame(width: BP.px(8), height: BP.px(8)) }
+                                Text(i.label).font(BP.sans(13, i.on ? .bold : .semibold)).lineLimit(1)
+                                if !i.on { Text("Off").font(BP.sans(9, .bold)).foregroundStyle(BP.inkSubtle) }
+                            }
+                            .foregroundStyle(i.on ? BP.ink : BP.inkSubtle)
+                            .padding(.horizontal, BP.px(12)).frame(width: BP.px(150), height: BP.px(46))
+                            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(i.on ? BP.panel2 : BP.panel))
+                            .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).strokeBorder(i.on ? BP.edge2 : BP.edge, lineWidth: 1))
+                            .opacity(i.on ? 1 : 0.55)
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                    }
+                }
+                .focusSection()
+            }
+            BPNote(text: hasKey ? "\(items.filter(\.on).count) on" : "These rows need a TMDB key before they show anything.")
+            HStack(spacing: BP.px(12)) {
+                Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
+                Button("Skip") { done() }.buttonStyle(BPActionStyle())
+            }
+        }
+        .task { await load() }
+    }
+
+    private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
+
+    private func load() async {
+        let p = profile
+        let controls: [BPSettingsModel.Control] = (try? await HarborEngine.shared.call("settingsRoom.controls", ["services", p.id, p.linked])) ?? []
+        items = controls.first { $0.id == "service" }?.items ?? []
+        loaded = true
+    }
+
+    private func toggle(_ i: BPSettingsModel.MultiItem) async {
+        let p = profile
+        _ = try? await HarborEngine.shared.callJSON("settingsRoom.commit", [.string("service"), .string(i.value), .string(p.id), .bool(p.linked)])
+        await load()
     }
 }

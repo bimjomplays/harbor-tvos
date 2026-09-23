@@ -73,7 +73,13 @@ struct CatalogPageView: View {
             struct Page: Decodable { var metas: [Meta]; var status: String }
             let p = ProfilesStore.shared.active
             let genre = String(row.key.dropFirst("genre:".count))
-            let got: Page = (try? await HarborEngine.shared.call("discoverRoom.genrePage", [p?.id ?? "default", p?.linked ?? true, genre, page + 1])) ?? Page(metas: [], status: "failed")
+            var got: Page = (try? await HarborEngine.shared.call("discoverRoom.genrePage", [p?.id ?? "default", p?.linked ?? true, genre, page + 1])) ?? Page(metas: [], status: "failed")
+            // use-bp-genre-grid: a page the anime filter emptied is not the end; skip past it (bounded).
+            var skipped = 0
+            while got.status == "filtered", skipped < 3 {
+                page += 1; skipped += 1
+                got = (try? await HarborEngine.shared.call("discoverRoom.genrePage", [p?.id ?? "default", p?.linked ?? true, genre, page + 1])) ?? Page(metas: [], status: "failed")
+            }
             next = got.metas
             if next.isEmpty, metas.isEmpty {
                 switch got.status {

@@ -131,6 +131,8 @@ async function simklEntries(force: boolean): Promise<{ entries: Entry[]; status:
 export type FeedInput = {
   tab: Tab; profileId: string; linked: boolean; authKey: string | null;
   sort?: SortKey; flat?: boolean; type?: TypeKey; query?: string; group?: string; limit?: number; force?: boolean;
+  /** History only (bp-library "Episodes / Posters"): false collapses a show's episodes into one card. */
+  episodes?: boolean;
 };
 
 /** One finished library page: filtered + sorted + grouped + capped, with chips data. */
@@ -159,6 +161,12 @@ export async function feed(input: FeedInput) {
         ...own.map((e) => ({ key: e.key, meta: e.meta, date: e.date, progress: e.progress, season: e.season, episode: e.episode, watched: e.watched })),
         ...extra.map((e) => ({ key: e.key, meta: e.meta, date: e.date })),
       ];
+      if (input.episodes === false) {
+        // history-tab "Posters": one card per title, the most recent episode's date and progress.
+        const byTitle = new Map<string, (typeof entries)[number]>();
+        for (const e of entries.slice().sort((a, b) => (b.date ?? 0) - (a.date ?? 0))) if (!byTitle.has(e.meta.id)) byTitle.set(e.meta.id, e);
+        entries = Array.from(byTitle.values());
+      }
     } else {
       const merged = mergeWatchlist(readLocalEntries(), filterLibrary(keep, s.libraryBookmarkedOnly !== false, tab), tr.watchlist);
       entries = merged.map((m) => ({ key: m.key, meta: m.meta, date: m.date }));

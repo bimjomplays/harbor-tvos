@@ -26,6 +26,8 @@ final class LibraryModel: ObservableObject {
     @Published var type = "all"
     @Published var sort = "recent"
     @Published var flat = false
+    /// bp-library "Episodes / Posters" for History (harbor.history.view).
+    @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") != "posters"
     @Published var group: String?
     @Published var query = ""
     @Published var showFilters = false
@@ -48,7 +50,7 @@ final class LibraryModel: ObservableObject {
         let p = profile
         let input: AnyJSON = .object([
             "tab": .string(tab), "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,
-            "sort": .string(sort), "flat": .bool(flat), "type": .string(type), "query": .string(query),
+            "sort": .string(sort), "flat": .bool(flat), "type": .string(type), "query": .string(query), "episodes": .bool(episodes),
             "group": group.map { .string($0) } ?? .null, "limit": .number(Double(limit)), "force": .bool(force),
         ])
         if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]) {
@@ -65,6 +67,7 @@ final class LibraryModel: ObservableObject {
         Task { _ = try? await HarborEngine.shared.callJSON("libraryRoom.setSort", [.string(s), .string(p.id), .bool(p.linked)]); await load() }
     }
     func toggleFlat() { flat.toggle(); Task { await load() } }
+    func set(episodes on: Bool) { episodes = on; try? Prefs.set(on ? "episodes" : "posters", for: "harbor.history.view"); Task { await load() } }
     func set(group g: String?) { group = g; limit = 60; Task { await load() } }
     func search(_ q: String) { query = q; limit = 60; Task { await load() } }
     func more() { limit += 60; Task { await load() } }
@@ -152,6 +155,9 @@ struct LibraryView: View {
             filterRow("Type", [("all", "All \(model.feed?.counts.all ?? 0)"), ("movie", "Movies \(model.feed?.counts.movie ?? 0)"), ("series", "Series \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
             filterRow("Sort", [("recent", "Recent"), ("title", "Title"), ("year", "Year")], active: model.sort) { model.set(sort: $0) }
             filterRow("View", [("grouped", "Grouped"), ("flat", "One list")], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
+            if model.tab == "history" {
+                filterRow("Show", [("episodes", "Episodes"), ("posters", "Posters")], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
+            }
             if let groups = model.feed?.groups, !groups.isEmpty {
                 filterRow(model.tab == "lists" ? "List" : "Group", [("", "All")] + groups.map { ($0.id, $0.label) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
             }

@@ -16,6 +16,11 @@ struct PlayerScreen: View {
     /// `true` when the file played to its end (next-episode logic keys off this).
     /// source-error-card "Pick another source": the caller reopens the picker after this closes.
     var onChooseAnother: (() -> Void)? = nil
+    /// bp-player-sources "Switch source": reopen the picker and resume the new stream here.
+    var onSwitchSource: ((Double) -> Void)? = nil
+    @State private var subDelay: Double = 0
+    @State private var subScale: Double = 1
+    @State private var loadingSince = Date()
     let onClose: (_ endedNaturally: Bool) -> Void
     @State private var reloadToken = 0
 
@@ -105,10 +110,11 @@ struct PlayerScreen: View {
                     default: wake()
                     }
                 }
-            if chrome, resumePending == nil, !leaveConfirm, status.state != "error" { chromeView.transition(.opacity) }
+            if chrome, resumePending == nil, !leaveConfirm, status.state != "error" || isLive { chromeView.transition(.opacity) }
             if let resumePending { resumePrompt(resumePending).transition(.opacity) }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
+            if status.state == "loading", !isLive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
             if let seg = activeSegment {
                 skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
             } else if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
@@ -127,7 +133,7 @@ struct PlayerScreen: View {
         .onPlayPauseCommand { togglePause() }
         .onExitCommand {
             if resumePending != nil { acknowledgeResume(true) }          // Back takes the default action (bp-resume-prompt)
-            else if leaveConfirm { leaveConfirm = false; focus = .surface; wake() }
+            else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
             else if panel != nil { panel = nil; focus = .surface; wake() }
             else if focus == .chip("skip") { focus = .surface }
             else if chrome { chrome = false }
@@ -140,8 +146,9 @@ struct PlayerScreen: View {
             // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.
             let slice = SettingsBridge.shared.slice
             var sec = (!isLive && (slice.resumePlayback ?? true)) ? (await context?.startPosition() ?? 0) : 0
-            // A home-server copy carries the server's own position (use-bridge-load hasExplicitStart).
-            if let h = context?.homeServer, h.resumeSec > 0 { sec = h.resumeSec }
+            // A source switch or a home-server copy carries its own position (use-bridge-load hasExplicitStart).
+            if let x = context?.explicitStartSec, x > 0 { sec = x }
+            else if let h = context?.homeServer, h.resumeSec > 0 { sec = h.resumeSec }
             if sec <= 5 { sec = 0 }
             if sec > 30, slice.resumePrompt ?? false, !isLive {
                 resumePending = sec
@@ -266,6 +273,7 @@ struct PlayerScreen: View {
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
                 if !isLive { chip(anime4kChipLabel, "sparkles") { open(.anime4k) } }
+                if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
                 Spacer()
                 Text(isLive ? "LIVE" : "\(fmt(snap.position)) / \(fmt(snap.duration))").font(BP.sans(14, .semibold)).foregroundStyle(isLive ? BP.live : BP.ink).monospacedDigit()
             }
@@ -387,6 +395,22 @@ struct PlayerScreen: View {
                 if list.isEmpty && which == .audio { BPNote(text: "No audio tracks reported yet.") }
                 if which == .subtitles {
                     Divider().overlay(BP.edge2).padding(.vertical, BP.px(6))
+                    // bp-subtitle-tune: manual offset steps and a size stepper.
+                    Text("Manual offset · \(subDelay == 0 ? "in sync" : String(format: "%+.1f s", subDelay))").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
+                    HStack(spacing: BP.px(6)) {
+                        ForEach([-1.0, -0.1, 0.1, 1.0], id: \.self) { step in
+                            Button(String(format: "%@%.1fs", step > 0 ? "+" : "", step)) { nudgeSubs(step) }.buttonStyle(BPActionStyle()).focused($focus, equals: .chip("sub\(step)"))
+                        }
+                        Button("Reset") { subDelay = 0; controller?.setSubDelay(0); wake() }.buttonStyle(BPActionStyle()).disabled(subDelay == 0)
+                    }
+                    Text("Subtitles late? Nudge plus. Early? Nudge minus.").font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
+                    HStack(spacing: BP.px(6)) {
+                        Text("Size").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
+                        Button("−") { subScale = max(0.5, subScale - 0.1); controller?.setSubScale(subScale); wake() }.buttonStyle(BPActionStyle())
+                        Text(String(format: "%.0f%%", subScale * 100)).font(BP.sans(12)).foregroundStyle(BP.ink).monospacedDigit()
+                        Button("+") { subScale = min(2.5, subScale + 0.1); controller?.setSubScale(subScale); wake() }.buttonStyle(BPActionStyle())
+                    }
+                    Divider().overlay(BP.edge2).padding(.vertical, BP.px(6))
                     Button(onlineState == "searching" ? "Searching…" : "Search online") { Task { await searchOnline() } }
                         .buttonStyle(BPActionStyle()).disabled(onlineState == "searching")
                         .focused($focus, equals: .track(-2))
@@ -434,6 +458,35 @@ struct PlayerScreen: View {
     }
 
     private func refreshTracks() { tracks = controller?.tracks() ?? [] }
+
+    private func nudgeSubs(_ step: Double) {
+        subDelay = (subDelay + step * 10).rounded() / 10
+        controller?.setSubDelay(subDelay)
+        wake()
+    }
+
+    /// bp-connecting: while the stream is still opening, elapsed time and a way out; after 22 s the
+    /// copy admits it is still looking. Focus moves here only once a start is clearly slow.
+    private var connectingCard: some View {
+        let elapsed = Int(Date().timeIntervalSince(loadingSince))
+        return VStack(alignment: .leading, spacing: BP.px(10)) {
+            Spacer()
+            HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Connecting…").font(BP.display(28)).foregroundStyle(BP.ink) }
+            Text(elapsed >= 22 ? "Still looking. Some sources take a while to answer." : "The player is opening the stream. \(elapsed) s").font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+            if elapsed >= 8 {
+                HStack(spacing: BP.px(10)) {
+                    chip("Go back", "chevron.left") { finish(natural: false) }
+                    chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); loadingSince = Date(); reloadToken += 1 }
+                    if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; finish(natural: false); go?(snap.position) } }
+                }
+                .focusSection()
+                .onAppear { focusLater(.chip("Go back")) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BP.gutter).padding(.bottom, BP.px(20))
+        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.5), BP.void_.opacity(0.9)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+    }
 
     /// OpenSubtitles v3 / Wyzie / subtitle addons through the engine (lib/subtitles/search.ts).
     private func searchOnline() async {

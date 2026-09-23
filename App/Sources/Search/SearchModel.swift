@@ -42,6 +42,27 @@ final class SearchModel: ObservableObject {
     @Published private(set) var topMatch: Meta?
     @Published private(set) var people: [Results.Person] = []
     @Published private(set) var addonHits: [Results.AddonHit] = []
+    /// search-context RECENT_KEY: the last eight queries that found something.
+    @Published private(set) var recent: [String] = Prefs.get([String].self, for: "harbor.search.recent") ?? []
+    /// bp-search idle "Suggested": posters from the hero feed while the field is empty.
+    @Published private(set) var suggestions: [Meta] = []
+
+    func loadSuggestions() async {
+        guard suggestions.isEmpty else { return }
+        let metas: [Meta] = (try? await HarborEngine.shared.call("feed.hero", ["trending"])) ?? []
+        var seen: Set<String> = []
+        suggestions = metas.filter { $0.poster != nil && seen.insert($0.id).inserted }.prefix(60).map { $0 }
+        await CardMarksStore.shared.refresh(suggestions)
+    }
+
+    private func noteRecent(_ q: String) {
+        var list = recent.filter { $0.caseInsensitiveCompare(q) != .orderedSame }
+        list.insert(q, at: 0)
+        recent = Array(list.prefix(8))
+        try? Prefs.set(recent, for: "harbor.search.recent")
+    }
+
+    func clearRecent() { recent = []; try? Prefs.set([String](), for: "harbor.search.recent") }
     private var engineRequestId = 0
     private var unsubscribe: (() -> Void)?
 
@@ -120,6 +141,7 @@ final class SearchModel: ObservableObject {
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done
+            if !out.isEmpty || !(results.liveTv ?? []).isEmpty || !(results.people ?? []).isEmpty { noteRecent(q) }
         } catch {
             guard mine == requestId else { return }
             status = .failed(error.localizedDescription)
