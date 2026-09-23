@@ -6,8 +6,17 @@ import { saveLocalCw, clearLocalCw } from "@/lib/local-cw";
 import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
-import { canonicalVideoOrder } from "@/lib/stremio-watched";
 import { inflateSync } from "fflate";
+
+// lib/stremio-watched.ts canonicalVideoOrder (not exported): Stremio indexes the watched
+// bitfield against videos sorted by (season, episode, released); bit i is that position.
+type Vid = NonNullable<Meta["videos"]>[number];
+const ordKey = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : -Infinity);
+const releasedMs = (v: Vid) => { const r = v?.released ?? v?.firstAired; if (!r) return -Infinity; const t = Date.parse(r); return Number.isNaN(t) ? -Infinity : t; };
+const cmpNum = (a: number, b: number) => (a === b ? 0 : a < b ? -1 : 1);
+function canonicalVideoOrder(videos: Vid[]): Vid[] {
+  return [...videos].sort((a, b) => cmpNum(ordKey(a?.season), ordKey(b?.season)) || cmpNum(ordKey(a?.episode), ordKey(b?.episode)) || cmpNum(releasedMs(a), releasedMs(b)));
+}
 
 const WATCHED_RATIO = 0.85;      // use-resume-autosave.ts:33 / playback-end.ts:3
 const CREDITS_RATIO = 0.9;       // use-stremio-sync.ts:19 (cloud flaggedWatched)
@@ -128,7 +137,7 @@ export async function watchedEpisodes(authKey: string | null, meta: Meta): Promi
     return [];
   }
   const bit = (i: number) => i >= 0 && i < bytes.length * 8 && (bytes[i >> 3] & (1 << (i & 7))) !== 0;
-  const sorted = canonicalVideoOrder(meta.videos as never);
+  const sorted = canonicalVideoOrder(meta.videos);
   const anchorIdx = sorted.findIndex((v) => v.id === anchorVideoId);
   const offset = anchorLength - anchorIdx - 1;
   const keys: string[] = [];

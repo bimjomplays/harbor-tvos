@@ -220,6 +220,7 @@ if (!OFFLINE) {
   } else {
     console.log("  (skipped rooms.anime: Jikan unreachable right now)");
   }
+  r.eq("player.watchedEpisodes without auth", await engine.player.watchedEpisodes(null, shaw), []);
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 
