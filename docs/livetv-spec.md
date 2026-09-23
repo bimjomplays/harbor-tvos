@@ -28,18 +28,9 @@ export type StoredPlaylist = {
   xtream?: { server: string; username: string; password: string };
 };
 ```
-`src/lib/settings/types.ts:661-671` (the legacy/settings-blob shape, structurally identical):
-```ts
-iptvPlaylists: Array<{
-  id: string;
-  name: string;
-  url: string;
-  epgUrl?: string;
-  kind?: "m3u" | "xtream" | "epg";
-  xtream?: { server: string; username: string; password: string };
-}>;
-```
-Default: `[]` (`src/lib/settings/defaults.ts:557`). `src/lib/iptv/playlist-entry.ts:13`:
+`src/lib/settings/types.ts:661-671` has `iptvPlaylists: Array<{...}>` with the identical
+field set (legacy/settings-blob shape). Default: `[]` (`src/lib/settings/defaults.ts:557`).
+`src/lib/iptv/playlist-entry.ts:13`:
 `export type StoredPlaylist = Settings["iptvPlaylists"][number];` — a third alias pointing at
 the settings-blob shape, used only by the add/edit form's `materializePlaylistEntry`.
 
@@ -57,20 +48,9 @@ settings blob (`:93-102`) — so a failed dedicated-key write never destroys the
 `adoptLegacyPlaylists()` (`:110-120`) handles a stranded legacy array found after the fact
 (stored entries win on conflict).
 
-Sources are converted to the runtime shape `IptvPlaylistSource` for loading
-(`src/lib/iptv/types.ts:24-35`):
-```ts
-export type IptvPlaylistSource = {
-  id: string;
-  name: string;
-  url: string;
-  epgUrl?: string;
-  kind?: "m3u" | "xtream" | "epg";
-  xtream?: { server: string; username: string; password: string };
-};
-```
-Identical field set to `StoredPlaylist`; Big Picture builds it straight from settings
-(`src/views/big-picture/use-bp-live.ts:143-156`).
+Sources are converted to the runtime shape `IptvPlaylistSource`
+(`src/lib/iptv/types.ts:24-35`, identical field set to `StoredPlaylist` — see §5) for
+loading; Big Picture builds it straight from settings (`use-bp-live.ts:143-156`).
 
 ### 1.2 Adding a playlist
 
@@ -823,29 +803,14 @@ export type OpenRect = { cssLeft: number; cssTop: number; cssWidth: number; cssH
   cssViewW: number; cssViewH: number };
 ```
 
-Provider detection (`src/lib/iptv/ingest/detect.ts:5-9`):
-```ts
-export type ProviderShape =
-  | { kind: "xtream"; creds: XtreamCreds }
-  | { kind: "m3u"; url: string; middleware: boolean }
-  | { kind: "epg"; url: string }
-  | { kind: "invalid"; reason: string };
-```
+`ProviderShape` — see §1.3 (`src/lib/iptv/ingest/detect.ts:5-9`). `StoredPlaylist` — see §1.1.
+`PlaylistFormValue` — see §1.2 (`src/lib/iptv/playlist-entry.ts:5-11`).
 
 Xtream (`src/lib/iptv/xtream.ts:4-8,10,73-76`):
 ```ts
 export type XtreamCreds = { base: string; username: string; password: string };
 export type XtreamContainer = "ts" | "m3u8";
 export type XtreamServerCaps = { allowedFormats: string[]; streamBase: string };
-```
-
-Playlist form (`src/lib/iptv/playlist-entry.ts:3,5-11`):
-```ts
-export type PlaylistKind = "m3u" | "xtream" | "epg";
-export type PlaylistFormValue = {
-  name: string; kind: PlaylistKind; url: string; epgUrl: string;
-  xtream: { server: string; username: string; password: string };
-};
 ```
 
 Guide metrics (`src/views/big-picture/bp-guide-geometry.ts:15-24`):
@@ -860,116 +825,77 @@ export type GuideMetrics = {
 
 ## 6. FRAMEWORK-FREE vs. REACT/DOM/TAURI-BOUND
 
-**Bundleable as-is in the JS engine** (pure TS, no `react`/DOM/`@tauri-apps` imports — only
-`type`-only imports of React-adjacent types don't count against this):
+**Bundleable as-is** (pure TS, no `react`/DOM imports; `type`-only imports don't count):
 - `src/lib/iptv/m3u.ts` — pure string parsing, imports only `type IptvChannel` (`:1`).
-- `src/lib/iptv/xmltv.ts` — uses `fetch`/`ReadableStream`/`TextDecoder`/`DecompressionStream`
-  (standard Web APIs, no DOM/React) plus one dynamic `import("@tauri-apps/plugin-http")` and
-  one dynamic `import("@/lib/safe-fetch")` gated behind `"__TAURI_INTERNALS__" in window`
-  (`:8`) — the parsing functions (`parseXmltv`, `drainBlocks`, `parseXmltvTime`,
-  `indexProgramsByChannel`, `findCurrent`) have zero framework dependency; only
-  `fetchAndParseXmltv`'s transport half touches Tauri, and does so defensively (falls back
-  to plain `fetch`).
-- `src/lib/iptv/xtream.ts` — same pattern: `xtreamFetchText` has the same Tauri-optional
-  dynamic import (`:94`); every other function (URL building, response parsing, base64
-  short-EPG decoding) is pure.
-- `src/lib/iptv/catchup.ts`, `src/lib/iptv/channel-headers.ts`, `src/lib/iptv/epg-resolver.ts`
-  (imports `epg-map.ts` for overrides and `settings-bridge.ts`/`rtl.ts`, both plain
-  `localStorage`+regex, no React), `src/lib/iptv/ingest/detect.ts`,
-  `src/lib/iptv/ingest/xtream-creds.ts`, `src/lib/iptv/vod-classify.ts` — all pure functions
-  over plain data.
-- `src/lib/iptv/bounded-response.ts` — Web Streams API only (`fetch`, `AbortController`,
-  `ReadableStreamDefaultReader`), no framework.
-- `src/lib/iptv/playlists-store.ts`, `src/lib/iptv/epg-map.ts`, `src/lib/iptv/favorites.tsx`
-  (the non-JSX exports), `src/lib/iptv/group-order.ts`, `src/lib/iptv/pins.ts`,
-  `src/lib/iptv/channel-stats.ts`, `src/lib/iptv/country-prefs.ts` — the read/write/persist
-  logic is plain `localStorage` + `JSON`; each additionally exports a
-  `useSyncExternalStore`-based React hook (`usePlaylists`, `useEpgMapVersion`,
-  `useFavorites`) that is **not** bundleable, but the underlying functions are trivially
-  separable (the hooks are thin wrappers, not load-bearing logic).
-- `src/lib/iptv/persistent-cache.ts` — `indexedDB` only, no framework.
-- `src/lib/iptv/playback-source.ts` — pure object construction; its only import besides
-  `IptvChannel` is `type PlayerSrc` (type-only, erased at build time).
-- `src/lib/player/live-src.ts` — pure predicate function.
+- `src/lib/iptv/xmltv.ts`, `src/lib/iptv/xtream.ts` — parsing/URL-building functions are
+  pure; only the transport half (`fetchAndParseXmltv`, `xtreamFetchText`) has a dynamic
+  `import("@tauri-apps/plugin-http")` gated behind `"__TAURI_INTERNALS__" in window`,
+  falling back to plain `fetch` (`xmltv.ts:8`, `xtream.ts:94`).
+- `src/lib/iptv/catchup.ts`, `channel-headers.ts`, `epg-resolver.ts` (+ its deps
+  `epg-map.ts`, `settings-bridge.ts`, `rtl.ts`, all plain `localStorage`+regex),
+  `ingest/detect.ts`, `ingest/xtream-creds.ts`, `vod-classify.ts` — pure functions over
+  plain data.
+- `src/lib/iptv/bounded-response.ts` — Web Streams API only, no framework.
+- `src/lib/iptv/playlists-store.ts`, `epg-map.ts`, `favorites.tsx` (non-JSX exports),
+  `group-order.ts`, `pins.ts`, `channel-stats.ts`, `country-prefs.ts` — read/write/persist
+  logic is plain `localStorage`+`JSON`; each also exports a `useSyncExternalStore` hook
+  that is **not** bundleable, but is a thin, separable wrapper over the pure functions.
+- `src/lib/iptv/persistent-cache.ts` — `indexedDB` only. `src/lib/iptv/playback-source.ts` —
+  pure object construction. `src/lib/player/live-src.ts` — pure predicate.
 
-**React/DOM-bound** (would need a from-scratch native-UI reimplementation, not a bundle):
-- Every `src/views/big-picture/bp-*.tsx` / `use-bp-*.ts` file — all React components/hooks,
-  many reading `ResizeObserver`, `document.querySelector`, DOM `dataset` attributes for
-  focus management (`bp-guide-block.tsx`, `use-bp-guide-nav.ts`), or CSS custom
-  properties/`clamp()` for ten-foot-safe sizing. None of this transfers to a native
-  SwiftUI/UIKit tvOS focus engine — port the **geometry constants and algorithms**
-  (§3.2–3.5), not the components.
-- `src/lib/dvr/provider.tsx`, `src/lib/multiview/bridge.ts`, `src/lib/multiview/store.ts` —
-  Tauri `invoke`/`listen`-bound (desktop-only IPC to Rust); `store.ts`'s pure `clampSplit*`
-  helpers and the `Layout`/slot-count constants are the only portable fragments.
-- `src/lib/iptv/store.ts`, `src/lib/iptv/epg-store.ts`, `src/lib/iptv/ingest/load.ts` — the
-  caching/orchestration logic itself is framework-free, but each has a Tauri-conditional
-  fetch branch (same pattern as xmltv.ts/xtream.ts) and is designed around the module-level
-  singleton-cache-plus-`useSyncExternalStore` pattern; portable as algorithms, would need
-  re-wiring for a different state/subscription model.
-- `src/views/player/hooks/use-live-channel-overlay.ts`,
-  `src/views/player/live-layer.tsx`, `src/components/player/live-channel-overlay/*`,
-  `src/components/player/dvr-modal/*`, `src/components/player/live-channel-dvr.tsx` — all
-  React, all desktop-player-only per §3.9/§3.11.
+**React/DOM/Tauri-bound** (needs a from-scratch native reimplementation, not a bundle):
+- Every `src/views/big-picture/bp-*.tsx`/`use-bp-*.ts` file — React components/hooks using
+  `ResizeObserver`, `document.querySelector`, DOM `dataset` focus attributes, and CSS
+  `clamp()` for ten-foot sizing. Port the **geometry constants and algorithms** (§3.2–3.5),
+  not the components.
+- `src/lib/dvr/provider.tsx`, `src/lib/multiview/bridge.ts`/`store.ts` — Tauri IPC-bound;
+  only `store.ts`'s `clampSplit*` helpers and `Layout`/slot-count constants are portable.
+- `src/lib/iptv/store.ts`, `epg-store.ts`, `ingest/load.ts` — caching/orchestration logic is
+  framework-free but built around a module-singleton-cache + `useSyncExternalStore`
+  pattern; portable as algorithms, needs re-wiring for a different subscription model.
+- `use-live-channel-overlay.ts`, `live-layer.tsx`, `live-channel-overlay/*`, `dvr-modal/*`,
+  `live-channel-dvr.tsx` — React, desktop-player-only (§3.9/§3.11).
 
 ---
 
 ## 7. GOTCHAS FOR A NATIVE PORT
 
-1. **Catch-up/replay is desktop-only dead code from Big Picture's perspective.** The
-   builder (`buildCatchupUrl`) is complete and framework-free, but nothing in the TV guide
-   calls it — tapping a past program just tunes live (§3.8). Decide explicitly whether the
-   tvOS guide should wire this up (it would be new integration work, not a port) or
-   deliberately match current TV behavior (past cell → live).
-2. **No channel up/down exists anywhere**, only "jump back to the last channel" (a 12-entry
-   undo stack), and it's desktop-keyboard-only (§3.9). A tvOS remote channel-up/down control
-   is new UX, not a port.
-3. **The live HUD is nearly bare**: no channel logo, no now/next programme panel, just a red
-   "LIVE" badge on the scrub bar (§4.2). `liveProgram` is threaded all the way from channel
-   selection into `PlayerSrc` but is only ever read by the Discord presence hook — if the
-   Stage 8 design wants a now/next overlay in the native player, that's fresh design work;
-   the *data* (`liveProgram`, and full EPG lookups via `epgProgramsForChannel`) is already
-   available at hand-off time.
-4. **Multiview has no portable implementation.** It's Windows-only, built from N separate
-   OS-level windows geometrically stacked over the app window and driven by Tauri IPC per
-   frame of movement (§3.10). A tvOS "up to 4" grid needs a genuinely new design — most
-   likely N libmpv render contexts composited into one view — with only the layout
-   constants (`MAX_SLOTS=4`, the four `Layout` variants, split-ratio bounds) as reusable
-   reference.
-5. **DVR is 100% Tauri `invoke`/`listen` IPC** to a Rust recorder with no in-JS recording
-   logic to port (§3.11) — the tvOS equivalent will need its own native recording pipeline
-   (e.g. writing the mpv demux stream to disk, or a parallel HTTP pull), with only the
-   `DvrSession`/`DvrStartArgs` shape and event semantics (`progress`/`done`/`error`) as a
-   contract reference.
-6. **`isLive: true` is set for catch-up playback too** (`use-live-actions.ts:59`) — i.e. the
-   existing code conflates "should use the mpv live cache/reconnect profile" with "is a live
-   channel." A catch-up/VOD-from-timeshift stream is finite and seekable; reusing the live
-   cache profile for it (`cache-secs=30`, no seeking assumptions, aggressive reconnect) may
-   be wrong for a native catch-up player and is worth re-deciding rather than copying as-is.
-7. **Xtream credentials are stored in two places for the same playlist**: both structured
-   (`xtream: {server,username,password}`) and pre-built into `url`/`epgUrl` query strings
-   (§1.2) — the native port's storage model should decide which is the source of truth
-   rather than keeping both in sync by convention as Harbor does.
-8. **EPG channel matching can silently return zero programs** for a channel whose `tvg-id`
-   is duplicated across the playlist and whose name doesn't share tokens with that id
-   (§2.4, step 2) — this is deliberate (avoids a wrong-channel EPG match) but means "channel
-   has an EPG id" doesn't guarantee "channel shows programme data"; the guide's `null`
-   program / gap-cell path (§3.2) must be exercised for real playlists, not just for
-   genuinely EPG-less channels.
+1. **Catch-up/replay is desktop-only dead code from Big Picture's view.** `buildCatchupUrl`
+   is complete and framework-free, but the TV guide never calls it — tapping a past program
+   just tunes live (§3.8). Decide explicitly whether to wire it up (new integration work) or
+   match current TV behavior (past cell → live).
+2. **No channel up/down exists anywhere**, only desktop-keyboard "jump back to the last
+   channel" (a 12-entry undo stack, §3.9). A remote channel-up/down control is new UX.
+3. **The live HUD is nearly bare**: no channel logo, no now/next panel, just a red "LIVE"
+   badge on the scrub bar (§4.2). `liveProgram` reaches `PlayerSrc` but is read only by the
+   Discord presence hook — the *data* is available at hand-off, a now/next overlay is not.
+4. **Multiview has no portable implementation.** Windows-only, built from N separate OS
+   windows geometrically stacked over the app and driven by per-frame Tauri IPC (§3.10). A
+   tvOS grid needs a new design (e.g. N libmpv render contexts in one view) — only
+   `MAX_SLOTS=4`, the four `Layout` variants, and split-ratio bounds are reusable reference.
+5. **DVR is 100% Tauri IPC** to a Rust recorder, no in-JS recording logic to port (§3.11) —
+   the native equivalent needs its own recording pipeline; only `DvrSession`/`DvrStartArgs`
+   and the `progress`/`done`/`error` event semantics are a contract reference.
+6. **`isLive: true` is set for catch-up playback too** (`use-live-actions.ts:59`) —
+   conflates "use the mpv live cache/reconnect profile" with "is a live channel." A
+   catch-up stream is finite and seekable; reusing the live cache profile for it is worth
+   re-deciding rather than copying as-is.
+7. **Xtream credentials are stored twice**: structured (`xtream: {server,username,password}`)
+   and pre-built into `url`/`epgUrl` query strings (§1.2) — pick one source of truth rather
+   than keeping both in sync by convention.
+8. **EPG matching can silently return zero programs** for a channel whose `tvg-id` is
+   duplicated playlist-wide and whose name shares no tokens with it (§2.4 step 2) —
+   deliberate (avoids a wrong match), but means "has an EPG id" ≠ "shows programme data";
+   exercise the `null`-program gap-cell path (§3.2) against real playlists.
 9. **The lane cache invalidates completely on `extendWindowBack`** (§3.2) — scrolling
-   backward in time remounts the entire visible guide in one commit. On tvOS this is worth
-   watching for frame drops with large channel counts; the JS implementation accepts this
-   and recovers focus via a deferred re-query rather than avoiding the remount.
-10. **Decorative/separator rows in M3U playlists are silently dropped** during parsing
-    (`isDecorativeRow`, §2.1) — a common IPTV playlist convention (channels named `━━━
-    SPORTS ━━━` as section headers) that a from-scratch parser would need to replicate or
-    channel counts/ordering will visibly differ from Harbor's.
-11. **`favicon`/logo, catch-up, and EPG override UI (the "match channel to EPG id" modal,
-    `src/views/live/guide/epg-match-modal.tsx`) were not opened in this pass** — only its
-    storage contract (`epg-map.ts`) was read. If the native port needs a manual
-    EPG-remapping UI, that screen's UX is **not found** in this document and needs a
-    separate pass.
-12. **No periodic background refresh** of playlists or EPG was found (§1.6) — a native
-    tvOS app that wants channel-list/EPG data to self-heal while idle (e.g. overnight)
-    would need to add its own scheduler; Harbor relies entirely on next-open staleness
-    checks and manual retry.
+   backward remounts the whole visible guide in one commit; watch for frame drops on tvOS
+   with large channel counts.
+10. **Decorative/separator rows are silently dropped** during M3U parsing
+    (`isDecorativeRow`, §2.1) — a common convention (`━━━ SPORTS ━━━` as a "channel") a
+    from-scratch parser must replicate or channel counts/order will visibly differ.
+11. **The manual EPG-remap UI (`src/views/live/guide/epg-match-modal.tsx`) was not opened**
+    in this pass, only its storage contract (`epg-map.ts`). **Not found** here — separate
+    pass needed if the port wants that screen.
+12. **No periodic background refresh** of playlists or EPG was found (§1.6) — Harbor relies
+    entirely on next-open staleness checks and manual retry; a self-healing tvOS scheduler
+    would be new.
