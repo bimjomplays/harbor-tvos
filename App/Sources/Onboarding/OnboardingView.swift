@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, tmdb, stremio, harbor, done }
+    enum Step: Int, CaseIterable { case language, tmdb, stremio, harbor, layout, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
 
@@ -42,6 +42,7 @@ struct OnboardingView: View {
         case .tmdb: ("Artwork and rows", "Connect TMDB", "Free, two minutes. Unlocks Trending, In Theaters, Top Rated and every service rail.")
         case .stremio: ("Your library", "Bring in your library", "Your Continue Watching, your watchlist and your addons.")
         case .harbor: ("Harbor account", "Sign in to Harbor", "Sync your profile, themes, lists and friends. You can do this any time.")
+        case .layout: ("Home", "How should the home screen read?", "Harbor leads with one big title. Classic leads with rows.")
         case .done: ("Ready", "You are set up", "Saved on this device. Another Harbor install starts fresh.")
         }
     }
@@ -59,6 +60,11 @@ struct OnboardingView: View {
             StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
         case .harbor:
             HarborSignInForm { advance() } skip: { advance() }
+        case .layout:
+            HStack(spacing: BP.px(16)) {
+                layoutCard("Harbor", "A hero up top, then Top 10, Trending, In Theaters and your service rows.", mode: "harbor")
+                layoutCard("Classic", "Continue Watching first, then your addon catalogs in install order.", mode: "classic")
+            }
         case .done:
             VStack(alignment: .leading, spacing: BP.px(16)) {
                 RecapRow(ok: !settings.slice.tmdbKey.isEmpty, text: settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta. Add a TMDB key in Settings whenever you want." : "TMDB connected")
@@ -70,6 +76,23 @@ struct OnboardingView: View {
                 BPNote(text: "Everything here took effect straight away, and it is saved on this device.")
             }
         }
+    }
+
+    /// bp-step-layout.tsx: two choice cards, applied instantly, auto-advance.
+    private func layoutCard(_ title: String, _ blurb: String, mode: String) -> some View {
+        Button {
+            Task { try? await settings.patch(["homeMode": .string(mode)]); advance() }
+        } label: {
+            VStack(alignment: .leading, spacing: BP.px(8)) {
+                Text(title).font(BP.display(22)).foregroundStyle(BP.ink)
+                Text(blurb).font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+                if settings.slice.homeMode == mode { Text("Current").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase) }
+            }
+            .padding(BP.px(20))
+            .frame(width: BP.px(280), height: BP.px(160), alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2))
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rMD))
     }
 
     private func advance() {

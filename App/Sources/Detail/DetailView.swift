@@ -117,6 +117,12 @@ struct DetailView: View {
                 }
                 .buttonStyle(BPActionStyle(primary: true))
                 .accessibilityIdentifier("detail-play")
+                if model.canWatchlist {
+                    Button { Task { await model.toggleWatchlist() } } label: {
+                        Label(model.inWatchlist ? "In Watchlist" : "Add to Watchlist", systemImage: model.inWatchlist ? "bookmark.fill" : "bookmark")
+                    }
+                    .buttonStyle(BPActionStyle(primary: model.inWatchlist)).disabled(model.watchlistBusy)
+                }
                 Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
             }
             .focusSection()

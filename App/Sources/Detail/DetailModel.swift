@@ -22,6 +22,10 @@ final class DetailModel: ObservableObject {
     @Published private(set) var loading = false
     /// Resume state for the Play button (detail-spec §1.3/1.4): where the viewer left off.
     @Published private(set) var resume: Resume?
+    /// Stremio library membership ("Add to Watchlist" / "In Watchlist", detail-spec §1.3).
+    @Published private(set) var inWatchlist = false
+    @Published private(set) var watchlistBusy = false
+    @Published private(set) var canWatchlist = false
 
     struct Resume: Equatable {
         var season: Int?
@@ -47,23 +51,45 @@ final class DetailModel: ObservableObject {
         await loadResume()
     }
 
+    private var authKey: String? {
+        ProfilesStore.shared.active.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
+    }
+
+    func toggleWatchlist() async {
+        guard let authKey, !watchlistBusy else { return }
+        watchlistBusy = true; defer { watchlistBusy = false }
+        if inWatchlist {
+            _ = try? await HarborEngine.shared.callJSON("stremio.removeBookmark", [.string(authKey), .string(meta.id)])
+            inWatchlist = false
+        } else {
+            _ = try? await HarborEngine.shared.callJSON("stremio.saveBookmark", [.string(authKey), .string(meta.id), .object(["type": .string(meta.type), "name": .string(meta.name), "poster": meta.poster.map { .string($0) } ?? .null])])
+            inWatchlist = true
+        }
+    }
+
     /// Cloud library entry first (Stremio), else the local resume store, like bpResumeMark.
     private func loadResume() async {
         struct Item: Decodable {
             struct State: Decodable { var timeOffset: Double?; var duration: Double?; var season: Int?; var episode: Int?; var video_id: String? }
             var state: State?
+            var removed: Bool?
         }
-        struct Local: Decodable { var ms: Double; var pct: Double? }
-        let p = ProfilesStore.shared.active
-        if let authKey = p.flatMap({ ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }),
-           let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, meta.id]),
-           let st = item?.state, let off = st.timeOffset, off > 0 {
+        canWatchlist = authKey != nil
+        if let authKey,
+           let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, meta.id]) {
+            inWatchlist = item.map { $0.removed != true } ?? false
+            guard let st = item?.state, let off = st.timeOffset, off > 0 else { return await loadLocalResume() }
             var s = st.season, e = st.episode
             if (e ?? 0) == 0, let vid = st.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: meta.id) { s = parsed.season; e = parsed.episode }
             resume = Resume(season: isSeries ? s : nil, episode: isSeries ? e : nil, positionMs: off, durationMs: st.duration ?? 0)
             if let s, isSeries, seasons.contains(s) { season = s }
             return
         }
+        await loadLocalResume()
+    }
+
+    private func loadLocalResume() async {
+        struct Local: Decodable { var ms: Double; var pct: Double? }
         if !isSeries, let local: Local? = try? await HarborEngine.shared.call("player.localResume", [meta.id, AnyJSON.null, AnyJSON.null]), let l = local {
             resume = Resume(season: nil, episode: nil, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
         } else if isSeries {
