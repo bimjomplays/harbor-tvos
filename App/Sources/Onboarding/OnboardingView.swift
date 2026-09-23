@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, tmdb, stremio, harbor, layout, done }
+    enum Step: Int, CaseIterable { case language, tmdb, stremio, harbor, layout, subtitles, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
 
@@ -43,6 +43,7 @@ struct OnboardingView: View {
         case .stremio: ("Your library", "Bring in your library", "Your Continue Watching, your watchlist and your addons.")
         case .harbor: ("Harbor account", "Sign in to Harbor", "Sync your profile, themes, lists and friends. You can do this any time.")
         case .layout: ("Home", "How should the home screen read?", "Harbor leads with one big title. Classic leads with rows.")
+        case .subtitles: ("Subtitles", "Which subtitle languages, in order?", "First match wins. Most people need only one.")
         case .done: ("Ready", "You are set up", "Saved on this device. Another Harbor install starts fresh.")
         }
     }
@@ -65,11 +66,21 @@ struct OnboardingView: View {
                 layoutCard("Harbor", "A hero up top, then Top 10, Trending, In Theaters and your service rows.", mode: "harbor")
                 layoutCard("Classic", "Continue Watching first, then your addon catalogs in install order.", mode: "classic")
             }
+        case .subtitles:
+            VStack(alignment: .leading, spacing: BP.px(14)) {
+                SubtitleLanguageGrid()
+                HStack(spacing: BP.px(12)) {
+                    Button("Continue") { advance() }.buttonStyle(BPActionStyle(primary: true))
+                    Button("Skip") { advance() }.buttonStyle(BPActionStyle())
+                }
+                BPNote(text: "In order: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
+            }
         case .done:
             VStack(alignment: .leading, spacing: BP.px(16)) {
                 RecapRow(ok: !settings.slice.tmdbKey.isEmpty, text: settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta. Add a TMDB key in Settings whenever you want." : "TMDB connected")
                 RecapRow(ok: stremioName != nil, text: stremioName.map { "Signed in as \($0)" } ?? "Not signed in to Stremio. Your library stays local.")
                 RecapRow(ok: account.isSignedIn, text: account.session.map { "Harbor account linked as \($0.user.username)" } ?? "No Harbor account yet")
+                RecapRow(ok: true, text: "Subtitles: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
                 Button("Start watching") { app.finishOnboarding() }
                     .buttonStyle(BPActionStyle(primary: true))
                     .accessibilityIdentifier("onboarding-start")

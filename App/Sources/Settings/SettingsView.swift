@@ -13,7 +13,7 @@ struct SettingsView: View {
 
     @EnvironmentObject private var settings: SettingsBridge
     enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs; var id: Int { hashValue } }
-    private static let languages = ["English", "Spanish", "Portuguese", "French", "German", "Italian", "Dutch", "Polish", "Russian", "Turkish", "Arabic", "Japanese", "Korean", "Chinese", "Hindi", "Swedish", "Norwegian", "Danish", "Finnish", "Greek", "Czech", "Hungarian", "Romanian", "Indonesian"]
+
 
     var body: some View {
         ScrollView {
@@ -123,18 +123,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: BP.px(12)) {
                             Text("Which subtitle languages, in order?").font(BP.display(30)).foregroundStyle(BP.ink)
                             BPNote(text: "First match wins. Most people need only one. Pick again to remove.")
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(10)), count: 4), spacing: BP.px(10)) {
-                                ForEach(Self.languages, id: \.self) { lang in
-                                    let idx = settings.slice.preferredSubLangs.firstIndex(of: lang)
-                                    Button(idx.map { "\($0 + 1) · \(lang)" } ?? lang) {
-                                        var list = settings.slice.preferredSubLangs
-                                        if let i = idx { list.remove(at: i) } else { list.append(lang) }
-                                        if list.isEmpty { list = ["English"] }
-                                        Task { try? await settings.patch(["preferredSubLangs": .array(list.map { .string($0) })]) }
-                                    }
-                                    .buttonStyle(BPActionStyle(primary: idx != nil))
-                                }
-                            }
+                            SubtitleLanguageGrid()
                             Button("Done") { sheet = nil }.buttonStyle(BPActionStyle(primary: true))
                         }
                         .padding(BP.gutter)
@@ -185,5 +174,29 @@ struct SettingsView: View {
             Text(title).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
             Text(detail).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
         }
+    }
+}
+
+
+/// Numbered toggle chips for preferred subtitle languages (bp-step-subtitles.tsx), shared by
+/// onboarding and Settings. Writes `preferredSubLangs` through the engine on every change.
+struct SubtitleLanguageGrid: View {
+    @EnvironmentObject private var settings: SettingsBridge
+    private static let languages = ["English", "Spanish", "Portuguese", "French", "German", "Italian", "Dutch", "Polish", "Russian", "Turkish", "Arabic", "Japanese", "Korean", "Chinese", "Hindi", "Swedish", "Norwegian", "Danish", "Finnish", "Greek", "Czech", "Hungarian", "Romanian", "Indonesian"]
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(10)), count: 4), spacing: BP.px(10)) {
+            ForEach(Self.languages, id: \.self) { lang in
+                let idx = settings.slice.preferredSubLangs.firstIndex(of: lang)
+                Button(idx.map { "\($0 + 1) · \(lang)" } ?? lang) {
+                    var list = settings.slice.preferredSubLangs
+                    if let i = idx { list.remove(at: i) } else { list.append(lang) }
+                    if list.isEmpty { list = ["English"] }
+                    Task { try? await settings.patch(["preferredSubLangs": .array(list.map { .string($0) })]) }
+                }
+                .buttonStyle(BPActionStyle(primary: idx != nil))
+            }
+        }
+        .focusSection()
     }
 }
