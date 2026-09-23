@@ -16,6 +16,7 @@ import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
 import { hydrateShortEpg } from "@/lib/iptv/xtream-short-epg";
 import { rankBpLive } from "@/views/big-picture/bp-live-rank";
+import { materializePlaylistEntry, newPlaylistId } from "@/lib/iptv/playlist-entry";
 import { buildBpGuide } from "@/views/big-picture/use-bp-live";
 import { bpChannelLabel, bpGroupLabel } from "@/views/big-picture/bp-guide-title";
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
@@ -84,6 +85,21 @@ export function addPlaylist(name: string, url: string, epgUrl?: string | null): 
   const epg = (epgUrl ?? "").trim() || (probe.kind === "xtream" ? deriveEpgUrls(trimmed)[0] ?? null : null);
   if (epg) entry.epgUrl = epg;
   writePlaylists([...readPlaylists().filter((p) => p.url !== trimmed), entry]);
+  return entry;
+}
+
+/**
+ * bp-live-setup: the structured form. "m3u" takes a playlist URL, "xtream" a server + login
+ * (Harbor builds the get.php and xmltv.php addresses), "epg" a guide address only.
+ */
+export function addStructured(kind: "m3u" | "xtream" | "epg", name: string, url: string, epgUrl: string, server: string, username: string, password: string): StoredPlaylist {
+  const id = newPlaylistId();
+  const entry = materializePlaylistEntry(id, {
+    kind, name: name.trim() || "My playlist", url: url.trim(), epgUrl: epgUrl.trim(),
+    xtream: { server: server.trim(), username: username.trim(), password: password.trim() },
+  } as Parameters<typeof materializePlaylistEntry>[1]);
+  const list = readPlaylists();
+  writePlaylists([...list, entry]);
   return entry;
 }
 

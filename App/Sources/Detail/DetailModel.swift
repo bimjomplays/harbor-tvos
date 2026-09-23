@@ -18,8 +18,19 @@ final class DetailModel: ObservableObject {
     @Published private(set) var meta: Meta
     @Published private(set) var episodes: [Episode] = []
     @Published private(set) var seasons: [Int] = []
-    @Published var season: Int = 1
+    @Published var season: Int = 1 { didSet { if season != oldValue { Task { await loadEpisodeFacts() } } } }
     @Published private(set) var loading = false
+    /// use-bp-episode-facts: per-episode rating (IMDb over TMDB) and runtime, keyed "season:episode".
+    @Published private(set) var episodeFacts: [String: EpisodeFact] = [:]
+    struct EpisodeFact: Decodable { var season: Int; var episode: Int; var rating: Double?; var ratingIsImdb: Bool; var runtime: Int? }
+
+    func loadEpisodeFacts() async {
+        guard isSeries, !isAnimeId else { return }
+        let p = ProfilesStore.shared.active
+        let list: [EpisodeFact] = (try? await HarborEngine.shared.call("detailRoom.episodeFacts", [meta, season, p?.id ?? "default", p?.linked ?? true])) ?? []
+        for f in list { episodeFacts["\(f.season):\(f.episode)"] = f }
+    }
+    func fact(for ep: Episode) -> EpisodeFact? { episodeFacts["\(ep.season):\(ep.episode)"] }
     /// Resume state for the Play button (detail-spec §1.3/1.4): where the viewer left off.
     @Published private(set) var resume: Resume?
     /// Stremio library membership ("Add to Watchlist" / "In Watchlist", detail-spec §1.3).
@@ -105,6 +116,7 @@ final class DetailModel: ObservableObject {
             watched = Set(keys)
         }
         await loadExtras()
+        await loadEpisodeFacts()
     }
 
     /// use-bp-detail: TMDB lands independently of the meta; the franchise collection last.

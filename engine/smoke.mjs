@@ -242,6 +242,9 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("collectionsRoom.categories starts with All", engine.collectionsRoom.categories()[0] === "All" && engine.collectionsRoom.categories().includes("Sagas"), JSON.stringify(engine.collectionsRoom.categories()));
   r.eq("live.toggleChannelPin pins and unpins", [engine.live.toggleChannelPin("src::ch1"), engine.live.toggleChannelPin("src::ch1")], [true, false]);
   r.eq("live.toggleGroupHidden hides then shows a group", [engine.live.toggleGroupHidden("src", "News"), engine.live.toggleGroupHidden("src", "News")], [["News"], []]);
+  const xt = engine.live.addStructured("xtream", "Smoke Xtream", "", "", "http://xt.example.invalid", "user", "pass");
+  r.ok("live.addStructured builds an Xtream playlist", xt.kind === "xtream" && /get\.php/.test(xt.url) && xt.xtream.username === "user", JSON.stringify(xt));
+  engine.live.removePlaylist(xt.id);
   r.eq("live.homeRow without playlists", await engine.live.homeRow(), { playlistId: null, cells: [] });
   r.eq("onboarding.vote records an upvote", engine.onboarding.vote("tt0000001", true, "Smoke", "movie").includes("tt0000001"), true);
   r.eq("onboarding.vote clears it again", engine.onboarding.vote("tt0000001", false, "Smoke", "movie").includes("tt0000001"), false);

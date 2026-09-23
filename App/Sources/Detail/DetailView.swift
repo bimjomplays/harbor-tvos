@@ -327,7 +327,7 @@ struct DetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: BP.trackGap) {
                     ForEach(model.seasonEpisodes) { ep in
-                        Button { picker = (model.meta, ep.playEpisode) } label: { EpisodeCell(episode: ep, watched: model.isWatched(ep)) }
+                        Button { picker = (model.meta, ep.playEpisode) } label: { EpisodeCell(episode: ep, watched: model.isWatched(ep), fact: model.fact(for: ep)) }
                             .buttonStyle(BPTileStyle())
                             .id(ep.id)
                             .accessibilityIdentifier("episode-\(ep.season)-\(ep.episode)")
@@ -350,6 +350,7 @@ struct DetailView: View {
 struct EpisodeCell: View {
     let episode: DetailModel.Episode
     var watched = false
+    var fact: DetailModel.EpisodeFact? = nil
     private static let size = CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded())
 
     var body: some View {
@@ -358,6 +359,18 @@ struct EpisodeCell: View {
                 RemoteImage(url: episode.thumbnail)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
                 Text("E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
+                // use-bp-episode-facts chip: rating (IMDb mark when it is IMDb's) and runtime.
+                if let f = fact, f.rating != nil || f.runtime != nil {
+                    HStack(spacing: BP.px(4)) {
+                        if let r = f.rating { Text((f.ratingIsImdb ? "IMDb " : "★ ") + String(format: "%.1f", r)) }
+                        if let m = f.runtime { Text("\(m) min") }
+                    }
+                    .font(BP.sans(9.5, .bold)).foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(3))
+                    .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.void_.opacity(0.85)))
+                    .padding(BP.px(8))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
                 if watched {
                     Image(systemName: "checkmark").font(.system(size: BP.px(10), weight: .bold)).foregroundStyle(BP.canvas)
                         .frame(width: BP.px(21), height: BP.px(21)).background(Circle().fill(BP.ink))

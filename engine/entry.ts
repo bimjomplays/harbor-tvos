@@ -577,6 +577,7 @@ export const mal = trackersGlue.mal;
 
 /** Detail page extras from TMDB: tagline, cast, crew, similar, recommendations, watch-on, collection. */
 export const detailRoom = {
+  episodeFacts: detailGlue.episodeFacts,
   extras: detailGlue.extras,
   collection: detailGlue.collection,
 };
@@ -648,6 +649,7 @@ export const skip = { segments: skipGlue.segments };
 export const live = {
   playlists: liveGlue.playlists,
   addPlaylist: liveGlue.addPlaylist,
+  addStructured: liveGlue.addStructured,
   setEpgUrl: liveGlue.setEpgUrl,
   loadShortEpg: liveGlue.loadShortEpg,
   homeRow: liveGlue.homeRow,

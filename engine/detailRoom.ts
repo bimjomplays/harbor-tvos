@@ -95,3 +95,31 @@ export async function collection(id: number, profileId: string, linked: boolean)
   if (c.parts.length < 2) return null;
   return { name: c.name, metas: c.parts };
 }
+
+
+// ------------------------------------------------------------------ per-episode facts
+// detail/use-bp-episode-facts.ts: TMDB's season episodes (vote average, runtime) with Harbor's
+// IMDb episode ratings on top; keyed "season:episode".
+import { tmdbSeasonEpisodes as factsSeasonEpisodes } from "@/lib/providers/tmdb/tmdb-details";
+import { harborImdbEpisodes as factsImdbEpisodes } from "@/lib/providers/harbor-imdb";
+export type EpisodeFact = { season: number; episode: number; rating: number | null; ratingIsImdb: boolean; runtime: number | null };
+export async function episodeFacts(meta: Meta, season: number, profileId: string, linked: boolean): Promise<EpisodeFact[]> {
+  const s = loadEffective(profileId, linked);
+  const x = await extras(meta, profileId, linked).catch(() => null);
+  const imdbId = x?.imdbId ?? (meta.id.startsWith("tt") ? meta.id : null);
+  const [tmdbList, imdb] = await Promise.all([
+    s.tmdbKey && x?.tmdbId && x.kind === "tv" && season > 0 ? factsSeasonEpisodes(s.tmdbKey, x.tmdbId, season).catch(() => []) : Promise.resolve([]),
+    imdbId ? factsImdbEpisodes(imdbId).catch(() => new Map<string, number>()) : Promise.resolve(new Map<string, number>()),
+  ]);
+  const out = new Map<string, EpisodeFact>();
+  for (const e of tmdbList as Array<{ seasonNumber: number; episodeNumber: number; voteAverage?: number | null; runtime?: number | null }>) {
+    out.set(`${e.seasonNumber}:${e.episodeNumber}`, { season: e.seasonNumber, episode: e.episodeNumber, rating: e.voteAverage && e.voteAverage > 0 ? e.voteAverage : null, ratingIsImdb: false, runtime: e.runtime && e.runtime > 0 ? e.runtime : null });
+  }
+  for (const [k, v] of imdb) {
+    if (!k.startsWith(`${season}:`)) continue;
+    const [se, ep] = k.split(":").map(Number);
+    const held = out.get(k);
+    out.set(k, { season: se, episode: ep, rating: v, ratingIsImdb: true, runtime: held?.runtime ?? null });
+  }
+  return Array.from(out.values());
+}

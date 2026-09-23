@@ -8,6 +8,19 @@ struct SportsView: View {
     @State private var personalize = false
     @State private var heroIndex = 0
 
+    @State private var directPlay: SportsEventModel.WatchOption?
+
+    /// useBpWatchGame: a live game with an exact channel match plays at once; anything else opens the event.
+    private func open(_ g: SportsModel.Game) {
+        guard g.state == "in" else { event = g; return }
+        Task {
+            if let w: SportsEventModel.Watch = try? await HarborEngine.shared.call("sports.watch", [g]), w.plan == "channel", let best = w.channels.first {
+                _ = try? await HarborEngine.shared.callJSON("sports.recordChannelWatch", [.string(best.channelId)])
+                directPlay = best
+            } else { event = g }
+        }
+    }
+
     var body: some View {
         Group {
             if model.consent != "accepted" {
@@ -18,6 +31,9 @@ struct SportsView: View {
         }
         .task { await model.start() }
         .fullScreenCover(item: $event) { g in SportsEventView(game: g, dismiss: { event = nil }) }
+        .fullScreenCover(item: $directPlay) { opt in
+            PlayerScreen(title: opt.name, subtitle: opt.label, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in directPlay = nil }
+        }
         .fullScreenCover(isPresented: $personalize) { SportsPersonalizeView(model: model, dismiss: { personalize = false }) }
     }
 
@@ -32,10 +48,10 @@ struct SportsView: View {
                         explore(p)
                     } else {
                         if let hero = p.heroes.indices.contains(heroIndex) ? p.heroes[heroIndex] : p.heroes.first {
-                            SportsHeroView(game: hero, count: p.heroes.count, index: heroIndex, open: { event = hero })
+                            SportsHeroView(game: hero, count: p.heroes.count, index: heroIndex, open: { open(hero) })
                         }
                         ForEach(p.rows) { row in
-                            SportsRowView(row: row, open: { event = $0 })
+                            SportsRowView(row: row, open: { open($0) })
                         }
                         if p.empty { emptyState(p) }
                     }

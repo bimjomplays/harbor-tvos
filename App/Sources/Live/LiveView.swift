@@ -137,6 +137,17 @@ final class LiveModel: ObservableObject {
         Task { _ = try? await HarborEngine.shared.callJSON("live.recordPlay", [.string(id), .string(ch.id)]) }
     }
 
+    /// bp-live-setup: the structured form; kind is "m3u", "xtream" or "epg".
+    func add(kind: String, name: String, url: String, epgUrl: String, server: String, username: String, password: String) async -> String? {
+        struct Added: Decodable { var id: String }
+        do {
+            let a: Added = try await HarborEngine.shared.call("live.addStructured", [kind, name, url, epgUrl, server, username, password])
+            selectedPlaylist = a.id
+            await load()
+            return nil
+        } catch { return error.localizedDescription }
+    }
+
     func add(name: String, url: String, epgUrl: String) async -> String? {
         struct Added: Decodable { var id: String }
         do {
@@ -365,6 +376,10 @@ struct LiveSourcesSheet: View {
     @State private var name = ""
     @State private var url = ""
     @State private var epg = ""
+    @State private var kind = "m3u"
+    @State private var server = ""
+    @State private var username = ""
+    @State private var password = ""
     @State private var busy = false
     @State private var error: String?
 
@@ -375,19 +390,35 @@ struct LiveSourcesSheet: View {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     Text(firstRun ? "Live TV" : "Sources").font(BP.display(36)).foregroundStyle(BP.ink)
                     BPNote(text: "Paste an M3U or M3U8 playlist URL, an IPTV middleware address, or an Xtream Codes login URL (get.php with username and password). Xtream guides are found automatically.")
+                    // bp-live-setup kind picker: M3U link, Xtream Codes login, or guide data only.
+                    HStack(spacing: BP.px(8)) {
+                        ForEach([("m3u", "M3U playlist"), ("xtream", "Xtream Codes"), ("epg", "Guide only")], id: \.0) { k, label in
+                            Button(label) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k))
+                        }
+                    }
                     BPField(label: "Name", placeholder: "My provider", text: $name)
-                    BPField(label: "Playlist or login URL", placeholder: "https://…/playlist.m3u", text: $url, keyboard: .URL)
-                    BPField(label: "EPG URL (optional, XMLTV)", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
+                    if kind == "xtream" {
+                        BPField(label: "Server", placeholder: "http://host:port", text: $server, keyboard: .URL)
+                        BPField(label: "Username", placeholder: "Username", text: $username)
+                        BPField(label: "Password", placeholder: "Password", text: $password, secure: true)
+                    } else if kind == "m3u" {
+                        BPField(label: "Playlist or login URL", placeholder: "https://…/playlist.m3u", text: $url, keyboard: .URL)
+                        BPField(label: "EPG URL (optional, XMLTV)", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
+                    } else {
+                        BPField(label: "Guide address (XMLTV)", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
+                    }
                     HStack(spacing: BP.px(12)) {
                         Button(busy ? "Adding…" : "Add source") {
                             busy = true
                             Task {
-                                error = await model.add(name: name, url: url, epgUrl: epg)
+                                error = kind == "m3u" && !url.isEmpty && server.isEmpty
+                                    ? await model.add(name: name, url: url, epgUrl: epg)
+                                    : await model.add(kind: kind, name: name, url: url, epgUrl: epg, server: server, username: username, password: password)
                                 busy = false
                                 if error == nil { name = ""; url = ""; epg = ""; dismiss() }
                             }
                         }
-                        .buttonStyle(BPActionStyle(primary: true)).disabled(busy || url.count < 8)
+                        .buttonStyle(BPActionStyle(primary: true)).disabled(busy || (kind == "m3u" ? url.count < 8 : kind == "xtream" ? (server.count < 8 || username.isEmpty) : epg.count < 8))
                         if !firstRun { Button("Close") { dismiss() }.buttonStyle(BPActionStyle()) }
                     }
                     if let e = error ?? model.error { BPNote(text: e, tone: BP.danger) }

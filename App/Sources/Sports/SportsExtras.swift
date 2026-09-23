@@ -71,7 +71,7 @@ struct StandingsSection: View {
 
 /// lib/sports/hub-artwork through the engine: a card with no art of its own asks TheSportsDB.
 struct SportsArtView: View {
-    let game: SportsModel.GameView
+    let game: SportsModel.Game
     var width: CGFloat
     @State private var url: String?
     struct Art: Decodable { var backdrop: String?; var poster: String? }

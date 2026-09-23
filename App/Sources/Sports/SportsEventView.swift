@@ -130,8 +130,29 @@ struct SportsEventView: View {
                     .frame(maxWidth: BP.px(900), alignment: .leading)
                 }
                 if !w.providers.isEmpty || !w.broadcasts.isEmpty {
-                    Text("Where to watch: " + (w.providers.map(\.name) + w.broadcasts.map { "\($0.title) on Twitch (\($0.channel))" }).joined(separator: " · "))
-                        .font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(2)
+                    // bp-sports-event-rows where-to-watch: provider tiles with their marks, then official broadcasts.
+                    VStack(alignment: .leading, spacing: BP.px(6)) {
+                        Text("Where to watch").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: BP.px(8)) {
+                                ForEach(Array(w.providers.enumerated()), id: \.offset) { _, p in
+                                    HStack(spacing: BP.px(6)) {
+                                        if !p.logo.isEmpty { RemoteImage(url: p.logo, contentMode: .fit).frame(width: BP.px(22), height: BP.px(22)) }
+                                        Text(p.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink)
+                                    }
+                                    .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(6))
+                                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                                }
+                                ForEach(Array(w.broadcasts.enumerated()), id: \.offset) { _, b in
+                                    Text("\(b.title) · \(b.source.capitalized) \(b.channel)").font(BP.sans(12)).foregroundStyle(BP.inkMuted)
+                                        .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(6))
+                                        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                                }
+                            }
+                        }
+                        .scrollClipDisabled()
+                        Text("Official apps and broadcasts open on your other devices; Harbor lists them here.").font(BP.sans(10.5)).foregroundStyle(BP.inkSubtle)
+                    }
                 }
             } else if model.watching {
                 HStack(spacing: BP.px(8)) { ProgressView().tint(BP.inkMuted); Text("Checking your channels…").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
