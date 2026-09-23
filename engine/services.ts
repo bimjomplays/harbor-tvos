@@ -30,6 +30,7 @@ export function all(): ServiceTile[] {
 }
 
 const posterCache = new Map<string, string[]>();
+const posterInflight = new Map<string, Promise<string[]>>();
 
 /** Poster mosaic for a focused tile (cached per service/key/region; [] on failure is not cached). */
 export async function posters(service: string, profileId: string, linked: boolean): Promise<string[]> {
@@ -39,13 +40,14 @@ export async function posters(service: string, profileId: string, linked: boolea
   const slot = `${id}\u0000${s.tmdbKey}\u0000${s.region}`;
   const hit = posterCache.get(slot);
   if (hit) return hit;
-  try {
-    const out = await servicePosters(s.tmdbKey, id, s.region);
-    posterCache.set(slot, out);
-    return out;
-  } catch {
-    return [];
-  }
+  const pending = posterInflight.get(slot);
+  if (pending) return pending;
+  const next = servicePosters(s.tmdbKey, id, s.region)
+    .then((out) => { posterCache.set(slot, out); return out; })
+    .catch(() => [] as string[])
+    .finally(() => { posterInflight.delete(slot); });
+  posterInflight.set(slot, next);
+  return next;
 }
 
 function mix(movies: Meta[], series: Meta[]): Meta[] {

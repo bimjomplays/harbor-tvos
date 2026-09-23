@@ -48,7 +48,9 @@ struct EngineBrowseSource: BrowseSource {
         switch room {
         case .home:
             build = try await HarborEngine.shared.call("rooms.homeFor", [p.id, p.linked, p.authKey])
-            // bp-home.tsx SERVICES_SLOT = 2: "Your streaming" brand tiles after the second row.
+            // bp-home.tsx: "Your streaming" brand tiles sit after the first two catalog rows
+            // (SERVICES_SLOT = 2); upstream also slots CW, addon, live and collection bands
+            // around them, which this room renders elsewhere or not yet.
             struct Services: Decodable { struct Tile: Decodable { var id: String; var name: String; var tint: String }; var hasKey: Bool; var services: [Tile] }
             if let svc: Services = try? await HarborEngine.shared.call("services.list", [p.id, p.linked]), !svc.services.isEmpty {
                 let metas = svc.services.map { t in

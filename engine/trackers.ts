@@ -61,7 +61,7 @@ export const anilist = {
     const cached = readCachedCollection(s.userId);
     if ((!cached || force) && !anilistLoad) {
       anilistLoad = fetchMediaListCollection(s.userId);
-      anilistLoad.then(() => { anilistFailed = false; }).catch(() => { anilistFailed = true; }).finally(() => { window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
+      anilistLoad.then(() => { anilistFailed = false; }).catch(() => { anilistFailed = true; }).finally(() => { anilistLoad = null; window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
     }
     return { rails: cached ? anilistRailsFrom(cached) : [], loading: !cached && !anilistFailed, error: anilistFailed && !cached };
   },
@@ -131,7 +131,7 @@ export const mal = {
     const cached = readCachedMalList();
     if ((!cached || force) && !malLoad) {
       malLoad = fetchMalList();
-      malLoad.then(() => { malFailed = false; }).catch(() => { malFailed = true; }).finally(() => { window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
+      malLoad.then(() => { malFailed = false; }).catch(() => { malFailed = true; }).finally(() => { malLoad = null; window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
     }
     return { rails: cached ? malRailsFrom(cached) : [], loading: !cached && !malFailed, error: malFailed && !cached };
   },

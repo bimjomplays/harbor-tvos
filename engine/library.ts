@@ -5,7 +5,7 @@ import type { Meta } from "@/lib/cinemeta";
 import { library, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
 import { readLocalEntries } from "@/lib/watchlist";
 import { readLists } from "@/lib/custom-lists";
-import { isAuthenticated as traktConnected } from "@/lib/trakt/session";
+import { isAuthenticated as traktConnected, getSession as traktSession } from "@/lib/trakt/session";
 import { fetchWatchlist as fetchTraktWatchlist } from "@/lib/trakt/watchlist";
 import { fetchWatchedHistory, type HistoryItem } from "@/lib/trakt/history";
 import { traktItemToMeta } from "@/lib/trakt/to-meta";
@@ -44,7 +44,7 @@ export function tabs(): Array<{ id: Tab; label: string }> {
 // ---- cached remote sources (30 s), so filter/sort/tab switches never refetch
 const TTL = 30_000;
 let stremioCache: { authKey: string; at: number; items: LibraryItem[] } | null = null;
-let traktCache: { at: number; watchlist: TraktItem[]; history: HistoryItem[]; error: boolean } | null = null;
+let traktCache: { token: string; at: number; watchlist: TraktItem[]; history: HistoryItem[]; error: boolean } | null = null;
 
 async function stremioItems(authKey: string | null, force: boolean): Promise<{ items: LibraryItem[]; status: Status }> {
   if (!authKey) return { items: [], status: "ready" };
@@ -60,12 +60,15 @@ async function stremioItems(authKey: string | null, force: boolean): Promise<{ i
 
 async function traktItems(force: boolean): Promise<{ watchlist: TraktItem[]; history: HistoryItem[]; status: Status }> {
   if (!traktConnected()) return { watchlist: [], history: [], status: "ready" };
-  if (!force && traktCache && Date.now() - traktCache.at < TTL) return { ...traktCache, status: traktCache.error ? "error" : "ready" };
+  // Sessions are per profile: the cache belongs to one access token, never to "whoever is connected".
+  const token = traktSession()?.accessToken ?? "";
+  const same = traktCache && traktCache.token === token;
+  if (!force && same && Date.now() - traktCache!.at < TTL) return { ...traktCache!, status: traktCache!.error ? "error" : "ready" };
   const [w, h] = await Promise.allSettled([fetchTraktWatchlist(), fetchWatchedHistory(200)]);
-  const watchlist = w.status === "fulfilled" ? w.value : traktCache?.watchlist ?? [];
-  const history = h.status === "fulfilled" ? h.value : traktCache?.history ?? [];
+  const watchlist = w.status === "fulfilled" ? w.value : (same ? traktCache!.watchlist : []);
+  const history = h.status === "fulfilled" ? h.value : (same ? traktCache!.history : []);
   const error = w.status === "rejected" && h.status === "rejected";
-  traktCache = { at: Date.now(), watchlist, history, error };
+  traktCache = { token, at: Date.now(), watchlist, history, error };
   return { watchlist, history, status: error ? "error" : "ready" };
 }
 
@@ -185,9 +188,10 @@ export async function feed(input: FeedInput) {
     groups = (Object.keys(SIMKL_STATUS_LABELS) as Array<keyof typeof SIMKL_STATUS_LABELS>).map((id) => ({ id, label: SIMKL_STATUS_LABELS[id] }));
   }
 
-  const total = entries.length;
-  let filtered = input.group ? entries.filter((e) => e.group === input.group) : entries;
-  filtered = applyFilter(filtered, type, input.query ?? "");
+  // bp-library.tsx:210: chip counts describe the group-scoped set, before type/query filters.
+  const scoped = input.group ? entries.filter((e) => e.group === input.group) : entries;
+  const total = scoped.length;
+  const filtered = applyFilter(scoped, type, input.query ?? "");
   // buildBpSections + capBpSections
   let sections: Array<{ label: string; items: Entry[]; total: number }>;
   if (filtered.length === 0) sections = [];
@@ -203,7 +207,7 @@ export async function feed(input: FeedInput) {
     shown += items.length;
     capped.push({ label: sec.label, items, total: sec.total });
   }
-  const counts = { all: filtered.length, movie: filtered.filter((e) => e.meta.type === "movie").length, series: filtered.filter((e) => e.meta.type === "series").length };
+  const counts = { all: scoped.length, movie: scoped.filter((e) => e.meta.type === "movie").length, series: scoped.filter((e) => e.meta.type === "series").length };
   return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts };
 }
 

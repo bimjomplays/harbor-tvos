@@ -11,7 +11,10 @@ import { animeFiltered, type AnimeFilterOpts } from "@/lib/anime-filter";
 import { applyAnimeRowCustomization, EMPTY_ANIME_ROWS } from "@/lib/anime-customization";
 import { loadAnimeAddonRows } from "@/lib/addons-anime-filter";
 import type { AddonRow } from "@/lib/addons";
-import { listLocalCw } from "@/lib/local-cw";
+import { listLocalCw, localCwEntry } from "@/lib/local-cw";
+import { anyProfileSharesStremioWith, type Profile } from "@/lib/profiles";
+import { fetchSimklPlaybackItems } from "@/lib/simkl/playback";
+import { isAuthenticated as simklConnected } from "@/lib/simkl/session";
 import { isCwDismissed } from "@/lib/cw-dismiss";
 import { franchiseRootSync } from "@/lib/providers/anime-franchise-root";
 import { ANIME_CLOUD_ID, isAnimeCwItem, isCwMember, library, type LibraryItem } from "@/lib/stremio";
@@ -22,7 +25,7 @@ import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 
 const MAX_ITEMS = 80;
 const CW_CAP = 20;
-const AUTO_FILL_BUDGET = 6;
+const AUTO_FILL_BUDGET = 4;
 
 const t = (key: string, vars?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? `{${k}}`));
 
@@ -80,8 +83,9 @@ let addonRows: AddonRow[] = [];
 let addonKey: string | null = null;
 let stopAddons: (() => void) | null = null;
 
-function ensureAddons(authKey: string | null): void {
-  const key = authKey ?? "";
+function ensureAddons(authKey: string | null, profileId: string): void {
+  // Installed addons are per profile even without a Stremio session (two guest profiles).
+  const key = `${profileId}|${authKey ?? ""}`;
   if (addonKey === key) return;
   stopAddons?.();
   addonKey = key;
@@ -109,9 +113,17 @@ function localAnimeCw(): LibraryItem[] {
   } as LibraryItem));
 }
 
-/** use-bp-anime-cw raw: local anime resume + cloud anime items, dismissed dropped, one per franchise, newest first. */
-function animeCw(cloudList: LibraryItem[]): LibraryItem[] {
-  const pool = [...localAnimeCw(), ...cloudList.filter((i) => !ANIME_CLOUD_ID.test(i._id))];
+function profilesBlob(): { activeId?: string | null; profiles?: Profile[] } {
+  try { return JSON.parse(localStorage.getItem("harbor.profiles.v1") ?? "{}") as { activeId?: string | null; profiles?: Profile[] }; } catch { return {}; }
+}
+
+/**
+ * use-bp-anime-cw raw: local anime resume + cloud anime items + Simkl playback, dismissed
+ * dropped, cloud rows hidden when this profile shares the Stremio session and asked for
+ * per-profile Continue Watching, one per franchise, newest first.
+ */
+function animeCw(cloudList: LibraryItem[], simklList: LibraryItem[], hideSharedCw: boolean): LibraryItem[] {
+  const pool = [...localAnimeCw(), ...cloudList.filter((i) => !ANIME_CLOUD_ID.test(i._id)), ...simklList];
   const seen = new Set<string>();
   const seenRoot = new Set<string>();
   return pool
@@ -119,6 +131,7 @@ function animeCw(cloudList: LibraryItem[]): LibraryItem[] {
       if (!isCwMember(i)) return false;
       if (!(i as LibraryItem & { local?: boolean }).local && !isAnimeCwItem(i)) return false;
       if (isCwDismissed(i)) return false;
+      if (hideSharedCw && localCwEntry(i._id) === null && !(i as LibraryItem & { local?: boolean }).local) return false;
       if (seen.has(i._id)) return false;
       seen.add(i._id);
       return true;
@@ -142,9 +155,13 @@ export type RoomRow = { key: string; group: string; name: string; metas: Meta[];
 export async function page(profileId: string, linked: boolean, authKey: string | null, force = false) {
   const s = loadEffective(profileId, linked);
   if (force) refresh(); else ensureStarted();
-  ensureAddons(authKey);
+  ensureAddons(authKey, profileId);
   const filterOpts: AnimeFilterOpts = { excludeOrigins: s.animeExcludeOrigins ?? [], hideWatched: !!s.animeHideWatchedPicks, isWatched: undefined };
-  const cw = animeCw(await cloudItems(authKey, force));
+  const blob = profilesBlob();
+  const active = (blob.profiles ?? []).find((p) => p.id === (blob.activeId ?? profileId)) ?? null;
+  const hideSharedCw = !!s.cwPerProfile && anyProfileSharesStremioWith(active, blob.profiles ?? []);
+  const simkl = simklConnected() ? await fetchSimklPlaybackItems().then((list) => list.filter(isAnimeCwItem)).catch(() => [] as LibraryItem[]) : [];
+  const cw = animeCw(await cloudItems(authKey, force), simkl, hideSharedCw);
 
   const hero = buildHeroSelection(rowsByKey, seed, filterOpts, []);
   const picksRow = rowsByKey[TOP_PICKS_KEY];
@@ -191,10 +208,12 @@ export async function page(profileId: string, linked: boolean, authKey: string |
     }
   }
   const ready = SPECS.filter((sp) => rowsByKey[sp.key]?.ready).length;
+  // use-bp-anime.ts:238: failure is "every feed answered with nothing", never "every row hidden".
+  const fetched = SPECS.reduce((n, sp) => n + (rowsByKey[sp.key]?.metas.length ?? 0), 0) + addonRows.reduce((n, r) => n + r.metas.length, 0);
   return {
     rows, hero: hero.metas.slice(0, 8), picks: topPicks, cw,
     loading: pending > 0, ready, total: SPECS.length,
-    failed: ready === SPECS.length && rows.every((r) => r.metas.length === 0),
+    failed: ready === SPECS.length && fetched === 0 && cw.length === 0,
   };
 }
 
