@@ -64,7 +64,7 @@ struct SettingsView: View {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
                     HStack(spacing: BP.px(12)) {
                         Button("Pull now") { Task { await app.refreshRoster() } }.buttonStyle(BPActionStyle()).disabled(!account.isSignedIn)
-                        BPNote(text: "Read-only for now. Changes made on this TV stay on this TV until Stage 4.")
+                        BPNote(text: sync.queued > 0 ? "\(sync.queued) change\(sync.queued == 1 ? "" : "s") waiting to upload" : "Profiles, home rows and services sync both ways. PINs never leave this TV.")
                     }
                 }
                 section("Profiles") {

@@ -108,6 +108,88 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------------- account + profile sync (recorded host)
+// A fake Harbor: the state GET returns a two-profile roster plus a home-rows doc, the push
+// POST accepts everything. Proves the bundle adopts a roster into harbor.profiles.v1, tells the
+// host, hydrates, and pushes a settings change with the right doc key.
+{
+  const events = [];
+  const pushes = [];
+  const seededSession = JSON.stringify({ token: "tok_smoke", refresh: "ref_smoke", refreshedAt: Date.now(), user: { id: "u_smoke", username: "skipper" } });
+  const rec = loadEngine({
+    storage: new Map([
+      // p_local1 was adopted earlier (id map binds it); p_guest is the auto-seeded bootstrap
+      // profile a fresh TV makes before sign-in, which a first pull must drop, not duplicate.
+      ["harbor.profiles.v1", JSON.stringify({ activeId: "p_guest", profiles: [
+        { id: "p_local1", name: "Me", avatar: null, color: "#60a5fa", isPrimary: true, kid: null, passwordHash: "abc", createdAt: 1000, settingsLinked: true },
+        { id: "p_guest", name: "Harbor", avatar: null, color: "#a78bfa", isPrimary: false, kid: null, passwordHash: null, createdAt: 900, settingsLinked: true, bootstrap: true },
+      ] })],
+      ["harbor.sync.idmap", JSON.stringify({ p_local1: "s_aaa" })],
+      ["harbor.auth.p_guest", JSON.stringify({ authKey: "x", user: {} })],
+      // The session was stored while the bootstrap profile was active (Settings → Sign in).
+      ["harbor.theme-session.p_guest", seededSession],
+    ]),
+  });
+  const SERVER_ROSTER = { profiles: [
+    { syncId: "s_aaa", name: "Me", avatar: null, color: "#60a5fa", isPrimary: true, kid: null, hideContent: null, lockedTabs: null, settingsLinked: true, createdAt: 1000, updatedAt: 2000, deletedAt: null },
+    { syncId: "s_bbb", name: "Kiddo", avatar: "/kids/avatars/fox.png", color: "#fbbf24", isPrimary: false, kid: { age: 8, curfewMinutes: null }, hideContent: null, lockedTabs: null, settingsLinked: false, createdAt: 1500, updatedAt: 2500, deletedAt: null },
+  ] };
+  let homeDoc = { rev: 2, value: { order: ["continue", "trending"], hidden: [] } };
+  rec.node.host.fetch = async (req) => {
+    const json = (body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/sync/v1/state")) {
+      return json({ rev: 7, serverTime: new Date().toISOString(), docs: [
+        { key: "account:profiles", rev: 3, at: "", value: SERVER_ROSTER },
+        { key: "s_aaa:home", rev: homeDoc.rev, at: "", value: homeDoc.value },
+      ] });
+    }
+    if (req.url.endsWith("/sync/v1/push")) {
+      const body = JSON.parse(req.body || "{}");
+      pushes.push(body);
+      return json({ serverTime: new Date().toISOString(), results: body.writes.map((w, i) => ({ key: w.key, ok: true, rev: 10 + i })) });
+    }
+    return json({ error: "not_found" }, 404);
+  };
+  rec.engine.runtime.onEvent((type, detail) => events.push([type, detail]));
+  const sess = rec.engine.account.session();
+  r.ok("account.session reads upstream's per-profile session key", sess && sess.user.username === "skipper" && sess.hasRefresh === true, JSON.stringify(sess));
+  r.eq("sync.status before start", rec.engine.sync.status().phase, "off");
+  const pulled = await rec.engine.sync.pullNow();
+  r.ok("sync.pullNow succeeds on a first pull", pulled.ok === true && pulled.firstPull === true, JSON.stringify(pulled));
+  const blob = JSON.parse(rec.node.storage.get("harbor.profiles.v1"));
+  r.ok("roster adopted into harbor.profiles.v1 (2 profiles, local id kept, PIN kept)", blob.profiles.length === 2 && blob.profiles[0].id === "p_local1" && blob.profiles[0].passwordHash === "abc" && blob.profiles[1].name === "Kiddo" && blob.profiles[1].settingsLinked === false, JSON.stringify(blob));
+  r.ok("bootstrap profile dropped and its per-profile keys purged", !blob.profiles.some((p) => p.id === "p_guest") && !rec.node.storage.has("harbor.auth.p_guest"), JSON.stringify([...rec.node.storage.keys()].filter((k) => k.includes("p_guest"))));
+  r.ok("roster-applied event names the dropped id", events.some(([t, d]) => t === "harbor:roster-applied" && d && d.dropped && d.dropped[0] === "p_guest"));
+  r.eq("active profile cleared when the active one was dropped", blob.activeId, null);
+  r.ok("account session survives the drop (moved onto the new primary)", rec.engine.account.session() && rec.engine.account.session().user.username === "skipper" && !!rec.node.storage.get("harbor.theme-session.p_local1"), JSON.stringify([...rec.node.storage.keys()].filter((k) => k.startsWith("harbor.theme-session"))));
+  const idmap = JSON.parse(rec.node.storage.get("harbor.sync.idmap") || "{}");
+  r.eq("id map binds the local id to the server syncId", idmap.p_local1, "s_aaa");
+  r.ok("host told: harbor:roster-applied", events.some(([t]) => t === "harbor:roster-applied"), JSON.stringify(events.map(([t]) => t)));
+  const home = rec.engine.settings.loadForProfile("p_local1", true);
+  r.ok("home rows doc applied into the linked settings blob", home && home.homeRows && Array.isArray(home.homeRows.order) && home.homeRows.order[1] === "trending", JSON.stringify(home && home.homeRows));
+  // The viewer picks the adopted profile (what Swift does after who-is-watching), the server
+  // moves on, and the next pull lands on the ACTIVE profile: the host must hear about it.
+  rec.node.storage.set("harbor.profiles.v1", JSON.stringify({ ...blob, activeId: "p_local1" }));
+  rec.engine.runtime.syncStorage("harbor.profiles.v1", rec.node.storage.get("harbor.profiles.v1"));
+  rec.engine.runtime.emitEvent("harbor:active-profile-changed", { id: "p_local1" });
+  homeDoc = { rev: 3, value: { order: ["trending", "continue", "new"], hidden: ["x"] } };
+  const pulled2 = await rec.engine.sync.pullNow();
+  r.ok("second pull applies the newer home doc", pulled2.ok && rec.engine.settings.loadForProfile("p_local1", true).homeRows.order[2] === "new", JSON.stringify(pulled2));
+  r.ok("host told: harbor:settings-updated for the active profile", events.some(([t, d]) => t === "harbor:settings-updated" && d && d.profileId === "p_local1" && d.fields.includes("homeRows")), JSON.stringify(events.filter(([t]) => t === "harbor:settings-updated")));
+  // A local edit to a synced field goes up with the right key.
+  rec.engine.sync.start();
+  rec.engine.settings.patch({ homeRows: { order: ["continue", "trending", "new"], hidden: [] } }, rec.engine.settings.sourceKeyFor("p_local1", true));
+  rec.engine.sync.pushNow();
+  await new Promise((res) => setTimeout(res, 200));
+  const sent = pushes.flatMap((p) => p.writes);
+  r.ok("settings.patch on homeRows pushed s_aaa:home at baseRev 3", sent.some((w) => w.key === "s_aaa:home" && w.baseRev === 3 && w.value && w.value.order[0] === "continue"), JSON.stringify(sent.map((w) => [w.key, w.baseRev])));
+  r.ok("no roster re-push when unchanged (sent-hash suppression)", !sent.some((w) => w.key === "account:profiles"), JSON.stringify(sent.map((w) => w.key)));
+  r.ok("sync status reached idle with a pull time", rec.engine.sync.status().phase === "idle" && rec.engine.sync.status().lastPullAt > 0, JSON.stringify(rec.engine.sync.status()));
+  rec.engine.sync.stop();
+  rec.engine.account.stop();
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());

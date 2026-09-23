@@ -107,7 +107,9 @@ enum HarborErrorMessages {
         case "stremio_already_bound": return "That Stremio account is already linked to another Harbor account."
         case "stremio_key_invalid": return "Stremio rejected that sign-in."
         case "validation": return "Invalid \(reason ?? "input")."
-        default: return code.map { "Harbor error: \($0)" } ?? "Harbor request failed (\(status))."
+        default:
+            if code == nil, let reason, !reason.isEmpty { return reason }
+            return code.map { "Harbor error: \($0)" } ?? "Harbor request failed (\(status))."
         }
     }
 }

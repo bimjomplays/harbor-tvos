@@ -42,7 +42,16 @@ final class SettingsBridge: ObservableObject {
         }
     }
 
+    private var unsubscribe: (() -> Void)?
+
     func load() async {
+        if unsubscribe == nil {
+            // Profile sync applied a settings section (home rows, services…): re-read the slice.
+            unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
+                guard type == "harbor:settings-updated" else { return }
+                Task { await self?.load() }
+            }
+        }
         let key = await storageKey
         if let s: Slice = try? await HarborEngine.shared.call("settings.load", [key]) {
             slice = s

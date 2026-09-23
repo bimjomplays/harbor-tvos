@@ -58,6 +58,8 @@ import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
 import * as subtitleGlue from "./subtitles";
 import * as liveGlue from "./live";
+import * as accountGlue from "./account";
+import * as syncGlue from "./sync";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -356,6 +358,7 @@ export const settings = {
   patch(patch: Partial<Settings>, key: string = SETTINGS_KEY): Settings {
     const next = { ...loadStoredSettings(key), ...patch } as Settings;
     globalThis.localStorage.setItem(key, serializeSettings(next));
+    syncGlue.markSettingsPatched(Object.keys(patch));
     return next;
   },
 };
@@ -422,6 +425,35 @@ export const trakt = {
   status: traktGlue.status,
   disconnect: traktGlue.disconnect,
   scrobble: traktGlue.scrobble,
+};
+
+/** Harbor account session (upstream theme-auth + identity API); the bundle owns refresh. */
+export const account = {
+  session: accountGlue.session,
+  login: accountGlue.login,
+  register: accountGlue.register,
+  logout: accountGlue.logout,
+  token: accountGlue.token,
+  refreshIfDue: accountGlue.refreshIfDue,
+  reloadUser: accountGlue.reloadUser,
+  start: accountGlue.start,
+  stop: accountGlue.stop,
+};
+
+/** Profile sync, both directions, on upstream's engine (see sync.ts for the host contract). */
+export const sync = {
+  start: syncGlue.start,
+  stop: syncGlue.stop,
+  status: syncGlue.status,
+  pullNow: syncGlue.pullNow,
+  pushNow: syncGlue.pushNow,
+  requestPull: syncGlue.requestPull,
+  markDirty: syncGlue.markDirty,
+  markCleared: syncGlue.markCleared,
+  profileDeleted: syncGlue.profileDeleted,
+  syncedSettingsFields: syncGlue.syncedSettingsFields,
+  parked: syncGlue.parked,
+  restoreParked: syncGlue.restoreParked,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

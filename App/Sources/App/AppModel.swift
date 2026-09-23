@@ -24,8 +24,12 @@ final class AppModel: ObservableObject {
 
     func boot() async {
         Fixtures.installIfRequested(into: self)
-        if !Fixtures.active { await SettingsBridge.shared.load() }
-        if account.isSignedIn && !Fixtures.active { await refreshRoster() }
+        if !Fixtures.active {
+            await SettingsBridge.shared.load()
+            profiles.attachEngine()
+            await account.attachEngine()
+            if account.isSignedIn { await refreshRoster() }
+        }
         try? await Task.sleep(for: .seconds(Fixtures.active ? 0.2 : 1.2))
         if let fixed = Fixtures.stage {
             if Fixtures.openSpikes { room = .settings }
@@ -60,20 +64,21 @@ final class AppModel: ObservableObject {
         stage = .whoIsWatching
     }
 
-    /// Pull the account roster and adopt it. Called after sign-in and on every boot while signed in.
+    /// One awaited pull (the engine adopts the roster and Swift reloads it), then the
+    /// scheduler keeps syncing in the background. Called after sign-in, on boot, and by Retry.
     func refreshRoster() async {
-        await sync.pull()
-        if let roster = sync.roster {
-            profiles.adopt(roster: roster)
-        } else if sync.phase == .idle {
-            // Signed in, pull succeeded, but the account has no roster yet: keep local profiles.
+        let ok = await sync.pull()
+        profiles.reloadFromStore()
+        if ok {
+            // Pull succeeded but the account has no roster yet: this TV seeds the household.
             profiles.seedIfEmpty(name: account.session?.user.username ?? "Harbor")
         }
+        await sync.start()
     }
 
     func signOutHarbor() {
+        sync.stop()
         account.signOut()
-        sync.clear()
     }
 }
 

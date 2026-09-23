@@ -2,23 +2,32 @@ import Foundation
 import Combine
 import CryptoKit
 
-/// Local profiles on this Apple TV. The roster comes from account sync (read-only for now);
-/// PINs, the active profile and per-profile Stremio sessions are device-local, as upstream intends.
+/// Local profiles on this Apple TV. The roster is adopted and pushed by the engine's profile
+/// sync (see engine/sync.ts); PINs, the active profile and per-profile Stremio sessions are
+/// device-local, as upstream intends.
 @MainActor
 final class ProfilesStore: ObservableObject {
     struct Profile: Codable, Equatable, Identifiable {
+        struct Kid: Codable, Equatable { var age: Int; var curfewMinutes: Int?; var parentPinHash: String? }
         var id: String            // local id, `p_<base36>_<rand>` like upstream
         var syncId: String?
         var name: String
         var avatar: String?
         var color: String
         var isPrimary: Bool
-        var kid: SyncReader.WireProfile.Kid?
+        var kid: Kid?
         var passwordHash: String?
         var createdAt: Double
         /// Settings shared with the primary profile (upstream `settingsLinked`, default true).
         var settingsLinked: Bool? = nil
         var linked: Bool { settingsLinked ?? true }
+        /// Upstream fields this app does not edit yet; carried so a re-save never drops them.
+        var hideContent: AnyJSON? = nil
+        var lockedTabs: AnyJSON? = nil
+        var shareStremioWith: String? = nil
+        /// The profile a fresh TV makes before sign-in. Roster adoption drops it instead of
+        /// pushing it up as a duplicate (upstream planRoster, isBootstrapProfile).
+        var bootstrap: Bool? = nil
     }
 
     struct StremioSession: Codable, Equatable {
@@ -54,35 +63,44 @@ final class ProfilesStore: ObservableObject {
             activeId = Prefs.get(String.self, for: Self.activeKey)
             if !profiles.isEmpty { persist() }
         }
+        migrateIdMap()
+    }
+
+    /// Earlier builds stored the local-id → syncId map as a JSON dictionary through Prefs; the
+    /// engine reads it as a JSON string through KeyValueStore. Re-save it once in that form.
+    private func migrateIdMap() {
+        guard KeyValueStore.shared.get(Self.idMapKey) == nil,
+              let old = Prefs.get([String: String].self, for: Self.idMapKey), !old.isEmpty,
+              let data = try? JSONEncoder().encode(old), let raw = String(data: data, encoding: .utf8) else { return }
+        try? KeyValueStore.shared.set(raw, for: Self.idMapKey)
+    }
+
+    private var unsubscribe: (() -> Void)?
+
+    /// Follow the engine: when profile sync adopts a roster it rewrites `harbor.profiles.v1`
+    /// and says so; reload without re-persisting (that would echo a roster push).
+    func attachEngine() {
+        guard unsubscribe == nil else { return }
+        unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
+            guard type == "harbor:roster-applied" else { return }
+            self?.reloadFromStore()
+        }
+    }
+
+    func reloadFromStore() {
+        guard let raw = KeyValueStore.shared.get(Self.profilesKey), let data = raw.data(using: .utf8),
+              let blob = try? JSONDecoder().decode(Blob.self, from: data) else { return }
+        profiles = blob.profiles
+        activeId = blob.activeId
     }
 
     var active: Profile? { profiles.first { $0.id == activeId } }
-
-    /// Adopt the synced roster: match by syncId, keep device-local fields, add new, drop tombstoned.
-    func adopt(roster: [SyncReader.WireProfile]) {
-        var idMap = Prefs.get([String: String].self, for: Self.idMapKey) ?? [:]   // localId -> syncId
-        var next: [Profile] = []
-        for w in roster {
-            let localId = idMap.first { $0.value == w.syncId }?.key
-            let existing = localId.flatMap { id in profiles.first { $0.id == id } }
-            var p = existing ?? Profile(id: Self.newId(), syncId: w.syncId, name: w.name, avatar: w.avatar, color: w.color,
-                                        isPrimary: w.isPrimary, kid: w.kid, passwordHash: nil, createdAt: w.createdAt)
-            p.syncId = w.syncId; p.name = w.name; p.avatar = w.avatar; p.color = w.color; p.isPrimary = w.isPrimary; p.kid = w.kid
-            p.settingsLinked = w.settingsLinked
-            idMap[p.id] = w.syncId
-            next.append(p)
-        }
-        profiles = next.sorted { ($0.isPrimary ? 0 : 1, $0.createdAt) < ($1.isPrimary ? 0 : 1, $1.createdAt) }
-        try? Prefs.set(idMap, for: Self.idMapKey)
-        if active == nil { activeId = nil }
-        persist()
-    }
 
     /// Used only when the account has no roster yet: one primary profile named after the account.
     func seedIfEmpty(name: String) {
         guard profiles.isEmpty else { return }
         profiles = [Profile(id: Self.newId(), syncId: nil, name: name, avatar: nil, color: Self.colors[0], isPrimary: true,
-                            kid: nil, passwordHash: nil, createdAt: Date().timeIntervalSince1970 * 1000)]
+                            kid: nil, passwordHash: nil, createdAt: Date().timeIntervalSince1970 * 1000, bootstrap: true)]
         persist()
     }
 
@@ -128,8 +146,9 @@ final class ProfilesStore: ObservableObject {
     func reset() {
         for p in profiles { SecretStore.remove("harbor.auth.\(p.id)") }
         profiles = []; activeId = nil
-        KeyValueStore.shared.remove(Self.profilesKey); Prefs.remove(Self.activeKey); Prefs.remove(Self.idMapKey)
+        KeyValueStore.shared.remove(Self.profilesKey); Prefs.remove(Self.activeKey); KeyValueStore.shared.remove(Self.idMapKey)
         HarborEngine.loaded?.syncStorage(key: Self.profilesKey, value: nil)
+        HarborEngine.loaded?.syncStorage(key: Self.idMapKey, value: nil)
     }
 
     func installFixture(_ list: [Profile], activeId: String?) {

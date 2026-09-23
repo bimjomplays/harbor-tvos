@@ -1,111 +1,101 @@
 import Foundation
 import Combine
 
-/// The Harbor account session on this Apple TV. One account per device (upstream keys the
-/// session per local profile, but every profile of one install shares the same account in practice).
+/// The Harbor account session on this Apple TV, mirrored from the engine. Upstream's
+/// theme-auth owns the session (per-profile Keychain keys, the 6-hour refresh, 401 retry);
+/// Swift never refreshes a token itself, so two refreshers can never race on one rotating
+/// refresh token. Before the engine has booted, `session` is a best-effort Keychain read so
+/// the boot screen knows whether to pull the roster.
 @MainActor
 final class AccountStore: ObservableObject {
     struct Session: Codable, Equatable {
-        var token: String
-        var refresh: String?
-        var refreshedAt: Double
         var user: HarborAPI.User
+        var token: String
+        var hasRefresh: Bool
     }
 
     static let shared = AccountStore()
-    private static let key = "harbor.theme-session"
-    /// Proactive refresh cadence from upstream (SESSION_REFRESH_MS = 6 h).
-    private static let refreshInterval: TimeInterval = 6 * 60 * 60
+    private static let legacyKey = "harbor.theme-session"
+    private static let prefix = "harbor.theme-session."
 
     @Published private(set) var session: Session?
     @Published private(set) var busy = false
-
-    private var refreshTask: Task<Void, Never>?
+    private var unsubscribe: (() -> Void)?
 
     private init() {
-        if let raw = SecretStore.get(Self.key), let data = raw.data(using: .utf8) {
-            session = try? JSONDecoder().decode(Session.self, from: data)
-        }
-        armRefresh()
+        session = Self.peekKeychain()
     }
 
     var isSignedIn: Bool { session != nil }
 
+    /// Attach to the running engine: adopt its view of the session, start upstream's refresh
+    /// runner, and follow every change it reports.
+    func attachEngine() async {
+        if unsubscribe == nil {
+            unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
+                guard type == "harbor:account-changed" else { return }
+                self?.session = detail.flatMap { try? $0.decode(Session?.self) } ?? nil
+            }
+        }
+        let current: Session?? = try? await HarborEngine.shared.call("account.session")
+        session = current ?? nil
+        _ = try? await HarborEngine.shared.callJSON("account.start")
+    }
+
     func signIn(username: String, password: String) async throws {
         busy = true; defer { busy = false }
-        let r = try await HarborAPI.login(username: username, password: password)
-        apply(r)
+        do {
+            session = try await HarborEngine.shared.call("account.login", [username, password])
+        } catch { throw Self.translate(error) }
     }
 
     func register(username: String, password: String) async throws {
         busy = true; defer { busy = false }
-        let r = try await HarborAPI.register(username: username, password: password)
-        apply(r)
+        struct Out: Decodable { var recoveryCode: String; var session: Session? }
+        do {
+            let out: Out = try await HarborEngine.shared.call("account.register", [username, password])
+            session = out.session
+        } catch { throw Self.translate(error) }
     }
 
     func signOut() {
         session = nil
-        SecretStore.remove(Self.key)
-        refreshTask?.cancel()
+        Task { _ = try? await HarborEngine.shared.callJSON("account.logout") }
     }
 
-    /// A bearer token for one request. Refreshes first when overdue.
+    /// A bearer for one native request; the engine rotates it first when overdue.
     func token() async throws -> String {
-        guard var s = session else { throw HarborAPI.APIError(status: 401, code: "auth_required", reason: nil) }
-        if Date().timeIntervalSince1970 - s.refreshedAt > Self.refreshInterval, let refresh = s.refresh {
-            if let rotated = try? await HarborAPI.refresh(refresh) {
-                s.token = rotated.token; s.refresh = rotated.refresh; s.refreshedAt = Date().timeIntervalSince1970
-                save(s)
-            }
-        }
-        return s.token
+        let t: String? = try await HarborEngine.shared.call("account.token")
+        guard let t else { throw HarborAPI.APIError(status: 401, code: "auth_required", reason: nil) }
+        return t
     }
 
-    /// One refresh-and-retry, as upstream's authenticatedFetch does.
-    func withToken<T>(_ body: (String) async throws -> T) async throws -> T {
-        let t = try await token()
-        do {
-            return try await body(t)
-        } catch let e as HarborAPI.APIError where e.status == 401 {
-            guard let s = session, let refresh = s.refresh else { throw e }
-            do {
-                let rotated = try await HarborAPI.refresh(refresh)
-                var next = s
-                next.token = rotated.token; next.refresh = rotated.refresh; next.refreshedAt = Date().timeIntervalSince1970
-                save(next)
-                return try await body(rotated.token)
-            } catch let re as HarborAPI.APIError where re.status == 401 && re.code == "refresh_invalid" {
-                signOut()
-                throw re
-            }
-        }
-    }
-
-    /// Simulator fixtures only: an in-memory session that never reaches the Keychain.
+    /// Simulator fixtures only: an in-memory session that never reaches the engine.
     func installFixture(user: HarborAPI.User) {
-        session = Session(token: "fixture", refresh: nil, refreshedAt: Date().timeIntervalSince1970, user: user)
+        session = Session(user: user, token: "fixture", hasRefresh: true)
     }
 
-    private func apply(_ r: HarborAPI.AuthResult) {
-        save(Session(token: r.token, refresh: r.refresh, refreshedAt: Date().timeIntervalSince1970, user: r.user))
-        armRefresh()
-    }
-
-    private func save(_ s: Session) {
-        session = s
-        if let data = try? JSONEncoder().encode(s), let raw = String(data: data, encoding: .utf8) {
-            try? SecretStore.set(raw, for: Self.key)
-        }
-    }
-
-    private func armRefresh() {
-        refreshTask?.cancel()
-        guard session != nil else { return }
-        refreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30 * 60))
-                _ = try? await self?.token()
+    /// Whatever session upstream last stored, before the engine is up: the legacy global key
+    /// (a sign-in made before any profile existed) or any per-profile key.
+    private static func peekKeychain() -> Session? {
+        struct Raw: Decodable { var token: String; var refresh: String?; var user: HarborAPI.User }
+        var keys = [legacyKey]
+        keys += SecretStore.allKeys().filter { $0.hasPrefix(prefix) && !$0.hasSuffix(".repaired.v2") }
+        for key in keys {
+            if let raw = SecretStore.get(key), let data = raw.data(using: .utf8), let r = try? JSONDecoder().decode(Raw.self, from: data) {
+                return Session(user: r.user, token: r.token, hasRefresh: r.refresh != nil)
             }
         }
+        return nil
+    }
+
+    /// Engine errors carry upstream's message: an API `error` code such as `bad_credentials`
+    /// (mapped to a sentence by HarborErrorMessages) or a sentence of its own.
+    private static func translate(_ error: Error) -> Error {
+        guard case EngineError.js(let text) = error else { return error }
+        let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
+        let line = first.hasPrefix("Error: ") ? String(first.dropFirst(7)) : first
+        let looksLikeCode = !line.isEmpty && line.allSatisfy { $0 == "_" || ($0.isLetter && $0.isLowercase) }
+        return HarborAPI.APIError(status: 0, code: looksLikeCode ? line : nil, reason: line)
     }
 }

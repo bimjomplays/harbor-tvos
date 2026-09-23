@@ -1,70 +1,85 @@
 import Foundation
 import Combine
 
-/// Read-only profile sync: pulls `/sync/v1/state`, keeps the docs, exposes the roster.
-/// Pushing is deliberately absent until the write rules are ported (PLAN.md decision 6).
+/// Profile sync status, mirrored from the engine (upstream's lib/profile-sync runs inside the
+/// bundle: pulls on boot and every 15 minutes, pushes 2.5 s after a change). Swift only
+/// starts it, asks for an immediate pull, and shows the status.
 @MainActor
 final class SyncReader: ObservableObject {
-    /// Wire roster record (docs/harbor-protocol.md §4, `WireProfile`).
-    struct WireProfile: Codable, Equatable, Identifiable {
-        struct Kid: Codable, Equatable { var age: Int; var curfewMinutes: Int? }
-        var syncId: String
-        var name: String
-        var avatar: String?
-        var color: String
-        var isPrimary: Bool
-        var kid: Kid?
-        var hideContent: AnyJSON?
-        var lockedTabs: AnyJSON?
-        var settingsLinked: Bool?
-        var createdAt: Double
-        var updatedAt: Double
-        var deletedAt: Double?
-        var id: String { syncId }
+    struct Status: Decodable, Equatable {
+        var phase: String          // off | signed-out | no-refresh | first-pull | first-pull-failed | idle | pulling | pushing
+        var armed: Bool
+        var everPulled: Bool
+        var queued: Int
+        var lastPullAt: Double
+        var lastPushAt: Double
+        var lastError: String?     // network | auth | rate-limited | server
     }
 
     enum Phase: Equatable { case idle, pulling, failed(String) }
 
     static let shared = SyncReader()
-    private static let cacheKey = "harbor.sync.state"
 
-    @Published private(set) var state: HarborAPI.SyncState?
+    @Published private(set) var status: Status?
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var lastPull: Date?
+    private var unsubscribe: (() -> Void)?
+    private var started = false
 
-    private init() {
-        state = CacheStore.shared.get(HarborAPI.SyncState.self, for: Self.cacheKey)
+    private init() {}
+
+    var queued: Int { status?.queued ?? 0 }
+
+    /// Follow the engine's status events and start the scheduler (idempotent).
+    func start() async {
+        if unsubscribe == nil {
+            unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
+                guard type == "harbor:sync-status", let s = detail.flatMap({ try? $0.decode(Status.self) }) else { return }
+                self?.apply(s)
+            }
+        }
+        guard !started else { return }
+        started = true
+        if let s: Status = try? await HarborEngine.shared.call("sync.start") { apply(s) }
     }
 
-    /// Live (non-tombstoned) profiles from the account roster, or nil when no roster doc exists.
-    var roster: [WireProfile]? {
-        guard let doc = state?.docs.first(where: { $0.key == "account:profiles" }) else { return nil }
-        struct Roster: Codable { var profiles: [WireProfile] }
-        let all = (try? doc.value.decode(Roster.self))?.profiles ?? []
-        return all.filter { $0.deletedAt == nil }
-    }
-
-    func doc(section: String, syncId: String? = nil) -> HarborAPI.SyncDoc? {
-        let key = syncId.map { "\($0):\(section)" } ?? "account:\(section)"
-        return state?.docs.first { $0.key == key }
-    }
-
-    func pull() async {
-        guard phase != .pulling else { return }
+    /// One awaited pull, for boot and the "Pull now" button. Returns true when it succeeded.
+    @discardableResult
+    func pull() async -> Bool {
+        struct Out: Decodable { var ok: Bool; var reason: String?; var status: Status }
         phase = .pulling
-        do {
-            let s = try await AccountStore.shared.withToken { try await HarborAPI.syncState(token: $0) }
-            state = s
-            lastPull = Date()
-            try? CacheStore.shared.set(s, for: Self.cacheKey)
-            phase = .idle
-        } catch {
-            phase = .failed(error.localizedDescription)
+        guard let out: Out = try? await HarborEngine.shared.call("sync.pullNow") else {
+            phase = .failed("engine unavailable"); return false
+        }
+        apply(out.status)
+        if !out.ok { phase = .failed(Self.describe(out.reason)) }
+        return out.ok
+    }
+
+    func stop() {
+        started = false
+        Task { _ = try? await HarborEngine.shared.callJSON("sync.stop") }
+        status = nil
+        phase = .idle
+    }
+
+    private func apply(_ s: Status) {
+        status = s
+        lastPull = s.lastPullAt > 0 ? Date(timeIntervalSince1970: s.lastPullAt / 1000) : nil
+        switch s.phase {
+        case "pulling", "first-pull", "pushing": phase = .pulling
+        case "first-pull-failed": phase = .failed(Self.describe(s.lastError))
+        default: phase = s.lastError != nil ? .failed(Self.describe(s.lastError)) : .idle
         }
     }
 
-    func clear() {
-        state = nil
-        CacheStore.shared.remove(Self.cacheKey)
+    private static func describe(_ reason: String?) -> String {
+        switch reason {
+        case "auth": return "signed out"
+        case "rate-limited": return "rate limited, retrying"
+        case "server": return "the server refused a write"
+        case "network", nil: return "network"
+        default: return reason ?? "unknown"
+        }
     }
 }
