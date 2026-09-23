@@ -726,6 +726,13 @@ export const live = {
 export const subtitles = {
   search: subtitleGlue.search,
   prepare: subtitleGlue.prepare,
+  /** bp-player-subtitles: track rows (language groups, badges, best-match order). */
+  trackView: subtitleGlue.trackView,
+  /** bp-subtitle-find: search a target title / season / episode, and parse a typed title. */
+  find: subtitleGlue.find,
+  titleTarget: subtitleGlue.titleTarget,
+  /** bp-subtitle-tune BpSubtitleLook presets. */
+  presets: subtitleGlue.presets,
 };
 
 /** Playback progress: where to start, and the 4-second progress write (local + Stremio). */
@@ -735,6 +742,8 @@ export const player = {
   localResume: playerGlue.localResume,
   watchedEpisodes: playerGlue.watchedEpisodes,
   decodeWatchedField: playerGlue.decodeWatchedField,
+  /** Up-next lead, auto-advance and seek steps for the Big Picture chrome. */
+  prefs: playerGlue.prefs,
 };
 
 // ================================================================================== runtime

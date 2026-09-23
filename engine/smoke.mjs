@@ -671,6 +671,45 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// ----------------------------------------------- player chrome + subtitle panel (recorded host)
+// bp-player-subtitles / bp-subtitle-find / bp-subtitle-tune: track rows, Find more over a fake
+// Cinemeta + OpenSubtitles v3, presets; player.prefs for the up-next lead and seek steps.
+{
+  const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/series/top/search=")) return json({ metas: [{ id: "tt0903747", type: "series", name: "Breaking Bad", releaseInfo: "2008-2013" }] });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/movie/top/search=")) return json({ metas: [{ id: "tt1000001", type: "movie", name: "Breaking Bad Movie", releaseInfo: "2019" }] });
+    if (req.url === "https://opensubtitles-v3.strem.io/subtitles/series/tt0903747:2:5.json") return json({ subtitles: [
+      { id: "1", url: "https://subs.example.invalid/a.srt", lang: "eng" },
+      { id: "2", url: "https://subs.example.invalid/b.srt", lang: "eng", m: "Breaking.Bad.S02E05.SDH.HI" },
+      { id: "3", url: "https://subs.example.invalid/c.srt", lang: "fre" },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  r.eq("player.prefs: upstream defaults (auto lead, auto-advance on, 10 s steps)", e.player.prefs("default", true), { autoPlayNextEpisode: true, nextEpisodeLeadSec: -1, seekBackStepSec: 10, seekForwardStepSec: 10 });
+  r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
+  const tv = e.subtitles.trackView("default", true, [
+    { id: 1, lang: "eng", title: null, codec: "subrip", external: false },
+    { id: 2, lang: "fre", title: "French", codec: "ass", external: false, forced: true },
+    { id: 3, lang: "en", title: "Show.S01E02.1080p.WEB-DL.x264-GRP", external: true, hearingImpaired: true, externalFilename: "/c/a.srt" },
+    { id: 4, lang: "ger", title: "German", external: false, secondary: true },
+  ], "Show.S01E02.1080p.WEB-DL.x264-GRP.mkv", 1, 2);
+  const row = (id) => tv.tracks.find((t) => t.id === id);
+  r.ok("subtitles.trackView keeps preferred languages plus the secondary track", row("1").keep && !row("2").keep && row("3").keep && row("4").keep, JSON.stringify(tv.tracks.map((t) => [t.id, t.keep])));
+  r.ok("subtitles.trackView labels rows like bp-subtitle-parts", row("1").title === "Embedded 1 · SUBRIP" && row("3").detail === "External · English" && row("3").tags.join() === "HI/SDH" && row("2").tags.join() === "Forced" && row("1").langDisplay === "English", JSON.stringify(tv.tracks));
+  r.ok("subtitles.trackView ranks the release-matched external track as the best match", tv.ranked[0] && tv.ranked[0].id === "3" && tv.ranked[0].eligible === true, JSON.stringify(tv.ranked));
+  const target = await e.subtitles.titleTarget("breaking bad s2e5", { imdbId: "tt0111161", type: "movie", title: "The Shawshank Redemption" });
+  r.eq("subtitles.titleTarget parses S2E5 and picks the Cinemeta series", target, { imdbId: "tt0903747", type: "series", title: "Breaking Bad", season: 2, episode: 5 });
+  r.eq("subtitles.titleTarget: a one-letter query re-runs the current target", await e.subtitles.titleTarget("b", { imdbId: "", type: "movie", title: "x" }), null);
+  const found = await e.subtitles.find("default", true, null, target, null, null, null);
+  r.ok("subtitles.find searches the other title's episode with provider details and HI flags", found.tooNew === false && found.results.length === 3 && found.results[1].hearingImpaired === true && found.results[1].tags.join() === "HI/SDH" && found.results[0].provider === "OpenSubtitles" && found.results[2].langName === "French" && hits.includes("https://opensubtitles-v3.strem.io/subtitles/series/tt0903747:2:5.json"), JSON.stringify(found));
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());
