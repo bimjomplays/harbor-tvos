@@ -144,3 +144,14 @@ export async function awards(meta: Meta): Promise<TitleAwards> {
   const entries = merged.filter((e) => e.type !== "other").map((e) => ({ type: e.type, awardName: e.awardName, category: e.category ?? null, year: e.year ?? null, result: e.result, recipient: e.recipient ?? (e.recipients?.[0] ?? null) }));
   return { groups, entries };
 }
+
+
+// ------------------------------------------------------------------------- gallery row
+/** bp-gallery-row: up to 24 backdrops, posters and logos from the TMDB detail (already fetched for extras). */
+export async function gallery(meta: Meta, profileId: string, linked: boolean): Promise<{ backdrops: string[]; posters: string[]; logos: string[] }> {
+  const s = loadEffective(profileId, linked);
+  if (!s.tmdbKey) return { backdrops: [], posters: [], logos: [] };
+  const d = await tmdbDetails(s.tmdbKey, meta).catch(() => null);
+  const g = (d as unknown as { gallery?: { backdrops?: string[]; posters?: string[]; logos?: string[] } } | null)?.gallery;
+  return { backdrops: (g?.backdrops ?? []).slice(0, 24), posters: (g?.posters ?? []).slice(0, 24), logos: (g?.logos ?? []).slice(0, 24) };
+}

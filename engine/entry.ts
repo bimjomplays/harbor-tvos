@@ -582,6 +582,7 @@ export const mal = trackersGlue.mal;
 export const detailRoom = {
   episodeFacts: detailGlue.episodeFacts,
   awards: detailGlue.awards,
+  gallery: detailGlue.gallery,
   extras: detailGlue.extras,
   collection: detailGlue.collection,
 };

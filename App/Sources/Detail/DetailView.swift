@@ -13,6 +13,7 @@ struct DetailView: View {
     @State private var listDialog = false
     @State private var factsDialog = false
     @State private var awardType: DetailModel.TitleAwards.Group?
+    @State private var seasonsSheet = false
     @State private var rateDialog = false
     @State private var person: DetailModel.Extras.Cast?
     @Environment(\.dismiss) private var dismiss
@@ -88,6 +89,9 @@ struct DetailView: View {
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: model.meta) }
         .fullScreenCover(isPresented: $factsDialog) { FactsDialogView(title: model.meta.name, facts: model.extras?.facts ?? []) }
+        .fullScreenCover(isPresented: $seasonsSheet) {
+            SeasonsSheet(seasons: model.seasons, counts: Dictionary(grouping: model.episodes, by: \.season).mapValues(\.count), season: Binding(get: { model.season }, set: { model.season = $0 }))
+        }
         .fullScreenCover(item: $awardType) { g in AwardsDialogView(group: g, entries: (model.awards?.entries ?? []).filter { $0.type == g.type }) }
         .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: model.meta) }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
@@ -195,6 +199,7 @@ struct DetailView: View {
     @ViewBuilder private var tmdbRows: some View {
         if !model.characters.isEmpty { charactersRow }
         if let a = model.awards, !a.groups.isEmpty { awardsRow(a) }
+        if !model.isAnimeId, !SettingsBridge.shared.slice.tmdbKey.isEmpty { GalleryRow(meta: model.meta) }
         if let x = model.extras {
             if !x.cast.isEmpty { castRow(x.cast) }
             if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
@@ -346,10 +351,12 @@ struct DetailView: View {
     private var episodes: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             HStack(spacing: BP.px(8)) {
-                ForEach(model.seasons, id: \.self) { s in
+                ForEach(model.seasons.prefix(8), id: \.self) { s in
                     Button(s == 0 ? "Specials" : "Season \(s)") { model.season = s }
                         .buttonStyle(BPActionStyle(primary: model.season == s))
                 }
+                // bp-season-menu: long runs open the scrollable list instead of a chip wall.
+                if model.seasons.count > 8 { Button("All \(model.seasons.count) seasons") { seasonsSheet = true }.buttonStyle(BPActionStyle()) }
             }
             .focusSection()
             ScrollViewReader { proxy in
