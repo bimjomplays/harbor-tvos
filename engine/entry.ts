@@ -648,6 +648,7 @@ export const live = {
   addPlaylist: liveGlue.addPlaylist,
   setEpgUrl: liveGlue.setEpgUrl,
   loadShortEpg: liveGlue.loadShortEpg,
+  homeRow: liveGlue.homeRow,
   removePlaylist: liveGlue.removePlaylist,
   channels: liveGlue.channels,
   favorites: liveGlue.favorites,

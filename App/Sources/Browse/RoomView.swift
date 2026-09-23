@@ -3,6 +3,7 @@ import SwiftUI
 /// Home / Movies / Shows: spotlight up top, Continue Watching, then the rail of rows.
 struct RoomView: View {
     @StateObject private var model: BrowseModel
+    @EnvironmentObject private var app: AppModel
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
     @State private var quick: Meta?
@@ -47,6 +48,8 @@ struct RoomView: View {
                         ContinueRowView(items: model.continueWatching,
                                         onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) })
                     }
+                    // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
+                    if model.room == .home { LiveRowView { app.room = .live } }
                 }
                 .prefersDefaultFocus(true, in: shellNS ?? localNS)
             }

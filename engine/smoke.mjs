@@ -240,6 +240,7 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("animeDetail.load ignores a non-anime id", await engine.animeDetail.load({ id: "tt0111161", type: "movie", name: "x" }, "default", true), null);
   r.eq("collectionsRoom.tmdb without a TMDB key", await engine.collectionsRoom.tmdb("default", true, "All", 1), { cards: [], done: true });
   r.ok("collectionsRoom.categories starts with All", engine.collectionsRoom.categories()[0] === "All" && engine.collectionsRoom.categories().includes("Sagas"), JSON.stringify(engine.collectionsRoom.categories()));
+  r.eq("live.homeRow without playlists", await engine.live.homeRow(), { playlistId: null, cells: [] });
   r.eq("onboarding.vote records an upvote", engine.onboarding.vote("tt0000001", true, "Smoke", "movie").includes("tt0000001"), true);
   r.eq("onboarding.vote clears it again", engine.onboarding.vote("tt0000001", false, "Smoke", "movie").includes("tt0000001"), false);
   r.eq("live.loadShortEpg ignores a non-Xtream playlist", await engine.live.loadShortEpg("nope", ["a"]), { hydrated: 0 });

@@ -14,6 +14,8 @@ import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
 import { hydrateShortEpg } from "@/lib/iptv/xtream-short-epg";
+import { rankBpLive } from "@/views/big-picture/bp-live-rank";
+import { buildBpGuide } from "@/views/big-picture/use-bp-live";
 import { bpChannelLabel, bpGroupLabel } from "@/views/big-picture/bp-guide-title";
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
 import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
@@ -344,4 +346,31 @@ export function schedule(playlistId: string, channelId: string, fromMs: number, 
   if (!ch || !epg) return [];
   const programs = epgProgramsForChannel(ch, epg, computeTvgIdCounts(all), epgOffsetHoursPref()) ?? [];
   return programs.filter((p) => p.endMs > fromMs && p.startMs < toMs).map(view);
+}
+
+
+// ------------------------------------------------------------------------- Home live row
+// bp-live-row + bp-live-rank: the active playlist's best sixteen channels right now (favourites
+// first, junk names penalised, most-watched and network channels boosted), with now/next.
+export type HomeLiveCell = { playlistId: string; channel: LiveChannel; now: ProgramView | null; next: ProgramView | null; progress: number | null };
+
+export async function homeRow(): Promise<{ playlistId: string | null; cells: HomeLiveCell[] }> {
+  const lists = readPlaylists();
+  if (lists.length === 0) return { playlistId: null, cells: [] };
+  let activeId: string | null = null;
+  try { activeId = localStorage.getItem("harbor.iptv.active"); } catch { activeId = null; }
+  const pl = lists.find((p) => p.id === activeId) ?? lists[0];
+  if (!loaded.has(pl.id)) await Promise.race([channels(pl.id).catch(() => undefined), new Promise((r) => setTimeout(r, 12000))]);
+  const all = loaded.get(pl.id) ?? [];
+  if (all.length === 0) return { playlistId: pl.id, cells: [] };
+  if (!epgCache.has(pl.id)) await Promise.race([loadEpg(pl.id).catch(() => undefined), new Promise((r) => setTimeout(r, 8000))]);
+  const epg = epgCache.get(pl.id)?.index ?? null;
+  const favs = readFavorites();
+  const region = String(loadStoredSettings().region ?? "US");
+  const tvgCounts = computeTvgIdCounts(all);
+  const ranked = rankBpLive({ channels: all, guide: [], epg: epg && epg.byChannel.size > 0 ? epg : null, tvgCounts, nowMs: Date.now(), region, favoriteIds: new Set(favs.keys()) });
+  return {
+    playlistId: pl.id,
+    cells: ranked.map((it) => ({ playlistId: pl.id, channel: toView(it.channel, favs), now: it.current ? view(it.current) : null, next: it.next ? view(it.next) : null, progress: it.progress })),
+  };
 }
