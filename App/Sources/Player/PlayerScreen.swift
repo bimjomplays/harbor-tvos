@@ -21,7 +21,19 @@ struct PlayerScreen: View {
     @State private var snap: (position: Double, duration: Double, paused: Bool) = (0, 0, false)
     @State private var panel: Panel?
     @State private var tracks: [MPVPlayerController.Track] = []
+    @State private var online: [OnlineSubtitle] = []
+    @State private var onlineState: String?
     @FocusState private var focus: FocusTarget?
+
+    struct OnlineSubtitle: Decodable, Identifiable {
+        var id: String
+        var url: String
+        var lang: String
+        var langName: String?
+        var title: String?
+        var displayTitle: String?
+        var source: String
+    }
 
     enum Panel { case audio, subtitles }
     enum FocusTarget: Hashable { case surface, chip(String), track(Int) }
@@ -132,7 +144,22 @@ struct PlayerScreen: View {
                 }
                 ForEach(list) { t in trackButton(t, label: t.label, selected: t.selected, kind: kind) }
                 if list.isEmpty && which == .audio { BPNote(text: "No audio tracks reported yet.") }
-                if list.isEmpty && which == .subtitles { BPNote(text: "No embedded subtitles. Online subtitle search arrives in Stage 4.") }
+                if which == .subtitles {
+                    Divider().overlay(BP.edge2).padding(.vertical, BP.px(6))
+                    Button(onlineState == "searching" ? "Searching…" : "Search online") { Task { await searchOnline() } }
+                        .buttonStyle(BPActionStyle()).disabled(onlineState == "searching")
+                        .focused($focus, equals: .track(-2))
+                    if let onlineState, onlineState != "searching" { BPNote(text: onlineState) }
+                    ForEach(online) { sub in
+                        Button { Task { await addOnline(sub) } } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sub.langName ?? sub.lang).font(BP.sans(14, .semibold))
+                                Text(sub.displayTitle ?? sub.title ?? sub.source).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(BPActionStyle())
+                    }
+                }
             }
             .padding(BP.px(24))
             .frame(width: BP.px(380), alignment: .leading)
@@ -163,6 +190,39 @@ struct PlayerScreen: View {
     }
 
     private func refreshTracks() { tracks = controller?.tracks() ?? [] }
+
+    /// OpenSubtitles v3 / Wyzie / subtitle addons through the engine (lib/subtitles/search.ts).
+    private func searchOnline() async {
+        guard let context else { return }
+        onlineState = "searching"
+        let p = ProfilesStore.shared.active
+        let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
+        do {
+            let results: [OnlineSubtitle] = try await HarborEngine.shared.call("subtitles.search",
+                [p?.id ?? "default", p?.isPrimary ?? true, authKey, context.meta, context.season, context.episode, context.imdbId])
+            online = results
+            onlineState = results.isEmpty ? "Nothing found online." : nil
+        } catch {
+            onlineState = error.localizedDescription
+        }
+    }
+
+    /// Download + decode through the engine (handles zips, encodings), hand mpv a local file.
+    private func addOnline(_ sub: OnlineSubtitle) async {
+        struct Prepared: Decodable { var text: String; var format: String }
+        do {
+            let prep: Prepared = try await HarborEngine.shared.call("subtitles.prepare", [sub.url])
+            let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("subs", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("\(sub.id.replacingOccurrences(of: "/", with: "_")).\(prep.format)")
+            try prep.text.write(to: file, atomically: true, encoding: .utf8)
+            controller?.addSubtitle(file: file, title: sub.displayTitle ?? sub.title ?? sub.langName ?? sub.lang, lang: sub.lang)
+            refreshTracks()
+            onlineState = "Added \(sub.langName ?? sub.lang)."
+        } catch {
+            onlineState = "Couldn't load that subtitle: \(error.localizedDescription)"
+        }
+    }
 
     // MARK: behaviour
 

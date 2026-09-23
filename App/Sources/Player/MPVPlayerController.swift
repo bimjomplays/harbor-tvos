@@ -170,6 +170,11 @@ final class MPVPlayerController: UIViewController {
         mpv_set_property_string(mpv, prop, track.map { String($0.id) } ?? "no")
     }
 
+    /// `sub-add <file> select <title> <lang>` (mpv.rs:1063 uses "auto"; we select the one the viewer picked).
+    func addSubtitle(file: URL, title: String, lang: String) {
+        command("sub-add", [file.path, "select", title, lang])
+    }
+
     func setPaused(_ paused: Bool) {
         guard let mpv else { return }
         var v: Int = paused ? 1 : 0

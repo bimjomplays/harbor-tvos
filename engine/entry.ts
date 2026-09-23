@@ -56,6 +56,7 @@ import * as roomBuilders from "./rooms";
 import * as discoverBuilders from "./discover";
 import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
+import * as subtitleGlue from "./subtitles";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -395,6 +396,12 @@ export const streamsRoom = {
   forget: streamGlue.forget,
 };
 export type { StreamSearch } from "./streams";
+
+/** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */
+export const subtitles = {
+  search: subtitleGlue.search,
+  prepare: subtitleGlue.prepare,
+};
 
 /** Playback progress: where to start, and the 4-second progress write (local + Stremio). */
 export const player = {

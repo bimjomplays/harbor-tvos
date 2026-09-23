@@ -206,6 +206,12 @@ if (!OFFLINE) {
   await engine.player.saveProgress({ meta: shaw, positionMs: 900000, durationMs: 8500000, authKey: null });
   const cwl = await r.timed("rooms.continueWatchingFor(local only)", () => engine.rooms.continueWatchingFor("p_smoke", true, null));
   r.ok("local resume shows up in Continue Watching", cwl.length === 1 && cwl[0]._id === "tt0111161" && cwl[0].state.timeOffset === 900000, JSON.stringify(cwl.map((i) => [i._id, i.state.timeOffset])));
+  const subs = await r.timed("subtitles.search(tt0111161)", () => engine.subtitles.search("p_smoke", true, null, shaw, null, null, "tt0111161"));
+  r.ok("subtitles.search finds English subtitles", Array.isArray(subs) && subs.length > 0 && subs[0].url, JSON.stringify(subs.slice(0, 2).map((x) => [x.source, x.lang, x.url.slice(0, 60)])));
+  if (subs.length > 0) {
+    const prep = await r.timed("subtitles.prepare(first)", () => engine.subtitles.prepare(subs[0].url));
+    r.ok("subtitles.prepare returns text", prep && prep.text.length > 100 && ["srt", "vtt", "ass", "ssa"].includes(prep.format), JSON.stringify(prep && { format: prep.format, encoding: prep.encoding, len: prep.text.length }));
+  }
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

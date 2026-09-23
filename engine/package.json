@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "core-js": "^3.50.0",
+    "fflate": "^0.8.3",
     "parse-torrent-title": "^3.0.1",
     "tldts": "^7.4.12"
   },
