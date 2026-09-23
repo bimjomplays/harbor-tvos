@@ -148,7 +148,7 @@ final class MPVPlayerController: UIViewController {
                 case MPV_EVENT_END_FILE:
                     if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
                         if ef.pointee.error < 0 { self.push("end: \(String(cString: mpv_error_string(ef.pointee.error)))") }
-                        if ef.pointee.reason == Int32(MPV_END_FILE_REASON_EOF.rawValue) { DispatchQueue.main.async { self.onEnded?() } }
+                        if ef.pointee.reason == MPV_END_FILE_REASON_EOF { DispatchQueue.main.async { self.onEnded?() } }
                     }
                 default:
                     break
