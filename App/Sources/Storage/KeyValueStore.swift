@@ -30,7 +30,7 @@ final class KeyValueStore {
         let value: String?
         switch Self.tier(for: key) {
         case .secret: value = SecretStore.get(key)
-        case .durable: value = Prefs.get(String.self, for: key)
+        case .durable: value = Prefs.get(String.self, for: key) ?? CacheStore.shared.get(String.self, for: key)
         case .cache: value = CacheStore.shared.get(String.self, for: key)
         }
         if let value { lock.lock(); memory[key] = value; lock.unlock() }

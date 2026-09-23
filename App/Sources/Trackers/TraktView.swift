@@ -30,6 +30,7 @@ final class TraktModel: ObservableObject {
                     try? await Task.sleep(for: .seconds(interval))
                     guard let self, !Task.isCancelled else { return }
                     let r: Poll = (try? await HarborEngine.shared.call("trakt.poll", [c.deviceCode])) ?? Poll(kind: "error", message: "poll failed", username: nil)
+                    guard !Task.isCancelled, self.code?.deviceCode == c.deviceCode else { return }
                     switch r.kind {
                     case "authorized":
                         self.code = nil

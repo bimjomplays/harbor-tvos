@@ -15,19 +15,29 @@ export async function deviceCode(): Promise<DeviceCode> {
 }
 
 /** One poll step; the native side owns the cadence. */
+const inflight = new Map<string, Promise<{ kind: PollResult["kind"]; message?: string; username?: string | null }>>();
+
+/** One poll step; the native side owns the cadence. Concurrent calls for one code share a request. */
 export function poll(deviceCode: string): Promise<{ kind: PollResult["kind"]; message?: string; username?: string | null }> {
+  const running = inflight.get(deviceCode);
+  if (running) return running;
   const device = codes.get(deviceCode) ?? { deviceCode, userCode: "", verificationUrl: "", expiresIn: 60, pollIntervalSec: 5 };
-  return new Promise((resolve) => {
+  const p = new Promise<{ kind: PollResult["kind"]; message?: string; username?: string | null }>((resolve) => {
+    let settled = false;
+    const done = (v: { kind: PollResult["kind"]; message?: string; username?: string | null }) => { if (!settled) { settled = true; resolve(v); } };
+    // pollForToken only reports non-pending results; a silent 8 s means "ask again later".
+    const timer = setTimeout(() => { handle.cancel(); done({ kind: "pending" }); }, 8000);
     const handle = pollForToken({ ...device, expiresIn: 30, pollIntervalSec: 9999 }, (r) => {
+      clearTimeout(timer);
       handle.cancel();
       if (r.kind === "authorized") {
-        completeAuthorization(r.session).then((s) => resolve({ kind: "authorized", username: s.username })).catch(() => resolve({ kind: "authorized", username: null }));
-      } else if (r.kind === "error") resolve({ kind: "error", message: r.message });
-      else resolve({ kind: r.kind });
+        completeAuthorization(r.session).then((s) => done({ kind: "authorized", username: s.username })).catch(() => done({ kind: "authorized", username: null }));
+      } else if (r.kind === "error") done({ kind: "error", message: r.message });
+      else done({ kind: r.kind });
     });
-    // pollForToken only reports non-pending results; a pending answer means "ask again later".
-    setTimeout(() => { handle.cancel(); resolve({ kind: "pending" }); }, 8000);
-  });
+  }).finally(() => inflight.delete(deviceCode));
+  inflight.set(deviceCode, p);
+  return p;
 }
 
 export function status(): { authenticated: boolean; username: string | null } {
