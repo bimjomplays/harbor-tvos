@@ -41,6 +41,14 @@ struct TmdbKeyForm: View {
         busy = true; defer { busy = false }
         note = nil; unreachable = false
         let trimmed = key.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("eyJ") {
+            note = "That is the API Read Access Token. Harbor needs the shorter API Key (32 letters and numbers) from the same TMDB page."
+            return
+        }
+        if trimmed.count != 32 {
+            note = "A TMDB v3 API key is exactly 32 letters and numbers; this one is \(trimmed.count). Check for a missed or extra character."
+            return
+        }
         if await settings.verifyTmdb(key: trimmed) {
             await save()
         } else {
