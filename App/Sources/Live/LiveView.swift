@@ -349,6 +349,8 @@ struct LiveChannelRow: View {
                     .frame(width: BP.px(56), height: BP.px(56))
                     .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
             }
+            .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .accessibilityLabel(channel.favorite ? "Remove from favorites" : "Add to favorites")
             if let pin {
                 // usePinnedOrder: a pinned channel sits just under the favourites in guide order.
                 Button(action: pin) {
@@ -358,10 +360,9 @@ struct LiveChannelRow: View {
                         .frame(width: BP.px(56), height: BP.px(56))
                         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
                 }
+                .buttonStyle(BPTileStyle(radius: BP.rSM))
                 .accessibilityLabel(channel.pinned == true ? "Unpin channel" : "Pin channel")
             }
-            .buttonStyle(BPTileStyle(radius: BP.rSM))
-            .accessibilityLabel(channel.favorite ? "Remove from favorites" : "Add to favorites")
         }
     }
 
