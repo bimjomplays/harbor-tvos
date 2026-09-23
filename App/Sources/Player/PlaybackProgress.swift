@@ -10,7 +10,7 @@ struct PlaybackContext {
     var imdbId: String?
     var imdbVerified: Bool = false
 
-    private var profile: (id: String, authKey: String?) {
+    @MainActor private var profile: (id: String, authKey: String?) {
         let p = ProfilesStore.shared.active
         return (p?.id ?? "default", p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey })
     }
