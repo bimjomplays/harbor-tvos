@@ -26,6 +26,26 @@ struct PlayerScreen: View {
     @State private var panel: Panel?
     @State private var tracks: [MPVPlayerController.Track] = []
     @State private var online: [OnlineSubtitle] = []
+    @State private var segments: [SkipSegment] = []
+    @State private var segmentsLoadedFor: Double = 0
+    @State private var skippedIds: Set<String> = []
+
+    struct SkipSegment: Decodable, Identifiable {
+        var kind: String       // "intro" | "outro" | "recap" | "ad" | ...
+        var startSec: Double
+        var endSec: Double
+        var source: String
+        var id: String { "\(kind)-\(startSec)-\(endSec)" }
+        var label: String {
+            switch kind {
+            case "intro": return "Skip intro"
+            case "outro", "credits": return "Skip outro"
+            case "recap": return "Skip recap"
+            case "ad": return "Skip ad"
+            default: return "Skip \(kind)"
+            }
+        }
+    }
     @State private var onlineState: String?
     @FocusState private var focus: FocusTarget?
 
@@ -66,7 +86,9 @@ struct PlayerScreen: View {
                     }
                 }
             if chrome { chromeView.transition(.opacity) }
-            if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
+            if let seg = activeSegment {
+                skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
                 upNextPill(upNext).transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if let panel { panelView(panel).transition(.move(edge: .trailing).combined(with: .opacity)) }
@@ -82,9 +104,56 @@ struct PlayerScreen: View {
         .onReceive(tick) { _ in
             if let c = controller { snap = c.snapshot() }
             Task { await saveTick(flush: false) }
+            if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
         }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
+    }
+
+    /// The segment the playhead is inside (skip-intro/index.ts activeSegment), unless already skipped.
+    private var activeSegment: SkipSegment? {
+        segments.first { $0.startSec <= snap.position && snap.position < $0.endSec - 1 && !skippedIds.contains($0.id) }
+    }
+
+    /// AniSkip / SkipDB / TheIntroDB / IntroDB App / chapters through the engine (lib/skip-intro).
+    private func loadSegments() async {
+        guard let context, snap.duration > 0 else { return }
+        let p = ProfilesStore.shared.active
+        let ep: AnyJSON = context.season.map { s in
+            .object(["season": .number(Double(s)), "episode": .number(Double(context.episode ?? 1)),
+                     "imdbId": context.imdbId.map { .string($0) } ?? .null,
+                     "imdbSeason": .number(Double(s)), "imdbEpisode": .number(Double(context.episode ?? 1))])
+        } ?? .null
+        let segs: [SkipSegment] = (try? await HarborEngine.shared.call("skip.segments", [p?.id ?? "default", p?.linked ?? true, context.meta, ep, snap.duration])) ?? []
+        segments = segs
+    }
+
+    private func skipPill(_ seg: SkipSegment) -> some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    skippedIds.insert(seg.id)
+                    controller?.seek(to: seg.endSec)
+                    wake()
+                } label: {
+                    HStack(spacing: BP.px(8)) {
+                        Image(systemName: "forward.fill")
+                        Text(seg.label).font(BP.sans(14, .semibold))
+                    }
+                    .foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
+                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.void_.opacity(0.92)))
+                    .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .focused($focus, equals: .chip("skip"))
+            }
+            .padding(.bottom, chrome ? BP.px(150) : BP.px(40)).padding(.trailing, BP.gutter)
+        }
+        .ignoresSafeArea()
+        .onAppear { if panel == nil { focus = .chip("skip") } }
     }
 
     /// Up-next pill in the last 40 seconds; Play/Pause or Select skips straight to the next episode.

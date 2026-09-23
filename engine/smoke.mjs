@@ -234,6 +234,8 @@ if (!OFFLINE) {
   const ch = await r.timed("live.channels(iptv-org US)", () => engine.live.channels(pl.id));
   r.ok("live.channels parses groups and channels", ch && ch.groups.length > 3 && ch.total > 100 && ch.groups[0].channels[0].url.startsWith("http"), JSON.stringify(ch && { groups: ch.groups.length, total: ch.total, first: ch.groups[0] && [ch.groups[0].name, ch.groups[0].channels.length] }));
   engine.live.removePlaylist(pl.id);
+  const sk = await r.timed("skip.segments(Breaking Bad S1E1)", () => engine.skip.segments("p_smoke", true, { id: "tt0903747", type: "series", name: "Breaking Bad" }, { season: 1, episode: 1, imdbId: "tt0903747", imdbSeason: 1, imdbEpisode: 1 }, 3480));
+  r.ok("skip.segments returns a (possibly empty) segment list", Array.isArray(sk) && sk.every((x) => x.startSec < x.endSec), JSON.stringify(sk.slice(0, 3)));
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

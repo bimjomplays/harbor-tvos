@@ -58,6 +58,7 @@ import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
 import * as subtitleGlue from "./subtitles";
 import * as liveGlue from "./live";
+import * as skipGlue from "./skip";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -399,6 +400,9 @@ export const streamsRoom = {
   forget: streamGlue.forget,
 };
 export type { StreamSearch } from "./streams";
+
+/** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
+export const skip = { segments: skipGlue.segments };
 
 /** Live TV: M3U playlists (upstream store + parser). EPG, Xtream and catch-up come later. */
 export const live = {

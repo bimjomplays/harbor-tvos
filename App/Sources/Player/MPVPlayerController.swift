@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 import Libmpv
 
 /// Minimal libmpv host: gpu-next over MoltenVK into a CAMetalLayer, VideoToolbox decode.
@@ -56,6 +57,7 @@ final class MPVPlayerController: UIViewController {
     /// Detach the wakeup callback and destroy on the event queue, so a pending readEvents
     /// never touches a handle mid-destroy.
     private func teardown() {
+        resetDisplayCriteria()
         let handle = mpv
         mpv = nil
         guard let handle else { return }
@@ -221,7 +223,35 @@ final class MPVPlayerController: UIViewController {
         return String(cString: c)
     }
 
+    /// Ask tvOS to match the display to the stream (takes effect only when the viewer has
+    /// Settings → Video and Audio → Match Content on). Upstream relies on mpv for this on desktop;
+    /// on Apple TV the OS owns the HDMI mode, so we hand it fps + dynamic range once known.
+    private var displayCriteriaApplied = false
+    private func applyDisplayCriteria() {
+        guard !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1 else { return }
+        displayCriteriaApplied = true
+        let gamma = string("video-params/gamma") ?? ""
+        var dynamicRange: AVDisplayCriteria.VideoDynamicRange = .sdr
+        if gamma == "pq" { dynamicRange = string("video-params/primaries") == "bt.2020" ? .hdr10 : .sdr }
+        if gamma == "hlg" { dynamicRange = .hlg }
+        if let dovi = string("video-dovi-profile"), !dovi.isEmpty, dovi != "-1" { dynamicRange = .dolbyVision }
+        let criteria = AVDisplayCriteria(refreshRate: Float(fps), videoDynamicRange: dynamicRange)
+        DispatchQueue.main.async {
+            guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
+            window.avDisplayManager.preferredDisplayCriteria = criteria
+        }
+        push("display: \(fps) fps \(dynamicRange)")
+    }
+
+    private func resetDisplayCriteria() {
+        DispatchQueue.main.async {
+            guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
+            window.avDisplayManager.preferredDisplayCriteria = nil
+        }
+    }
+
     private func poll() {
+        applyDisplayCriteria()
         status.videoParams = [string("video-params/w"), string("video-params/h"), string("video-codec"), string("video-params/primaries"), string("video-params/gamma")]
             .compactMap { $0 }.joined(separator: " ")
         status.hwdec = string("hwdec-current") ?? ""
