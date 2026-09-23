@@ -43,7 +43,11 @@ final class DetailModel: ObservableObject {
 
     struct Extras: Decodable {
         struct Cast: Decodable, Identifiable { var id: Int; var name: String; var character: String; var profile: String? }
-        struct Crew: Decodable, Identifiable { var label: String; var names: [String]; var id: String { label } }
+        struct Crew: Decodable, Identifiable {
+            struct Person: Decodable, Identifiable { var id: Int?; var name: String }
+            var label: String; var names: [String]; var people: [Person]?
+            var id: String { label }
+        }
         struct Fact: Decodable, Identifiable { var label: String; var value: String; var id: String { label } }
         struct Provider: Decodable, Identifiable { var name: String; var logo: String; var id: String { name } }
         struct Collection: Decodable { var id: Int; var name: String }

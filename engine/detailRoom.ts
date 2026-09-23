@@ -21,7 +21,7 @@ export type DetailExtras = {
   status: string;
   genres: string[];
   cast: Array<{ id: number; name: string; character: string; profile: string | null }>;
-  crew: Array<{ label: string; names: string[] }>;
+  crew: Array<{ label: string; names: string[]; people: Array<{ id: number | null; name: string }> }>;
   recommendations: Meta[];
   similar: Meta[];
   trailerYtId: string | null;
@@ -44,7 +44,10 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
   if (!d) { cache.set(key, { at: Date.now(), value: null }); return null; }
   // bp-crew-row: Director/Creator/Writer/Producers/Cinematography/Music/Editor, capped 2-4 each.
   const crew: DetailExtras["crew"] = [];
-  const push = (label: string, list: Array<{ name: string }>, cap: number) => { if (list.length) crew.push({ label, names: list.slice(0, cap).map((p) => p.name) }); };
+  // bp-crew-row cells open the Person page, so each name keeps its TMDB id when the detail carried one.
+  const push = (label: string, list: Array<{ name: string; id?: number }>, cap: number) => {
+    if (list.length) crew.push({ label, names: list.slice(0, cap).map((p) => p.name), people: list.slice(0, cap).map((p) => ({ id: typeof p.id === "number" ? p.id : null, name: p.name })) });
+  };
   push(d.kind === "tv" ? "Created by" : "Directed by", d.kind === "tv" ? d.creators : d.directors, 3);
   if (d.kind === "tv") push("Directed by", d.directors, 2);
   push("Written by", d.writers, 3);

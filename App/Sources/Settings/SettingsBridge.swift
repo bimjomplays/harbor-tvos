@@ -40,6 +40,8 @@ final class SettingsBridge: ObservableObject {
         // Player forks (settings/defaults.ts): resume automatically, ask first, confirm on Back.
         // Instant play (use-bp-stream-play): Play fires the best source; "Sources" forces the list.
         var instantPlay: Bool? = true
+        /// use-bp-streams strictMode: "strict" starts narrow; "Search wider" / "Show everything" loosen.
+        var streamFilterLevel: String? = "strict"
         var rememberLastStream: Bool? = true
         var seasonSourceLock: Bool? = false
         var resumePlayback: Bool? = true

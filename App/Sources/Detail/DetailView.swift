@@ -11,6 +11,7 @@ struct DetailView: View {
     @State private var switchFromSec: Double?
     @State private var related: Meta?
     @State private var listDialog = false
+    @State private var factsDialog = false
     @State private var rateDialog = false
     @State private var person: DetailModel.Extras.Cast?
     @Environment(\.dismiss) private var dismiss
@@ -85,6 +86,7 @@ struct DetailView: View {
         }
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: model.meta) }
+        .fullScreenCover(isPresented: $factsDialog) { FactsDialogView(title: model.meta.name, facts: model.extras?.facts ?? []) }
         .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: model.meta) }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
@@ -267,6 +269,9 @@ struct DetailView: View {
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
         .padding(.horizontal, BP.gutter)
         .focusable()
+        // bp-facts-dialog: Select opens every row in a scrollable sheet.
+        .onTapGesture { factsDialog = true }
+        .onPlayPauseCommand { factsDialog = true }
     }
 
     /// Crew/cast lines from Cinemeta until TMDB cast cards arrive (detail-spec §1.1 rows 4-5).
@@ -274,10 +279,25 @@ struct DetailView: View {
         let director = (model.meta.director ?? []).filter { !$0.isEmpty }
         let cast = (model.meta.cast ?? []).filter { !$0.isEmpty }
         if let crew = model.extras?.crew, !crew.isEmpty {
-            VStack(alignment: .leading, spacing: BP.px(3)) {
-                ForEach(crew.prefix(4)) { c in creditLine(c.label, c.names.joined(separator: ", ")) }
+            // bp-crew-row: each name is a cell into the Person page when TMDB knows the person.
+            VStack(alignment: .leading, spacing: BP.px(6)) {
+                ForEach(crew.prefix(5)) { c in
+                    HStack(alignment: .top, spacing: BP.px(8)) {
+                        Text(c.label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+                        HStack(spacing: BP.px(6)) {
+                            ForEach(Array((c.people ?? c.names.map { DetailModel.Extras.Crew.Person(id: nil, name: $0) }).enumerated()), id: \.offset) { _, p in
+                                if let id = p.id {
+                                    Button(p.name) { person = DetailModel.Extras.Cast(id: id, name: p.name, character: "", profile: nil) }.buttonStyle(BPActionStyle())
+                                } else {
+                                    Text(p.name).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            .frame(maxWidth: BP.px(620), alignment: .leading)
+            .frame(maxWidth: BP.px(760), alignment: .leading)
+            .focusSection()
         } else if !director.isEmpty || !cast.isEmpty {
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 if !director.isEmpty { creditLine(model.isSeries ? "Created by" : "Directed by", director.prefix(3).joined(separator: ", ")) }
@@ -303,17 +323,25 @@ struct DetailView: View {
                 }
             }
             .focusSection()
+            ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: BP.trackGap) {
                     ForEach(model.seasonEpisodes) { ep in
                         Button { picker = (model.meta, ep.playEpisode) } label: { EpisodeCell(episode: ep, watched: model.isWatched(ep)) }
                             .buttonStyle(BPTileStyle())
+                            .id(ep.id)
                             .accessibilityIdentifier("episode-\(ep.season)-\(ep.episode)")
                     }
                 }
                 .padding(.vertical, BP.px(14))
             }
             .scrollClipDisabled()
+            // use-bp-episode-strip: land on the resume episode when the strip first shows.
+            .onChange(of: model.seasonEpisodes.count) { _, n in
+                guard n > 0, let r = model.resume, r.season == model.season, let e = r.episode, let target = model.seasonEpisodes.first(where: { $0.episode == e }) else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { proxy.scrollTo(target.id, anchor: .leading) } }
+            }
+            }
             .focusSection()
         }
     }

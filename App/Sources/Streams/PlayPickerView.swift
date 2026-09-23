@@ -125,6 +125,13 @@ struct PlayPickerView: View {
         case .done:
             Text(model.streams.isEmpty ? (model.addonCount == 0 ? "No stream addons installed. Sign in to Stremio or add addons." : "No streams found.") : "\(model.streams.count) streams from \(model.addonCount) addons")
                 .font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+            // bp-streams ladder: when the filters left nothing, widen the search, then show everything.
+            if model.streams.isEmpty, model.addonCount > 0, model.canLoosen {
+                HStack(spacing: BP.px(8)) {
+                    if model.strict { Button("Search wider") { Task { await model.searchWider() } }.buttonStyle(BPActionStyle(primary: true)) }
+                    if !model.showAll { Button("Show everything") { Task { await model.showEverything() } }.buttonStyle(BPActionStyle()) }
+                }
+            }
         case .failed(let why): BPNote(text: why, tone: BP.danger)
         case .idle: EmptyView()
         }

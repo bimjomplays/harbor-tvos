@@ -85,7 +85,18 @@ final class StreamsModel: ObservableObject {
     deinit { unsubscribe?() }
 
     /// `episode` is upstream's PlayEpisode as JSON (season/episode/...); nil for movies.
+    /// use-bp-streams strictMode / forceShowAll: the loosen ladder re-runs the pipeline.
+    @Published private(set) var strict = (SettingsBridge.shared.slice.streamFilterLevel ?? "strict") == "strict"
+    @Published private(set) var showAll = SettingsBridge.shared.slice.streamFilterLevel == "off"
+    var canLoosen: Bool { strict || !showAll }
+    private var lastMeta: Meta?
+    private var lastEpisode: AnyJSON?
+
+    func searchWider() async { guard let m = lastMeta else { return }; strict = false; await search(meta: m, episode: lastEpisode) }
+    func showEverything() async { guard let m = lastMeta else { return }; strict = false; showAll = true; await search(meta: m, episode: lastEpisode) }
+
     func search(meta: Meta, episode: AnyJSON?) async {
+        lastMeta = meta; lastEpisode = episode
         phase = .searching
         streams = []; primary = nil; progress = (0, 0)
         subscribeOnce()
@@ -98,7 +109,7 @@ final class StreamsModel: ObservableObject {
         }
         do {
             let r: SearchResult = try await HarborEngine.shared.call("streamsRoom.search",
-                [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object([:])])
+                [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object(["strictMode": .bool(strict), "filterDisabled": .bool(showAll)])])
             if let err = r.error { phase = .failed(err); return }
             addonCount = r.addonCount
             addonOrder = r.addonOrder ?? []
