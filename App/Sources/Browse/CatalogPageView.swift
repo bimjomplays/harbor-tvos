@@ -9,6 +9,7 @@ struct CatalogPageView: View {
     @State private var exhausted = false
     @State private var loading = false
     @State private var spotlight: Meta?
+    @State private var detail: Meta?
     @FocusState private var focusedId: String?
 
     private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21), alignment: .top), count: 6)
@@ -26,7 +27,7 @@ struct CatalogPageView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(columns: Self.columns, alignment: .leading, spacing: BP.px(24)) {
                     ForEach(Array(metas.enumerated()), id: \.element.id) { i, meta in
-                        Button {} label: {
+                        Button { detail = meta } label: {
                             BPTileView(meta: meta, shape: .poster, focused: focusedId == meta.id)
                         }
                         .buttonStyle(BPTileStyle())
@@ -48,6 +49,7 @@ struct CatalogPageView: View {
         }
         .ignoresSafeArea()
         .onChange(of: focusedId) { _, id in spotlight = metas.first { $0.id == id } }
+        .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
     }
 
     private func loadMore() async {

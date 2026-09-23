@@ -4,6 +4,7 @@ import SwiftUI
 struct SearchView: View {
     @StateObject private var model = SearchModel()
     @State private var spotlight: Meta?
+    @State private var detail: Meta?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -22,6 +23,7 @@ struct SearchView: View {
             }
         }
         .onAppear { if let q = Fixtures.query, model.query.isEmpty { model.query = q } }
+        .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
     }
 
     private var queryLine: some View {
@@ -53,7 +55,7 @@ struct SearchView: View {
                     TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
                 }
                 ForEach(model.rows) { row in
-                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { _ in })
+                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
                 }
                 Color.clear.frame(height: BP.hintHeight + BP.px(40))
             }

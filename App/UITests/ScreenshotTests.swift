@@ -140,6 +140,22 @@ final class ScreenshotTests: XCTestCase {
         dump(app, "hierarchy-discover")
     }
 
+    func testDetailAndPicker() {
+        let app = launch("live")
+        let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tile-'")).firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 90))
+        sleep(2)
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.buttons["detail-play"].waitForExistence(timeout: 30))
+        sleep(2)
+        capture("26-detail")
+        XCUIRemote.shared.press(.select)
+        XCTAssertTrue(app.staticTexts["Play"].waitForExistence(timeout: 20))
+        sleep(6)
+        capture("27-play-picker")
+        dump(app, "hierarchy-picker")
+    }
+
     func testSpikesStillPass() {
         let app = launch("spikes")
         XCTAssertTrue(app.buttons["spike-engine"].waitForExistence(timeout: 30))

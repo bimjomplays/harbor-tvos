@@ -4,6 +4,7 @@ import SwiftUI
 /// Awards, Collections and Top People bands arrive with their features.
 struct DiscoverView: View {
     @StateObject private var model = DiscoverModel()
+    @State private var detail: Meta?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -18,7 +19,7 @@ struct DiscoverView: View {
             } else if model.build == nil {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
             } else {
-                BPRailView(rows: model.rows, onFocus: { m, _ in model.spotlight = m }, onSelect: { _ in }, topInset: BP.barHeight + BP.px(10)) {
+                BPRailView(rows: model.rows, onFocus: { m, _ in model.spotlight = m }, onSelect: { detail = $0 }, topInset: BP.barHeight + BP.px(10)) {
                     section("Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
                         QueueBandView(queue: model.build?.queue)
                     }
@@ -31,6 +32,7 @@ struct DiscoverView: View {
             }
         }
         .task { await model.load() }
+        .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
     }
 
     private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
