@@ -24,6 +24,9 @@ struct SearchView: View {
         }
         .onAppear { if let q = Fixtures.query, model.query.isEmpty { model.query = q } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $channel) { ch in
+            PlayerScreen(title: ch.name, subtitle: ch.playlistName, url: URL(string: ch.url) ?? URL(string: "about:blank")!, isLive: true) { _ in channel = nil }
+        }
     }
 
     private var queryLine: some View {
@@ -38,11 +41,40 @@ struct SearchView: View {
         .accessibilityIdentifier("search-query")
     }
 
+    @State private var channel: SearchModel.Results.LiveTvHit?
+
+    // bp-search-rows BpChannelCell: a channel from your Live TV sources, Select tunes it.
+    private var channelRow: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: BP.trackGap) {
+                    ForEach(model.channels) { ch in
+                        Button { channel = ch } label: {
+                            VStack(spacing: BP.px(6)) {
+                                RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(120), height: BP.px(60))
+                                Text(ch.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.center)
+                                Text(ch.group ?? ch.playlistName).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                            }
+                            .padding(BP.px(10))
+                            .frame(width: BP.px(190), height: BP.px(130))
+                            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
+    }
+
     @ViewBuilder private var statusLine: some View {
         switch model.status {
         case .loading: BPNote(text: "Searching…")
         case .failed(let why): BPNote(text: why, tone: BP.danger)
-        case .done where model.rows.isEmpty: BPNote(text: "Nothing found for “\(model.query)”.")
+        case .done where model.rows.isEmpty && model.channels.isEmpty: BPNote(text: "Nothing found for “\(model.query)”.")
         default: EmptyView()
         }
     }
@@ -77,6 +109,7 @@ struct SearchView: View {
                     }
                     .focusSection()
                 }
+                if !model.channels.isEmpty { channelRow }
                 ForEach(model.rows) { row in
                     BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
                 }

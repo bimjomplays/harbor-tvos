@@ -16,17 +16,22 @@ final class SearchModel: ObservableObject {
             private enum CodingKeys: String, CodingKey { case tmdbId = "id", name, profile, knownFor }
         }
         struct AnimeHit: Decodable { var name: String; var poster: String?; var background: String?; var malId: Int?; var kitsuId: Int?; var year: String?; var overview: String? }
+        struct LiveTvHit: Decodable, Identifiable { var channelId: String; var name: String; var logo: String?; var url: String; var group: String?; var playlistId: String; var playlistName: String; var id: String { channelId } }
+        struct AddonGroup: Decodable, Identifiable { var id: String; var name: String; var logo: String?; var metas: [Meta] }
         var query: String
         var topMatch: TopMatch?
         var people: [Person]?
         var movies: [Meta]
         var series: [Meta]
         var anime: [AnimeHit]?
+        var liveTv: [LiveTvHit]?
+        var addonGroups: [AddonGroup]?
     }
 
     @Published var query = "" { didSet { schedule() } }
     @Published private(set) var status: Status = .idle
     @Published private(set) var rows: [BrowseRow] = []
+    @Published private(set) var channels: [Results.LiveTvHit] = []
     @Published private(set) var topMatch: Meta?
     @Published private(set) var people: [Results.Person] = []
 
@@ -38,7 +43,7 @@ final class SearchModel: ObservableObject {
     private func schedule() {
         timer?.cancel()
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { status = .idle; rows = []; topMatch = nil; return }
+        guard !q.isEmpty else { status = .idle; rows = []; channels = []; topMatch = nil; return }
         status = .typing
         timer = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
@@ -60,7 +65,7 @@ final class SearchModel: ObservableObject {
                 // No TMDB key: Cinemeta + installed addon catalogs (engine, no key needed).
                 struct Pair: Decodable { var movies: [Meta]; var series: [Meta] }
                 let c: Pair = try await HarborEngine.shared.call("search.cinemeta", [q])
-                results = Results(query: q, topMatch: nil, people: nil, movies: c.movies, series: c.series, anime: nil)
+                results = Results(query: q, topMatch: nil, people: nil, movies: c.movies, series: c.series, anime: nil, liveTv: nil, addonGroups: nil)
             }
             guard mine == requestId else { return }
             var out: [BrowseRow] = []
@@ -70,7 +75,12 @@ final class SearchModel: ObservableObject {
                 let metas = anime.map { Meta(id: $0.kitsuId.map { "kitsu:\($0)" } ?? "mal:\($0.malId ?? 0)", type: "anime", name: $0.name, poster: $0.poster, background: $0.background, logo: nil, description: $0.overview, releaseInfo: $0.year, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
                 out.append(BrowseRow(key: "anime", title: "Anime", metas: metas))
             }
+            // bp-search-rows: one row per addon that answered ("From <addon>"), after the catalogs.
+            for g in results.addonGroups ?? [] where !g.metas.isEmpty {
+                out.append(BrowseRow(key: "addon:\(g.id)", title: "From \(g.name)", metas: g.metas))
+            }
             rows = out
+            channels = results.liveTv ?? []
             await CardMarksStore.shared.refresh(out.flatMap(\.metas))
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
