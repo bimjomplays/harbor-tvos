@@ -5,8 +5,8 @@ struct RoomView: View {
     @StateObject private var model: BrowseModel
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
-    @Namespace private var focusNS
-    @Environment(\.resetFocus) private var resetFocus
+    @Environment(\.shellFocusNamespace) private var shellNS
+    @Namespace private var localNS
 
     init(room: Room, source: BrowseSource) {
         _model = StateObject(wrappedValue: BrowseModel(room: room, source: source))
@@ -31,14 +31,15 @@ struct RoomView: View {
                                         onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) })
                     }
                 }
-                .prefersDefaultFocus(true, in: focusNS)
+                .prefersDefaultFocus(true, in: shellNS ?? localNS)
             }
         }
-        .focusScope(focusNS)
         .task { await model.load() }
         // Rows arrive after first render; pull focus into them so Select acts on a tile,
         // not on the tab the bar was left on (upstream autofocuses the first row too).
-        .onChange(of: model.rows.isEmpty) { _, empty in if !empty { resetFocus(in: focusNS) } }
+        .onChange(of: model.rows.isEmpty) { _, empty in
+            if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ShellFocus.shared.requestDefault() } }
+        }
         .fullScreenCover(item: $seeAll) { row in
             CatalogPageView(room: model.room, row: row)
         }

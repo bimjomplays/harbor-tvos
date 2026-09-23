@@ -1,8 +1,25 @@
 import SwiftUI
 
 /// The Big Picture shell: ambient background, top bar, the current room, hint bar.
+/// Rooms ask the shell to re-evaluate default focus (e.g. when their rows arrive).
+final class ShellFocus {
+    static let shared = ShellFocus()
+    var request: (() -> Void)?
+    func requestDefault() { request?() }
+}
+
+private struct ShellFocusNamespaceKey: EnvironmentKey { static let defaultValue: Namespace.ID? = nil }
+extension EnvironmentValues {
+    var shellFocusNamespace: Namespace.ID? {
+        get { self[ShellFocusNamespaceKey.self] }
+        set { self[ShellFocusNamespaceKey.self] = newValue }
+    }
+}
+
 struct ShellView: View {
     @EnvironmentObject private var app: AppModel
+    @Namespace private var focusNS
+    @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -11,6 +28,9 @@ struct ShellView: View {
             VStack { Spacer(); HintBarView(actions: hints) }
         }
         .ignoresSafeArea()
+        .focusScope(focusNS)
+        .environment(\.shellFocusNamespace, focusNS)
+        .onAppear { ShellFocus.shared.request = { resetFocus(in: focusNS) } }
     }
 
     @ViewBuilder private var room: some View {
