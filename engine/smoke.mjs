@@ -251,6 +251,8 @@ if (!OFFLINE) {
   r.ok("trakt.deviceCode returns a user code (or a clear error)", (dc && dc.userCode && dc.userCode.length >= 6) || (dc && dc.error), JSON.stringify(dc && { code: dc.userCode, url: dc.verificationUrl, error: dc.error }));
   const scrob = await engine.trakt.scrobble("start", "tt0111161", null, 5);
   r.eq("trakt.scrobble skips when not connected", scrob, { sent: false, reason: "not-connected" });
+  const col = await r.timed("collectionsRoom.all()", () => engine.collectionsRoom.all());
+  r.ok("collectionsRoom.all returns community collections (or [] when harbor.site is down)", col && Array.isArray(col.community) && Array.isArray(col.mine), JSON.stringify({ mine: col.mine.length, community: col.community.length, first: col.community[0] && [col.community[0].name, col.community[0].count, col.community[0].byline] }));
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

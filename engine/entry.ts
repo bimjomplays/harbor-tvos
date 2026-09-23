@@ -60,6 +60,7 @@ import * as subtitleGlue from "./subtitles";
 import * as liveGlue from "./live";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
+import * as collectionsGlue from "./collections";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -406,6 +407,13 @@ export const streamsRoom = {
   forget: streamGlue.forget,
 };
 export type { StreamSearch } from "./streams";
+
+/** Collections: this device's lists + community collections (harbor.site). */
+export const collectionsRoom = {
+  mine: collectionsGlue.mine,
+  community: collectionsGlue.community,
+  all: collectionsGlue.all,
+};
 
 /** Trakt: device-code sign-in, session status, scrobbles. */
 export const trakt = {
