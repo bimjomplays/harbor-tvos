@@ -71,6 +71,7 @@ import * as animeGlue from "./animeRoom";
 import * as servicesGlue from "./services";
 import * as trackersGlue from "./trackers";
 import * as detailGlue from "./detailRoom";
+import * as personGlue from "./personRoom";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -554,6 +555,9 @@ export const detailRoom = {
   extras: detailGlue.extras,
   collection: detailGlue.collection,
 };
+
+/** Person page: facts, Known For, IMDb Top, collaborators, awards, filmography sections. */
+export const personRoom = { page: personGlue.page };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
 export const skip = { segments: skipGlue.segments };

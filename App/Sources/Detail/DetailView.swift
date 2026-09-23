@@ -6,6 +6,7 @@ struct DetailView: View {
     @State private var picker: (meta: Meta, episode: AnyJSON?)?
     @State private var playing: PlayTarget?
     @State private var related: Meta?
+    @State private var person: DetailModel.Extras.Cast?
     @Environment(\.dismiss) private var dismiss
 
     struct PlayTarget: Identifiable {
@@ -66,6 +67,7 @@ struct DetailView: View {
             }
         }
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext) { natural in
                 playing = nil
@@ -177,7 +179,7 @@ struct DetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(cast) { person in
-                        Button {} label: {
+                        Button { self.person = person } label: {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {
                                     Circle().fill(BP.panel2)

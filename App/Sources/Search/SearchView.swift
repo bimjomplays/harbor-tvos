@@ -24,6 +24,7 @@ struct SearchView: View {
         }
         .onAppear { if let q = Fixtures.query, model.query.isEmpty { model.query = q } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $person) { p in PersonView(personId: p.tmdbId ?? 0, name: p.name) }
         .fullScreenCover(item: $channel) { ch in
             PlayerScreen(title: ch.name, subtitle: ch.playlistName, url: URL(string: ch.url) ?? URL(string: "about:blank")!, isLive: true) { _ in channel = nil }
         }
@@ -42,6 +43,7 @@ struct SearchView: View {
     }
 
     @State private var channel: SearchModel.Results.LiveTvHit?
+    @State private var person: SearchModel.Results.Person?
 
     // bp-search-rows BpChannelCell: a channel from your Live TV sources, Select tunes it.
     private var channelRow: some View {
@@ -92,7 +94,7 @@ struct SearchView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: BP.trackGap) {
                                 ForEach(model.people) { person in
-                                    Button {} label: {
+                                    Button { if person.tmdbId != nil { self.person = person } } label: {
                                         VStack(spacing: BP.px(8)) {
                                             RemoteImage(url: person.profile).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
                                             Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
