@@ -46,8 +46,19 @@ final class MPVPlayerController: UIViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         timer?.invalidate()
-        if let mpv { mpv_terminate_destroy(mpv) }
+        teardown()
+    }
+
+    deinit { teardown() }
+
+    /// Detach the wakeup callback and destroy on the event queue, so a pending readEvents
+    /// never touches a handle mid-destroy.
+    private func teardown() {
+        let handle = mpv
         mpv = nil
+        guard let handle else { return }
+        mpv_set_wakeup_callback(handle, nil, nil)
+        queue.async { mpv_terminate_destroy(handle) }
     }
 
     private func setupMpv() {
@@ -112,9 +123,9 @@ final class MPVPlayerController: UIViewController {
 
     func togglePause() {
         guard let mpv else { return }
-        var paused: Int64 = 0
+        var paused: Int32 = 0
         mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &paused)
-        var next: Int = paused > 0 ? 0 : 1
+        var next: Int32 = paused > 0 ? 0 : 1
         mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &next)
     }
 
@@ -125,7 +136,7 @@ final class MPVPlayerController: UIViewController {
     func snapshot() -> (position: Double, duration: Double, paused: Bool) {
         guard let mpv else { return (0, 0, true) }
         var pos = 0.0, dur = 0.0
-        var paused: Int64 = 0
+        var paused: Int32 = 0
         mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &pos)
         mpv_get_property(mpv, "duration", MPV_FORMAT_DOUBLE, &dur)
         mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &paused)
@@ -177,7 +188,7 @@ final class MPVPlayerController: UIViewController {
 
     func setPaused(_ paused: Bool) {
         guard let mpv else { return }
-        var v: Int = paused ? 1 : 0
+        var v: Int32 = paused ? 1 : 0
         mpv_set_property(mpv, "pause", MPV_FORMAT_FLAG, &v)
     }
 

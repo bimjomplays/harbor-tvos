@@ -71,6 +71,9 @@ final class StreamsModel: ObservableObject {
 
     let token = UUID().uuidString
     private var subscribed = false
+    private var unsubscribe: (() -> Void)?
+
+    deinit { unsubscribe?() }
 
     /// `episode` is upstream's PlayEpisode as JSON (season/episode/...); nil for movies.
     func search(meta: Meta, episode: AnyJSON?) async {
@@ -93,6 +96,7 @@ final class StreamsModel: ObservableObject {
     }
 
     func cancel() {
+        unsubscribe?(); unsubscribe = nil; subscribed = false
         Task { _ = try? await HarborEngine.shared.callJSON("streamsRoom.cancelSearch", [.string(token)]) }
     }
 
@@ -132,7 +136,7 @@ final class StreamsModel: ObservableObject {
     private func subscribeOnce() {
         guard !subscribed else { return }
         subscribed = true
-        HarborEngine.shared.onEvent { [weak self] type, detail in
+        unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
             guard type == "harbor-tvos:streams", let self, detail?["token"]?.string == self.token else { return }
             switch detail?["phase"]?.string {
             case "progress":

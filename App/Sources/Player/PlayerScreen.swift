@@ -262,9 +262,9 @@ struct PlayerScreen: View {
 
     private func finish(natural: Bool) {
         Task {
-            if natural, let c = controller, let context {
+            if natural, let c = controller, let context, c.snapshot().duration > 0 {
                 let s = c.snapshot()
-                _ = await context.save(positionSec: s.duration > 0 ? s.duration : s.position, durationSec: s.duration, flush: true)
+                _ = await context.save(positionSec: s.duration, durationSec: s.duration, flush: true)
             } else {
                 await saveTick(flush: true)
             }

@@ -68,10 +68,7 @@ struct EngineBrowseSource: BrowseSource {
         return items.map { i in
             let off = i.state?.timeOffset ?? 0, dur = i.state?.duration ?? 0
             var season = i.state?.season, episode = i.state?.episode
-            if season == nil, let vid = i.state?.video_id {
-                let parts = vid.split(separator: ":")
-                if parts.count >= 3, let s = Int(parts[parts.count - 2]), let e = Int(parts[parts.count - 1]) { season = s; episode = e }
-            }
+            if (episode ?? 0) == 0, let vid = i.state?.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: i._id) { season = parsed.season; episode = parsed.episode }
             return ContinueItem(id: i._id, type: i.type, name: i.name, poster: i.poster, background: i.background, logo: nil,
                                 season: season, episode: episode,
                                 progress: dur > 0 ? min(1, max(0, off / dur)) : 0,
@@ -82,5 +79,17 @@ struct EngineBrowseSource: BrowseSource {
     enum BrowseError: Error, LocalizedError {
         case empty
         var errorDescription: String? { "No catalog rows came back. Check the connection, or add a TMDB key in Settings." }
+    }
+}
+
+
+/// Upstream stremio.ts:70-76 + episodeFromVideoId: "tt123:2:5" → S2E5; anime "kitsu:123:7" → S1E7.
+enum VideoId {
+    static func seasonEpisode(_ vid: String, metaId: String) -> (season: Int, episode: Int)? {
+        let parts = vid.split(separator: ":")
+        let anime = ["kitsu:", "mal:", "anilist:", "anidb:"].contains { metaId.hasPrefix($0) || vid.hasPrefix($0) }
+        if anime, parts.count == 3, let e = Int(parts[2]) { return (1, e) }
+        guard parts.count >= 3, let s = Int(parts[parts.count - 2]), let e = Int(parts[parts.count - 1]) else { return nil }
+        return (s, e)
     }
 }

@@ -47,7 +47,10 @@ struct DetailView: View {
                                               season: ep?["season"]?.number.map { Int($0) }, episode: ep?["episode"]?.number.map { Int($0) },
                                               videoId: ep?["videoId"]?.string, imdbId: model.meta.id.hasPrefix("tt") ? model.meta.id : nil,
                                               imdbVerified: model.meta.id.hasPrefix("tt"))
-                    playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx)
+                    // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx)
+                    }
                 }
             }
         }

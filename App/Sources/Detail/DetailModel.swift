@@ -59,10 +59,7 @@ final class DetailModel: ObservableObject {
            let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, meta.id]),
            let st = item?.state, let off = st.timeOffset, off > 0 {
             var s = st.season, e = st.episode
-            if (s == nil || e == 0), let vid = st.video_id {
-                let parts = vid.split(separator: ":")
-                if parts.count >= 3, let ps = Int(parts[parts.count - 2]), let pe = Int(parts[parts.count - 1]) { s = ps; e = pe }
-            }
+            if (e ?? 0) == 0, let vid = st.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: meta.id) { s = parsed.season; e = parsed.episode }
             resume = Resume(season: isSeries ? s : nil, episode: isSeries ? e : nil, positionMs: off, durationMs: st.duration ?? 0)
             if let s, isSeries, seasons.contains(s) { season = s }
             return

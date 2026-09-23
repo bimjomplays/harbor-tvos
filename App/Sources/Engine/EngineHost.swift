@@ -111,7 +111,8 @@ final class HarborEngine {
     // Logs and event observers (touched from several threads, so they take the lock).
     private let sideLock = NSLock()
     private var logRing: [String] = []
-    private var eventHandlers: [(String, AnyJSON?) -> Void] = []
+    private var eventHandlers: [(id: Int, fn: (String, AnyJSON?) -> Void)] = []
+    private var nextHandlerId = 1
 
     private static let logRingCapacity = 200
 
@@ -359,10 +360,20 @@ final class HarborEngine {
     }
 
     /// Observe every event the bundle dispatches on `window`. Handlers run on the main queue.
-    func onEvent(_ handler: @escaping (String, AnyJSON?) -> Void) {
+    /// Returns an unsubscribe; call it when the observer goes away.
+    @discardableResult
+    func onEvent(_ handler: @escaping (String, AnyJSON?) -> Void) -> () -> Void {
         sideLock.lock()
-        eventHandlers.append(handler)
+        let id = nextHandlerId
+        nextHandlerId += 1
+        eventHandlers.append((id, handler))
         sideLock.unlock()
+        return { [weak self] in
+            guard let self else { return }
+            self.sideLock.lock()
+            self.eventHandlers.removeAll { $0.id == id }
+            self.sideLock.unlock()
+        }
     }
 
     /// The last 200 lines the bundle logged, newest last. For the debug screen.
@@ -438,7 +449,7 @@ final class HarborEngine {
             detail = decoded.first
         }
         sideLock.lock()
-        let handlers = eventHandlers
+        let handlers = eventHandlers.map(\.fn)
         sideLock.unlock()
         guard !handlers.isEmpty else { return }
         DispatchQueue.main.async {
