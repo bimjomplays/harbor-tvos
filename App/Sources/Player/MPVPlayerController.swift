@@ -131,6 +131,7 @@ final class MPVPlayerController: UIViewController {
     }
 
     func load(_ url: URL) {
+        displayCriteriaApplied = false
         if let mpv {
             // http-header-fields is a comma list: escape like mpv.rs mpv_header_field().
             let rest = headers.filter { $0.key.lowercased() != "user-agent" }
@@ -241,13 +242,28 @@ final class MPVPlayerController: UIViewController {
     /// Pick the first audio track matching the preferred languages (in order); subtitles stay
     /// off unless an embedded track matches a preferred language (upstream keeps `sid=no` until
     /// its own choice; mpv.rs:991-1007, player-spec §2.9).
+    /// ISO 639-2/B and /T codes ffmpeg tags tracks with → 639-1 (upstream subsync/audio_tracks.rs LANG_ALIAS).
+    private static let langAlias: [String: String] = [
+        "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es", "ita": "it", "por": "pt",
+        "dut": "nl", "nld": "nl", "chi": "zh", "zho": "zh", "gre": "el", "ell": "el", "rum": "ro", "ron": "ro", "slo": "sk", "slk": "sk",
+        "alb": "sq", "sqi": "sq", "arm": "hy", "hye": "hy", "baq": "eu", "eus": "eu", "bur": "my", "mya": "my", "geo": "ka", "kat": "ka",
+        "mac": "mk", "mkd": "mk", "mao": "mi", "mri": "mi", "may": "ms", "msa": "ms", "tib": "bo", "bod": "bo", "wel": "cy", "cym": "cy",
+        "ice": "is", "isl": "is", "kor": "ko", "rus": "ru", "pol": "pl", "tur": "tr", "ara": "ar", "hin": "hi", "swe": "sv", "nor": "no",
+        "dan": "da", "fin": "fi", "cze": "cs", "ces": "cs", "hun": "hu", "ind": "id", "tha": "th", "vie": "vi", "ukr": "uk", "heb": "he",
+        "per": "fa", "fas": "fa", "cat": "ca", "hrv": "hr", "srp": "sr", "bul": "bg", "tam": "ta", "tel": "te", "ben": "bn", "urd": "ur",
+    ]
+
     private func applyTrackPreferences() {
         let list = tracks()
         func matches(_ t: Track, _ names: [String]) -> Int? {
-            guard let lang = t.lang?.lowercased() else { return nil }
+            guard let raw = t.lang?.lowercased() else { return nil }
+            let lang = Self.langAlias[raw] ?? raw
+            let english = Locale(identifier: "en").localizedString(forLanguageCode: lang)?.lowercased()
             for (i, name) in names.enumerated() {
-                let code = Locale(identifier: "en").localizedString(forLanguageCode: lang)?.lowercased() ?? lang
-                if code == name.lowercased() || lang == name.lowercased() || lang.hasPrefix(String(name.lowercased().prefix(2))) && name.count <= 3 { return i }
+                let n = name.lowercased()
+                if english == n || lang == n || raw == n || (n.count == 2 && lang == n) { return i }
+                // Names like "Portuguese (Brazil)" match on their first word.
+                if let first = n.split(separator: " ").first, english == String(first) { return i }
             }
             return nil
         }
