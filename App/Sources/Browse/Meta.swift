@@ -21,6 +21,10 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
     var isCollection: Bool?
     var providerBadge: ProviderBadge?
     var videos: [AnyJSON]?
+    // Cinemeta extras (not in upstream's Meta type, but present on its responses).
+    var cast: [String]?
+    var director: [String]?
+    var writer: [String]?
 
     struct ProviderBadge: Codable, Equatable, Hashable { var name: String; var logo: String; var tint: String }
 

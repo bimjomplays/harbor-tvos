@@ -9,6 +9,8 @@ struct PlayerScreen: View {
     let url: URL
     var headers: [String: String] = [:]
     var context: PlaybackContext? = nil
+    /// "S1 E2 · Title" of what follows; drives the up-next pill near the end (player-spec §1.9).
+    var upNext: String? = nil
     /// `true` when the file played to its end (next-episode logic keys off this).
     let onClose: (_ endedNaturally: Bool) -> Void
 
@@ -62,6 +64,9 @@ struct PlayerScreen: View {
                     }
                 }
             if chrome { chromeView.transition(.opacity) }
+            if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
+                upNextPill(upNext).transition(.move(edge: .trailing).combined(with: .opacity))
+            }
             if let panel { panelView(panel).transition(.move(edge: .trailing).combined(with: .opacity)) }
         }
         .onPlayPauseCommand { togglePause() }
@@ -78,6 +83,32 @@ struct PlayerScreen: View {
         }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
+    }
+
+    /// Up-next pill in the last 40 seconds; Play/Pause or Select skips straight to the next episode.
+    private func upNextPill(_ text: String) -> some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button { finish(natural: true) } label: {
+                    HStack(spacing: BP.px(10)) {
+                        Image(systemName: "forward.end.fill")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Up next in \(max(0, Int(snap.duration - snap.position)))s").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase)
+                            Text(text).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                        }
+                    }
+                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
+                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.void_.opacity(0.92)))
+                    .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .focused($focus, equals: .chip("upnext"))
+            }
+            .padding(.top, BP.px(40)).padding(.trailing, BP.gutter)
+            Spacer()
+        }
+        .ignoresSafeArea()
     }
 
     // MARK: chrome

@@ -14,6 +14,7 @@ struct DetailView: View {
         var title: String
         var subtitle: String?
         var context: PlaybackContext
+        var upNext: String?
     }
 
     init(meta: Meta) { _model = StateObject(wrappedValue: DetailModel(meta: meta)) }
@@ -49,13 +50,18 @@ struct DetailView: View {
                                               imdbVerified: model.meta.id.hasPrefix("tt"))
                     // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx)
+                            var upNext: String?
+                        if let s = ctx.season, let e = ctx.episode, let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < model.episodes.count {
+                            let n = model.episodes[idx + 1]
+                            if n.season > 0 { upNext = "S\(n.season) E\(n.episode) · \(n.title)" }
+                        }
+                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext)
                     }
                 }
             }
         }
         .fullScreenCover(item: $playing) { t in
-            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context) { natural in
+            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext) { natural in
                 playing = nil
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
@@ -128,6 +134,27 @@ struct DetailView: View {
             .focusSection()
             Text(model.meta.description ?? "").font(BP.sans(13, .regular)).foregroundStyle(BP.inkMuted).lineSpacing(4).lineLimit(4)
                 .frame(maxWidth: BP.px(620), alignment: .leading)
+            credits
+        }
+    }
+
+    /// Crew/cast lines from Cinemeta until TMDB cast cards arrive (detail-spec §1.1 rows 4-5).
+    @ViewBuilder private var credits: some View {
+        let director = (model.meta.director ?? []).filter { !$0.isEmpty }
+        let cast = (model.meta.cast ?? []).filter { !$0.isEmpty }
+        if !director.isEmpty || !cast.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(3)) {
+                if !director.isEmpty { creditLine(model.isSeries ? "Created by" : "Directed by", director.prefix(3).joined(separator: ", ")) }
+                if !cast.isEmpty { creditLine("Cast", cast.prefix(6).joined(separator: ", ")) }
+            }
+            .frame(maxWidth: BP.px(620), alignment: .leading)
+        }
+    }
+
+    private func creditLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: BP.px(8)) {
+            Text(label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+            Text(value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
         }
     }
 
