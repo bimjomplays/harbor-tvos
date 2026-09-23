@@ -17,6 +17,13 @@ final class ScreenshotTests: XCTestCase {
         add(a)
     }
 
+    /// Live rooms pull focus into the rail once rows arrive; navigate only after that.
+    private func waitForRows(_ app: XCUIApplication) {
+        let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tile-'")).firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 90), "no live rows arrived")
+        sleep(2)
+    }
+
     private func launch(_ scenario: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--fixtures", scenario]
@@ -110,6 +117,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments = ["--fixtures", "live", "--query", "dune"]
         app.launch()
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        waitForRows(app)
         XCUIRemote.shared.press(.up)
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
         for _ in 0..<7 { XCUIRemote.shared.press(.right) }
@@ -125,6 +133,7 @@ final class ScreenshotTests: XCTestCase {
     func testDiscoverRoom() {
         let app = launch("live")
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
+        waitForRows(app)
         XCUIRemote.shared.press(.up)
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
         XCUIRemote.shared.press(.right)
