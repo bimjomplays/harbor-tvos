@@ -12,6 +12,8 @@ struct DetailView: View {
     @State private var related: Meta?
     @State private var listDialog = false
     @State private var factsDialog = false
+    struct TrailerPick: Identifiable { let ytId: String; let name: String?; var id: String { ytId } }
+    @State private var trailer: TrailerPick?
     @State private var awardType: DetailModel.TitleAwards.Group?
     @State private var seasonsSheet = false
     @State private var rateDialog = false
@@ -89,6 +91,7 @@ struct DetailView: View {
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: model.meta) }
         .fullScreenCover(isPresented: $factsDialog) { FactsDialogView(title: model.meta.name, facts: model.extras?.facts ?? []) }
+        .fullScreenCover(item: $trailer) { t in TrailerView(ytId: t.ytId, title: model.meta.name, clipName: t.name) { trailer = nil } }
         .fullScreenCover(isPresented: $seasonsSheet) {
             SeasonsSheet(seasons: model.seasons, counts: Dictionary(grouping: model.episodes, by: \.season).mapValues(\.count), season: Binding(get: { model.season }, set: { model.season = $0 }))
         }
@@ -169,6 +172,10 @@ struct DetailView: View {
                     .buttonStyle(BPActionStyle(primary: model.inWatchlist)).disabled(model.watchlistBusy)
                 }
                 // bp-detail-actions: rate and add to a custom list from the TV.
+                // use-bp-detail-actions "Watch trailer" (only when a trailer id exists).
+                if let yt = model.trailerYtId {
+                    Button { trailer = TrailerPick(ytId: yt, name: nil) } label: { Label("Watch trailer", systemImage: "play.rectangle") }.buttonStyle(BPActionStyle())
+                }
                 Button { rateDialog = true } label: { Label("Rate", systemImage: "star") }.buttonStyle(BPActionStyle())
                 Button { listDialog = true } label: { Label("Add to list", systemImage: "text.badge.plus") }.buttonStyle(BPActionStyle())
                 Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
@@ -205,8 +212,40 @@ struct DetailView: View {
             if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
             if !x.recommendations.isEmpty { BPRowView(row: BrowseRow(key: "recommendations", title: "More Like This", metas: x.recommendations), onFocus: { _ in }, onSelect: { related = $0 }) }
             if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: "You Might Also Like", metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
+            if let v = x.videos, !v.isEmpty { videosRow(v) }
             if !x.facts.isEmpty { factsCard(x.facts) }
         }
+    }
+
+    // detail/bp-videos-row: 16:9 YouTube thumbnails, kind over name; Select opens the trailer overlay.
+    private func videosRow(_ clips: [DetailModel.Extras.Video]) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text("Videos").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: BP.trackGap) {
+                    ForEach(clips) { c in
+                        Button { trailer = TrailerPick(ytId: c.ytId, name: c.name) } label: {
+                            VStack(alignment: .leading, spacing: 0) {
+                                RemoteImage(url: "https://img.youtube.com/vi/\(c.ytId)/mqdefault.jpg")
+                                    .frame(width: BP.px(300), height: BP.px(169)).clipped()
+                                VStack(alignment: .leading, spacing: BP.px(3)) {
+                                    Text(c.type).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                                    Text(c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                }
+                                .padding(BP.px(10)).frame(width: BP.px(300), alignment: .leading)
+                            }
+                            .background(BP.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.rMD))
+                        .accessibilityLabel(c.name)
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
     }
 
     // detail/bp-awards-row: one cell per award body; Select opens the categories and years.

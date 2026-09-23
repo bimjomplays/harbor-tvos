@@ -213,6 +213,10 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
 {
   const none = await engine.detailRoom.extras({ id: "tt0111161", type: "movie", name: "The Shawshank Redemption" }, "default", true);
   r.eq("detailRoom.extras is null without a TMDB key", none, null);
+  {
+    const clips = engine.detailRoom.videoClips(["aaa", "bbb", "aaa"], [{ ytId: "bbb", name: "Dup", type: "Clip" }, { ytId: "ccc", name: "", type: "Featurette" }]);
+    r.eq("detailRoom.videoClips: other trailers first, deduped, names fall back to type", clips.map((c) => [c.ytId, c.name, c.type]), [["bbb", "Trailer", "Trailer"], ["aaa", "Trailer", "Trailer"], ["ccc", "Featurette", "Featurette"]]);
+  }
   r.eq("detailRoom.collection is null without a TMDB key", await engine.detailRoom.collection(10, "default", true), null);
 }
 

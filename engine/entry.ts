@@ -583,6 +583,7 @@ export const mal = trackersGlue.mal;
 
 /** Detail page extras from TMDB: tagline, cast, crew, similar, recommendations, watch-on, collection. */
 export const detailRoom = {
+  videoClips: detailGlue._videoClips,
   episodeFacts: detailGlue.episodeFacts,
   awards: detailGlue.awards,
   gallery: detailGlue.gallery,

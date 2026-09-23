@@ -86,13 +86,5 @@ struct PasteTrackerPanel: View {
         .task { await model.refresh() }
     }
 
-    private static func qr(_ text: String) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "M"
-        guard let out = filter.outputImage else { return nil }
-        let scaled = out.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
-        guard let cg = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
-        return UIImage(cgImage: cg)
-    }
+    private static func qr(_ text: String) -> UIImage? { QRCode.image(text) }
 }

@@ -32,6 +32,17 @@ export type DetailExtras = {
   gallery: { backdrops: number; posters: number; logos: number };
 };
 
+// detail/bp-videos-row: the other trailer candidates first (the lead one is "Watch trailer"),
+// then TMDB's extra videos, each YouTube id once, 14 cards.
+function videoClips(candidates: string[], extras: Array<{ ytId: string; name: string; type: string }>): DetailExtras["videos"] {
+  const seen = new Set<string>();
+  const clips: DetailExtras["videos"] = [];
+  for (const ytId of candidates.slice(1)) { if (!seen.has(ytId)) { seen.add(ytId); clips.push({ ytId, name: "Trailer", type: "Trailer" }); } }
+  for (const v of extras) { if (!seen.has(v.ytId)) { seen.add(v.ytId); clips.push({ ytId: v.ytId, name: v.name || v.type, type: v.type }); } }
+  return clips.slice(0, 14);
+}
+export const _videoClips = videoClips;
+
 const cache = new Map<string, { at: number; value: DetailExtras | null }>();
 
 export async function extras(meta: Meta, profileId: string, linked: boolean): Promise<DetailExtras | null> {
@@ -78,7 +89,7 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
     rating: d.rating ?? null, runtime: d.runtime ?? null, status: d.status, genres: d.genres,
     cast: d.cast.slice(0, 20).map((c) => ({ id: c.id, name: c.name, character: c.character, profile: portrait(c.profilePath) })),
     crew, recommendations: d.recommendations, similar: d.similar,
-    trailerYtId: d.trailerYtId, videos: d.extraVideos.slice(0, 14),
+    trailerYtId: d.trailerYtId, videos: videoClips(d.trailerCandidates, d.extraVideos),
     collection: d.collection ?? null, facts, watchOn,
     gallery: { backdrops: d.gallery.backdrops.length, posters: d.gallery.posters.length, logos: d.gallery.logos.length },
   };

@@ -76,6 +76,14 @@ final class DetailModel: ObservableObject {
         var rating: String?; var runtime: String?; var status: String; var genres: [String]
         var cast: [Cast]; var crew: [Crew]; var recommendations: [Meta]; var similar: [Meta]
         var trailerYtId: String?; var collection: Collection?; var facts: [Fact]; var watchOn: [Provider]
+        struct Video: Decodable, Identifiable { var ytId: String; var name: String; var type: String; var id: String { ytId } }
+        var videos: [Video]?
+    }
+
+    /// bp-detail: TMDB's lead trailer, else the first Cinemeta trailer stream.
+    var trailerYtId: String? {
+        if let t = extras?.trailerYtId, !t.isEmpty { return t }
+        return meta.trailerStreams?.compactMap(\.ytId).first { !$0.isEmpty }
     }
 
     struct Resume: Equatable {

@@ -25,6 +25,9 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
     var cast: [String]?
     var director: [String]?
     var writer: [String]?
+    /// Cinemeta's YouTube trailers; bp-detail falls back to the first when TMDB has none.
+    var trailerStreams: [TrailerStream]?
+    struct TrailerStream: Codable, Equatable, Hashable { var ytId: String?; var title: String? }
 
     struct ProviderBadge: Codable, Equatable, Hashable { var name: String; var logo: String; var tint: String }
 
