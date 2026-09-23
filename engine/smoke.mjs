@@ -303,6 +303,28 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("live.loadShortEpg ignores a non-Xtream playlist", await engine.live.loadShortEpg("nope", ["a"]), { hydrated: 0 });
   r.eq("discoverRoom.genrePage without a TMDB key", (await engine.discoverRoom.genrePage("default", true, "Action", 1)).status, "no-key");
   r.eq("search.fanOut with an empty query", (await engine.search.fanOut("  ", "default", true, null)).movies, []);
+  // Search: TVDB collection hits (use-collection-hits) and one hydrated collection (bp-collection).
+  r.eq("search.collections skips queries under three characters", await engine.search.collections("st"), []);
+  {
+    const rec = loadEngine({});
+    const seen = [];
+    rec.node.host.fetch = async (req) => {
+      seen.push(req.url);
+      const json = (data) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ data }) });
+      if (req.url.includes("/api/tvdb/v4/search?query=star%20wars&type=list")) return json([{ tvdb_id: "101", name: "Star Wars Collection", image_url: "/lists/101.jpg", overview: "A galaxy." }, { name: "no id" }]);
+      if (req.url.endsWith("/api/tvdb/v4/lists/101/extended")) return json({ id: 101, name: "Star Wars Collection", overview: "A galaxy.", image: null, entities: [{ seriesId: 7, order: 2 }, { movieId: 5, order: 1 }] });
+      if (req.url.endsWith("/api/tvdb/v4/movies/5/extended")) return json({ name: "A New Hope", image: "/p/5.jpg", year: 1977, remoteIds: [{ id: "tt0076759" }] });
+      if (req.url.endsWith("/api/tvdb/v4/series/7/extended")) return json({ name: "Andor", image: null, year: "2022", remoteIds: [] });
+      return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    };
+    const hits = await rec.engine.search.collections("Star Wars");
+    r.eq("search.collections maps TVDB list hits (absolute art, rows without an id dropped)", hits, [{ id: 101, name: "Star Wars Collection", image: "https://artworks.thetvdb.com/lists/101.jpg", overview: "A galaxy." }]);
+    const card = await rec.engine.search.collection(101, "Star Wars", hits[0].image);
+    r.ok("search.collection hydrates entries in list order (imdb id, else tvdb:kind:id)", card && card.key === "tvdb:101" && card.count === 2 && card.image === hits[0].image
+      && JSON.stringify(card.items) === JSON.stringify([{ id: "tt0076759", type: "movie", name: "A New Hope", poster: "https://artworks.thetvdb.com/p/5.jpg" }, { id: "tvdb:series:7", type: "series", name: "Andor", poster: null }]), JSON.stringify(card));
+    r.eq("search.collection is null when TVDB has no such list", await rec.engine.search.collection(999, "Gone", null), null);
+    rec.dispose();
+  }
   r.eq("libraryRoom.tabs hides Media Servers without connections", engine.libraryRoom.tabs().some((t) => t.id === "media-servers"), false);
   const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "p1", profiles: [{ id: "p1", isPrimary: true }] })]]) });
   const calls = [];
