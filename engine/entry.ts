@@ -516,6 +516,9 @@ export const anime4k = {
 /** Sports room (upstream hub feeds, rows, discovery, consent, personalization, detail). */
 export const sports = {
   standings: sportsGlue.standings,
+  teamLeagues: sportsGlue.teamLeagues,
+  teams: sportsGlue.teams,
+  favouriteTeams: sportsGlue.favouriteTeams,
   artwork: sportsGlue.artwork,
   consent: sportsGlue.consent,
   accept: sportsGlue.accept,
@@ -578,6 +581,7 @@ export const mal = trackersGlue.mal;
 /** Detail page extras from TMDB: tagline, cast, crew, similar, recommendations, watch-on, collection. */
 export const detailRoom = {
   episodeFacts: detailGlue.episodeFacts,
+  awards: detailGlue.awards,
   extras: detailGlue.extras,
   collection: detailGlue.collection,
 };

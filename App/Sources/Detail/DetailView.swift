@@ -12,6 +12,7 @@ struct DetailView: View {
     @State private var related: Meta?
     @State private var listDialog = false
     @State private var factsDialog = false
+    @State private var awardType: DetailModel.TitleAwards.Group?
     @State private var rateDialog = false
     @State private var person: DetailModel.Extras.Cast?
     @Environment(\.dismiss) private var dismiss
@@ -87,6 +88,7 @@ struct DetailView: View {
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: model.meta) }
         .fullScreenCover(isPresented: $factsDialog) { FactsDialogView(title: model.meta.name, facts: model.extras?.facts ?? []) }
+        .fullScreenCover(item: $awardType) { g in AwardsDialogView(group: g, entries: (model.awards?.entries ?? []).filter { $0.type == g.type }) }
         .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: model.meta) }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
@@ -192,6 +194,7 @@ struct DetailView: View {
     /// The rows under the hero (detail-spec §1.1 order): cast, collection, More Like This, You Might Also Like, facts.
     @ViewBuilder private var tmdbRows: some View {
         if !model.characters.isEmpty { charactersRow }
+        if let a = model.awards, !a.groups.isEmpty { awardsRow(a) }
         if let x = model.extras {
             if !x.cast.isEmpty { castRow(x.cast) }
             if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
@@ -199,6 +202,32 @@ struct DetailView: View {
             if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: "You Might Also Like", metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
             if !x.facts.isEmpty { factsCard(x.facts) }
         }
+    }
+
+    // detail/bp-awards-row: one cell per award body; Select opens the categories and years.
+    private func awardsRow(_ a: DetailModel.TitleAwards) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text("Awards & Recognition").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: BP.px(10)) {
+                    ForEach(a.groups) { g in
+                        Button { awardType = g } label: {
+                            VStack(alignment: .leading, spacing: BP.px(4)) {
+                                Text(g.title).font(BP.sans(14, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+                                Text(g.wins > 0 ? "\(g.wins) win\(g.wins == 1 ? "" : "s")" + (g.nominations > 0 ? " · \(g.nominations) nomination\(g.nominations == 1 ? "" : "s")" : "") : "\(g.nominations) nomination\(g.nominations == 1 ? "" : "s")")
+                                    .font(BP.sans(12)).foregroundStyle(BP.inkMuted)
+                            }
+                            .padding(BP.px(14)).frame(width: BP.px(260), alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(10))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
     }
 
     // bp-anime-characters: AniList characters, distinct from the cast row.

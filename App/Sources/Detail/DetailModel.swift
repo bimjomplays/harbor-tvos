@@ -43,6 +43,16 @@ final class DetailModel: ObservableObject {
     @Published private(set) var extras: Extras?
     /// bp-anime-characters: AniList characters for an anime id (empty otherwise).
     @Published private(set) var characters: [AnimeCharacter] = []
+    /// detail/bp-awards-row: award bodies with counts, and every entry behind them.
+    @Published private(set) var awards: TitleAwards?
+    struct TitleAwards: Decodable {
+        struct Group: Decodable, Identifiable { var type: String; var title: String; var wins: Int; var nominations: Int; var id: String { type } }
+        struct Entry: Decodable, Identifiable { var type: String; var awardName: String; var category: String?; var year: Int?; var result: String; var recipient: String?; var id: String { "\(type)-\(awardName)-\(category ?? "")-\(year ?? 0)-\(result)" } }
+        var groups: [Group]; var entries: [Entry]
+    }
+    func loadAwards() async {
+        awards = try? await HarborEngine.shared.call("detailRoom.awards", [meta])
+    }
     struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String? }
     private struct AnimeDetail: Decodable {
         struct D: Decodable { var name: String?; var overview: String?; var backdrop: String?; var poster: String?; var year: String?; var genres: [String] }
@@ -117,6 +127,7 @@ final class DetailModel: ObservableObject {
         }
         await loadExtras()
         await loadEpisodeFacts()
+        await loadAwards()
     }
 
     /// use-bp-detail: TMDB lands independently of the meta; the franchise collection last.

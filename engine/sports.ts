@@ -10,7 +10,7 @@ import { HOT_EVENT_LEAGUES, hotEvents } from "@/lib/sports/hot-events";
 import { currentLiveGames, liveDateRange, liveScoreboardKeys } from "@/lib/sports/live-schedule";
 import { gamesInSportsSelection, selectedSportsLeagues, sportsSelectionScope } from "@/lib/sports/personalization";
 import { getGroupLabel, getLeagueLabel } from "@/lib/sports/espn-leagues";
-import { involvesTeam, readFavourites, writeFavourites, toggleFavouriteTeam, type FavouriteTeam } from "@/lib/sports/favourites";
+import { involvesTeam, readFavourites, writeFavourites, toggleFavouriteTeam, fetchLeagueTeams, teamCatalogStatus, teamCatalogIsPartial, type FavouriteTeam } from "@/lib/sports/favourites";
 import { fetchGameSummary } from "@/lib/sports/provider";
 import { matchCardContext, relativeCardStart } from "@/lib/sports/card-context";
 import { formatSportsEventDate } from "@/lib/sports/event-date";
@@ -378,3 +378,22 @@ export async function artwork(game: SportsGame): Promise<SportsArtwork> {
   if (held.backdrop || held.poster) return held;
   return Promise.race([fetchSportsArtwork(game).catch(() => held), new Promise<SportsArtwork>((r) => setTimeout(() => r(held), 6000))]);
 }
+
+
+// ------------------------------------------------------------ personalize step 3: teams
+// bp-sports-personalize.tsx: leagues organised by team (not by event) offer a team list; picks
+// go straight into the favourites store (toggleTeam) and feed the "Your teams" row.
+const EVENT_GROUPS = new Set(["combat", "boxing", "esports", "motorsport", "golf", "tennis"]);
+export function teamLeagues(keys: string[]): Array<{ key: string; label: string; group: string }> {
+  return HUB_LEAGUES.filter((l) => keys.includes(l.key) && !EVENT_GROUPS.has(l.group)).map((l) => ({ key: l.key, label: getLeagueLabel(l), group: l.group }));
+}
+export async function teams(leagueKey: string, force = false): Promise<{ status: string; partial: boolean; teams: FavouriteTeam[]; followed: string[] }> {
+  const list = await Promise.race([fetchLeagueTeams(leagueKey, { force }).catch(() => [] as FavouriteTeam[]), new Promise<FavouriteTeam[]>((r) => setTimeout(() => r([]), 10000))]);
+  const fav = readFavourites();
+  return {
+    status: String(teamCatalogStatus(leagueKey)), partial: teamCatalogIsPartial(leagueKey),
+    teams: list.map((t) => ({ id: t.id, leagueKey: t.leagueKey, group: t.group, name: t.name, abbr: t.abbr, logo: t.logo })),
+    followed: fav.teams.filter((t) => t.leagueKey === leagueKey).map((t) => t.id),
+  };
+}
+export function favouriteTeams(): FavouriteTeam[] { return readFavourites().teams; }

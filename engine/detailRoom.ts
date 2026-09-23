@@ -123,3 +123,24 @@ export async function episodeFacts(meta: Meta, season: number, profileId: string
   }
   return Array.from(out.values());
 }
+
+
+// ------------------------------------------------------------------------ awards row
+// detail/bp-awards-row.tsx + bp-award-detail-dialog.tsx: one mark per award body with win /
+// nomination counts, and the categories and years behind each.
+import { fetchAwards as awardsFetch, awardSummary as awardsSummary, type AwardEntry as AwardsEntry } from "@/lib/providers/wikidata";
+import { mergeBundledAwards as awardsMergeBundled } from "@/lib/awards-history";
+import { AWARD_CATALOG as awardsCatalog } from "@/lib/awards-catalog";
+export type TitleAwards = {
+  groups: Array<{ type: string; title: string; wins: number; nominations: number }>;
+  entries: Array<{ type: string; awardName: string; category: string | null; year: number | null; result: "won" | "nominated"; recipient: string | null }>;
+};
+export async function awards(meta: Meta): Promise<TitleAwards> {
+  const imdbId = meta.id.startsWith("tt") ? meta.id : null;
+  const year = Number((meta.releaseInfo ?? "").slice(0, 4)) || undefined;
+  const live: AwardsEntry[] | null = imdbId ? await Promise.race([awardsFetch(imdbId, meta.type === "series").catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 8000))]) : null;
+  const merged = awardsMergeBundled(live, meta.name, year);
+  const groups = awardsSummary(merged).filter((a) => a.wins > 0 || a.nominations > 0).map((a) => ({ type: a.type, title: awardsCatalog[a.type]?.title ?? "Awards", wins: a.wins, nominations: a.nominations }));
+  const entries = merged.filter((e) => e.type !== "other").map((e) => ({ type: e.type, awardName: e.awardName, category: e.category ?? null, year: e.year ?? null, result: e.result, recipient: e.recipient ?? (e.recipients?.[0] ?? null) }));
+  return { groups, entries };
+}
