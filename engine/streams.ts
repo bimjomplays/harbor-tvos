@@ -94,6 +94,8 @@ export type StreamSearch = {
   imdb: ResolvedImdb;
   streamIds: string[];
   addonCount: number;
+  /** Installed order (transport URLs): orderByAddonNative groups by this, then by each stream's nativeIdx. */
+  addonOrder?: string[];
   result: PipelineResult | null;
   error?: string;
 };
@@ -144,7 +146,7 @@ export async function search(
     );
     stampAddonOrder(result.picker.all, result.raw.addon);
     lastResults.set(token, result);
-    return { token, imdb, streamIds, addonCount: addons.length, result };
+    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl) };
   } catch (e) {
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {
@@ -186,7 +188,7 @@ const LIKELY_PACK_BYTES = 12 * 1024 * 1024 * 1024;
  * without asking, best first, as indexes into the token's picker.all. Only cached or direct-URL
  * streams qualify (no P2P engine on the TV). The remembered pick and the season lock lead.
  */
-export function autoCandidates(token: string, profileId: string, linked: boolean, meta: Meta, season: number | null, episode: number | null, isAnime: boolean, expectedTitles: string[] | null): number[] {
+export function autoCandidates(token: string, profileId: string, linked: boolean, meta: Meta, season: number | null, episode: number | null, isAnime: boolean, expectedTitles: string[] | null, prefer1080 = false): number[] {
   const result = lastResults.get(token);
   if (!result) return [];
   const settings = loadEffective(profileId, linked);
@@ -223,6 +225,7 @@ export function autoCandidates(token: string, profileId: string, linked: boolean
     const an = nameKnown(a) ? 0 : 1, bn = nameKnown(b) ? 0 : 1; if (an !== bn) return an - bn;
     const ap = isLikelyPack(a) ? 1 : 0, bp = isLikelyPack(b) ? 1 : 0; if (ap !== bp) return settings.seasonSourceLock ? bp - ap : ap - bp;
     const ad = needsDownload(a) ? 1 : 0, bd = needsDownload(b) ? 1 : 0; if (ad !== bd) return ad - bd;
+    if (prefer1080) { const dr = (RES_PREF[a.resolution] ?? 5) - (RES_PREF[b.resolution] ?? 5); if (dr !== 0) return dr; }
     if (hasStrongAddon) { const at = isTorrentio(a) ? 1 : 0, bt = isTorrentio(b) ? 1 : 0; if (at !== bt) return at - bt; }
     if (preferredLangs.length > 0) { const al = streamMatchesLangs(a, preferredLangs) ? 0 : 1, bl = streamMatchesLangs(b, preferredLangs) ? 0 : 1; if (al !== bl) return al - bl; }
     const ar = addonRank.get(a.addonId) ?? 9999, br = addonRank.get(b.addonId) ?? 9999; if (ar !== br) return ar - br;

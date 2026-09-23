@@ -49,10 +49,24 @@ final class SearchModel: ObservableObject {
 
     func loadSuggestions() async {
         guard suggestions.isEmpty else { return }
-        let metas: [Meta] = (try? await HarborEngine.shared.call("feed.hero", ["trending"])) ?? []
+        // bp-search: the first 60 unique posters across the Home rows, in row order.
+        struct Build: Decodable { struct Row: Decodable { var metas: [Meta] }; var rows: [Row] }
+        let p = ProfilesStore.shared.active
+        let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
+        var metas: [Meta] = []
+        if let b: Build = try? await HarborEngine.shared.call("rooms.homeFor", [p?.id ?? "default", p?.linked ?? true, authKey]) { metas = b.rows.flatMap(\.metas) }
+        if metas.isEmpty { metas = (try? await HarborEngine.shared.call("feed.hero", ["trending"])) ?? [] }
         var seen: Set<String> = []
         suggestions = metas.filter { $0.poster != nil && seen.insert($0.id).inserted }.prefix(60).map { $0 }
         await CardMarksStore.shared.refresh(suggestions)
+    }
+
+    /// search-context recordRecent: only when the viewer commits (opens a result), never mid-typing;
+    /// magnets and direct video links are never kept.
+    func commitRecent() {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2, !q.lowercased().hasPrefix("magnet:"), q.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) == nil else { return }
+        noteRecent(q)
     }
 
     private func noteRecent(_ q: String) {
@@ -141,7 +155,6 @@ final class SearchModel: ObservableObject {
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done
-            if !out.isEmpty || !(results.liveTv ?? []).isEmpty || !(results.people ?? []).isEmpty { noteRecent(q) }
         } catch {
             guard mine == requestId else { return }
             status = .failed(error.localizedDescription)

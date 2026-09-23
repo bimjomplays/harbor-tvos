@@ -42,6 +42,19 @@ struct EngineBrowseSource: BrowseSource {
         return (id, p?.linked ?? true, authKey)
     }
 
+    /// bp-home "Your addons": one brand card per installed addon; Select opens its catalogs.
+    private func addonsBand(_ authKey: String?) async -> BrowseRow? {
+        struct Card: Decodable { var key: String; var name: String; var base: String; var logo: String?; var hasCatalogs: Bool; var posters: [String] }
+        let cards: [Card] = (try? await HarborEngine.shared.call("addonsRoom.cards", [authKey, true])) ?? []
+        guard !cards.isEmpty else { return nil }
+        let metas = cards.map { c in
+            Meta(id: "addon:\(c.base)", type: "addon", name: c.name, poster: c.posters.first, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
+                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil,
+                 providerBadge: Meta.ProviderBadge(name: c.name, logo: c.logo ?? "", tint: "#2a2b2d"), videos: nil)
+        }
+        return BrowseRow(key: "addons", title: "Your addons", metas: metas, shape: .brand)
+    }
+
     func rows(for room: Room) async throws -> [BrowseRow] {
         let p = await profile
         let build: RoomBuild
@@ -60,9 +73,14 @@ struct EngineBrowseSource: BrowseSource {
                 }
                 var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
                 rows.insert(BrowseRow(key: "services", title: "Your streaming", metas: metas, shape: .brand), at: min(2, rows.count))
+                if let addons = await addonsBand(p.authKey) { rows.insert(addons, at: min(3, rows.count)) }
                 if build.failed && rows.isEmpty { throw BrowseError.empty }
                 return rows
             }
+            var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
+            if let addons = await addonsBand(p.authKey) { rows.insert(addons, at: min(2, rows.count)) }
+            if build.failed && rows.isEmpty { throw BrowseError.empty }
+            return rows
         case .movies, .shows:
             build = try await HarborEngine.shared.call("rooms.catalogFor", [room == .movies ? "movies" : "shows", p.id, p.linked])
         case .anime:
@@ -135,6 +153,19 @@ struct ServiceBrowseSource: BrowseSource {
     struct Build: Decodable {
         struct Row: Decodable { var key: String; var name: String; var type: String; var metas: [Meta]; var hasMore: Bool }
         var hasKey: Bool; var name: String; var tint: String; var rows: [Row]
+    }
+
+    /// bp-home "Your addons": one brand card per installed addon; Select opens its catalogs.
+    private func addonsBand(_ authKey: String?) async -> BrowseRow? {
+        struct Card: Decodable { var key: String; var name: String; var base: String; var logo: String?; var hasCatalogs: Bool; var posters: [String] }
+        let cards: [Card] = (try? await HarborEngine.shared.call("addonsRoom.cards", [authKey, true])) ?? []
+        guard !cards.isEmpty else { return nil }
+        let metas = cards.map { c in
+            Meta(id: "addon:\(c.base)", type: "addon", name: c.name, poster: c.posters.first, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
+                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil,
+                 providerBadge: Meta.ProviderBadge(name: c.name, logo: c.logo ?? "", tint: "#2a2b2d"), videos: nil)
+        }
+        return BrowseRow(key: "addons", title: "Your addons", metas: metas, shape: .brand)
     }
 
     func rows(for room: Room) async throws -> [BrowseRow] {

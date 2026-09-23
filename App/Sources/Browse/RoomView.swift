@@ -6,6 +6,9 @@ struct RoomView: View {
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
     @State private var quick: Meta?
+    @State private var addonPage: AddonTarget?
+    @State private var play: Meta?
+    struct AddonTarget: Identifiable { var base: String; var name: String; var logo: String?; var id: String { base } }
     @State private var service: ServiceTarget?
     struct ServiceTarget: Identifiable { var id: String; var name: String }
     @Environment(\.shellFocusNamespace) private var shellNS
@@ -29,9 +32,17 @@ struct RoomView: View {
             } else {
                 BPRailView(rows: model.rows, onFocus: { m, _ in if m.type != "service" { model.focus(m) } },
                            onSelect: { m in
-                               if m.id.hasPrefix("service:") { service = ServiceTarget(id: String(m.id.dropFirst(8)), name: m.name) } else { detail = m }
+                               if m.id.hasPrefix("service:") { service = ServiceTarget(id: String(m.id.dropFirst(8)), name: m.name) }
+                               else if m.id.hasPrefix("addon:") { addonPage = AddonTarget(base: String(m.id.dropFirst(6)), name: m.name, logo: m.providerBadge?.logo) }
+                               else { detail = m }
                            },
                            onSeeAll: { seeAll = $0 }, onQuick: { quick = $0 }, topInset: heroHeight) {
+                    if model.room == .anime, let hero = model.spotlight, hero.type != "service" {
+                        // bp-anime-hero-actions: the focused hero's Resume / Start Watching and More Info.
+                        AnimeHeroActionsView(meta: hero, resume: model.continueWatching.first { $0.id == hero.id },
+                                             onPlay: { play = $0 }, onInfo: { detail = $0 })
+                            .padding(.horizontal, BP.gutter)
+                    }
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
                                         onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) })
@@ -52,6 +63,8 @@ struct RoomView: View {
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $quick) { m in QuickPanelView(meta: m) }
         .fullScreenCover(item: $service) { t in ServicePageView(service: t.id, name: t.name) }
+        .fullScreenCover(item: $addonPage) { t in AddonPageView(base: t.base, name: t.name, logo: t.logo) }
+        .fullScreenCover(item: $play) { m in DetailView(meta: m, autoPlay: true) }
     }
 
     /// Home hero box: clamp(260px, 34vh, 380px) − 56px give (bp-tokens.ts:227-228, 172-175).

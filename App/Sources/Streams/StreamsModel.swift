@@ -23,6 +23,9 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     var tier: String
     var addonName: String
     var addonId: String
+    var addonUrl: String?
+    /// stampAddonOrder: the stream's position in its addon's own response.
+    var nativeIdx: Int?
     var url: String?
     var infoHash: String?
     var index: Int = 0   // position in picker.all, set after decoding
@@ -56,6 +59,7 @@ final class StreamsModel: ObservableObject {
         var imdb: Imdb
         var streamIds: [String]
         var addonCount: Int
+        var addonOrder: [String]?
         var result: Result?
         var error: String?
     }
@@ -64,6 +68,8 @@ final class StreamsModel: ObservableObject {
 
     @Published private(set) var streams: [ScoredStream] = []
     @Published private(set) var primary: ScoredStream?
+    /// Installed addon order (transport URLs) for the picker's "addon order" sort.
+    @Published private(set) var addonOrder: [String] = []
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var progress: (settled: Int, total: Int) = (0, 0)
     @Published private(set) var addonCount = 0
@@ -95,6 +101,7 @@ final class StreamsModel: ObservableObject {
                 [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object([:])])
             if let err = r.error { phase = .failed(err); return }
             addonCount = r.addonCount
+            addonOrder = r.addonOrder ?? []
             debridErrors = (r.result?.debridErrors ?? []).map { "\($0.name): \($0.code)" }
             apply(r.result?.picker)
             phase = .done
@@ -145,7 +152,8 @@ final class StreamsModel: ObservableObject {
         let p = ProfilesStore.shared.active
         let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
         let anime = meta.type == "anime" || ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) }
-        return (try? await HarborEngine.shared.call("streamsRoom.autoCandidates", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep, anime, nil as [String]?])) ?? []
+        // use-bp-stream-play prefer1080: !!kid.
+        return (try? await HarborEngine.shared.call("streamsRoom.autoCandidates", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep, anime, nil as [String]?, p?.kid != nil])) ?? []
     }
 
     /// use-pick-handler savePlayback: remember what played for next time's instant play.

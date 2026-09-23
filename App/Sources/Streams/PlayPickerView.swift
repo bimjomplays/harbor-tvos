@@ -56,7 +56,7 @@ struct PlayPickerView: View {
             }
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
-        .onDisappear { model.cancel() }
+        .onDisappear { if autoState == .waiting { autoState = .cancelled }; model.cancel() }
     }
 
     private var episodeLabel: String? {
@@ -89,8 +89,8 @@ struct PlayPickerView: View {
         autoState = .firing(s.id)
         resolving = s.id
         let r = await model.resolve(s)
+        guard case .firing = autoState, !Task.isCancelled else { return }   // the viewer picked by hand, or left
         resolving = nil
-        guard case .firing = autoState else { return }   // the viewer picked by hand meanwhile
         if r.ok, r.data != nil {
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
             onPlay(s, r)
@@ -139,9 +139,9 @@ struct PlayPickerView: View {
             switch (s.source ?? "").uppercased() {
             case "BLURAY", "BDRIP", "BRRIP", "BLU-RAY": return "BluRay"
             case "WEB-DL", "WEBDL", "WEB": return "WEB-DL"
-            case "WEBRIP": return "WEBRip"
-            case "HDTV": return "HDTV"
-            case "CAM", "TS", "HDTS", "TC": return "CAM"
+            case "WEBRIP", "HDRIP": return "WEBRip"
+            case "HDTV", "DVDRIP": return "HDTV"
+            case "CAM", "TS", "HDTS", "TC", "SCR": return "CAM"
             default: return nil
             }
         },
@@ -182,12 +182,14 @@ struct PlayPickerView: View {
             matchesFacets(s)
         }
         if sortByAddon {
-            // orderByAddonNative: keep each addon's own order, addons in the order they first answered.
-            var firstSeen: [String: Int] = [:]
-            for s in model.streams where firstSeen[s.addonId] == nil { firstSeen[s.addonId] = firstSeen.count }
+            // orderByAddonNative: addons in the installed order, each stream where its addon listed it.
+            var rank: [String: Int] = [:]
+            for (i, url) in model.addonOrder.enumerated() { rank[url] = i }
             return filtered.sorted { a, b in
-                let ra = firstSeen[a.addonId] ?? 0, rb = firstSeen[b.addonId] ?? 0
-                return ra != rb ? ra < rb : a.index < b.index
+                let ra = a.addonUrl.flatMap { rank[$0] } ?? 9999, rb = b.addonUrl.flatMap { rank[$0] } ?? 9999
+                if ra != rb { return ra < rb }
+                let na = a.nativeIdx ?? Int.max, nb = b.nativeIdx ?? Int.max
+                return na != nb ? na < nb : a.index < b.index
             }
         }
         return filtered.sorted { a, b in a.isCached != b.isCached ? a.isCached : a.index < b.index }

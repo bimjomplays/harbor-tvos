@@ -76,6 +76,8 @@ import * as homeGlue from "./homeServers";
 import * as searchGlue from "./search";
 import * as onboardingGlue from "./onboarding";
 import * as actionsGlue from "./actions";
+import { scores as scoreBadges } from "./scores";
+import * as addonsRoomGlue from "./addonsRoom";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
@@ -547,6 +549,7 @@ export const libraryRoom = {
 
 /** Anime room: progressive Jikan spec rows, anime CW, hero, awards, addon rows (use-bp-anime). */
 export const animeRoom = {
+  heroMeta: animeGlue.heroMeta,
   page: animeGlue.page,
   loadMore: animeGlue.loadMore,
   refresh: animeGlue.refresh,
@@ -594,6 +597,16 @@ export const homeServers = {
   reportProgress: homeGlue.reportProgress,
   stopPlayback: homeGlue.stopPlayback,
 };
+
+/** bp-home "Your addons" band and the addon page: cards, catalogs, paged feeds. */
+export const addonsRoom = {
+  cards: addonsRoomGlue.cards,
+  catalogs: addonsRoomGlue.catalogs,
+  feed: addonsRoomGlue.feed,
+};
+
+/** use-bp-card-badges: provider score chips for a hero ("card" gates) or a detail page ("detail" gates). */
+export const scores = { forMeta: scoreBadges };
 
 /** Detail / quick-panel actions: custom lists, ratings, anime row customisation. */
 export const actions = {

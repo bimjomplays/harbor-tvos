@@ -27,7 +27,7 @@ final class LibraryModel: ObservableObject {
     @Published var sort = "recent"
     @Published var flat = false
     /// bp-library "Episodes / Posters" for History (harbor.history.view).
-    @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") != "posters"
+    @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") == "episodes"
     @Published var group: String?
     @Published var query = ""
     @Published var showFilters = false

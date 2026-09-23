@@ -230,6 +230,11 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.actions.removeList(lid);
   r.eq("actions.rating unknown item", engine.actions.rating("tt0000009"), null);
   r.eq("actions.animeRows before any room build", engine.actions.animeRows("default", true), []);
+  const ac = await engine.addonsRoom.cards(null, false);
+  r.ok("addonsRoom.cards lists installed addons as cards", Array.isArray(ac) && ac.every((c) => typeof c.base === "string" && typeof c.name === "string"), JSON.stringify(ac.map((c) => c.name)));
+  r.eq("addonsRoom.catalogs for an unknown base", await engine.addonsRoom.catalogs("https://nowhere.invalid"), []);
+  const hm = await engine.animeRoom.heroMeta({ id: "tt0388629", type: "anime", name: "One Piece", releaseInfo: "1999", imdbRating: "9.0" }, "default", true, { season: 1, episode: 3 });
+  r.ok("animeRoom.heroMeta falls back to the inline score and formats the episode", hm.score === "9.0" && hm.episode === "S1 E3", JSON.stringify(hm));
   r.eq("onboarding.vote records an upvote", engine.onboarding.vote("tt0000001", true, "Smoke", "movie").includes("tt0000001"), true);
   r.eq("onboarding.vote clears it again", engine.onboarding.vote("tt0000001", false, "Smoke", "movie").includes("tt0000001"), false);
   r.eq("live.loadShortEpg ignores a non-Xtream playlist", await engine.live.loadShortEpg("nope", ["a"]), { hydrated: 0 });
@@ -462,6 +467,8 @@ if (!OFFLINE) {
 
   const sc = await r.timed("search.cinemeta('blade runner')", () => engine.search.cinemeta("blade runner"));
   r.ok("search.cinemeta finds movies and series", sc && sc.movies.length > 0 && Array.isArray(sc.series), JSON.stringify(sc && { movies: sc.movies.length, series: sc.series.length, first: sc.movies[0] && sc.movies[0].name }));
+  const sb = await r.timed("scores.forMeta(tt0111161, card)", () => engine.scores.forMeta({ id: "tt0111161", type: "movie", name: "The Shawshank Redemption", imdbRating: "9.3" }, "default", true, "card"));
+  r.ok("scores.forMeta returns an IMDb chip for a tt id", Array.isArray(sb) && sb.some((b) => b.kind === "rating" && b.source === "imdb"), JSON.stringify(sb));
   const fo = await r.timed("search.fanOut('blade runner')", () => engine.search.fanOut("blade runner", "default", true, null));
   r.ok("search.fanOut fuses Cinemeta into Movies without a TMDB key", fo && fo.movies.length > 0 && typeof fo.requestId === "number" && Array.isArray(fo.addonQueries), JSON.stringify(fo && { movies: fo.movies.length, series: fo.series.length, anime: fo.anime.length, queries: fo.addonQueries.length, addons: fo.addons.length }));
   const sa = await r.timed("search.addonCatalogs(seeded)", () => engine.search.addonCatalogs(gathered ?? [], "inception"));

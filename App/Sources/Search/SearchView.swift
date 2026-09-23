@@ -28,6 +28,9 @@ struct SearchView: View {
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
         }
         .task { await model.loadSuggestions() }
+        .onChange(of: detail?.id) { _, id in if id != nil { model.commitRecent() } }
+        .onChange(of: person?.id) { _, id in if id != nil { model.commitRecent() } }
+        .onChange(of: channel?.id) { _, id in if id != nil { model.commitRecent() } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $person) { p in PersonView(personId: p.tmdbId ?? 0, name: p.name) }
         .fullScreenCover(item: $channel) { ch in

@@ -70,7 +70,15 @@ struct BPTileView: View {
             RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(tint.opacity(white ? 0.18 : (focused ? 0.8 : 0.62)))
             LinearGradient(colors: [BP.ink.opacity(0.12), .clear, BP.void_.opacity(0.55)], startPoint: .top, endPoint: .bottom)
                 .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
-            Text(meta.name).font(BP.display(22, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.center).padding(BP.px(12))
+            if let logo = meta.providerBadge?.logo, !logo.isEmpty {
+                // bp-addon-card: the addon's own logo over its name.
+                VStack(spacing: BP.px(8)) {
+                    RemoteImage(url: logo, contentMode: .fit).frame(width: BP.px(56), height: BP.px(56)).clipShape(RoundedRectangle(cornerRadius: BP.px(12)))
+                    Text(meta.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1).padding(.horizontal, BP.px(10))
+                }
+            } else {
+                Text(meta.name).font(BP.display(22, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.center).padding(BP.px(12))
+            }
         }
         .frame(width: Self.brandSize.width, height: Self.brandSize.height)
     }

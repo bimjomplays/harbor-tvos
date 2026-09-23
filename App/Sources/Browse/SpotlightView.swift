@@ -20,8 +20,9 @@ struct SpotlightView: View {
                         .lineLimit(2).shadow(color: .black.opacity(0.5), radius: 12, y: 4)
                 }
                 HStack(spacing: BP.px(10)) {
+                    // bp-spotlight: provider chips from use-bp-card-badges, then TMDB's own score, then facts.
+                    ScoreChipsView(meta: meta, surface: "card", limit: 3)
                     if let s = meta?.tmdbScore, s > 0 { scoreChip("TMDB", String(format: "%.1f", s)) }
-                    else if let r = meta?.imdbRating, !r.isEmpty { scoreChip("IMDb", r) }
                     if let f = meta?.facts, !f.isEmpty {
                         Text(f).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
                     }

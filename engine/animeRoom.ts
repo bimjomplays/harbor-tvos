@@ -225,3 +225,27 @@ export async function specPage(key: string, pageNo: number): Promise<Meta[]> {
   if (!spec) return [];
   return (await spec.fetcher(pageNo)).map(cleanMeta);
 }
+
+
+// ------------------------------------------------------------ hero actions / meta line
+// bp-anime-hero-meta.tsx: the award pill or "New", the MAL score, "Sub and Dub", the country.
+import { findTopAward as heroTopAward, parseAwardYear as heroAwardYear } from "@/lib/anime-awards";
+import { animeHasDub as heroHasDub, ensureDubSet as heroEnsureDub } from "@/lib/providers/anime-dub-sub";
+import { jikanScore as heroJikanScore } from "@/lib/mal-rating";
+export type HeroMeta = { topLine: string; score: string | null; dub: boolean; country: string; episode: string; minutesLeft: string };
+export async function heroMeta(meta: Meta, profileId: string, linked: boolean, cwItem: { season?: number | null; episode?: number | null; duration?: number | null; timeOffset?: number | null } | null): Promise<HeroMeta> {
+  const s = loadEffective(profileId, linked);
+  const win = heroTopAward(meta.name ?? "", heroAwardYear(meta.releaseInfo), meta.id);
+  const topLine = win ? (win.isAOTY ? "Anime of the year" : `Best ${win.categoryName ?? ""}`.trim()) : meta.releaseInfo === String(new Date().getFullYear()) ? "New" : "";
+  const malMatch = meta.id.match(/^mal:(\d+)/);
+  const score = malMatch ? await heroJikanScore(Number(malMatch[1])).catch(() => null) : meta.imdbRating ?? null;
+  let dub = false;
+  if (s.showDubBadge !== false) { try { await heroEnsureDub(); dub = heroHasDub(meta.id); } catch { dub = false; } }
+  const c = (meta as { country?: string }).country ?? "";
+  const country = c.length > 3 && c !== "Japan" ? c : "";
+  const se = cwItem?.season ?? 0, ep = cwItem?.episode ?? 0;
+  const episode = ep > 0 ? (se > 0 ? `S${se} E${ep}` : `E${ep}`) : "";
+  const dur = cwItem?.duration ?? 0, off = cwItem?.timeOffset ?? 0;
+  const left = dur > 0 ? Math.round((dur - off) / 60000) : 0;
+  return { topLine, score, dub, country, episode, minutesLeft: left >= 1 ? `${left} min left` : "" };
+}

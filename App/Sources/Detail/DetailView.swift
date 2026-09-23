@@ -89,8 +89,8 @@ struct DetailView: View {
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
-                         onChooseAnother: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
-                         onSwitchSource: { at in switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
+                         onChooseAnother: { pickerAuto = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
+                         onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
                 playing = nil
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
@@ -126,12 +126,8 @@ struct DetailView: View {
                 Text(model.meta.name).font(BP.display(52)).foregroundStyle(BP.ink).lineLimit(2).frame(maxWidth: BP.px(700), alignment: .leading)
             }
             HStack(spacing: BP.px(12)) {
-                if let r = model.meta.imdbRating, !r.isEmpty {
-                    HStack(spacing: BP.px(4)) {
-                        Text("IMDb").font(BP.sans(9.8, .bold)).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(5)).padding(.vertical, BP.px(2)).background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.ink))
-                        Text(r).font(BP.sans(13.4, .semibold)).foregroundStyle(BP.ink)
-                    }
-                }
+                // bp-detail: every provider the detail settings allow (use-bp-card-badges "detail").
+                ScoreChipsView(meta: model.meta, surface: "detail", limit: 6)
                 Text(model.meta.facts).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
             }
             HStack(spacing: BP.px(8)) {
