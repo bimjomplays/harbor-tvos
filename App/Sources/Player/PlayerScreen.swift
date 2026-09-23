@@ -383,7 +383,12 @@ struct PlayerScreen: View {
                      "imdbId": context.imdbId.map { .string($0) } ?? .null,
                      "imdbSeason": .number(Double(s)), "imdbEpisode": .number(Double(context.episode ?? 1))])
         } ?? .null
-        Task { _ = try? await HarborEngine.shared.callJSON("trakt.scrobble", [.string(action), .string(context.meta.id), ep, .number(progress)]) }
+        let year = context.meta.releaseInfo.flatMap { Double($0.prefix(4)) }
+        let info: AnyJSON = .object(["title": .string(context.meta.name), "year": year.map { .number($0) } ?? .null, "imdb": context.imdbId.map { .string($0) } ?? .null])
+        Task {
+            _ = try? await HarborEngine.shared.callJSON("trakt.scrobble", [.string(action), .string(context.meta.id), ep, .number(progress)])
+            _ = try? await HarborEngine.shared.callJSON("simkl.scrobble", [.string(action), .string(context.meta.id), ep, .number(progress), info])
+        }
     }
 
     /// use-resume-autosave.ts: every 4 s while playing, only if moved ≥ 1.5 s since the last save.

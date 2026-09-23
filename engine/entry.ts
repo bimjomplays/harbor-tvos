@@ -61,6 +61,7 @@ import * as liveGlue from "./live";
 import * as accountGlue from "./account";
 import * as syncGlue from "./sync";
 import * as cardsGlue from "./cards";
+import * as simklGlue from "./simkl";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -462,6 +463,15 @@ export const cards = {
   marks: cardsGlue.marks,
   setTop10: cardsGlue.setTop10,
   refreshWatchlist: cardsGlue.refreshWatchlist,
+};
+
+/** Simkl: PIN sign-in, session status, scrobbles (same wire shapes as `trakt`). */
+export const simkl = {
+  deviceCode: simklGlue.deviceCode,
+  poll: simklGlue.poll,
+  status: simklGlue.status,
+  disconnect: simklGlue.disconnect,
+  scrobble: simklGlue.scrobble,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

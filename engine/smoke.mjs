@@ -395,6 +395,10 @@ if (!OFFLINE) {
   r.eq("trakt.status when signed out", engine.trakt.status(), { authenticated: false, username: null });
   const dc = await r.timed("trakt.deviceCode()", () => engine.trakt.deviceCode().catch((e) => ({ error: e.message })));
   r.ok("trakt.deviceCode returns a user code (or a clear error)", (dc && dc.userCode && dc.userCode.length >= 6) || (dc && dc.error), JSON.stringify(dc && { code: dc.userCode, url: dc.verificationUrl, error: dc.error }));
+  r.eq("simkl.status when signed out", engine.simkl.status(), { authenticated: false, username: null });
+  const spin = await r.timed("simkl.deviceCode()", () => engine.simkl.deviceCode().catch((e) => ({ error: e.message })));
+  r.ok("simkl.deviceCode returns a PIN (or a clear error)", (spin && spin.userCode && spin.userCode.length >= 4 && spin.verificationUrl) || (spin && spin.error), JSON.stringify(spin));
+  r.eq("simkl.scrobble skips when not connected", await engine.simkl.scrobble("start", "tt0111161", null, 5), { sent: false, reason: "not-connected" });
   const scrob = await engine.trakt.scrobble("start", "tt0111161", null, 5);
   r.eq("trakt.scrobble skips when not connected", scrob, { sent: false, reason: "not-connected" });
   const col = await r.timed("collectionsRoom.all()", () => engine.collectionsRoom.all());
