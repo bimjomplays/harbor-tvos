@@ -197,7 +197,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
     awards, specRows, addonRows: dedupeAnimeAddonRows(addonRows, s.hideAdultAnime !== false), collections,
   });
   // Row customisation (order / hidden / renamed) as the anime settings store it.
-  noteAnimeGroups(groups.map((g) => ({ key: g.key, name: g.name })));
+  noteAnimeGroups(groups.map((g) => ({ key: g.key, name: g.name })), profileId);
   const ordered = applyAnimeRowCustomization(groups.map((g) => ({ key: g.key, name: g.name, group: g })), s.animeRows ?? EMPTY_ANIME_ROWS);
   const rows: RoomRow[] = [];
   for (const entry of ordered) {
@@ -232,20 +232,32 @@ export async function specPage(key: string, pageNo: number): Promise<Meta[]> {
 import { findTopAward as heroTopAward, parseAwardYear as heroAwardYear } from "@/lib/anime-awards";
 import { animeHasDub as heroHasDub, ensureDubSet as heroEnsureDub } from "@/lib/providers/anime-dub-sub";
 import { jikanScore as heroJikanScore } from "@/lib/mal-rating";
-export type HeroMeta = { topLine: string; score: string | null; dub: boolean; country: string; episode: string; minutesLeft: string };
+import { kitsuToMal as heroKitsuToMal } from "@/lib/providers/anime-mapping";
+import { dubSetReady as heroDubReady } from "@/lib/providers/anime-dub-sub";
+export type HeroMeta = { topLine: string; score: string | null; fromMal: boolean; dub: boolean; country: string; episode: string; minutesLeft: string };
+// lib/mal-rating resolveMalId: mal: ids directly, kitsu: ids through the ARM mapping.
+async function heroMalId(metaId: string): Promise<number | null> {
+  if (metaId.startsWith("mal:")) { const n = Number(metaId.slice(4)); return Number.isFinite(n) ? n : null; }
+  if (metaId.startsWith("kitsu:")) { const n = Number(metaId.slice(6)); return Number.isFinite(n) ? heroKitsuToMal(n).catch(() => null) : null; }
+  return null;
+}
 export async function heroMeta(meta: Meta, profileId: string, linked: boolean, cwItem: { season?: number | null; episode?: number | null; duration?: number | null; timeOffset?: number | null } | null): Promise<HeroMeta> {
   const s = loadEffective(profileId, linked);
   const win = heroTopAward(meta.name ?? "", heroAwardYear(meta.releaseInfo), meta.id);
   const topLine = win ? (win.isAOTY ? "Anime of the year" : `Best ${win.categoryName ?? ""}`.trim()) : meta.releaseInfo === String(new Date().getFullYear()) ? "New" : "";
-  const malMatch = meta.id.match(/^mal:(\d+)/);
-  const score = malMatch ? await heroJikanScore(Number(malMatch[1])).catch(() => null) : meta.imdbRating ?? null;
+  const malId = await heroMalId(meta.id);
+  const jikan = malId ? await heroJikanScore(malId).catch(() => null) : null;
+  const score = jikan ?? meta.imdbRating ?? null;
   let dub = false;
-  if (s.showDubBadge !== false) { try { await heroEnsureDub(); dub = heroHasDub(meta.id); } catch { dub = false; } }
+  if (s.showDubBadge !== false) {
+    // ensureDubSet fires the load and returns; wait (bounded) for the set before asking it.
+    try { heroEnsureDub(); for (let i = 0; i < 30 && !heroDubReady(); i += 1) await new Promise((r) => setTimeout(r, 100)); dub = heroHasDub(meta.id); } catch { dub = false; }
+  }
   const c = (meta as { country?: string }).country ?? "";
   const country = c.length > 3 && c !== "Japan" ? c : "";
   const se = cwItem?.season ?? 0, ep = cwItem?.episode ?? 0;
   const episode = ep > 0 ? (se > 0 ? `S${se} E${ep}` : `E${ep}`) : "";
   const dur = cwItem?.duration ?? 0, off = cwItem?.timeOffset ?? 0;
   const left = dur > 0 ? Math.round((dur - off) / 60000) : 0;
-  return { topLine, score, dub, country, episode, minutesLeft: left >= 1 ? `${left} min left` : "" };
+  return { topLine, score, fromMal: jikan != null, dub, country, episode, minutesLeft: left >= 1 ? `${left} min left` : "" };
 }

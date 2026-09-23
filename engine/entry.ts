@@ -515,6 +515,8 @@ export const anime4k = {
 
 /** Sports room (upstream hub feeds, rows, discovery, consent, personalization, detail). */
 export const sports = {
+  standings: sportsGlue.standings,
+  artwork: sportsGlue.artwork,
   consent: sportsGlue.consent,
   accept: sportsGlue.accept,
   decline: sportsGlue.decline,
@@ -649,6 +651,8 @@ export const live = {
   setEpgUrl: liveGlue.setEpgUrl,
   loadShortEpg: liveGlue.loadShortEpg,
   homeRow: liveGlue.homeRow,
+  toggleGroupHidden: liveGlue.toggleGroupHidden,
+  toggleChannelPin: liveGlue.toggleChannelPin,
   removePlaylist: liveGlue.removePlaylist,
   channels: liveGlue.channels,
   favorites: liveGlue.favorites,

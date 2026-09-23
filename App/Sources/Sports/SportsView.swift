@@ -193,10 +193,7 @@ struct SportsHeroView: View {
             .background(
                 ZStack(alignment: .trailing) {
                     RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2)
-                    if let art = game.artwork ?? game.poster {
-                        RemoteImage(url: art).frame(width: BP.px(420)).clipped().opacity(0.5)
-                            .mask(LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing))
-                    }
+                    SportsArtView(game: game, width: BP.px(420))
                 }
                 .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
             )

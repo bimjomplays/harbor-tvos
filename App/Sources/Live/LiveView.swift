@@ -10,9 +10,10 @@ final class LiveModel: ObservableObject {
         var headers: [String: String]?; var favorite: Bool
         /// bp-guide-title: cleaned name, quality badge, and a group label that is not just the name again.
         var label: String?; var badge: String?; var groupLabel: String?
+        var pinned: Bool?
         var shownName: String { label ?? name }
     }
-    struct Group: Decodable, Identifiable { var name: String; var count: Int; var id: String { name } }
+    struct Group: Decodable, Identifiable { var name: String; var count: Int; var hidden: Bool?; var id: String { name } }
     struct View_: Decodable { var id: String; var name: String; var kind: String; var channels: [Channel]; var groups: [Group]; var total: Int; var epgUrl: String? }
     struct Program: Decodable, Equatable { var title: String; var description: String?; var startMs: Double; var endMs: Double; var category: String? }
     struct NowNext: Decodable, Equatable { var id: String; var now: Program?; var next: Program?; var known: Bool }
@@ -112,6 +113,20 @@ final class LiveModel: ObservableObject {
         }
     }
 
+    /// usePinnedOrder: pinned channels sit in guide-order tier 2 (after favourites).
+    func togglePin(_ ch: Channel) async {
+        _ = try? await HarborEngine.shared.callJSON("live.toggleChannelPin", [.string(ch.id)])
+        await load()
+    }
+
+    /// useGroupPrefs: hide (or show again) a whole channel group of this source.
+    func toggleGroupHidden(_ group: String) async {
+        guard let id = selectedPlaylist else { return }
+        _ = try? await HarborEngine.shared.callJSON("live.toggleGroupHidden", [.string(id), .string(group)])
+        if category == group { category = Self.allKey }
+        await load()
+    }
+
     func toggleFavorite(_ ch: Channel) async {
         let on: Bool = (try? await HarborEngine.shared.call("live.toggleFavorite", [ch])) ?? !ch.favorite
         if let i = channels.firstIndex(where: { $0.id == ch.id }) { channels[i].favorite = on }
@@ -153,6 +168,7 @@ struct LiveView: View {
     @State private var showSources = false
     /// bp-live shows the guide grid; the list is the fallback when a source has no guide.
     @State private var grid = true
+    @State private var showHidden = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -219,6 +235,17 @@ struct LiveView: View {
                     }
                     .buttonStyle(BPActionStyle(primary: model.category == c.key))
                 }
+                if model.category != LiveModel.favKey, model.category != LiveModel.allKey {
+                    Button("Hide group") { Task { await model.toggleGroupHidden(model.category) } }.buttonStyle(BPActionStyle())
+                }
+                if showHidden {
+                    ForEach(model.groups.filter { $0.hidden == true }) { g in
+                        Button("Show \(g.name)") { Task { await model.toggleGroupHidden(g.name) } }.buttonStyle(BPActionStyle())
+                    }
+                }
+                if let hiddenCount = model.groups.filter({ $0.hidden == true }).count as Int?, hiddenCount > 0 {
+                    Button("\(hiddenCount) hidden") { showHidden.toggle() }.buttonStyle(BPActionStyle(primary: showHidden))
+                }
                 if model.guideNote == nil {
                     Button(grid ? "List" : "Guide") { grid.toggle() }.buttonStyle(BPActionStyle())
                 }
@@ -233,7 +260,7 @@ struct LiveView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.px(6)) {
                 ForEach(model.visible) { ch in
-                    LiveChannelRow(channel: ch, nowNext: model.guide[ch.id],
+                    LiveChannelRow(channel: ch, nowNext: model.guide[ch.id], pin: { Task { await model.togglePin(ch) } },
                                    play: { model.played(ch); playing = ch },
                                    star: { Task { await model.toggleFavorite(ch) } })
                 }
@@ -250,6 +277,7 @@ struct LiveChannelRow: View {
     let nowNext: LiveModel.NowNext?
     let play: () -> Void
     let star: () -> Void
+    var pin: (() -> Void)? = nil
 
     private var progress: Double? {
         guard let p = nowNext?.now else { return nil }
@@ -306,6 +334,17 @@ struct LiveChannelRow: View {
                     .foregroundStyle(channel.favorite ? BP.ink : BP.inkMuted)
                     .frame(width: BP.px(56), height: BP.px(56))
                     .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+            }
+            if let pin {
+                // usePinnedOrder: a pinned channel sits just under the favourites in guide order.
+                Button(action: pin) {
+                    Image(systemName: channel.pinned == true ? "pin.fill" : "pin")
+                        .font(.system(size: BP.px(16), weight: .bold))
+                        .foregroundStyle(channel.pinned == true ? BP.ink : BP.inkMuted)
+                        .frame(width: BP.px(56), height: BP.px(56))
+                        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                }
+                .accessibilityLabel(channel.pinned == true ? "Unpin channel" : "Pin channel")
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
             .accessibilityLabel(channel.favorite ? "Remove from favorites" : "Add to favorites")

@@ -65,7 +65,9 @@ final class SearchModel: ObservableObject {
     /// magnets and direct video links are never kept.
     func commitRecent() {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard q.count >= 2, !q.lowercased().hasPrefix("magnet:"), q.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) == nil else { return }
+        // isMagnetInput / isDirectVideoUrl: magnets, bare infohashes and links never become recents.
+        guard q.count >= 2, !q.lowercased().hasPrefix("magnet:"), q.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) == nil,
+              q.range(of: #"^([0-9a-fA-F]{40}|[A-Za-z2-7]{32})$"#, options: .regularExpression) == nil else { return }
         noteRecent(q)
     }
 

@@ -105,7 +105,7 @@ export async function scores(meta: Meta, profileId: string, linked: boolean, sur
     gate.imdb && !isAnime && imdbId && !(meta.id.startsWith("tt") && meta.imdbRating) ? timeout(fetchMeta(cinemetaKind, imdbId).then((m) => m?.imdbRating ?? null), 4000, null) : Promise.resolve(null),
     gate.tmdb && !isAnime && s.tmdbKey ? timeout(tmdbVote(s.tmdbKey, meta.id, cinemetaKind), 4000, null) : Promise.resolve(null),
     s.mdblistKey && wantMdblist && imdbId ? timeout(mdblist(imdbId, mediaKind), 4000, null) : Promise.resolve(null),
-    gate.simkl ? timeout(simklScore(isAnime ? meta.id : imdbId ? `imdb:${imdbId}` : ""), 4000, null) : Promise.resolve(null),
+    gate.simkl && (isAnime || imdbId) ? timeout(simklScore(isAnime ? meta.id : `imdb:${imdbId}`), 4000, null) : Promise.resolve(null),
   ]);
   const simklValue = simklValueRaw ?? cardScores?.simkl ?? null;
   const imdbValue = isAnime ? undefined : harborRating ?? omdb?.imdbRating ?? cinemetaRating ?? (meta.id.startsWith("tt") ? meta.imdbRating : undefined);

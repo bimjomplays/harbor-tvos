@@ -138,6 +138,7 @@ struct SportsEventView: View {
             }
         }
         .focusSection()
+        StandingsSection(league: game.league).padding(.top, BP.px(10))
     }
 
     private func play(_ opt: SportsEventModel.WatchOption) {

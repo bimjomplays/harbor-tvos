@@ -33,6 +33,7 @@ export function renameListTo(id: string, name: string): void { renameList(id, na
 const ANIME_ID = /^(kitsu|mal|anilist|anidb):/i;
 function mediaTypeFor(meta: Meta): RatingMediaType {
   const t = meta.type;
+  if (t === "manga") return "manga" as RatingMediaType;
   if (t === "movie") return "movie";
   if (t === "series" || t === "tv") return "series";
   if (ANIME_ID.test(meta.id) || t === "anime") return "anime";
@@ -60,9 +61,11 @@ export async function unrate(itemKey: string): Promise<void> {
 
 // -------------------------------------------------------------------------- anime rows
 export type AnimeRowState = { key: string; name: string; originalName: string; hidden: boolean };
-let lastAnimeGroups: Array<{ key: string; name: string }> = [];
-/** animeRoom records the groups it last built so the settings panel can list them without rebuilding. */
-export function noteAnimeGroups(groups: Array<{ key: string; name: string }>): void { lastAnimeGroups = groups; }
+// Per profile: a kid profile's addons and hidden rows differ from the adult's.
+const animeGroupsByProfile = new Map<string, Array<{ key: string; name: string }>>();
+/** animeRoom records the groups it last built (per profile) so the settings panel can list them without rebuilding. */
+export function noteAnimeGroups(groups: Array<{ key: string; name: string }>, profileId = "default"): void { animeGroupsByProfile.set(profileId, groups); }
+const lastGroups = (profileId: string) => animeGroupsByProfile.get(profileId) ?? [];
 
 function custom(profileId: string, linked: boolean): AnimeRowCustomization {
   return loadEffective(profileId, linked).animeRows ?? EMPTY_ANIME_ROWS;
@@ -76,12 +79,13 @@ function write(profileId: string, linked: boolean, next: AnimeRowCustomization):
 
 export function animeRows(profileId: string, linked: boolean): AnimeRowState[] {
   const c = custom(profileId, linked);
-  const shown = applyAnimeRowCustomization(lastAnimeGroups, c, true);
-  return shown.map((g) => ({ key: g.key, name: g.name, originalName: lastAnimeGroups.find((x) => x.key === g.key)?.name ?? g.name, hidden: c.hidden.includes(g.key) }));
+  const groups = lastGroups(profileId);
+  const shown = applyAnimeRowCustomization(groups, c, true);
+  return shown.map((g) => ({ key: g.key, name: g.name, originalName: groups.find((x) => x.key === g.key)?.name ?? g.name, hidden: c.hidden.includes(g.key) }));
 }
 
 export function animeRowMove(profileId: string, linked: boolean, key: string, delta: -1 | 1): AnimeRowState[] {
-  write(profileId, linked, animeMoveRow(custom(profileId, linked), lastAnimeGroups, key, delta));
+  write(profileId, linked, animeMoveRow(custom(profileId, linked), lastGroups(profileId), key, delta));
   return animeRows(profileId, linked);
 }
 

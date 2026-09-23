@@ -363,3 +363,18 @@ export function recordChannelWatch(channelId: string): void {
   const ch = indexCache?.channels.find((c) => c.id === channelId);
   if (ch) recordChannelPlay(ch);
 }
+
+
+// ---------------------------------------------------------------- standings + artwork
+import { fetchStandings as fetchStandingsUpstream, type StandingsTable } from "@/lib/sports/standings";
+import { fetchSportsArtwork, cachedArtwork, type SportsArtwork } from "@/lib/sports/hub-artwork";
+/** bp-sports-event-rows BpSportsStandingsRow: the league table for a game's league. */
+export function standings(leagueTag: string): Promise<StandingsTable | null> {
+  return fetchStandingsUpstream(leagueTag).catch(() => null);
+}
+/** lib/sports/hub-artwork: TheSportsDB backdrop/poster/team art for a card or hero with none of its own. */
+export async function artwork(game: SportsGame): Promise<SportsArtwork> {
+  const held = cachedArtwork(game);
+  if (held.backdrop || held.poster) return held;
+  return Promise.race([fetchSportsArtwork(game).catch(() => held), new Promise<SportsArtwork>((r) => setTimeout(() => r(held), 6000))]);
+}

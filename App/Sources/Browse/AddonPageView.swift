@@ -106,14 +106,14 @@ struct AnimeHeroActionsView: View {
     let onPlay: (Meta) -> Void
     let onInfo: (Meta) -> Void
     @State private var info: HeroMeta?
-    struct HeroMeta: Decodable { var topLine: String; var score: String?; var dub: Bool; var country: String; var episode: String; var minutesLeft: String }
+    struct HeroMeta: Decodable { var topLine: String; var score: String?; var fromMal: Bool?; var dub: Bool; var country: String; var episode: String; var minutesLeft: String }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             HStack(spacing: BP.px(10)) {
                 if let i = info {
                     if !i.topLine.isEmpty { Text(i.topLine).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.accent) }
-                    if let s = i.score, !s.isEmpty { Text("MAL \(s)").font(BP.sans(12, .semibold)).foregroundStyle(BP.ink) }
+                    if let s = i.score, !s.isEmpty { Text(i.fromMal == true ? "MAL \(s)" : s).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink) }
                     if i.dub { Text("Sub and Dub").font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                     if !i.country.isEmpty { Text(i.country).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                     if resume != nil, !i.episode.isEmpty { Text(i.episode + (i.minutesLeft.isEmpty ? "" : " · \(i.minutesLeft)")).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
@@ -126,7 +126,8 @@ struct AnimeHeroActionsView: View {
         }
         .task(id: meta.id) {
             let p = ProfilesStore.shared.active
-            let cw: AnyJSON = resume.map { r in .object(["season": r.season.map { .number(Double($0)) } ?? .null, "episode": r.episode.map { .number(Double($0)) } ?? .null]) } ?? .null
+            let cw: AnyJSON = resume.map { r in .object(["season": r.season.map { .number(Double($0)) } ?? .null, "episode": r.episode.map { .number(Double($0)) } ?? .null,
+                                                          "duration": .number(r.durationMs), "timeOffset": .number(r.timeOffsetMs)]) } ?? .null
             info = try? await HarborEngine.shared.call("animeRoom.heroMeta", [meta, p?.id ?? "default", p?.linked ?? true, cw])
         }
     }

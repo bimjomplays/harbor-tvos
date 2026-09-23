@@ -9,7 +9,8 @@ import { parseXmltv, indexProgramsByChannel, findCurrent } from "@/lib/iptv/xmlt
 import { computeTvgIdCounts, epgProgramsForChannel } from "@/lib/iptv/epg-resolver";
 import { epgOffsetHoursPref } from "@/lib/iptv/settings-bridge";
 import { recordChannelPlay, removeStatsForSource } from "@/lib/iptv/channel-stats";
-import { removePinsForSource } from "@/lib/iptv/pins";
+import { removePinsForSource, togglePin as togglePinUpstream, isPinned } from "@/lib/iptv/pins";
+import { toggleGroupHidden as toggleGroupHiddenUpstream } from "@/lib/iptv/group-order";
 import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
@@ -25,6 +26,7 @@ import { gunzipSync } from "fflate";
 export type LiveChannel = {
   id: string;
   name: string;
+  pinned?: boolean;
   label: string;
   badge: string | null;
   groupLabel: string | null;
@@ -37,7 +39,7 @@ export type LiveChannel = {
   favorite: boolean;
 };
 
-export type LiveGroup = { name: string; count: number };
+export type LiveGroup = { name: string; count: number; hidden?: boolean };
 
 export type LivePlaylistView = {
   id: string;
@@ -46,6 +48,7 @@ export type LivePlaylistView = {
   /** Channels in guide order for the "All" category (favorites, pins, most watched, region networks, rest). */
   channels: LiveChannel[];
   groups: LiveGroup[];
+  hiddenGroups?: string[];
   total: number;
   epgUrl: string | null;
 };
@@ -143,6 +146,26 @@ function removeFavoritesForSource(sourceId: string): void {
   if (changed) writeFavorites(map);
 }
 
+// lib/iptv/group-order: per-source group prefs (hidden / pinned groups), read straight from the store.
+function readHiddenGroups(sourceId: string): string[] {
+  try {
+    const all = JSON.parse(localStorage.getItem("harbor.iptv.groupPrefs.v1") ?? "{}") as Record<string, { hidden?: string[] }>;
+    return all?.[sourceId]?.hidden ?? [];
+  } catch { return []; }
+}
+
+/** useGroupPrefs toggleGroupHidden: hide (or show again) a whole channel group of one source. */
+export function toggleGroupHidden(playlistId: string, group: string): string[] {
+  toggleGroupHiddenUpstream(playlistId, group);
+  return readHiddenGroups(playlistId);
+}
+
+/** usePinnedOrder togglePin: pinned channels sit in guide-order tier 2. */
+export function toggleChannelPin(channelId: string): boolean {
+  togglePinUpstream(channelId);
+  return isPinned(channelId);
+}
+
 function readPins(): string[] {
   try {
     const parsed = JSON.parse(localStorage.getItem("harbor.iptv.pins.v1") ?? "[]");
@@ -172,18 +195,21 @@ export async function channels(playlistId: string, force = false): Promise<LiveP
   loaded.set(playlistId, all);
   const favs = readFavorites();
   const region = String(loadStoredSettings().region ?? "US");
-  const ordered = bpGuideOrder({ channels: all, favoriteIds: new Set(favs.keys()), pinnedOrder: readPins(), hiddenGroups: [], region, promoteNetworks: true });
+  const hidden = readHiddenGroups(pl.id);
+  const ordered = bpGuideOrder({ channels: all, favoriteIds: new Set(favs.keys()), pinnedOrder: readPins(), hiddenGroups: hidden, region, promoteNetworks: true });
   const counts = new Map<string, number>();
   for (const ch of all) {
     const g = ch.group ?? "Uncategorized";
     counts.set(g, (counts.get(g) ?? 0) + 1);
   }
+  const pins = new Set(readPins());
   return {
     id: pl.id,
     name: pl.name,
     kind: pl.kind ?? "m3u",
-    channels: ordered.map((ch) => toView(ch, favs)),
-    groups: Array.from(counts, ([name, count]) => ({ name, count })),
+    channels: ordered.map((ch) => ({ ...toView(ch, favs), pinned: pins.has(ch.id) })),
+    groups: Array.from(counts, ([name, count]) => ({ name, count, hidden: hidden.includes(name) })),
+    hiddenGroups: hidden,
     total: playlist.channels.length,
     epgUrl: pl.epgUrl ?? null,
   };
