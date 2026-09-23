@@ -41,7 +41,7 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
     }
 }
 
-enum TileShape: String, Codable { case poster, wide, rank }
+enum TileShape: String, Codable { case poster, wide, rank, brand }
 
 /// One horizontal row in a room.
 struct BrowseRow: Identifiable, Equatable, Codable {

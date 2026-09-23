@@ -56,7 +56,16 @@ struct CatalogPageView: View {
         guard !loading, !exhausted else { return }
         loading = true; defer { loading = false }
         let kind = room == .home ? "home" : (room == .movies ? "movies" : (room == .anime ? "anime" : "shows"))
-        let next: [Meta] = (try? await HarborEngine.shared.call("rooms.page", [kind, row.key, page + 1])) ?? []
+        let next: [Meta]
+        if row.key.hasPrefix("svc:") {
+            // A streaming-service category row pages through TMDB (services.page).
+            let p = ProfilesStore.shared.active
+            next = (try? await HarborEngine.shared.call("services.page", [row.key, page + 1, p?.id ?? "default", p?.linked ?? true])) ?? []
+        } else if room == .anime {
+            next = (try? await HarborEngine.shared.call("animeRoom.specPage", [row.key, page + 1])) ?? []
+        } else {
+            next = (try? await HarborEngine.shared.call("rooms.page", [kind, row.key, page + 1])) ?? []
+        }
         if next.isEmpty { exhausted = true; return }
         page += 1
         let known = Set(metas.map(\.id))

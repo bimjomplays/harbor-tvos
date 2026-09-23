@@ -48,6 +48,19 @@ struct EngineBrowseSource: BrowseSource {
         switch room {
         case .home:
             build = try await HarborEngine.shared.call("rooms.homeFor", [p.id, p.linked, p.authKey])
+            // bp-home.tsx SERVICES_SLOT = 2: "Your streaming" brand tiles after the second row.
+            struct Services: Decodable { struct Tile: Decodable { var id: String; var name: String; var tint: String }; var hasKey: Bool; var services: [Tile] }
+            if let svc: Services = try? await HarborEngine.shared.call("services.list", [p.id, p.linked]), !svc.services.isEmpty {
+                let metas = svc.services.map { t in
+                    Meta(id: "service:\(t.id)", type: "service", name: t.name, poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
+                         inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil,
+                         providerBadge: Meta.ProviderBadge(name: t.name, logo: "", tint: t.tint), videos: nil)
+                }
+                var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
+                rows.insert(BrowseRow(key: "services", title: "Your streaming", metas: metas, shape: .brand), at: min(2, rows.count))
+                if build.failed && rows.isEmpty { throw BrowseError.empty }
+                return rows
+            }
         case .movies, .shows:
             build = try await HarborEngine.shared.call("rooms.catalogFor", [room == .movies ? "movies" : "shows", p.id, p.linked])
         case .anime:
@@ -108,5 +121,31 @@ enum VideoId {
         if anime, parts.count == 3, let e = Int(parts[2]) { return (1, e) }
         guard parts.count >= 3, let s = Int(parts[parts.count - 2]), let e = Int(parts[parts.count - 1]) else { return nil }
         return (s, e)
+    }
+}
+
+
+/// bp-service.tsx: one streaming service's category rows, through the engine's TMDB fetch.
+struct ServiceBrowseSource: BrowseSource {
+    let service: String
+    var cacheId: String? { "service.\(service)" }
+
+    struct Build: Decodable {
+        struct Row: Decodable { var key: String; var name: String; var type: String; var metas: [Meta]; var hasMore: Bool }
+        var hasKey: Bool; var name: String; var tint: String; var rows: [Row]
+    }
+
+    func rows(for room: Room) async throws -> [BrowseRow] {
+        let p = ProfilesStore.shared.active
+        let build: Build = try await HarborEngine.shared.call("services.rows", [service, p?.id ?? "default", p?.linked ?? true])
+        if !build.hasKey { throw ServiceError.noKey }
+        return build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: .poster) }
+    }
+
+    func continueWatching(for room: Room) async throws -> [ContinueItem] { [] }
+
+    enum ServiceError: Error, LocalizedError {
+        case noKey
+        var errorDescription: String? { "Add a TMDB key in Settings to browse this service." }
     }
 }

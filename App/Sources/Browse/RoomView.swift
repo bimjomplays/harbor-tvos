@@ -5,6 +5,8 @@ struct RoomView: View {
     @StateObject private var model: BrowseModel
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
+    @State private var service: ServiceTarget?
+    struct ServiceTarget: Identifiable { var id: String; var name: String }
     @Environment(\.shellFocusNamespace) private var shellNS
     @Namespace private var localNS
 
@@ -24,7 +26,10 @@ struct RoomView: View {
             } else if model.loading && model.rows.isEmpty {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
             } else {
-                BPRailView(rows: model.rows, onFocus: { m, _ in model.focus(m) }, onSelect: { detail = $0 },
+                BPRailView(rows: model.rows, onFocus: { m, _ in if m.type != "service" { model.focus(m) } },
+                           onSelect: { m in
+                               if m.id.hasPrefix("service:") { service = ServiceTarget(id: String(m.id.dropFirst(8)), name: m.name) } else { detail = m }
+                           },
                            onSeeAll: { seeAll = $0 }, topInset: heroHeight) {
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
@@ -44,6 +49,7 @@ struct RoomView: View {
             CatalogPageView(room: model.room, row: row)
         }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $service) { t in ServicePageView(service: t.id, name: t.name) }
     }
 
     /// Home hero box: clamp(260px, 34vh, 380px) − 56px give (bp-tokens.ts:227-228, 172-175).
@@ -55,5 +61,22 @@ extension Meta {
         self.init(id: c.id, type: c.type, name: c.name, poster: c.poster, background: c.background, logo: c.logo,
                   description: nil, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil,
                   runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
+    }
+}
+
+
+/// The service page (bp-service.tsx): the same room layout over the service's category rows.
+struct ServicePageView: View {
+    let service: String
+    let name: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            BPAmbientBackground()
+            RoomView(room: .home, source: ServiceBrowseSource(service: service))
+            Text(name).font(BP.display(26)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).padding(.top, BP.px(20))
+        }
+        .onExitCommand { dismiss() }
     }
 }

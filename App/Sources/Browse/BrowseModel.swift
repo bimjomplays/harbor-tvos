@@ -7,6 +7,12 @@ import SwiftUI
 protocol BrowseSource {
     func rows(for room: Room) async throws -> [BrowseRow]
     func continueWatching(for room: Room) async throws -> [ContinueItem]
+    /// Distinct pages sharing a room kind (a streaming-service page) keep their own cache slot.
+    var cacheId: String? { get }
+}
+
+extension BrowseSource {
+    var cacheId: String? { nil }
 }
 
 @MainActor
@@ -45,7 +51,7 @@ final class BrowseModel: ObservableObject {
 
     deinit { unsubscribe?(); refreshTask?.cancel(); heroTask?.cancel() }
 
-    private var cacheKey: String { "bp.room.\(room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
+    private var cacheKey: String { "bp.room.\(source.cacheId ?? room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
     /// Fixture rows never touch the cache, so a screenshot run cannot poison a live one.
     private var cacheable: Bool { !(source is FixtureBrowseSource) }
 

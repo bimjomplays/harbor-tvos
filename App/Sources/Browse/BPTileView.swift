@@ -14,12 +14,15 @@ struct BPTileView: View {
     static var wideSize: CGSize { CGSize(width: wideWidth, height: (wideWidth * 9 / 16).rounded()) }
     /// Rank cell: poster covers the right 60 %, cell aspect 10:9, height = poster box × 0.9.
     static var rankSize: CGSize { CGSize(width: (posterWidth / 0.6).rounded(), height: (posterWidth * 1.5 * 0.9).rounded()) }
+    /// bp-service-row.tsx: clamp(150px, 12.4vw, 244px) wide, 1.2:1.
+    static var brandSize: CGSize { CGSize(width: BP.px(238), height: (BP.px(238) / 1.2).rounded()) }
 
     var body: some View {
         switch shape {
         case .poster: poster
         case .wide: wide
         case .rank: rankCell
+        case .brand: brandTile
         }
     }
 
@@ -55,6 +58,21 @@ struct BPTileView: View {
             art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height))
         }
         .frame(width: Self.rankSize.width, height: Self.rankSize.height, alignment: .bottomTrailing)
+    }
+
+    /// Streaming-service tile: the brand tint over the panel (62 %, 18 % for white marks), the
+    /// name as the mark (the SVG logos are not bundled), a light sheen from the top.
+    private var brandTile: some View {
+        let tint = Color(css: meta.providerBadge?.tint ?? "") ?? BP.ink
+        let white = (meta.providerBadge?.tint ?? "").uppercased() == "#FFFFFF"
+        return ZStack {
+            RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel)
+            RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(tint.opacity(white ? 0.18 : (focused ? 0.8 : 0.62)))
+            LinearGradient(colors: [BP.ink.opacity(0.12), .clear, BP.void_.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+            Text(meta.name).font(BP.display(22, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.center).padding(BP.px(12))
+        }
+        .frame(width: Self.brandSize.width, height: Self.brandSize.height)
     }
 
     private func art(url: String?, size: CGSize, plateText: Bool = true) -> some View {

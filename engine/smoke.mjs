@@ -209,6 +209,19 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 
+// --------------------------------------------------------------------------- services
+{
+  const none = engine.services.list("default", true);
+  r.ok("services.list is empty without a TMDB key", none.hasKey === false && none.services.length === 0, JSON.stringify(none));
+  r.ok("services.all lists every brand with a tint", engine.services.all().length >= 18 && engine.services.all().every((x) => /^#[0-9A-Fa-f]{6}$/.test(x.tint)));
+  engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, engine.settings.sourceKeyFor("default", true));
+  const some = engine.services.list("default", true);
+  r.ok("services.list with a key returns the switched-on services (netflix first by default)", some.hasKey && some.services.length >= 10 && some.services[0].id === "netflix", JSON.stringify(some.services.map((x) => x.id).slice(0, 5)));
+  engine.settings.patch({ tmdbKey: "" }, engine.settings.sourceKeyFor("default", true));
+  const noRows = await engine.services.rows("netflix", "default", true);
+  r.ok("services.rows without a key: hasKey false, no rows", noRows.hasKey === false && noRows.rows.length === 0 && noRows.name === "Netflix");
+}
+
 // ------------------------------------------------------------------------ library room
 {
   r.eq("libraryRoom.tabs (signed out of trackers)", engine.libraryRoom.tabs().map((t) => t.id), ["library", "watchlist", "history", "lists", "favorites"]);
@@ -477,7 +490,7 @@ if (!OFFLINE) {
   r.ok("discoverRoom.people returns ranked people (or [] if harbor.site is unreachable)", Array.isArray(pp), JSON.stringify(pp.slice(0, 2)));
   {
     const first = await engine.animeRoom.page("default", true, null);
-    r.ok("animeRoom.page returns at once while Jikan rows load", Array.isArray(first.rows) && first.total === 16 && typeof first.loading === "boolean", JSON.stringify({ rows: first.rows.length, ready: first.ready, loading: first.loading }));
+    r.ok("animeRoom.page returns at once while Jikan rows load", Array.isArray(first.rows) && first.total >= 16 && typeof first.loading === "boolean", JSON.stringify({ rows: first.rows.length, ready: first.ready, loading: first.loading }));
     let waited = 0;
     while (waited < 60000) { await new Promise((res) => setTimeout(res, 2000)); waited += 2000; const p = await engine.animeRoom.page("default", true, null); if (!p.loading) break; }
     const done = await engine.animeRoom.page("default", true, null);

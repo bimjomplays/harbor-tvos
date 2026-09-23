@@ -68,6 +68,7 @@ import * as settingsRoomGlue from "./settingsRoom";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
+import * as servicesGlue from "./services";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -531,6 +532,15 @@ export const animeRoom = {
   loadMore: animeGlue.loadMore,
   refresh: animeGlue.refresh,
   specPage: animeGlue.specPage,
+};
+
+/** Streaming services: the Home band tiles, poster mosaics and the per-service page rows. */
+export const services = {
+  list: servicesGlue.list,
+  all: servicesGlue.all,
+  posters: servicesGlue.posters,
+  rows: servicesGlue.rows,
+  page: servicesGlue.page,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
