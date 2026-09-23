@@ -19,9 +19,10 @@ final class KeyValueStore {
                                                    "harbor.sports.favourites.v1", "harbor.sports.sources.v1", "harbor-sports-consent", "harbor.iptv.playlists.v1",
                                                    "harbor.iptv.favorites.v2", "harbor.iptv.pins.v1", "harbor.iptv.epgmap.v1", "harbor.iptv.groupPrefs.v1", "harbor.iptv.countryPrefs.v1", "harbor.iptv.stats.v1",
                                                    "harbor.installed-addons", "harbor.onboarding.bp", "harbor.customlists.v1",
+                                                   "harbor.reminders.v1", "harbor.reminders.unseen.v1", "harbor.moviewatched.v1",
                                                    "harbor.media-server.connections.v1", "harbor.media-server.mappings.v1", "harbor.media-server.summaries.v1"]
     private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap", "harbor.settings.", "harbor.installed-addons.", "harbor.tvsettings.v1.",
-                                          "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1."]
+                                          "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1."]
     /// Every key the engine may own: upstream uses both `harbor.` and `harbor-` spellings.
     static func isEngineKey(_ key: String) -> Bool { key.hasPrefix("harbor.") || key.hasPrefix("harbor-") }
 
