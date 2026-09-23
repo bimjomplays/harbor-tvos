@@ -18,7 +18,26 @@ struct PlayPickerView: View {
     @State private var quality: String = "All"
     @State private var cachedOnly = false
     @State private var addonFilter: String?
+    /// bp-stream-dialogs: the one dialog over the picker (P2P consent, debrid down, no sources, auto exhausted).
+    @State private var dialog: PickerDialog?
+    /// use-pick-handler debridFailStreak: two debrid-side failures in a row → "Debrid is down".
+    @State private var debridFailStreak = 0
+    /// use-bp-stream-play failedStreams: rows that already failed read "Unavailable, try another."
+    @State private var failedIds: Set<String> = []
+    @State private var alive = true
     @Environment(\.dismiss) private var dismiss
+
+    enum PickerDialog: Identifiable {
+        case p2p(ScoredStream), debridDown, noSources, exhausted(Int)
+        var id: String {
+            switch self {
+            case .p2p(let s): return "p2p-\(s.id)"
+            case .debridDown: return "debrid-down"
+            case .noSources: return "no-sources"
+            case .exhausted: return "exhausted"
+            }
+        }
+    }
 
     /// bp-stream-chips.tsx quality chips, mapped onto the parser's resolution values.
     private static let qualities: [(String, [String])] = [("All", []), ("4K UHD", ["2160p", "4K"]), ("1080p", ["1080p"]), ("720p", ["720p"]), ("480p", ["480p"]), ("SD", ["SD", "360p", "240p"])]
@@ -56,7 +75,91 @@ struct PlayPickerView: View {
             }
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
-        .onDisappear { if autoState == .waiting { autoState = .cancelled }; model.cancel() }
+        // bp-streams: BpNoSourcesDialog when there is no addon, no debrid and no home-server copy.
+        .onChange(of: model.phase) { _, phase in
+            // It outranks "tried N sources" (bp-streams shows that one only when !noSources).
+            if phase == .done, model.addonCount == 0, model.debridCount == 0, model.copies.isEmpty, dialog == nil || dialog?.id == "exhausted" { dialog = .noSources }
+        }
+        // BpAutoExhaustedDialog: shown unless no sources or debrid down already explains it.
+        .onChange(of: autoState) { _, state in
+            if state == .exhausted, dialog == nil { dialog = .exhausted(autoTried) }
+        }
+        .onDisappear { alive = false; if autoState == .waiting { autoState = .cancelled }; model.cancel() }
+        .fullScreenCover(item: $dialog) { d in dialogView(d) }
+    }
+
+    // bp-stream-dialogs.tsx, one view per dialog. Back acts like the seeded button's escape
+    // (useSeededFocus onBack): Cancel, Back, Back, Browse sources.
+    @ViewBuilder private func dialogView(_ d: PickerDialog) -> some View {
+        switch d {
+        case .p2p(let s):
+            StreamDialogShell(title: "Stream this via peer-to-peer?",
+                              message: "This source isn't cached on your debrid, so Harbor would pull it directly from peers. It can take a moment to start and may buffer on low-seed torrents.") {
+                VStack(alignment: .leading, spacing: BP.px(6)) {
+                    Text(s.parsedTitle ?? s.title ?? s.name ?? "This source").font(.system(size: BP.px(14), design: .monospaced)).foregroundStyle(BP.ink).lineLimit(2)
+                    HStack(spacing: BP.px(12)) {
+                        if let seeds = s.seeders { Label("\(Int(seeds)) seeders", systemImage: "person.2") }
+                        if let sz = s.sizeText { Text(sz) }
+                        let summary = badges(s).filter { $0 != "Cached" }
+                        if !summary.isEmpty { Text(summary.joined(separator: " · ")) }
+                    }
+                    .font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle)
+                }
+                .padding(BP.px(14)).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
+            } buttons: {
+                Button("Cancel") { dialog = nil }.buttonStyle(BPActionStyle())
+                Button("Stream") { dialog = nil; Task { await start(s, forceP2p: true) } }.buttonStyle(BPActionStyle(primary: true))
+                Button("Always stream P2P") { dialog = nil; Task { await model.setP2pAutoConsent(); await start(s, forceP2p: true) } }.buttonStyle(BPActionStyle())
+            }
+            .onExitCommand { dialog = nil }
+        case .debridDown:
+            StreamDialogShell(title: "Your debrid service can't process this right now.",
+                              message: "Real-Debrid, TorBox, AllDebrid and Premiumize all have brief outages where they stop returning links. Wait a few minutes and try again, or check the service's status page.") {
+                EmptyView()
+            } buttons: {
+                // use-pick-handler resetDebridDown: the streak clears and the list stays up.
+                Button("Try again") { debridFailStreak = 0; dialog = nil }.buttonStyle(BPActionStyle(primary: true))
+                Button("Back") { closePicker() }.buttonStyle(BPActionStyle())
+            }
+            .onExitCommand { closePicker() }
+        case .noSources:
+            // Upstream's second button ("Leave Big Picture and open settings") has no TV equivalent.
+            StreamDialogShell(title: "No streaming sources yet",
+                              message: "Harbor needs at least one streaming source before it can play \(meta.name). Install a stream addon or add a debrid key in settings.") {
+                EmptyView()
+            } buttons: {
+                Button("Back") { closePicker() }.buttonStyle(BPActionStyle(primary: true))
+            }
+            .onExitCommand { closePicker() }
+        case .exhausted(let n):
+            StreamDialogShell(title: "We could not find a working stream",
+                              message: "Harbor tried \(n) sources for \(exhaustedLabel) and none of them played. Usually that means a debrid key has expired, no stream addon is installed yet, or nothing has this title cached.") {
+                EmptyView()
+            } buttons: {
+                Button("Browse sources") { browseManually() }.buttonStyle(BPActionStyle(primary: true))
+                Button("Back") { closePicker() }.buttonStyle(BPActionStyle())
+            }
+            .onExitCommand { browseManually() }
+        }
+    }
+
+    /// use-bp-stream-play browseManually: auto stops for good and the list is the picker again.
+    private func browseManually() { dialog = nil; autoState = .cancelled }
+
+    private func closePicker() {
+        dialog = nil
+        // Leave once the dialog's cover is gone; a dismiss while it is still dismissing is dropped.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { dismiss() }
+    }
+
+    /// BpAutoExhaustedDialog label: "{title} S{s}E{ee}" with the IMDb numbering when the episode has one.
+    private var exhaustedLabel: String {
+        let s = episode?["imdbSeason"]?.number ?? episode?["season"]?.number
+        let e = episode?["imdbEpisode"]?.number ?? episode?["episode"]?.number
+        guard let s, let e else { return meta.name }
+        return "\(meta.name) S\(Int(s))E" + String(format: "%02d", Int(e))
     }
 
     private var episodeLabel: String? {
@@ -88,17 +191,53 @@ struct PlayPickerView: View {
         let s = model.streams[first]
         autoState = .firing(s.id)
         resolving = s.id
-        let r = await model.resolve(s)
-        guard case .firing = autoState, !Task.isCancelled else { return }   // the viewer picked by hand, or left
+        // use-pick-handler: during auto-fire a debrid-side failure retries the same source only under the season lock.
+        let r = await resolveRetrying(s, forceP2p: false, sameSource: model.seasonLock) { if case .firing = autoState { return true }; return false }
+        guard case .firing = autoState, !Task.isCancelled else {
+            // The viewer picked by hand, or left: free the rows unless a manual pick owns the spinner now.
+            if resolving == s.id { resolving = nil }
+            return
+        }
         resolving = nil
         if r.ok, r.data != nil {
+            debridFailStreak = 0
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
             onPlay(s, r)
         } else {
+            failedIds.insert(s.id)
             autoTried += 1
+            if countDebridFailure(r) {
+                // Debrid down ends auto-fire; its dialog explains it instead of "tried N sources".
+                dialog = .debridDown
+                autoState = .exhausted
+                return
+            }
             autoState = autoTried >= 3 ? .exhausted : .waiting
-            if autoState == .exhausted { resolveError = "Harbor couldn't start any source. Pick one." }
         }
+    }
+
+    /// use-pick-handler: the debrid-side streak. True when this failure makes two in a row.
+    private func countDebridFailure(_ r: StreamsModel.Resolved) -> Bool {
+        if r.debridFailure == true, model.debridCount > 0 {
+            debridFailStreak += 1
+            return debridFailStreak >= 2
+        }
+        debridFailStreak = 0
+        return false
+    }
+
+    /// use-pick-handler scheduleSameSourceRetry: a debrid-side failure retries the same source up to
+    /// four times, 1.5 s × n apart, before it counts as a failure.
+    private func resolveRetrying(_ s: ScoredStream, forceP2p: Bool, sameSource: Bool, stillWanted: () -> Bool) async -> StreamsModel.Resolved {
+        var r = await model.resolve(s, forceP2p: forceP2p)
+        var n = 0
+        while sameSource, !r.ok, r.debridFailure == true, n < 4, alive, stillWanted() {
+            n += 1
+            try? await Task.sleep(for: .milliseconds(1500 * n))
+            guard alive, stillWanted() else { break }
+            r = await model.resolve(s, forceP2p: forceP2p)
+        }
+        return r
     }
 
     @ViewBuilder private var autoBanner: some View {
@@ -188,18 +327,30 @@ struct PlayPickerView: View {
             (addonFilter == nil || s.addonName == addonFilter) &&
             matchesFacets(s)
         }
+        let sorted: [ScoredStream]
         if sortByAddon {
             // orderByAddonNative: addons in the installed order, each stream where its addon listed it.
             var rank: [String: Int] = [:]
             for (i, url) in model.addonOrder.enumerated() { rank[url] = i }
-            return filtered.sorted { a, b in
+            sorted = filtered.sorted { a, b in
                 let ra = a.addonUrl.flatMap { rank[$0] } ?? 9999, rb = b.addonUrl.flatMap { rank[$0] } ?? 9999
                 if ra != rb { return ra < rb }
                 let na = a.nativeIdx ?? Int.max, nb = b.nativeIdx ?? Int.max
                 return na != nb ? na < nb : a.index < b.index
             }
+        } else {
+            sorted = filtered.sorted { a, b in a.isCached != b.isCached ? a.isCached : a.index < b.index }
         }
-        return filtered.sorted { a, b in a.isCached != b.isCached ? a.isCached : a.index < b.index }
+        return pinnedFirst(sorted)
+    }
+
+    /// bp-stream-filters `pinned`: the remembered stream leads the list whenever the filters keep it.
+    private func pinnedFirst(_ list: [ScoredStream]) -> [ScoredStream] {
+        guard let p = model.rememberedIndex, let i = list.firstIndex(where: { $0.index == p }) else { return list }
+        var out = list
+        let s = out.remove(at: i)
+        out.insert(s, at: 0)
+        return out
     }
 
     private var addons: [String] { Array(Set(model.streams.map(\.addonName))).sorted() }
@@ -279,10 +430,20 @@ struct PlayPickerView: View {
                             .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(b == "Cached" ? BP.live : BP.on))
                     }
                     Spacer()
+                    // bp-stream-row: the remembered pick wears "Played last".
+                    if model.rememberedIndex == s.index {
+                        Label("Played last", systemImage: "clock.arrow.circlepath")
+                            .font(BP.sans(10.5, .bold)).foregroundStyle(BP.ink)
+                            .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(2))
+                            .background(Capsule().fill(BP.glass))
+                    }
                     Text(s.addonName).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
                     if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
                 }
                 Text(s.parsedTitle ?? s.title ?? s.name ?? "Stream").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                if failedIds.contains(s.id) {
+                    Text("Unavailable, try another.").font(BP.sans(12, .bold)).foregroundStyle(BP.ink)
+                }
                 HStack(spacing: BP.px(10)) {
                     if let g = s.releaseGroup { Text(g) }
                     if let sz = s.sizeText { Text(sz) }
@@ -295,6 +456,7 @@ struct PlayPickerView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(highlight ? BP.panel2 : BP.panel))
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(highlight ? BP.accent.opacity(0.6) : BP.edge, lineWidth: 1))
+            .opacity(failedIds.contains(s.id) ? 0.7 : 1)
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
         .disabled(resolving != nil)
@@ -349,14 +511,59 @@ struct PlayPickerView: View {
 
     private func pick(_ s: ScoredStream) async {
         if autoState == .waiting || { if case .firing = autoState { return true }; return false }() { autoState = .cancelled }
+        // use-pick-handler onPlay: an uncached torrent the P2P engine could stream asks first.
+        if await model.p2pConsentNeeded(s) { dialog = .p2p(s); return }
+        await start(s, forceP2p: false)
+    }
+
+    /// use-pick-handler startResolve + resolveAndOpen for a committed pick.
+    private func start(_ s: ScoredStream, forceP2p: Bool) async {
         resolving = s.id; resolveError = nil
-        let r = await model.resolve(s)
+        let r = await resolveRetrying(s, forceP2p: forceP2p, sameSource: true) { resolving == s.id }
+        guard alive, resolving == s.id else { return }
         resolving = nil
         if r.ok, r.data != nil {
+            debridFailStreak = 0
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
             onPlay(s, r)
         } else {
-            resolveError = "Couldn't get a playable link (\(r.code ?? "unknown")). Try another stream."
+            failedIds.insert(s.id)
+            if countDebridFailure(r) { dialog = .debridDown; return }
+            resolveError = r.message ?? "Couldn't get a playable link (\(r.code ?? "unknown")). Try another stream."
+        }
+    }
+}
+
+/// bp-stream-dialogs BpDialogShell: title, body, an optional detail card, then a row of buttons.
+struct StreamDialogShell<Extra: View, Buttons: View>: View {
+    let title: String
+    let message: String
+    let extra: Extra
+    let buttons: Buttons
+
+    init(title: String, message: String, @ViewBuilder extra: () -> Extra, @ViewBuilder buttons: () -> Buttons) {
+        self.title = title
+        self.message = message
+        self.extra = extra()
+        self.buttons = buttons()
+    }
+
+    var body: some View {
+        ZStack {
+            BP.void_.opacity(0.8).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: BP.px(22)) {
+                VStack(alignment: .leading, spacing: BP.px(10)) {
+                    Text(title).font(BP.display(26)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
+                    Text(message).font(BP.sans(15)).foregroundStyle(BP.inkSubtle).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                }
+                extra
+                HStack(spacing: BP.px(12)) { buttons }
+                    .focusSection()
+            }
+            .padding(BP.px(40))
+            .frame(width: BP.px(720), alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
+            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge2, lineWidth: 1))
         }
     }
 }

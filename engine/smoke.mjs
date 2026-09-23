@@ -264,6 +264,42 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("detailRoom.collection is null without a TMDB key", await engine.detailRoom.collection(10, "default", true), null);
 }
 
+// ------------------------------------------- detail hero actions, picker outcomes, still ladder
+// DT-3 (use-bp-detail-actions state + writes), DT-6/DT-7 (remembered pick, resolve copy, P2P
+// gate), DT-11 (use-bp-episode-art ladder) on a recording host: nothing leaves the machine.
+{
+  const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const artHits = [];
+  rec.node.host.fetch = async (req) => {
+    artHits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.includes("/api/tvdb/images")) return json({ images: { s1e2: "https://artworks.thetvdb.com/banners/episodes/1/2.jpg" } });
+    if (req.url.includes("ani.zip")) return json({ episodes: { "2": { seasonNumber: 1, episodeNumber: 2, image: "https://img.anizip.example/2.jpg" } }, mappings: { imdb_id: "tt0903747" } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  const film = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", poster: "https://example.invalid/p.jpg" };
+  const show = { id: "tt0903747", type: "series", name: "Breaking Bad" };
+  const hs = e.actions.heroState(film, "tt0111161", "default", true);
+  r.eq("actions.heroState: a fresh movie", [hs.favorite, hs.reminder, hs.watchedLocal, hs.traktMovie, hs.showWatchedButton, hs.rating], [false, false, false, false, true, null]);
+  r.eq("actions.toggleFavorite adds then removes", [e.actions.toggleFavorite(film, "tt0111161", "default"), e.actions.heroState(film, null, "default", true).favorite, e.actions.toggleFavorite(film, "tt0111161", "default")], [true, true, false]);
+  r.eq("actions.toggleReminder on a series (heroState follows)", [e.actions.toggleReminder(show), e.actions.heroState(show, null, "default", true).reminder, e.actions.toggleReminder(show), e.actions.heroState(film, null, "default", true).reminder], [true, true, false, false]);
+  r.eq("actions.trackers without a Simkl/AniList/MAL session", await e.actions.trackers({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop" }, false), []);
+  r.eq("actions.traktMarkWatched without a Trakt session", await e.actions.traktMarkWatched("tt0111161"), false);
+  r.eq("streamsRoom.remembered with an unknown token", e.streamsRoom.remembered("nope", "default", true, film, null, null), null);
+  r.eq("streamsRoom.p2pConsentNeeded with an unknown token", e.streamsRoom.p2pConsentNeeded("nope", "default", true, 0, false), false);
+  r.ok("streamsRoom.failureMessage carries picker-utils copy", /isn't cached on your debrid/.test(e.streamsRoom.failureMessage("not-cached") ?? "") && e.streamsRoom.failureMessage("some-new-code") === null, e.streamsRoom.failureMessage("not-cached"));
+  const miss = await e.streamsRoom.resolve("default", true, "nope", 0, true);
+  r.eq("streamsRoom.resolve of an unknown stream carries message + debridFailure", [miss.ok, miss.code, miss.message, miss.debridFailure], [false, "no-such-stream", null, false]);
+  const art = await e.detailRoom.episodeArt(show, 1, [
+    { key: "a", season: 1, episode: 1, still: "https://example.invalid/s1e1.jpg" },
+    { key: "b", season: 1, episode: 2 },
+  ], "default", true);
+  r.ok("detailRoom.episodeArt: the meta's still leads an episode no provider has, metahub last", art.a[0] === "https://example.invalid/s1e1.jpg" && /episodes\.metahub\.space\/tt0903747\/1\/1\//.test(art.a[art.a.length - 1]), JSON.stringify(art.a));
+  r.ok("detailRoom.episodeArt: TVDB proxy before ani.zip before metahub for a gap", /thetvdb/.test(art.b[0]) && art.b[1] === "https://img.anizip.example/2.jpg" && /metahub/.test(art.b[2]) && art.b.length === 3, JSON.stringify(art.b));
+  rec.dispose();
+}
+
 // ----------------------------------------------------------------------- home servers
 {
   r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);
@@ -303,6 +339,28 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("live.loadShortEpg ignores a non-Xtream playlist", await engine.live.loadShortEpg("nope", ["a"]), { hydrated: 0 });
   r.eq("discoverRoom.genrePage without a TMDB key", (await engine.discoverRoom.genrePage("default", true, "Action", 1)).status, "no-key");
   r.eq("search.fanOut with an empty query", (await engine.search.fanOut("  ", "default", true, null)).movies, []);
+  // Search: TVDB collection hits (use-collection-hits) and one hydrated collection (bp-collection).
+  r.eq("search.collections skips queries under three characters", await engine.search.collections("st"), []);
+  {
+    const rec = loadEngine({});
+    const seen = [];
+    rec.node.host.fetch = async (req) => {
+      seen.push(req.url);
+      const json = (data) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ data }) });
+      if (req.url.includes("/api/tvdb/v4/search?query=star%20wars&type=list")) return json([{ tvdb_id: "101", name: "Star Wars Collection", image_url: "/lists/101.jpg", overview: "A galaxy." }, { name: "no id" }]);
+      if (req.url.endsWith("/api/tvdb/v4/lists/101/extended")) return json({ id: 101, name: "Star Wars Collection", overview: "A galaxy.", image: null, entities: [{ seriesId: 7, order: 2 }, { movieId: 5, order: 1 }] });
+      if (req.url.endsWith("/api/tvdb/v4/movies/5/extended")) return json({ name: "A New Hope", image: "/p/5.jpg", year: 1977, remoteIds: [{ id: "tt0076759" }] });
+      if (req.url.endsWith("/api/tvdb/v4/series/7/extended")) return json({ name: "Andor", image: null, year: "2022", remoteIds: [] });
+      return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    };
+    const hits = await rec.engine.search.collections("Star Wars");
+    r.eq("search.collections maps TVDB list hits (absolute art, rows without an id dropped)", hits, [{ id: 101, name: "Star Wars Collection", image: "https://artworks.thetvdb.com/lists/101.jpg", overview: "A galaxy." }]);
+    const card = await rec.engine.search.collection(101, "Star Wars", hits[0].image);
+    r.ok("search.collection hydrates entries in list order (imdb id, else tvdb:kind:id)", card && card.key === "tvdb:101" && card.count === 2 && card.image === hits[0].image
+      && JSON.stringify(card.items) === JSON.stringify([{ id: "tt0076759", type: "movie", name: "A New Hope", poster: "https://artworks.thetvdb.com/p/5.jpg" }, { id: "tvdb:series:7", type: "series", name: "Andor", poster: null }]), JSON.stringify(card));
+    r.eq("search.collection is null when TVDB has no such list", await rec.engine.search.collection(999, "Gone", null), null);
+    rec.dispose();
+  }
   r.eq("libraryRoom.tabs hides Media Servers without connections", engine.libraryRoom.tabs().some((t) => t.id === "media-servers"), false);
   const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "p1", profiles: [{ id: "p1", isPrimary: true }] })]]) });
   const calls = [];
@@ -553,6 +611,43 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     r.eq("live.lanes marks the catch-up channel", rec.engine.live.lanes(plx.id, [vx.channels[0].id], now, now + 3600000)[0].catchup, true);
   }
   r.ok("live.lanes: programmes keep exact bounds, gaps are half-hour slices", cnnLane.some((c) => c.program && c.program.title === "Newsroom" && Math.abs(c.startMs - (now - 20 * 60000)) < 1000) && espnLane.every((c) => c.program === null && c.endMs - c.startMs <= slot));
+  {
+    // epg-match-modal + epg-map: ESPN has no tvg-id and no name match; the viewer matches it by hand.
+    const espnId = view.channels.find((c) => c.name === "ESPN").id;
+    const seeded = rec.engine.live.epgCandidates(pl.id, espnId, null);
+    r.ok("live.epgCandidates seeds the search with the channel name (no hit for ESPN)", seeded.query === "ESPN" && seeded.total === 1 && seeded.entries.length === 0 && seeded.current === null, JSON.stringify(seeded));
+    const all = rec.engine.live.epgCandidates(pl.id, espnId, "");
+    r.eq("live.epgCandidates with an empty query lists every guide channel with a sample title", all.entries, [{ id: "cnn.us", sample: "Newsroom" }]);
+    r.eq("live.epgCandidates matches the sample programme title too", rec.engine.live.epgCandidates(pl.id, espnId, "zzz newsroom").entries.map((e) => e.id), ["cnn.us"]);
+    r.eq("live.setEpgMatch stores the match", rec.engine.live.setEpgMatch(espnId, "cnn.us"), "cnn.us");
+    const mapped = rec.engine.live.nowNext(pl.id, [espnId], now)[0];
+    r.ok("nowNext honours the manual match", mapped.known && mapped.now && mapped.now.title === "Newsroom", JSON.stringify(mapped));
+    r.ok("live.lanes honour the manual match", rec.engine.live.lanes(pl.id, [espnId], ws, ws + 6 * 3600000)[0].cells.some((c) => c.program && c.program.title === "The Lead"));
+    const again = await rec.engine.live.channels(pl.id);
+    r.eq("live.channels reports the channel's match", again.channels.find((c) => c.id === espnId).epgMatch, "cnn.us");
+    r.eq("live.epgCandidates reports the current match", rec.engine.live.epgCandidates(pl.id, espnId, "").current, "cnn.us");
+    r.eq("live.setEpgMatch(null) clears the match", rec.engine.live.setEpgMatch(espnId, null), null);
+    r.eq("nowNext falls back to automatic matching after clearing", rec.engine.live.nowNext(pl.id, [espnId], now)[0].known, false);
+    rec.engine.live.setEpgMatch(espnId, "cnn.us");
+    rec.engine.live.removePlaylist(pl.id);
+    r.eq("live.removePlaylist drops the source's EPG matches", rec.engine.live.epgCandidates(pl.id, espnId, "").current, null);
+  }
+  {
+    // bp-live.tsx chips from use-live-home rails: themes (3+ matches), big groups (4+), VOD lines dropped.
+    const names = ["CNN", "BBC News", "Sky News", "Fox News"].map((n) => `#EXTINF:-1 group-title="News",${n}\nhttps://example.invalid/${n.replace(/ /g, "")}.m3u8`);
+    const vod = `#EXTINF:-1 group-title="Movies",Some Film\nhttp://host.invalid:8080/movie/u/p/1.mkv`;
+    const m3uc = `#EXTM3U\n${names.join("\n")}\n#EXTINF:-1 group-title="Sports",ESPN\nhttps://example.invalid/espn.m3u8\n${vod}\n`;
+    rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3uc });
+    const plc = rec.engine.live.addPlaylist("Cats", "https://cats.example.invalid/list.m3u");
+    const vc = await rec.engine.live.channels(plc.id);
+    r.ok("live.channels drops VOD lines (isLiveChannel)", vc.channels.length === 5 && !vc.channels.some((c) => c.name === "Some Film"), JSON.stringify(vc.channels.map((c) => c.name)));
+    const news = vc.categories.find((c) => c.key === "theme:news");
+    r.ok("live.channels categories: News theme rail with ids, then the News group rail", news && news.ids.length === 4 && news.group === null && vc.categories.some((c) => c.key === "cat:News" && c.group === "News" && c.count === 4) && !vc.categories.some((c) => c.group === "Sports"), JSON.stringify(vc.categories.map((c) => [c.key, c.count])));
+    rec.engine.live.toggleGroupHidden(plc.id, "News");
+    const hid = await rec.engine.live.channels(plc.id);
+    r.ok("a hidden group loses its chip and its channels leave theme rails", !hid.categories.some((c) => c.group === "News") && !hid.categories.some((c) => c.key === "theme:news"), JSON.stringify(hid.categories.map((c) => [c.key, c.count])));
+    rec.engine.live.removePlaylist(plc.id);
+  }
   {
     // A sports channel in the playlist should match a fixture by team names (iptv-match).
     const m3u2 = `#EXTM3U\n#EXTINF:-1 group-title="Sports",ESPN Lakers vs Celtics\nhttps://example.invalid/lakers.m3u8\n#EXTINF:-1 group-title="News",CNN\nhttps://example.invalid/cnn.m3u8\n`;
