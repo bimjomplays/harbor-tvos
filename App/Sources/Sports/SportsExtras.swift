@@ -7,17 +7,17 @@ struct StandingsSection: View {
     @State private var loaded = false
     @State private var group = 0
     struct Column: Decodable, Identifiable { var name: String; var label: String; var abbr: String; var id: String { name } }
+    struct Cell: Decodable { var name: String; var display: String? ; var value: AnyJSON? }
     struct Row: Decodable, Identifiable {
-        var teamId: String; var name: String; var shortName: String; var abbr: String; var logo: String; var rank: Int; var note: String
-        var values: [String: AnyJSON]
+        var teamId: String; var name: String; var shortName: String?; var abbr: String?; var logo: String?; var rank: Int?; var note: String?
+        /// standings.ts: the per-column stats live in `cells`, keyed by the column's raw name (league-guide.tsx).
+        var cells: [Cell]?
         var id: String { teamId }
-        private enum Known: String, CodingKey { case teamId, name, shortName, abbr, logo, rank, note }
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: Known.self)
-            teamId = try c.decode(String.self, forKey: .teamId); name = try c.decode(String.self, forKey: .name)
-            shortName = (try? c.decode(String.self, forKey: .shortName)) ?? name; abbr = (try? c.decode(String.self, forKey: .abbr)) ?? ""
-            logo = (try? c.decode(String.self, forKey: .logo)) ?? ""; rank = (try? c.decode(Int.self, forKey: .rank)) ?? 0; note = (try? c.decode(String.self, forKey: .note)) ?? ""
-            values = (try? decoder.singleValueContainer().decode([String: AnyJSON].self)) ?? [:]
+        func value(for column: Column) -> String {
+            guard let cell = cells?.first(where: { $0.name == column.name }) else { return "–" }
+            if let d = cell.display, !d.isEmpty { return d }
+            if let v = cell.value { return v.string ?? v.number.map { $0 == $0.rounded() ? String(Int($0)) : String(format: "%.1f", $0) } ?? "–" }
+            return "–"
         }
     }
     struct Group: Decodable, Identifiable { var id: String; var name: String; var rows: [Row] }
@@ -43,16 +43,15 @@ struct StandingsSection: View {
                 .font(BP.sans(10.5, .bold)).foregroundStyle(BP.inkSubtle).textCase(.uppercase)
                 ForEach(rows.prefix(20)) { r in
                     HStack(spacing: BP.px(8)) {
-                        Text("\(r.rank)").frame(width: BP.px(28), alignment: .trailing).foregroundStyle(BP.inkMuted)
+                        Text("\(r.rank ?? 0)").frame(width: BP.px(28), alignment: .trailing).foregroundStyle(BP.inkMuted)
                         HStack(spacing: BP.px(8)) {
-                            if !r.logo.isEmpty { RemoteImage(url: r.logo, contentMode: .fit).frame(width: BP.px(20), height: BP.px(20)) }
+                            if let l = r.logo, !l.isEmpty { RemoteImage(url: l, contentMode: .fit).frame(width: BP.px(20), height: BP.px(20)) }
                             Text(r.name).lineLimit(1)
-                            if !r.note.isEmpty { Text(r.note).font(BP.sans(10)).foregroundStyle(BP.inkSubtle) }
+                            if let n = r.note, !n.isEmpty { Text(n).font(BP.sans(10)).foregroundStyle(BP.inkSubtle) }
                         }
                         .frame(width: BP.px(280), alignment: .leading)
                         ForEach(cols) { c in
-                            Text(r.values[c.name].map { v in v.string ?? v.number.map { $0 == $0.rounded() ? String(Int($0)) : String(format: "%.1f", $0) } ?? "–" } ?? "–")
-                                .frame(width: BP.px(56), alignment: .trailing).monospacedDigit()
+                            Text(r.value(for: c)).frame(width: BP.px(56), alignment: .trailing).monospacedDigit()
                         }
                     }
                     .font(BP.sans(13, .medium)).foregroundStyle(BP.ink)

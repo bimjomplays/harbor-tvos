@@ -87,7 +87,7 @@ struct SportsEventView: View {
     }
 
     // bp-sports-watch.tsx press → play the exact match, or open the picker, or point at Live TV.
-    private var watchSection: some View {
+    @ViewBuilder private var watchSection: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             if game.state == "post" {
                 EmptyView()
