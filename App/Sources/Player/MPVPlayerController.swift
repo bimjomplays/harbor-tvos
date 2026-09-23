@@ -15,6 +15,9 @@ final class MPVPlayerController: UIViewController {
 
     var onStatus: ((Status) -> Void)?
     var url: URL?
+    /// Extra request headers for the stream (debrid links, addon proxyHeaders).
+    var headers: [String: String] = [:]
+    var onEnded: (() -> Void)?
 
     private let layer = MPVMetalLayer()
     private var mpv: OpaquePointer?
@@ -69,6 +72,15 @@ final class MPVPlayerController: UIViewController {
     }
 
     func load(_ url: URL) {
+        if let mpv {
+            if !headers.isEmpty {
+                let fields = headers.map { "\($0.key): \($0.value)" }.joined(separator: ",")
+                check(mpv_set_option_string(mpv, "http-header-fields", fields))
+                if let ua = headers.first(where: { $0.key.lowercased() == "user-agent" })?.value {
+                    check(mpv_set_option_string(mpv, "user-agent", ua))
+                }
+            }
+        }
         command("loadfile", [url.absoluteString, "replace"])
         status.state = "loading"
         report()
@@ -134,8 +146,9 @@ final class MPVPlayerController: UIViewController {
                 case MPV_EVENT_FILE_LOADED:
                     self.push("file loaded")
                 case MPV_EVENT_END_FILE:
-                    if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)), ef.pointee.error < 0 {
-                        self.push("end: \(String(cString: mpv_error_string(ef.pointee.error)))")
+                    if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
+                        if ef.pointee.error < 0 { self.push("end: \(String(cString: mpv_error_string(ef.pointee.error)))") }
+                        if ef.pointee.reason == Int32(MPV_END_FILE_REASON_EOF.rawValue) { DispatchQueue.main.async { self.onEnded?() } }
                     }
                 default:
                     break
