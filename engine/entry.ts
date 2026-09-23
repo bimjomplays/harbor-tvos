@@ -518,6 +518,7 @@ export const sports = {
   standings: sportsGlue.standings,
   teamLeagues: sportsGlue.teamLeagues,
   who: sportsGlue.who,
+  whoSides: sportsGlue.whoSides,
   whoPlayer: sportsGlue.whoPlayer,
   teams: sportsGlue.teams,
   favouriteTeams: sportsGlue.favouriteTeams,

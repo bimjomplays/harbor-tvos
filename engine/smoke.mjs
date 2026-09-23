@@ -416,6 +416,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3u2 });
     rec.engine.live.addPlaylist("Sports list", "https://sports.example.invalid/list.m3u");
     const game = { id: "g1", league: "NBA", state: "in", detail: "Q2 5:12", home: { id: "1", name: "Boston Celtics", abbr: "BOS", logo: "", score: "50", winner: false }, away: { id: "2", name: "Los Angeles Lakers", abbr: "LAL", logo: "", score: "48", winner: false }, startMs: Date.now() - 3600000 };
+    const ws = rec.engine.sports.whoSides(game);
+    r.ok("sports.whoSides: both NBA teams open a team profile", ws.home === true && ws.away === true, JSON.stringify(ws));
+    r.eq("sports.whoSides: a TBD side has no profile", rec.engine.sports.whoSides({ ...game, home: { ...game.home, id: "", name: "TBD" } }).home, false);
     const w = await rec.engine.sports.watch(game);
     r.ok("sports.watch matches a Lakers/Celtics channel by team names", w.sources >= 1 && w.channels.length >= 1 && /lakers/i.test(w.channels[0].name) && ["exact", "likely", "possible"].includes(w.channels[0].tier), JSON.stringify({ plan: w.plan, first: w.channels[0] && [w.channels[0].name, w.channels[0].tier, w.channels[0].copy, w.channels[0].reasons] }));
     r.ok("sports.watch does not offer the news channel", !w.channels.some((c) => /cnn/i.test(c.name)));

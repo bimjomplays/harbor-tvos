@@ -23,6 +23,13 @@ final class SportsEventModel: ObservableObject {
     @Published private(set) var note: String?
     @Published private(set) var watch: Watch?
     @Published private(set) var watching = false
+    struct WhoSides: Decodable { var home: Bool; var away: Bool }
+    @Published private(set) var whoSides = WhoSides(home: false, away: false)
+
+    /// bp-sports-event-hero whoOf: only sides with a profile subject are buttons.
+    func loadWhoSides(_ game: SportsModel.Game) async {
+        if let w: WhoSides = try? await HarborEngine.shared.call("sports.whoSides", [game.wire]) { whoSides = w }
+    }
 
     /// bp-sports-watch.tsx: resolve what Watch can do (channel / picker / setup / finished).
     func resolveWatch(_ game: SportsModel.Game) async {
@@ -55,6 +62,8 @@ struct SportsEventView: View {
     @StateObject private var model = SportsEventModel()
     @State private var playing: SportsEventModel.WatchOption?
     @State private var picker = false
+    struct WhoTarget: Identifiable { let id: String }   // "home" | "away"
+    @State private var who: WhoTarget?
 
     var body: some View {
         ZStack {
@@ -79,11 +88,13 @@ struct SportsEventView: View {
             }
         }
         .task { await model.load(game) }
+        .task { await model.loadWhoSides(game) }
         .task { if game.state != "post" { await model.resolveWatch(game) } }
         .onExitCommand { if picker { picker = false } else { dismiss() } }
         .fullScreenCover(item: $playing) { opt in
             PlayerScreen(title: opt.name, subtitle: model.watch?.fixture ?? game.leagueLabel, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in playing = nil }
         }
+        .fullScreenCover(item: $who) { t in SportsWhoView(game: game, side: t.id) }
     }
 
     // bp-sports-watch.tsx press → play the exact match, or open the picker, or point at Live TV.
@@ -180,10 +191,10 @@ struct SportsEventView: View {
             } else {
                 if let c = game.context, !c.name.isEmpty { Text(c.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
                 HStack(spacing: BP.px(24)) {
-                    side(game.away)
+                    side(game.away, key: "away", opens: model.whoSides.away)
                     Text(game.state == "pre" ? "vs" : "\(game.away.score.isEmpty ? "0" : game.away.score) : \(game.home.score.isEmpty ? "0" : game.home.score)")
                         .font(BP.display(40)).foregroundStyle(BP.ink).monospacedDigit()
-                    side(game.home)
+                    side(game.home, key: "home", opens: model.whoSides.home)
                 }
             }
             Text(facts).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
@@ -206,13 +217,23 @@ struct SportsEventView: View {
         Text(text).font(BP.sans(10, .bold)).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(Capsule().fill(color))
     }
 
-    private func side(_ s: SportsModel.Side) -> some View {
-        VStack(spacing: BP.px(6)) {
+    // bp-sports-event-hero BpEventSide: a side with a who subject is a button ("Open {name}") that
+    // opens bp-sports-who-panel; otherwise it is plain.
+    @ViewBuilder private func side(_ s: SportsModel.Side, key: String, opens: Bool) -> some View {
+        let content = VStack(spacing: BP.px(6)) {
             RemoteImage(url: s.logo.isEmpty ? nil : s.logo, contentMode: .fit).frame(width: BP.px(72), height: BP.px(72))
             Text(s.name).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-            if let r = s.record { Text(r).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+            let sub: String = ([s.rank.map { "#\($0)" }, s.record] as [String?]).compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            if !sub.isEmpty { Text(sub).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
         }
-        .frame(width: BP.px(220))
+        .frame(width: BP.px(220)).padding(.vertical, BP.px(8))
+        if opens {
+            Button { who = WhoTarget(id: key) } label: { content }
+                .buttonStyle(BPTileStyle(radius: BP.rMD))
+                .accessibilityLabel("Open \(s.name)")
+        } else {
+            content
+        }
     }
 
     private func statsRow(_ stats: [SportsEventModel.StatRow], title: String) -> some View {

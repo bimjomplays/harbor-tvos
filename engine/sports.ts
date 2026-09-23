@@ -468,6 +468,13 @@ export async function who(game: SportsGame, which: "home" | "away"): Promise<Who
   return subject ? whoView(subject) : null;
 }
 
+/** bp-sports-event-hero whoOf: which sides have a profile subject (only those sides are buttons). */
+export function whoSides(game: SportsGame): { home: boolean; away: boolean } {
+  const league = hubLeague(game.league);
+  const has = (which: "home" | "away") => bpSportsWhoSubject({ side: which === "home" ? game.home : game.away, art: bpSportsCardArt(game) ?? "", league, leagueTag: game.league, group: bpSportsGroup(game), individual: bpSportsSingleSubject(game), source: game.source, profile: undefined }) !== null;
+  return { home: has("home"), away: has("away") };
+}
+
 /** A roster player from a team panel opens as an athlete. */
 export async function whoPlayer(leagueTag: string, player: { id: string; name: string; image?: string | null; source: "espn" | "thesportsdb" }): Promise<WhoView | null> {
   const subject = bpSportsWhoPlayerSubject({ id: player.id, name: player.name, image: player.image ?? undefined, source: player.source }, hubLeague(leagueTag), leagueTag);
