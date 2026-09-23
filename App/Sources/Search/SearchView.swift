@@ -54,6 +54,29 @@ struct SearchView: View {
                 if let top = spotlight ?? model.topMatch {
                     TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
                 }
+                if !model.people.isEmpty {
+                    VStack(alignment: .leading, spacing: BP.px(10)) {
+                        Text("People").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: BP.trackGap) {
+                                ForEach(model.people) { person in
+                                    Button {} label: {
+                                        VStack(spacing: BP.px(8)) {
+                                            RemoteImage(url: person.profile).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
+                                            Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                            if let k = person.knownFor, !k.isEmpty { Text(k).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                                        }
+                                        .frame(width: BP.px(130))
+                                    }
+                                    .buttonStyle(BPTileStyle(radius: BP.px(55)))
+                                }
+                            }
+                            .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+                        }
+                        .scrollClipDisabled()
+                    }
+                    .focusSection()
+                }
                 ForEach(model.rows) { row in
                     BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
                 }

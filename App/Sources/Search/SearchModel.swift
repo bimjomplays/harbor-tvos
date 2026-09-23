@@ -7,7 +7,14 @@ import Combine
 final class SearchModel: ObservableObject {
     struct Results: Decodable {
         struct TopMatch: Decodable { var kind: String; var meta: Meta; var overview: String?; var backdrop: String? }
-        struct Person: Decodable { var id: Int?; var name: String; var profile: String? }
+        struct Person: Decodable, Identifiable {
+            var tmdbId: Int?
+            var name: String
+            var profile: String?
+            var knownFor: String?
+            var id: String { "\(tmdbId ?? 0)-\(name)" }
+            private enum CodingKeys: String, CodingKey { case tmdbId = "id", name, profile, knownFor }
+        }
         struct AnimeHit: Decodable { var name: String; var poster: String?; var background: String?; var malId: Int?; var kitsuId: Int?; var year: String?; var overview: String? }
         var query: String
         var topMatch: TopMatch?
@@ -21,6 +28,7 @@ final class SearchModel: ObservableObject {
     @Published private(set) var status: Status = .idle
     @Published private(set) var rows: [BrowseRow] = []
     @Published private(set) var topMatch: Meta?
+    @Published private(set) var people: [Results.Person] = []
 
     enum Status: Equatable { case idle, typing, loading, done, failed(String) }
 
@@ -63,6 +71,7 @@ final class SearchModel: ObservableObject {
                 out.append(BrowseRow(key: "anime", title: "Anime", metas: metas))
             }
             rows = out
+            people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done
         } catch {
