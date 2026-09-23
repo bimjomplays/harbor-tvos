@@ -7,6 +7,8 @@ struct MPVPlayerView: UIViewControllerRepresentable {
     var isLive: Bool = false
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// Muted guide preview (see MPVPlayerController.preview).
+    var preview = false
     let onStatus: (MPVPlayerController.Status) -> Void
     var onEnded: (() -> Void)? = nil
     var onReady: ((MPVPlayerController) -> Void)? = nil
@@ -17,6 +19,7 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         c.headers = headers
         c.startAtSeconds = startAt
         c.isLive = isLive
+        c.preview = preview
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
         c.onStatus = onStatus

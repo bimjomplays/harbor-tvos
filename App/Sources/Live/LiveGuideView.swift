@@ -87,13 +87,22 @@ struct LiveGuideView: View {
     @ObservedObject var live: LiveModel
     @StateObject private var model = LiveGuideModel()
     @FocusState private var focused: String?
-    /// bp-guide-portal (text half): the focused cell's programme, drawn under the grid.
+    /// bp-guide-portal: the focused cell's channel and programme (GuidePortalView).
     @State private var portal: (channel: LiveModel.Channel, cell: LiveGuideModel.Cell)?
     @State private var now = Date().timeIntervalSince1970 * 1000
     let play: (LiveModel.Channel) -> Void
     let star: (LiveModel.Channel) -> Void
     /// A past programme on a catch-up channel: play the replay instead of the live stream.
     var replay: ((LiveModel.Channel, LiveModel.Program) -> Void)? = nil
+    /// The player or a sheet is up: the preview lets go of its stream.
+    var previewSuspended = false
+    /// bp-guide dimmed: the portal hides while the focused row sits under it.
+    @State private var focusedRowMaxY: CGFloat?
+    @State private var listHeight: CGFloat = 0
+    private var portalHidden: Bool {
+        guard let y = focusedRowMaxY, listHeight > 0 else { return false }
+        return y > listHeight - GuidePortalView.height - BP.hintHeight - BP.px(24)
+    }
 
     // bp-guide-geometry.ts at 1920×1080 (w×0.155 col clamp 220–340, h×0.155 rows 88–128, slot w×0.14 clamp 150–232).
     private let colPx = BP.px(300)
@@ -113,7 +122,15 @@ struct LiveGuideView: View {
                 }
                 .padding(.bottom, BP.px(150) + BP.hintHeight)
             }
-            .overlay(alignment: .bottom) { if let portal { portalView(portal.channel, portal.cell) } }
+            .coordinateSpace(name: "guideList")
+            .background(GeometryReader { g in Color.clear.onAppear { listHeight = g.size.height }.onChange(of: g.size.height) { _, h in listHeight = h } })
+            .onPreferenceChange(GuideFocusRowKey.self) { focusedRowMaxY = $0 }
+            .overlay(alignment: .bottomTrailing) {
+                if let portal, !portalHidden {
+                    GuidePortalView(channel: portal.channel, program: portal.cell.program, startMs: portal.cell.startMs, endMs: portal.cell.endMs, now: now, suspended: previewSuspended)
+                        .padding(.trailing, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(12))
+                }
+            }
         }
         .task(id: live.visible.map(\.id)) {
             await model.seed(playlistId: live.selectedPlaylist ?? "", channelIds: live.visible.map(\.id))
@@ -138,35 +155,6 @@ struct LiveGuideView: View {
             if cell.endMs >= model.windowEnd { Task { await model.extend(forward: true) } }
             else if cell.startMs <= model.windowStart, model.windowStart > now - LiveGuideModel.maxWindowMs { Task { await model.extend(forward: false) } }
         }
-    }
-
-    private func portalView(_ ch: LiveModel.Channel, _ cell: LiveGuideModel.Cell) -> some View {
-        let p = cell.program
-        let pct = min(1, max(0, (now - cell.startMs) / max(1, cell.endMs - cell.startMs)))
-        let airing = now >= cell.startMs && now < cell.endMs
-        return HStack(alignment: .top, spacing: BP.px(18)) {
-            RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(96), height: BP.px(54))
-                .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
-            VStack(alignment: .leading, spacing: BP.px(5)) {
-                HStack(spacing: BP.px(8)) {
-                    Text(p?.title.isEmpty == false ? p!.title : "No programme information").font(BP.sans(18, .bold)).foregroundStyle(BP.ink).lineLimit(1)
-                    if airing { Text("ON NOW").font(BP.sans(10, .bold)).foregroundStyle(BP.live) }
-                    if let c = p?.category, !c.isEmpty { Text(c).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
-                }
-                Text("\(ch.shownName) · \(Self.clock(cell.startMs)) – \(Self.clock(cell.endMs))").font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
-                if airing {
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) { Capsule().fill(BP.on); Capsule().fill(BP.live).frame(width: g.size.width * pct) }
-                    }.frame(width: BP.px(360), height: BP.px(4))
-                }
-                if let d = p?.description, !d.isEmpty { Text(d).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(3) }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(BP.px(16)).padding(.horizontal, BP.gutter)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [BP.void_.opacity(0), BP.void_.opacity(0.9), BP.void_.opacity(0.97)], startPoint: .top, endPoint: .bottom))
-        .allowsHitTesting(false)
     }
 
     private static func clock(_ ms: Double) -> String {
@@ -240,6 +228,9 @@ struct LiveGuideView: View {
             .clipped()
         }
         .frame(height: rowPx)
+        .background(GeometryReader { g in
+            Color.clear.preference(key: GuideFocusRowKey.self, value: focused?.hasPrefix(ch.id + "|") == true ? g.frame(in: .named("guideList")).maxY : nil)
+        })
     }
 
     // bp-guide-block: past / airing / future paint, three width tiers, chevrons when clipped.
@@ -297,4 +288,10 @@ struct LiveGuideView: View {
         if cal.isDateInYesterday(d) { return "Yesterday" }
         let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f.string(from: d)
     }
+}
+
+/// The focused guide row's bottom edge in the list's viewport (nil when no cell has focus).
+private struct GuideFocusRowKey: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { if let n = nextValue() { value = n } }
 }

@@ -15,7 +15,7 @@ final class LiveModel: ObservableObject {
     }
     struct Group: Decodable, Identifiable { var name: String; var count: Int; var hidden: Bool?; var id: String { name } }
     struct View_: Decodable { var id: String; var name: String; var kind: String; var channels: [Channel]; var groups: [Group]; var total: Int; var epgUrl: String? }
-    struct Program: Decodable, Equatable { var title: String; var description: String?; var startMs: Double; var endMs: Double; var category: String? }
+    struct Program: Decodable, Equatable { var title: String; var description: String?; var startMs: Double; var endMs: Double; var category: String?; var iconUrl: String? }
     struct NowNext: Decodable, Equatable { var id: String; var now: Program?; var next: Program?; var known: Bool }
 
     static let favKey = "fav", allKey = "all", maxCategories = 30
@@ -197,7 +197,8 @@ struct LiveView: View {
                             .padding(.top, BP.px(20))
                     } else if grid && model.guideNote == nil {
                         LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } },
-                                      replay: { ch, prog in Task { await startReplay(ch, prog) } })
+                                      replay: { ch, prog in Task { await startReplay(ch, prog) } },
+                                      previewSuspended: playing != nil || replaying != nil || showSources)
                     } else {
                         guideList
                     }

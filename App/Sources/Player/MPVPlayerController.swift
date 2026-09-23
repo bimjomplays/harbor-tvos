@@ -28,6 +28,9 @@ final class MPVPlayerController: UIViewController {
     /// Preferred audio / subtitle languages (upstream `preferredAudioLangs` / `preferredSubLangs`, names like "English").
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// bp-guide-portal's MultiPlayer (muted, cover): a muted mini preview. It never touches the
+    /// display mode or HDR, decodes no audio and keeps a small live cache.
+    var preview = false
 
     private let layer = MPVMetalLayer()
     private var mpv: OpaquePointer?
@@ -64,7 +67,8 @@ final class MPVPlayerController: UIViewController {
     /// Detach the wakeup callback and destroy on the event queue, so a pending readEvents
     /// never touches a handle mid-destroy.
     private func teardown() {
-        resetDisplayCriteria()
+        // A preview never set criteria; resetting here could clear the real player's.
+        if !preview { resetDisplayCriteria() }
         let handle = mpv
         mpv = nil
         guard let handle else { return }
@@ -82,7 +86,7 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "gpu-api", "vulkan"))
         check(mpv_set_option_string(handle, "gpu-context", "moltenvk"))
         check(mpv_set_option_string(handle, "hwdec", "videotoolbox"))
-        check(mpv_set_option_string(handle, "target-colorspace-hint", "yes")) // HDR passthrough
+        check(mpv_set_option_string(handle, "target-colorspace-hint", preview ? "no" : "yes")) // HDR passthrough (never for a preview)
         // Upstream's pre-init set (src-tauri/src/mpv.rs:349-416, docs/player-spec.md §2.1).
         check(mpv_set_option_string(handle, "title", "Harbor"))
         check(mpv_set_option_string(handle, "audio-client-name", "Harbor"))
@@ -115,6 +119,14 @@ final class MPVPlayerController: UIViewController {
             check(mpv_set_option_string(handle, "demuxer-readahead-secs", "30"))
             check(mpv_set_option_string(handle, "stream-buffer-size", "16MiB"))
             check(mpv_set_option_string(handle, "stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60"))
+        }
+        if preview {
+            check(mpv_set_option_string(handle, "mute", "yes"))
+            check(mpv_set_option_string(handle, "aid", "no"))
+            check(mpv_set_option_string(handle, "cache-secs", "4"))
+            check(mpv_set_option_string(handle, "demuxer-max-bytes", "16MiB"))
+            check(mpv_set_option_string(handle, "demuxer-max-back-bytes", "1MiB"))
+            check(mpv_set_option_string(handle, "demuxer-readahead-secs", "4"))
         }
         // Subtitle slots start empty so Harbor, not mpv, picks the language (mpv.rs:991-1007).
         check(mpv_set_option_string(handle, "sub-auto", "all"))
@@ -278,6 +290,7 @@ final class MPVPlayerController: UIViewController {
     ]
 
     private func applyTrackPreferences() {
+        guard !preview else { return }
         let list = tracks()
         func matches(_ t: Track, _ names: [String]) -> Int? {
             guard let raw = t.lang?.lowercased() else { return nil }
@@ -332,7 +345,7 @@ final class MPVPlayerController: UIViewController {
     /// on Apple TV the OS owns the HDMI mode, so we hand it fps + dynamic range once known.
     private var displayCriteriaApplied = false
     private func applyDisplayCriteria() {
-        guard !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
+        guard !preview, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
               let w = Int32(string("video-params/w") ?? ""), let h = Int32(string("video-params/h") ?? ""), w > 0, h > 0 else { return }
         displayCriteriaApplied = true
         // AVDisplayCriteria(refreshRate:formatDescription:) is the public tvOS initializer; the
