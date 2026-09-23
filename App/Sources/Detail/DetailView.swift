@@ -13,6 +13,7 @@ struct DetailView: View {
         var headers: [String: String]
         var title: String
         var subtitle: String?
+        var context: PlaybackContext
     }
 
     init(meta: Meta) { _model = StateObject(wrappedValue: DetailModel(meta: meta)) }
@@ -42,12 +43,16 @@ struct DetailView: View {
                         return "S\(Int(s)) E\(Int(n))" + (e["name"]?.string.map { " · \($0)" } ?? "")
                     }
                     self.picker = nil
-                    playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub)
+                    let ctx = PlaybackContext(meta: model.meta,
+                                              season: ep?["season"]?.number.map { Int($0) }, episode: ep?["episode"]?.number.map { Int($0) },
+                                              videoId: ep?["videoId"]?.string, imdbId: model.meta.id.hasPrefix("tt") ? model.meta.id : nil,
+                                              imdbVerified: model.meta.id.hasPrefix("tt"))
+                    playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx)
                 }
             }
         }
         .fullScreenCover(item: $playing) { t in
-            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers) { playing = nil }
+            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context) { playing = nil }
         }
     }
 

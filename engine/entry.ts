@@ -55,6 +55,7 @@ import type { Meta } from "@/lib/cinemeta";
 import * as roomBuilders from "./rooms";
 import * as discoverBuilders from "./discover";
 import * as streamGlue from "./streams";
+import * as playerGlue from "./player";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -393,6 +394,13 @@ export const streamsRoom = {
   forget: streamGlue.forget,
 };
 export type { StreamSearch } from "./streams";
+
+/** Playback progress: where to start, and the 4-second progress write (local + Stremio). */
+export const player = {
+  startPosition: playerGlue.startPosition,
+  saveProgress: playerGlue.saveProgress,
+  localResume: playerGlue.localResume,
+};
 
 // ================================================================================== runtime
 /**

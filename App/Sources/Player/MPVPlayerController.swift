@@ -61,6 +61,31 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "gpu-context", "moltenvk"))
         check(mpv_set_option_string(handle, "hwdec", "videotoolbox"))
         check(mpv_set_option_string(handle, "target-colorspace-hint", "yes")) // HDR passthrough
+        // Upstream's pre-init set (src-tauri/src/mpv.rs:349-416, docs/player-spec.md §2.1).
+        check(mpv_set_option_string(handle, "title", "Harbor"))
+        check(mpv_set_option_string(handle, "audio-client-name", "Harbor"))
+        check(mpv_set_option_string(handle, "input-default-bindings", "no"))
+        check(mpv_set_option_string(handle, "osd-level", "0"))
+        check(mpv_set_option_string(handle, "sub-codepage", "utf-8"))
+        check(mpv_set_option_string(handle, "background-color", "#000000"))
+        check(mpv_set_option_string(handle, "user-agent", headers.first { $0.key.lowercased() == "user-agent" }?.value ?? "VLC/3.0.20 LibVLC/3.0.20"))
+        // VOD cache defaults (mpv.rs ~905-982, §2.3): 30 s ahead, 128 MiB, reconnecting HTTP.
+        check(mpv_set_option_string(handle, "cache", "yes"))
+        check(mpv_set_option_string(handle, "cache-pause", "yes"))
+        check(mpv_set_option_string(handle, "cache-pause-initial", "no"))
+        check(mpv_set_option_string(handle, "cache-secs", "30"))
+        check(mpv_set_option_string(handle, "cache-pause-wait", "1"))
+        check(mpv_set_option_string(handle, "demuxer-max-bytes", "128MiB"))
+        check(mpv_set_option_string(handle, "demuxer-max-back-bytes", "32MiB"))
+        check(mpv_set_option_string(handle, "demuxer-readahead-secs", "30"))
+        check(mpv_set_option_string(handle, "stream-buffer-size", "16MiB"))
+        check(mpv_set_option_string(handle, "network-timeout", "60"))
+        check(mpv_set_option_string(handle, "stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60"))
+        // Subtitle slots start empty so Harbor, not mpv, picks the language (mpv.rs:991-1007).
+        check(mpv_set_option_string(handle, "sub-auto", "all"))
+        check(mpv_set_option_string(handle, "sid", "no"))
+        check(mpv_set_option_string(handle, "secondary-sid", "no"))
+        check(mpv_set_option_string(handle, "embeddedfonts", "yes"))
         check(mpv_set_option_string(handle, "subs-fallback", "yes"))
         check(mpv_set_option_string(handle, "keep-open", "yes"))
         check(mpv_initialize(handle))
@@ -73,12 +98,11 @@ final class MPVPlayerController: UIViewController {
 
     func load(_ url: URL) {
         if let mpv {
-            if !headers.isEmpty {
-                let fields = headers.map { "\($0.key): \($0.value)" }.joined(separator: ",")
+            // http-header-fields is a comma list: escape like mpv.rs mpv_header_field().
+            let rest = headers.filter { $0.key.lowercased() != "user-agent" }
+            if !rest.isEmpty {
+                let fields = rest.map { "\($0.key): \($0.value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: ",", with: "\\,"))" }.joined(separator: ",")
                 check(mpv_set_option_string(mpv, "http-header-fields", fields))
-                if let ua = headers.first(where: { $0.key.lowercased() == "user-agent" })?.value {
-                    check(mpv_set_option_string(mpv, "user-agent", ua))
-                }
             }
         }
         command("loadfile", [url.absoluteString, "replace"])
@@ -95,6 +119,21 @@ final class MPVPlayerController: UIViewController {
     }
 
     func seek(_ seconds: Double) { command("seek", [String(seconds), "relative"]) }
+    func seek(to seconds: Double) { command("seek", [String(seconds), "absolute"]) }
+
+    /// Position and duration in seconds, and whether playback is paused.
+    func snapshot() -> (position: Double, duration: Double, paused: Bool) {
+        guard let mpv else { return (0, 0, true) }
+        var pos = 0.0, dur = 0.0
+        var paused: Int64 = 0
+        mpv_get_property(mpv, "time-pos", MPV_FORMAT_DOUBLE, &pos)
+        mpv_get_property(mpv, "duration", MPV_FORMAT_DOUBLE, &dur)
+        mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &paused)
+        return (pos, dur, paused > 0)
+    }
+
+    /// Where playback should start, applied once the file is loaded.
+    var startAtSeconds: Double = 0
 
     private func command(_ name: String, _ args: [String]) {
         guard let mpv else { return }
@@ -145,6 +184,7 @@ final class MPVPlayerController: UIViewController {
                     }
                 case MPV_EVENT_FILE_LOADED:
                     self.push("file loaded")
+                    if self.startAtSeconds > 1 { self.seek(to: self.startAtSeconds); self.startAtSeconds = 0 }
                 case MPV_EVENT_END_FILE:
                     if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
                         if ef.pointee.error < 0 { self.push("end: \(String(cString: mpv_error_string(ef.pointee.error)))") }

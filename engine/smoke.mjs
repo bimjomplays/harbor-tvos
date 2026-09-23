@@ -196,6 +196,13 @@ if (!OFFLINE) {
   const ss = await r.timed("streamsRoom.search(tt0111161, no addons)", () => engine.streamsRoom.search("t1", "p_smoke", true, null, shaw, null));
   off();
   r.ok("streamsRoom.search returns a result shape", ss && ss.imdb.id === "tt0111161" && ss.streamIds.length > 0 && (ss.result === null || Array.isArray(ss.result.picker.all)), JSON.stringify(ss && { imdb: ss.imdb, ids: ss.streamIds, addons: ss.addonCount, all: ss.result && ss.result.picker.all.length, error: ss.error, events: events.length }));
+  const prog = await r.timed("player.saveProgress(local only)", () => engine.player.saveProgress({ meta: shaw, positionMs: 600000, durationMs: 8500000, authKey: null }));
+  const back = engine.player.localResume("tt0111161", null, null);
+  r.ok("player.saveProgress writes harbor.resume", prog && prog.cloud === "none" && back && back.ms === 600000, JSON.stringify({ prog, back }));
+  const sp = await r.timed("player.startPosition(local)", () => engine.player.startPosition(shaw, null, null, null, "tt0111161", true, null));
+  r.ok("player.startPosition reads it back", sp && sp.ms === 600000, JSON.stringify(sp));
+  const done = await engine.player.saveProgress({ meta: shaw, positionMs: 8000000, durationMs: 8500000, authKey: null, flush: true });
+  r.ok("watched at 85% clears resume", done.watched === true && engine.player.localResume("tt0111161", null, null) === null, JSON.stringify(done));
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

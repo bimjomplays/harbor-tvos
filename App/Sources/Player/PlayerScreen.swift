@@ -6,15 +6,24 @@ struct PlayerScreen: View {
     let subtitle: String?
     let url: URL
     var headers: [String: String] = [:]
+    var context: PlaybackContext? = nil
     let onClose: () -> Void
     @State private var status = MPVPlayerController.Status()
     @State private var hud = true
     @State private var hideTask: Task<Void, Never>?
+    @State private var controller: MPVPlayerController?
+    @State private var startAt: Double?
+    @State private var lastSavedPos: Double = -10
+    private let tick = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            MPVPlayerView(url: url, headers: headers, onStatus: { status = $0 }, onEnded: onClose)
-                .ignoresSafeArea()
+            if let startAt {
+                MPVPlayerView(url: url, headers: headers, startAt: startAt, onStatus: { status = $0 }, onEnded: { finish(natural: true) }, onReady: { controller = $0 })
+                    .ignoresSafeArea()
+            } else {
+                BP.void_.ignoresSafeArea()
+            }
             if hud {
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Text(title).font(BP.display(26)).foregroundStyle(BP.ink).shadow(radius: 8)
@@ -29,10 +38,33 @@ struct PlayerScreen: View {
             }
         }
         .focusable()
-        .onPlayPauseCommand { showHud() }
-        .onExitCommand { onClose() }
+        .onPlayPauseCommand { controller?.togglePause(); showHud() }
+        .onExitCommand { finish(natural: false) }
         .onAppear { scheduleHide() }
+        .task { startAt = await context?.startPosition() ?? 0 }
+        .onReceive(tick) { _ in Task { await saveTick(flush: false) } }
         .animation(.easeOut(duration: 0.26), value: hud)
+    }
+
+    /// use-resume-autosave.ts: every 4 s while playing, only if moved ≥ 1.5 s since the last save.
+    private func saveTick(flush: Bool) async {
+        guard let c = controller, let context else { return }
+        let snap = c.snapshot()
+        guard snap.duration > 0, flush || (!snap.paused && abs(snap.position - lastSavedPos) >= 1.5) else { return }
+        lastSavedPos = snap.position
+        _ = await context.save(positionSec: snap.position, durationSec: snap.duration, flush: flush)
+    }
+
+    private func finish(natural: Bool) {
+        Task {
+            if natural, let c = controller, let context {
+                let snap = c.snapshot()
+                _ = await context.save(positionSec: snap.duration > 0 ? snap.duration : snap.position, durationSec: snap.duration, flush: true)
+            } else {
+                await saveTick(flush: true)
+            }
+            onClose()
+        }
     }
 
     private func showHud() {
