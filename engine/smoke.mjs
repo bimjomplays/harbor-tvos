@@ -216,6 +216,40 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("detailRoom.collection is null without a TMDB key", await engine.detailRoom.collection(10, "default", true), null);
 }
 
+// ----------------------------------------------------------------------- home servers
+{
+  r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);
+  r.eq("homeServers.copies without connections", await engine.homeServers.copies({ id: "tt0111161", type: "movie", name: "x" }, "tt0111161"), []);
+  r.eq("homeServers.titles empty", await engine.homeServers.titles(), []);
+  r.eq("libraryRoom.tabs hides Media Servers without connections", engine.libraryRoom.tabs().some((t) => t.id === "media-servers"), false);
+  const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "p1", profiles: [{ id: "p1", isPrimary: true }] })]]) });
+  const calls = [];
+  let approved = false;
+  rec.node.host.fetch = async (req) => {
+    calls.push(req.url);
+    const json = (body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === "https://plex.tv/api/v2/pins?strong=true") return json({ id: 77, code: "ABCD", expiresAt: new Date(Date.now() + 300000).toISOString() });
+    if (req.url === "https://plex.tv/api/v2/pins/77") return json({ id: 77, code: "ABCD", authToken: approved ? "tok" : null });
+    if (req.url.startsWith("https://plex.tv/api/v2/resources")) return json([{ name: "Den", provides: "server", owned: true, presence: true, accessToken: "srvtok", clientIdentifier: "srv1", connections: [{ uri: "https://10-0-0-5.x.plex.direct:32400", local: true, relay: false }] }]);
+    if (req.url.startsWith("https://10-0-0-5.x.plex.direct:32400/library/sections")) return json({ MediaContainer: { Directory: [] } });
+    return json({ error: "not_found" }, 404);
+  };
+  const pin = await rec.engine.homeServers.plexPinStart();
+  r.ok("homeServers.plexPinStart returns the code and the link", pin.pinId === 77 && pin.code === "ABCD" && /app\.plex\.tv\/auth#\?clientID=/.test(pin.url), JSON.stringify(pin));
+  r.eq("homeServers.plexPinPoll pending before approval", (await rec.engine.homeServers.plexPinPoll(77)).kind, "pending");
+  approved = true;
+  const done = await rec.engine.homeServers.plexPinPoll(77);
+  r.ok("homeServers.plexPinPoll authorized lists servers", done.kind === "authorized" && done.servers.length === 1 && done.servers[0].name === "Den" && !("token" in done.servers[0]), JSON.stringify(done));
+  const conn = rec.engine.homeServers.plexAdd(77, "srv1");
+  r.ok("homeServers.plexAdd saves a Plex connection with the token in the secret store", conn.provider === "plex" && (await rec.engine.homeServers.connections()).length === 1 && rec.node.storage.has("harbor.media-server.token.v1.p1." + conn.id), JSON.stringify(conn.name));
+  r.eq("libraryRoom.tabs shows Media Servers with a connection", rec.engine.libraryRoom.tabs().some((t) => t.id === "media-servers"), true);
+  const bad = await rec.engine.homeServers.connect("jellyfin", "nowhere.invalid", "u", "p").then(() => "ok", (e) => e.message);
+  r.ok("homeServers.connect reports a clear failure for an unreachable Jellyfin", typeof bad === "string" && bad !== "ok", bad);
+  rec.engine.homeServers.remove(conn.id);
+  r.eq("homeServers.remove clears the connection", (await rec.engine.homeServers.connections()).length, 0);
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------ person room
 r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "default", true), { hasKey: false, person: null });
 

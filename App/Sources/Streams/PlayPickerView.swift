@@ -4,7 +4,7 @@ import SwiftUI
 struct PlayPickerView: View {
     let meta: Meta
     let episode: AnyJSON?
-    let onPlay: (ScoredStream, StreamsModel.Resolved) -> Void
+    let onPlay: (ScoredStream?, StreamsModel.Resolved) -> Void
     @StateObject private var model = StreamsModel()
     @State private var resolving: String?
     @State private var resolveError: String?
@@ -104,6 +104,11 @@ struct PlayPickerView: View {
             chips
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(10)) {
+                    if !model.copies.isEmpty {
+                        Text("On your home servers").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted)
+                        ForEach(model.copies) { c in copyRow(c) }
+                        if !model.streams.isEmpty { Text("Addons").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted).padding(.top, BP.px(6)) }
+                    }
                     ForEach(visible) { s in row(s, highlight: s.id == model.primary?.id) }
                     if !model.streams.isEmpty && visible.isEmpty { BPNote(text: "Nothing matches these filters.") }
                     Color.clear.frame(height: BP.px(60))
@@ -145,6 +150,40 @@ struct PlayPickerView: View {
         .buttonStyle(BPTileStyle(radius: BP.rSM))
         .disabled(resolving != nil)
         .accessibilityIdentifier("stream-\(s.index)")
+    }
+
+    /// A copy on a Plex/Jellyfin/Emby server (bp-streams home-server rows): direct play or transcode through the server.
+    private func copyRow(_ c: StreamsModel.HomeCopy) -> some View {
+        Button { Task { await pick(copy: c) } } label: {
+            VStack(alignment: .leading, spacing: BP.px(5)) {
+                HStack(spacing: BP.px(8)) {
+                    ForEach([c.resolution, c.quality].compactMap { $0 }.filter { !$0.isEmpty && $0 != "unknown" }, id: \.self) { b in
+                        Text(b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4).foregroundStyle(BP.ink)
+                            .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
+                            .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.on))
+                    }
+                    if c.progressMs > 0 { Text("Resume").font(BP.sans(10, .bold)).textCase(.uppercase).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.live)) }
+                    Spacer()
+                    Text(c.sourceLabel).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
+                    if resolving == c.key { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
+                }
+                Text(c.label).font(BP.sans(14)).foregroundStyle(BP.ink).lineLimit(2)
+                if let b = c.sizeBytes, b > 0 { Text(ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .file)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
+            }
+            .padding(BP.px(12))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
+            .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .disabled(resolving != nil)
+    }
+
+    private func pick(copy: StreamsModel.HomeCopy) async {
+        resolving = copy.key; resolveError = nil
+        let r = await model.play(copy: copy, meta: meta)
+        resolving = nil
+        if r.ok, r.data != nil { onPlay(nil, r) } else { resolveError = "This server couldn't start playback (\(r.code ?? "unknown"))." }
     }
 
     private func badges(_ s: ScoredStream) -> [String] {

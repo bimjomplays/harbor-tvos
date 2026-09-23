@@ -18,8 +18,10 @@ import { filterHistory, historyItemsToDated, mergeHistory } from "@/views/librar
 import { applyFilter, parseTs, sortedGroups, type SortKey, type TypeKey } from "@/views/library/shared";
 import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import { anilist as anilistGlue, mal as malGlue } from "./trackers";
+import { mediaServerConnections } from "@/lib/media-server/connections";
+import { titles as homeServerTitles } from "./homeServers";
 
-export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "trakt" | "anilist" | "mal" | "simkl";
+export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "media-servers" | "trakt" | "anilist" | "mal" | "simkl";
 type Status = "loading" | "ready" | "error";
 
 export type Entry = {
@@ -34,6 +36,7 @@ const CORE: Array<{ id: Tab; label: string }> = [
 
 export function tabs(): Array<{ id: Tab; label: string }> {
   const out = [...CORE];
+  if (mediaServerConnections().length > 0) out.push({ id: "media-servers", label: "Media Servers" });
   if (traktConnected()) out.push({ id: "trakt", label: "Trakt" });
   if (anilistGlue.status().authenticated) out.push({ id: "anilist", label: "AniList" });
   if (malGlue.status().authenticated) out.push({ id: "mal", label: "MyAnimeList" });
@@ -179,6 +182,12 @@ export async function feed(input: FeedInput) {
     for (const e of historyItemsToDated(tr.history)) entries.push({ key: `h:${e.key}`, meta: e.meta, date: e.date, group: "history" });
     groups = [{ id: "watchlist", label: "Watchlist" }, { id: "history", label: "History" }];
     status = tr.status;
+  } else if (tab === "media-servers") {
+    const list = await homeServerTitles();
+    entries = list.map((t) => ({ key: t.key, meta: t.meta, date: t.date, group: t.groups[0] }));
+    const seen = new Map<string, string>();
+    for (const t of list) for (const c of t.connections) seen.set(c.id, c.label);
+    groups = [...seen].map(([id, label]) => ({ id, label }));
   } else if (tab === "anilist" || tab === "mal") {
     const svc = await (tab === "anilist" ? anilistGlue : malGlue).entries(!!input.force);
     entries = svc.entries; status = svc.status; groups = svc.groups;

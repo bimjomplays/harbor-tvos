@@ -72,6 +72,7 @@ import * as servicesGlue from "./services";
 import * as trackersGlue from "./trackers";
 import * as detailGlue from "./detailRoom";
 import * as personGlue from "./personRoom";
+import * as homeGlue from "./homeServers";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -558,6 +559,22 @@ export const detailRoom = {
 
 /** Person page: facts, Known For, IMDb Top, collaborators, awards, filmography sections. */
 export const personRoom = { page: personGlue.page };
+
+/** Home media servers: Plex (PIN), Jellyfin, Emby — connect, index, copies, playback. */
+export const homeServers = {
+  connections: homeGlue.connectionsWithSummaries,
+  connect: homeGlue.connect,
+  plexPinStart: homeGlue.plexPinStart,
+  plexPinPoll: homeGlue.plexPinPoll,
+  plexAdd: homeGlue.plexAdd,
+  remove: homeGlue.remove,
+  update: homeGlue.update,
+  libraries: homeGlue.libraries,
+  sync: homeGlue.sync,
+  titles: homeGlue.titles,
+  copies: homeGlue.copies,
+  play: homeGlue.play,
+};
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
 export const skip = { segments: skipGlue.segments };

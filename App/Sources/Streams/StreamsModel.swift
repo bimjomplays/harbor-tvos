@@ -68,6 +68,9 @@ final class StreamsModel: ObservableObject {
     @Published private(set) var progress: (settled: Int, total: Int) = (0, 0)
     @Published private(set) var addonCount = 0
     @Published private(set) var debridErrors: [String] = []
+    /// Home-server copies of this title (use-bp-streams homeServerCopies), loaded beside the addon search.
+    @Published private(set) var copies: [HomeCopy] = []
+    struct HomeCopy: Decodable, Identifiable { var key: String; var label: String; var sourceLabel: String; var connectionId: String; var itemId: String; var versionId: String; var quality: String?; var sizeBytes: Double?; var resolution: String?; var progressMs: Double; var id: String { key } }
 
     let token = UUID().uuidString
     private var subscribed = false
@@ -82,6 +85,11 @@ final class StreamsModel: ObservableObject {
         subscribeOnce()
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
+        Task { [weak self] in
+            let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
+            let list: [HomeCopy] = (try? await HarborEngine.shared.call("homeServers.copies", [meta, meta.id.hasPrefix("tt") ? meta.id : nil as String?, season, ep])) ?? []
+            self?.copies = list
+        }
         do {
             let r: SearchResult = try await HarborEngine.shared.call("streamsRoom.search",
                 [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object([:])])
@@ -114,6 +122,17 @@ final class StreamsModel: ObservableObject {
         var data: Link?
         var via: String?
         var code: String?
+    }
+
+    /// A home-server copy resolves through the server (direct play or transcode).
+    func play(copy: HomeCopy, meta: Meta) async -> Resolved {
+        struct Out: Decodable { var url: String; var headers: [String: String]?; var subtitle: String?; var subtitles: [Resolved.Link.Sub]; var resumeMs: Double }
+        do {
+            let o: Out = try await HarborEngine.shared.call("homeServers.play", [meta, copy.connectionId, copy.itemId, copy.versionId])
+            return Resolved(ok: true, data: Resolved.Link(url: o.url, filename: nil, headers: o.headers, notWebReady: true, subtitles: o.subtitles), via: o.subtitle, code: nil)
+        } catch {
+            return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription)
+        }
     }
 
     func resolve(_ stream: ScoredStream) async -> Resolved {

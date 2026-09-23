@@ -98,6 +98,13 @@ export const stubs = {
     b.onResolve({ filter: /^@\/data\/awards\.json$/ }, (a) => ({ path: a.path, namespace: "awards-stub" }));
     // Rejecting keeps upstream's `requested` flag reset and never replaces an installed catalog.
     b.onLoad({ filter: /.*/, namespace: "awards-stub" }, () => ({ contents: "throw new Error('HarborEngine: the awards catalog is installed by the host (discoverRoom.installAwards)');", loader: "js" }));
+    // Home media servers: upstream's transport is a Tauri command and its index store is
+    // IndexedDB; the bundle swaps both for engine/media/* (fetch, localStorage). Only the
+    // upstream modules themselves are redirected; engine/media imports the real files by path.
+    b.onResolve({ filter: /(^@\/lib\/media-server\/transport$)|(^\.\/transport$)/ }, (a) =>
+      a.path.startsWith("@/") || /lib\/media-server\//.test(a.importer) ? { path: path.join(here, "media/transport.ts") } : undefined);
+    b.onResolve({ filter: /(^@\/lib\/media-server\/index-store$)|(^\.\/index-store$)/ }, (a) =>
+      a.path.startsWith("@/") || /lib\/media-server\//.test(a.importer) ? { path: path.join(here, "media/index-store.ts") } : undefined);
     // Pure helpers live in a few React view files (views/library/shared, watchlist-tab); the
     // virtualiser they import is render-only, so it stubs like the icons do.
     b.onResolve({ filter: /^@tanstack\/react-virtual($|\/)/ }, (a) => ({ path: a.path, namespace: "virtual-stub" }));
