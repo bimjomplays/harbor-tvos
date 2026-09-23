@@ -1,6 +1,7 @@
 // Discover room glue: the pure parts of use-bp-discover.ts and queue/use-bp-queue.ts.
 import type { Meta } from "@/lib/cinemeta";
-import { getPool, selectDailyRows, fetchGenreSample, type FeedItem } from "@/lib/feed";
+import { getPool, extendPool, selectDailyRows, fetchGenreSample, type FeedItem } from "@/lib/feed";
+import { snoozeQueueItem, blockQueueItem } from "@/lib/feed/skipped";
 import { getDownvotedIds, getUpvotedIds } from "@/lib/feed/preferences";
 import { rankByAffinity } from "@/lib/feed/rank";
 import { filterQueuePool, shuffleQueuePool } from "@/lib/feed/skipped";
@@ -14,6 +15,8 @@ import { fetchRankList, peekRankSnapshot } from "@/lib/harbor-rank";
 import { setBundledAwards, bundledAwardsVersion } from "@/lib/awards-history";
 import { loadEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
+import { MOVIE_GENRES } from "@/lib/feed/tags";
+import { tmdbDiscover } from "@/lib/providers/tmdb";
 
 const RAIL_COUNT = 8;
 const MIN_RAIL = 10;
@@ -160,3 +163,58 @@ export async function people(limit = 24) {
   if (!result || result.source !== "harbor") return [];
   return result.list.slice(0, limit).map((p) => ({ id: p.id, rank: p.rank, name: p.name, profilePath: p.profilePath, department: p.department, country: p.country, score: p.score }));
 }
+
+// ------------------------------------------------------------------ genre grid page
+/** use-bp-genre-grid: one TMDB discover page for a genre shelf; anime hidden when the viewer asked. */
+export type GenrePage = { metas: Meta[]; status: "ready" | "no-key" | "failed" | "filtered" | "empty" };
+export async function genrePage(profileId: string, linked: boolean, genre: string, page: number): Promise<GenrePage> {
+  const settings = loadEffective(profileId, linked);
+  const id = MOVIE_GENRES[genre];
+  if (!settings.tmdbKey || id == null) return { metas: [], status: "no-key" };
+  try {
+    const batch = await tmdbDiscover(settings.tmdbKey, "movie", { with_genres: String(id), "vote_count.gte": "180", sort_by: "popularity.desc", page: String(page) });
+    // An empty first page means TMDB did not answer (tmdb-client swallows errors into null).
+    if (batch.length === 0) return { metas: [], status: page === 1 ? "failed" : "empty" };
+    const shown = settings.hideContent?.anime ? batch.filter((m) => !metaLooksAnime(m)) : batch;
+    return { metas: shown, status: shown.length > 0 ? "ready" : "filtered" };
+  } catch {
+    return { metas: [], status: "failed" };
+  }
+}
+
+// --------------------------------------------------------------- Discovery Queue deck
+// queue/use-bp-queue.ts without React: one ordered deck per TMDB key, extended a page at a time
+// once the viewer nears the end, entries dropped as they are snoozed (two weeks) or blocked.
+export type QueueEntry = { meta: Meta; tag: string };
+export type QueueDeck = { status: "loading" | "nokey" | "unreachable" | "empty" | "ready"; entries: QueueEntry[] };
+const FIRST_EXTENSION_PAGE = 2;
+let deck: { key: string; items: FeedItem[]; page: number } | null = null;
+
+export async function queueOpen(profileId: string, linked: boolean): Promise<QueueDeck> {
+  const key = loadEffective(profileId, linked).tmdbKey;
+  let pool: FeedItem[] = [];
+  let raw = 0;
+  try { pool = await getPool(key); raw = pool.length; } catch { pool = []; }
+  if (!deck || deck.key !== key) deck = { key, items: buildOrder(pool), page: FIRST_EXTENSION_PAGE };
+  const entries = deck.items.map((it) => ({ meta: it.meta, tag: it.tag }));
+  const status: QueueDeck["status"] = entries.length > 0 ? "ready" : !key ? "nokey" : raw === 0 ? "unreachable" : "empty";
+  return { status, entries };
+}
+
+export async function queueExtend(profileId: string, linked: boolean): Promise<QueueEntry[]> {
+  const key = loadEffective(profileId, linked).tmdbKey;
+  if (!deck || deck.key !== key || !key) return [];
+  const page = deck.page;
+  deck.page += 1;
+  const more = await extendPool(key, page).catch(() => [] as FeedItem[]);
+  const have = new Set(deck.items.map((it) => it.meta.id));
+  const fresh = buildOrder(more.filter((it) => !have.has(it.meta.id)));
+  deck.items = [...deck.items, ...fresh];
+  return fresh.map((it) => ({ meta: it.meta, tag: it.tag }));
+}
+
+function dropFromDeck(id: string) { if (deck) deck.items = deck.items.filter((it) => it.meta.id !== id); }
+/** "Skip · Back in two weeks" */
+export function queueSnooze(id: string): void { snoozeQueueItem(id); dropFromDeck(id); }
+/** "Not interested · Never shown again" */
+export function queueBlock(id: string): void { blockQueueItem(id); dropFromDeck(id); }

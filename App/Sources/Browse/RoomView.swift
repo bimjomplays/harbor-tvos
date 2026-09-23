@@ -5,6 +5,7 @@ struct RoomView: View {
     @StateObject private var model: BrowseModel
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
+    @State private var quick: Meta?
     @State private var service: ServiceTarget?
     struct ServiceTarget: Identifiable { var id: String; var name: String }
     @Environment(\.shellFocusNamespace) private var shellNS
@@ -30,7 +31,7 @@ struct RoomView: View {
                            onSelect: { m in
                                if m.id.hasPrefix("service:") { service = ServiceTarget(id: String(m.id.dropFirst(8)), name: m.name) } else { detail = m }
                            },
-                           onSeeAll: { seeAll = $0 }, topInset: heroHeight) {
+                           onSeeAll: { seeAll = $0 }, onQuick: { quick = $0 }, topInset: heroHeight) {
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
                                         onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) })
@@ -49,6 +50,7 @@ struct RoomView: View {
             CatalogPageView(room: model.room, row: row)
         }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $quick) { m in QuickPanelView(meta: m) }
         .fullScreenCover(item: $service) { t in ServicePageView(service: t.id, name: t.name) }
     }
 

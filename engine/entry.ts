@@ -74,6 +74,7 @@ import * as detailGlue from "./detailRoom";
 import * as personGlue from "./personRoom";
 import * as homeGlue from "./homeServers";
 import * as searchGlue from "./search";
+import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -318,6 +319,8 @@ export const search = {
 // ==================================================================================== feed
 /** The Home room's editorial feed: hero pool, daily rows and the named TMDB sections. */
 export const feed = {
+  /** use-bp-screensaver: the hero feed's ranked art (trending / trakt / simkl). */
+  hero: fetchHeroFeed,
   getPool: upstreamFeed.getPool,
   buildPool: upstreamFeed.buildPool,
   extendPool: upstreamFeed.extendPool,
@@ -394,6 +397,7 @@ export const rooms = {
   catalogFor: roomBuilders.catalogFor,
   page: roomBuilders.page,
   continueWatchingFor: roomBuilders.continueWatchingFor,
+  dismissContinueWatching: roomBuilders.dismissContinueWatching,
   anime: roomBuilders.anime,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
 };
@@ -407,6 +411,11 @@ export const discoverRoom = {
   queueFor: discoverBuilders.queueFor,
   genres: discoverBuilders.genres,
   genreArtFor: discoverBuilders.genreArtFor,
+  genrePage: discoverBuilders.genrePage,
+  queueOpen: discoverBuilders.queueOpen,
+  queueExtend: discoverBuilders.queueExtend,
+  queueSnooze: discoverBuilders.queueSnooze,
+  queueBlock: discoverBuilders.queueBlock,
   installAwards: discoverBuilders.installAwards,
   awardsInstalled: discoverBuilders.awardsInstalled,
   awards: discoverBuilders.awards,

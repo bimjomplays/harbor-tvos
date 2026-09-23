@@ -221,6 +221,8 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);
   r.eq("homeServers.copies without connections", await engine.homeServers.copies({ id: "tt0111161", type: "movie", name: "x" }, "tt0111161"), []);
   r.eq("homeServers.titles empty", await engine.homeServers.titles(), []);
+  r.eq("discoverRoom.genrePage without a TMDB key", (await engine.discoverRoom.genrePage("default", true, "Action", 1)).status, "no-key");
+  r.eq("search.fanOut with an empty query", (await engine.search.fanOut("  ", "default", true, null)).movies, []);
   r.eq("libraryRoom.tabs hides Media Servers without connections", engine.libraryRoom.tabs().some((t) => t.id === "media-servers"), false);
   const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "p1", profiles: [{ id: "p1", isPrimary: true }] })]]) });
   const calls = [];

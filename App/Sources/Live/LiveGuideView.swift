@@ -87,6 +87,8 @@ struct LiveGuideView: View {
     @ObservedObject var live: LiveModel
     @StateObject private var model = LiveGuideModel()
     @FocusState private var focused: String?
+    /// bp-guide-portal (text half): the focused cell's programme, drawn under the grid.
+    @State private var portal: (channel: LiveModel.Channel, cell: LiveGuideModel.Cell)?
     @State private var now = Date().timeIntervalSince1970 * 1000
     let play: (LiveModel.Channel) -> Void
     let star: (LiveModel.Channel) -> Void
@@ -109,8 +111,9 @@ struct LiveGuideView: View {
                 LazyVStack(spacing: BP.px(4)) {
                     ForEach(live.visible) { ch in row(ch) }
                 }
-                .padding(.bottom, BP.hintHeight + BP.px(40))
+                .padding(.bottom, BP.px(150) + BP.hintHeight)
             }
+            .overlay(alignment: .bottom) { if let portal { portalView(portal.channel, portal.cell) } }
         }
         .task(id: live.visible.map(\.id)) {
             await model.seed(playlistId: live.selectedPlaylist ?? "", channelIds: live.visible.map(\.id))
@@ -129,11 +132,45 @@ struct LiveGuideView: View {
         .onChange(of: focused) { _, id in
             guard let id, let hit = cellFor(id) else { return }
             let cell = hit.0
+            portal = (hit.1, cell)
             model.reveal(cellStart: cell.startMs, cellEnd: cell.endMs, visibleMs: visibleMs)
             // Reaching an edge grows the window (upstream extends on the last/first cell).
             if cell.endMs >= model.windowEnd { Task { await model.extend(forward: true) } }
             else if cell.startMs <= model.windowStart, model.windowStart > now - LiveGuideModel.maxWindowMs { Task { await model.extend(forward: false) } }
         }
+    }
+
+    private func portalView(_ ch: LiveModel.Channel, _ cell: LiveGuideModel.Cell) -> some View {
+        let p = cell.program
+        let pct = min(1, max(0, (now - cell.startMs) / max(1, cell.endMs - cell.startMs)))
+        let airing = now >= cell.startMs && now < cell.endMs
+        return HStack(alignment: .top, spacing: BP.px(18)) {
+            RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(96), height: BP.px(54))
+                .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
+            VStack(alignment: .leading, spacing: BP.px(5)) {
+                HStack(spacing: BP.px(8)) {
+                    Text(p?.title.isEmpty == false ? p!.title : "No programme information").font(BP.sans(18, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+                    if airing { Text("ON NOW").font(BP.sans(10, .bold)).foregroundStyle(BP.live) }
+                    if let c = p?.category, !c.isEmpty { Text(c).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
+                }
+                Text("\(ch.shownName) · \(Self.clock(cell.startMs)) – \(Self.clock(cell.endMs))").font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                if airing {
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) { Capsule().fill(BP.on); Capsule().fill(BP.live).frame(width: g.size.width * pct) }
+                    }.frame(width: BP.px(360), height: BP.px(4))
+                }
+                if let d = p?.description, !d.isEmpty { Text(d).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(3) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(BP.px(16)).padding(.horizontal, BP.gutter)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient(colors: [BP.void_.opacity(0), BP.void_.opacity(0.9), BP.void_.opacity(0.97)], startPoint: .top, endPoint: .bottom))
+        .allowsHitTesting(false)
+    }
+
+    private static func clock(_ ms: Double) -> String {
+        Date(timeIntervalSince1970: ms / 1000).formatted(date: .omitted, time: .shortened)
     }
 
     private func cellFor(_ key: String) -> (LiveGuideModel.Cell, LiveModel.Channel)? {
@@ -181,7 +218,7 @@ struct LiveGuideView: View {
             Button { star(ch) } label: {
                 HStack(spacing: BP.px(10)) {
                     RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(64), height: BP.px(36))
-                    Text(ch.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
+                    Text(ch.shownName).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
                     Spacer(minLength: 0)
                     Image(systemName: ch.favorite ? "star.fill" : "star").font(.system(size: BP.px(12), weight: .bold)).foregroundStyle(ch.favorite ? BP.ink : BP.inkSubtle)
                 }

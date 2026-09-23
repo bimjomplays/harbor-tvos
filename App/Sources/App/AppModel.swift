@@ -9,6 +9,8 @@ final class AppModel: ObservableObject {
 
     @Published var stage: Stage = .boot
     @Published var room: Room = .home
+    /// Quick panel "Search": the Search room opens with this query.
+    @Published var searchSeed: String?
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
     var browseSource: BrowseSource = (Fixtures.active && !Fixtures.liveRooms) ? FixtureBrowseSource() : EngineBrowseSource()
@@ -34,6 +36,7 @@ final class AppModel: ObservableObject {
     }
 
     func boot() async {
+        ActivityMonitor.install()
         Fixtures.installIfRequested(into: self)
         if !Fixtures.active {
             await SettingsBridge.shared.load()

@@ -6,6 +6,8 @@ struct DiscoverView: View {
     @StateObject private var model = DiscoverModel()
     @State private var detail: Meta?
     @State private var awardDetail: DiscoverModel.Awards.Summary?
+    @State private var genrePage: BrowseRow?
+    @State private var queueOpen = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -22,7 +24,7 @@ struct DiscoverView: View {
             } else {
                 BPRailView(rows: model.rows, onFocus: { m, _ in model.spotlight = m }, onSelect: { detail = $0 }, topInset: BP.barHeight + BP.px(10)) {
                     section("Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
-                        QueueBandView(queue: model.build?.queue)
+                        QueueBandView(queue: model.build?.queue) { queueOpen = true }
                     }
                     if !model.people.isEmpty {
                         section("Discover", "Top People", "Top \(model.people.count), ranked by the work they left behind") {
@@ -35,7 +37,9 @@ struct DiscoverView: View {
                         }
                     }
                     section("Discover", "Genres", "18 shelves, one press into any of them") {
-                        GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt) {
+                        GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt, onOpen: { genre in
+                            genrePage = BrowseRow(key: "genre:\(genre)", title: genre, metas: [])
+                        }) {
                             Task { await model.loadGenreArt() }
                         }
                     }
@@ -45,6 +49,8 @@ struct DiscoverView: View {
         .task { await model.load() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $awardDetail) { a in AwardDetailView(summary: a) }
+        .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
+        .fullScreenCover(isPresented: $queueOpen) { QueueDeckView() }
     }
 
     private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
@@ -63,10 +69,11 @@ struct DiscoverView: View {
 /// queue/bp-queue-band.tsx: one wide panel, blurred bed art, a fan of the next four posters.
 struct QueueBandView: View {
     let queue: DiscoverModel.Build.Queue?
+    var onOpen: () -> Void = {}
     private let height = BP.px(150)
 
     var body: some View {
-        Button {} label: {
+        Button { onOpen() } label: {
             ZStack(alignment: .leading) {
                 if let bed = queue?.backdrop ?? queue?.posters.first {
                     RemoteImage(url: bed).blur(radius: 18).opacity(queue?.backdrop == nil ? 0.45 : 0.8)
@@ -125,6 +132,7 @@ struct GenresBandView: View {
     let genres: [DiscoverModel.Build.Genre]
     let art: [String: [Meta]]
     /// Fired the first time any genre tile takes focus (art is fetched lazily, as upstream does).
+    var onOpen: (String) -> Void = { _ in }
     let onFocus: () -> Void
     @FocusState private var focusedGenre: String?
     private let cell = BP.px(178)
@@ -132,8 +140,24 @@ struct GenresBandView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: BP.px(9)) {
+                // bp-genre-tiles: a "Surprise me" lead tile opens a random shelf.
+                if let first = genres.first {
+                    Button { onOpen(genres.randomElement()?.genre ?? first.genre) } label: {
+                        VStack(alignment: .leading) {
+                            Image(systemName: "dice").font(.system(size: BP.px(26), weight: .semibold)).foregroundStyle(BP.ink)
+                            Spacer()
+                            Text("Surprise me").font(BP.sans(15, .bold)).foregroundStyle(BP.ink)
+                        }
+                        .padding(BP.px(14))
+                        .frame(width: cell, height: cell * 0.8, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2))
+                        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                    }
+                    .buttonStyle(BPTileStyle(radius: BP.rMD))
+                    .focused($focusedGenre, equals: "__surprise")
+                }
                 ForEach(genres, id: \.genre) { g in
-                    Button {} label: { tile(g) }
+                    Button { onOpen(g.genre) } label: { tile(g) }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
                         .focused($focusedGenre, equals: g.genre)
                         .accessibilityIdentifier("genre-\(g.genre)")

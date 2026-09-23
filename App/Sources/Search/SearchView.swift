@@ -3,6 +3,7 @@ import SwiftUI
 /// Search room: keyboard on the left, query + results on the right.
 struct SearchView: View {
     @StateObject private var model = SearchModel()
+    @EnvironmentObject private var app: AppModel
     @State private var spotlight: Meta?
     @State private var detail: Meta?
 
@@ -22,7 +23,10 @@ struct SearchView: View {
                 results
             }
         }
-        .onAppear { if let q = Fixtures.query, model.query.isEmpty { model.query = q } }
+        .onAppear {
+            if let q = Fixtures.query, model.query.isEmpty { model.query = q }
+            if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
+        }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $person) { p in PersonView(personId: p.tmdbId ?? 0, name: p.name) }
         .fullScreenCover(item: $channel) { ch in

@@ -14,6 +14,8 @@ final class MPVPlayerController: UIViewController {
         var fps = ""
         var dropped = ""
         var log: [String] = []
+        /// mpv's end-file error (source-error-card.tsx): the stream never opened or died mid-way.
+        var error: String?
     }
 
     var onStatus: ((Status) -> Void)?
@@ -407,7 +409,11 @@ final class MPVPlayerController: UIViewController {
                     self.applyTrackPreferences()
                 case MPV_EVENT_END_FILE:
                     if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
-                        if ef.pointee.error < 0 { self.push("end: \(String(cString: mpv_error_string(ef.pointee.error)))") }
+                        if ef.pointee.error < 0 {
+                            let why = String(cString: mpv_error_string(ef.pointee.error))
+                            self.push("end: \(why)")
+                            DispatchQueue.main.async { self.status.state = "error"; self.status.error = why }
+                        }
                         if ef.pointee.reason == MPV_END_FILE_REASON_EOF { DispatchQueue.main.async { self.onEnded?() } }
                     }
                 default:

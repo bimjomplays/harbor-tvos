@@ -8,6 +8,8 @@ struct CatalogPageView: View {
     @State private var page = 1
     @State private var exhausted = false
     @State private var loading = false
+    /// use-bp-genre-grid status when a genre page has nothing to show.
+    @State private var emptyNote: String?
     @State private var spotlight: Meta?
     @State private var detail: Meta?
     @FocusState private var focusedId: String?
@@ -18,6 +20,7 @@ struct CatalogPageView: View {
         self.room = room
         self.row = row
         _metas = State(initialValue: row.metas)
+        _page = State(initialValue: row.metas.isEmpty ? 0 : 1)
     }
 
     var body: some View {
@@ -39,6 +42,13 @@ struct CatalogPageView: View {
                 .padding(.top, BP.px(200) + BP.barHeight)
                 .padding(.bottom, BP.hintHeight + BP.px(40))
                 if loading { ProgressView().tint(BP.inkMuted).padding() }
+                if let emptyNote, metas.isEmpty, !loading {
+                    VStack(alignment: .leading, spacing: BP.px(10)) {
+                        BPNote(text: emptyNote)
+                        Button("Try again") { exhausted = false; page = 0; Task { await loadMore() } }.buttonStyle(BPActionStyle(primary: true))
+                    }
+                    .padding(.horizontal, BP.gutter)
+                }
             }
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 Text(row.title).font(BP.display(30)).foregroundStyle(BP.ink)
@@ -49,6 +59,7 @@ struct CatalogPageView: View {
         }
         .ignoresSafeArea()
         .onChange(of: focusedId) { _, id in spotlight = metas.first { $0.id == id } }
+        .task { if metas.isEmpty { await loadMore() } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
     }
 
@@ -57,7 +68,22 @@ struct CatalogPageView: View {
         loading = true; defer { loading = false }
         let kind = room == .home ? "home" : (room == .movies ? "movies" : (room == .anime ? "anime" : "shows"))
         let next: [Meta]
-        if row.key.hasPrefix("svc:") {
+        if row.key.hasPrefix("genre:") {
+            // bp-genre-grid: TMDB discover pages for one genre shelf (use-bp-genre-grid).
+            struct Page: Decodable { var metas: [Meta]; var status: String }
+            let p = ProfilesStore.shared.active
+            let genre = String(row.key.dropFirst("genre:".count))
+            let got: Page = (try? await HarborEngine.shared.call("discoverRoom.genrePage", [p?.id ?? "default", p?.linked ?? true, genre, page + 1])) ?? Page(metas: [], status: "failed")
+            next = got.metas
+            if next.isEmpty, metas.isEmpty {
+                switch got.status {
+                case "no-key": emptyNote = "Genre shelves are built from TMDB. Add a key in Setup to fill this one."
+                case "filtered": emptyNote = "Everything on this page of \(genre) is hidden by your anime filter."
+                case "empty": emptyNote = "Nothing in \(genre) right now."
+                default: emptyNote = "Couldn't reach TMDB for \(genre) titles."
+                }
+            }
+        } else if row.key.hasPrefix("svc:") {
             // A streaming-service category row pages through TMDB (services.page).
             let p = ProfilesStore.shared.active
             next = (try? await HarborEngine.shared.call("services.page", [row.key, page + 1, p?.id ?? "default", p?.linked ?? true])) ?? []

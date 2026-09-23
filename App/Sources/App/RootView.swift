@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @StateObject private var saver = ScreensaverModel()
     @StateObject private var app = AppModel()
 
     var body: some View {
@@ -12,7 +13,9 @@ struct RootView: View {
             case .whoIsWatching: WhoIsWatchingView()
             case .shell: ShellView()
             }
+            if app.stage == .shell, saver.active { ScreensaverView(model: saver).transition(.opacity).zIndex(10) }
         }
+        .onChange(of: app.stage) { _, st in if st == .shell { saver.start() } }
         .environmentObject(app)
         .environmentObject(app.account)
         .environmentObject(app.profiles)

@@ -8,6 +8,9 @@ final class LiveModel: ObservableObject {
     struct Channel: Codable, Identifiable, Equatable {
         var id: String; var name: String; var logo: String?; var url: String; var group: String?; var tvgId: String?
         var headers: [String: String]?; var favorite: Bool
+        /// bp-guide-title: cleaned name, quality badge, and a group label that is not just the name again.
+        var label: String?; var badge: String?; var groupLabel: String?
+        var shownName: String { label ?? name }
     }
     struct Group: Decodable, Identifiable { var name: String; var count: Int; var id: String { name } }
     struct View_: Decodable { var id: String; var name: String; var kind: String; var channels: [Channel]; var groups: [Group]; var total: Int; var epgUrl: String? }
@@ -167,7 +170,7 @@ struct LiveView: View {
         }
         .fullScreenCover(item: $replaying) { r in
             // A bounded replay: VOD cache profile, seekable, subtitle says so (use-live-actions.ts).
-            PlayerScreen(title: r.program.title, subtitle: "\(r.channel.name) · catch up", url: URL(string: r.url) ?? URL(string: "about:blank")!, headers: r.headers, isLive: false) { _ in replaying = nil }
+            PlayerScreen(title: r.program.title, subtitle: "\(r.channel.shownName) · catch up", url: URL(string: r.url) ?? URL(string: "about:blank")!, headers: r.headers, isLive: false) { _ in replaying = nil }
         }
         .fullScreenCover(isPresented: $showSources) {
             LiveSourcesSheet(model: model, firstRun: false, dismiss: { showSources = false })
@@ -251,8 +254,11 @@ struct LiveChannelRow: View {
                         .frame(width: BP.px(84), height: BP.px(46))
                         .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
                     VStack(alignment: .leading, spacing: BP.px(2)) {
-                        Text(channel.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                        if let g = channel.group { Text(g).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                        HStack(spacing: BP.px(6)) {
+                            Text(channel.shownName).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                            if let b = channel.badge { Text(b).font(BP.sans(9, .bold)).foregroundStyle(BP.inkMuted).padding(.horizontal, 4).padding(.vertical, 1).overlay(RoundedRectangle(cornerRadius: 3).stroke(BP.edge2, lineWidth: 1)) }
+                        }
+                        if let g = channel.groupLabel ?? channel.group { Text(g).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
                     }
                     .frame(width: BP.px(220), alignment: .leading)
                     VStack(alignment: .leading, spacing: BP.px(4)) {

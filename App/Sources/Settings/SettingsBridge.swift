@@ -41,6 +41,10 @@ final class SettingsBridge: ObservableObject {
         var resumePlayback: Bool? = true
         var resumePrompt: Bool? = false
         var playerConfirmLeave: Bool? = true
+        // Screensaver (settings/defaults.ts:122-126) and the hero feed it draws from.
+        var screensaver: Bool? = true
+        var screensaverDelayMin: Double? = 5
+        var heroFeed: String? = "trending"
         /// bp-settings "Edge margin": a fraction of the screen kept clear on every edge.
         var bigPictureOverscan: Double? = 0
     }

@@ -13,6 +13,7 @@ import { removePinsForSource } from "@/lib/iptv/pins";
 import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
+import { bpChannelLabel, bpGroupLabel } from "@/views/big-picture/bp-guide-title";
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
 import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
 import { loadStoredSettings } from "@/lib/settings/load";
@@ -21,6 +22,9 @@ import { gunzipSync } from "fflate";
 export type LiveChannel = {
   id: string;
   name: string;
+  label: string;
+  badge: string | null;
+  groupLabel: string | null;
   logo: string | null;
   url: string;
   group: string | null;
@@ -151,7 +155,9 @@ const MAX_CHANNELS = 6000;
 const loaded = new Map<string, IptvChannel[]>();
 
 function toView(ch: IptvChannel, favs: Map<string, StoredFavorite>): LiveChannel {
-  return { id: ch.id, name: ch.name, logo: ch.logo, url: ch.url, group: ch.group, tvgId: ch.tvgId, headers: headersFromChannel(ch) ?? null, favorite: favs.has(ch.id) };
+  // bp-guide-title: "##ESPN HD RAW##" → label "ESPN", badge "HD"; a group that repeats the name is dropped.
+  const l = bpChannelLabel(ch.name);
+  return { id: ch.id, name: ch.name, label: l.name, badge: l.badge, groupLabel: bpGroupLabel(ch.group, l.name), logo: ch.logo, url: ch.url, group: ch.group, tvgId: ch.tvgId, headers: headersFromChannel(ch) ?? null, favorite: favs.has(ch.id) };
 }
 
 /** Loads (or serves from upstream's cache) one playlist, ordered like the Big Picture guide. */

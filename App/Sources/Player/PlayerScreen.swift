@@ -14,7 +14,10 @@ struct PlayerScreen: View {
     /// Live streams: live mpv cache options, no seek bar, no progress saves.
     var isLive: Bool = false
     /// `true` when the file played to its end (next-episode logic keys off this).
+    /// source-error-card "Pick another source": the caller reopens the picker after this closes.
+    var onChooseAnother: (() -> Void)? = nil
     let onClose: (_ endedNaturally: Bool) -> Void
+    @State private var reloadToken = 0
 
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
@@ -85,6 +88,7 @@ struct PlayerScreen: View {
                               onStatus: { status = $0 }, onEnded: { finish(natural: true) },
                               onReady: { controller = $0; if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
+                    .id(reloadToken)
             } else {
                 BP.void_.ignoresSafeArea()
             }
@@ -101,9 +105,10 @@ struct PlayerScreen: View {
                     default: wake()
                     }
                 }
-            if chrome, resumePending == nil, !leaveConfirm { chromeView.transition(.opacity) }
+            if chrome, resumePending == nil, !leaveConfirm, status.state != "error" { chromeView.transition(.opacity) }
             if let resumePending { resumePrompt(resumePending).transition(.opacity) }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
+            if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
             if let seg = activeSegment {
                 skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
             } else if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
@@ -128,7 +133,8 @@ struct PlayerScreen: View {
             else if chrome { chrome = false }
             else { requestClose() }
         }
-        .onAppear { focus = .surface; scheduleHide() }
+        .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true }
+        .onDisappear { PlaybackState.shared.active = false }
         .task {
             // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
             // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.
@@ -593,6 +599,31 @@ struct PlayerScreen: View {
     /// A focus target that is only being inserted this tick cannot take the ring yet.
     private func focusLater(_ target: FocusTarget) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = target }
+    }
+
+    /// source-error-card.tsx: the stream would not open; pick another source, retry, or leave.
+    private var sourceErrorCard: some View {
+        VStack(alignment: .leading, spacing: BP.px(12)) {
+            Spacer()
+            HStack(spacing: BP.px(10)) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(BP.danger)
+                Text("Harbor couldn't play this source").font(BP.display(30)).foregroundStyle(BP.ink)
+            }
+            Text("The source responded but the stream would not open. Try a different one.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
+            if let e = status.error { Text("Source said: \(e)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+            HStack(spacing: BP.px(10)) {
+                if onChooseAnother != nil {
+                    chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false); go?() }
+                }
+                chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); reloadToken += 1 }
+                chip("Back", "chevron.left") { finish(natural: false) }
+            }
+            .focusSection()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BP.gutter).padding(.bottom, BP.px(20))
+        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.6), BP.void_.opacity(0.95)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .onAppear { hideTask?.cancel(); focusLater(.chip(onChooseAnother != nil ? "Pick another source" : "Try again")) }
     }
 
     /// bp-leave-confirm.tsx: Keep watching / Leave / Don't ask again.

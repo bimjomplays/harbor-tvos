@@ -7,6 +7,8 @@ struct BPRowView: View {
     let onSelect: (Meta) -> Void
     /// Present when the row can open a "See all" page (bp-row-header.tsx chip).
     var onSeeAll: (() -> Void)? = nil
+    /// bp-quick-panel: hold Select on a tile.
+    var onQuick: ((Meta) -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var seeAllFocused: Bool
 
@@ -33,6 +35,7 @@ struct BPRowView: View {
                         .buttonStyle(BPTileStyle())
                         .focused($focusedId, equals: meta.id)
                         .accessibilityIdentifier("tile-\(row.key)-\(i)")
+                        .onLongPressGesture(minimumDuration: 0.6) { onQuick?(meta) }
                     }
                 }
                 .padding(.horizontal, BP.gutter)
@@ -53,6 +56,7 @@ struct BPRailView<Lead: View>: View {
     let onFocus: (Meta, BrowseRow) -> Void
     let onSelect: (Meta) -> Void
     var onSeeAll: ((BrowseRow) -> Void)? = nil
+    var onQuick: ((Meta) -> Void)? = nil
     var topInset: CGFloat = 0
     @ViewBuilder var lead: () -> Lead
     @State private var focusedRow: String?
@@ -67,7 +71,7 @@ struct BPRailView<Lead: View>: View {
                     lead().id("lead")
                     ForEach(rows) { row in
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
-                                  onSeeAll: onSeeAll.map { cb in { cb(row) } })
+                                  onSeeAll: onSeeAll.map { cb in { cb(row) } }, onQuick: onQuick)
                             .id(row.key)
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))

@@ -3,6 +3,7 @@
 // rendering; this returns one finished build per call.
 import { setTop10Metas } from "@/lib/top10-set";
 import type { Meta } from "@/lib/cinemeta";
+import { dismissCw } from "@/lib/cw-dismiss";
 import { topMovies, topSeries } from "@/lib/cinemeta";
 import type { HomeRow, RowSpec } from "@/views/home/home-types";
 import { buildAnimeHomeRows, buildCinemetaRows, buildTmdbRows, isStreamingServiceRow, mergeRows } from "@/views/home/home-rows";
@@ -237,6 +238,15 @@ export async function continueWatching(authKey: string | null, settings: Setting
     .map((e) => e.i)
     .filter((i) => (seen.has(i._id) ? false : (seen.add(i._id), true)));
   return merged.slice(0, limit);
+}
+
+/** bp-quick-panel "Remove from Continue watching" (lib/cw-dismiss): hides the item locally and in the cloud library. */
+export async function dismissContinueWatching(profileId: string, linked: boolean, authKey: string | null, metaId: string): Promise<boolean> {
+  const items = await continueWatching(authKey, loadEffective(profileId, linked), 200);
+  const item = items.find((i) => i._id === metaId);
+  if (!item) return false;
+  dismissCw(item, authKey);
+  return true;
 }
 
 export function continueWatchingFor(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<LibraryItem[]> {

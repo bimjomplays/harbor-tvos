@@ -17,9 +17,12 @@ struct DetailView: View {
         var subtitle: String?
         var context: PlaybackContext
         var upNext: String?
+        var episode: AnyJSON?
     }
 
-    init(meta: Meta) { _model = StateObject(wrappedValue: DetailModel(meta: meta)) }
+    /// Quick panel / Discovery Queue "Play now": open the picker as soon as the page knows what to play.
+    var autoPlay = false
+    init(meta: Meta, autoPlay: Bool = false) { _model = StateObject(wrappedValue: DetailModel(meta: meta)); self.autoPlay = autoPlay }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -39,7 +42,12 @@ struct DetailView: View {
             }
         }
         .ignoresSafeArea()
-        .task { await model.load() }
+        .task {
+            await model.load()
+            if autoPlay, picker == nil {
+                if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
+            }
+        }
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {
             if let picker {
                 PlayPickerView(meta: picker.meta, episode: picker.episode) { stream, resolved in
@@ -61,7 +69,7 @@ struct DetailView: View {
                             let n = model.episodes[idx + 1]
                             if n.season > 0 { upNext = "S\(n.season) E\(n.episode) · \(n.title)" }
                         }
-                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext)
+                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep)
                     }
                 }
             }
@@ -69,7 +77,8 @@ struct DetailView: View {
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
-            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext) { natural in
+            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
+                         onChooseAnother: { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
                 playing = nil
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
