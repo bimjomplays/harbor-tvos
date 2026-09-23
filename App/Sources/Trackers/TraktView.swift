@@ -49,6 +49,10 @@ final class TraktModel: ObservableObject {
                     default: break
                     }
                 }
+                // The code's own lifetime ran out without a verdict (Simkl never says "expired").
+                guard let self, !Task.isCancelled, self.code?.deviceCode == c.deviceCode else { return }
+                self.code = nil
+                self.note = "That code expired. Try again."
             }
         } catch {
             note = error.localizedDescription
@@ -64,6 +68,7 @@ final class TraktModel: ObservableObject {
 
 struct TraktPanel: View {
     @StateObject private var model: TraktModel
+    @ObservedObject private var settings = SettingsBridge.shared
     init(service: String = "trakt", label: String = "Trakt") {
         _model = StateObject(wrappedValue: TraktModel(service: service, label: label))
     }
@@ -73,7 +78,13 @@ struct TraktPanel: View {
             if model.status.authenticated {
                 Text("Connected as \(model.status.username ?? "\(model.label) user")").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Scrobbles what you watch; watchlist and history sync arrive with Stage 5.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                Button("Disconnect") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())
+                HStack(spacing: BP.px(8)) {
+                    Button("Disconnect") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())
+                    if model.service == "simkl" {
+                        let on = settings.slice.simklScrobbleEnabled ?? true
+                        Button(on ? "Scrobbling on" : "Scrobbling off") { Task { try? await settings.patch(["simklScrobbleEnabled": .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
+                    }
+                }
             } else if let c = model.code {
                 Text("On your phone, open \(c.verificationUrl) and enter").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                 Text(c.userCode).font(BP.display(44)).foregroundStyle(BP.ink).tracking(6)

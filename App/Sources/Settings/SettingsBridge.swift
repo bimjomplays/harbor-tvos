@@ -36,6 +36,7 @@ final class SettingsBridge: ObservableObject {
         var playerAnime4kMode: String? = "A"
         var playerAnime4kTier: String? = "hq"
         var playerAnime4kOverride: String? = "auto"
+        var simklScrobbleEnabled: Bool? = true
     }
 
     @Published private(set) var slice = Slice()

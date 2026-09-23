@@ -6,11 +6,13 @@ import { loadStoredSettings } from "@/lib/settings/load";
 import type { SimklPin } from "@/lib/simkl/types";
 
 const pins = new Map<string, SimklPin>();
+const issuedAt = new Map<string, number>();
 
 /** Same wire shape as trakt.deviceCode so one Swift panel serves both. */
 export async function deviceCode(): Promise<{ deviceCode: string; userCode: string; verificationUrl: string; expiresIn: number; pollIntervalSec: number }> {
   const pin = await requestPin();
   pins.set(pin.userCode, pin);
+  issuedAt.set(pin.userCode, Date.now());
   return { deviceCode: pin.userCode, userCode: pin.userCode, verificationUrl: pin.verificationUrl, expiresIn: pin.expiresIn, pollIntervalSec: pin.pollIntervalSec };
 }
 
@@ -22,6 +24,13 @@ export function poll(userCode: string): Promise<PollOut> {
   const running = inflight.get(userCode);
   if (running) return running;
   const pin = pins.get(userCode) ?? { userCode, verificationUrl: "", deepLinkUrl: "", expiresIn: 60, pollIntervalSec: 5 };
+  // Simkl's pollOnce cannot tell "pending" from "expired" (device-auth.ts:28-38); only the
+  // elapsed time can, and each short poll below restarts upstream's clock, so keep our own.
+  const since = issuedAt.get(userCode);
+  if (since !== undefined && (Date.now() - since) / 1000 >= pin.expiresIn) {
+    pins.delete(userCode); issuedAt.delete(userCode);
+    return Promise.resolve({ kind: "expired" as const });
+  }
   const p = new Promise<PollOut>((resolve) => {
     let settled = false;
     const done = (v: PollOut) => { if (!settled) { settled = true; resolve(v); } };

@@ -16,7 +16,7 @@ import { library } from "@/lib/stremio";
 import { loadEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
 import { BP_ANIME_ID } from "@/views/big-picture/use-bp-card-badges";
-import { tmdbImdbId } from "@/lib/providers/tmdb/tmdb-imdb-resolve";
+import { tmdbImdbCached, tmdbImdbId } from "@/lib/providers/tmdb/tmdb-imdb-resolve";
 
 export type CardMeta = {
   id: string;
@@ -99,10 +99,16 @@ function prime(anime: boolean): void {
  * or watched flag is often stored under the imdb id while a TMDB-built row carries a tmdb one
  * (useTmdbImdbId in the tiles); the resolver's cache makes the alt lookup free after the first.
  */
-export async function marks(metas: CardMeta[], profileId: string, linked: boolean): Promise<CardMarks[]> {
+export function marks(metas: CardMeta[], profileId: string, linked: boolean): CardMarks[] {
   const s = loadEffective(profileId, linked);
   prime(metas.some((m) => BP_ANIME_ID.test(m.id)));
-  const alts = await Promise.all(metas.map((m) => (m.id.startsWith("tmdb:") ? tmdbImdbId(s.tmdbKey, m.id).catch(() => null) : Promise.resolve(null))));
+  // useTmdbImdbId: the cache answers now; a miss resolves in the background for the next pass.
+  const alts = metas.map((m) => {
+    if (!m.id.startsWith("tmdb:")) return null;
+    const hit = tmdbImdbCached(m.id);
+    if (hit === undefined && s.tmdbKey) void tmdbImdbId(s.tmdbKey, m.id).catch(() => null);
+    return hit ?? null;
+  });
   const has = (i: number, test: (id: string) => boolean) => test(metas[i].id) || (!!alts[i] && test(alts[i] as string));
   // bpCardZones: scores take topEnd when badgePlacement is "top", else bottomEnd; the watched
   // check always takes the other end. The TV tile has no scores, but the corner stays theirs.

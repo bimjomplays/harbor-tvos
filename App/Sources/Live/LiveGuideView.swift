@@ -26,6 +26,8 @@ final class LiveGuideModel: ObservableObject {
     private var playlistId: String?
     private var channelIds: [String] = []
 
+    private var generation = 0
+
     func seed(playlistId: String, channelIds: [String]) async {
         let now = Date().timeIntervalSince1970 * 1000
         if windowStart == 0 {
@@ -36,28 +38,36 @@ final class LiveGuideModel: ObservableObject {
         let changedList = self.playlistId != playlistId || self.channelIds != channelIds
         self.playlistId = playlistId
         self.channelIds = channelIds
-        if changedList { lanes = [:] }
-        await load(ids: channelIds)
+        // Rows that are still on screen keep their lanes until the new ones land (no empty frame).
+        let keep = changedList ? lanes.filter { channelIds.contains($0.key) } : lanes
+        await load(ids: channelIds, base: keep, start: windowStart, end: windowEnd)
     }
 
-    private func load(ids: [String]) async {
+    /// Fetch lanes for `ids` missing from `base`, then swap window + lanes in one assignment.
+    /// A later call supersedes an earlier one (generation guard), so a slow reply never wins.
+    private func load(ids: [String], base: [String: [Cell]], start: Double, end: Double) async {
         guard let playlistId, !ids.isEmpty else { return }
-        let missing = ids.filter { lanes[$0] == nil }
-        guard !missing.isEmpty else { return }
-        if let out: [Lane] = try? await HarborEngine.shared.call("live.lanes", [playlistId, missing, windowStart, windowEnd]) {
-            var next = lanes
+        generation += 1
+        let mine = generation
+        let missing = ids.filter { base[$0] == nil }
+        var next = base
+        if !missing.isEmpty, let out: [Lane] = try? await HarborEngine.shared.call("live.lanes", [playlistId, missing, start, end]) {
             for l in out { next[l.id] = l.cells }
-            lanes = next
         }
+        guard mine == generation else { return }
+        windowStart = start
+        windowEnd = end
+        lanes = next
     }
 
-    /// bp-guide.tsx extendWindow / extendWindowBack: every lane is rebuilt for the new span.
+    /// bp-guide.tsx extendWindow / extendWindowBack: every lane is rebuilt for the new span,
+    /// but the old lanes stay up until the new ones arrive so focus never lands on nothing.
     func extend(forward: Bool) async {
         guard windowEnd - windowStart < Self.maxWindowMs else { return }
-        if forward { windowEnd = min(windowEnd + Self.extendMs, windowStart + Self.maxWindowMs) }
-        else { windowStart = max(windowStart - Self.extendMs, windowEnd - Self.maxWindowMs) }
-        lanes = [:]
-        await load(ids: channelIds)
+        var start = windowStart, end = windowEnd
+        if forward { end = min(end + Self.extendMs, start + Self.maxWindowMs) }
+        else { start = max(start - Self.extendMs, end - Self.maxWindowMs) }
+        await load(ids: channelIds, base: [:], start: start, end: end)
     }
 
     /// viewStartFor: pan so the focused cell is visible; a cell wider than the view pins to its start.
@@ -106,6 +116,10 @@ struct LiveGuideView: View {
                 try? await Task.sleep(for: .seconds(10))
                 now = Date().timeIntervalSince1970 * 1000
             }
+        }
+        .onChange(of: model.windowStart) { _, _ in
+            // The window grew backwards: every cell moved; re-assert the focused key so the ring stays put.
+            if let f = focused { let keep = f; DispatchQueue.main.async { focused = keep } }
         }
         .onChange(of: focused) { _, id in
             guard let id, let hit = cellFor(id) else { return }
@@ -174,7 +188,7 @@ struct LiveGuideView: View {
             .frame(width: colPx, alignment: .leading)
             ZStack(alignment: .topLeading) {
                 ForEach(model.lanes[ch.id] ?? []) { cell in
-                    if cell.program != nil { block(cell, ch) }
+                    block(cell, ch)
                 }
                 if x(now) >= 0 && x(now) <= lanePx {
                     Rectangle().fill(BP.live).frame(width: 2, height: rowPx).offset(x: x(now))
@@ -188,7 +202,9 @@ struct LiveGuideView: View {
 
     // bp-guide-block: past / airing / future paint, three width tiers, chevrons when clipped.
     private func block(_ cell: LiveGuideModel.Cell, _ ch: LiveModel.Channel) -> some View {
-        let width = max(BP.px(8), CGFloat(cell.endMs - cell.startMs) * pxPerMs - BP.px(6))
+        // bp-guide-block: gutter on the inline end only, a 24 px floor for degenerate slices.
+        let width = max(BP.px(24), CGFloat(cell.endMs - cell.startMs) * pxPerMs - BP.px(10))
+        let empty = cell.program == nil
         let airing = cell.startMs <= now && now < cell.endMs
         let past = cell.endMs <= now
         let tier: Int = width < BP.px(44) ? 0 : (width < BP.px(150) ? 1 : 2)
@@ -219,10 +235,10 @@ struct LiveGuideView: View {
             .frame(width: width, height: rowPx - BP.px(10), alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)
-                    .fill(focused == key ? BP.on : (airing ? BP.live.opacity(0.14) : (past ? BP.panel2.opacity(0.45) : BP.panel2)))
+                    .fill(focused == key ? BP.on : empty ? .clear : (airing ? BP.live.opacity(0.14) : (past ? BP.panel2.opacity(0.45) : BP.panel2)))
             )
-            .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).strokeBorder(airing ? BP.live.opacity(0.45) : BP.edge2, lineWidth: 1))
-            .opacity(past ? 0.55 : 1)
+            .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).strokeBorder(empty ? (focused == key ? BP.edge2 : .clear) : (airing ? BP.live.opacity(0.45) : BP.edge2), lineWidth: 1))
+            .opacity(past && !empty ? 0.55 : 1)
         }
         .buttonStyle(.plain)
         .focused($focused, equals: key)

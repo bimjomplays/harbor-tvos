@@ -13,9 +13,31 @@ final class SportsEventModel: ObservableObject {
         var homeFormation: String?; var awayFormation: String?
     }
 
+    struct WatchOption: Decodable, Identifiable { var channelId: String; var name: String; var logo: String?; var url: String; var headers: [String: String]?; var tier: String; var attached: Bool; var label: String; var copy: String; var reasons: [String]; var score: Double; var id: String { channelId } }
+    struct Provider: Decodable, Identifiable { var name: String; var url: String; var logo: String; var id: String { name } }
+    struct Broadcast: Decodable, Identifiable { var title: String; var competition: String; var channel: String; var source: String; var id: String { channel } }
+    struct Watch: Decodable { var plan: String; var fixture: String; var channels: [WatchOption]; var providers: [Provider]; var broadcasts: [Broadcast]; var sources: Int; var scanned: Int }
+
     @Published private(set) var detail: Detail?
     @Published private(set) var loading = false
     @Published private(set) var note: String?
+    @Published private(set) var watch: Watch?
+    @Published private(set) var watching = false
+
+    /// bp-sports-watch.tsx: resolve what Watch can do (channel / picker / setup / finished).
+    func resolveWatch(_ game: SportsModel.Game) async {
+        watching = true; defer { watching = false }
+        watch = try? await HarborEngine.shared.call("sports.watch", [game.wire])
+    }
+
+    func togglePin(_ game: SportsModel.Game, _ option: WatchOption) async {
+        _ = try? await HarborEngine.shared.callJSON("sports.toggleAttachedChannel", [.string(game.league), .string(option.channelId)])
+        await resolveWatch(game)
+    }
+
+    func recordPlay(_ option: WatchOption) {
+        Task { _ = try? await HarborEngine.shared.callJSON("sports.recordChannelWatch", [.string(option.channelId)]) }
+    }
 
     func load(_ game: SportsModel.Game) async {
         loading = true; defer { loading = false }
@@ -31,6 +53,8 @@ struct SportsEventView: View {
     let game: SportsModel.Game
     let dismiss: () -> Void
     @StateObject private var model = SportsEventModel()
+    @State private var playing: SportsEventModel.WatchOption?
+    @State private var picker = false
 
     var body: some View {
         ZStack {
@@ -38,6 +62,7 @@ struct SportsEventView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(20)) {
                     hero
+                    watchSection
                     if let d = model.detail {
                         if let stats = d.allStats, !stats.isEmpty { statsRow(stats, title: game.live ? "Live now" : "Key statistics") }
                         if let ev = d.events, !ev.isEmpty { eventsRow(ev) }
@@ -54,7 +79,70 @@ struct SportsEventView: View {
             }
         }
         .task { await model.load(game) }
-        .onExitCommand { dismiss() }
+        .task { if game.state != "post" { await model.resolveWatch(game) } }
+        .onExitCommand { if picker { picker = false } else { dismiss() } }
+        .fullScreenCover(item: $playing) { opt in
+            PlayerScreen(title: opt.name, subtitle: model.watch?.fixture ?? game.leagueLabel, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in playing = nil }
+        }
+    }
+
+    // bp-sports-watch.tsx press → play the exact match, or open the picker, or point at Live TV.
+    private var watchSection: some View {
+        VStack(alignment: .leading, spacing: BP.px(8)) {
+            if game.state == "post" {
+                EmptyView()
+            } else if let w = model.watch {
+                HStack(spacing: BP.px(10)) {
+                    switch w.plan {
+                    case "channel":
+                        Button("Watch on \(w.channels[0].name)") { play(w.channels[0]) }.buttonStyle(BPActionStyle(primary: true))
+                        if w.channels.count > 1 { Button("Other channels") { picker.toggle() }.buttonStyle(BPActionStyle()) }
+                    case "picker":
+                        Button(w.channels.isEmpty ? "Search your channels" : "Watch · \(w.channels.count) channel\(w.channels.count == 1 ? "" : "s") found") { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
+                    case "setup":
+                        Text("Add a Live TV source to watch matches here.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                    default:
+                        EmptyView()
+                    }
+                }
+                if picker || (w.plan == "picker" && w.channels.isEmpty) {
+                    VStack(alignment: .leading, spacing: BP.px(6)) {
+                        ForEach(w.channels) { opt in
+                            HStack(spacing: BP.px(8)) {
+                                Button { play(opt) } label: {
+                                    HStack(spacing: BP.px(10)) {
+                                        RemoteImage(url: opt.logo, contentMode: .fit).frame(width: BP.px(48), height: BP.px(28))
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(opt.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                            Text(opt.copy + (opt.reasons.isEmpty ? "" : " · " + opt.reasons.prefix(2).joined(separator: ", "))).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Text(opt.tier.capitalized).font(BP.sans(11, .bold)).foregroundStyle(opt.tier == "exact" ? BP.live : BP.inkSubtle)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(BPActionStyle())
+                                Button(opt.attached ? "Unpin" : "Pin for \(game.leagueLabel)") { Task { await model.togglePin(game, opt) } }.buttonStyle(BPActionStyle(primary: opt.attached))
+                            }
+                        }
+                        if w.channels.isEmpty { Text("No channel in your \(w.sources) source\(w.sources == 1 ? "" : "s") looks like this fixture (\(w.scanned) sports channels scanned).").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+                    }
+                    .frame(maxWidth: BP.px(900), alignment: .leading)
+                }
+                if !w.providers.isEmpty || !w.broadcasts.isEmpty {
+                    Text("Where to watch: " + (w.providers.map(\.name) + w.broadcasts.map { "\($0.title) on Twitch (\($0.channel))" }).joined(separator: " · "))
+                        .font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(2)
+                }
+            } else if model.watching {
+                HStack(spacing: BP.px(8)) { ProgressView().tint(BP.inkMuted); Text("Checking your channels…").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+            }
+        }
+        .focusSection()
+    }
+
+    private func play(_ opt: SportsEventModel.WatchOption) {
+        model.recordPlay(opt)
+        playing = opt
     }
 
     private var hero: some View {

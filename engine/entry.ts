@@ -494,6 +494,9 @@ export const sports = {
   page: sportsGlue.page,
   days: sportsGlue.days,
   detail: sportsGlue.detail,
+  watch: sportsGlue.watch,
+  toggleAttachedChannel: sportsGlue.toggleAttachedChannel,
+  recordChannelWatch: sportsGlue.recordChannelWatch,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

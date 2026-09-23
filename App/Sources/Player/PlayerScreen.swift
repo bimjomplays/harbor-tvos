@@ -63,6 +63,7 @@ struct PlayerScreen: View {
     struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
+    @State private var anime4kNote: String?
     enum FocusTarget: Hashable { case surface, chip(String), track(Int) }
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -122,6 +123,13 @@ struct PlayerScreen: View {
             if !isLive, let c = controller, status.state != "loading" {
                 let w = c.videoWidth()
                 if w > 0, w != anime4kAppliedFor { anime4kAppliedFor = w; Task { await applyAnime4k(srcWidth: w) } }
+                // A chain libplacebo refused shows up in mpv's warnings: drop it rather than play blind.
+                if let a = anime4k, a.active, status.log.contains(where: { $0.range(of: #"(shader|glsl|hook)"#, options: [.regularExpression, .caseInsensitive]) != nil && $0.range(of: #"(error|fail|invalid|could not)"#, options: [.regularExpression, .caseInsensitive]) != nil }) {
+                    var off = a; off.active = false
+                    anime4k = off
+                    anime4kNote = "mpv rejected the Anime4K shaders on this device; playing without them."
+                    c.setShaders([])
+                }
             }
             Task { await saveTick(flush: false) }
             scrobbleTick()
@@ -270,11 +278,21 @@ struct PlayerScreen: View {
         let meta: AnyJSON = .object(["id": .string(context.meta.id), "genres": .array((context.meta.genres ?? []).map { .string($0) })])
         let p = ProfilesStore.shared.active
         guard let choice: Anime4KChoice = try? await HarborEngine.shared.call("anime4k.choose", [p?.id ?? "default", p?.linked ?? true, meta, srcWidth, display]) else { return }
-        anime4k = choice
         if choice.active {
             if !Anime4KStore.shared.installed { await Anime4KStore.shared.ensure() }
-            c.setShaders(Anime4KStore.shared.paths(for: choice.files) ?? [])
+            if let paths = Anime4KStore.shared.paths(for: choice.files) {
+                anime4k = choice
+                anime4kNote = nil
+                c.setShaders(paths)
+            } else {
+                // Not downloaded (offline?): never claim a mode that mpv is not running.
+                var off = choice; off.active = false
+                anime4k = off
+                anime4kNote = Anime4KStore.shared.note ?? "Anime4K shaders are not downloaded yet."
+                c.setShaders([])
+            }
         } else {
+            anime4k = choice
             c.setShaders([])
         }
     }
@@ -308,6 +326,7 @@ struct PlayerScreen: View {
                     .focused($focus, equals: .track(-10 - i))
                 }
                 if let a = anime4k, a.active { BPNote(text: "Running mode \(a.mode ?? "") (\(a.tier == "fast" ? "fast" : "HQ")). Stutter? Switch the tier to Fast in Settings.") }
+                if let n = anime4kNote { BPNote(text: n, tone: BP.danger) }
                 if !Anime4KStore.shared.installed { BPNote(text: "The shaders download on first use (about 3 MB).") }
             }
             .padding(BP.px(24))

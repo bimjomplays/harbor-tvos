@@ -19,6 +19,14 @@ import { bpSportsForYouRows, bpSportsHotRows, bpSportsLeagueRows } from "@/views
 import type { SportsGame } from "@/lib/sports/espn-types";
 import { loadStoredSettings } from "@/lib/settings/load";
 import { serializeSettings } from "@/lib/settings/profile-store";
+import { readPlaylists } from "@/lib/iptv/playlists-store";
+import { loadPlaylist } from "@/lib/iptv/store";
+import { headersFromChannel } from "@/lib/iptv/channel-headers";
+import { recordChannelPlay } from "@/lib/iptv/channel-stats";
+import type { IptvChannel } from "@/lib/iptv/types";
+import { buildSportsChannelIndex, matchChannelsForGameAsync, type ChannelMatch, type SportsChannelIndex } from "@/lib/sports/iptv-match";
+import { watchProviders } from "@/lib/sports/watch-providers";
+import { SPORTS_BROADCASTS } from "@/lib/sports/broadcasts";
 
 export type Mode = "for-you" | "live" | "schedule" | "hot" | "explore";
 
@@ -254,4 +262,99 @@ export async function detail(game: SportsGame): Promise<unknown> {
   const value = await fetchGameSummary(game);
   detailCache.set(key, { at: Date.now(), value });
   return value;
+}
+
+// ------------------------------------------------------------------------------ watch
+// bp-sports-watch.tsx plan, minus embedded web players: attached streams and official
+// Twitch/YouTube broadcasts are listed as information, Live TV channels are playable.
+const ATTACH_KEY = "harbor.sports.sources.v1";
+type Attachments = { channels: Record<string, string[]>; streams: Record<string, { url: string; kind: string; headers?: Record<string, string>; page: string; title: string; poster: string }> };
+
+function readAttachments(): Attachments {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ATTACH_KEY) ?? "{}") as Record<string, unknown>;
+    if ("channels" in raw || "streams" in raw) return { channels: (raw.channels as Attachments["channels"]) ?? {}, streams: (raw.streams as Attachments["streams"]) ?? {} };
+    return { channels: raw as Attachments["channels"], streams: {} };
+  } catch {
+    return { channels: {}, streams: {} };
+  }
+}
+
+export function toggleAttachedChannel(leagueTag: string, channelId: string): boolean {
+  const a = readAttachments();
+  const current = a.channels[leagueTag] ?? [];
+  const on = !current.includes(channelId);
+  const kept = on ? [...current, channelId] : current.filter((id) => id !== channelId);
+  const channels = { ...a.channels };
+  if (kept.length) channels[leagueTag] = kept; else delete channels[leagueTag];
+  localStorage.setItem(ATTACH_KEY, JSON.stringify({ channels, streams: a.streams }));
+  return on;
+}
+
+let indexCache: { signature: string; index: SportsChannelIndex; channels: IptvChannel[] } | null = null;
+
+/** watch-sources.tsx useSportsChannelIndex: every non-EPG playlist, flattened, sports-filtered. */
+async function channelIndex(): Promise<{ index: SportsChannelIndex; channels: IptvChannel[]; sources: number }> {
+  const sources = readPlaylists().filter((p) => p.kind !== "epg");
+  const signature = sources.map((p) => p.id + ":" + p.url).join("|");
+  if (indexCache && indexCache.signature === signature) return { ...indexCache, sources: sources.length };
+  const lists = await Promise.allSettled(sources.map((src) => loadPlaylist(src)));
+  const channels: IptvChannel[] = [];
+  for (const r of lists) if (r.status === "fulfilled") channels.push(...r.value.channels);
+  const index = buildSportsChannelIndex(channels);
+  indexCache = { signature, index, channels };
+  return { index, channels, sources: sources.length };
+}
+
+export type WatchOption = {
+  channelId: string; name: string; logo: string | null; url: string; headers: Record<string, string> | null;
+  tier: string; attached: boolean; label: string; copy: string; reasons: string[]; score: number;
+};
+
+function tierCopy(m: ChannelMatch): string {
+  return m.attached ? "Your pick for this competition"
+    : m.reasons.some((r) => r.kind === "event") ? "Event matchup found"
+    : m.tier === "exact" ? "Strong match"
+    : m.tier === "likely" ? "Likely match · check the broadcast"
+    : "Possible match · check the broadcast";
+}
+
+/**
+ * Everything the Watch press can do for one game: `plan` is "channel" (an exact match, play
+ * it), "picker" (weaker matches), "setup" (no Live TV source), or "finished".
+ */
+export async function watch(game: SportsGame): Promise<{
+  plan: "channel" | "picker" | "setup" | "finished";
+  fixture: string;
+  channels: WatchOption[];
+  providers: Array<{ name: string; url: string; logo: string }>;
+  broadcasts: Array<{ title: string; competition: string; channel: string; source: string }>;
+  attachedStream: { url: string; title: string; page: string } | null;
+  sources: number;
+  scanned: number;
+}> {
+  const fixture = game.away.name ? `${game.away.name} v ${game.home.name}` : game.context?.name || game.home.name;
+  const attachments = readAttachments();
+  const { index, sources } = await channelIndex();
+  const attachedIds = attachments.channels[game.league] ?? [];
+  const matches = sources > 0 ? await matchChannelsForGameAsync(game, index, { attachedIds, broadcastNames: game.broadcasts ?? [], limit: 8 }) : [];
+  const channels: WatchOption[] = matches.map((m) => ({
+    channelId: m.channel.id, name: m.channel.name, logo: m.channel.logo, url: m.channel.url, headers: headersFromChannel(m.channel) ?? null,
+    tier: m.tier, attached: m.attached, label: m.label, copy: tierCopy(m), reasons: m.reasons.map((r) => r.label), score: m.score,
+  }));
+  const stream = attachments.streams[game.id] ?? null;
+  const plan = game.state === "post" ? "finished" : sources === 0 ? "setup" : channels.length > 0 && channels[0].tier === "exact" ? "channel" : "picker";
+  return {
+    plan, fixture, channels,
+    providers: watchProviders(game).map((p) => ({ name: p.name, url: p.url, logo: p.logo })),
+    broadcasts: SPORTS_BROADCASTS.filter((b) => b.league === game.league).map((b) => ({ title: b.title, competition: b.competition, channel: b.channel, source: b.source })),
+    attachedStream: stream ? { url: stream.url, title: stream.title, page: stream.page } : null,
+    sources, scanned: index.scanned,
+  };
+}
+
+/** Tuning a matched channel counts toward Live TV's "most watched" band too. */
+export function recordChannelWatch(channelId: string): void {
+  const ch = indexCache?.channels.find((c) => c.id === channelId);
+  if (ch) recordChannelPlay(ch);
 }

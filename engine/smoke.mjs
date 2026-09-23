@@ -242,6 +242,19 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const cnnLane = lanesOut[0].cells, espnLane = lanesOut[1].cells;
   r.ok("live.lanes: gapless, contiguous, ends at the window edge", cnnLane[0].startMs === ws && cnnLane[cnnLane.length - 1].endMs === ws + 6 * 3600000 && cnnLane.every((c, i) => i === 0 || c.startMs === cnnLane[i - 1].endMs), JSON.stringify(cnnLane.map((c) => [c.program && c.program.title, (c.endMs - c.startMs) / 60000])));
   r.ok("live.lanes: programmes keep exact bounds, gaps are half-hour slices", cnnLane.some((c) => c.program && c.program.title === "Newsroom" && Math.abs(c.startMs - (now - 20 * 60000)) < 1000) && espnLane.every((c) => c.program === null && c.endMs - c.startMs <= slot));
+  {
+    // A sports channel in the playlist should match a fixture by team names (iptv-match).
+    const m3u2 = `#EXTM3U\n#EXTINF:-1 group-title="Sports",ESPN Lakers vs Celtics\nhttps://example.invalid/lakers.m3u8\n#EXTINF:-1 group-title="News",CNN\nhttps://example.invalid/cnn.m3u8\n`;
+    rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3u2 });
+    rec.engine.live.addPlaylist("Sports list", "https://sports.example.invalid/list.m3u");
+    const game = { id: "g1", league: "NBA", state: "in", detail: "Q2 5:12", home: { id: "1", name: "Boston Celtics", abbr: "BOS", logo: "", score: "50", winner: false }, away: { id: "2", name: "Los Angeles Lakers", abbr: "LAL", logo: "", score: "48", winner: false }, startMs: Date.now() - 3600000 };
+    const w = await rec.engine.sports.watch(game);
+    r.ok("sports.watch matches a Lakers/Celtics channel by team names", w.sources >= 1 && w.channels.length >= 1 && /lakers/i.test(w.channels[0].name) && ["exact", "likely", "possible"].includes(w.channels[0].tier), JSON.stringify({ plan: w.plan, first: w.channels[0] && [w.channels[0].name, w.channels[0].tier, w.channels[0].copy, w.channels[0].reasons] }));
+    r.ok("sports.watch does not offer the news channel", !w.channels.some((c) => /cnn/i.test(c.name)));
+    r.eq("sports.toggleAttachedChannel pins", rec.engine.sports.toggleAttachedChannel("NBA", w.channels[0].channelId), true);
+    const w2 = await rec.engine.sports.watch(game);
+    r.ok("an attached channel is exact-tier and plans direct play", w2.plan === "channel" && w2.channels[0].attached === true && w2.channels[0].copy === "Your pick for this competition", JSON.stringify(w2.channels[0]));
+  }
   r.ok("xtream login URL is detected and stored with creds + derived EPG", (() => {
     const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
     return x.kind === "xtream" && x.xtream && x.xtream.username === "u" && /xmltv\.php/.test(x.epgUrl || "");
@@ -391,7 +404,7 @@ if (!OFFLINE) {
   {
     const yr = String(new Date().getFullYear());
     engine.cards.setTop10([{ id: "tt0111161", name: "The Shawshank Redemption" }]);
-    const cm = await engine.cards.marks([
+    const cm = engine.cards.marks([
       { id: "tt15398776", type: "movie", name: "Oppenheimer", releaseInfo: "2023" },
       { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", releaseInfo: "1994" },
       { id: "tt9999999", type: "series", name: "Brand New Show", releaseInfo: yr },
@@ -407,7 +420,7 @@ if (!OFFLINE) {
     r.eq("cards.marks: watched check for the title just finished (topEnd, opposite the score corner)", cm[1].watched, "topEnd");
     r.ok("cards.marks: no bookmark/watched without state", cm.slice(2).every((m) => m.bookmark === null && m.watched === null));
     engine.settings.patch({ badgePlacement: "top" });
-    const cm2 = await engine.cards.marks([{ id: "tt0111161", type: "movie", name: "x" }], "default", true);
+    const cm2 = engine.cards.marks([{ id: "tt0111161", type: "movie", name: "x" }], "default", true);
     r.eq("cards.marks: watched zone follows badgePlacement", cm2[0].watched, "bottomEnd");
     engine.settings.patch({ badgePlacement: "bottom" });
   }
@@ -440,6 +453,10 @@ if (!OFFLINE) {
   if (anyGame) {
     const det = await r.timed("sports.detail(first game)", () => engine.sports.detail(anyGame).catch((e) => ({ error: e.message })));
     r.ok("sports.detail returns a summary (or null/err for non-ESPN sources)", det === null || (det && (det.error || Array.isArray(det.homeRoster))), JSON.stringify(det && { err: det.error, roster: det.homeRoster && det.homeRoster.length, events: det.events && det.events.length }));
+  }
+  if (anyGame) {
+    const w = await r.timed("sports.watch(first game, no Live TV source)", () => engine.sports.watch(anyGame));
+    r.ok("sports.watch plans setup without playlists and lists providers", (w.plan === "setup" || w.plan === "finished") && Array.isArray(w.providers) && typeof w.fixture === "string" && w.channels.length === 0, JSON.stringify({ plan: w.plan, fixture: w.fixture, providers: w.providers.map((p) => p.name) }));
   }
   engine.sports.setLeagues(["NBA", "EPL"]);
   r.ok("sports.setLeagues personalizes both stores", engine.sports.catalog().selected.join(",") === "NBA,EPL" && engine.sports.catalog().personalized === true);
