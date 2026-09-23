@@ -12,7 +12,7 @@ struct SettingsView: View {
     @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
-    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs; var id: Int { hashValue } }
+    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs, newProfile, editProfile; var id: Int { hashValue } }
 
 
     var body: some View {
@@ -79,6 +79,8 @@ struct SettingsView: View {
                             Button(p.passwordHash == nil ? "Set a PIN" : "Remove PIN") {
                                 if p.passwordHash == nil { pinDraft = ""; sheet = .pin } else { profiles.setPin(nil, for: p.id) }
                             }.buttonStyle(BPActionStyle())
+                            Button("Edit profile") { sheet = .editProfile }.buttonStyle(BPActionStyle())
+                            Button("Add profile") { sheet = .newProfile }.buttonStyle(BPActionStyle())
                         }
                     }
                 }
@@ -123,6 +125,10 @@ struct SettingsView: View {
                     .padding(BP.gutter)
                 case .addons:
                     AddonsView()
+                case .newProfile:
+                    ProfileEditorView(editing: nil, dismiss: { sheet = nil })
+                case .editProfile:
+                    ProfileEditorView(editing: profiles.active, dismiss: { sheet = nil })
                 case .subLangs:
                     ScrollView {
                         VStack(alignment: .leading, spacing: BP.px(12)) {

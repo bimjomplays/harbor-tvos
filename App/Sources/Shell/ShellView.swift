@@ -21,12 +21,17 @@ struct ShellView: View {
     @Namespace private var focusNS
     @Environment(\.resetFocus) private var resetFocus
 
+    @EnvironmentObject private var settings: SettingsBridge
+
     var body: some View {
         ZStack(alignment: .top) {
             room
             TopBarView()
             VStack { Spacer(); HintBarView(actions: hints) }
         }
+        // bp-settings "Edge margin": a whole-screen inset for sets that crop the picture.
+        .padding(.horizontal, 1920 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
+        .padding(.vertical, 1080 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
         .ignoresSafeArea()
         .focusScope(focusNS)
         .environment(\.shellFocusNamespace, focusNS)

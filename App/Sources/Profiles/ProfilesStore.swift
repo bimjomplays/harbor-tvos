@@ -105,6 +105,40 @@ final class ProfilesStore: ObservableObject {
         persist()
     }
 
+    // MARK: Management (lib/profiles.tsx createProfile / updateProfile / deleteProfile)
+
+    /// A new local profile; the roster push mints its syncId on the next flush.
+    @discardableResult
+    func create(name: String, avatar: String?, color: String) -> Profile {
+        let primary = profiles.first { $0.isPrimary } ?? profiles.first
+        let p = Profile(id: Self.newId(), syncId: nil, name: String(name.trimmingCharacters(in: .whitespaces).prefix(32)).isEmpty ? "Profile" : String(name.trimmingCharacters(in: .whitespaces).prefix(32)),
+                        avatar: avatar, color: color, isPrimary: false, kid: nil, passwordHash: nil,
+                        createdAt: Date().timeIntervalSince1970 * 1000, settingsLinked: true, shareStremioWith: primary?.id)
+        profiles.append(p)
+        persist()
+        return p
+    }
+
+    func update(_ id: String, name: String? = nil, avatar: String?? = nil, color: String? = nil) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        if let name { let n = String(name.trimmingCharacters(in: .whitespaces).prefix(32)); if !n.isEmpty { profiles[i].name = n } }
+        if let avatar { profiles[i].avatar = avatar }
+        if let color { profiles[i].color = color }
+        persist()
+    }
+
+    /// Never the primary. Tombstones first (so the delete reaches other devices), then purges.
+    func delete(_ id: String) async {
+        guard let target = profiles.first(where: { $0.id == id }), !target.isPrimary else { return }
+        _ = try? await HarborEngine.shared.callJSON("sync.profileDeleted", [.string(id)])
+        _ = try? await HarborEngine.shared.callJSON("profilesRoom.purge", [.string(id)])
+        SecretStore.remove("harbor.auth.\(id)")
+        profiles.removeAll { $0.id == id }
+        for i in profiles.indices where profiles[i].shareStremioWith == id { profiles[i].shareStremioWith = nil }
+        if activeId == id { activeId = profiles.first?.id }
+        persist()
+    }
+
     func select(_ id: String) {
         activeId = id
         persist()

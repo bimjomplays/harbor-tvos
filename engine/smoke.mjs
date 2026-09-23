@@ -209,6 +209,13 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 
+// ----------------------------------------------------------------------- profiles room
+{
+  const av = engine.profilesRoom.avatars();
+  r.ok("profilesRoom.avatars lists upstream's catalog with bundle paths", av.length >= 4 && av[0].items[0].path === "/avatars/harbor_person_01.webp", JSON.stringify(av.map((g) => [g.group, g.items.length])));
+  r.ok("profilesRoom.colors + pickColor", engine.profilesRoom.colors().length >= 6 && engine.profilesRoom.pickColor([engine.profilesRoom.colors()[0]]) === engine.profilesRoom.colors()[1]);
+}
+
 // ------------------------------------------------------------------ settings room
 {
   const cats = engine.settingsRoom.categories("default", true);

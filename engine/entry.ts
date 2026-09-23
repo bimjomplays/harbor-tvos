@@ -65,6 +65,7 @@ import * as simklGlue from "./simkl";
 import * as anime4kGlue from "./anime4k";
 import * as sportsGlue from "./sports";
 import * as settingsRoomGlue from "./settingsRoom";
+import * as profilesRoomGlue from "./profilesRoom";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -505,6 +506,14 @@ export const settingsRoom = {
   categories: settingsRoomGlue.categories,
   controls: settingsRoomGlue.controls,
   commit: settingsRoomGlue.commit,
+};
+
+/** Profiles: upstream's avatar catalog, brand colours, per-profile storage purge. */
+export const profilesRoom = {
+  avatars: profilesRoomGlue.avatars,
+  colors: profilesRoomGlue.colors,
+  pickColor: profilesRoomGlue.pickColor,
+  purge: profilesRoomGlue.purge,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
