@@ -91,6 +91,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launch("shell")
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         XCUIRemote.shared.press(.up)
+        XCUIRemote.shared.press(.up)
         // From wherever Up landed, walk left until Home, then right to Movies.
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
         for _ in 0..<4 { XCUIRemote.shared.press(.right) }
@@ -118,6 +119,8 @@ final class ScreenshotTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         waitForRows(app)
+        // First Up lands on the row's "See all" chip, second reaches the bar.
+        XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.up)
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
         for _ in 0..<7 { XCUIRemote.shared.press(.right) }
@@ -134,6 +137,8 @@ final class ScreenshotTests: XCTestCase {
         let app = launch("live")
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         waitForRows(app)
+        // First Up lands on the row's "See all" chip, second reaches the bar.
+        XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.up)
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
         XCUIRemote.shared.press(.right)
