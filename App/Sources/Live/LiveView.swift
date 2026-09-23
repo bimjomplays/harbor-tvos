@@ -127,6 +127,8 @@ final class LiveModel: ObservableObject {
         await load()
     }
 
+    var hiddenGroupCount: Int { groups.filter { $0.hidden == true }.count }
+
     func toggleFavorite(_ ch: Channel) async {
         let on: Bool = (try? await HarborEngine.shared.call("live.toggleFavorite", [ch])) ?? !ch.favorite
         if let i = channels.firstIndex(where: { $0.id == ch.id }) { channels[i].favorite = on }
@@ -254,8 +256,8 @@ struct LiveView: View {
                         Button("Show \(g.name)") { Task { await model.toggleGroupHidden(g.name) } }.buttonStyle(BPActionStyle())
                     }
                 }
-                if let hiddenCount = model.groups.filter({ $0.hidden == true }).count as Int?, hiddenCount > 0 {
-                    Button("\(hiddenCount) hidden") { showHidden.toggle() }.buttonStyle(BPActionStyle(primary: showHidden))
+                if model.hiddenGroupCount > 0 {
+                    Button("\(model.hiddenGroupCount) hidden") { showHidden.toggle() }.buttonStyle(BPActionStyle(primary: showHidden))
                 }
                 if model.guideNote == nil {
                     Button(grid ? "List" : "Guide") { grid.toggle() }.buttonStyle(BPActionStyle())
@@ -271,9 +273,10 @@ struct LiveView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.px(6)) {
                 ForEach(model.visible) { ch in
-                    LiveChannelRow(channel: ch, nowNext: model.guide[ch.id], pin: { Task { await model.togglePin(ch) } },
+                    LiveChannelRow(channel: ch, nowNext: model.guide[ch.id],
                                    play: { model.played(ch); playing = ch },
-                                   star: { Task { await model.toggleFavorite(ch) } })
+                                   star: { Task { await model.toggleFavorite(ch) } },
+                                   pin: { Task { await model.togglePin(ch) } })
                 }
             }
             .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))
