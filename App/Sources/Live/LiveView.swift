@@ -11,10 +11,17 @@ final class LiveModel: ObservableObject {
         /// bp-guide-title: cleaned name, quality badge, and a group label that is not just the name again.
         var label: String?; var badge: String?; var groupLabel: String?
         var pinned: Bool?
+        /// epg-map.ts: the guide channel the viewer matched by hand (nil = automatic).
+        var epgMatch: String?
         var shownName: String { label ?? name }
     }
     struct Group: Decodable, Identifiable { var name: String; var count: Int; var hidden: Bool?; var id: String { name } }
-    struct View_: Decodable { var id: String; var name: String; var kind: String; var channels: [Channel]; var groups: [Group]; var total: Int; var epgUrl: String? }
+    /// bp-live.tsx chip after Favorites and All: a group rail (filter by `group`) or a rail of `ids`.
+    struct Category: Decodable { var key: String; var label: String; var count: Int; var group: String?; var flag: String?; var ids: [String]? }
+    struct View_: Decodable { var id: String; var name: String; var kind: String; var channels: [Channel]; var groups: [Group]; var categories: [Category]?; var total: Int; var epgUrl: String? }
+    /// epg-match-modal.tsx: guide channels a playlist channel can be matched to.
+    struct EpgMatchEntry: Decodable, Identifiable { var id: String; var sample: String }
+    struct EpgMatchList: Decodable { var channelId: String; var channelName: String; var query: String; var total: Int; var current: String?; var entries: [EpgMatchEntry] }
     struct Program: Decodable, Equatable { var title: String; var description: String?; var startMs: Double; var endMs: Double; var category: String?; var iconUrl: String? }
     struct NowNext: Decodable, Equatable { var id: String; var now: Program?; var next: Program?; var known: Bool }
 
@@ -29,8 +36,15 @@ final class LiveModel: ObservableObject {
     @Published private(set) var error: String?
     @Published var selectedPlaylist: String?
     @Published var category: String = LiveModel.allKey
+    @Published private(set) var extraCategories: [Category] = []
+    /// How many channels the loaded guide covers (0 = nothing to match against).
+    @Published private(set) var guideChannelCount = 0
+    /// Bumped after a manual EPG match changes; `lastRemapped` names the channel.
+    @Published private(set) var epgMapRevision = 0
+    private(set) var lastRemapped: String?
 
     private var tick: Task<Void, Never>?
+    private var indexById: [String: Int] = [:]
 
     deinit { tick?.cancel() }
 
@@ -41,17 +55,25 @@ final class LiveModel: ObservableObject {
     }
 
     func loadChannels(force: Bool = false) async {
-        guard let id = selectedPlaylist else { channels = []; groups = []; guide = [:]; return }
+        guard let id = selectedPlaylist else { setChannels([]); groups = []; extraCategories = []; guide = [:]; return }
         loading = true; defer { loading = false }
         error = nil
         do {
             let v: View_ = try await HarborEngine.shared.call("live.channels", [id, force])
-            channels = v.channels
+            setChannels(v.channels)
             groups = v.groups
-            if category != Self.favKey && category != Self.allKey && !groups.contains(where: { $0.name == category }) { category = Self.allKey }
+            extraCategories = v.categories ?? []
+            if category != Self.favKey && category != Self.allKey && !extraCategories.contains(where: { $0.key == category }) { category = Self.allKey }
             await loadGuide(force: force)
             startTick()
-        } catch { self.error = error.localizedDescription; channels = []; groups = [] }
+        } catch { self.error = error.localizedDescription; setChannels([]); groups = []; extraCategories = [] }
+    }
+
+    private func setChannels(_ list: [Channel]) {
+        channels = list
+        var index: [String: Int] = [:]
+        for (i, ch) in list.enumerated() where index[ch.id] == nil { index[ch.id] = i }
+        indexById = index
     }
 
     /// The guide is optional: no EPG URL means rows just say "Live".
@@ -64,6 +86,7 @@ final class LiveModel: ObservableObject {
             covered = o.channels
             guideNote = o.url == nil ? "No guide for this source. Add an EPG URL under Sources." : (o.channels == 0 ? "The guide loaded but lists no channels." : nil)
         } catch { guideNote = "Guide failed: \(error.localizedDescription)" }
+        guideChannelCount = covered
         await refreshNowNext()
         // use-xtream-epg-fallback: an Xtream source with no usable XMLTV asks get_short_epg per channel.
         let xtream = playlists.first { $0.id == id }?.kind == "xtream"
@@ -72,6 +95,7 @@ final class LiveModel: ObservableObject {
             let ids = visible.map(\.id)
             if let h: Hydrated = try? await HarborEngine.shared.call("live.loadShortEpg", [id, ids]), h.hydrated > 0 {
                 guideNote = nil
+                guideChannelCount = covered + h.hydrated
                 await refreshNowNext()
             }
         }
@@ -98,18 +122,34 @@ final class LiveModel: ObservableObject {
         }
     }
 
-    var categories: [(key: String, label: String, count: Int)] {
-        var out = [(Self.favKey, "Favorites", channels.filter(\.favorite).count), (Self.allKey, "All", channels.count)]
-        for g in groups.prefix(Self.maxCategories) { out.append((g.name, g.name, g.count)) }
+    /// bp-live.tsx: Favorites and All, then the engine's rails (recent, pinned groups, themes or
+    /// countries, top groups); 30 chips at most.
+    var categories: [(key: String, label: String, count: Int, flag: String?)] {
+        var out: [(key: String, label: String, count: Int, flag: String?)] = [
+            (key: Self.favKey, label: "Favorites", count: channels.filter(\.favorite).count, flag: nil),
+            (key: Self.allKey, label: "All", count: channels.count, flag: nil),
+        ]
+        for c in extraCategories.prefix(Self.maxCategories - 2) { out.append((key: c.key, label: c.label, count: c.count, flag: c.flag)) }
         return out
     }
+
+    /// The group behind the chosen chip, when it is a group rail.
+    var currentGroup: String? { extraCategories.first(where: { $0.key == category })?.group }
 
     /// Channels of the chosen category, in guide order (favorites, pins, most watched, networks, rest).
     var visible: [Channel] {
         switch category {
         case Self.favKey: return channels.filter(\.favorite)
         case Self.allKey: return channels
-        default: return channels.filter { ($0.group ?? "Uncategorized") == category }
+        default:
+            guard let c = extraCategories.first(where: { $0.key == category }) else { return [] }
+            if let ids = c.ids {
+                var out: [Channel] = []
+                for id in ids { if let i = indexById[id], i < channels.count { out.append(channels[i]) } }
+                return out
+            }
+            let group = c.group ?? ""
+            return channels.filter { ($0.group ?? "Uncategorized") == group }
         }
     }
 
@@ -123,8 +163,37 @@ final class LiveModel: ObservableObject {
     func toggleGroupHidden(_ group: String) async {
         guard let id = selectedPlaylist else { return }
         _ = try? await HarborEngine.shared.callJSON("live.toggleGroupHidden", [.string(id), .string(group)])
-        if category == group { category = Self.allKey }
+        if currentGroup == group { category = Self.allKey }
         await load()
+    }
+
+    /// epg-match-modal Match EPG: offered when the guide has channels and this one has no
+    /// programmes, or already carries a manual match (so it can be changed or cleared).
+    func canMatchEpg(_ ch: Channel) -> Bool {
+        guideChannelCount > 0 && (ch.epgMatch != nil || guide[ch.id]?.known != true)
+    }
+
+    /// The modal's list: nil `query` starts from the channel's own name.
+    func epgCandidates(for ch: Channel, query: String?) async -> EpgMatchList? {
+        guard let id = selectedPlaylist else { return nil }
+        let q: AnyJSON = query.map { AnyJSON.string($0) } ?? AnyJSON.null
+        let args: [any Encodable] = [id, ch.id, q]
+        do {
+            let out: EpgMatchList = try await HarborEngine.shared.call("live.epgCandidates", args)
+            return out
+        } catch { return nil }
+    }
+
+    /// epg-map setEpgOverride: a guide channel id, or nil to clear; now/next and the guide lane follow.
+    func setEpgMatch(_ ch: Channel, tvgId: String?) async {
+        let args: [AnyJSON] = [.string(ch.id), tvgId.map { AnyJSON.string($0) } ?? AnyJSON.null]
+        guard let result = try? await HarborEngine.shared.callJSON("live.setEpgMatch", args) else { return }
+        var match: String? = nil
+        if case .string(let s) = result { match = s }
+        if let i = indexById[ch.id], i < channels.count { channels[i].epgMatch = match }
+        lastRemapped = ch.id
+        epgMapRevision += 1
+        await refreshNowNext()
     }
 
     var hiddenGroupCount: Int { groups.filter { $0.hidden == true }.count }
@@ -182,6 +251,8 @@ struct LiveView: View {
     /// bp-live shows the guide grid; the list is the fallback when a source has no guide.
     @State private var grid = true
     @State private var showHidden = false
+    /// epg-match-modal: the channel whose guide match is being picked.
+    @State private var matching: LiveModel.Channel?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -198,7 +269,8 @@ struct LiveView: View {
                     } else if grid && model.guideNote == nil {
                         LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } },
                                       replay: { ch, prog in Task { await startReplay(ch, prog) } },
-                                      previewSuspended: playing != nil || replaying != nil || showSources)
+                                      previewSuspended: playing != nil || replaying != nil || showSources || matching != nil,
+                                      match: { ch in matching = ch })
                     } else {
                         guideList
                     }
@@ -216,6 +288,9 @@ struct LiveView: View {
         }
         .fullScreenCover(isPresented: $showSources) {
             LiveSourcesSheet(model: model, firstRun: false, dismiss: { showSources = false })
+        }
+        .fullScreenCover(item: $matching) { ch in
+            EpgMatchView(model: model, channel: ch, dismiss: { matching = nil })
         }
     }
 
@@ -242,15 +317,31 @@ struct LiveView: View {
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
+                // bp-live-filters: star on Favorites, a flag on country groups, no count at zero.
                 ForEach(model.categories, id: \.key) { c in
-                    Button("\(c.label)  \(c.count)") {
+                    Button {
                         model.category = c.key
                         Task { await model.refreshNowNext() }
+                    } label: {
+                        HStack(spacing: BP.px(6)) {
+                            if c.key == LiveModel.favKey {
+                                Image(systemName: c.count > 0 ? "star.fill" : "star")
+                            }
+                            if let flag = c.flag {
+                                RemoteImage(url: flag, contentMode: .fill)
+                                    .frame(width: BP.px(18), height: BP.px(12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                            }
+                            Text(c.label).lineLimit(1)
+                            if c.count > 0 {
+                                Text("\(c.count)").opacity(0.55)
+                            }
+                        }
                     }
                     .buttonStyle(BPActionStyle(primary: model.category == c.key))
                 }
-                if model.category != LiveModel.favKey, model.category != LiveModel.allKey {
-                    Button("Hide group") { Task { await model.toggleGroupHidden(model.category) } }.buttonStyle(BPActionStyle())
+                if let group = model.currentGroup {
+                    Button("Hide group") { Task { await model.toggleGroupHidden(group) } }.buttonStyle(BPActionStyle())
                 }
                 if showHidden {
                     ForEach(model.groups.filter { $0.hidden == true }) { g in
@@ -277,7 +368,8 @@ struct LiveView: View {
                     LiveChannelRow(channel: ch, nowNext: model.guide[ch.id],
                                    play: { model.played(ch); playing = ch },
                                    star: { Task { await model.toggleFavorite(ch) } },
-                                   pin: { Task { await model.togglePin(ch) } })
+                                   pin: { Task { await model.togglePin(ch) } },
+                                   match: model.canMatchEpg(ch) ? { matching = ch } : nil)
                 }
             }
             .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))
@@ -293,6 +385,8 @@ struct LiveChannelRow: View {
     let play: () -> Void
     let star: () -> Void
     var pin: (() -> Void)? = nil
+    /// Opens the EPG match picker (only offered when there is something to match or clear).
+    var match: (() -> Void)? = nil
 
     private var progress: Double? {
         guard let p = nowNext?.now else { return nil }
@@ -363,6 +457,18 @@ struct LiveChannelRow: View {
                 }
                 .buttonStyle(BPTileStyle(radius: BP.rSM))
                 .accessibilityLabel(channel.pinned == true ? "Unpin channel" : "Pin channel")
+            }
+            if let match {
+                // guide-view.tsx "Match EPG": pick the guide channel when the tvg-id is wrong.
+                Button(action: match) {
+                    Image(systemName: "link")
+                        .font(.system(size: BP.px(16), weight: .bold))
+                        .foregroundStyle(channel.epgMatch != nil ? BP.accent : BP.inkMuted)
+                        .frame(width: BP.px(56), height: BP.px(56))
+                        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                }
+                .buttonStyle(BPTileStyle(radius: BP.rSM))
+                .accessibilityLabel("Match EPG")
             }
         }
     }

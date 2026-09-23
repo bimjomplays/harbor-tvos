@@ -78,8 +78,9 @@ struct SportsAddonPanelView: View {
         ZStack {
             BP.void_.opacity(0.94).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(14)) {
-                Text("Addon sources").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.accent)
+                Text(picked == nil ? "Addon sources" : "Addon streams").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.accent)
                 Text(game.headline.isEmpty ? game.leagueLabel : game.headline).font(BP.display(32)).foregroundStyle(BP.ink).lineLimit(1)
+                if model.addons?.failed == true { BPNote(text: "Some addons did not respond. Try again.", tone: BP.danger) }
                 if let row = picked { streamsView(row) } else { listingsView }
             }
             .frame(maxWidth: BP.px(1100), alignment: .leading)

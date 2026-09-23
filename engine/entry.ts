@@ -310,6 +310,10 @@ export const secretStore = {
  */
 export const search = {
   fanOut: searchGlue.fanOut,
+  /** use-collection-hits: TVDB collection hits for a query (≥3 chars). */
+  collections: searchGlue.collections,
+  /** bp-collection.tsx: one TVDB collection hydrated to a Collections-room card, or null. */
+  collection: searchGlue.collection,
   all: searchAll,
   cinemeta: searchCinemeta,
   anime: searchAnime,
@@ -440,6 +444,10 @@ export const streamsRoom = {
   forget: streamGlue.forget,
   autoCandidates: streamGlue.autoCandidates,
   rememberPlayback: streamGlue.rememberPlayback,
+  remembered: streamGlue.remembered,
+  p2pConsentNeeded: streamGlue.p2pConsentNeeded,
+  setP2pAutoConsent: streamGlue.setP2pAutoConsent,
+  failureMessage: streamGlue.failureMessage,
 };
 export type { StreamSearch } from "./streams";
 
@@ -592,6 +600,7 @@ export const detailRoom = {
   gallery: detailGlue.gallery,
   extras: detailGlue.extras,
   collection: detailGlue.collection,
+  episodeArt: detailGlue.episodeArt,
 };
 
 /** Person page: facts, Known For, IMDb Top, collaborators, awards, filmography sections. */
@@ -645,6 +654,14 @@ export const actions = {
   animeRowToggleHidden: actionsGlue.animeRowToggleHidden,
   animeRowRename: actionsGlue.animeRowRename,
   animeRowsReset: actionsGlue.animeRowsReset,
+  heroState: actionsGlue.heroState,
+  toggleFavorite: actionsGlue.toggleFavorite,
+  toggleReminder: actionsGlue.toggleReminder,
+  setMovieWatched: actionsGlue.setMovieWatched,
+  traktMarkWatched: actionsGlue.traktMarkWatched,
+  trackers: actionsGlue.trackers,
+  trackerSet: actionsGlue.trackerSet,
+  trackerRemove: actionsGlue.trackerRemove,
 };
 
 /** Onboarding taste step (onboarding/use-bp-taste-titles + bp-step-taste): titles to pick, votes. */
@@ -677,6 +694,8 @@ export const live = {
   schedule: liveGlue.schedule,
   lanes: liveGlue.lanes,
   catchupUrl: liveGlue.catchupUrl,
+  epgCandidates: liveGlue.epgCandidates,
+  setEpgMatch: liveGlue.setEpgMatch,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */

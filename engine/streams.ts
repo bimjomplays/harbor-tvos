@@ -18,7 +18,11 @@ import { runPipeline, type PipelineResult } from "@/lib/streams/pipeline";
 import { resolveStream, type ResolveResult } from "@/lib/streams/resolve";
 import type { ScoredStream } from "@/lib/streams/types";
 import type { PlayEpisode } from "@/lib/view";
-import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached } from "@/views/play-picker/picker-utils";
+import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure } from "@/views/play-picker/picker-utils";
+import { engineP2pEligible } from "@/lib/torrent/stremio-stream";
+import { hasUncachedMarker } from "@/lib/streams/cached";
+import { persistEffective } from "@/lib/settings/profile-store";
+import { markSettingsPatched } from "./sync";
 import { titleTokensPresent } from "@/lib/streams/trust";
 import { isStreamDead } from "@/lib/dead-streams";
 import { readPlayback, savePlayback, streamMatchesEntry, streamMatchesSource } from "@/lib/playback-history";
@@ -96,6 +100,10 @@ export type StreamSearch = {
   addonCount: number;
   /** Installed order (transport URLs): orderByAddonNative groups by this, then by each stream's nativeIdx. */
   addonOrder?: string[];
+  /** use-bp-streams noSources: addons.length === 0 && debrids.length === 0. */
+  debridCount?: number;
+  /** use-bp-stream-play seasonLock: same-source retries also run during auto-fire. */
+  seasonLock?: boolean;
   result: PipelineResult | null;
   error?: string;
 };
@@ -146,7 +154,8 @@ export async function search(
     );
     stampAddonOrder(result.picker.all, result.raw.addon);
     lastResults.set(token, result);
-    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl) };
+    const seasonLock = !!settings.seasonSourceLock && (meta.type === "series" || /^(kitsu|mal|anilist|anidb):/.test(meta.id));
+    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock };
   } catch (e) {
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {
@@ -159,19 +168,86 @@ export function cancelSearch(token: string): void {
   searches.delete(token);
 }
 
-/** Turn a picked stream into a playable link (debrid unrestrict, direct URL, or P2P handoff). */
+/** picker-utils translatePickerError with upstream's `{name}` substitution; null for a code it has no copy for. */
+const fmt = (key: string, vars?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (m, k: string) => (vars && k in vars ? String(vars[k]) : m));
+export function failureMessage(code: string): string | null {
+  const e = playError(code);
+  if (e.kind === "play" && e.code === "unknown-playback") return null;
+  return translatePickerError(fmt, e);
+}
+
+export type ResolveOutcome =
+  | (ResolveResult & { ok: true })
+  | { ok: false; code: string; tried: Array<{ slug: string; code: string }>; webUrl?: string; message: string | null; debridFailure: boolean };
+
+/**
+ * Turn a picked stream into a playable link (debrid unrestrict, direct URL, or P2P handoff).
+ * A failure carries use-pick-handler's reading of it: the copy for the code and whether it was
+ * the debrid's side (two in a row → BpDebridDownDialog).
+ */
 export async function resolve(
   profileId: string,
   linked: boolean,
   token: string,
   streamIndex: number,
   userCommitted = true,
-): Promise<ResolveResult | { ok: false; code: "no-such-stream"; tried: [] }> {
+  forceP2p = false,
+): Promise<ResolveOutcome> {
   const settings = loadEffective(profileId, linked);
   const stream: ScoredStream | undefined = lastResults.get(token)?.picker.all[streamIndex];
-  if (!stream) return { ok: false, code: "no-such-stream", tried: [] };
+  if (!stream) return { ok: false, code: "no-such-stream", tried: [], message: null, debridFailure: false };
   const ac = new AbortController();
-  return resolveStream(stream, debridsFor(settings), ac.signal, userCommitted);
+  // use-pick-handler: allowP2pFallback = streamMode !== "addons" || !!stream.infoHash.
+  const allowP2pFallback = settings.streamMode !== "addons" || !!stream.infoHash;
+  const r = await resolveStream(stream, debridsFor(settings), ac.signal, userCommitted, forceP2p, undefined, allowP2pFallback);
+  if (r.ok) return r;
+  return { ...r, message: failureMessage(r.code), debridFailure: isDebridFailure(r.code, r.tried) };
+}
+
+/**
+ * use-pick-handler onPlay: a committed pick of an uncached torrent the P2P engine could stream
+ * asks first (BpP2pDialog) unless p2pAutoConsent is on or a kid profile is watching. On tvOS
+ * engineP2pEligible is false until a torrent engine exists, so this answers false today.
+ */
+export function p2pConsentNeeded(token: string, profileId: string, linked: boolean, streamIndex: number, kid = false): boolean {
+  const settings = loadEffective(profileId, linked);
+  const stream = lastResults.get(token)?.picker.all[streamIndex];
+  if (!stream) return false;
+  const debrids = debridsFor(settings);
+  if (settings.p2pAutoConsent || kid) return false;
+  if (settings.streamMode === "p2p" && stream.infoHash && engineP2pEligible(stream)) return false;
+  return !streamIsCached(stream, debrids) && engineP2pEligible(stream) && (hasUncachedMarker(stream) || (!stream.url && debrids.length === 0));
+}
+
+/** BpP2pDialog "Always stream P2P": update({ p2pAutoConsent: true }). */
+export function setP2pAutoConsent(profileId: string, linked: boolean): void {
+  const s = loadEffective(profileId, linked);
+  persistEffective({ ...s, p2pAutoConsent: true }, profileId, linked);
+  markSettingsPatched(["p2pAutoConsent"]);
+}
+
+/**
+ * use-bp-streams rememberedStream: the last pick for this title/episode (else the season lock's
+ * source) as an index into the token's picker.all, so the list pins it on top and badges it
+ * "Played last". A remembered episode pick that names another episode does not count.
+ */
+export function remembered(token: string, profileId: string, linked: boolean, meta: Meta, season: number | null, episode: number | null): number | null {
+  const pool = lastResults.get(token)?.picker.all ?? [];
+  if (pool.length === 0) return null;
+  const settings = loadEffective(profileId, linked);
+  const isAnimeMetaId = /^(kitsu|mal|anilist|anidb):/.test(meta.id);
+  const previous = settings.rememberLastStream ? readPlayback(meta.id, season ?? undefined, episode ?? undefined) : null;
+  const source = settings.seasonSourceLock && (meta.type === "series" || isAnimeMetaId) ? readSeasonLock(meta.id, isAnimeMetaId ? null : season) : null;
+  let i = -1;
+  let kind: "playback" | "source" | null = null;
+  if (previous) { kind = "playback"; i = pool.findIndex((s) => streamMatchesEntry(s, previous)); }
+  else if (source) { kind = "source"; i = pool.findIndex((s) => streamMatchesSource(s, source)); }
+  if (i < 0 || kind == null) return null;
+  const match = pool[i];
+  if (isAnimeMetaId || episode == null || kind === "source") return i;
+  if (match.episode != null && match.episode !== episode) return null;
+  if (match.episode != null && match.season != null && season != null && match.season !== season) return null;
+  return i;
 }
 
 export function forget(token: string): void {
