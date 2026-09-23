@@ -44,6 +44,8 @@ struct ShellView: View {
             DiscoverView()
         case .library:
             LibraryView()
+        case .live:
+            LiveView()
         default: RoomPlaceholderView(room: app.room)
         }
     }

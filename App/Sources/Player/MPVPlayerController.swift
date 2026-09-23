@@ -18,6 +18,8 @@ final class MPVPlayerController: UIViewController {
     /// Extra request headers for the stream (debrid links, addon proxyHeaders).
     var headers: [String: String] = [:]
     var onEnded: (() -> Void)?
+    /// Live stream: upstream's live cache set instead of the VOD one (mpv.rs:889-902).
+    var isLive = false
 
     private let layer = MPVMetalLayer()
     private var mpv: OpaquePointer?
@@ -80,18 +82,31 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "sub-codepage", "utf-8"))
         check(mpv_set_option_string(handle, "background-color", "#000000"))
         check(mpv_set_option_string(handle, "user-agent", headers.first { $0.key.lowercased() == "user-agent" }?.value ?? "VLC/3.0.20 LibVLC/3.0.20"))
-        // VOD cache defaults (mpv.rs ~905-982, §2.3): 30 s ahead, 128 MiB, reconnecting HTTP.
         check(mpv_set_option_string(handle, "cache", "yes"))
         check(mpv_set_option_string(handle, "cache-pause", "yes"))
         check(mpv_set_option_string(handle, "cache-pause-initial", "no"))
-        check(mpv_set_option_string(handle, "cache-secs", "30"))
-        check(mpv_set_option_string(handle, "cache-pause-wait", "1"))
-        check(mpv_set_option_string(handle, "demuxer-max-bytes", "128MiB"))
-        check(mpv_set_option_string(handle, "demuxer-max-back-bytes", "32MiB"))
-        check(mpv_set_option_string(handle, "demuxer-readahead-secs", "30"))
-        check(mpv_set_option_string(handle, "stream-buffer-size", "16MiB"))
         check(mpv_set_option_string(handle, "network-timeout", "60"))
-        check(mpv_set_option_string(handle, "stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60"))
+        if isLive {
+            // Live (mpv.rs:889-902): short cache, reconnecting, no persistent HTTP, quality filters off.
+            check(mpv_set_option_string(handle, "cache-secs", "30"))
+            check(mpv_set_option_string(handle, "demuxer-max-bytes", "64MiB"))
+            check(mpv_set_option_string(handle, "demuxer-max-back-bytes", "16MiB"))
+            check(mpv_set_option_string(handle, "demuxer-readahead-secs", "20"))
+            check(mpv_set_option_string(handle, "stream-buffer-size", "16MiB"))
+            check(mpv_set_option_string(handle, "stream-lavf-o", "reconnect=1,reconnect_delay_max=5,reconnect_on_network_error=1"))
+            check(mpv_set_option_string(handle, "demuxer-lavf-o", "http_seekable=0,http_persistent=0"))
+            check(mpv_set_option_string(handle, "deband", "no"))
+            check(mpv_set_option_string(handle, "interpolation", "no"))
+        } else {
+            // VOD cache defaults (mpv.rs ~905-982, §2.3): 30 s ahead, 128 MiB, reconnecting HTTP.
+            check(mpv_set_option_string(handle, "cache-secs", "30"))
+            check(mpv_set_option_string(handle, "cache-pause-wait", "1"))
+            check(mpv_set_option_string(handle, "demuxer-max-bytes", "128MiB"))
+            check(mpv_set_option_string(handle, "demuxer-max-back-bytes", "32MiB"))
+            check(mpv_set_option_string(handle, "demuxer-readahead-secs", "30"))
+            check(mpv_set_option_string(handle, "stream-buffer-size", "16MiB"))
+            check(mpv_set_option_string(handle, "stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60"))
+        }
         // Subtitle slots start empty so Harbor, not mpv, picks the language (mpv.rs:991-1007).
         check(mpv_set_option_string(handle, "sub-auto", "all"))
         check(mpv_set_option_string(handle, "sid", "no"))

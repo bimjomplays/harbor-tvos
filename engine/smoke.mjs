@@ -229,6 +229,11 @@ if (!OFFLINE) {
     const field = `tt1:1:10:10:${zlib.deflateSync(Buffer.from(bits)).toString("base64")}`;
     r.eq("player.decodeWatchedField decodes a zlib bitfield", engine.player.decodeWatchedField(field, vids), ["1:1", "1:4", "1:10"]);
   }
+  const pl = engine.live.addPlaylist("iptv-org US", "https://iptv-org.github.io/iptv/countries/us.m3u");
+  r.ok("live.addPlaylist stores in harbor.iptv.playlists.v1", engine.live.playlists().some((p) => p.id === pl.id));
+  const ch = await r.timed("live.channels(iptv-org US)", () => engine.live.channels(pl.id));
+  r.ok("live.channels parses groups and channels", ch && ch.groups.length > 3 && ch.total > 100 && ch.groups[0].channels[0].url.startsWith("http"), JSON.stringify(ch && { groups: ch.groups.length, total: ch.total, first: ch.groups[0] && [ch.groups[0].name, ch.groups[0].channels.length] }));
+  engine.live.removePlaylist(pl.id);
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

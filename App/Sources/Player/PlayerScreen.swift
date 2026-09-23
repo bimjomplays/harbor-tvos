@@ -11,6 +11,8 @@ struct PlayerScreen: View {
     var context: PlaybackContext? = nil
     /// "S1 E2 · Title" of what follows; drives the up-next pill near the end (player-spec §1.9).
     var upNext: String? = nil
+    /// Live streams: live mpv cache options, no seek bar, no progress saves.
+    var isLive: Bool = false
     /// `true` when the file played to its end (next-episode logic keys off this).
     let onClose: (_ endedNaturally: Bool) -> Void
 
@@ -46,7 +48,7 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             if let startAt {
-                MPVPlayerView(url: url, headers: headers, startAt: startAt, onStatus: { status = $0 }, onEnded: { finish(natural: true) }, onReady: { controller = $0 })
+                MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive, onStatus: { status = $0 }, onEnded: { finish(natural: true) }, onReady: { controller = $0 })
                     .ignoresSafeArea()
             } else {
                 BP.void_.ignoresSafeArea()
@@ -125,14 +127,14 @@ struct PlayerScreen: View {
                 Text(status.state == "loading" ? "Loading…" : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
                     .font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle)
             }
-            seekBar
+            if !isLive { seekBar }
             HStack(spacing: BP.px(10)) {
                 chip("Back", "chevron.left") { finish(natural: false) }
                 chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill") { togglePause() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
                 Spacer()
-                Text("\(fmt(snap.position)) / \(fmt(snap.duration))").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).monospacedDigit()
+                Text(isLive ? "LIVE" : "\(fmt(snap.position)) / \(fmt(snap.duration))").font(BP.sans(14, .semibold)).foregroundStyle(isLive ? BP.live : BP.ink).monospacedDigit()
             }
             .focusSection()
         }

@@ -57,6 +57,7 @@ import * as discoverBuilders from "./discover";
 import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
 import * as subtitleGlue from "./subtitles";
+import * as liveGlue from "./live";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -398,6 +399,14 @@ export const streamsRoom = {
   forget: streamGlue.forget,
 };
 export type { StreamSearch } from "./streams";
+
+/** Live TV: M3U playlists (upstream store + parser). EPG, Xtream and catch-up come later. */
+export const live = {
+  playlists: liveGlue.playlists,
+  addPlaylist: liveGlue.addPlaylist,
+  removePlaylist: liveGlue.removePlaylist,
+  channels: liveGlue.channels,
+};
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */
 export const subtitles = {
