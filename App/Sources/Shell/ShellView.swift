@@ -75,6 +75,9 @@ struct TopBarView: View {
         }
         .padding(.horizontal, BP.gutter)
         .frame(height: BP.barHeight)
+        // One full-width focus target: Up from anything in a room reaches the bar even when
+        // nothing focusable sits directly above it (the brand mark is not a button).
+        .focusSection()
         .background(
             LinearGradient(colors: [BP.void_.opacity(0.95), BP.void_.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: BP.barHeight * 1.9), alignment: .top
