@@ -70,6 +70,7 @@ import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
 import * as servicesGlue from "./services";
 import * as trackersGlue from "./trackers";
+import * as detailGlue from "./detailRoom";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -547,6 +548,12 @@ export const services = {
 /** AniList and MyAnimeList: paste-code sign-in, status, disconnect, list rails. */
 export const anilist = trackersGlue.anilist;
 export const mal = trackersGlue.mal;
+
+/** Detail page extras from TMDB: tagline, cast, crew, similar, recommendations, watch-on, collection. */
+export const detailRoom = {
+  extras: detailGlue.extras,
+  collection: detailGlue.collection,
+};
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
 export const skip = { segments: skipGlue.segments };

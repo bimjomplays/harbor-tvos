@@ -28,6 +28,21 @@ final class DetailModel: ObservableObject {
     @Published private(set) var canWatchlist = false
     /// "season:episode" keys the Stremio library marks watched.
     @Published private(set) var watched: Set<String> = []
+    /// TMDB extras (detail-spec §1.2 step 3): nil without a key or for anime ids.
+    @Published private(set) var extras: Extras?
+    @Published private(set) var collectionRow: BrowseRow?
+
+    struct Extras: Decodable {
+        struct Cast: Decodable, Identifiable { var id: Int; var name: String; var character: String; var profile: String? }
+        struct Crew: Decodable, Identifiable { var label: String; var names: [String]; var id: String { label } }
+        struct Fact: Decodable, Identifiable { var label: String; var value: String; var id: String { label } }
+        struct Provider: Decodable, Identifiable { var name: String; var logo: String; var id: String { name } }
+        struct Collection: Decodable { var id: Int; var name: String }
+        var kind: String; var tmdbId: Int; var imdbId: String?; var tagline: String; var overview: String
+        var rating: String?; var runtime: String?; var status: String; var genres: [String]
+        var cast: [Cast]; var crew: [Crew]; var recommendations: [Meta]; var similar: [Meta]
+        var trailerYtId: String?; var collection: Collection?; var facts: [Fact]; var watchOn: [Provider]
+    }
 
     struct Resume: Equatable {
         var season: Int?
@@ -54,6 +69,22 @@ final class DetailModel: ObservableObject {
         if isSeries, let authKey {
             let keys: [String] = (try? await HarborEngine.shared.call("player.watchedEpisodes", [authKey, meta])) ?? []
             watched = Set(keys)
+        }
+        await loadExtras()
+    }
+
+    /// use-bp-detail: TMDB lands independently of the meta; the franchise collection last.
+    private func loadExtras() async {
+        let p = ProfilesStore.shared.active
+        let x: Extras? = try? await HarborEngine.shared.call("detailRoom.extras", [meta, p?.id ?? "default", p?.linked ?? true])
+        extras = x
+        if let x, !x.recommendations.isEmpty || !x.similar.isEmpty {
+            await CardMarksStore.shared.refresh(x.recommendations + x.similar)
+        }
+        if let c = x?.collection {
+            struct Col: Decodable { var name: String; var metas: [Meta] }
+            let col: Col? = try? await HarborEngine.shared.call("detailRoom.collection", [c.id, p?.id ?? "default", p?.linked ?? true])
+            if let col { collectionRow = BrowseRow(key: "collection", title: col.name, metas: col.metas) }
         }
     }
 

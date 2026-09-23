@@ -5,6 +5,7 @@ struct DetailView: View {
     @StateObject private var model: DetailModel
     @State private var picker: (meta: Meta, episode: AnyJSON?)?
     @State private var playing: PlayTarget?
+    @State private var related: Meta?
     @Environment(\.dismiss) private var dismiss
 
     struct PlayTarget: Identifiable {
@@ -24,11 +25,15 @@ struct DetailView: View {
             backdrop
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(26)) {
-                    hero
-                    if model.isSeries { episodes }
+                    VStack(alignment: .leading, spacing: BP.px(26)) {
+                        hero
+                        if model.isSeries { episodes }
+                    }
+                    .padding(.horizontal, BP.gutter)
+                    // Rail rows carry their own gutter (BPRowView), so they sit outside the padded column.
+                    tmdbRows
                     Color.clear.frame(height: BP.px(60))
                 }
-                .padding(.horizontal, BP.gutter)
                 .padding(.top, BP.px(250))
             }
         }
@@ -60,6 +65,7 @@ struct DetailView: View {
                 }
             }
         }
+        .fullScreenCover(item: $related) { m in DetailView(meta: m) }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext) { natural in
                 playing = nil
@@ -132,17 +138,95 @@ struct DetailView: View {
                 Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
             }
             .focusSection()
-            Text(model.meta.description ?? "").font(BP.sans(13, .regular)).foregroundStyle(BP.inkMuted).lineSpacing(4).lineLimit(4)
+            if let tag = model.extras?.tagline, !tag.isEmpty {
+                Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(620), alignment: .leading)
+            }
+            Text(model.meta.description ?? model.extras?.overview ?? "").font(BP.sans(13, .regular)).foregroundStyle(BP.inkMuted).lineSpacing(4).lineLimit(4)
                 .frame(maxWidth: BP.px(620), alignment: .leading)
+            if let providers = model.extras?.watchOn, !providers.isEmpty { watchOn(providers) }
             credits
         }
+    }
+
+    // bp-watch-on-row: provider marks, not a picker.
+    private func watchOn(_ providers: [DetailModel.Extras.Provider]) -> some View {
+        HStack(spacing: BP.px(8)) {
+            Text("Watch on").font(BP.sans(11, .bold)).tracking(1).foregroundStyle(BP.inkSubtle)
+            ForEach(providers.prefix(8)) { p in
+                RemoteImage(url: p.logo, contentMode: .fit).frame(width: BP.px(28), height: BP.px(28)).clipShape(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous))
+                    .accessibilityLabel(p.name)
+            }
+        }
+    }
+
+    /// The rows under the hero (detail-spec §1.1 order): cast, collection, More Like This, You Might Also Like, facts.
+    @ViewBuilder private var tmdbRows: some View {
+        if let x = model.extras {
+            if !x.cast.isEmpty { castRow(x.cast) }
+            if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
+            if !x.recommendations.isEmpty { BPRowView(row: BrowseRow(key: "recommendations", title: "More Like This", metas: x.recommendations), onFocus: { _ in }, onSelect: { related = $0 }) }
+            if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: "You Might Also Like", metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
+            if !x.facts.isEmpty { factsCard(x.facts) }
+        }
+    }
+
+    // bp-cast-row: round portraits, name over character, up to 20.
+    private func castRow(_ cast: [DetailModel.Extras.Cast]) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text("Cast").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: BP.trackGap) {
+                    ForEach(cast) { person in
+                        Button {} label: {
+                            VStack(spacing: BP.px(8)) {
+                                ZStack {
+                                    Circle().fill(BP.panel2)
+                                    if let p = person.profile { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle) }
+                                }
+                                .frame(width: BP.px(110), height: BP.px(110))
+                                Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                Text(person.character).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                            }
+                            .frame(width: BP.px(130))
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.px(55)))
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
+    }
+
+    // bp-facts: a preview card of the first rows.
+    private func factsCard(_ facts: [DetailModel.Extras.Fact]) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(6)) {
+            Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            ForEach(facts.prefix(8)) { f in
+                HStack(alignment: .top, spacing: BP.px(8)) {
+                    Text(f.label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
+                    Text(f.value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                }
+            }
+        }
+        .padding(BP.px(16))
+        .frame(maxWidth: BP.px(620), alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+        .padding(.horizontal, BP.gutter)
+        .focusable()
     }
 
     /// Crew/cast lines from Cinemeta until TMDB cast cards arrive (detail-spec §1.1 rows 4-5).
     @ViewBuilder private var credits: some View {
         let director = (model.meta.director ?? []).filter { !$0.isEmpty }
         let cast = (model.meta.cast ?? []).filter { !$0.isEmpty }
-        if !director.isEmpty || !cast.isEmpty {
+        if let crew = model.extras?.crew, !crew.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(3)) {
+                ForEach(crew.prefix(4)) { c in creditLine(c.label, c.names.joined(separator: ", ")) }
+            }
+            .frame(maxWidth: BP.px(620), alignment: .leading)
+        } else if !director.isEmpty || !cast.isEmpty {
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 if !director.isEmpty { creditLine(model.isSeries ? "Created by" : "Directed by", director.prefix(3).joined(separator: ", ")) }
                 if !cast.isEmpty { creditLine("Cast", cast.prefix(6).joined(separator: ", ")) }

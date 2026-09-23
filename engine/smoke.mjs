@@ -209,6 +209,13 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 
+// ------------------------------------------------------------------------ detail room
+{
+  const none = await engine.detailRoom.extras({ id: "tt0111161", type: "movie", name: "The Shawshank Redemption" }, "default", true);
+  r.eq("detailRoom.extras is null without a TMDB key", none, null);
+  r.eq("detailRoom.collection is null without a TMDB key", await engine.detailRoom.collection(10, "default", true), null);
+}
+
 // --------------------------------------------------------------------- anilist / mal
 {
   r.ok("anilist.authorizeUrl carries the client id and the pin redirect", /anilist\.co\/api\/v2\/oauth\/authorize\?client_id=42941&redirect_uri=.*pin/.test(engine.anilist.authorizeUrl()), engine.anilist.authorizeUrl());
