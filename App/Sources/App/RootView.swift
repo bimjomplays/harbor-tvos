@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @StateObject private var saver = ScreensaverModel()
+    @ObservedObject private var curfew = CurfewState.shared
     @StateObject private var app = AppModel()
 
     var body: some View {
@@ -14,8 +15,10 @@ struct RootView: View {
             case .shell: ShellView()
             }
             if app.stage == .shell, saver.active { ScreensaverView(model: saver).transition(.opacity).zIndex(10) }
+            // curfew-guard: topmost on every entry, or it is the appearance of child safety without any of it.
+            if app.stage == .shell, curfew.locked { CurfewLockView(state: curfew).transition(.opacity).zIndex(20) }
         }
-        .onChange(of: app.stage) { _, st in if st == .shell { saver.start() } }
+        .onChange(of: app.stage) { _, st in if st == .shell { saver.start(); curfew.start() } }
         .environmentObject(app)
         .environmentObject(app.account)
         .environmentObject(app.profiles)

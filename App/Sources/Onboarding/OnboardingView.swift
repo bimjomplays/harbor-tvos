@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, tmdb, streaming, stremio, harbor, layout, subtitles, done }
+    enum Step: Int, CaseIterable { case language, tmdb, streaming, taste, stremio, harbor, layout, subtitles, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
 
@@ -41,6 +41,7 @@ struct OnboardingView: View {
         case .language: ("Language", "Choose your language", "Harbor speaks this everywhere. You can change it later in Settings.")
         case .tmdb: ("Artwork and rows", "Connect TMDB", "Free, two minutes. Unlocks Trending, In Theaters, Top Rated and every service rail.")
         case .streaming: ("Your services", "Which services do you have?", "Their rows show on Home and Discover. Turn off the ones you don't use.")
+        case .taste: ("Your taste", "Pick up to five you love", "Discover learns from these. Nothing is shared.")
         case .stremio: ("Your library", "Bring in your library", "Your Continue Watching, your watchlist and your addons.")
         case .harbor: ("Harbor account", "Sign in to Harbor", "Sync your profile, themes, lists and friends. You can do this any time.")
         case .layout: ("Home", "How should the home screen read?", "Harbor leads with one big title. Classic leads with rows.")
@@ -60,6 +61,8 @@ struct OnboardingView: View {
             TmdbKeyForm(done: { advance() }, skip: { advance() })
         case .streaming:
             StreamingServicesStep(hasKey: !settings.slice.tmdbKey.isEmpty) { advance() }
+        case .taste:
+            TasteStep { advance() }
         case .stremio:
             StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
         case .harbor:
@@ -282,5 +285,72 @@ struct StreamingServicesStep: View {
         let p = profile
         _ = try? await HarborEngine.shared.callJSON("settingsRoom.commit", [.string("service"), .string(i.value), .string(p.id), .bool(p.linked)])
         await load()
+    }
+}
+
+
+/// onboarding/steps/bp-step-taste.tsx: a poster grid, up to five picks, written on select through
+/// the feed vote store (onboarding.vote) so Skip never throws them away.
+struct TasteStep: View {
+    let done: () -> Void
+    @State private var items: [Meta] = []
+    @State private var picked: Set<String> = []
+    @State private var loaded = false
+    @State private var bump: String?
+    private static let max = 5
+    private static let columns = Array(repeating: GridItem(.fixed(BP.px(150)), spacing: BP.px(10)), count: 6)
+
+    private var onScreen: Int { items.filter { picked.contains($0.id) }.count }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(12)) {
+            if !loaded { BPNote(text: "Finding titles…") }
+            else if items.isEmpty { BPNote(text: "Couldn't load titles right now. You can pick favourites later from any detail page.") }
+            else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(columns: Self.columns, spacing: BP.px(14)) {
+                        ForEach(items) { m in
+                            let on = picked.contains(m.id)
+                            Button { Task { await toggle(m) } } label: {
+                                ZStack(alignment: .topTrailing) {
+                                    RemoteImage(url: m.poster).frame(width: BP.px(150), height: BP.px(225))
+                                        .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(on ? BP.accent : .clear, lineWidth: 3))
+                                    if on { Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(22))).foregroundStyle(BP.accent).padding(BP.px(6)) }
+                                }
+                                .offset(y: bump == m.id ? -6 : 0)
+                            }
+                            .buttonStyle(BPTileStyle(radius: BP.rXS))
+                        }
+                    }
+                    .padding(.vertical, BP.px(10))
+                }
+                .frame(height: BP.px(500))
+                .focusSection()
+            }
+            BPNote(text: onScreen >= Self.max ? "That is five. Deselect one to swap it out." : "\(onScreen) of \(Self.max) picked")
+            HStack(spacing: BP.px(12)) {
+                Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
+                Button("Skip") { done() }.buttonStyle(BPActionStyle())
+            }
+        }
+        .task {
+            let p = ProfilesStore.shared.active
+            items = (try? await HarborEngine.shared.call("onboarding.tasteTitles", [p?.id ?? "default", p?.linked ?? true])) ?? []
+            picked = Set((try? await HarborEngine.shared.call("onboarding.upvoted", []) as [String]) ?? [])
+            loaded = true
+        }
+    }
+
+    private func toggle(_ m: Meta) async {
+        let on = picked.contains(m.id)
+        if !on, onScreen >= Self.max {
+            // At the cap an unpicked tile refuses visibly (the nudge), never silently.
+            withAnimation(.easeOut(duration: 0.19)) { bump = m.id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { bump = nil } }
+            return
+        }
+        let ids: [String] = (try? await HarborEngine.shared.call("onboarding.vote", [m.id, !on, m.name, m.type])) ?? []
+        picked = Set(ids)
     }
 }

@@ -9,6 +9,7 @@ import { buildBpAnimeGroups, filterSpecRows, mergeAwardWinners, dedupeAnimeAddon
 import { buildHeroSelection } from "@/views/anime/hero-build";
 import { animeFiltered, type AnimeFilterOpts } from "@/lib/anime-filter";
 import { applyAnimeRowCustomization, EMPTY_ANIME_ROWS } from "@/lib/anime-customization";
+import { noteAnimeGroups } from "./actions";
 import { loadAnimeAddonRows } from "@/lib/addons-anime-filter";
 import type { AddonRow } from "@/lib/addons";
 import { listLocalCw, localCwEntry } from "@/lib/local-cw";
@@ -196,6 +197,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
     awards, specRows, addonRows: dedupeAnimeAddonRows(addonRows, s.hideAdultAnime !== false), collections,
   });
   // Row customisation (order / hidden / renamed) as the anime settings store it.
+  noteAnimeGroups(groups.map((g) => ({ key: g.key, name: g.name })));
   const ordered = applyAnimeRowCustomization(groups.map((g) => ({ key: g.key, name: g.name, group: g })), s.animeRows ?? EMPTY_ANIME_ROWS);
   const rows: RoomRow[] = [];
   for (const entry of ordered) {

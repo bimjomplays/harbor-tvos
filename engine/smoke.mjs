@@ -223,6 +223,15 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("homeServers.titles empty", await engine.homeServers.titles(), []);
   r.eq("streamsRoom.autoCandidates with an unknown token", engine.streamsRoom.autoCandidates("nope", "default", true, { id: "tt1", type: "movie", name: "x" }, null, null, false, null), []);
   r.eq("streamsRoom.rememberPlayback with an unknown token", engine.streamsRoom.rememberPlayback("nope", "default", true, { id: "tt1", type: "movie", name: "x" }, 0, null, null, null), false);
+  const lid = engine.actions.newList("Smoke list");
+  r.ok("actions.newList creates a list", typeof lid === "string" && engine.actions.lists(null).some((l) => l.id === lid), JSON.stringify(engine.actions.lists(null)));
+  r.eq("actions.toggleList adds a title", engine.actions.toggleList(lid, { id: "tt0111161", type: "movie", name: "Shawshank" }), true);
+  r.eq("actions.lists reports membership", engine.actions.lists("tt0111161").find((l) => l.id === lid).contains, true);
+  engine.actions.removeList(lid);
+  r.eq("actions.rating unknown item", engine.actions.rating("tt0000009"), null);
+  r.eq("actions.animeRows before any room build", engine.actions.animeRows("default", true), []);
+  r.eq("onboarding.vote records an upvote", engine.onboarding.vote("tt0000001", true, "Smoke", "movie").includes("tt0000001"), true);
+  r.eq("onboarding.vote clears it again", engine.onboarding.vote("tt0000001", false, "Smoke", "movie").includes("tt0000001"), false);
   r.eq("live.loadShortEpg ignores a non-Xtream playlist", await engine.live.loadShortEpg("nope", ["a"]), { hydrated: 0 });
   r.eq("discoverRoom.genrePage without a TMDB key", (await engine.discoverRoom.genrePage("default", true, "Action", 1)).status, "no-key");
   r.eq("search.fanOut with an empty query", (await engine.search.fanOut("  ", "default", true, null)).movies, []);

@@ -9,6 +9,8 @@ struct QuickPanelView: View {
     @State private var detail: Target?
     @State private var saved = false
     @State private var note: String?
+    @State private var listDialog = false
+    @State private var rateDialog = false
     @FocusState private var focus: String?
     struct Target: Identifiable { var meta: Meta; var autoPlay: Bool; var id: String { meta.id } }
 
@@ -29,6 +31,8 @@ struct QuickPanelView: View {
                 action("Play", "play.fill") { detail = Target(meta: meta, autoPlay: true) }
                 if authKey != nil { action(saved ? "Saved" : "Watchlist", saved ? "bookmark.fill" : "bookmark") { Task { await save() } } }
                 action("Details", "info.circle") { detail = Target(meta: meta, autoPlay: false) }
+                action("Add to list", "text.badge.plus") { listDialog = true }
+                action("Rate", "star") { rateDialog = true }
                 action("Remove from Continue watching", "eye.slash") { Task { await removeCw() } }
                 action("Search", "magnifyingglass") { app.searchSeed = meta.name; app.room = .search; dismiss() }
                 if let note { BPNote(text: note, tone: BP.inkMuted) }
@@ -44,6 +48,8 @@ struct QuickPanelView: View {
         .onExitCommand { dismiss() }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "Play" } }
         .fullScreenCover(item: $detail) { t in DetailView(meta: t.meta, autoPlay: t.autoPlay) }
+        .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: meta) }
+        .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: meta) }
     }
 
     private func action(_ label: String, _ icon: String, _ run: @escaping () -> Void) -> some View {

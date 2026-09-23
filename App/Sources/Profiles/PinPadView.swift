@@ -5,6 +5,9 @@ import SwiftUI
 struct PinPadView: View {
     let profile: ProfilesStore.Profile
     let finish: (Bool) -> Void
+    /// Curfew lockdown: verify against the parent PIN hash instead of the profile's own.
+    var hashOverride: String? = nil
+    var title: String? = nil
     @EnvironmentObject private var profiles: ProfilesStore
     @State private var entry = ""
     @State private var shake = 0
@@ -21,7 +24,7 @@ struct PinPadView: View {
         ZStack {
             BP.void_.ignoresSafeArea()
             VStack(spacing: BP.px(22)) {
-                Text("Enter \(profile.name)'s PIN").font(BP.display(30)).foregroundStyle(BP.ink)
+                Text(title ?? "Enter \(profile.name)'s PIN").font(BP.display(30)).foregroundStyle(BP.ink)
                 Text(secondsLeft > 0 ? "Too many tries. Try again in \(secondsLeft)s." : "Profile is locked. Enter the 4-digit PIN to continue.")
                     .font(BP.sans(15)).foregroundStyle(BP.inkMuted)
                 HStack(spacing: BP.px(14)) {
@@ -61,7 +64,8 @@ struct PinPadView: View {
     }
 
     private func check() {
-        if profiles.verifyPin(entry, for: profile) {
+        let ok = hashOverride.map { ProfilesStore.hashPin(entry) == $0 } ?? profiles.verifyPin(entry, for: profile)
+        if ok {
             Self.tries[profile.id] = 0
             finish(true)
             return

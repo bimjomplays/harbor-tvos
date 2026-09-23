@@ -10,6 +10,8 @@ struct DetailView: View {
     /// bp-player-sources: the position the next pick resumes from after "Switch source".
     @State private var switchFromSec: Double?
     @State private var related: Meta?
+    @State private var listDialog = false
+    @State private var rateDialog = false
     @State private var person: DetailModel.Extras.Cast?
     @Environment(\.dismiss) private var dismiss
 
@@ -82,6 +84,8 @@ struct DetailView: View {
             }
         }
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
+        .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: model.meta) }
+        .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: model.meta) }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
@@ -160,6 +164,9 @@ struct DetailView: View {
                     }
                     .buttonStyle(BPActionStyle(primary: model.inWatchlist)).disabled(model.watchlistBusy)
                 }
+                // bp-detail-actions: rate and add to a custom list from the TV.
+                Button { rateDialog = true } label: { Label("Rate", systemImage: "star") }.buttonStyle(BPActionStyle())
+                Button { listDialog = true } label: { Label("Add to list", systemImage: "text.badge.plus") }.buttonStyle(BPActionStyle())
                 Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
             }
             .focusSection()

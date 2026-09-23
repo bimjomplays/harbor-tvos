@@ -13,6 +13,8 @@ export type CollectionCard = {
   byline: string | null;
   description: string | null;
   items: CollectionItem[];
+  /** bp-collection-items: manga items are not shown in Big Picture, but the viewer is told how many. */
+  hidden: number;
 };
 
 function card(c: Collection, source: CollectionCard["source"], byline: string | null): CollectionCard {
@@ -26,6 +28,7 @@ function card(c: Collection, source: CollectionCard["source"], byline: string | 
     byline,
     description: c.description ?? null,
     items,
+    hidden: c.items.length - items.length,
   };
 }
 

@@ -7,6 +7,7 @@ final class CollectionsModel: ObservableObject {
     struct Item: Decodable, Identifiable { var id: String; var type: String; var name: String; var poster: String? }
     struct Card: Decodable, Identifiable {
         var key: String; var source: String; var name: String; var image: String?; var count: Int; var byline: String?; var description: String?; var items: [Item]
+        var hidden: Int?
         var id: String { key }
     }
     struct All: Decodable { var mine: [Card]; var community: [Card] }
@@ -118,7 +119,8 @@ struct CollectionItemsOverlay: View {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     if let b = card.byline { Text(b).font(BP.sans(12, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1) }
                     Text(card.name).font(BP.display(32)).foregroundStyle(BP.ink)
-                    Text("\(card.count) items").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                    Text("\(card.count + (card.hidden ?? 0)) items").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                    if let h = card.hidden, h > 0 { Text("\(h) manga items are not shown in Big Picture.").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
                     if let d = card.description, !d.isEmpty { Text(d).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(3).frame(maxWidth: BP.px(700), alignment: .leading) }
                     Button("Close", action: onClose).buttonStyle(BPActionStyle())
                     if card.items.isEmpty { BPNote(text: "This collection is empty.") }

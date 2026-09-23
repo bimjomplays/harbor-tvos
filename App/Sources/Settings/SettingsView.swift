@@ -72,6 +72,7 @@ struct SettingsView: View {
                     }
                 }
                 section("Anime4K") { Anime4KPanel() }
+                section("Anime rows") { AnimeRowsPanel() }
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
                     HStack(spacing: BP.px(12)) {

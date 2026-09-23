@@ -141,6 +141,7 @@ struct PlayerScreen: View {
         }
         .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true }
         .onDisappear { PlaybackState.shared.active = false }
+        .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         .task {
             // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
             // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.

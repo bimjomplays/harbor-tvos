@@ -74,6 +74,8 @@ import * as detailGlue from "./detailRoom";
 import * as personGlue from "./personRoom";
 import * as homeGlue from "./homeServers";
 import * as searchGlue from "./search";
+import * as onboardingGlue from "./onboarding";
+import * as actionsGlue from "./actions";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
@@ -591,6 +593,30 @@ export const homeServers = {
   startRunner: homeGlue.startRunner,
   reportProgress: homeGlue.reportProgress,
   stopPlayback: homeGlue.stopPlayback,
+};
+
+/** Detail / quick-panel actions: custom lists, ratings, anime row customisation. */
+export const actions = {
+  lists: actionsGlue.lists,
+  toggleList: actionsGlue.toggleList,
+  newList: actionsGlue.newList,
+  removeList: actionsGlue.removeList,
+  renameList: actionsGlue.renameListTo,
+  rating: actionsGlue.rating,
+  rate: actionsGlue.rate,
+  unrate: actionsGlue.unrate,
+  animeRows: actionsGlue.animeRows,
+  animeRowMove: actionsGlue.animeRowMove,
+  animeRowToggleHidden: actionsGlue.animeRowToggleHidden,
+  animeRowRename: actionsGlue.animeRowRename,
+  animeRowsReset: actionsGlue.animeRowsReset,
+};
+
+/** Onboarding taste step (onboarding/use-bp-taste-titles + bp-step-taste): titles to pick, votes. */
+export const onboarding = {
+  tasteTitles: onboardingGlue.tasteTitles,
+  vote: onboardingGlue.vote,
+  upvoted: onboardingGlue.upvoted,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
