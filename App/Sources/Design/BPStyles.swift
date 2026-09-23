@@ -30,8 +30,10 @@ struct BPFocusModifier: ViewModifier {
 /// Card-like tile (posters, profile faces, choice cards).
 struct BPTileStyle: ButtonStyle {
     var radius: CGFloat = BP.rXS
+    /// bp-settings-parts.tsx onCellFocus: runs when the tile takes focus.
+    var onFocus: (() -> Void)? = nil
     func makeBody(configuration: Configuration) -> some View {
-        BPFocusReader { focused in
+        BPFocusReader(onFocus: onFocus) { focused in
             configuration.label
                 .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius))
         }
@@ -78,12 +80,24 @@ struct BPTabStyle: ButtonStyle {
     }
 }
 
-/// Lets a ButtonStyle body read the focus state of the button it decorates.
+/// Lets a ButtonStyle body read the focus state of the button it decorates. Every focus it
+/// gains plays the theme's hover (use-bp-focus.ts moveFocus: SFX.hover()).
 struct BPFocusReader<Content: View>: View {
     @Environment(\.isFocused) private var focused
+    let onFocus: (() -> Void)?
     let content: (Bool) -> Content
-    init(@ViewBuilder content: @escaping (Bool) -> Content) { self.content = content }
-    var body: some View { content(focused) }
+    init(onFocus: (() -> Void)? = nil, @ViewBuilder content: @escaping (Bool) -> Content) {
+        self.onFocus = onFocus
+        self.content = content
+    }
+    var body: some View {
+        content(focused)
+            .onChange(of: focused) { _, now in
+                guard now else { return }
+                onFocus?()
+                BPSound.shared.hover()
+            }
+    }
 }
 
 /// Text field styled as a Big Picture input. Focusing does not start editing;

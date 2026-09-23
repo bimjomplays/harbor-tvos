@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The Big Picture shell: ambient background, top bar, the current room, hint bar.
 /// Rooms ask the shell to re-evaluate default focus (e.g. when their rows arrive).
@@ -29,13 +30,21 @@ struct ShellView: View {
             TopBarView()
             VStack { Spacer(); HintBarView(actions: hints) }
         }
+        // bp-shell.tsx fallback → popBigPicture: a tab is [home, tab], so Back from a tab lands on
+        // Home; at Home the press is declined and belongs to the system (the app closes), which
+        // is why Home's hint says Exit. Rooms with their own Back handling sit deeper and win.
+        .onExitCommand(perform: backToHome)
         // bp-settings "Edge margin": a whole-screen inset for sets that crop the picture.
         .padding(.horizontal, 1920 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
         .padding(.vertical, 1080 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
         .ignoresSafeArea()
         .focusScope(focusNS)
         .environment(\.shellFocusNamespace, focusNS)
-        .onAppear { ShellFocus.shared.request = { resetFocus(in: focusNS) } }
+        .onAppear {
+            ShellFocus.shared.request = { resetFocus(in: focusNS) }
+            GamepadMonitor.shared.onTab = { delta in cycleTab(delta) }
+        }
+        .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         .overlay(alignment: .top) {
             if let n = app.deepLinkNote {
@@ -67,8 +76,98 @@ struct ShellView: View {
         }
     }
 
-    private var hints: [(String, String)] {
-        [("OK", "Select"), ("Menu", "Back")]
+    private var backToHome: (() -> Void)? {
+        if app.room == .home { return nil }
+        return { app.room = .home }
+    }
+
+    /// bp-shell.tsx HINTS per route kind. "search" and "phone" are left out: both name the pad's
+    /// Y button (the quick panel / phone typing), which this port does not bind, and the bar
+    /// exists to stop advertising dead keys. "nav" needs a jump key (bp-shell passes jump only
+    /// when one works); on Apple TV Up already reaches the bar, so it is never advertised.
+    private var hints: [BPHintAction] {
+        switch app.room {
+        case .home: return [.select, .exit, .tabs]
+        case .search: return [.type, .back, .tabs]
+        default: return [.select, .back, .tabs]
+        }
+    }
+
+    /// use-bp-focus.ts PageUp/PageDown → bp-shell onTab → goBigPictureTab(cycleTab(order, active, delta)).
+    /// Only on a bare route: bp-shell passes no onTab while a layer is up, and a full-screen cover
+    /// (detail, pages, panels) or playback is exactly that here.
+    private func cycleTab(_ delta: Int) {
+        guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
+        let order = Room.tabs.filter { !(settings.sportsDeclined && $0 == .sports) }
+        guard !order.isEmpty else { return }
+        let from = order.firstIndex(of: app.room) ?? 0
+        let next = ((from + delta) % order.count + order.count) % order.count
+        ActivityMonitor.shared.touch()
+        BPSound.shared.pageTurn(next: delta > 0)
+        app.room = order[next]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { ShellFocus.shared.requestDefault() }
+    }
+
+    private static var noCoverPresented: Bool {
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        guard let root = (windows.first(where: \.isKeyWindow) ?? windows.first)?.rootViewController else { return false }
+        return root.presentedViewController == nil
+    }
+}
+
+/// bp-hint-bar.tsx BpAction and its three glyph maps. Hardware key names are not translated.
+enum BPHintAction: String {
+    case select, back, exit, search, type, clear, toggle, phone, tabs, nav, actions, advance
+
+    var label: String {
+        switch self {
+        case .select: return "Select"
+        case .toggle: return "Toggle"
+        case .type: return "Type"
+        case .phone: return "Phone keyboard"
+        case .back: return "Back"
+        case .exit: return "Exit"
+        case .search: return "Search"
+        case .clear: return "Clear"
+        case .tabs: return "Switch tab"
+        case .nav: return "Nav"
+        case .actions: return "Hold to skip or continue"
+        case .advance: return "Hold to continue"
+        }
+    }
+
+    var padGlyph: String? {
+        switch self {
+        case .select, .toggle, .type: return "A"
+        case .back, .exit: return "B"
+        case .search, .phone: return "Y"
+        case .tabs: return "LB / RB"
+        case .actions, .advance: return "▼"
+        default: return nil
+        }
+    }
+
+    /// A hint with no remote glyph is dropped on a remote without a pad.
+    var remoteGlyph: String? {
+        switch self {
+        case .select, .toggle, .type: return "OK"
+        case .back, .exit: return "Back"
+        case .nav: return "Menu"
+        case .actions, .advance: return "▼"
+        default: return nil
+        }
+    }
+
+    var keyGlyph: String {
+        switch self {
+        case .select, .toggle, .type: return "Enter"
+        case .back, .exit: return "Esc"
+        case .search, .phone: return "Tab"
+        case .clear: return "Del"
+        case .tabs: return "PgUp / PgDn"
+        case .nav: return "Home"
+        case .actions, .advance: return "↓"
+        }
     }
 }
 
@@ -185,19 +284,36 @@ struct ClockView: View {
     }
 }
 
-/// Hint bar (bp-hint-bar.tsx): right-aligned glyph chips with labels.
+/// Hint bar (bp-hint-bar.tsx): right-aligned glyph chips with labels. The glyphs follow the
+/// input: pad glyphs while a game controller is connected (falling back to the key a keyboard
+/// would use), remote glyphs otherwise, and a hint the remote has no button for is dropped.
 struct HintBarView: View {
-    let actions: [(String, String)]
+    let actions: [BPHintAction]
+    @ObservedObject private var pads = GamepadMonitor.shared
+
+    private struct Hint: Identifiable { var id: String; var glyph: String; var label: String }
+
+    private var hints: [Hint] {
+        let shown = actions.filter { $0 != .nav }
+        let usable = pads.usingPad ? shown : shown.filter { $0.remoteGlyph != nil }
+        return usable.map { a in
+            let glyph = (pads.usingPad ? a.padGlyph : a.remoteGlyph) ?? a.keyGlyph
+            return Hint(id: a.rawValue, glyph: glyph, label: a.label)
+        }
+    }
+
     var body: some View {
         HStack(spacing: BP.px(18)) {
             Spacer()
-            ForEach(actions, id: \.1) { glyph, label in
+            ForEach(hints) { h in
                 HStack(spacing: BP.px(7)) {
-                    Text(glyph)
-                        .font(BP.sans(11, .bold)).foregroundStyle(BP.ink)
-                        .padding(.horizontal, BP.px(7)).frame(height: BP.px(22))
-                        .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.on))
-                    Text(label).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
+                    // Wide chips (more than one character) are rounded rects; single glyphs are circles.
+                    Text(h.glyph)
+                        .font(BP.sans(h.glyph.count > 1 ? 12.5 : 13.4, .semibold)).foregroundStyle(BP.ink)
+                        .padding(.horizontal, h.glyph.count > 1 ? BP.px(7) : 0)
+                        .frame(minWidth: BP.px(22), minHeight: BP.px(22), maxHeight: BP.px(22))
+                        .background(RoundedRectangle(cornerRadius: h.glyph.count > 1 ? BP.rXS : BP.px(11), style: .continuous).fill(BP.edge2))
+                    Text(h.label).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
                 }
             }
         }
