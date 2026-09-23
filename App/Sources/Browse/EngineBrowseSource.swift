@@ -136,7 +136,8 @@ struct ServiceBrowseSource: BrowseSource {
     }
 
     func rows(for room: Room) async throws -> [BrowseRow] {
-        let p = ProfilesStore.shared.active
+        // ProfilesStore is main-actor bound; this source runs off it.
+        let p = await MainActor.run { ProfilesStore.shared.active }
         let build: Build = try await HarborEngine.shared.call("services.rows", [service, p?.id ?? "default", p?.linked ?? true])
         if !build.hasKey { throw ServiceError.noKey }
         return build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: .poster) }
