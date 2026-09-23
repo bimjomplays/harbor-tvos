@@ -16,6 +16,7 @@ import { library } from "@/lib/stremio";
 import { loadEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
 import { BP_ANIME_ID } from "@/views/big-picture/use-bp-card-badges";
+import { tmdbImdbId } from "@/lib/providers/tmdb/tmdb-imdb-resolve";
 
 export type CardMeta = {
   id: string;
@@ -41,7 +42,7 @@ export type CardMarks = {
 const NOUN: Record<string, string> = {
   oscar: "Oscar", emmy: "Emmy", golden_globe: "Globe", bafta: "BAFTA", sag: "SAG", critics_choice: "Critics",
   cannes: "Cannes", venice: "Venice", berlin: "Berlin", annie: "Annie", spirit: "Spirit", saturn: "Saturn",
-  cesar: "Cesar", goya: "Goya", blue_dragon: "Blue Dragon", baeksang: "Baeksang", bifa: "BIFA", other: "Award",
+  bafta_tv: "BAFTA", cesar: "Cesar", goya: "Goya", blue_dragon: "Blue Dragon", baeksang: "Baeksang", bifa: "BIFA", other: "Award",
 };
 
 function classicLabel(type: AwardType, wins: number): string {
@@ -93,21 +94,27 @@ function prime(anime: boolean): void {
   if (anime) ensureDubSet();
 }
 
-/** Marks for one screenful of cards, using the profile's effective settings. */
-export function marks(metas: CardMeta[], profileId: string, linked: boolean): CardMarks[] {
+/**
+ * Marks for one screenful of cards, using the profile's effective settings. A watchlist entry
+ * or watched flag is often stored under the imdb id while a TMDB-built row carries a tmdb one
+ * (useTmdbImdbId in the tiles); the resolver's cache makes the alt lookup free after the first.
+ */
+export async function marks(metas: CardMeta[], profileId: string, linked: boolean): Promise<CardMarks[]> {
   const s = loadEffective(profileId, linked);
   prime(metas.some((m) => BP_ANIME_ID.test(m.id)));
+  const alts = await Promise.all(metas.map((m) => (m.id.startsWith("tmdb:") ? tmdbImdbId(s.tmdbKey, m.id).catch(() => null) : Promise.resolve(null))));
+  const has = (i: number, test: (id: string) => boolean) => test(metas[i].id) || (!!alts[i] && test(alts[i] as string));
   // bpCardZones: scores take topEnd when badgePlacement is "top", else bottomEnd; the watched
   // check always takes the other end. The TV tile has no scores, but the corner stays theirs.
   const scoresZone = s.badgePlacement === "top" ? "topEnd" : "bottomEnd";
   const watchedZone = scoresZone === "bottomEnd" ? "topEnd" : "bottomEnd";
   const bookmarkZone = s.watchlistBadge === "off" ? null : (s.watchlistBadge as Zone);
   const ribbonSide = s.top10RibbonSide === "left" ? "left" : "right";
-  return metas.map((m) => ({
+  return metas.map((m, i) => ({
     id: m.id,
     chip: chipFor(m, s),
-    bookmark: bookmarkZone && watchlistHas(m.id) ? bookmarkZone : null,
-    watched: s.showWatchedBadge && (isWatchedFlagged(m.id) || (m.type === "movie" && isMovieWatchedLocal(m.id))) ? watchedZone : null,
+    bookmark: bookmarkZone && has(i, watchlistHas) ? bookmarkZone : null,
+    watched: s.showWatchedBadge && (has(i, isWatchedFlagged) || (m.type === "movie" && has(i, isMovieWatchedLocal))) ? watchedZone : null,
     // On a television the ribbon is the mark, not a preference (bp-card-state-marks.tsx).
     top10: isTop10(m.id, m.name) ? ribbonSide : null,
   }));

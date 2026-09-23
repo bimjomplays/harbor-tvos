@@ -372,7 +372,7 @@ if (!OFFLINE) {
   {
     const yr = String(new Date().getFullYear());
     engine.cards.setTop10([{ id: "tt0111161", name: "The Shawshank Redemption" }]);
-    const cm = engine.cards.marks([
+    const cm = await engine.cards.marks([
       { id: "tt15398776", type: "movie", name: "Oppenheimer", releaseInfo: "2023" },
       { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", releaseInfo: "1994" },
       { id: "tt9999999", type: "series", name: "Brand New Show", releaseInfo: yr },
@@ -388,7 +388,7 @@ if (!OFFLINE) {
     r.eq("cards.marks: watched check for the title just finished (topEnd, opposite the score corner)", cm[1].watched, "topEnd");
     r.ok("cards.marks: no bookmark/watched without state", cm.slice(2).every((m) => m.bookmark === null && m.watched === null));
     engine.settings.patch({ badgePlacement: "top" });
-    const cm2 = engine.cards.marks([{ id: "tt0111161", type: "movie", name: "x" }], "default", true);
+    const cm2 = await engine.cards.marks([{ id: "tt0111161", type: "movie", name: "x" }], "default", true);
     r.eq("cards.marks: watched zone follows badgePlacement", cm2[0].watched, "bottomEnd");
     engine.settings.patch({ badgePlacement: "bottom" });
   }

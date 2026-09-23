@@ -85,6 +85,7 @@ export function removePlaylist(id: string): void {
   writePlaylists(readPlaylists().filter((p) => p.id !== id));
   clearPlaylistCache(id);
   epgCache.delete(id);
+  loaded.delete(id);
   removeFavoritesForSource(id);
   removePinsForSource(id);
   removeStatsForSource(id);

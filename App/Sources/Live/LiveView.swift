@@ -28,6 +28,8 @@ final class LiveModel: ObservableObject {
 
     private var tick: Task<Void, Never>?
 
+    deinit { tick?.cancel() }
+
     func load() async {
         playlists = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
         if selectedPlaylist == nil || !playlists.contains(where: { $0.id == selectedPlaylist }) { selectedPlaylist = playlists.first?.id }

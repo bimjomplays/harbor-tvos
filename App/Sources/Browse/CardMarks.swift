@@ -70,8 +70,9 @@ struct CardMarksOverlay: View {
                 if marks?.watched == "topEnd" { circle("checkmark") }
             }
             corner(.bottomTrailing) {
-                if marks?.bookmark == "bottomEnd" { circle("bookmark.fill") }
+                // Upstream's bottom-anchored column puts the bookmark nearest the corner.
                 if marks?.watched == "bottomEnd" { circle("checkmark") }
+                if marks?.bookmark == "bottomEnd" { circle("bookmark.fill") }
             }
             corner(.bottomLeading) {
                 if marks?.bookmark == "bottomStart" { circle("bookmark.fill") }
