@@ -59,6 +59,7 @@ struct SearchView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .focusSection()
     }
 }
 

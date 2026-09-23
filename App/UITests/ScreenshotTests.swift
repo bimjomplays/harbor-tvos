@@ -53,6 +53,12 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
         sleep(1)
         capture("15-settings")
+        // Down from the cog must reach the settings buttons.
+        XCUIRemote.shared.press(.down)
+        sleep(1)
+        let focused = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        XCTAssertTrue(focused.exists && !focused.identifier.hasPrefix("tab-"), "Down from Settings cog did not enter the room (focus: \(focused.identifier) \(focused.label))")
+        capture("15b-settings-focus")
     }
 
     func testHomeRail() {

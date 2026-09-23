@@ -128,6 +128,9 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+        // The whole panel is a focus target, so Down from the Settings cog (far right) lands
+        // on the buttons at the left instead of finding nothing under the cog.
+        .focusSection()
     }
 
     private func row(_ title: String, detail: String) -> some View {
