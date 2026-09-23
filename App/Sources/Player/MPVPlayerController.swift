@@ -1,5 +1,7 @@
 import UIKit
 import AVFoundation
+import AVKit
+import CoreMedia
 import Libmpv
 
 /// Minimal libmpv host: gpu-next over MoltenVK into a CAMetalLayer, VideoToolbox decode.
@@ -228,19 +230,39 @@ final class MPVPlayerController: UIViewController {
     /// on Apple TV the OS owns the HDMI mode, so we hand it fps + dynamic range once known.
     private var displayCriteriaApplied = false
     private func applyDisplayCriteria() {
-        guard !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1 else { return }
+        guard !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
+              let w = Int32(string("video-params/w") ?? ""), let h = Int32(string("video-params/h") ?? ""), w > 0, h > 0 else { return }
         displayCriteriaApplied = true
+        // AVDisplayCriteria(refreshRate:formatDescription:) is the public tvOS initializer; the
+        // format description's colour extensions tell tvOS whether the content is HDR10 / HLG.
         let gamma = string("video-params/gamma") ?? ""
-        var dynamicRange: AVDisplayCriteria.VideoDynamicRange = .sdr
-        if gamma == "pq" { dynamicRange = string("video-params/primaries") == "bt.2020" ? .hdr10 : .sdr }
-        if gamma == "hlg" { dynamicRange = .hlg }
-        if let dovi = string("video-dovi-profile"), !dovi.isEmpty, dovi != "-1" { dynamicRange = .dolbyVision }
-        let criteria = AVDisplayCriteria(refreshRate: Float(fps), videoDynamicRange: dynamicRange)
+        let primaries = string("video-params/primaries") ?? ""
+        let codec = (string("video-codec") ?? "").lowercased()
+        var ext: [CFString: Any] = [:]
+        if primaries == "bt.2020" {
+            ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCMFormatDescriptionColorPrimaries_ITU_R_2020
+            ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCMFormatDescriptionYCbCrMatrix_ITU_R_2020
+        } else {
+            ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCMFormatDescriptionColorPrimaries_ITU_R_709_2
+            ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2
+        }
+        switch gamma {
+        case "pq": ext[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ
+        case "hlg": ext[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG
+        default: ext[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_ITU_R_709_2
+        }
+        let codecType: CMVideoCodecType = codec.contains("hevc") || codec.contains("h265") ? kCMVideoCodecType_HEVC
+            : codec.contains("av1") ? kCMVideoCodecType_AV1 : kCMVideoCodecType_H264
+        var desc: CMVideoFormatDescription?
+        let status = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: codecType, width: w, height: h,
+                                                    extensions: ext as CFDictionary, formatDescriptionOut: &desc)
+        guard status == noErr, let desc else { push("display: format description failed (\(status))"); return }
+        let criteria = AVDisplayCriteria(refreshRate: Float(fps), formatDescription: desc)
         DispatchQueue.main.async {
             guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
             window.avDisplayManager.preferredDisplayCriteria = criteria
         }
-        push("display: \(fps) fps \(dynamicRange)")
+        push("display: \(fps) fps \(gamma) \(primaries)")
     }
 
     private func resetDisplayCriteria() {
