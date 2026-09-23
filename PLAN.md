@@ -62,6 +62,8 @@ is a usable daily driver after Stage 4.
 
 ## 4. Stages
 
+**Status 2026-09-23:** Stage 0 ✔, Stage 1 ✔, Stage 2 mostly ✔ (Collections room, services/addons Home rows, award/DUB marks pending), Stage 3 ✔ core (detail page, episodes, ranked picker, debrid resolve, playback; TMDB-dependent rows pending a working key), Stage 4 partial (player chrome, resume/progress, online subtitles, audio/subtitle tracks, up-next; skip-intro, shaders, AVPlayer engine, display-mode matching pending), Stage 5 partial (Library rails, Addons manager, watchlist), Stage 7 partial (Anime room rows). Read-only sync still in place (writes: Stage 4 exit criteria).
+
 Each stage: scope → what ships → how it is verified. Settings panels ship with the feature they belong to.
 
 ### Stage 0 — Foundations and risk spikes (no features)
