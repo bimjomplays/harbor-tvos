@@ -247,7 +247,7 @@ final class HarborEngine {
             KeyValueStore.shared.remove(key)
         }
         let clearBlock: @convention(block) () -> Void = {
-            for key in KeyValueStore.shared.snapshot().keys where key.hasPrefix("harbor.") {
+            for key in KeyValueStore.shared.snapshot().keys where KeyValueStore.isEngineKey(key) {
                 KeyValueStore.shared.remove(key)
             }
         }

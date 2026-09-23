@@ -98,11 +98,16 @@ final class SportsModel: ObservableObject {
         }
     }
 
+    private var generation = 0
+
     func reload(force: Bool = false) async {
         loading = true; defer { loading = false }
+        generation += 1
+        let mine = generation
         let input: AnyJSON = .object(["mode": .string(mode.rawValue), "group": .string(group), "day": day.map { .string($0) } ?? .null,
                                       "browsing": .bool(browsing), "force": .bool(force), "locale": .string(Locale.current.identifier.replacingOccurrences(of: "_", with: "-"))])
-        if let p: Page = try? await HarborEngine.shared.call("sports.page", [input]) { page = p }
+        // Four callers can overlap (poll, event debounce, chip presses); only the newest reply lands.
+        if let p: Page = try? await HarborEngine.shared.call("sports.page", [input]), mine == generation { page = p }
     }
 
     func setMode(_ m: Mode) {

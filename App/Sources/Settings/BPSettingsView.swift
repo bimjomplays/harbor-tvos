@@ -144,7 +144,14 @@ struct BPSettingsView: View {
             .buttonStyle(BPActionStyle())
         case "action":
             if c.id != "leave" {
-                Button(c.label) { Task { await model.commit(c.id, "on") } }.buttonStyle(BPActionStyle())
+                Button(c.label) {
+                    Task {
+                        await model.commit(c.id, "on")
+                        // bp-settings.tsx reviewSportsNotice: reset, then open the Sports tab to show it.
+                        if c.id == "sportsNotice" { app.room = .sports }
+                    }
+                }
+                .buttonStyle(BPActionStyle())
             }
         default:
             EmptyView()

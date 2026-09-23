@@ -66,6 +66,7 @@ import * as anime4kGlue from "./anime4k";
 import * as sportsGlue from "./sports";
 import * as settingsRoomGlue from "./settingsRoom";
 import * as profilesRoomGlue from "./profilesRoom";
+import * as libraryGlue from "./library";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -514,6 +515,13 @@ export const profilesRoom = {
   colors: profilesRoomGlue.colors,
   pickColor: profilesRoomGlue.pickColor,
   purge: profilesRoomGlue.purge,
+};
+
+/** Library room: tabs and one filtered/sorted/grouped feed per tab (use-bp-library). */
+export const libraryRoom = {
+  tabs: libraryGlue.tabs,
+  feed: libraryGlue.feed,
+  setSort: libraryGlue.setSort,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

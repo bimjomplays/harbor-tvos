@@ -1,85 +1,197 @@
 import SwiftUI
 
-/// Library room (Stage 5 slice): the Stremio library for the active profile, split into
-/// Continue Watching, watchlist movies and watchlist series. Needs a Stremio sign-in.
+/// Library room (bp-library.tsx): tabs (Saved / Watchlist / History / My Lists / Favorites, plus
+/// Trakt / Simkl when connected), filter rows (type, sort, grouping), search, and a vertical
+/// poster grid in date/title/year sections fed by the engine's use-bp-library port.
 @MainActor
 final class LibraryModel: ObservableObject {
-    struct Item: Decodable, Identifiable {
-        struct State: Decodable { var timeOffset: Double?; var duration: Double?; var flaggedWatched: Int?; var lastWatched: String? }
-        var _id: String
-        var type: String
-        var name: String
-        var poster: String?
-        var background: String?
-        var state: State?
-        var removed: Bool?
-        var temp: Bool?
-        var _mtime: String?
-        var id: String { _id }
+    struct Tab: Decodable, Identifiable { var id: String; var label: String }
+    struct Entry: Decodable, Identifiable {
+        var key: String; var meta: Meta; var date: Double?; var group: String?
+        var progress: Double?; var season: Int?; var episode: Int?; var watched: Bool?
+        var id: String { key }
+    }
+    struct Section: Decodable, Identifiable { var label: String; var items: [Entry]; var total: Int; var id: String { label } }
+    struct Group: Decodable, Identifiable { var id: String; var label: String }
+    struct Counts: Decodable { var all: Int; var movie: Int; var series: Int }
+    struct Feed: Decodable {
+        var tab: String; var sections: [Section]; var shown: Int; var matched: Int; var total: Int; var hasMore: Bool
+        var groups: [Group]; var status: String; var hidden: Int; var signedIn: Bool; var sort: String; var counts: Counts
     }
 
-    @Published private(set) var rows: [BrowseRow] = []
+    @Published private(set) var tabs: [Tab] = []
+    @Published private(set) var feed: Feed?
     @Published private(set) var loading = false
-    @Published private(set) var signedOut = false
-    @Published private(set) var failed: String?
+    @Published var tab = "library"
+    @Published var type = "all"
+    @Published var sort = "recent"
+    @Published var flat = false
+    @Published var group: String?
+    @Published var query = ""
+    @Published var showFilters = false
+    @Published var showSearch = false
+    private var limit = 60
 
-    func load() async {
-        loading = true; defer { loading = false }
+    private var profile: (id: String, linked: Bool, authKey: String?) {
         let p = ProfilesStore.shared.active
-        guard let authKey = p.flatMap({ ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }) else { signedOut = true; return }
-        signedOut = false
-        do {
-            let items: [Item] = try await HarborEngine.shared.call("stremio.library", [authKey])
-            let live = items.filter { $0.removed != true && $0.temp != true }
-            let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            func date(_ s: String?) -> Date { s.flatMap { iso.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) } ?? .distantPast }
-            let byRecent = live.sorted { date($0.state?.lastWatched ?? $0._mtime) > date($1.state?.lastWatched ?? $1._mtime) }
-            func metas(_ list: [Item]) -> [Meta] {
-                list.map { Meta(id: $0._id, type: $0.type, name: $0.name, poster: $0.poster, background: $0.background, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
-            }
-            var out: [BrowseRow] = []
-            let inProgress = byRecent.filter { ($0.state?.timeOffset ?? 0) > 0 && ($0.state?.flaggedWatched ?? 0) == 0 }
-            if !inProgress.isEmpty { out.append(BrowseRow(key: "lib-cw", title: "Continue watching", metas: metas(inProgress))) }
-            let movies = byRecent.filter { $0.type == "movie" }
-            let series = byRecent.filter { $0.type == "series" }
-            if !movies.isEmpty { out.append(BrowseRow(key: "lib-movies", title: "Movies in your library", metas: metas(movies))) }
-            if !series.isEmpty { out.append(BrowseRow(key: "lib-series", title: "Series in your library", metas: metas(series))) }
-            let other = byRecent.filter { $0.type != "movie" && $0.type != "series" }
-            if !other.isEmpty { out.append(BrowseRow(key: "lib-other", title: "Everything else", metas: metas(other))) }
-            rows = out
-            await CardMarksStore.shared.refresh(out.flatMap(\.metas))
-        } catch {
-            failed = error.localizedDescription
+        return (p?.id ?? "default", p?.linked ?? true, p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey })
+    }
+
+    func start() async {
+        tabs = (try? await HarborEngine.shared.call("libraryRoom.tabs", [])) ?? []
+        if !tabs.contains(where: { $0.id == tab }) { tab = tabs.first?.id ?? "library" }
+        await load()
+    }
+
+    func load(force: Bool = false) async {
+        loading = true; defer { loading = false }
+        let p = profile
+        let input: AnyJSON = .object([
+            "tab": .string(tab), "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,
+            "sort": .string(sort), "flat": .bool(flat), "type": .string(type), "query": .string(query),
+            "group": group.map { .string($0) } ?? .null, "limit": .number(Double(limit)), "force": .bool(force),
+        ])
+        if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]) {
+            feed = f
+            await CardMarksStore.shared.refresh(f.sections.flatMap { $0.items.map(\.meta) })
         }
     }
+
+    func select(tab id: String) { tab = id; group = nil; limit = 60; Task { await load() } }
+    func set(type t: String) { type = t; limit = 60; Task { await load() } }
+    func set(sort s: String) {
+        sort = s; limit = 60
+        let p = profile
+        Task { _ = try? await HarborEngine.shared.callJSON("libraryRoom.setSort", [.string(s), .string(p.id), .bool(p.linked)]); await load() }
+    }
+    func toggleFlat() { flat.toggle(); Task { await load() } }
+    func set(group g: String?) { group = g; limit = 60; Task { await load() } }
+    func search(_ q: String) { query = q; limit = 60; Task { await load() } }
+    func more() { limit += 60; Task { await load() } }
 }
 
 struct LibraryView: View {
     @StateObject private var model = LibraryModel()
-    @State private var spotlight: Meta?
     @State private var detail: Meta?
+    @State private var draft = ""
+
+    private let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(14)), count: 9)
 
     var body: some View {
-        ZStack(alignment: .top) {
-            SpotlightView(meta: spotlight, boxHeight: BP.px(200) + BP.barHeight).opacity(spotlight == nil ? 0 : 1)
-            if model.signedOut {
-                VStack(alignment: .leading, spacing: BP.px(10)) {
-                    Text("Library").font(BP.display(36)).foregroundStyle(BP.ink)
-                    BPNote(text: "Sign in to Stremio in Settings to see your library, watchlist and Continue Watching here.")
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: BP.px(16)) {
+                tabRow
+                if model.showFilters { filters }
+                if model.showSearch { searchRow }
+                if let f = model.feed {
+                    if f.status == "error" { BPNote(text: "Couldn't load your library. Try refreshing.", tone: BP.danger) }
+                    if f.sections.isEmpty {
+                        emptyState(f)
+                    } else {
+                        ForEach(f.sections) { s in
+                            VStack(alignment: .leading, spacing: BP.px(8)) {
+                                if !s.label.isEmpty {
+                                    HStack(spacing: BP.px(8)) {
+                                        Text(s.label).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
+                                        Text("\(s.total)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+                                    }
+                                }
+                                LazyVGrid(columns: columns, alignment: .leading, spacing: BP.px(18)) {
+                                    ForEach(s.items) { e in
+                                        Button { detail = e.meta } label: {
+                                            ZStack(alignment: .bottom) {
+                                                BPTileView(meta: e.meta, shape: .poster)
+                                                if let p = e.progress, p > 0, p < 1 {
+                                                    // history-episode-card: the watched fraction under the poster.
+                                                    Capsule().fill(BP.ink).frame(width: BPTileView.posterWidth * CGFloat(p), height: BP.px(4))
+                                                        .frame(width: BPTileView.posterWidth, alignment: .leading)
+                                                        .offset(y: -BP.px(22))
+                                                }
+                                            }
+                                        }
+                                        .buttonStyle(BPTileStyle())
+                                    }
+                                }
+                            }
+                            .focusSection()
+                        }
+                        if f.hasMore {
+                            Button("Show more (\(f.shown) of \(f.matched))") { model.more() }.buttonStyle(BPActionStyle())
+                        }
+                    }
+                } else if model.loading {
+                    ProgressView().tint(BP.inkMuted).padding(.top, BP.px(40))
                 }
-                .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .focusable()
-            } else if let failed = model.failed {
-                BPNote(text: failed, tone: BP.danger).padding(.horizontal, BP.gutter).padding(.top, BP.px(300))
-            } else if model.rows.isEmpty {
-                (model.loading ? AnyView(ProgressView().tint(BP.inkMuted)) : AnyView(BPNote(text: "Your library is empty.")))
-                    .padding(.top, BP.px(320))
-            } else {
-                BPRailView(rows: model.rows, onFocus: { m, _ in spotlight = m }, onSelect: { detail = $0 }, topInset: BP.px(200) + BP.barHeight) { EmptyView() }
+            }
+            .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16)).padding(.bottom, BP.hintHeight + BP.px(40))
+        }
+        .task { await model.start() }
+        .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+    }
+
+    // bp-library.tsx chip row: tabs, then Filters / Search / Refresh.
+    private var tabRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: BP.px(8)) {
+                ForEach(model.tabs) { t in
+                    Button(t.label) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id))
+                }
+                Divider().frame(height: BP.px(24)).overlay(BP.edge2)
+                Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }.buttonStyle(BPActionStyle(primary: model.showFilters))
+                Button { model.showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }.buttonStyle(BPActionStyle(primary: model.showSearch))
+                Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.buttonStyle(BPActionStyle())
+                if let f = model.feed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
             }
         }
-        .task { await model.load() }
-        .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .focusSection()
+    }
+
+    // bp-library-filters: one labelled row per kind (Up/Down between kinds, Left/Right within).
+    private var filters: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            filterRow("Type", [("all", "All \(model.feed?.counts.all ?? 0)"), ("movie", "Movies \(model.feed?.counts.movie ?? 0)"), ("series", "Series \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
+            filterRow("Sort", [("recent", "Recent"), ("title", "Title"), ("year", "Year")], active: model.sort) { model.set(sort: $0) }
+            filterRow("View", [("grouped", "Grouped"), ("flat", "One list")], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
+            if let groups = model.feed?.groups, !groups.isEmpty {
+                filterRow(model.tab == "lists" ? "List" : "Group", [("", "All")] + groups.map { ($0.id, $0.label) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
+            }
+        }
+    }
+
+    private func filterRow(_ heading: String, _ options: [(String, String)], active: String, pick: @escaping (String) -> Void) -> some View {
+        HStack(spacing: BP.px(8)) {
+            Text(heading.uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+            ForEach(options, id: \.0) { o in
+                Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0))
+            }
+        }
+        .focusSection()
+    }
+
+    private var searchRow: some View {
+        HStack(spacing: BP.px(8)) {
+            BPField(label: "Search this tab", placeholder: "Title", text: $draft)
+            Button("Go") { model.search(draft) }.buttonStyle(BPActionStyle(primary: true))
+            if !model.query.isEmpty { Button("Clear") { draft = ""; model.search("") }.buttonStyle(BPActionStyle()) }
+        }
+        .focusSection()
+    }
+
+    // bp-library.tsx empty copy per tab.
+    private func emptyState(_ f: LibraryModel.Feed) -> some View {
+        let text: String
+        if model.loading { text = "Loading…" }
+        else if !model.query.isEmpty || model.type != "all" || model.group != nil { text = "No matches for these filters." }
+        else if !f.signedIn && (model.tab == "library" || model.tab == "watchlist" || model.tab == "history") { text = "Sign in to Stremio in Settings to see your library here." }
+        else {
+            switch model.tab {
+            case "watchlist": text = "Your watchlist is empty."
+            case "history": text = "Nothing watched yet. Press play on something."
+            case "lists": text = "You have no lists yet."
+            case "favorites": text = "No favorites yet. Save a movie or show to see it here."
+            default: text = "Nothing saved yet. Add a title from any details page."
+            }
+        }
+        return BPNote(text: text).padding(.top, BP.px(10))
     }
 }

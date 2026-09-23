@@ -85,6 +85,26 @@ export const stubs = {
       contents: "module.exports = new Proxy({}, { get: (_, name) => name === '__esModule' ? true : function IconStub() { return null; } });",
       loader: "js",
     }));
+    // esbuild inlines dynamic imports in an IIFE bundle, so upstream's lazy locale catalogs
+    // (~20 MB of translations behind setUiLanguage) and the 4 MB awards JSON would land in
+    // the bundle. The TV app is English-only for now and feeds the awards catalog through
+    // discoverRoom.installAwards, so both lazy loads resolve to empty modules.
+    b.onResolve({ filter: /(^|\/)load-locale$/ }, (a) =>
+      /lib\/i18n\//.test(a.importer) ? { path: a.path, namespace: "locale-stub" } : undefined);
+    b.onLoad({ filter: /.*/, namespace: "locale-stub" }, () => ({
+      contents: "export async function ensureUiLocale() {} export function uiLocaleReady() { return true; }",
+      loader: "js",
+    }));
+    b.onResolve({ filter: /^@\/data\/awards\.json$/ }, (a) => ({ path: a.path, namespace: "awards-stub" }));
+    // Rejecting keeps upstream's `requested` flag reset and never replaces an installed catalog.
+    b.onLoad({ filter: /.*/, namespace: "awards-stub" }, () => ({ contents: "throw new Error('HarborEngine: the awards catalog is installed by the host (discoverRoom.installAwards)');", loader: "js" }));
+    // Pure helpers live in a few React view files (views/library/shared, watchlist-tab); the
+    // virtualiser they import is render-only, so it stubs like the icons do.
+    b.onResolve({ filter: /^@tanstack\/react-virtual($|\/)/ }, (a) => ({ path: a.path, namespace: "virtual-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "virtual-stub" }, () => ({
+      contents: "module.exports = { __esModule: true, useVirtualizer() { throw new Error('HarborEngine: react-virtual is render-only'); }, useWindowVirtualizer() { throw new Error('HarborEngine: react-virtual is render-only'); } };",
+      loader: "js",
+    }));
     b.onResolve({ filter: /^react($|\/)|^react-dom($|\/)|^scheduler($|\/)/ }, (a) => ({
       path: a.path,
       namespace: "react-stub",

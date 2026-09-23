@@ -209,6 +209,24 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 
+// ------------------------------------------------------------------------ library room
+{
+  r.eq("libraryRoom.tabs (signed out of trackers)", engine.libraryRoom.tabs().map((t) => t.id), ["library", "watchlist", "history", "lists", "favorites"]);
+  const empty = await engine.libraryRoom.feed({ tab: "library", profileId: "default", linked: true, authKey: null });
+  r.ok("libraryRoom.feed(library) with no Stremio session is ready and empty", empty.status === "ready" && empty.sections.length === 0 && empty.signedIn === false, JSON.stringify(empty));
+  app.node.storage.set("harbor.favorites.v1.default", JSON.stringify([{ id: "tt0111161", type: "movie", name: "The Shawshank Redemption", addedAt: Date.now() - 3600000 }, { id: "tt0903747", type: "series", name: "Breaking Bad", addedAt: Date.now() - 40 * 86400000 }]));
+  engine.runtime.syncStorage("harbor.favorites.v1.default", app.node.storage.get("harbor.favorites.v1.default"));
+  const fav = await engine.libraryRoom.feed({ tab: "favorites", profileId: "default", linked: true, authKey: null });
+  r.ok("libraryRoom.feed(favorites) groups by date bucket", fav.total === 2 && fav.sections.map((x) => x.label).join("|") === "Today|This month" || fav.sections.map((x) => x.label).join("|") === "Today|" + String(new Date().getFullYear()), JSON.stringify(fav.sections.map((x) => [x.label, x.items.length])));
+  const onlySeries = await engine.libraryRoom.feed({ tab: "favorites", profileId: "default", linked: true, authKey: null, type: "series", sort: "title" });
+  r.ok("libraryRoom.feed filters by type and sorts by title", onlySeries.matched === 1 && onlySeries.sections[0].label === "A to Z" && onlySeries.sections[0].items[0].meta.name === "Breaking Bad", JSON.stringify(onlySeries.sections));
+  const q = await engine.libraryRoom.feed({ tab: "favorites", profileId: "default", linked: true, authKey: null, query: "shaw" });
+  r.eq("libraryRoom.feed search", q.matched, 1);
+  engine.libraryRoom.setSort("year", "default", true);
+  r.eq("libraryRoom.setSort persists", engine.settings.load().librarySort, "year");
+  engine.libraryRoom.setSort("recent", "default", true);
+}
+
 // ----------------------------------------------------------------------- profiles room
 {
   const av = engine.profilesRoom.avatars();
@@ -446,10 +464,10 @@ if (!OFFLINE) {
     // The saveProgress check above ran Shawshank to the credits, which sets the local movie flag.
     r.eq("cards.marks: watched check for the title just finished (topEnd, opposite the score corner)", cm[1].watched, "topEnd");
     r.ok("cards.marks: no bookmark/watched without state", cm.slice(2).every((m) => m.bookmark === null && m.watched === null));
-    engine.settings.patch({ badgePlacement: "top" });
+    engine.settings.patch({ badgePlacement: "top" }, engine.settings.sourceKeyFor("default", true));
     const cm2 = engine.cards.marks([{ id: "tt0111161", type: "movie", name: "x" }], "default", true);
     r.eq("cards.marks: watched zone follows badgePlacement", cm2[0].watched, "bottomEnd");
-    engine.settings.patch({ badgePlacement: "bottom" });
+    engine.settings.patch({ badgePlacement: "bottom" }, engine.settings.sourceKeyFor("default", true));
   }
   const aw = engine.discoverRoom.awards();
   r.ok("discoverRoom.awards has bundled bodies", aw.summaries.length >= 5 && aw.overview.wins > 100, JSON.stringify({ n: aw.summaries.length, first: aw.summaries[0] && aw.summaries[0].title, overview: aw.overview }));

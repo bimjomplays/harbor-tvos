@@ -13,8 +13,14 @@ final class KeyValueStore {
     private static let secretPrefixes = ["harbor.auth.", "harbor.theme-session", "harbor.debrid.", "harbor.keys.",
                                          "harbor.trakt.session.v1", "harbor.simkl.session.v1", "harbor.mal.session.v1", "harbor.anilist.session.v1",
                                          "harbor.lastfm.v1", "harbor.media-server.token.v1", "harbor.plex-auth.device.v1", "harbor.sports.api-sports.v1"]
-    private static let durableKeys: Set<String> = ["harbor.profiles.v1", "harbor.active-profile", "harbor.settings.v1", "harbor.sync.account"]
-    private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap"]
+    /// Small, user-authored state that must survive a cache purge: profiles, settings blobs
+    /// (`harbor.settings`, `.shared`, `.<profile>`), sync bookkeeping, sports choices, consent.
+    private static let durableKeys: Set<String> = ["harbor.profiles.v1", "harbor.active-profile", "harbor.settings", "harbor.settings.shared", "harbor.sync.account",
+                                                   "harbor.sports.favourites.v1", "harbor.sports.sources.v1", "harbor-sports-consent", "harbor.iptv.playlists.v1",
+                                                   "harbor.iptv.favorites.v2", "harbor.iptv.pins.v1", "harbor.installed-addons", "harbor.onboarding.bp"]
+    private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap", "harbor.settings.", "harbor.installed-addons.", "harbor.tvsettings.v1."]
+    /// Every key the engine may own: upstream uses both `harbor.` and `harbor-` spellings.
+    static func isEngineKey(_ key: String) -> Bool { key.hasPrefix("harbor.") || key.hasPrefix("harbor-") }
 
     private var memory: [String: String] = [:]
     private let lock = NSLock()
@@ -54,18 +60,17 @@ final class KeyValueStore {
     /// copy, then a possibly stale Caches copy of the same key).
     func snapshot() -> [String: String] {
         var out: [String: String] = [:]
-        let harbor = "harbor."
-        for key in CacheStore.shared.allKeys() where key.hasPrefix(harbor) {
+        for key in CacheStore.shared.allKeys() where Self.isEngineKey(key) {
             if let value = CacheStore.shared.get(String.self, for: key) { out[key] = value }
         }
-        for key in Prefs.allKeys() where key.hasPrefix(harbor) {
+        for key in Prefs.allKeys() where Self.isEngineKey(key) {
             if let value = Prefs.get(String.self, for: key) { out[key] = value }
         }
-        for key in SecretStore.allKeys() where key.hasPrefix(harbor) {
+        for key in SecretStore.allKeys() where Self.isEngineKey(key) {
             if let value = SecretStore.get(key) { out[key] = value }
         }
         lock.lock()
-        for (key, value) in memory where key.hasPrefix(harbor) { out[key] = value }
+        for (key, value) in memory where Self.isEngineKey(key) { out[key] = value }
         lock.unlock()
         return out
     }

@@ -224,8 +224,10 @@ export async function page(input: PageInput) {
   const at = mode === "hot" ? hotFeed.at : boardFeed.at || (mode === "live" ? 0 : upcomingFeed.at);
   const personalized = !!fav.personalized || (loadStoredSettings().sportsLeagues ?? []).length > 0;
   // bp-sports.tsx:142-153 status note.
+  // bp-sports.tsx:141-149: one label per league, "Soccer" for the aggregate board.
+  const failedLabels = [...new Set(failedKeys.map((k) => k.split("@")[0]))].map((k) => (k === "SOCCER_ALL" ? "Soccer" : hubLeague(k) ? getLeagueLabel(hubLeague(k)!) : k));
   const note = busy ? null : stale ? "Showing saved schedules while feeds reconnect."
-    : failed ? `Some feeds did not respond. Available events are still shown. (${failedKeys.slice(0, 3).map((k) => (k.split("@")[0] === "SOCCER_ALL" ? "Soccer" : k.split("@")[0])).join(", ")}${failedKeys.length > 3 ? ` +${failedKeys.length - 3}` : ""})`
+    : failed ? `Some feeds did not respond. Available events are still shown. (${failedLabels.slice(0, 3).join(", ")}${failedLabels.length > 3 ? ` +${failedLabels.length - 3}` : ""})`
     : null;
 
   return {
@@ -234,7 +236,7 @@ export async function page(input: PageInput) {
     heroes: heroes.map((g) => view(g, now, locale)),
     rows: rows.map((r) => ({ key: r.key, title: r.title, description: r.description ?? null, games: r.games.map((g) => view(g, now, locale)) })),
     status: { busy, failed, failedKeys, stale, at, note },
-    empty: (mode === "for-you" && filtered.length === 0) || (mode !== "for-you" && mode !== "explore" && rows.length === 0),
+    empty: (mode === "for-you" && filtered.length === 0) || (mode !== "for-you" && mode !== "explore" && !busy && rows.length === 0),
     personalized,
     explore: HUB_GROUPS.map((g) => ({ key: g.key, label: getGroupLabel(g), icon: g.icon })),
   };
@@ -297,12 +299,15 @@ let indexCache: { signature: string; index: SportsChannelIndex; channels: IptvCh
 async function channelIndex(): Promise<{ index: SportsChannelIndex; channels: IptvChannel[]; sources: number }> {
   const sources = readPlaylists().filter((p) => p.kind !== "epg");
   const signature = sources.map((p) => p.id + ":" + p.url).join("|");
-  if (indexCache && indexCache.signature === signature) return { ...indexCache, sources: sources.length };
   const lists = await Promise.allSettled(sources.map((src) => loadPlaylist(src)));
   const channels: IptvChannel[] = [];
-  for (const r of lists) if (r.status === "fulfilled") channels.push(...r.value.channels);
+  let stamp = "";
+  for (const r of lists) if (r.status === "fulfilled") { channels.push(...r.value.channels); stamp += `${r.value.fetchedAt ?? 0}:${r.value.channels.length}|`; }
+  // A re-fetched playlist with the same url but new channels must rebuild (watch-sources.tsx flatten keys on fetchedAt).
+  const full = signature + "#" + stamp;
+  if (indexCache && indexCache.signature === full) return { ...indexCache, sources: sources.length };
   const index = buildSportsChannelIndex(channels);
-  indexCache = { signature, index, channels };
+  indexCache = { signature: full, index, channels };
   return { index, channels, sources: sources.length };
 }
 
