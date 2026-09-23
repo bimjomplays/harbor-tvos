@@ -1,7 +1,8 @@
 // The Search room's fan-out, lifted from lib/search-context.tsx without React: TMDB (when a key
 // exists), anime (AniList + Jikan + Kitsu), installed addon catalogs fused into Movies/Series,
 // Cinemeta, one "From <addon>" group per addon that answers, Live TV channels from the viewer's
-// playlists, AniList characters (franchise row) and the addon index ("Addons you could install").
+// playlists, AniList characters (franchise row), the addon index ("Addons you could install") and
+// TVDB collection hits (components/search/use-collection-hits.ts, a separate hook upstream).
 // Slow addon groups keep arriving after the call returns, as `harbor:search-addon-group` events
 // carrying the same request id.
 import { metaLooksAnime } from "@/lib/anime-detect";
@@ -12,6 +13,9 @@ import { mergeMetas, searchAddonCatalogs, searchAddonGroups, type AddonQuery } f
 import { searchAddonIndex } from "@/lib/search-addon-index";
 import { normalizeSearchQuery } from "@/lib/search-query";
 import { loadEffective } from "@/lib/settings/profile-store";
+import { entityToMeta, fetchTvdbCollection, fetchTvdbEntity, searchTvdbCollections, type TvdbCollectionHit } from "@/lib/providers/tvdb-collections";
+import { HYDRATE_LANES } from "@/views/big-picture/bp-collection-steps";
+import { bpMapLimit } from "@/views/big-picture/use-bp-collections";
 import type { Meta } from "@/lib/cinemeta";
 import { playlists } from "./live";
 
@@ -74,14 +78,50 @@ export type FanOut = SearchResults & {
   requestId: number;
   /** Every addon slot in installed order, including pending/empty/failed ones (bp-search-rows). */
   addonQueries: AddonQuery[];
+  /** use-collection-hits: TVDB lists matching the query (Collections chip, banner cells). */
+  collections: TvdbCollectionHit[];
 };
+
+/** use-collection-hits.ts useCollectionHits: nothing under three characters, never throws. */
+export function collections(query: string): Promise<TvdbCollectionHit[]> {
+  const q = query.trim();
+  if (q.length < 3) return Promise.resolve([]);
+  return searchTvdbCollections(q).catch(() => [] as TvdbCollectionHit[]);
+}
+
+/**
+ * bp-collection.tsx useBpCollection: a TVDB list's first 40 entries hydrated to metas
+ * (HYDRATE_LANES wide, entityToMeta: imdb id when TVDB has one), shaped like the Collections
+ * room's card so the same items overlay can show it. null when the list could not be loaded.
+ */
+export async function collection(id: number, fallbackName: string, image: string | null) {
+  const coll = await fetchTvdbCollection(id).catch(() => null);
+  if (!coll) return null;
+  const wanted = coll.entries.slice(0, 40);
+  const found = await bpMapLimit(wanted, HYDRATE_LANES, (e) => fetchTvdbEntity(e.kind, e.tvdbId).catch(() => null));
+  const items = found.filter((c): c is NonNullable<typeof c> => c !== null).map((c) => {
+    const m = entityToMeta(c);
+    return { id: m.id, type: m.type, name: m.name, poster: m.poster ?? null };
+  });
+  return {
+    key: `tvdb:${coll.id}`,
+    source: "tvdb",
+    name: coll.name || fallbackName,
+    image: coll.image ?? image,
+    count: items.length,
+    byline: "Collection",
+    description: coll.overview,
+    items,
+    hidden: 0,
+  };
+}
 
 export async function fanOut(query: string, profileId: string, linked: boolean, authKey: string | null): Promise<FanOut> {
   const settings = loadEffective(profileId, linked);
   const trimmed = query.trim();
   const requestId = ++requestSeq;
   const empty: SearchResults = { query: trimmed, topMatch: null, people: [], movies: [], series: [], liveTv: [], anime: [], manga: [], characters: [], addonGroups: [], addons: [], intent: null };
-  if (!trimmed) return { ...empty, requestId, addonQueries: [] };
+  if (!trimmed) return { ...empty, requestId, addonQueries: [], collections: [] };
   const hide = settings.hideContent;
   const animeAllowed = !hide.anime;
   const lists = playlists();
@@ -97,6 +137,7 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
   const charactersP: Promise<CharacterHit[]> = animeAllowed ? guard(anilistCharacterSearch(trimmed), []) : Promise.resolve([]);
   const addonP = guard(addonsP.then((a) => searchAddonCatalogs(a, trimmed)), { movies: [] as Meta[], series: [] as Meta[] });
   const cineP = guard(cached(cineCache, normalized, () => searchCinemeta(trimmed)), { movies: [], series: [] });
+  const collectionsP = guard(collections(trimmed), [] as TvdbCollectionHit[]);
 
   const queries: AddonQuery[] = [];
   const dropAnime = <T extends { id: string }>(list: T[]): T[] => (hide.anime ? list.filter((m) => !metaLooksAnime(m)) : list);
@@ -112,7 +153,7 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
   // Groups are streamed; the call itself waits only for the primary sources.
   void groupsP;
 
-  const [tmdb, anime, characters, addon, cine] = await Promise.all([tmdbP, animeP, charactersP, addonP, cineP]);
+  const [tmdb, anime, characters, addon, cine, collectionHits] = await Promise.all([tmdbP, animeP, charactersP, addonP, cineP, collectionsP]);
   const base = tmdb ?? empty;
   const animeTitles = new Set(anime.map((a) => normShow(a.name)));
   const notAnimeDupe = (m: { name?: string }) => animeTitles.size === 0 || !animeTitles.has(normShow(m.name ?? ""));
@@ -133,5 +174,6 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
     addonGroups: queries.filter((q) => q.state === "ok").map((q) => ({ id: q.id, name: q.name, logo: q.logo, metas: q.metas.filter((m) => !shown.has(m.id)) })).filter((g) => g.metas.length > 0),
     addonQueries: queries.slice(),
     addons: searchAddonIndex(trimmed),
+    collections: collectionHits,
   };
 }

@@ -21,6 +21,8 @@ final class SearchModel: ObservableObject {
         struct CharacterRef: Decodable { var anilistId: Int; var malId: Int?; var type: String; var name: String; var poster: String?; var background: String?; var year: String?; var overview: String?; var score: Double? }
         struct Character: Decodable, Identifiable { var id: Int; var name: String; var image: String?; var anime: [CharacterRef] }
         struct AddonHit: Decodable, Identifiable { var id: String; var name: String; var logo: String?; var transportUrl: String?; var blurb: String?; var installed: Bool }
+        /// tvdb-collections TvdbCollectionHit (use-collection-hits).
+        struct CollectionHit: Decodable, Identifiable { var id: Int; var name: String; var image: String?; var overview: String? }
         var query: String
         var topMatch: TopMatch?
         var people: [Person]?
@@ -32,6 +34,7 @@ final class SearchModel: ObservableObject {
         var addonQueries: [AddonGroup]?
         var characters: [Character]?
         var addons: [AddonHit]?
+        var collections: [CollectionHit]?
         var requestId: Int?
     }
 
@@ -42,6 +45,100 @@ final class SearchModel: ObservableObject {
     @Published private(set) var topMatch: Meta?
     @Published private(set) var people: [Results.Person] = []
     @Published private(set) var addonHits: [Results.AddonHit] = []
+    @Published private(set) var collections: [Results.CollectionHit] = []
+    /// Addon slots announced "pending" that have not answered yet (use-bp-search addonsPending).
+    @Published private(set) var addonsPending: Set<String> = []
+
+    // MARK: kind chips (use-bp-search.ts BpSearchFilter, GROUP_ORDER, GROUP_LABEL)
+
+    /// use-bp-search BpSearchFilter minus "top" (never a chip) and "manga": the TV has no manga
+    /// source (settings.mangaEnabled is off and Big Picture hands manga to the desktop reader),
+    /// so that group can never count anything and its chip would never be drawn.
+    enum Filter: String, CaseIterable, Identifiable {
+        case all, movie, series, people, anime, livetv, collections, characters, addons
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all: return "All"
+            case .movie: return "Movies"
+            case .series: return "Series"
+            case .people: return "People"
+            case .anime: return "Anime"
+            case .livetv: return "Live TV"
+            case .collections: return "Collections"
+            case .characters: return "Franchise"
+            case .addons: return "Addons"
+            }
+        }
+    }
+    struct Chip: Identifiable { var filter: Filter; var count: Int; var id: String { filter.rawValue } }
+
+    /// bp-search: the chosen chip belongs to one query; a new query starts back on All.
+    @Published var filter: Filter = .all
+    /// use-bp-search QueryLatch.groups: a chip is never withdrawn mid-query.
+    private var latched: Set<Filter> = []
+    private var latchedQuery = ""
+
+    /// Which chip a result row belongs to (use-bp-search buildBpSearchSlots `group`).
+    static func group(ofRow key: String) -> Filter {
+        if key == "movies" { return .movie }
+        if key == "series" { return .series }
+        if key == "anime" { return .anime }
+        if key.hasPrefix("character:") { return .characters }
+        return .addons
+    }
+
+    func shows(_ group: Filter) -> Bool { filter == .all || filter == group }
+
+    /// use-bp-search counts: bpSectionCount summed per group ("top" excluded).
+    func count(_ group: Filter) -> Int {
+        switch group {
+        case .all: return distinctCount(nil)
+        case .people: return people.count
+        case .livetv: return channels.count
+        case .collections: return collections.count
+        case .addons: return addonHits.count + rows.filter { Self.group(ofRow: $0.key) == .addons }.reduce(0) { $0 + $1.metas.count }
+        default: return rows.filter { Self.group(ofRow: $0.key) == group }.reduce(0) { $0 + $1.metas.count }
+        }
+    }
+
+    /// use-bp-search bpDistinctCount: distinct things found, not cells drawn. Title rows count
+    /// each meta id once across rows; every other kind counts its length. nil = every group.
+    func distinctCount(_ only: Filter?) -> Int {
+        var seen: Set<String> = []
+        var n = 0
+        let keep: (Filter) -> Bool = { g in only == nil || only == g }
+        if keep(.people) { n += people.count }
+        if keep(.livetv) { n += channels.count }
+        if keep(.collections) { n += collections.count }
+        if keep(.addons) { n += addonHits.count }
+        for row in rows where keep(Self.group(ofRow: row.key)) {
+            if row.key == "anime" { n += row.metas.count; continue }
+            for m in row.metas where seen.insert(m.id).inserted { n += 1 }
+        }
+        return n
+    }
+
+    /// use-bp-search chips: none until something counted; then All plus every group that has
+    /// counted anything this query (or is the active one), in GROUP_ORDER.
+    var chips: [Chip] {
+        guard status != .idle, !latched.isEmpty else { return [] }
+        var out = [Chip(filter: .all, count: distinctCount(nil))]
+        for g in Filter.allCases where g != .all && (latched.contains(g) || g == filter) {
+            out.append(Chip(filter: g, count: count(g)))
+        }
+        return out
+    }
+
+    /// Settled: the fixed sources returned and no addon slot is still pending.
+    var settled: Bool { status == .done && addonsPending.isEmpty }
+    var busy: Bool { status == .typing || status == .loading || (status == .done && !addonsPending.isEmpty) }
+    /// use-bp-search filterStale: a chip that outlived its results.
+    var filterStale: Bool { settled && filter != .all && count(filter) == 0 }
+
+    private func latchGroups() {
+        for g in Filter.allCases where g != .all && count(g) > 0 { latched.insert(g) }
+    }
     /// search-context RECENT_KEY: the last eight queries that found something.
     @Published private(set) var recent: [String] = Prefs.get([String].self, for: "harbor.search.recent") ?? []
     /// bp-search idle "Suggested": posters from the hero feed while the field is empty.
@@ -79,16 +176,24 @@ final class SearchModel: ObservableObject {
     }
 
     func clearRecent() { recent = []; try? Prefs.set([String](), for: "harbor.search.recent") }
+
+    /// After an install from "Addons you could install", the hit shows its tick straight away.
+    func markInstalled(_ id: String) {
+        for i in addonHits.indices where addonHits[i].id == id { addonHits[i].installed = true }
+    }
     private var engineRequestId = 0
     private var unsubscribe: (() -> Void)?
+    /// Addon answers that crossed before this side learned the request id they belong to.
+    private var early: [(Int, Results.AddonGroup)] = []
 
     init() {
         // Slow addons answer after the fan-out returned; each answer replaces its own row in place.
         unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
             guard type == "harbor:search-addon-group", let self, let detail,
-                  Int(detail["requestId"]?.number ?? -1) == self.engineRequestId,
                   let group = try? detail["group"]?.decode(Results.AddonGroup.self) else { return }
-            self.upsert(group)
+            let rid = Int(detail["requestId"]?.number ?? -1)
+            if rid == self.engineRequestId { self.upsert(group) }
+            else if rid > self.engineRequestId, self.status == .loading { self.early = Array((self.early + [(rid, group)]).suffix(64)) }
         }
     }
     deinit { unsubscribe?() }
@@ -101,6 +206,8 @@ final class SearchModel: ObservableObject {
             if let at = out.firstIndex(where: { $0.key.hasPrefix("addon:") }) { out.insert(row, at: at) } else { out.append(row) }
         }
         rows = out
+        addonsPending.remove(g.id)
+        latchGroups()
         Task { await CardMarksStore.shared.refresh(g.metas) }
     }
 
@@ -112,7 +219,8 @@ final class SearchModel: ObservableObject {
     private func schedule() {
         timer?.cancel()
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; engineRequestId = 0; return }
+        if q != latchedQuery { latchedQuery = q; latched = []; filter = .all; engineRequestId = 0; addonsPending = [] }
+        guard !q.isEmpty else { status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; addonsPending = []; people = []; early = []; engineRequestId = 0; return }
         status = .typing
         timer = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
@@ -133,6 +241,7 @@ final class SearchModel: ObservableObject {
             let results: Results = try await HarborEngine.shared.call("search.fanOut", [q, p?.id ?? "default", p?.linked ?? true, authKey])
             guard mine == requestId else { return }
             engineRequestId = results.requestId ?? 0
+            addonsPending = Set((results.addonQueries ?? []).filter { $0.state == "pending" }.map(\.id))
             var out: [BrowseRow] = []
             if !results.movies.isEmpty { out.append(BrowseRow(key: "movies", title: "Movies", metas: results.movies)) }
             if !results.series.isEmpty { out.append(BrowseRow(key: "series", title: "Series", metas: results.series)) }
@@ -151,12 +260,17 @@ final class SearchModel: ObservableObject {
                 out.append(BrowseRow(key: "addon:\(g.id)", title: "From \(g.name)", metas: g.metas))
             }
             addonHits = results.addons ?? []
+            collections = results.collections ?? []
             rows = out
             channels = results.liveTv ?? []
             await CardMarksStore.shared.refresh(out.flatMap(\.metas))
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done
+            latchGroups()
+            let late = early.filter { $0.0 == engineRequestId }.map { $0.1 }
+            early = []
+            for g in late { upsert(g) }
         } catch {
             guard mine == requestId else { return }
             status = .failed(error.localizedDescription)

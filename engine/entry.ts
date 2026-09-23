@@ -310,6 +310,10 @@ export const secretStore = {
  */
 export const search = {
   fanOut: searchGlue.fanOut,
+  /** use-collection-hits: TVDB collection hits for a query (≥3 chars). */
+  collections: searchGlue.collections,
+  /** bp-collection.tsx: one TVDB collection hydrated to a Collections-room card, or null. */
+  collection: searchGlue.collection,
   all: searchAll,
   cinemeta: searchCinemeta,
   anime: searchAnime,
@@ -690,6 +694,8 @@ export const live = {
   schedule: liveGlue.schedule,
   lanes: liveGlue.lanes,
   catchupUrl: liveGlue.catchupUrl,
+  epgCandidates: liveGlue.epgCandidates,
+  setEpgMatch: liveGlue.setEpgMatch,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */
