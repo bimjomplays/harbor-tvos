@@ -10,7 +10,6 @@ Cross-references (not repeated here):
   `data-bp-autofocus`, spatial nav), canvas/viewport rules — `docs/big-picture-design.md`.
 - `Meta`, `LibraryItem`-adjacent browse types, settings-key conventions —
   `docs/browse-spec.md`.
-- Account/session storage key scheme (`harbor.settings*`) — `docs/harbor-protocol.md` §6.
 
 Scope: the **10-foot ("Big Picture") player**, `src/views/big-picture/player/*` plus its
 state/wiring seam in `src/views/player/bp-ten-foot.tsx`, the shared (desktop + TV)
@@ -22,411 +21,403 @@ TypeScript types a Swift/MPVKit port needs to reproduce.
 
 ## 1. TV PLAYER UI (`src/views/big-picture/player/*`)
 
-### 1.1 Shell composition
+### 1.1 Integration point / shell composition
 
-`BpPlayerShell` (`src/views/big-picture/player/bp-player-shell.tsx:78-392`) is the root. It
-renders in a `createPortal(..., document.body)` (`bp-player-shell.tsx:272,389-390`) because
-`bp-shell.tsx` sets `visibility:hidden` on `[data-bp-root]` the instant playback opens, and a
-hidden subtree cannot hold focus (`bp-player-shell.tsx:70-72`).
+`src/views/player/bp-ten-foot.tsx` (`BpTenFoot`, `BpTenFootLayer`) is the seam: it wraps
+`BpPlayerShell` (`src/views/big-picture/player/bp-player-shell.tsx`) and feeds it live
+player state. `BpPlayerShell` itself contains **no playback logic** — it is a chrome/focus
+layer around the existing mpv bridge; playback stays in `src/views/player`. The TV shell
+mounts via `createPortal(..., document.body)` (`bp-player-shell.tsx:272-391`), outside the
+hidden `[data-bp-root]` tree so it can keep focus while the normal Big Picture browse root
+is `visibility:hidden`.
 
-Layout, top to bottom inside the chrome container (`bp-player-shell.tsx:294-379`):
-1. **Identity row** (`top` slot, defaults to `BpPlayerIdentity`) — only rendered while
-   `phase === "up"` (`bp-player-shell.tsx:311-319`).
-2. **Scrub row** (`BpPlayerScrub`) — always rendered, even when chrome is down, so the
-   position bar exists as a layout row (`bp-player-shell.tsx:322-326`).
-3. **Transport row** (`transport` slot, defaults to `BpPlayerControls`) — only while `up`
-   (`bp-player-shell.tsx:328-345`).
-4. **Rail row** (`rail` slot, defaults to `BpPlayerRail`) — only while `up`
-   (`bp-player-shell.tsx:347-369`).
-5. **Hint bar** (`BpHintBar`, actions `["select", "back"]` — `bp-player-shell.tsx:32,377`).
+`BpTenFootLayer` is reached only when `p.tenFoot` is true; `player-overlay-layers.tsx:352`
+explicitly suppresses the desktop `ShellLayer` (`!p.tenFoot`), and `:1580` suppresses the
+desktop `LeaveConfirmModal` (`!tenFoot && <LeaveConfirmModal/>`) since `BpLeaveConfirm`
+replaces it. **The desktop `StillWatchingPrompt` is NOT similarly gated** — see §1.8.
 
-An **active panel** (subtitles/audio/sources/quality/resume) renders in its own top layer at
-`z-[60]`, above the stage (`z-30`) and the chrome (`z-40`) (`bp-player-shell.tsx:284-292,
-301-304,385-387`).
+### 1.2 Chrome show/hide state machine — HUD on Select / Play-Pause / Menu
 
-### 1.2 Chrome show/hide state machine
+Chrome has three phases (`bp-player-context.ts:10`, `BpChromePhase = "down" | "peek" |
+"up"`): `down` — chrome away, video alone. `peek` — slim scrub readout only (seek
+feedback), nothing focusable. `up` — full chrome, shell owns the D-pad.
 
-Owned by `useBpPlayerChrome` (`src/views/big-picture/player/use-bp-player-chrome.ts:29-102`),
-independent of the desktop player's mouse-driven chrome timer (comment,
-`use-bp-player-chrome.ts:24-28`). Phases: `"up" | "peek" | "down"` (`BpChromePhase`, imported
-from `bp-player-context.ts`).
-
-Constants (`use-bp-player-chrome.ts:4-7`):
+Timing constants, `use-bp-player-chrome.ts:4-7`:
+```ts
+const IDLE_UP_MS = 4600;          // chrome auto-hides after 4.6s idle while playing
+const PEEK_MS = 1800;             // peek readout auto-hides after 1.8s
+const ACTIVITY_THROTTLE_MS = 260; // throttle for controller-repeat activity pings
+const FADE_MS = 320;              // opacity fade-out duration before unmount
 ```
-IDLE_UP_MS = 4600            // chrome auto-hides 4.6s after last activity while playing
-PEEK_MS = 1800               // a "peek" (arrow press while chrome is down) holds 1.8s
-ACTIVITY_THROTTLE_MS = 260   // a held D-pad direction repeats faster than this; throttled
-FADE_MS = 320                // opacity fade-out duration before unmount
+A paused video never auto-hides (`playing` gates the idle timer, `use-bp-player-chrome.ts:
+77-79`); a pinned panel (`pinned`) or a held direction (`held`) also suspends the countdown.
+Reduced-motion skips the fade and unmounts immediately (`:84-87`).
+
+Key routing (`use-bp-player-keys.ts`, the "idle keys" listener active only while chrome is
+down/no panel open):
+- **Up/Down or Space** → raise full chrome (`onSummon`/`wakeChrome`).
+- **Left/Right** → `onPeek` (unless a registered `setBpPlayerKeyHandler` claims it, e.g. the
+  scrub bar). Deliberately NOT consumed for direct seeking — comment at
+  `use-bp-player-keys.ts:17-26`.
+- **Enter (Select)** → `onSelect`; in the shell this calls `playbackRef.current.playPause()`
+  then `wakeChrome()` (`bp-player-shell.tsx:203-206`).
+- **Tab / ContextMenu ("Menu")** → `onOptions` (wake chrome). There is no distinct
+  Menu-panel toggle beyond waking chrome; per-panel access is via rail chips once chrome is
+  up.
+
+### 1.3 Seek bar (`BpPlayerScrub`, `bp-player-scrub.tsx`)
+
+- **No chapter marks and no trickplay thumbnail preview** — confirmed absent by a full read
+  of the 188-line file; it renders buffered/played fill bars and a live "pending" tick mark
+  only. Both are desktop-only features (see §6 gap note).
+- Left/Right claimed by the scrub bar itself while it holds the D-pad ring, via
+  `setBpPlayerKeyHandler` (`:96-113`).
+- Step ramp constants (`:11-14`):
+```ts
+const STEP_RAMP_AT = 10;   // after 10 repeats, multiply step
+const STEP_RUSH_AT = 26;   // after 26 repeats, multiply step further
+const STEP_RAMP_X = 3;
+const STEP_RUSH_X = 6;
 ```
-Rules:
-- A **paused** video is treated as a title card: the idle countdown only runs while
-  `playing && !pinned && !held` (`use-bp-player-chrome.ts:77-80`). `pinned` = an open panel;
-  `held` = an explicit hold flag (e.g. scrub in progress) via `holdChrome(true)`.
-- `wakeChrome()` → phase `"up"`, resets the activity clock (`use-bp-player-chrome.ts:52-57`).
-- `peekChrome()` → phase `"peek"` only if not already `"up"` (`use-bp-player-chrome.ts:59-63`);
-  auto-returns to `"down"` after `PEEK_MS`.
-- `hideChrome()` → phase `"down"` immediately (`use-bp-player-chrome.ts:65`).
-- `reducedMotion()` (via `matchMedia("(prefers-reduced-motion: reduce)")`) skips the
-  `FADE_MS` unmount delay and unmounts immediately (`use-bp-player-chrome.ts:9-12,84-87`).
-- While `phase === "up"`, a capture-phase `keydown` listener re-notes activity without
-  consuming the key, so any key press resets the idle timer even if a lower-level handler
-  swallows it (`use-bp-player-chrome.ts:92-99`).
+- `COMMIT_MS = 420` (`:9`) — accumulated presses commit as one `seekTo` call 420ms after the
+  last nudge (debounced so controller repeat doesn't hammer mpv).
+- Uses `settings.seekBackStepSec`/`seekForwardStepSec` (default 10s each,
+  `src/lib/settings/defaults.ts:367-368`).
+- Live streams show a red/`--bp-live` fill and `{t("Live")}` label with a pulsing dot
+  instead of remaining time (`:170-175`).
+- VOD shows `"{time} left"` and `"Ends {time}"` (wall-clock ETA via
+  `Intl.DateTimeFormat`) at `:176-183`.
 
-### 1.3 Key routing — Select / Play-Pause / Menu
+### 1.4 Info line / identity (`BpPlayerIdentity`, `bp-player-identity.tsx`)
 
-Two mutually-exclusive key owners, one at a time (comment, `use-bp-player-keys.ts:17-19`):
-- **Chrome up**: `useBpFocusRoot` in `bp-player-shell.tsx:211-222` owns arrows/Enter/Back
-  through the general spatial-nav engine.
-- **Chrome down** (idle): `useBpPlayerIdleKeys` (`src/views/big-picture/player/use-bp-player-keys.ts:28-82`).
-  - `ArrowUp`/`ArrowDown` → `onSummon` (wakes chrome fully) (`use-bp-player-keys.ts:51-56`).
-  - `ArrowLeft`/`ArrowRight` → first asks the scrub bar's own handler
-    (`bpPlayerHandledKey`, registered by `setBpPlayerKeyHandler` in
-    `bp-player-scrub.tsx:96-113`); if declined, falls through to `onPeek`
-    (`use-bp-player-keys.ts:42-59`).
-  - `Enter` (Select) → `onSelect`, wired in the shell to `playback.playPause()` +
-    `wakeChrome()` (`use-bp-player-keys.ts:61-66`; `bp-player-shell.tsx:203-206`).
-  - `" "` (Space, arrives from a gamepad's A button too) → `onSummon` only, deliberately not
-    play/pause here to avoid double-firing (`use-bp-player-keys.ts:68-71`).
-  - `Tab` or `ContextMenu` (Menu) → `onOptions`, wired to `wakeChrome`
-    (`use-bp-player-keys.ts:73-77`; `bp-player-shell.tsx:229`).
-  - Both listeners bail if `bpOverlayOpen()` or an `<input>/<textarea>` is focused
-    (`use-bp-player-keys.ts:40`).
+- Clear-logo image if available, else `<h2>{playback.title || t("Now playing")}</h2>`.
+- "Quiet" line = episode + source, joined `"  ·  "`: episode format
+  `S{season} E{padded episode}[ · {name}]` (`episodeLine`, `:5-10`); source format =
+  `[resolution, quality, releaseGroup].join(" · ")` (`sourceLine`, `:12-17`).
+- Casting indicator: `{t("Casting")}` shown when `playback.casting` true.
+- **No dedicated quality-badge chip** (e.g. an HDR/4K pill) exists in
+  `bp-player-identity.tsx` — only plain text in the source line. Not found elsewhere under
+  `src/views/big-picture/player/*`.
 
-### 1.4 Seek bar (`BpPlayerScrub`, `src/views/big-picture/player/bp-player-scrub.tsx`)
+### 1.5 Transport controls (`BpPlayerControls`, `bp-player-controls.tsx:76-124`)
 
-- **No chapter marks and no trickplay thumbnail.** Confirmed by grep: neither
-  `chapter` nor `trickplay`/`Trickplay`/`thumb` appears anywhere under
-  `src/views/big-picture/player/`. The desktop `src/components/player/transport/seek-bar.tsx`
-  imports `useTrickplayState` (`seek-bar.tsx:9,41`) and `ThumbPreview`
-  (`seek-bar.tsx:11,184`) — that is desktop-only; `seek-bar-visual.tsx` also has no chapter
-  logic. **Chapters do exist as data** (`snap.chapters: Chapter[]`, `bridge.ts:73`, used to
-  derive skip segments — §1.7) but the TV scrub bar does not render marks for them.
-- Track/buffered/played bars, `pct()` helper (`bp-player-scrub.tsx:21-24`).
-- **Step accumulation**: Left/Right nudge a *pending* seek target rather than seeking
-  immediately; commits after `COMMIT_MS = 420`ms of inactivity (`bp-player-scrub.tsx:9,67-75`).
-- **Ramp**: repeated presses scale the step size —
-  `STEP_RAMP_AT = 10` presses → `STEP_RAMP_X = 3`×; `STEP_RUSH_AT = 26` → `STEP_RUSH_X = 6`×
-  (`bp-player-scrub.tsx:11-14,85-94`). Base step size = `settings.seekBackStepSec` /
-  `settings.seekForwardStepSec` (default `10`s each, `bp-player-scrub.tsx:58-59`).
-- Flushes any pending seek on unmount so a chrome-hide mid-accumulation isn't silently
-  dropped (`bp-player-scrub.tsx:77-83`).
-- Live streams: scrub bar becomes non-interactive (`steppable = active && !playback.live`,
-  `bp-player-scrub.tsx:60`), shows a pulsing "Live" badge instead of a duration
-  (`bp-player-scrub.tsx:170-174`).
-- Below the bar: current time, and either the Live badge, or
-  `"{time} left"` + `"Ends {time}"` (a wall-clock ETA computed via
-  `Intl.DateTimeFormat` with `hour: "numeric", minute: "2-digit"`,
-  `bp-player-scrub.tsx:26-33,176-183`).
-
-### 1.5 Transport controls (`BpPlayerControls`, `bp-player-controls.tsx:66-128`)
-
-Order: `[Previous episode?]` `[Back {n}s]` `[Play/Pause]` (primary, larger, autofocus)
-`[Forward {n}s]` `[Next episode?]`. Prev/Next episode chips only render when
-`playback.hasPrevEpisode || playback.hasNextEpisode` (`bp-player-controls.tsx:71,75,116`);
-Back/Forward hidden entirely on live (`bp-player-controls.tsx:85,107`). Labels (verbatim,
-`t()`-wrapped i18n keys) — `"Previous episode"`, `"Back {n}s"`, `"Pause"`/`"Play"`,
-`"Forward {n}s"`, `"Next episode"` (`bp-player-controls.tsx:77,87,95,109,118`).
+Default row: Previous episode (if series) → Back {n}s (Rewind) → Play/Pause (primary,
+autofocused) → Forward {n}s (FastForward) → Next episode (if series). Live streams hide the
+back/forward seek buttons. Labels: `t("Previous episode")`, `t("Back {n}s", {n: back})`,
+`t("Pause")`/`t("Play")`, `t("Forward {n}s", {n: forward})`, `t("Next episode")`.
 
 ### 1.6 Rail (`BpPlayerRail`, `bp-player-rail.tsx:51-117`)
 
-Always-first chip: **"Back"** (`bp-player-rail.tsx:71-76`). Then one chip per declared
-`BpPlayerSlot area="panel"` (label/icon are the slot's own props). Then, only if no
-dedicated `"subtitles"` panel slot exists AND `playback.canToggleSubtitles`, a quick
-**"Subtitles on"/"Subtitles off"** toggle chip (`bp-player-rail.tsx:63-64,87-101`). Always
-last: **"Muted"/"Sound on"** toggle (`bp-player-rail.tsx:102-114`).
+One chip per declared panel (icon+label from the `BpPlayerSlot`), plus a permanent leading
+`t("Back")` chip (icon `ArrowLeft`, calls `runBpBack()` directly, `:71-76`), plus a quick
+subtitle toggle chip (`t("Subtitles on")`/`t("Subtitles off")`) shown only when no dedicated
+"subtitles" panel slot exists, plus a mute toggle chip (`t("Muted")`/`t("Sound on")`).
 
-Panels registered by `BpTenFoot` (`src/views/player/bp-ten-foot.tsx:159-261`), each a
-`<BpPlayerSlot area="panel" id=... label=... icon=... shellNav>`:
-| id | label | icon | condition |
-|---|---|---|---|
-| `resume` (`RESUME_PANEL`) | — (forced panel, blocks everything) | — | `pendingResumeSec != null` (`bp-ten-foot.tsx:31,85,163,182-193`) |
-| `subtitles` | `"Subtitles"` | `Captions` | not resuming (`bp-ten-foot.tsx:195-205`) |
-| `audio` | `"Audio"` | `Languages` | not resuming (`bp-ten-foot.tsx:207-225`) |
-| `sources` | `"Sources"` | `AllAddonsIcon` | not resuming, `!src.isLive` (`bp-ten-foot.tsx:227-244`) |
-| `home-server-quality` | `"Quality"` | `Gauge` | not resuming, `src.homeServer` present (`bp-ten-foot.tsx:246-260`) |
+### 1.7 Menus / panels (opened from rail chips, `bp-ten-foot.tsx:163-260`)
 
-**No playback-speed menu and no explicit "next episode" menu on TV.** Confirmed by grep:
-no `speed`/`Speed` string appears under `src/views/big-picture/player/` outside of P2P
-download-speed telemetry (`bp-p2p-status.tsx`). The desktop player has a dedicated
-`src/components/player/transport/speed-menu.tsx`; there is no TV equivalent — this is a
-gap the native port must decide how to fill (see §6). "Next episode" on TV is handled
-entirely by the Up Next card / skip-pill flow (§1.7), not a menu.
+Panels registered for the TV player (in-place `shellNav`, driven by the shell's own focus
+engine, not a portal):
+1. **resume** (forced/blocking, not a rail chip) — `BpResumePrompt` (`bp-resume-prompt.tsx:
+   27-172`).
+2. **subtitles** — `BpPlayerSubtitles` (icon `Captions`, label `t("Subtitles")`).
+3. **audio** — `BpPlayerAudio` (icon `Languages`, label `t("Audio")`).
+4. **sources** — `BpPlayerSources` (icon `AllAddonsIcon`, label `t("Sources")`); hidden for
+   live (`!src.isLive`). This IS the quality/stream-switch UI — wraps the shared `BpStreams`
+   component in `mode="switch"` (`bp-player-sources.tsx:49-53`).
+5. **home-server-quality** — only if `src.homeServer` is set (icon `Gauge`, label
+   `t("Quality")`).
 
-### 1.7 Skip intro/outro, Up Next, auto-advance
+**No playback-speed panel/menu exists in the TV player.** Grepping `speed` across
+`src/views/big-picture/player/*` and `bp-ten-foot.tsx` found nothing UI-related — desktop
+has `src/components/player/transport/speed-menu.tsx`, but it is never imported into the Big
+Picture tree. **No "next episode" menu/panel exists either** — next-episode is handled
+entirely by the up-next/skip-pill overlay system (§1.9), not a menu.
 
-Types (`src/lib/skip-intro/types.ts:1-9`, verbatim):
-```ts
-export type SkipKind = "intro" | "outro" | "recap" | "ad";
-export type SkipSource = "aniskip" | "introdb" | "skipdb" | "introdb-app" | "chapters" | "adcorpus";
+#### Audio menu (`bp-player-sources.tsx`, `BpPlayerAudio`)
 
-export type SkipSegment = {
-  kind: SkipKind;
-  startSec: number;
-  endSec: number;
-  source: SkipSource;
-};
-```
+Header: `{t("Audio")}` + `"{title} · " + t("{n} tracks", {n})`. Empty-state text: mpv engine
+→ `t("This file has one audio track.")`; html5 engine → `t("Track switching isn't supported
+on the current engine. The file's default audio is playing.")`. Delay steps
+`DELAY_STEPS = [-0.5, -0.1, 0.1, 0.5]` seconds (`:37`), rendered `"{+/-}{step}s"`, plus a
+`t("Reset")` chip when `delaySec !== 0`; disabled (`opacity-45`, `data-bp-disabled`) when
+`engine === "html5"`.
 
-**Segment sources, in merge priority order** (`mergeSegments`, first-listed wins on overlap
-— `src/lib/skip-intro/index.ts:27-39,172`): `adSegments`, then `aniSkip`, `skipDb`,
-`introDb`, `introDbApp`, then `fromChapters` (chapter-title pattern match, lowest priority).
+#### Subtitle menu (`bp-player-subtitles.tsx`)
 
-- **AniSkip** — anime only. Endpoint:
-  `` `https://api.aniskip.com/v2/skip-times/${malId}/${episode}?${params}` ``
-  (`aniskip.ts:94`), `types` params = `op, ed, mixed-op, mixed-ed, recap`
-  (`aniskip.ts:92`), plus `episodeLength`. Requires a Kitsu→MAL id resolution first
-  (`kitsuToMal`, `aniskip.ts:34-78`, cached in `localStorage["harbor.kitsu-to-mal.cache.v1"]`,
-  `aniskip.ts:5`). Maps `skipType`: `"ed"`/`"mixed-ed"` → `"outro"`, `"recap"` → `"recap"`,
-  else → `"intro"` (`aniskip.ts:117`).
-- **TheIntroDB** — `` `https://api.theintrodb.org/v2/media?${params}` ``
-  (`theintrodb.ts:80`), optional `X-API-Key` header from `settings.theIntroDbKey`
-  (`theintrodb.ts:19,30-33,79-81`). Query by `tmdb_id` or `imdb_id` + `season`/`episode`
-  (`theintrodb.ts:112-118`). Response fields `intro`/`recap`/`credits`/`preview` map to
-  kinds `intro`/`recap`/`outro`/`outro` respectively (`theintrodb.ts:130-133`). 404 is
-  cached as "no data"; any other failure triggers a 10-minute cooldown
-  (`FAILURE_COOLDOWN_MS = 10 * 60 * 1000`, `theintrodb.ts:24,83-89`).
-- **SkipDB** — `` `https://api.skipdb.tv/api/segments?${key}` `` (`skipdb.ts:56`).
-- **IntroDB App** — `` `https://api.introdb.app/segments?${key}` `` (`introdb-app.ts:46`).
-- **AdCorpus** (injected-ad segments, not intro/outro) — `` `${HARBOR_API_BASE}/updates/ad-segments.json` ``
-  (`adcorpus.ts:5`), a signed corpus (`CORPUS_PUBKEY`, `adcorpus.ts:6`) keyed by a
-  content+source fingerprint, only for `ih_`/`rg_`-prefixed sources
-  (`adcorpus.ts:22`).
-- **Chapters** — `chaptersToSegments()` (`chapters.ts:29-43`) classifies mpv chapter titles
-  by regex: intro patterns `/\b(opening|op)\b/i`, `/\bintro\b/i`, `/\bopening\s*credits\b/i`,
-  `/\btheme\s*song\b/i`; outro patterns `/\b(ending|ed)\b/i`, `/\b(outro|outtro)\b/i`,
-  `/\bend\s*credits?\b/i`, `/\bclosing\s*credits?\b/i`, `/\bcredits?\b/i`; recap pattern
-  `/\b(recap|previously)\b/i` (`chapters.ts:4-19`).
-
-**Post-merge filters** (`index.ts:174-182`): drop segments starting at/after `durationSec`;
-clamp `endSec` to `durationSec`; drop segments shorter than 2s or longer than
-`MAX_SEGMENT_SEC = 360`; drop `"outro"` segments starting before
-`durationSec * MIN_OUTRO_START_FRACTION` (`0.5`) (`index.ts:18-19`).
-
-**Active segment**: `activeSegment()` returns the first segment where
-`positionSec >= startSec && positionSec < endSec - 0.75` (`index.ts:214-222`) — a 0.75s
-early cutoff so the pill/auto-skip doesn't re-fire right at the boundary.
-
-**Auto-skip**: gated per-kind by settings `autoSkipIntro`/`autoSkipRecap`/`autoSkipOutro`/
-`autoSkipAd` (`skip-pill-container.tsx:74-78`), fires once per segment instance via a ref
-guard (`skip-pill-container.tsx:68-91`).
-
-**Skip pill auto-hide**: `settings.skipButtonHideSec` — if `> 0`, the pill auto-dismisses
-that many seconds after appearing (`skip-pill-container.tsx:106-108`); user can also
-dismiss it manually and it stays dismissed until the segment key changes
-(`skip-pill-container.tsx:93-121`). `settings.showSkipButton` gates whether it renders at
-all.
-
-**Skip pill button labels** (`bp-skip-pill.tsx:148-157`, verbatim `t()` keys): ad →
-`"Skip injected ad?"`; intro → `"Skip Intro"`; recap → `"Skip Recap"`; outro-with-next-episode
-→ `"Next Episode"`; else (plain outro) → `"Skip Credits"`. Dismiss button:
-`"Hide this Skip button"` (`bp-skip-pill.tsx:213-214`). The pill deliberately never takes
-autofocus (long comment, `bp-skip-pill.tsx:23-43`) — reachable only by navigating Up from
-the transport, or by the `MediaFastForward` remote key (`bp-skip-pill.tsx:116-129`).
-
-**Next-episode lead time / Up Next countdown** (`skip-pill-container.tsx:10-14`):
-```ts
-export function nextEpisodeLead(setting: number, durationSec: number): number {
-  if (setting === 0) return 0;                                    // disabled
-  if (setting > 0) return setting;                                // explicit seconds
-  return Math.min(45, Math.max(15, Math.round(durationSec * 0.04)));  // auto: 4% of runtime, clamped 15-45s
-}
-```
-Driven by `settings.nextEpisodeLeadSec`. When there's no real "outro" skip segment but
-there IS a next episode and `leadSec > 0`, a **synthetic outro** is fabricated covering the
-last `leadSec` of the episode (`source: "chapters"`, `skip-pill-container.tsx:50-65`) so Up
-Next still appears even with no chapter/API data.
-
-**Up Next card** (`BpUpNext`, `src/views/big-picture/player/bp-up-next.tsx:92-295`):
-appears when `remainingSec <= leadSec` during an outro-with-next-episode
-(`bp-skip-pill.tsx:98-101,133-146`). Countdown ring (SVG stroke-dashoffset, not
-conic-gradient — cross-WebView rendering note at `bp-up-next.tsx:270-272`). Title = episode
-name or `"S{season} · E{episode}"` fallback; if a spoiler mask hides the title, shows the
-code only (`bp-up-next.tsx:135-139`). Buttons (verbatim): **"Play now"** (primary,
-`bp-up-next.tsx:220`) and **"Keep watching"** (cancel, autofocus-seeded,
-`bp-up-next.tsx:242-243`) with an `X` icon. A `Back` press on this card also triggers cancel
-(`bp-up-next.tsx:125-131`).
-
-**Natural-end auto-advance** (independent of the lead-time UI, for cases with no synthetic
-outro): `useAutoNextEpisode` (`src/views/player/hooks/use-auto-next-episode.ts:9-39`) fires
-`goToEpisode(nextEp)` when `isNaturalEnd(snap, pos)` OR (`errorCode` set AND within 2s of
-duration) OR (not-playing AND within 1s of duration) — gated on
-`snap.durationSec >= STUB_MAX_SEC (150s)` and not already fired for this `src.url`
-(`use-auto-next-episode.ts:26-38`).
+Four lanes/tabs: `t("Tracks")`, `t("Find more")`, `t("Sync")`, `t("Look")` (icons
+`Captions`, `Search`, `Timer`, `SlidersHorizontal`, `:155-160`). Header line:
+`"{context} · {selected variant or t("Off")} · {offset}"`.
+- **Tracks lane**: language filter chips (`t("All languages")` + count, per-language chips
+  with flag), filter chips `t("All")`/`t("Embedded")`/`t("External")`/`t("Hide HI/SDH")`/
+  `t("Forced only")`, re-search chip (`t("Searching…")` / `t("Search every source again")`),
+  `t("Load file")` (Tauri file dialog filtered to `srt, ass, ssa, vtt, sub`; error
+  `t("Couldn't load that subtitle file. Try another.")`). "Better match" row:
+  `t("Better match")`. No-subs row: `t("No subtitles")`. No-match text: `t("No tracks match
+  these filters. Try toggling HI/SDH or Forced.")`. Per-row secondary/dual-subtitle chip
+  labeled `t("2nd")`.
+- **Sync lane** (`bp-subtitle-tune.tsx`, `BpSubtitleSync`): `t("Auto sync")`/
+  `t("Cancel sync")`, `t("Use it")`, `t("Revert")`; gate text `t("Needs an external
+  subtitle")`; manual offset steps `DELAY_STEPS = [-1, -0.1, 0.1, 1]`; hint `t("Subtitles
+  late? Nudge plus. Early? Nudge minus.")`.
+- **Look lane** (`BpSubtitleLook`): presets from `loadSubPresets()`; steppers for Size
+  (`subFontSize`, reset 32, range 16-120, step ±4), Height (`subMarginY`, reset 10, range
+  0-100, step ±2), Opacity (`subOpacity`, reset 1, range 0.1-1, step ±0.1); backing style
+  chips Shadow/Outline/Box (`settings.subStyle`) + Bold toggle (`settings.subBold`); live
+  CSS preview text `t("This is how your subtitles will look.")`.
 
 ### 1.8 "Still watching?" prompt
 
-**Not present in the TV/Big Picture player at all.** Grep for `StillWatching`/
-`stillWatching`/`"Still watching"` under `src/views/big-picture/` returns zero matches.
-It exists only on the desktop player: `src/views/player/hooks/use-still-watching.ts` +
-`src/views/player/still-watching-prompt.tsx`, gated by `settings.stillWatching` (default
-`false`, `defaults.ts:394`) and `settings.stillWatchingAfter` (default `3` — episodes played
-back-to-back before prompting, `defaults.ts:395`). Desktop prompt: 45s countdown
-(`TIMEOUT_SEC = 45`, `still-watching-prompt.tsx:4`), auto-exits at 0; buttons **"Keep
-watching"** / **"Stop ({n})"**; `Enter`/`Space` continues, `Escape` exits
-(`still-watching-prompt.tsx:36-50,67-81`). The reset-on-input logic
-(`use-still-watching.ts:23-34`) resets the "runs" counter on any `pointerdown`/`keydown` —
-i.e. if the user showed activity in the current session, the *next* auto-advance still
-counts toward the threshold; threshold semantics: prompts once
-`runsRef.current + 1 >= threshold` (`use-still-watching.ts:36-47`). **A native TV port has
-no reference implementation to follow here** — decide whether to add TV parity or omit.
+**There is no TV-specific ("10-foot") still-watching component.** The desktop
+`StillWatchingPrompt` (`src/views/player/still-watching-prompt.tsx`) is rendered
+unconditionally in `src/views/player.tsx:1555-1566` — it is **not** gated by `!tenFoot`
+(unlike `LeaveConfirmModal`, which IS `!tenFoot`-gated at `player.tsx:1580`). This is worth
+flagging for the native port: the TV path currently falls back to the mouse-era modal for
+this one prompt.
+- Timeout: `TIMEOUT_SEC = 45` (`still-watching-prompt.tsx:4`) — counts down every 1000ms;
+  hits 0 → `onExit()`.
+- Trigger logic: `src/views/player/hooks/use-still-watching.ts`, gated by
+  `settings.stillWatching` (default `false`, `defaults.ts:394`) and
+  `settings.stillWatchingAfter` (default `3` — number of back-to-back auto-advanced
+  episodes before prompting, `defaults.ts:395`), wired at `src/views/player.tsx:379-384`.
+- Strings: heading `t("Still watching?")`; body `"{show} · {nextLabel}"` or just show name;
+  buttons `t("Keep watching")` and `t("Stop ({n})", {n: secs})`.
+- Keys: Enter/Space → continue; Escape → exit (`:36-50`).
 
-### 1.9 Back / exit behaviour
+### 1.9 Next-episode countdown / auto-advance, skip intro/outro (`skip-pill-container.tsx`)
 
-Two-stage, not a literal "press Back twice within N seconds" — it's stateful:
-1. **First Back while chrome is up**: `BpPlayerShell.onBack` (`bp-player-shell.tsx:183-196`)
-   — if a `runBpBack()` handler consumed it, stop; else if a panel is open, close the panel;
-   else `hideChrome()`. No confirmation dialog at this stage.
-2. **Back while chrome is down** (idle key listener doesn't bind Back at all — only
-   arrows/Enter/Space/Tab): falls through to the registered `pushBpBack` handler in
-   `BpTenFootLayer` (`src/views/player/bp-ten-foot.tsx:301-308`), which calls
-   `requestPlayerClose()` (`src/views/player/request-player-close.ts:5-30`):
-   - if `drawMode`, exits draw mode instead of closing (`request-player-close.ts:14-17`);
-   - if `settings.playerConfirmLeave` (**default `true`**, `defaults.ts:374`), opens the
-     leave-confirm dialog; else closes immediately (`request-player-close.ts:22-29`).
+`SkipPillContainer` (`src/views/player/skip-pill-container.tsx`) drives all timing and is
+**shared** between desktop `SkipPill` and TV `BpSkipPill`, switched via a `tenFoot` prop
+(`:147-148`, comment at `:41`).
 
-**Leave-confirm dialog** (`BpLeaveConfirm`, `src/views/big-picture/player/bp-leave-confirm.tsx:33-192`):
-title **"Leave the show?"**, body **"We'll save your spot so you can pick up right where you
-left off."** (`bp-leave-confirm.tsx:150,156`). Three chips: **"Keep watching"** (autofocus,
-closes dialog), **"Leave"** (confirms exit), **"Don't ask again"** (toggle; if checked when
-confirming, calls `onRememberConfirmLeave` which sets `playerConfirmLeave: false` —
-`bp-ten-foot.tsx:296-297`) (`bp-leave-confirm.tsx:160-187`). `Escape`/`Backspace` also closes
-it without leaving (`bp-leave-confirm.tsx:99-103`).
-
-### 1.10 Resume prompt (`BpResumePrompt`, `bp-resume-prompt.tsx:27-172`)
-
-Blocking fork (`forcePanel`, locks the shell, takes the remote directly — comment at
-`bp-resume-prompt.tsx:18-26`). Copy: eyebrow **"Pick up where you left off"**; progress line
-`"{watched} of {total} watched ({pct}%)."` + `"{time} left"` (`bp-resume-prompt.tsx:118-123`).
-Buttons: **"Resume from {time}"** (primary, autofocus, `Play` icon) and **"Start Over"**
-(`RotateCcw` icon) (`bp-resume-prompt.tsx:153-169`). Back press on this card resumes rather
-than exiting, since there is no other escape route (`bp-resume-prompt.tsx:56-63`).
-
-### 1.11 Info line / identity (`BpPlayerIdentity`, `bp-player-identity.tsx:24-58`)
-
-Shows a clear-logo image if available, else the title as text (`bp-player-identity.tsx:34-45`).
-Quiet metadata line below: episode line `"S{season} E{episode padded 2}"` optionally
-` · {episode name}` (`bp-player-identity.tsx:5-10`); source line = `resolution · quality ·
-releaseGroup` joined, filtering blanks (`bp-player-identity.tsx:12-17`). Both joined with
-`"  ·  "` (`bp-player-identity.tsx:47-49`). A `"Casting"` badge appears when
-`playback.casting` (`bp-player-identity.tsx:51-55`).
-
-**Quality/HDR badges** are computed, not part of this identity component directly, in
-`src/lib/player/resolution-label.ts`:
+- `nextEpisodeLead(setting, durationSec)` (`:10-14`):
 ```ts
-realQualityLabel(w,h): "4K" (≥2160p/3840w) | "1440p" | "1080p" | "720p" | "480p" | "SD" | null
-hdrFormatLabel(hdrGamma, ...formats): "DV" | "HDR10+" | "HDR" | null
+export function nextEpisodeLead(setting: number, durationSec: number): number {
+  if (setting === 0) return 0;
+  if (setting > 0) return setting;
+  return Math.min(45, Math.max(15, Math.round(durationSec * 0.04)));
+}
 ```
-(`resolution-label.ts:1-29`) — DV/HDR10+ detected via regex over format strings
-(`DV_TOKEN`, `HDR_TOKEN`, `resolution-label.ts:13-14`); when `hdrGamma` isn't `"pq"`/`"hlg"`
-and is non-empty, returns `null` (avoids mislabeling SDR-tonemapped content).
+  `setting` = `settings.nextEpisodeLeadSec`, default `-1` (`defaults.ts:392`) → auto lead =
+  4% of duration, clamped to 15–45s. `0` disables it; a positive value is the lead window
+  literally, in seconds.
+- If no real "outro" skip segment exists, a **synthetic outro** is manufactured covering the
+  last `leadSec` of the runtime once remaining time drops into `(0.5s, leadSec]` (`:50-65`),
+  so the up-next UI always has something to key off near the end even with no provider data.
+- Auto-skip (immediate jump, no pill shown) fires per-kind when `settings.autoSkipIntro`/
+  `autoSkipRecap`/`autoSkipOutro`/`autoSkipAd` is true (all default `false`,
+  `defaults.ts:310-313`) and the `allowAutoSkip` prop is true; guarded so each concrete
+  segment auto-skips only once (`autoSkippedRef`).
+- Skip-pill auto-hide: `settings.skipButtonHideSec` (default `0` = never, `defaults.ts:
+  315`); when >0, `setTimeout(..., skipButtonHideSec * 1000)` hides the shown pill; manual
+  dismissal (X) is remembered per segment key (`kind:startSec:endSec`) until the segment
+  changes. `settings.showSkipButton` (default `true`) gates whether pills render at all.
 
-### 1.12 Connecting / error / stall UI (`BpConnecting`, `bp-connecting.tsx:1-431`)
+#### Skip pill (`bp-skip-pill.tsx`) & Up Next card (`bp-up-next.tsx`)
 
-Timing: `STILL_LOOKING_MS = 22_000` — after 22s with zero torrent peers, switches to the
-"still looking" message (`bp-connecting.tsx:30,246-248`). `HEAVY_BYTES = 20 * 1024**3` (20GiB)
-triggers a separate "large file" warning line (`bp-connecting.tsx:31,238-244`).
+Both render in the shell's always-on `stage` slot (independent of chrome phase) at
+`BP_STAGE_BOTTOM = "var(--bp-player-dock, calc(var(--bp-safe-y, 0px) + clamp(30px, 4vh,
+64px)))"` (`bp-up-next.tsx:69-70`).
 
-Status note strings (verbatim, `bp-connecting.tsx:239-254`):
-- Terminal (couldn't connect): *"Couldn't connect to any peers for this torrent. It may be
-  unreachable on your network (some ISPs and VPNs block torrent traffic)."*
-- Slow (peers but no data): *"Found peers but no data yet. The torrent may be slow."*
-- Buffering (player has stream open): *"The player has the stream open and is waiting on
-  the next piece."*
-- Still looking (≥22s, 0 peers): *"Still looking. Some torrents take a minute to find their
-  first peer."*
-- Downloading with peers: *"Downloading the start of the file. Playback begins once there
-  is enough to keep going."*
-- Heavy-file note (non-terminal): *"Heads up: this is a large file for peer-to-peer
-  streaming, so it can take a while to start. A 1080p source or a debrid service will load
-  faster."*
+Skip pill:
+- **Never auto-focuses** (no `data-bp-autofocus`) — deliberate; documented at
+  `bp-skip-pill.tsx:22-42`: a focused `<button>` fires on both Enter and Space, and Space is
+  the pause key, so auto-seeding it would hijack pause during the intro window. Reachable
+  by: (1) navigating Up twice from the transport, or (2) the dedicated `MediaFastForward`
+  hotkey, which shows a hint chip reading `"A"` (gamepad) or `"Enter"` (no gamepad)
+  (`:198-200`).
+- `EXIT_MS = 240` (`:20`) — pill stays mounted 240ms after the segment clears, for exit fade.
+- Labels by kind (`:148-157`): ad → `t("Skip injected ad?")`; intro → `t("Skip Intro")`;
+  recap → `t("Skip Recap")`; outro-with-next-episode → `t("Next Episode")`; else →
+  `t("Skip Credits")`. Dismiss tooltip/aria-label: `t("Hide this Skip button")`.
+- When an outro segment is active, a next episode exists, and `remainingSec <= leadSec`, the
+  pill **morphs into the Up Next card** instead (`asUpNext`, `:98-101,133-146`).
 
-Action buttons: terminal state → **"Go back"** (loud) + **"Try again"**
-(`bp-connecting.tsx:287-300`); non-terminal → **"Cancel"** + (if slow) **"Try again"**
-(`bp-connecting.tsx:302-317`).
+Up Next card:
+- Header eyebrow `t("Up Next")`; title = episode name or `S{season}·E{episode}` fallback
+  (spoiler-masked via `mask?.title`); meta line `"{epLabel} · {n} min"` (via
+  `t("{n} min", {n})`); still image if available and not spoiler-masked (`mask?.thumb`).
+- `CountdownRing` — SVG ring, `stroke-dashoffset` animation (not conic-gradient — comment at
+  `bp-up-next.tsx:270-272` notes conic-gradient renders unevenly on the WebViews Harbor
+  ships on), shows integer seconds remaining.
+- Buttons: `t("Play now")` (Play icon) and `t("Keep watching")` (X icon, cancels
+  auto-advance) — cancel, not play, gets the autofocus seed (`:223-227`): an accidental
+  cancel costs one extra button press, an accidental play throws away unwatched runtime.
+- Back button, while the up-next card is visible, cancels auto-advance rather than exiting
+  (`pushBpBack`, `:126-131`).
+
+#### Skip-segment data sources (`src/lib/skip-intro/*`)
+
+Merge priority order (first match on overlap wins), `index.ts:172`:
+`[adSegments, aniSkip, skipDb, introDb, introDbApp, fromChapters]`.
+- **AniSkip** (`aniskip.ts`) — anime only. Kitsu→MAL mapping:
+  `https://kitsu.io/api/edge/anime/{kitsuId}/mappings`; skip times:
+  `https://api.aniskip.com/v2/skip-times/{malId}/{episode}?{params}`.
+- **SkipDB** (`skipdb.ts:56`) — `https://api.skipdb.tv/api/segments?{key}`.
+- **IntroDB** (`theintrodb.ts:79-80`) — `https://api.theintrodb.org/v2/media?{cacheKey}`
+  (user-supplied API key read via `readTheIntroDbKey(settings)`).
+- **IntroDB App** (`introdb-app.ts:46`) — a *different* service:
+  `https://api.introdb.app/segments?{key}`.
+- **AdCorpus** (`adcorpus.ts`) — hits `HARBOR_API_BASE` (`@/lib/config/endpoints`) for
+  injected-ad segment fingerprints; not a third-party skip-intro provider.
+- **Chapters** (`chapters.ts`) — classifies mpv chapter titles by regex
+  (`INTRO_PATTERNS`/`OUTRO_PATTERNS`/`RECAP_PATTERNS`) into intro/outro/recap, synthesizing
+  a `SkipSegment` per matched chapter; `endSec` = next chapter's start, or `+90s` fallback.
+- Filtering (`index.ts:171-183`): drop segments starting ≥ total duration; clamp `endSec` to
+  duration; require length in `[2, MAX_SEGMENT_SEC=360]` seconds; outro segments must start
+  at or after `durationSec * MIN_OUTRO_START_FRACTION (0.5)`.
+- `activeSegment(segments, positionSec)` (`:214-222`): active while `positionSec ∈
+  [startSec, endSec - 0.75)`.
+- `SkipSegment = { kind: "intro"|"outro"|"recap"|"ad"; startSec: number; endSec: number;
+  source: "aniskip"|"introdb"|"skipdb"|"introdb-app"|"chapters"|"adcorpus" }` (`types.ts`).
+
+### 1.10 Back / exit behaviour
+
+`bp-player-key.ts` and `bp-back.ts` implement two independent, stacked handler registries:
+`setBpPlayerKeyHandler`/`bpPlayerHandledKey` for directional keys, and
+`pushBpBack`/`runBpBack` for the Back button specifically — both LIFO (newest handler wins;
+false/no-claim falls through).
+
+Shell's Back handling (`bp-player-shell.tsx:183-196`, `onBack`): first tries `runBpBack()`
+(registered dialogs/panels get first refusal); if a panel is open, closes it and stops;
+**otherwise `hideChrome()`** — Back with chrome up just hides the chrome, it does **not**
+exit playback. Comment is explicit: *"Back does not leave playback from here. It puts the
+chrome away, and the next Back falls through uncaught to the player's own confirm-and-exit."*
+So it is genuinely a **press-Back-twice pattern**: 1st Back (chrome up) → hide chrome; 2nd
+Back (chrome down, idle-keys active) → falls through uncaught to `BpTenFootLayer`'s own
+`pushBpBack` (`bp-ten-foot.tsx:283-308`), which calls `p.onBack()` directly if
+`!sportsDocked && !drawMode`, else routes through `requestPlayerClose(...)` with
+`playerConfirmLeave: settings.playerConfirmLeave` — i.e. **the leave-confirmation dialog
+only appears if that setting is enabled.**
+
+Confirm dialog (`bp-leave-confirm.tsx`, `BpLeaveConfirm`, state from
+`src/lib/player/leave-confirm.ts`): title `t("Leave the show?")`; body `t("We'll save your
+spot so you can pick up right where you left off.")`; buttons `t("Keep watching")`
+(autofocused), `t("Leave")`, plus a toggle `t("Don't ask again")` (Check icon when on) —
+checking it flips `playerConfirmLeave` off via `state.onConfirm(remember)`. Escape/Backspace
+also close it.
+
+The rail's manual `t("Back")` chip (§1.6) provides an always-visible exit affordance in
+addition to the hardware Back button.
+
+### 1.11 Error / stall / retry UI (`bp-connecting.tsx`, `bp-p2p-status.tsx`)
+
+Connecting/loading full-screen overlay (`bp-connecting.tsx`), shown while `!everPlayed &&
+!failed && errorCode == null && status !== "ended"`.
+- `STILL_LOOKING_MS = 22_000` — after 22s with zero peers, note upgrades to "still looking".
+- `HEAVY_BYTES = 20 * 1024**3` (20 GB) — triggers a "large file" warning note.
+- `FADE_MS = 320` — overlay fade-out on dismiss.
+- P2P terminal-failure windows (`bp-p2p-status.tsx:28-29`, shared with the windowed
+  player's `use-p2p-preparing-status.ts` — comment warns both must be changed together):
+  `NO_PEERS_MS = 75_000` (torrent declared dead after 75s of zero peers/no data),
+  `SLOW_MS = 90_000` (declared "slow" after 90s with peers but no data movement). Poll
+  interval `POLL_MS = 1000`.
+- Stage labels (`bpStageLabel`, `bp-p2p-status.tsx:168-180`): `t("No peers found")`
+  (terminal) / `t("Buffering")` / `t("Loading")` (local file) or `t("Connecting")`
+  (non-torrent stream) / `t("Found peers, no data yet")` (slow) / `t("Looking for
+  peers…")` (0 peers) / `t("Preparing stream")` (default torrent state).
+- Note strings (`bp-connecting.tsx:239-267`): terminal → `t("Couldn't connect to any peers
+  for this torrent. It may be unreachable on your network (some ISPs and VPNs block torrent
+  traffic).")`; slow → `t("Found peers but no data yet. The torrent may be slow.")`;
+  buffering → `t("The player has the stream open and is waiting on the next piece.")`;
+  still-looking (≥22s, 0 peers) → `t("Still looking. Some torrents take a minute to find
+  their first peer.")`; peers>0 → `t("Downloading the start of the file. Playback begins
+  once there is enough to keep going.")`; heavy-file → `t("Heads up: this is a large file
+  for peer-to-peer streaming, so it can take a while to start. A 1080p source or a debrid
+  service will load faster.")`.
+- Action buttons: non-terminal → `t("Cancel")` always, plus `t("Try again")` if `slow`;
+  terminal → `t("Go back")` (loud/primary) + `t("Try again")` (quiet).
+- Readiness meter is monotonic-only (never regresses visually, `useMonotonicPct`,
+  `bp-p2p-status.tsx:182-189`) and shows an indeterminate pulsing-bar state
+  (`stremio-progress` CSS animation, 1.5s) while `pct < 1`.
+
+### 1.12 Hint bar
+
+`HINTS: BpAction[] = ["select", "back"]` (`bp-player-shell.tsx:32`) — labels: Select =
+`t("Select")` (pad glyph `A`, remote glyph `OK`, keyboard glyph `Enter`), Back = `t("Back")`
+(pad `B`, remote `Back`, keyboard `Esc`). Hidden (opacity 0) while a panel is open; shown at
+full opacity only when chrome is up with no active panel (`bp-player-shell.tsx:372-379`).
+
+### 1.13 Not found (Section 1)
+
+- Chapter marks on the seek bar.
+- Trickplay/scrubbing thumbnail preview (desktop-only concept, not present in TV source).
+- A dedicated quality/resolution badge UI element (e.g. a "4K"/"HDR" chip) — only plain text.
+- A playback-speed menu for TV — no TV source file for it exists.
+- Any TV-specific still-watching UI — desktop modal is reused unconditionally.
 
 ---
 
 ## 2. MPV CONFIGURATION (`src-tauri/src/mpv.rs`, `src/lib/player/*`)
 
-Rust host: `src-tauri/src/mpv.rs` (3483 lines). All options below are set via
-`mpv.set_property(name, value)` or, pre-init, `init.set_property(...)` on an
-`MpvInitializer`. Errors from optional properties are swallowed (`let _ = ...`) so the
-player degrades gracefully on libmpv builds missing optional features (comment,
-`mpv.rs:326-329`).
+### 2.1 Pre-init options (`apply_pre_init`, `mpv.rs:325-478`)
 
-### 2.1 Pre-init options (`apply_pre_init`, `mpv.rs:325-...`)
+Applied before `mpv_initialize` via `init.set_property` (best-effort — `PROPERTY_NOT_FOUND`
+logged non-fatally, `mpv.rs:334-338`):
 
-Always set: `title="Harbor"`, `audio-client-name="Harbor"`, `terminal="no"`,
-`msg-level="all=warn,vo=v,d3d11=v,gpu=v,win32=v"` (`mpv.rs:349-352`).
-`ytdl` = `"yes"` if live else `"no"` (`mpv.rs:353-354`).
+| mpv property | value | file:line |
+|---|---|---|
+| `title` | `"Harbor"` | 349 |
+| `audio-client-name` | `"Harbor"` | 350 |
+| `terminal` | `"no"` | 351 |
+| `msg-level` | `"all=warn,vo=v,d3d11=v,gpu=v,win32=v"` | 352 |
+| `ytdl` | `"yes"` if `args.is_live` else `"no"` | 353-354 |
+| `user-agent` | `args.headers["user-agent"]` else default `"VLC/3.0.20 LibVLC/3.0.20"` | 355-367 |
+| `http-header-fields` | comma-joined `"Name: value"` pairs for remaining headers | 368-369 |
 
-**User-Agent / headers** (`mpv.rs:355-368`): default UA `"VLC/3.0.20 LibVLC/3.0.20"`
-(`mpv.rs:355`); any `headers` map passed in is scanned for a `User-Agent` key (case
--insensitive) to override it; all other headers become `http-header-fields`, comma-joined,
-each formatted `"{name}: {value}"` with `\` and `,` escaped inside the value
-(`mpv_header_field`, `mpv.rs:317-323`) — this is how upstream applies stream-proxy headers
-(`behaviorHints.proxyHeaders` from the addon manifest; the header values arrive as plain
-strings in `MpvStartArgs.headers: Option<Vec<(String,String)>>` and are passed through
-verbatim).
+`http-header-fields` is built by `mpv_header_field()` (`mpv.rs:319-323`), which escapes
+`\`→`\\` and `,`→`\,` — mpv parses this option as a comma list, so an unescaped comma (e.g.
+in `Accept-Language`) would create an invalid second header.
 
-**hwdec** (platform-branched, `mpv.rs:376-395`):
-- macOS embedded: `"videotoolbox-copy"`, `force-window="no"`.
-- Linux: `"auto-safe"`; `force-window` = `"no"` if embedded else `"yes"`.
-- Windows: `"d3d11va"` if RTX Video (HDR or VSR) requested, else `"auto-safe"`;
-  `force-window="immediate"`.
-- Other: `"auto-safe"`, `force-window="immediate"`.
+**`hwdec`** (mpv.rs:377-391): macOS embedded (`on_mac_embed`) → `"videotoolbox-copy"` (+
+`force-window="no"`); Linux → `"auto-safe"`; Windows → `"d3d11va"` if RTX HDR or RTX VSR
+requested else `"auto-safe"`; other/macOS non-embed → `"auto-safe"`.
 
-Other pre-init flags: `input-default-bindings="no"`, `input-media-keys="no"`,
-`input-cursor="no"`, `osc="no"` (best-effort — not all libmpv builds ship the OSC Lua
-script, `mpv.rs:398-401`), `osd-level="0"`, `cursor-autohide="200"`, `volume-max="600"`,
-`sub-codepage="utf-8"`, `background-color="#000000"`, `background="color"`,
-`media-controls="no"` (`mpv.rs:396-414`). Windowed (non-embedded) mode also sets
-`ontop="yes"`, `border="no"` (`mpv.rs:424-436`).
+**`force-window`**: Linux `"no"` if `args.embed` else `"yes"` (383-386); Windows
+`"immediate"` (389); other `"immediate"` (392).
 
-**Colorspace/HDR (pre-init)**:
-- RTX HDR path: `gpu-api="d3d11"`, `target-colorspace-hint="yes"`, `target-peak="10000"`
-  (`mpv.rs:449-452`).
-- HDR-to-SDR tonemap path: `tone-mapping="spline"`, `gamut-mapping-mode="perceptual"`,
-  `hdr-compute-peak="yes"`, `hdr-contrast-recovery="0.30"`, `hdr-peak-percentile="99.995"`,
-  `dither-depth="auto"`, `target-trc="bt.1886"`, `target-prim="bt.709"`; Windows/macOS also
-  add `target-colorspace-hint="yes"` (`mpv.rs:453-471`); Windows VSR-while-tonemapping keeps
-  `gpu-api="d3d11"` (`mpv.rs:472-474`).
-- Otherwise: Windows sets `target-colorspace-hint="yes"` always, plus `gpu-api="d3d11"` if
-  embedded or VSR (`mpv.rs:476-480`); macOS sets `target-colorspace-hint="yes"`
-  (`mpv.rs:482-484`).
+Other pre-init options: `video-timing-offset="0"` when embedded on macOS/Linux (mpv's render
+callback normally wakes ahead of presentation time and blocks in `render()`, stalling the
+WebKit overlay's UI thread — 394-401); `input-default-bindings="no"`, `input-media-keys=
+"no"`, `input-cursor="no"` (403-405); `osc="no"` (best-effort; some libmpv builds, e.g.
+Flatpak, lack the optional OSC Lua script, 406-409); `osd-level="0"` (410);
+`cursor-autohide="200"` (411); `volume-max="600"` (412); `sub-codepage="utf-8"` (413);
+`background-color="#000000"`, `background="color"`, `media-controls="no"` (414-416).
+Windows embed: `wid`=HWND int; if `d3d11_flip && hdr_to_sdr`, `d3d11-flip="no"` (419-427).
+Non-embed windowed overlay: `ontop="yes"`, `border="no"`; Windows-only `screen`=monitor
+ordinal (434-445).
 
-**Anime4K shaders**: if `args.anime4k_shaders` is set, paths are backslash→forward-slash
-normalized and joined with `;` on Windows / `:` elsewhere into `glsl-shaders`
-(`mpv.rs:486-498`).
-
-**Start position**: `start="{sec}"` if `args.start_at_sec > 0` (`mpv.rs:500-503`).
-
-No `"profile"` mpv option is ever set — confirmed by grep (`grep '"profile"' mpv.rs` → no
-matches). Harbor configures every relevant knob individually rather than using an mpv
-profile.
+**HDR/tone-map branch** (447-480): RTX HDR active → `gpu-api="d3d11"`,
+`target-colorspace-hint="yes"`, `target-peak="10000"`. Else if `hdr_to_sdr` →
+`tone-mapping="spline"`, `gamut-mapping-mode="perceptual"`, `hdr-compute-peak="yes"`,
+`hdr-contrast-recovery="0.30"`, `hdr-peak-percentile="99.995"`, `dither-depth="auto"`,
+`target-trc="bt.1886"`, `target-prim="bt.709"`; Windows/macOS also add
+`target-colorspace-hint="yes"`; Windows+RTX VSR also `gpu-api="d3d11"`. Else: Windows adds
+`target-colorspace-hint="yes"` (+ `gpu-api="d3d11"` if embedded or VSR); macOS adds
+`target-colorspace-hint="yes"`.
 
 ### 2.2 Video output
 
-Non-embedded (or non-mac/linux-embed) path: `vo` = `"gpu"` if
-`args.renderer == Some("gpu")` else default **`"gpu-next"`** (`mpv.rs:803-809`); optional
-`vf-append="format=yuv420p"` if `force_yuv420p` (`mpv.rs:810-813`). Embedded macOS/Linux
-render-API path: `vo="libmpv"`, `force-window="no"` (`mpv.rs:815-818`).
+`vo`: when not using the native render API (macOS/Linux embed path) → `args.renderer`
+(`"gpu"` or default `"gpu-next"`, mpv.rs:801-809); if `force_yuv420p`, appends
+`vf-append="format=yuv420p"` (810-813); when using the render API → `vo="libmpv"` +
+`force-window="no"` (815-818). **No `profile` option is ever set anywhere in `mpv.rs`.**
 
-### 2.3 Cache / network (post-init, `mpv.rs:885-985`)
+### 2.3 Cache / network — post-init (`mpv_start`, mpv.rs ~780-1030)
 
-**Live streams** (`is_live == true`):
-```
-cache=yes, cache-secs=30, cache-pause=yes, cache-pause-initial=no
-demuxer-max-bytes=64MiB, demuxer-max-back-bytes=16MiB, demuxer-readahead-secs=20
-network-timeout=60
-stream-lavf-o=reconnect=1,reconnect_delay_max=5,reconnect_on_network_error=1
-demuxer-lavf-o=http_seekable=0,http_persistent=0
-stream-buffer-size=16MiB
-```
-(`mpv.rs:887-901`)
+`log-file` = `<app_data_dir>/harbor-mpv.log` (797-798).
 
-**Non-live**, three tiers by `full_dl` (full-download mode) / `high_bitrate`
-(`startup_profile == "high-bitrate"`) / default:
+**Live streams** (`is_live`, 889-902): `cache="yes"`, `cache-secs="30"`, `cache-pause=
+"yes"`, `cache-pause-initial="no"`, `demuxer-max-bytes="64MiB"`, `demuxer-max-back-bytes=
+"16MiB"`, `demuxer-readahead-secs="20"`, `network-timeout="60"`, `stream-lavf-o=
+"reconnect=1,reconnect_delay_max=5,reconnect_on_network_error=1"`, `demuxer-lavf-o=
+"http_seekable=0,http_persistent=0"`, `stream-buffer-size="16MiB"`. Also disables quality
+filters (1016-1029): `scale`/`dscale`/`cscale="bilinear"`, `dither="no"`, `deband="no"`,
+`correct-downscaling="no"`, `linear-downscaling="no"`, `sigmoid-upscaling="no"`,
+`hdr-compute-peak="no"`, `interpolation="no"`.
+
+**VOD** (905-980), keyed on `full_dl = args.full_download` and `high_bitrate =
+args.startup_profile == "high-bitrate"`:
+
 | property | full_dl | high_bitrate | default |
 |---|---|---|---|
 | `cache-secs` | `100000` | `45` | `30` |
@@ -434,322 +425,352 @@ stream-buffer-size=16MiB
 | `demuxer-max-bytes` | `48GiB` | `256MiB` | `128MiB` |
 | `demuxer-max-back-bytes` | `48GiB` | `64MiB` | `32MiB` |
 | `demuxer-readahead-secs` | `100000` | `45` | `30` |
-| `stream-buffer-size` | `16MiB` | `32MiB` | `16MiB` |
-(`mpv.rs:905-982`)
+| `stream-buffer-size` | — | `32MiB` | `16MiB` |
 
-`cache=yes`, `cache-pause=yes`, `cache-pause-initial=no` always. `demuxer-cache-dir` (or
-legacy `cache-dir` if the property name is rejected on mpv 0.41+) points at
-`<app_cache_dir>/mpv-cache` (`mpv.rs:955-969`); `cache-on-disk=yes` (`mpv.rs:972`).
-`network-timeout` = `network_timeout_for(url)`: **`600`** for a local-network URL,
-**`60`** otherwise (`mpv.rs:645-651,973`). `stream-lavf-o` for non-live:
-```
-reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60
-```
-Deliberately **no `reconnect_streamed`** — comment explains that on AES-128 HLS every
-segment ends in a normal EOF that ffmpeg then retries from offset 0 with that flag, costing
-measured 55s of backoff per 100s on a real stream vs. 0s without it (`mpv.rs:911-916`).
+`cache="yes"`, `cache-pause="yes"`, `cache-pause-initial="no"` always. `demuxer-cache-dir`
+(falls back to legacy `cache-dir` if rejected — mpv 0.41 renamed it and rejects the old name)
+= `<app_cache_dir>/mpv-cache` (959-969); `cache-on-disk="yes"` (972). `network-timeout` =
+`network_timeout_for(url)`: `"600"` for a local-network URL (`is_local_network_url`), else
+`"60"` (645-651, 973). `stream-lavf-o` = `"reconnect=1,reconnect_on_network_error=1,
+reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60"` —
+**deliberately no `reconnect_streamed`**: comment explains AES-128 HLS segments end in a
+normal EOF, ffmpeg retries from offset 0 and gets an empty body, causing 1/3/7s backoff;
+measured 7 segments/55s backoff per 100s with the flag vs. 94 segments/0s backoff without it
+(975-982).
 
-### 2.4 Live-stream render simplifications
+Subtitle slot init (991-1007): `sub-auto="all"` (still discovers local sidecars for the
+track picker), `sid="no"`, `secondary-sid="no"` (kept empty so mpv doesn't auto-pick before
+Harbor applies the user's language choice); if embedding, `sub-visibility="no"`,
+`secondary-sub-visibility="no"`; `sub-fonts-dir` = app font dir; `sub-font-provider=
+"auto"`; `sub-font="Noto Sans JP"`; `embeddedfonts="yes"`.
 
-When `is_live`, extra scaling/dithering is disabled for performance: `scale`/`dscale`/
-`cscale = "bilinear"`, `dither="no"`, `deband="no"`, `correct-downscaling="no"`,
-`linear-downscaling="no"`, `sigmoid-upscaling="no"`, `hdr-compute-peak="no"`,
-`interpolation="no"` (`mpv.rs:1010-1024`).
+`extra_options` (arbitrary user string) is applied *after* everything above via
+`apply_extra_mpv_options`, so it can override anything (1009-1011).
 
-### 2.5 Subtitle options (post-init)
+Screenshot options: `screenshot-format="png"/"jpg"`, `screenshot-png-compression="3"`,
+`screenshot-jpeg-quality="92"/"72"`, `screenshot-sw="yes"`, `screenshot-high-bit-depth=
+"no"` (1931-2001, 2303-2308 — clip/GIF recorder vs. regular screenshot use different
+quality). CLI fallback launch (2245-2246) uses `--cache=yes --network-timeout=60`.
 
-```
-sub-auto=all           // discover sidecar subs even for local files indexed pre-sidecar-persist
-sid=no                 // both subtitle slots start empty — Harbor applies user's language choice itself
-secondary-sid=no
-sub-visibility=no          // only if embedding (want_embed)
-secondary-sub-visibility=no
-sub-fonts-dir=<app fonts dir>   // from crate::fonts::sub_fonts_dir
-sub-font-provider=auto
-sub-font="Noto Sans JP"
-embeddedfonts=yes
-```
-(`mpv.rs:990-1007`)
+### 2.4 HDR runtime toggles (platform-specific, out of scope for tvOS)
 
-Per-URL subtitle attach: for every `args.subtitles[]` entry, runs `sub-add <url> auto` via
-`mpv_argv_command` (`mpv.rs:1060-1066`) — this is how external SRT/VTT/ASS URLs are loaded
-(the `url` is backslash-normalized first). Local file sidecars are attached separately via
-`attach_local_sidecars()` (`mpv.rs:1068`, not read in this pass — grep for its body if
-needed).
+Windows: `target-peak` flips `"10000"` → 60ms sleep → `"auto"` (`reassert_hdr_colorspace`,
+1088-1092). macOS EDR (`apply_mac_edr`, 1140-1157): sets `icc-profile-auto="no"`,
+`target-prim="bt.2020"`/`"display-p3"` (from read `video-params/primaries`),
+`target-trc="pq"`, `target-peak="auto"` when active; reverts `target-trc`/`target-prim`/
+`target-peak` to `"auto"` when inactive.
 
-Live-facing style properties (`sub-color`, `sub-border-size`, etc.) applied from the
-**frontend** in `applySubStyle()`, `src/lib/player/sub-style.ts:48-90` — see §4 of this doc
-("Style settings keys") for the full settings→mpv-property mapping; it's driven by
-`invoke("mpv_set_property", {name, value})` calls (Tauri IPC, not a Rust-side batch), see §6
-gotchas.
+### 2.5 Anime4K shader chains (`src/lib/player/anime4k-modes.ts`)
 
-### 2.6 HDR reassert / display flip (Windows/macOS-specific, out of scope for tvOS)
+Modes `"A"|"B"|"C"|"AA"|"BB"|"CA"`, tiers `"hq"` (`VL` variant) / `"fast"` (`M` variant).
+`anime4kChain(folder, mode, tier)` builds an ordered `.glsl` filename list prefixed with the
+shader folder — e.g. mode `"A"`: `[Anime4K_Clamp_Highlights.glsl,
+Anime4K_Restore_CNN_{VL|M}.glsl, Anime4K_Upscale_CNN_x2_{VL|M}.glsl,
+Anime4K_AutoDownscalePre_x2.glsl, Anime4K_AutoDownscalePre_x4.glsl,
+Anime4K_Upscale_CNN_x2_M.glsl]`; mode `"C"` swaps in
+`Anime4K_Upscale_Denoise_CNN_x2_{VL|M}.glsl}`. **Not found**: the exact mpv property that
+receives this chain (likely `glsl-shaders`) was not confirmed in this pass — check
+`src/lib/player/shader-chain.ts` and `mpv-forward.ts`.
 
-`reassert_hdr_colorspace()` toggles `target-peak` `10000`→(60ms sleep)→`auto` (`mpv.rs:1087-1091`).
-Windows: `restore_display_sdr_if_flipped()` uses `DisplayConfig` Win32 APIs to flip the
-physical display back to SDR after mpv quits, only if this session flipped HDR on
-(`mpv.rs:1105-1133`). macOS: `apply_mac_edr()` sets `icc-profile-auto=no`,
-`target-prim` = `"bt.2020"` or `"display-p3"` (based on `video-params/primaries`),
-`target-trc="pq"`, `target-peak="auto"` when entering EDR, and reverses all three when
-leaving (`mpv.rs:1140-1160`) — this is the closest desktop analog to what a native
-AVFoundation/MPVKit `tvOS` EDR path would need, but the actual display-flip mechanism
-(`crate::mpv_render_mac::set_hdr_active`) is platform-specific and not portable.
+### 2.6 Buffer size presets (`src/lib/player/buffer-profile.ts`)
 
-### 2.7 Anime4K shader chains (`src/lib/player/anime4k-modes.ts:1-46`)
+`BufferSizeId = "auto"|"small"|"medium"|"large"|"max"`:
 
-6 modes: `A, B, C, AA, BB, CA` (`anime4k-modes.ts:1,4-11`). Each mode maps to an ordered
-`.glsl` filename chain built from a fixed set of building blocks
-(`Anime4K_Clamp_Highlights.glsl`, `Restore_CNN[_Soft]`, `Upscale_CNN_x2`,
-`AutoDownscalePre_x2/x4`) at either `"VL"` (hq tier) or `"M"` (fast tier) size
-(`anime4k-modes.ts:13-39`). `anime4kChain(folder, mode, tier)` (`anime4k-modes.ts:41-46`)
-prefixes every filename with the shader folder path and normalizes slashes; the resulting
-list becomes `args.anime4k_shaders` → mpv's `glsl-shaders` option (§2.1). The broader shader
-catalog (FSRCNNX, AMD FSR, etc. — user-selectable upscalers/tonemap shaders, not
-Anime4K-specific) lives in `src/lib/player/shader-catalog.ts` with per-entry `stage`
-(`prescale|restore|chroma|sharpen|tonemap`), `content` gate (`all|anime|hdr|live`), and
-`conflictsWith` (e.g. a shader incompatible with `hdrToSdr`/`rtxHdr`) — not exhaustively
-enumerated here; read `shader-catalog.ts` directly if the port needs the full shader list.
+| id | cacheSecs | readaheadSecs | maxBytes | maxBackBytes | pauseWaitSecs |
+|---|---|---|---|---|---|
+| small | 60 | 20 | 150MiB | 32MiB | 0 |
+| medium | 300 | 120 | 512MiB | 64MiB | 4 |
+| large | 600 | 600 | 1GiB | 128MiB | 10 |
+| max | 1800 | 1800 | 2GiB | 256MiB | 20 |
 
-### 2.8 "Auto engine" rule — mpv vs. HTML5 (hls.js / mpegts.js)
+`bufferMpvLines(id)` renders literal mpv config lines (`cache=yes`, `cache-secs=N`, …).
+`bufferSizeFor(stored)` resolves `mpvBufferSize`, else `"large"` if legacy
+`mpvBufferBoost` was true, else `"auto"`. **Note**: reconciliation between this preset table
+and the hardcoded live/VOD numbers in §2.3 was not confirmed — appears to be a
+separate/possibly-legacy config path.
 
-`pickBridge()` (`src/views/player/player-utils.ts:54-87`):
+### 2.7 Startup profile (`src/lib/player/startup-profile.ts`)
+
+`PlaybackStartupProfile = "standard"|"high-bitrate"`. `playbackStartupProfile(stream)`
+returns `"high-bitrate"` if `stream.size >= 12 * 1024^3` bytes OR the regex
+`/(?:^|[^a-z0-9])(?:2160p?|4320p?|4k|8k|uhd|remux)(?:[^a-z0-9]|$)/i` matches the joined
+resolution/quality/source/parsedTitle/title descriptor; else `"standard"`. Threaded through
+as `args.startupProfile` → `mpv_start` → the `high_bitrate` branches in §2.3.
+
+### 2.8 Subtitle style → mpv property mapping
+
+See §4.5 (kept alongside the Settings defaults it maps from).
+
+### 2.9 Audio/subtitle track preference
+
+`Settings.preferredLanguages: string[]` (default `["English"]`,
+`src/lib/settings/types.ts:115`, `src/lib/settings/defaults.ts:29`) is the single
+language-preference list driving catalogue and player auto-selection. Subtitle candidate
+scoring/eligibility lives in `src/lib/subtitles/track-selection.ts` — see §4.2 for the full
+ranking algorithm. Orchestration is `src/views/player/hooks/use-track-autoload.ts` (939
+lines), which wires `preferredLanguages`, per-show overrides
+(`src/lib/player-prefs.ts::readPlayerPrefs`, §5.5), remembered choices
+(`src/lib/subtitles/subtitle-memory.ts`), and autoload gating
+(`src/lib/subtitles/autoload.ts`, `autoload-run.ts`) into the final `sid`/`aid`. Race
+protection: `SubtitleSelectionCoordinator` (`src/lib/player/subtitle-selection.ts:15-70`) —
+`manualMediaRevision` prevents a manual pick from being clobbered by a later automatic pick
+for the same media; `selectionRevision` drops stale async loads; `settle()` falls back to
+the previous id if the requested one is unavailable. mpv properties set: `aid`
+(`mpv.ts:995`, `mpv-forward.ts:98`) and `sid`/`secondary-sid` (`mpv.ts:1017-1064`).
+
+### 2.10 Stream headers (`behaviorHints.proxyHeaders`)
+
+- Type: `proxyHeaders?: ProxyHeaders` on the stream object (`src/lib/streams/types.ts:71`);
+  shape `{ request?: Record<string,string>|null; response?: Record<string,string>|null }`
+  (`src/lib/streams/mode.ts:5-8`).
+- Read at resolve time: `const headers = stream.behaviorHints?.proxyHeaders?.request ??
+  stream.behaviorHints?.headers;` (`src/lib/streams/resolve.ts:133`).
+- `hasDirectMediaEvidence()` treats presence of proxyHeaders/headers as evidence a stream is
+  directly playable, not a web page (`mode.ts:37-40,60-66`).
+- Adapter plugins can set `behaviorHints.proxyHeaders = { request: headers }`
+  (`src/lib/streams/plugins/adapter.ts:232`).
+- Flows into `DirectLink.headers` (`resolve.ts:140-146`) → `PlayerSrc.headers` → `src.headers`
+  in `createMpvBridge` (`src/lib/player/mpv.ts:892,934`).
+- `applyHeaderProps(headers)` (`mpv.ts:240-249`): splits headers into `user-agent`
+  (case-insensitive match) vs. the rest; sets mpv props `user-agent` and
+  `http-header-fields` (joined `"Key: value"`, comma-separated) via
+  `invoke("mpv_set_property", …)`. Rust re-escapes via `mpv_header_field()` (§2.1).
+  Applied on fresh `mpv_start` (`headers: src.headers ?? null`, `mpv.ts:934`) and on
+  in-place reload (`await applyHeaderProps(src.headers)` before `loadfile`, `mpv.ts:892`).
+
+### 2.11 Subtitle loading into mpv
+
+External subs are added via the mpv `sub-add` command with flag `"auto"` (does not
+force-select): `mpv_argv_command(&mpv_arc, &["sub-add", &url, "auto"])` (`mpv.rs:1063-1065`
+on-demand; `mpv.rs:1443` adjacent/sidecar auto-discovery; lower-level manual build at
+`mpv.rs:2380-2405`). TS side invokes this via `src/lib/player/mpv.ts` (warns
+`"[mpv] sub-add failed"` on error, `mpv.ts:1268`); accepts SRT/VTT/ASS URLs (local paths or
+http(s)).
+
+### 2.12 "Auto engine" rule — mpv vs. HTML5
+
+`pickBridge(want, notWebReady, mpvOpts)` — `src/views/player/player-utils.ts:54-87`:
 ```ts
-if (want === "html5") → html5 bridge, always.
-if (want === "mpv") → probe mpv; if available, mpv bridge; else fall back to html5 (warns).
+if (want === "html5") return { bridge: createHtml5Bridge(), engine: "html5" };
+if (want === "mpv") {
+  // probe mpv; available -> mpv bridge, engine "mpv"
+  // else -> warn, fall back to createHtml5Bridge(), engine "html5"
+}
 // want === "auto":
-if (isDesktop (Tauri) || notWebReady) → probe mpv; if available, mpv bridge.
-else → html5 bridge.
+// isDesktop = "__TAURI_INTERNALS__" in window
+// if (isDesktop || notWebReady) {
+//   probe mpv; available -> mpv bridge, engine "mpv"
+//   if (isDesktop) warn on probe failure
+// }
+// return createHtml5Bridge(), engine "html5"   // fallback
 ```
-`isDesktop` = `"__TAURI_INTERNALS__" in window` (`player-utils.ts:80`). `notWebReady` is a
-per-source flag (`src.notWebReady`) for streams the `<video>` element can't play directly
-(e.g. raw MPEG-TS). **On a native tvOS app there is no "web" fallback path** — the port
-always uses MPVKit; this rule doesn't need porting, but its *consequence* — that some
-formats route through hls.js or mpegts.js instead of mpv on non-desktop web builds — is a
-web-only concern.
+There is **no separate HLS/mpegts engine** in this codebase — only `"mpv"` (native libmpv
+via Tauri) and `"html5"` (in-webview `<video>`, via `createHtml5Bridge()` in
+`src/lib/player/html5.ts`). "Auto" picks mpv whenever running under Tauri desktop or when
+the stream is `notWebReady` (direct/torrent/proxied stream a plain `<video>` can't play),
+gated by a successful `probeMpv()`; otherwise always falls back to html5. `engine` state
+lives in `src/views/player/hooks/use-player-bridge.ts:63` and gates many mpv-only features
+across `src/views/player/hooks/*.ts` (grep `engine === "mpv"` for the full list). This rule
+is **irrelevant to a native tvOS port** — MPVKit is always used — but is documented here for
+completeness since it explains why some desktop code paths are HTML5-only.
 
-Inside the HTML5 bridge (`src/lib/player/html5/bridge.ts:524-548`, only relevant to the
-in-browser build): `isHls` = URL ends with/contains `.m3u8` or `/playlist/`
-(`html5/bridge.ts:524-525`) → `Hls` (hls.js) if `Hls.isSupported()`. Else `isTs` = URL ends
-`.ts`, or `notWebReady && !isHls` and not one of `mp4|webm|mov|mkv|mpd`
-(`html5/bridge.ts:526-528`) → `mpegts.js` if supported. Else plain `video.src = url`.
+### 2.13 Types verbatim (mpv/Rust)
 
-### 2.9 Stream headers / proxy headers (`behaviorHints.proxyHeaders`)
+`src-tauri/src/mpv.rs:41-60` — `MpvStartArgs` (serde camelCase):
+```rust
+pub struct MpvStartArgs {
+    pub url: String,
+    pub start_at_sec: Option<f64>,
+    pub subtitles: Option<Vec<MpvSub>>,
+    pub anime4k: Option<bool>,
+    pub hdr_to_sdr: Option<bool>,
+    pub rtx_hdr: Option<bool>,
+    pub rtx_vsr: Option<bool>,
+    pub embed: Option<bool>,
+    pub anime4k_shaders: Option<Vec<String>>,
+    pub d3d11_flip: Option<bool>,
+    pub mac_edr: Option<bool>,
+    pub is_live: Option<bool>,
+    pub full_download: Option<bool>,
+    pub startup_profile: Option<String>,
+    pub headers: Option<HashMap<String, String>>,
+    pub extra_options: Option<String>,
+    pub renderer: Option<String>,
+    pub force_yuv420p: Option<bool>,
+}
+```
 
-Not found as a literal string in `mpv.rs`; the header pipeline is generic (§2.1 — any
-`headers` map passed into `MpvStartArgs` becomes `user-agent` + `http-header-fields`). The
-add-on-manifest-level `behaviorHints.proxyHeaders` → per-stream headers mapping happens on
-the TypeScript side before the Rust call (in the streams-resolution code, outside this
-doc's file scope — see `src/lib/streams/*` if the port needs that mapping).
+`src-tauri/src/mpv.rs:64-71` — `MpvGeometry`:
+```rust
+pub struct MpvGeometry {
+    pub css_left: f64,
+    pub css_top: f64,
+    pub css_width: f64,
+    pub css_height: f64,
+    pub css_view_w: f64,
+    pub css_view_h: f64,
+}
+```
+
+### 2.14 Not found / unconfirmed (Section 2)
+
+- Exact mpv property receiving the Anime4K `.glsl` chain (likely `glsl-shaders`).
+- Reconciliation between `BUFFER_PROFILES` (§2.6) and the hardcoded live/VOD cache numbers
+  in §2.3.
+- `src/lib/player/mpv-tuning.ts` (`mergeMpvOptions`, referenced from
+  `use-player-bridge.ts:8`) was not opened in this pass.
 
 ---
 
 ## 3. PROGRESS + RESUME
 
-Three parallel local persistence layers plus a cloud (Stremio) library sync layer and two
-optional third-party scrobblers (Trakt, Simkl). All are `localStorage`-backed on the web
-build.
+### 3.1 localStorage keys and shapes
 
-### 3.1 Resume (`src/lib/resume.ts`)
+All four stores below are **per-profile**: they read `harbor.profiles.v1` to resolve
+`activeProfileId()`; if the active profile shares Stremio with another profile
+(`shareStremioWith`), writes redirect to that shared profile's key.
 
-Storage key: **`"harbor.resume"`** (`resume.ts:3`) — a single flat JSON object, not
-per-profile-scoped (unlike playback-history/local-cw/movie-watched below).
-
-Entry key: `entryKey(id, season?, episode?)` → `` `${id}|s${season}e${episode}` `` if both
-given, else bare `id` (`resume.ts:7-12`).
-
-Entry shape (`resume.ts:5`, matches §5 `ResumeEntry` type):
+**`harbor.resume`** (`src/lib/resume.ts:3`) — single JSON object, keyed by
+`entryKey(id, season?, episode?)` = `` `${id}|s${season}e${episode}` `` for episodes, else
+bare `id` (`resume.ts:7-12`). Value (`resume.ts:5`):
 ```ts
-type Entry = { ms: number; t: number; s?: number; pct?: number; source?: "simkl" | "trakt" };
+type Entry = { ms: number; t: number; s?: number; pct?: number; source?: ExternalCwSource };
 ```
-`ms` = position in milliseconds, `t` = `Date.now()` write timestamp, `s` = *display* season
-(may differ from the storage-key season for split-franchise anime — see
-`displaySeasonFor` in §3.6), `pct` = optional fractional watched ratio (0-1, used when
-merging with a remote entry of different duration — §3.6), `source` = which external
-tracker last wrote this entry.
+`ms`=position ms, `t`=`Date.now()` write timestamp, `s`=display season override,
+`pct`=fraction 0-1, `source`=`"simkl"|"trakt"` when backfilled externally. Written via
+`saveResumeMs`/`saveResumeBatch` (`:31,57`), read via `readResumeMs`/`readResumeEntry`
+(`:88,93`), cleared via `clearResume` (`:119`). `lastPlayedEpisode(seriesId)` (`:125`) scans
+keys prefixed `` `${seriesId}|s` `` and returns the most-recently-touched episode.
 
-Writers: `saveResumeMs(...)` (single) and `saveResumeBatch([...])` (bulk, used by the
-episode-span "mark N episodes as covered" path). Both validate `ms >= 0` and
-`season >= 0, episode >= 1` before writing (`resume.ts:31-86`). `readResumeEntry`,
-`readResumeMs`, `readResumeSource`, `clearResume`, and `lastPlayedEpisode(seriesId)` (scans
-all `seriesId|sXeY` keys for the most-recently-touched episode, by `t`) round out the API
-(`resume.ts:88-165`).
+**`harbor.playback-history.v1.<profileId>`** (legacy key `harbor.playback-history.v1`
+migrated in, `playback-history.ts:20-21,68-80`) — JSON object keyed the same way
+(`entryKey`, `:89-94`). Value = `PlaybackEntry` (§5.2). TTL `30 * 24 * 60 * 60 * 1000` ms
+(`:23`), cap `MAX_ENTRIES = 200`, oldest by `savedAt` evicted on write (`:24,115-121`).
+Written by `savePlayback` (`:145`), read by `readPlayback`/`readLastSeriesPlayback`
+(`:167,268`).
 
-### 3.2 Write cadence / thresholds — local (`src/views/player/hooks/use-resume-autosave.ts`)
+**`harbor.localcw.v1.<profileId>`** (legacy `harbor.localcw.v1`, `local-cw.ts:1-2`) — JSON
+object keyed by bare meta id. Value = `LocalCwEntry` (§5.3). Cap `MAX = 60`, oldest by `t`
+evicted (`:4,117-121`). `FINISHED_RATIO = 0.92` (`:5`): on `saveLocalCw`, if
+`positionMs/durationMs >= 0.92` and `type === "movie"`, the entry is **deleted** rather than
+stored (`:111-114`); series entries are kept regardless. Read via `listLocalCw`/
+`localCwEntry` (`:126,130`).
 
-```ts
-const TICK_MS = 4000;            // resume localStorage write tick while playing
-const MIN_POSITION_SEC = 5;      // ignore any position below this
-const TASTE_MIN_SEC = 90;        // minimum watched time before "taste"/discover tracking fires
-const WATCHED_RATIO = 0.85;      // LOCAL "finished" threshold — clears resume, marks watched
-const REWATCH_RESUME_SEC = 45;   // re-watching a finished movie past this re-enters Continue Watching
-const SYNC_RATIO = 0.7;          // AniList/MAL sync-ready threshold
-const STUB_MAX_SEC = 150;        // videos shorter than this are never persisted (stub/trailer guard)
-```
-(`use-resume-autosave.ts:30-36`)
+**`harbor.moviewatched.v1.<profileId>`** (legacy `harbor.moviewatched.v1`,
+`movie-watched.ts:3-4`) — JSON array of watched movie meta-id strings, loaded into a
+`Set<string>`. Written via `persistCritical` in `persist()` (`:79-84`).
+`setMovieWatchedLocal(id, watched)` toggles membership (`:94-101`);
+`isMovieWatchedLocal` checks membership (`:86-88`).
 
-Write triggers: an interval every `TICK_MS` while `snap.status === "playing"`
-(`use-resume-autosave.ts:277-281`); immediately on any non-active status transition
-(`use-resume-autosave.ts:283-292`); on unmount / source change (`use-resume-autosave.ts:294-300`);
-on `pagehide`/`beforeunload` (`use-resume-autosave.ts:302-310`).
+Also a Stremio cloud-write retry queue, **`harbor.stremio.write-queue.v1`**
+(`stremio-write-queue.ts:3`) — array of `{authKey, item: LibraryItem}` for failed
+library-item PUTs; flushed on `online` event and every 60000ms (`:104-106`).
 
-**"Finished" logic** (`record()`, `use-resume-autosave.ts:113-220`): `finished =
-(durationSec > 0 && pos/durationSec >= WATCHED_RATIO) || isNaturalEnd(snap, pos)`
-(`use-resume-autosave.ts:121-122`). If finished: `clearResume(...)` for the episode(s)
-covered by this play session (handles multi-episode `episodeSpan` files); else:
-`saveResumeMs(...)`. On finish, also: `setManualWatched(...)` for series/anime
-(`use-resume-autosave.ts:153-167`), `setMovieWatchedLocal(id, true)` +
-`clearLocalCw(id)` for movies (`use-resume-autosave.ts:171-174`), and
-`recordWatchEvent(...)` (`use-resume-autosave.ts:175-185`).
+### 3.2 Write cadence
 
-**Rewatch handling**: if a movie was already flagged watched but the viewer has resumed past
-`REWATCH_RESUME_SEC` (45s) and is still below `WATCHED_RATIO`, it un-flags
-`setMovieWatchedLocal(id, false)` and re-adds it to local Continue Watching
-(`use-resume-autosave.ts:191-220`).
+Two independent write loops run during playback, both driven off
+`getPlaybackPosition()`/`subscribePlaybackClock` (`src/lib/player/playback-clock.ts`):
 
-Also on every persisted tick: `savePlayback(...)` (playback-history, §3.3) and, for items
-not cloud-eligible or local/anime/unmapped-anime/rewatching, `saveLocalCw(...)` (§3.4)
-(`use-resume-autosave.ts:147-219`).
+1. **Local resume/history** — `src/views/player/hooks/use-resume-autosave.ts`:
+   `TICK_MS = 4000` (`:29`) — `setInterval` every **4s** while `snap.status === "playing"`
+   (`:250-253`), calling `persistNow(false)`, which no-ops unless position moved ≥1500ms
+   since last save (`:245-248`) or `force=true`. Also force-persists on any
+   non-playing/loading/idle/ready status change, on episode/src change, and on
+   `pagehide`/`beforeunload` (`:262-286`). `MIN_POSITION_SEC = 5` (`:30`).
+   `STUB_MAX_SEC = 150` (`:34`) — content under 150s duration never persisted.
+2. **Stremio cloud library sync** — `src/views/player/hooks/use-stremio-sync.ts`:
+   `TICK_MS = 30000` (`:16`) every **30s** while playing/casting, skipped if position delta
+   since last sync is <4000ms (`:264`). `MIN_POSITION_SEC = 6` (`:18`). Also flushes on
+   pause/ended/error, unmount, `pagehide`/`beforeunload` (`:271-294`).
+   `BASE_REFRESH_MS = 30000` (`:17`) re-polls the remote item every 30s to detect
+   concurrent writes. Remote writes are dropped if a fresher remote mtime exists with a
+   higher timeOffset (`:201-209`).
 
-### 3.3 Playback history (`src/lib/playback-history.ts`)
+### 3.3 Watched thresholds — five different ratios, no single shared constant
 
-Storage key: **`"harbor.playback-history.v1." + profileId`** (falls back to legacy
-un-suffixed `"harbor.playback-history.v1"` if no active profile) (`playback-history.ts:20-21,63-66`).
-`TTL_MS = 30 * 24 * 60 * 60 * 1000` (30 days) — entries older than this are dropped on
-every read (`playback-history.ts:23,102-110`). `MAX_ENTRIES = 200` (`playback-history.ts:24`).
-Entry key: same `id` / `id|sXeY` scheme as resume (`playback-history.ts:89-94`).
+| Constant | Value | File:line | Meaning |
+|---|---|---|---|
+| `END_RATIO` | 0.85 | `src/lib/player/playback-end.ts:3` | `isNaturalEnd`: mpv "ended" counts as natural end only if pos/duration ≥0.85 |
+| `WATCHED_RATIO` | 0.85 | `use-resume-autosave.ts:33` | local "finished" flag: pos/duration≥0.85 OR isNaturalEnd → clears resume, marks watched |
+| `CREDITS_RATIO` | 0.9 | `use-stremio-sync.ts:19` | cloud `flaggedWatched=1` threshold |
+| `CW_FINISHED_RATIO` | 0.9 | `src/lib/stremio.ts:7` | item drops from Continue Watching when timeOffset/duration≥0.9 |
+| `RESTART_THRESHOLD` | 0.8 | `src/lib/player/resume-start.ts:5` | remote item treated as "finished" (restart at 0) if flaggedWatched or ratio≥0.8 |
+| `FINISHED_RATIO` | 0.92 | `src/lib/local-cw.ts:5` | local-cw entry for finished movie deleted rather than stored |
+| Trakt `WATCHED_MARK_PCT` | 90 | `src/lib/trakt/scrobble-hook.ts:19` | scrobble becomes "stop" vs "pause" once progress%≥90 |
+| Simkl (`SIMKL_WATCHED_RATIO`→pct) | 0.9 → 90 | `src/lib/simkl/config.ts:10`, `scrobble-hook.ts:28` | same for Simkl |
+| `REWATCH_RESUME_SEC` | 45 | `use-resume-autosave.ts:31` | movie must resume past 45s before rewatch un-marks watched |
+| cloud `meaningfulResume` offset | 45000ms | `use-stremio-sync.ts:403` | offset≥45s treated as real resume, resets flaggedWatched |
+| `SYNC_RATIO` (anime trackers) | 0.7 | `use-resume-autosave.ts:32` | AniList/MAL sync-ready threshold |
 
-`PlaybackEntry` type (verbatim, `playback-history.ts:4-18`) — see §5.
+**Recommendation for the native port**: pick one canonical "watched" threshold — 0.85
+(`WATCHED_RATIO`/`END_RATIO`) is the most broadly used. Upstream itself is inconsistent
+across 5+ different ratios for different purposes; don't try to replicate all of them
+faithfully unless parity with every upstream edge case matters.
 
-### 3.4 Local Continue-Watching cache (`src/lib/local-cw.ts`)
+### 3.4 Building the Stremio library item (movie vs. episode)
 
-Storage key: **`"harbor.localcw.v1." + profileId`** (legacy fallback
-`"harbor.localcw.v1"`) (`local-cw.ts:1-2`). `MAX = 60` entries, `FINISHED_RATIO = 0.92`
-(`local-cw.ts:4-5`) — a *third*, slightly different watched-ratio threshold from this local
-cache's own perspective (vs. `0.85` local-resume and `0.9` cloud, §3.5/3.6). `LocalCwEntry`
-type at `local-cw.ts:7-17` (see §5).
+`writeLibraryItem`, `src/views/player/hooks/use-stremio-sync.ts:350-504`. Same function for
+movie and episode; differs only in `video_id`/`type`:
 
-### 3.5 Movie-watched flag (`src/lib/movie-watched.ts`)
+- `video_id`: via `videoIdFor(s, canonicalId)` (`:297-308`) — prefers the stream's threaded
+  id (`s.episode.videoId ?? s.episode.kitsuStreamId`) if scheme matches `cid`; else for
+  `tt`-ids with resolved imdb season/episode builds `` `${cid}:${imdbSeason}:${imdbEpisode}` ``;
+  else `` `${cid}:${season}:${episode}` ``. For movies, `video_id = canonicalId`
+  (`:299-300`).
+- `type`: `src.episode ? "series" : (baseType ?? (isSeries ? "series" : "movie"))` (`:491`).
+- `state.timeOffset`: `finaleDone ? 0 : offsetMs` — terminal write on the series finale
+  resets offset to 0 (`:405-412,417`).
+- `state.flaggedWatched`: `1` once `watchedRatio > CREDITS_RATIO(0.9)` and not
+  errored/duration-shrunk (`nowFlagged`, `:400-404,420`); else carries forward unless
+  episode changed or "meaningful resume" (≥45s, <90%) reset it to 0 (`effPrevFlagged`,
+  `:404`).
+- `state.timesWatched`: +1 only on transition into `nowFlagged && effPrevFlagged===0`
+  (`:419`).
+- `state.overallTimeWatched`: `prevOverall + (videoChanged ? prevTimeWatched : 0)`
+  (`:418`).
+- `state.watched` (episode bitfield string): 3-way freshest-wins merge of cache
+  (`freshestWatched`), queued-but-unsent (`queuedWatched`), and a live strict fetch,
+  picking newest mtime (`:456-486`); computed only when `isSeries && !isAnimeWrite`.
+- Written via `cloudLibraryPut` (`stremio-write-queue.ts:51`) → `libraryPut`
+  (`stremio.ts:243`, POSTs `datastorePut`); failures enqueue to the retry queue.
+- Anime-scheme ids (`kitsu:`/`mal:`/`anilist:`/`anidb:`) are blocked from cloud writes
+  except removals (`stremio.ts:244`).
+- Guard: skipped entirely for stub-length content —
+  `snap.durationSec>0 && snap.durationSec<STUB_MAX_SEC(150)` (`:360`).
 
-Storage key: **`"harbor.moviewatched.v1." + profileId`** (legacy fallback
-`"harbor.moviewatched.v1"`) (`movie-watched.ts:3-4`). Backing store is a `Set<string>` of
-movie ids (`movie-watched.ts:9`), not a ratio — this is a pure boolean flag file, set by the
-`WATCHED_RATIO` (0.85) check in §3.2.
+### 3.5 Trakt / Simkl scrobble hooks
 
-### 3.6 Cloud sync — Stremio library (`src/lib/stremio.ts`, `src/views/player/hooks/use-stremio-sync.ts`)
+`src/lib/trakt/scrobble-hook.ts` (`useTraktScrobble`) and `src/lib/simkl/scrobble-hook.ts`
+(`useSimklScrobble`), both invoked unconditionally (gated internally by `isConnected`) from
+`src/views/player/hooks/use-player-media.ts:290-291`. Structurally identical; Simkl uses
+`WATCHED_MARK_PCT = SIMKL_WATCHED_RATIO*100 = 90` (`simkl/scrobble-hook.ts:27-28`). Trakt:
+- `status==="playing"`, no scrobble sent yet → `scrobble("start", {metaId, episode,
+  progress})` (`:105-107`).
+- `status==="paused"` after "start" → `scrobble("pause", ...)` (`:108-110`).
+- `status==="ended"` (duration≥150s) → `scrobble("stop", {..., progress: endPct})`
+  (`:88-99`).
+- Unmount / episode-identity change / `pagehide`: `"stop"` if accumulated progress ≥90,
+  else `"pause"` (`:44-56` pagehide beacon via raw `fetch(..., keepalive:true)`; `:150-175`
+  unmount; `:59-75` identity-change).
+- Seek-resync loop (1s interval while state="start") detects seeks (`|Δpos|>8s` in a burst)
+  and re-sends `"start"` at most every 30000ms (`:126-149`).
+- `STUB_MAX_SEC = 150` — no scrobbles below that duration.
 
-`LibraryItem` type — verbatim, `stremio.ts:18-43` — see §5. Cloud "finished" ratio:
-`CW_FINISHED_RATIO = 0.9` (`stremio.ts:6`), used by `isCwMember`/`cwMemberViaResume` to
-decide if an item still counts as "in progress" for the Continue Watching row (this is a
-*different* constant from the *write-side* flagged-watched ratio below).
+### 3.6 What upstream reads on resume (local/cloud merge)
 
-**Cloud write** happens in `writeLibraryItem()` (`use-stremio-sync.ts:350-504`), not in
-`stremio.ts` directly (`stremio.ts:libraryPut` is a thin `datastorePut` wrapper,
-`stremio.ts:243-249`, that also **refuses to write anime-scheme ids**
-(`kitsu:`/`mal:`/`anilist:`/`anidb:`) to the cloud unless they're being removed
-(`stremio.ts:244`) — anime progress stays local/AniList/MAL only).
-
-Write-side constants (`use-stremio-sync.ts:16-19,37`): `TICK_MS = 30000` (cloud sync poll,
-**distinct from the 4s local resume tick**), `BASE_REFRESH_MS = 30000`,
-`MIN_POSITION_SEC = 6`, `CREDITS_RATIO = 0.9` — **the actual "flag watched" threshold for
-the Stremio cloud item** is `watchedRatio > CREDITS_RATIO (0.9)` AND `playedReal` (not an
-error, not a shrunk-duration false-positive) → `nowFlagged` (`use-stremio-sync.ts:379,
-399-401`). So: **local resume/movie-watched flips at 85%, the Stremio cloud item flips
-at >90%.** A native port should pick one canonical threshold or reproduce both if Stremio
-cloud-library parity matters.
-
-**Episode video_id derivation** (`videoIdFor`, `use-stremio-sync.ts:297-308`): for a movie,
-just the canonical id; for a series episode, prefers a pre-threaded `videoId`/
-`kitsuStreamId` matching the canonical id's scheme, else `` `${cid}:${imdbSeason}:${imdbEpisode}` ``
-for `tt`-scheme ids, else `` `${cid}:${season}:${episode}` ``.
-
-**Built `LibraryItem.state` for a write** (`use-stremio-sync.ts:414-426`):
-```ts
-{
-  lastWatched: <ISO now>,
-  timeWatched: offsetMs,
-  timeOffset: finaleDone ? 0 : offsetMs,     // 0 clears resume once the series finale is done
-  overallTimeWatched: prevOverall + (videoChanged ? prevTimeWatched : 0),
-  timesWatched: nowFlagged && effPrevFlagged===0 ? prevTimesWatched+1 : prevTimesWatched,
-  flaggedWatched: nowFlagged ? 1 : effPrevFlagged,
-  duration: durationMs,
-  video_id: videoId,
-  watched: prevWatched,          // per-episode bitfield string, merged from cache/queue/remote — see below
-  lastVidReleased: prevLastVidReleased,
-  noNotif: baseState.noNotif === true,
-}
-```
-`meaningfulResume` (resets the flagged-watched bit on a real rewatch) =
-`playedReal && durationMs>0 && offsetMs>=45000 && watchedRatio<CREDITS_RATIO`
-(`use-stremio-sync.ts:402-404`). `finaleDone` is computed via `isFinaleEpisode()` — true
-when the current episode is the highest `(season,episode)` pair in `meta.videos`
-(`use-stremio-sync.ts:21-36,405-412`).
-
-For series (non-anime), the `watched` bitfield string is resolved from whichever of
-{cached (`freshestWatched`), queued (`queuedWatched`), or a fresh strict GET} has the
-newest `_mtime`, so a stale local base never clobbers a newer cloud/queue value
-(`use-stremio-sync.ts:449-487`).
-
-**Offline resilience**: `cloudLibraryPut()` (`src/lib/stremio-write-queue.ts:49-...`) wraps
-`libraryPut`; on failure the item is queued in `localStorage["harbor.stremio.write-queue.v1"]`
-(`stremio-write-queue.ts:3`) and flushed later (`flushWriteQueue`).
-
-### 3.7 Resume-time merge of local + cloud (`src/lib/player/resume-start.ts`)
-
-`resolveStartMs()` (`resume-start.ts:89-147`): reads the local `Entry` first
-(`readResumeEntry`). If no `authKey`, returns local only. Else fetches the remote
-`LibraryItem` (by imdb id and/or raw meta id, `lookupIds`, cached 30s per id,
-`REMOTE_CACHE_TTL_MS = 30_000`, `MAX_CACHE_KEYS_PER_ACCOUNT = 24` — `resume-start.ts:5-6`)
-and, for the first matching remote item (`matchesEpisode`, matching on `video_id` or
-season/episode):
-- `finished` = `isEpisode && (flaggedWatched===1 || remoteMs/remoteDuration >= RESTART_THRESHOLD (0.8))`
-  (`resume-start.ts:4,123-126`).
-- Local `pct` (if present) is rescaled against the *remote's* duration to compare
-  apples-to-apples across sources with different measured runtimes
-  (`effectiveLocal`, `resume-start.ts:118-122`).
-- If the remote write is newer (`_mtime` > local `t`) OR the remote position is further
-  along, the remote value wins and is written back into local storage via
-  `saveResumeBatch` (`resume-start.ts:130-143`); otherwise local wins.
-
-### 3.8 Trakt / Simkl scrobble hooks
-
-Both trackers mirror the same state machine (`start`/`pause`/`stop`), driven off
-`snap.status` transitions, not a fixed tick — plus a `seek` re-sync when position jumps.
-
-**Trakt** (`src/lib/trakt/scrobble-hook.ts:1-211`):
-- `STUB_MAX_SEC = 150` (skip short/stub media), `WATCHED_MARK_PCT = 90`
-  (`scrobble-hook.ts:16,19`) — comment: kept aligned with Harbor's own CW-drop ratio so a
-  "pause" scrobble (resumable elsewhere) only becomes a "stop"/watched scrobble past the
-  point Harbor itself considers the item finished (`scrobble-hook.ts:17-18`).
-- `playing` → `scrobble("start", …)` (first time only); `paused` (after having started) →
-  `scrobble("pause", …)`; `status==="ended"` with `durationSec >= STUB_MAX_SEC` → `scrobble("stop", …)`
-  at the max of tracked progress and live position (`scrobble-hook.ts:81-116`).
-- **Seek re-sync**: every 1s while playing, detects a seek (`|Δpos| > 8s` within `<1.5s`
-  real time, or apparent playback rate `> 4×`) and re-sends `scrobble("start", …)` — but
-  throttled to at most once per 30s (`scrobble-hook.ts:118-148`).
-- **On unmount / title change**: sends a final `stop` (if progress ≥ 90%) or `pause`
-  (`scrobble-hook.ts:58-75,150-168`).
-- **On `pagehide`** specifically also fires a `navigator.sendBeacon`-style fire-and-forget
-  POST directly to `` `${TRAKT_API_BASE}/scrobble/${action}` `` with `keepalive: true`
-  (since a normal async call can be killed mid-flight on tab close), *and* still attempts
-  the confirmed `scrobble("stop", …)` call for the ≥90% case (`scrobble-hook.ts:41-56,171-211`).
-
-**Simkl** (`src/lib/simkl/scrobble-hook.ts`) mirrors this structure almost exactly:
-`STUB_MAX_SEC = 150`, `WATCHED_MARK_PCT = SIMKL_WATCHED_RATIO * 100` where
-`SIMKL_WATCHED_RATIO = 0.9` (`simkl/scrobble-hook.ts:27-28`; `simkl/config.ts:10`) — i.e.
-**also 90%, same as Trakt**, both independent of the 85%/92% local thresholds.
-
-### 3.9 What upstream reads on resume — summary
-
-For a given title/episode, the resume value shown to the user is: local `Entry.ms`
-(`resume.ts`) reconciled against the Stremio cloud `LibraryItem.state.timeOffset` (newer
-`_mtime` or larger position wins, §3.7) — **Trakt/Simkl progress is a separate pull path**
-(`src/lib/trakt/playback.ts`, `src/lib/simkl/playback.ts`, not merged into
-`resolveStartMs()` directly; they write into the same local `resume.ts` store via
-`saveResumeMs` when their own "playback progress" endpoint is polled, so they participate
-in the *next* local-vs-cloud reconciliation rather than a three-way merge at watch-time).
-`trakt/playback.ts` constants: `DURATION_MS = { movie: 6_300_000, series: 2_640_000 }`
-(`trakt/playback.ts:19`) — fallback assumed durations (ms) when Trakt doesn't report one,
-used to convert Trakt's `progress` percentage into an absolute `ms` value.
+`resolveStartMs`, `src/lib/player/resume-start.ts:94-146`:
+1. Reads local `readResumeEntry(metaId, season, episode)` → `local` ms.
+2. No `authKey` → returns local immediately (`:99`).
+3. Else fetches remote library item(s) via `resumeLibraryGetOne` (30s-TTL cache per
+   account/id, `:44-64`) for both the raw meta id and, if imdb-verified, the resolved imdb
+   id (`lookupIds`, `:29-37`).
+4. `matchesEpisode` confirms season/episode via `openingVid`, `state.video_id`, or
+   `state.season/episode` (`:107-115`).
+5. If remote `timeOffset>0`: remote wins (written back to local via `saveResumeBatch`,
+   returns `fromRemote:true`) if `remoteMtime > localEntry.t` OR remote ms ≥ effective local
+   ms (local `pct` scaled against remote duration when durations differ); `finished` flag
+   set via `RESTART_THRESHOLD(0.8)`/`flaggedWatched` (`:117-143`).
+6. Otherwise falls back to local ms (`:144,146`).
 
 ---
 
@@ -758,32 +779,30 @@ used to convert Trakt's `progress` percentage into an absolute `ms` value.
 ### 4.1 Sources
 
 **OpenSubtitles v3** (`src/lib/subtitles/providers/opensubtitles-v3.ts`):
-- `const ENDPOINTS = ["https://opensubtitles-v3.strem.io"]` (`opensubtitles-v3.ts:10`).
-- Call: `` `${base}/subtitles/${type}/${id}.json` `` (`opensubtitles-v3.ts:34`), `type` =
-  `"movie"|"series"`, `id` = `tt1234567` or `tt1234567:season:episode` for series
-  (`opensubtitles-v3.ts:22-31`). Requires `imdbId`; returns `[]` otherwise
-  (`opensubtitles-v3.ts:52-55`). Header `{Accept: "application/json"}`.
-- Dedup across endpoints by `` `${lang}|${url}` `` while merging (`opensubtitles-v3.ts:66`).
-  Result `id` = `` `os3:${s.id ?? s.url}` ``, synthesized title `` `OpenSubtitles V3 #{n}` ``
-  (per-language counter) (`opensubtitles-v3.ts:72-90`).
+- `const ENDPOINTS = ["https://opensubtitles-v3.strem.io"]` (`:10`).
+- Call: `` `${base}/subtitles/${type}/${id}.json` `` (`:34`), `type` = `"movie"|"series"`,
+  `id` = `tt1234567` or `tt1234567:season:episode` for series (`:22-31`). Requires
+  `imdbId`; returns `[]` otherwise (`:52-55`). Header `{Accept: "application/json"}`.
+- Dedup across endpoints by `` `${lang}|${url}` `` while merging (`:66`). Result `id` =
+  `` `os3:${s.id ?? s.url}` ``, synthesized title `` `OpenSubtitles V3 #{n}` `` (per-language
+  counter) (`:72-90`).
 
 **Wyzie** (`src/lib/subtitles/providers/wyzie.ts`):
-- `const ENDPOINT = "https://sub.wyzie.io/search"` (`wyzie.ts:5`).
-- Params (`wyzie.ts:29-39`): `id` = `tt`-prefixed imdbId, else `tmdbId`, else `query=title`
-  (else returns `[]`); `season`, `episode`; **`source=all`** (always, verbatim);
-  `language` = comma-joined normalized preferred langs, if given.
-- `hearingImpaired = r.isHearingImpaired || r.hi || false` (`wyzie.ts:75`).
+- `const ENDPOINT = "https://sub.wyzie.io/search"` (`:5`).
+- Params (`:29-39`): `id` = `tt`-prefixed imdbId, else `tmdbId`, else `query=title` (else
+  returns `[]`); `season`, `episode`; **`source=all`** (always, verbatim); `language` =
+  comma-joined normalized preferred langs, if given.
+- `hearingImpaired = r.isHearingImpaired || r.hi || false` (`:75`).
 
 **Addon subtitles** (`src/lib/subtitles/providers/addons.ts`):
 - Per-addon URL: `` `${transportBase}/subtitles/${type}/${id}${extra}.json` ``
-  (`addons.ts:114-115`); `transportBase` strips `/manifest.json` and trailing `/`
-  (`addons.ts:33-35`).
+  (`:114-115`); `transportBase` strips `/manifest.json` and trailing `/` (`:33-35`).
 - `id` from `contentId()`: prefers `q.stremioId`, else `tt`-prefixed imdbId; appends
-  `:season:episode` for episodes (`addons.ts:37-47`).
-- `extra` = a `/videoHash=...&videoSize=...&filename=...` path segment when present, URL-
-  encoded (`addons.ts:86-92`).
+  `:season:episode` for episodes (`:37-47`).
+- `extra` = a `/videoHash=...&videoSize=...&filename=...` path segment when present,
+  URL-encoded (`:86-92`).
 - Only addons declaring a `"subtitles"` resource (or matching by id-prefix priority
-  `["kitsu","mal","anidb","anilist","tt","tmdb"]`) are queried (`addons.ts:49,58-84`).
+  `["kitsu","mal","anidb","anilist","tt","tmdb"]`) are queried (`:49,58-84`).
 
 **Other pipeline sources** (used inside `src/lib/subtitles/autosync/*`; `SubResult.source`
 union also lists `jimaku`, `podnapisi`, `subdl`, `gestdown`, `subsource` —
@@ -798,68 +817,67 @@ Jimaku endpoint **not found** in the files searched in this pass.
 
 ### 4.2 Language ranking (`src/lib/subtitles/language.ts`)
 
-`langScore(lang, preferred)` (`language.ts:307-319`): `0` if `preferred` empty; exact
-normalized-lang match → `(preferred.length - exactIdx) * 2`; base-subtag-only match (e.g.
-`pt` vs `pt-BR`) → `(preferred.length - baseIdx) * 2 - 1`; no match → `-1`. Earlier entries
-in the preferred list always outscore later ones.
+`langScore(lang, preferred)` (`:307-319`): `0` if `preferred` empty; exact normalized-lang
+match → `(preferred.length - exactIdx) * 2`; base-subtag-only match (e.g. `pt` vs `pt-BR`)
+→ `(preferred.length - baseIdx) * 2 - 1`; no match → `-1`. Earlier entries in the preferred
+list always outscore later ones.
 
-`pickBestTrack(tracks, preferred)` (`language.ts:328-345`): skips `forced` tracks and any
-with `langScore < 0`; picks max of `langScore*10 + (default?1:0)`.
+`pickBestTrack(tracks, preferred)` (`:328-345`): skips `forced` tracks and any with
+`langScore < 0`; picks max of `langScore*10 + (default?1:0)`.
 
 Full auto-selection order, `rankSubtitleCandidates()` (`candidate-ranking.ts:151-206`):
 filters out `langScore<0` (when preferred given), `forced`/`foreignOnly`, explicit
 episode-mismatch, and `confidence === "incompatible"`; sorts by exact moviehash match →
-`langScore` → strong provider confidence (`exact`/`high`) → provider match score →
-explicit episode rank → local stream-match confidence/sourceRank/score → timing-status rank
+`langScore` → strong provider confidence (`exact`/`high`) → provider match score → explicit
+episode rank → local stream-match confidence/sourceRank/score → timing-status rank
 (`aligned > fixed-offset > drifting > unmeasurable`) → weak provider confidence → provider
-score → machine-translated penalty → `fromTrusted` boost → rating score/count → downloads →
-stable tiebreak key.
+score → machine-translated penalty → `fromTrusted` boost → rating score/count → downloads
+→ stable tiebreak key.
 
 ### 4.3 Dedupe (`src/lib/subtitles/search.ts`)
 
-`deduplicateAndRankSubtitleResults()` (`search.ts:266-283`) groups by key
-`` `${normalizeLang(lang)}|${url}|${title||""}|${format||""}` `` (`search.ts:270`), after
-dropping unsafe URLs (`isSafeProviderSubtitleUrl`, `provider-url.ts:96`).
-`mergeDuplicateGroup()` (`search.ts:242-262`) picks the best-ranked member of a duplicate
-group via `compareDuplicateCandidates` (exact moviehash → has `downloadAuth` → provider
-confidence → provider score → local match rank → **"metadata richness"** — count of
-non-null fields, `metadataRichness()`, `search.ts:196-205` → source priority → stable key),
-then fills any `null` field on the winner from the losers, and unions
-`providerMatch.reasons`/`matchedBy` across the whole group. A separate
-`interleaveBySource()` step re-orders the deduped list for **menu display only** — the
-comment at `candidate-ranking.ts:150` is explicit that auto-selection order and menu
-presentation order are deliberately different passes.
+`deduplicateAndRankSubtitleResults()` (`:266-283`) groups by key
+`` `${normalizeLang(lang)}|${url}|${title||""}|${format||""}` `` (`:270`), after dropping
+unsafe URLs (`isSafeProviderSubtitleUrl`, `provider-url.ts:96`). `mergeDuplicateGroup()`
+(`:242-262`) picks the best-ranked member of a duplicate group via
+`compareDuplicateCandidates` (exact moviehash → has `downloadAuth` → provider confidence →
+provider score → local match rank → **"metadata richness"** — count of non-null fields,
+`metadataRichness()`, `:196-205` → source priority → stable key), then fills any `null`
+field on the winner from the losers, and unions `providerMatch.reasons`/`matchedBy` across
+the whole group. A separate `interleaveBySource()` step re-orders the deduped list for
+**menu display only** — the comment at `candidate-ranking.ts:150` is explicit that
+auto-selection order and menu presentation order are deliberately different passes.
 
 ### 4.4 Encoding detection (`src/lib/subtitles/encoding.ts`)
 
-`decodeSubtitleBytesDetailed(bytes, options)` (`encoding.ts:233-369`):
-1. **BOM check**: `FF FE`→`utf-16le`, `FE FF`→`utf-16be`, `EF BB BF`→`utf-8`
-   (`encoding.ts:238-244`).
+`decodeSubtitleBytesDetailed(bytes, options)` (`:233-369`):
+1. **BOM check**: `FF FE`→`utf-16le`, `FE FF`→`utf-16be`, `EF BB BF`→`utf-8` (`:238-244`).
 2. Strict-UTF-8 probe (`TextDecoder("utf-8", {fatal:true})`) sets `validUtf8`.
 3. No BOM: builds candidate list `[declaredEncoding?, "utf-8", ...fallbacks]`, fallbacks =
    `["windows-1256","iso-8859-6","windows-1252"]` for Arabic-tagged subs else
-   `["windows-1252","windows-1256","iso-8859-6"]` (`encoding.ts:45-46,274-291`). Each is
-   scored by `assessCandidate()`.
-4. `assessCandidate()` (`encoding.ts:150-204`) scores 0-1 from: printable-char ratio (+),
-   U+FFFD replacement-char penalty, control-char penalty, mojibake regex penalty
+   `["windows-1252","windows-1256","iso-8859-6"]` (`:45-46,274-291`). Each is scored by
+   `assessCandidate()`.
+4. `assessCandidate()` (`:150-204`) scores 0-1 from: printable-char ratio (+), U+FFFD
+   replacement-char penalty, control-char penalty, mojibake regex penalty
    (`/(?:Ã.|Â.|â.|Ø.|Ù.)/gu`), SRT/ASS timestamp-pattern bonus, declared-encoding-match
    bonus, valid-UTF-8 bonus, and for Arabic-tagged content an Arabic-script-ratio +
    hardcoded lexical-plausibility bonus/penalty (`COMMON_ARABIC_WORDS`/`_SEQUENCES`,
-   `encoding.ts:47-101`).
+   `:47-101`).
 5. Selection: `validUtf8` → always pick the `utf-8` candidate; else pick highest score.
-6. `HEALTHY_SCORE = 0.72` (`encoding.ts:43`); `healthy` = no ambiguous-legacy flag AND
-   `score >= 0.72` AND zero replacement/control chars (`encoding.ts:346-350`).
+6. `HEALTHY_SCORE = 0.72` (`:43`); `healthy` = no ambiguous-legacy flag AND `score >= 0.72`
+   AND zero replacement/control chars (`:346-350`).
 7. **Ambiguous-Arabic-legacy check**: if `windows-1256` and `iso-8859-6` candidates decode
    to different text but score within `0.012` of each other, flags
-   `ambiguous-legacy-encoding` (`encoding.ts:306-320`).
+   `ambiguous-legacy-encoding` (`:306-320`).
 
 Diagnostic codes: `bom-detected, invalid-utf8, ambiguous-legacy-encoding,
 declared-encoding-unavailable, legacy-encoding-selected, replacement-characters,
-control-characters, low-decode-health` (`encoding.ts:6-19`).
+control-characters, low-decode-health` (`:6-19`).
 
 ### 4.5 Style settings keys and defaults
 
-Defaults (`src/lib/settings/defaults.ts:265-293`), types (`src/lib/settings/types.ts:319-353`):
+Defaults (`src/lib/settings/defaults.ts:265-293`), types (`src/lib/settings/types.ts:
+319-353`):
 ```
 subFontSize: 32              subFontColor: "#FFFFFF"      subBorderColor: "#000000"
 subBorderSize: 0              subMarginY: 12                subAlignX: "center"
@@ -873,6 +891,7 @@ subOpacity: 1                  subLineSpacing: 0              subHideSdh: false
 defaults (`55`/`3`/`22`) to the new ones above, for users who never touched these settings.
 
 Mapping to mpv properties, `applySubStyle()` (`src/lib/player/sub-style.ts:48-90`):
+
 | mpv property | source |
 |---|---|
 | `sub-filter-sdh` | `subHideSdh && sdhFilterAllowed` |
@@ -894,27 +913,25 @@ Mapping to mpv properties, `applySubStyle()` (`src/lib/player/sub-style.ts:48-90
 | `sub-bold` | `subBold` → `"yes"`/`"no"` |
 | `sub-pos` | `clamp(100-marginY, 0, 100)` if repositioning allowed, else `100` |
 
-All applied in parallel via Tauri `invoke("mpv_set_property", {name, value})` — **this is
-one of the Tauri-coupled call sites a native port must replace** (see §6).
+All applied via Tauri `invoke("mpv_set_property", {name, value})` — **one of the
+Tauri-coupled call sites a native port must replace** (see §6).
 
 ### 4.6 Dual subtitles (secondary track)
 
 State: `src/lib/player/secondary-sub.ts` — a module-level external store (not React state),
-type `SecondarySubChoice = string | null | "auto"` (`secondary-sub.ts:3`), default `"auto"`.
+type `SecondarySubChoice = string | null | "auto"` (`:3`), default `"auto"`.
 
-Application: `src/views/player/hooks/use-secondary-sub.ts` — on source change, resets choice
-to `"auto"` (`use-secondary-sub.ts:26-29`). If choice is `"auto"`, calls
-`autoPick(tracks, lang, primaryId)` which excludes the primary track and calls
-`pickBestTrack(pool, [lang])` (`use-secondary-sub.ts:6-9,36`); else uses the explicit
-choice. If the target differs from the primary track, calls
-`bridge.setSecondarySubtitleTrack(target)` (`use-secondary-sub.ts:37-44`).
+Application: `src/views/player/hooks/use-secondary-sub.ts` — on source change, resets
+choice to `"auto"` (`:26-29`). If choice is `"auto"`, calls `autoPick(tracks, lang,
+primaryId)` which excludes the primary track and calls `pickBestTrack(pool, [lang])`
+(`:6-9,36`); else uses the explicit choice. If the target differs from the primary track,
+calls `bridge.setSecondarySubtitleTrack(target)` (`:37-44`).
 
 **Not found**: a dedicated "secondary subtitle language" Settings key — the `lang` driving
 auto-pick is passed in by the hook's caller, not read from `settings` inside this file, and
 no `secondarySub*` key surfaced in `settings/types.ts`. `TrackInfo.secondary?: boolean`
-flags the active secondary track (`bridge.ts:24`); `PlayerSnapshot.secondarySubText: string`
-carries the rendered secondary-cue text for overlay rendering (`bridge.ts:78`, default
-`""` at `bridge.ts:184`).
+flags the active secondary track (§5.6); `PlayerSnapshot.secondarySubText: string` carries
+the rendered secondary-cue text for overlay rendering (default `""`).
 
 ### 4.7 Subtitle types verbatim
 
@@ -1041,13 +1058,15 @@ prefs store `PerShowPrefs` (§5.5), which includes `subDelaySec`/`audioLang`/`su
 
 ## 5. TYPES VERBATIM
 
-### 5.1 `ResumeEntry` (unnamed inline type in `src/lib/resume.ts:5`)
+### 5.1 Resume `Entry` (unexported — no type literally named `ResumeEntry` exists in
+source; this is the canonical resume-record shape) — `src/lib/resume.ts:5`
 ```ts
 type Entry = { ms: number; t: number; s?: number; pct?: number; source?: ExternalCwSource };
-// ExternalCwSource = "simkl" | "trakt"  (src/lib/stremio.ts:16)
+// ExternalCwSource — src/lib/stremio.ts:16
+export type ExternalCwSource = "simkl" | "trakt";
 ```
 
-### 5.2 `PlaybackEntry` (`src/lib/playback-history.ts:4-18`)
+### 5.2 `PlaybackEntry` — `src/lib/playback-history.ts:4-18`
 ```ts
 export type PlaybackEntry = {
   infoHash?: string | null;
@@ -1066,7 +1085,7 @@ export type PlaybackEntry = {
 };
 ```
 
-### 5.3 `LocalCwEntry` (`src/lib/local-cw.ts:7-17`)
+### 5.3 `LocalCwEntry` — `src/lib/local-cw.ts:7-19`
 ```ts
 export type LocalCwEntry = {
   id: string;
@@ -1083,7 +1102,7 @@ export type LocalCwEntry = {
 };
 ```
 
-### 5.4 `LibraryItem` (`src/lib/stremio.ts:18-43`)
+### 5.4 `LibraryItem` (public shape) — `src/lib/stremio.ts:18-45`
 ```ts
 export type LibraryItem = {
   _id: string;
@@ -1114,8 +1133,45 @@ export type LibraryItem = {
   manualWatched?: boolean;
 };
 ```
-The actual write-path shape sent to the cloud (`StremioLibraryItem`,
-`use-stremio-sync.ts:317-343`) is stricter/fuller — see §3.6.
+
+`StremioLibraryItemState` / `StremioLibraryItem` — the exact shape PUT to Stremio's cloud
+datastore — `src/views/player/hooks/use-stremio-sync.ts:317-343`:
+```ts
+type StremioBehaviorHints = {
+  defaultVideoId: string | null;
+  featuredVideoId: string | null;
+  hasScheduledVideos: boolean;
+  [extra: string]: unknown;
+};
+
+type StremioLibraryItemState = {
+  lastWatched: string | null;
+  timeWatched: number;
+  timeOffset: number;
+  overallTimeWatched: number;
+  timesWatched: number;
+  flaggedWatched: number;
+  duration: number;
+  video_id: string | null;
+  watched: string | null;
+  lastVidReleased: string | null;
+  noNotif: boolean;
+};
+
+type StremioLibraryItem = {
+  _id: string;
+  name: string;
+  type: string;
+  poster: string | null;
+  posterShape: "square" | "landscape" | "poster";
+  removed: boolean;
+  temp: boolean;
+  _ctime: string | null;
+  _mtime: string;
+  state: StremioLibraryItemState;
+  behaviorHints: StremioBehaviorHints;
+};
+```
 
 ### 5.5 Per-title settings — `PerShowPrefs` (`src/lib/player-prefs.ts:4-11`)
 ```ts
@@ -1128,10 +1184,11 @@ export type PerShowPrefs = {
   updatedAt: number;
 };
 ```
-Storage: `localStorage["harbor.player.prefs.v1"]`, a `Record<metaId, PerShowPrefs>`,
-capped at `MAX_ENTRIES = 200` (LRU-evicted by `updatedAt`) (`player-prefs.ts:1-2,28-34`).
+Storage: `localStorage["harbor.player.prefs.v1"]`, a `Record<metaId, PerShowPrefs>`, capped
+at `MAX_ENTRIES = 200` (LRU-evicted by `updatedAt`) (`player-prefs.ts:1-2,28-34`).
 
-### 5.6 Player state — `PlayerSnapshot`, `PlayerSource`, `Chapter`, `TrackInfo` (`src/lib/player/bridge.ts`)
+### 5.6 Player state — `PlayerSnapshot`, `PlayerSource`, `Chapter`, `TrackInfo`
+(`src/lib/player/bridge.ts`)
 ```ts
 export type Chapter = { title: string; startSec: number };                     // bridge.ts:52-55
 export type PlayerStatus = "idle" | "loading" | "ready" | "playing" | "paused" | "ended" | "error"; // bridge.ts:57
@@ -1180,7 +1237,7 @@ export type PlayerSource = {                                                    
   headers?: Record<string, string>;
 };
 ```
-`TrackInfo` (`bridge.ts:7-40`, fields relevant through the audio/subtitle surface — file
+`TrackInfo` (`bridge.ts:7-40`, fields relevant through the audio/subtitle surface — the file
 continues past line 40 with additional metadata mirrored from `SubtitleLoadMetadata`):
 ```ts
 export type TrackInfo = {
@@ -1220,106 +1277,213 @@ export type TrackInfo = {
   // ... additional fields beyond line 40 not captured in this pass
 };
 ```
-
 `PlayerBridge` — the abstract interface both the mpv Tauri bridge and the HTML5 bridge
 implement (`bridge.ts:106-...`): `attach/detach/load/play/pause/seek/frameStep?/setVolume/
 setMuted/setRate/setAudioTrack/setSubtitleTrack/setSecondarySubtitleTrack/setSubVisible/...`
 — this is the seam a native MPVKit implementation should mirror as its own Swift protocol.
 
+### 5.7 Subtitle track / candidate types
+
+See §4.7 for `SubResult`, `SubtitleLoadMetadata`, `SubSearchQuery` (kept there, next to the
+provider/ranking logic they describe, to avoid duplicating a ~130-line block).
+
+### 5.8 Buffer profile type — `src/lib/player/buffer-profile.ts:11-17`
+```ts
+export type BufferProfile = {
+  cacheSecs: number;
+  readaheadSecs: number;
+  maxBytes: number;
+  maxBackBytes: number;
+  pauseWaitSecs: number;
+};
+```
+
+### 5.9 Misc small types
+```ts
+// src/lib/player/subtitle-selection.ts:1-12
+export type SubtitleSelectionOrigin = "manual" | "automatic" | "restore";
+export type SubtitleSelectionRequest = Readonly<{
+  mediaRevision: number;
+  selectionRevision: number;
+  requestedId: string;
+  previousId: string | null;
+}>;
+export type SubtitleSelectionSettlement =
+  | { current: false }
+  | { current: true; selectedId: string | null };
+
+// src/lib/player/secondary-sub.ts:3
+export type SecondarySubChoice = string | null | "auto";
+
+// src/lib/player/anime4k-modes.ts:1-2
+export type Anime4kMode = "A" | "B" | "C" | "AA" | "BB" | "CA";
+export type Anime4kTier = "hq" | "fast";
+```
+
 ---
 
 ## 6. GOTCHAS FOR A NATIVE LIBMPV PORT
 
-1. **Every mpv property write goes through Tauri IPC, not direct libmpv calls.**
-   `sub-style.ts:87` calls `invoke("mpv_set_property", {name, value})` per property,
-   in parallel, swallowing errors. With MPVKit in-process on tvOS this collapses to direct
-   `mpv_set_property_string` calls — no round-trip, and a native port can afford to surface
-   failures instead of silently ignoring them like `mpv.rs` does (`let _ = mpv.set_property(...)`
-   on ~40 call sites).
+### 6.1 Core bridge: everything goes through Tauri IPC, not a library call
 
-2. **Chrome/panel focus is a DOM-attribute-driven spatial engine** (`data-bp-focusable`,
-   `data-bp-chip`, `data-bp-autofocus`, `inert`, manual `document.activeElement.blur()` —
-   `bp-player-shell.tsx:153-157`). None of it exists on tvOS; re-implement with SwiftUI
-   `@FocusState`/`.focusable()`. The *behavioral rules* (idle timings, peek vs. up,
-   panel-pins-chrome, re-seeding focus after a wake) are the transferable spec, not the DOM
-   mechanics.
+The entire mpv control surface is a thin RPC client over Tauri's `invoke`/`listen`, talking
+to the Rust backend in `src-tauri/src/mpv.rs`. **This is the single biggest thing to
+replace** — every mpv command/property set in `src/lib/player/mpv.ts` is
+`await invoke("mpv_xxx", {...})` (e.g. `mpv_start` L918, `mpv_set_property`
+L231/326/460/542/…, `mpv_command` L267/502/540/883/902, `mpv_sub_add` L388/1236,
+`mpv_set_geometry` L460, `mpv_save_screenshot` L1335, `mpv_release_media` L1389,
+`mpv_stop` L601/883/1397/1402/1411). Native port: replace this whole call surface with
+direct MPVKit `mpv_set_property`/`mpv_command` calls — 1:1 mapping of command/property names
+is straightforward, but the async invoke/catch-swallow error pattern (nearly every call does
+`.catch(() => {})`) should be replaced with real Swift error handling. — **reimplement in
+Swift/MPVKit**
 
-3. **`createPortal(..., document.body)`** is used pervasively (shell, leave-confirm, up-next)
-   to escape a `visibility:hidden` ancestor during playback (`bp-player-shell.tsx:70-72`) —
-   a browser-only workaround, but it signals these surfaces must render above/independent of
-   the main content stack at all times; make sure the tvOS player overlay layer can't end up
-   nested inside something hideable.
+mpv events (position, pause, end-file, property-change) arrive as Tauri `listen()` events in
+`mpv.ts` (`import { listen } from "@tauri-apps/api/event"`, `mpv.ts:9`) rather than a
+libmpv event-loop callback — native port drives this from `mpv_wait_event`/MPVKit's event
+stream directly. — **reimplement**
 
-4. **Exactly one `keydown` capture-phase listener owns the remote at a time**
-   (`use-bp-player-keys.ts` vs. the focus root), toggled by `enabled`, with an explicit code
-   comment warning that two such listeners on one key is "the single most reliable way to
-   make this surface unnavigable" (`bp-player-shell.tsx:208-210`). tvOS's focus engine
-   handles exclusivity structurally, but the *intent* — exactly one owner of Left/Right
-   between seek-bar, spatial-nav, and an open panel — still needs explicit modeling.
+### 6.2 Video surface embedding: transparent WebView + native window geometry sync
+(Tauri-only, drop entirely)
 
-5. **`ResizeObserver`/`getBoundingClientRect()`** measure the chrome's real height at
-   runtime to publish `--bp-player-dock` so stage overlays (skip pill, up next) know where
-   to stop above it (`bp-player-shell.tsx:135-149`). Port the *coupling* (overlays react
-   live to the transport's rendered height) via SwiftUI geometry readers, not a hardcoded
-   constant.
+Desktop mpv is NOT rendered inside the DOM. It's a separate native surface positioned
+*underneath* a transparent Tauri WebView, kept in sync by polling the DOM overlay rect and
+pushing it to Rust:
+- `src/views/player/hooks/use-mpv-embed.ts:9-15` sets
+  `document.documentElement.dataset.mpvEmbed = "1"` to make the webview background
+  transparent (`needsTransparentWebView = isLinuxDesktop() || isMacDesktop()`), only when
+  `engine === "mpv"` and `settings.playerMpvEmbed`.
+- `use-mpv-embed.ts:19-30` imports `@tauri-apps/api/window` `getCurrentWindow()` and
+  subscribes to `win.onMoved`/`win.onResized` to re-sync an overlay
+  (`modalOverlaySync()` from `src/lib/modal-overlay.ts`).
+- `src/lib/player/mpv.ts:440-470` runs a debounced (40ms, `mpv.ts:465`) rect-tracking loop
+  that calls `opts.getEmbedRect()` and, on change, calls
+  `invoke("mpv_set_geometry", { geom: r })` (`mpv.ts:460`) to tell the Rust side where to
+  place the native mpv render surface in window-relative CSS pixels. Skipped entirely on
+  Linux (`isLinuxDesktop()` short-circuit, `mpv.ts:440`).
+- `src/lib/modal-overlay.ts:1-2,24-27` is a companion Tauri IPC channel
+  (`modal_overlay_open/close/emit_state/emit_action`, plus `modal://show`/`modal://closed`
+  events) used to punch through the transparent webview so native modal chrome doesn't get
+  occluded by mpv's surface.
 
-6. **`matchMedia("(prefers-reduced-motion: reduce)")`** gates the chrome fade
-   (`use-bp-player-chrome.ts:9-12,84-87`) and is checked ad hoc per-file (plus
-   `motion-reduce:` Tailwind classes). tvOS's `accessibilityReduceMotion` is the equivalent,
-   but there's no central switch here — every fade site needs its own check ported.
+None of this exists on tvOS: MPVKit renders directly into a `CAMetalLayer`/`MTKView`
+(or GL) that is a normal SwiftUI/UIKit subview, so mpv IS part of the native view hierarchy
+— no geometry-sync IPC loop, no transparent-webview trick, no `modal_overlay_*` channel
+needed. — **drop entirely, ports as: plain SwiftUI ZStack with mpv view + overlay UI**
 
-7. **All resume/history/prefs persistence is `localStorage`, profile-scoped by
-   string-concatenating a profile id onto the key** (`"harbor.localcw.v1." + profileId`,
-   `"harbor.moviewatched.v1." + profileId`, `"harbor.playback-history.v1." + profileId`,
-   each with a legacy un-suffixed key as a one-time migration fallback). `resume.ts` itself
-   is the one *not* profile-scoped (flat `"harbor.resume"` for all profiles) — decide
-   deliberately whether the native port wants per-profile resume. None of this maps
-   directly to `UserDefaults`/Core Data; the portable part is the schema (keys, TTLs, caps,
-   thresholds) above, not the storage mechanism.
+### 6.3 Fullscreen / window management (Tauri window API, drop)
 
-8. **`pagehide`/`beforeunload` are the last-chance flush hook** for resume
-   (`use-resume-autosave.ts:302-310`), Stremio cloud sync (`use-stremio-sync.ts:284-294`),
-   and Trakt scrobbling (`scrobble-hook.ts:41-56`, including a `sendBeacon`-style
-   fire-and-forget POST for the case an async call gets killed on close). tvOS has no
-   equivalent; use app backgrounding (`scenePhase`) and flush proactively on every tick
-   rather than relying on a final-chance-on-unload pattern, since termination isn't
-   guaranteed to run any code.
+`src/lib/fullscreen-state.ts` wraps `@tauri-apps/api/window` `getCurrentWindow()` and calls
+`win.isFullscreen()/setFullscreen()` (lines 83-85, 99-105, 136-141, 169-171, 278-305), plus
+`currentMonitor`/`PhysicalPosition`/`PhysicalSize` to compute borderless-fullscreen bounds
+per monitor, and two Rust-side commands `invoke("window_fullscreen_enter")` (L210, L229) /
+`invoke("window_fullscreen_exit", {...})` (L254). `src/views/player/hooks/use-fullscreen.ts`
+is just a thin React hook over that module (subscribe/enter/exit/toggle, L1-11). tvOS apps
+are always fullscreen/single-window. — **drop entirely**
 
-9. **Gamepad detection** (`useGamepads()`, `bp-skip-pill.tsx:72,199`, picks an `"A"` vs.
-   `"Enter"` hint glyph) is a Web Gamepad API dependency. tvOS's `GameController`
-   framework/Siri Remote has a different capability surface (e.g. a real hardware
-   Play/Pause button) — the hint-glyph logic needs re-deriving, not a straight port.
+### 6.4 Picture-in-picture (`use-pip-mode.ts`) — Tauri-window-based, needs full rework
 
-10. **`SFX.click()`/`SFX.close()`** calls are on nearly every interactive element; the SFX
-    system itself was out of scope for this pass — confirm whether it's meant to be ported
-    1:1 before wiring up `AVAudioPlayer` equivalents everywhere.
+`src/views/player/hooks/use-pip-mode.ts:15` gates on `"__TAURI__" in window ||
+"__TAURI_INTERNALS__" in window`; on PiP enter/exit it dispatches synthetic
+`resize`/`harbor:mpv-refresh-geom` DOM events (L22-23) and calls
+`invoke("hdr_overlay_sync")` (L25) — i.e. PiP is a second OS window Tauri manages, not a
+video-layer PiP API. tvOS has no OS-level PiP surface for third-party apps. —
+**drop / needs-rework, no tvOS equivalent**
 
-11. **Platform-conditional Rust** (`cfg!(windows)`/`macos`/`linux`) drives `hwdec`,
-    `gpu-api`, HDR/tone-mapping, and window embedding (Win32 `DisplayConfig`, GTK on Linux,
-    `mpv_render_mac`/EDR on macOS) — none of it applies to tvOS. MPVKit on tvOS needs its
-    own `hwdec` (VideoToolbox, closest to the existing macOS `videotoolbox-copy` embedded
-    path, `mpv.rs:378`) and its own HDR path — closer to the macOS EDR flow
-    (`target-trc="pq"`, bt.2020/display-p3) than the Windows `DisplayConfig` flip, since
-    AVFoundation also manages EDR at the OS level. Treat §2.6 as conceptual reference only.
+### 6.5 System power/sleep inhibit — needs native replacement
 
-12. **Anime4K shader files load from a filesystem folder path**
-    (`anime4kChain(folder, ...)`, `anime4k-modes.ts:41-46`) the desktop app manages
-    separately. tvOS needs its own bundling/shipping strategy (App Store size limits may
-    rule out the full shader catalog) and needs to verify MPVKit's `libplacebo` pipeline on
-    Metal behaves like desktop mpv's `gpu-next` VO.
+`src/views/player/hooks/use-power-inhibit.ts:7-11` calls
+`invoke("power_inhibit", { on: playing })` to stop the OS from sleeping while media plays,
+and un-inhibits on unmount/pause. tvOS equivalent:
+`UIApplication.shared.isIdleTimerDisabled = true` while playing. —
+**reimplement (trivial)**
 
-13. **Four different "watched" thresholds already disagree upstream**: local resume/
-    movie-watched flips at **85%** (`WATCHED_RATIO`, `use-resume-autosave.ts:33`), the
-    local CW cache's own check uses **92%** (`FINISHED_RATIO`, `local-cw.ts:5`), the
-    Stremio cloud item flips at **>90%** (`CREDITS_RATIO`, `use-stremio-sync.ts:19`), and
-    Trakt/Simkl both scrobble "stop" at **90%**. Pick one canonical threshold deliberately,
-    or reproduce all four if bit-for-bit ecosystem parity matters.
+### 6.6 Frame grab / clip / GIF recording — Tauri filesystem + sidecar ffmpeg, needs full
+rework
 
-14. **No TV "Still watching?" prompt exists to copy** (§1.8) — a real gap versus the
-    desktop player. Decide explicitly whether Stage 4 adds TV parity (desktop
-    hook/constants in §1.8 are a reasonable starting spec) or omits it.
+- `src/lib/player/capture-path.ts:38` `captureDir()` resolves an OS save directory via
+  Tauri's fs/path APIs.
+- `src/views/player/hooks/use-frame-grab.ts` → `mpv_save_screenshot` (`mpv.rs:1335`) writes
+  a file via the Rust mpv backend directly to disk.
+- `src/views/player/hooks/use-clip-recorder.ts:14` gates on `"__TAURI_INTERNALS__" in
+  window`; fixed `CLIP_SECONDS = 30` (L14), likely shells out to an ffmpeg sidecar
+  (`src/lib/ffmpeg-install.ts`, referenced from `use-cast-session.ts:9`).
+- `src/views/player/hooks/use-gif-recorder.ts:16` same pattern, `MAX_SECONDS = 30` (L16),
+  drives `invoke("mpv_gif_start")` (L78) / `invoke("mpv_gif_abort")` (L99, L114).
 
-15. **No TV playback-speed menu and no TV chapter-mark/trickplay-thumbnail seek bar exist
-    to copy either** (§1.4, §1.6) — both desktop-only today. If native tvOS is meant to
-    reach desktop feature parity rather than just match the existing TV web surface, these
-    need original design work.
+tvOS has no arbitrary filesystem access and can't bundle/shell an ffmpeg binary under
+sandboxing. Needs its own capture path via mpv render-target readback plus AVFoundation
+(`AVAssetWriter`) and the Photos framework for saving. — **needs-rework, no direct port**
+
+### 6.7 Casting (Chromecast/DLNA-style) — desktop/browser feature, out of scope
+
+`src/views/player/hooks/use-cast-session.ts` imports `src/lib/cast.ts`
+(`castLoad/castPause/castPlay/castSeek/castStatus/castStop`, L9-19) plus `VideoAudioCast`
+and `ffmpegInstallStep` (L9) for transcode profiles — Harbor acting as a cast sender,
+dependent on desktop transcoding + Tauri networking. tvOS natively supports AirPlay as a
+receiver already. — **out of scope / needs-rework if kept**
+
+### 6.8 Watch-together room sync — pure WebSocket, ports cleanly
+
+`src/views/player/hooks/use-room-sync.ts` and `src/lib/together/client.ts` are plain
+state-machine logic over a raw `WebSocket` (`client.ts:32,274` `new WebSocket(...)`,
+readyState checks at L130/149/189/241/247/253/406/421) — no Tauri or DOM dependency. Sync
+tuning constants (`HOST_HEARTBEAT_MS`, `SEEK_APPLY_DEBOUNCE_MS`, `SYNC_DRIFT_TOLERANCE_S`,
+`SYNC_MAX_AGE_S`, `SYNC_PLAY_LOOKAHEAD_S`, `SYNC_SEEK_JUMP_S`, `SYNC_SUPPRESS_MS`, imported
+in `use-room-sync.ts:9` from `../player-utils`) are portable as-is. — **ports as-is
+(rewrite the WebSocket client in Swift `URLSessionWebSocketTask`, keep the algorithm)**
+
+### 6.9 Webview memory pressure trimming — Tauri/webview-only, drop
+
+`src/views/player/hooks/use-webview-memory.ts:9-15` runs a 60s interval
+(`TRIM_INTERVAL_MS = 60000`) calling `pulseWebviewMemoryLow()`/`runMaintenance(true)` to
+work around WebView memory growth — no counterpart in a native app with no embedded web
+renderer. — **drop entirely**
+
+### 6.10 Content-advisory "ignored" flags — localStorage, needs native replacement
+
+`src/lib/player/content-advisory-ignore.ts:10` reads
+`JSON.parse(localStorage.getItem(KEY) ?? "[]")`. Trivial to port to `UserDefaults`/a JSON
+file. — **reimplement via UserDefaults**
+
+### 6.11 Persistence in general — profile-suffixed localStorage keys, no native analog
+
+Every store in §3.1/§5.5 (`harbor.resume`, `harbor.playback-history.v1.<profileId>`,
+`harbor.localcw.v1.<profileId>`, `harbor.moviewatched.v1.<profileId>`,
+`harbor.player.prefs.v1`, `harbor.stremio.write-queue.v1`) is a plain `localStorage` JSON
+blob, keyed by a profile id resolved from a separate `harbor.profiles.v1` store. A native
+port needs its own small key-value store (e.g. `UserDefaults` for small blobs, or a JSON
+file / SQLite for the larger/rotating ones) with the same per-profile keying scheme and the
+same TTL/cap/eviction rules reproduced explicitly, since there's no drop-in
+`localStorage` equivalent. — **reimplement (straightforward, but don't skip the eviction
+rules — they bound file/UserDefaults size)**
+
+### 6.12 `pagehide`/`beforeunload` flush hooks — no tvOS equivalent, use scenePhase
+
+Several places force a final persistence/scrobble flush on `pagehide`/`beforeunload`
+(`use-resume-autosave.ts:262-286`, `use-stremio-sync.ts:271-294`,
+`trakt/scrobble-hook.ts:44-56` via `fetch(..., keepalive:true)`). tvOS has no page-lifecycle
+events; the equivalent hook point is `ScenePhase` transitioning to `.background`/
+`.inactive` (SwiftUI `@Environment(\.scenePhase)`) or `UIApplication` lifecycle
+notifications — a beacon-style `fetch(keepalive:true)` also has no direct analog and should
+become a synchronous best-effort write before the app suspends. — **reimplement using
+scenePhase**
+
+### 6.13 DOM/focus-driven chrome state — needs a SwiftUI focus re-implementation
+
+All of §1's chrome/panel/rail navigation (`bp-player-key.ts`, `bp-back.ts`,
+`setBpPlayerKeyHandler`, `pushBpBack`/`runBpBack`, `data-bp-autofocus`/`data-bp-focusable`
+attributes referenced throughout `src/views/big-picture/player/*`) is a hand-rolled
+DOM-attribute-driven spatial-navigation and key-interception system layered on top of
+browser keyboard events. tvOS's native focus engine (`@FocusState`, `.focusable()`,
+`onMoveCommand`/`onExitCommand`) is a different model entirely (automatic geometry-based
+focus movement vs. this codebase's explicit registries) — the *behavior* (LIFO handler
+stacks for Back, chrome auto-hide timers, "peek" state) should be preserved, but the
+mechanism must be rebuilt from scratch in SwiftUI. — **reimplement (design work, not a
+mechanical port)**
+
+### 6.14 Not found
+
+- No direct `localStorage`/`sessionStorage`/`indexedDB` usage found in core `use-*`
+  playback hooks or `src/lib/player/*.ts` beyond `content-advisory-ignore.ts` (§6.10).
+- No `always_on_top`/`alwaysOnTop` window flag usage scoped to the player.
