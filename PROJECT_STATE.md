@@ -57,7 +57,12 @@ Docs: browse-spec, big-picture-design, harbor-protocol, engine-report, detail-sp
 - Build: XcodeGen + GitHub Actions macOS → TestFlight internal only. CI simulator screenshots for UI review.
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
-## Next
-1. User: install the newest TestFlight build; sign in to Stremio + Harbor; fix the TMDB key (Test saved key); play something and report (picker, playback, resume, subtitles, Live TV with an M3U).
-2. Device-only checks: HDR/display-mode switching (AVDisplayCriteria still to do), mpv performance, remote feel in the player chrome.
-3. Remaining Stage 2/3/4 gaps: services/addons Home rows, TMDB/TVDB collection sources, TMDB-driven detail rows (cast cards, More Like This), skip intro/outro, AVPlayer engine, Xtream VOD.
+## Next (pick up here — stopped 2026-09-24 ~05:00 EDT on the user's request)
+**Where things stand**
+- Pushed: everything up to commit `345761a` (batches 1–12 + fix). Its CI run is `35895689380`; check `gh run view 35895689380` — if green, dispatch TestFlight with `gh workflow run Build -f testflight=true` (the background waiter may already have done it; `cat /tmp/…/scratchpad/ci-b12.txt` is gone after reboot, so just check the run).
+- Local, NOT pushed: commit "WIP: sports who panel" — `engine/sports.ts` `who()/whoPlayer()` + `App/Sources/Sports/SportsWhoView.swift`. Engine builds (2816 KB) and offline smoke passes (145). **Not wired yet**: `SportsEventView.sideRow(_:lost:)` (≈line 279) must become a Button that presents `SportsWhoView(game:, side: "home"|"away")` in a fullScreenCover. Wire it, then push.
+- A fresh-context review of batches 6–8 (commits 0e30c90, 287cba3, 5f870bf) was running when we stopped; its report was never read. Re-run it (Sonnet subagent, same brief as the earlier reviews) rather than hunting for the old transcript.
+**Then**
+1. Verify the whole run on the device: `cd engine && npm test` (network smoke ≈220 checks), then the user installs the newest TestFlight build.
+2. Remaining audit rows (`docs/parity-audit-2026-09-23.md`): SP-3 addon sources for sports, LV-1 guide floating video preview, LV-3 EPG remap, TVDB collections (CL-1 half), DT-10 videos row (needs a YouTube path), Letterboxd tab, phone handoff/remote (needs a LAN web server), Top Shelf (needs a second signed target), Stage 6 torrents (librqbit), Stages 12–13.
+3. Keep the pattern: batch → `node build.mjs` size check (~2.8 MB now) → `node smoke.mjs --offline` → commit → push → wait for `Build` → TestFlight → Sonnet review → apply.

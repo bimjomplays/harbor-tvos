@@ -397,3 +397,79 @@ export async function teams(leagueKey: string, force = false): Promise<{ status:
   };
 }
 export function favouriteTeams(): FavouriteTeam[] { return readFavourites().teams; }
+
+
+// ------------------------------------------------------------------- "who" panel
+// bp-sports-who-panel: a team or athlete bio for one side of a game (bp-sports-who-subject
+// picks which; team-profile / athlete-identity fetch it).
+import { bpSportsWhoSubject, bpSportsWhoPlayerSubject, type BpSportsWhoSubject } from "@/views/big-picture/sports/bp-sports-who-subject";
+import { bpSportsGroup, bpSportsSingleSubject, bpSportsCardArt } from "@/views/big-picture/sports/bp-sports-art";
+import { fetchTeamProfile } from "@/lib/sports/team-profile";
+import { fetchSportsDbAthleteBio, parseEspnAthleteBio } from "@/lib/sports/athlete-identity";
+import { safeFetch as whoFetch } from "@/lib/safe-fetch";
+export type WhoView = {
+  kind: "team" | "athlete"; key: string; name: string; art: string; eyebrow: string; lead: string; body: string; note: string;
+  figures: Array<{ name: string; value: string }>; facts: Array<{ label: string; value: string }>;
+  link: { label: string; url: string } | null;
+  roster: Array<{ id: string; name: string; image: string | null; position: string | null; jersey: string | null; source: string }>;
+};
+const WHO_TIMEOUT = 12000;
+const WHO_LOUD = /record|rank|standing|points|wins|titles|championships/i;
+function whoText(v: unknown): string { return typeof v === "string" ? v.trim().slice(0, 120) : typeof v === "number" && Number.isFinite(v) ? String(v) : ""; }
+
+async function whoView(subject: BpSportsWhoSubject): Promise<WhoView> {
+  const base = { key: subject.key, name: subject.name, art: subject.art, figures: [] as WhoView["figures"], facts: [] as WhoView["facts"], link: null as WhoView["link"], roster: [] as WhoView["roster"], body: "", note: "" };
+  if (subject.kind === "team") {
+    const data = await Promise.race([fetchTeamProfile(subject.identity).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), WHO_TIMEOUT))]);
+    if (!data) return { ...base, kind: "team", eyebrow: "Team profile", lead: "", note: "Profile details could not be loaded." };
+    const loud = data.facts.filter((f) => WHO_LOUD.test(f.label) && f.value.length <= 14).slice(0, 4);
+    const link = data.links?.find((l) => l.label === "Official website") ?? data.links?.[0] ?? null;
+    return {
+      ...base, kind: "team", eyebrow: "Team profile", art: data.logo || subject.art,
+      lead: data.facts.filter((f) => /standing|league|conference|division/i.test(f.label)).map((f) => f.value).join(" · "),
+      figures: loud.map((f) => ({ name: f.label, value: f.value })),
+      facts: data.facts.filter((f) => !loud.includes(f)).slice(0, 8),
+      body: data.description ?? "",
+      note: data.partial ? "Detailed statistics could not be loaded." : "",
+      link: link ? { label: link.label, url: link.url } : null,
+      roster: data.roster.slice(0, 40).map((p) => ({ id: p.id, name: p.name, image: p.image ?? null, position: p.position ?? null, jersey: p.jersey ?? null, source: p.source })),
+    };
+  }
+  const person = subject.person;
+  const espn = person.source === "espn" && /^\d+$/.test(person.id) && person.path.includes("/");
+  const db = person.source === "thesportsdb" && /^\d{1,15}$/.test(person.id);
+  const facts = person.profile ? ([["Height", person.profile.height], ["Weight", person.profile.weight], ["Reach", person.profile.reach], ["Stance", person.profile.stance], ["Age", person.profile.age]] as Array<[string, string]>).filter(([, v]) => !!v).map(([label, value]) => ({ label, value })) : [];
+  if (!espn && !db) return { ...base, kind: "athlete", eyebrow: "Athlete profile", lead: "", facts, note: facts.length === 0 ? "Profile details could not be loaded." : "" };
+  try {
+    if (db) {
+      const bio = await Promise.race([fetchSportsDbAthleteBio(person.id, person.group, new AbortController().signal), new Promise<null>((r) => setTimeout(() => r(null), WHO_TIMEOUT))]);
+      return { ...base, kind: "athlete", eyebrow: "Athlete profile", art: bio?.image || subject.art, lead: [bio?.team?.name ?? "", ...(bio?.bio ?? [])].filter(Boolean).join(" · "), facts,
+        note: bio ? "Athlete information supplied by TheSportsDB. Statistics may not be available." : "Profile details could not be loaded.",
+        link: bio?.recordUrl ? { label: "View profile on TheSportsDB", url: bio.recordUrl } : null };
+    }
+    const res = await Promise.race([whoFetch(`https://site.web.api.espn.com/apis/common/v3/sports/${person.path}/athletes/${person.id}`), new Promise<null>((r) => setTimeout(() => r(null), WHO_TIMEOUT))]);
+    if (!res || res.status === 404) return { ...base, kind: "athlete", eyebrow: "Athlete profile", lead: "", facts, note: "Profile details could not be loaded." };
+    if (!res.ok) throw new Error("Athlete profile unavailable");
+    const raw = (await res.json()) as Record<string, unknown>;
+    const bio = parseEspnAthleteBio(raw, person.id);
+    const block = ((raw.athlete as Record<string, unknown> | undefined)?.statsSummary ?? {}) as Record<string, unknown>;
+    const figures = (Array.isArray(block.statistics) ? (block.statistics as Array<Record<string, unknown>>) : []).map((st) => ({ name: whoText(st.displayName) || whoText(st.name), value: whoText(st.displayValue) || whoText(st.value) })).filter((st) => st.name && st.value).slice(0, 6);
+    return { ...base, kind: "athlete", eyebrow: "Athlete profile", art: bio?.image || subject.art, lead: [bio?.team?.name ?? "", ...(bio?.bio ?? [])].filter(Boolean).join(" · "), figures, facts,
+      note: figures.length === 0 ? "Detailed statistics are not provided for this athlete yet." : "", link: bio?.recordUrl ? { label: "View full record on ESPN", url: bio.recordUrl } : null };
+  } catch {
+    return { ...base, kind: "athlete", eyebrow: "Athlete profile", lead: "", facts, note: "Statistics could not be loaded. Please try again." };
+  }
+}
+
+export async function who(game: SportsGame, which: "home" | "away"): Promise<WhoView | null> {
+  const side = which === "home" ? game.home : game.away;
+  const league = hubLeague(game.league);
+  const subject = bpSportsWhoSubject({ side, art: bpSportsCardArt(game) ?? "", league, leagueTag: game.league, group: bpSportsGroup(game), individual: bpSportsSingleSubject(game), source: game.source, profile: undefined });
+  return subject ? whoView(subject) : null;
+}
+
+/** A roster player from a team panel opens as an athlete. */
+export async function whoPlayer(leagueTag: string, player: { id: string; name: string; image?: string | null; source: "espn" | "thesportsdb" }): Promise<WhoView | null> {
+  const subject = bpSportsWhoPlayerSubject({ id: player.id, name: player.name, image: player.image ?? undefined, source: player.source }, hubLeague(leagueTag), leagueTag);
+  return subject ? whoView(subject) : null;
+}

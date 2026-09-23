@@ -517,6 +517,8 @@ export const anime4k = {
 export const sports = {
   standings: sportsGlue.standings,
   teamLeagues: sportsGlue.teamLeagues,
+  who: sportsGlue.who,
+  whoPlayer: sportsGlue.whoPlayer,
   teams: sportsGlue.teams,
   favouriteTeams: sportsGlue.favouriteTeams,
   artwork: sportsGlue.artwork,
