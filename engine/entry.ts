@@ -63,6 +63,7 @@ import * as syncGlue from "./sync";
 import * as cardsGlue from "./cards";
 import * as simklGlue from "./simkl";
 import * as anime4kGlue from "./anime4k";
+import * as sportsGlue from "./sports";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -480,6 +481,19 @@ export const anime4k = {
   files: anime4kGlue.files,
   modes: anime4kGlue.modes,
   choose: anime4kGlue.choose,
+};
+
+/** Sports room (upstream hub feeds, rows, discovery, consent, personalization, detail). */
+export const sports = {
+  consent: sportsGlue.consent,
+  accept: sportsGlue.accept,
+  decline: sportsGlue.decline,
+  catalog: sportsGlue.catalog,
+  setLeagues: sportsGlue.setLeagues,
+  toggleTeam: sportsGlue.toggleTeam,
+  page: sportsGlue.page,
+  days: sportsGlue.days,
+  detail: sportsGlue.detail,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

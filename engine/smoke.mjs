@@ -420,6 +420,30 @@ if (!OFFLINE) {
   r.eq("trakt.status when signed out", engine.trakt.status(), { authenticated: false, username: null });
   const dc = await r.timed("trakt.deviceCode()", () => engine.trakt.deviceCode().catch((e) => ({ error: e.message })));
   r.ok("trakt.deviceCode returns a user code (or a clear error)", (dc && dc.userCode && dc.userCode.length >= 6) || (dc && dc.error), JSON.stringify(dc && { code: dc.userCode, url: dc.verificationUrl, error: dc.error }));
+  // ---- sports (ESPN public feeds, no key)
+  r.eq("sports.consent starts unknown", engine.sports.consent().status, "unknown");
+  r.eq("sports.accept persists", engine.sports.accept().status, "accepted");
+  const scat = engine.sports.catalog();
+  r.ok("sports.catalog lists groups, leagues and the starter selection", scat.groups.length > 8 && scat.leagues.length > 60 && scat.selected.length > 30 && scat.personalized === false, JSON.stringify({ g: scat.groups.length, l: scat.leagues.length, s: scat.selected.length }));
+  const quick = await r.timed("sports.page(for-you, no wait) returns from cache at once", () => engine.sports.page({ mode: "for-you", group: "all" }));
+  r.ok("sports.page without wait reports busy while feeds load", quick.status.busy === true && Array.isArray(quick.rows), JSON.stringify(quick.status));
+  const sdays = engine.sports.days();
+  r.ok("sports.days: 14 cells with Today at index 3", sdays.length === 14 && sdays[3].today && sdays[3].label === "Today", JSON.stringify(sdays.slice(2, 5)));
+  const spg = await r.timed("sports.page(for-you)", () => engine.sports.page({ mode: "for-you", group: "all", wait: true }));
+  r.ok("sports.page for-you returns groups, rows and a status", Array.isArray(spg.rows) && spg.groups.length > 3 && spg.status && typeof spg.status.failed === "boolean", JSON.stringify({ rows: spg.rows.map((x) => [x.key, x.games.length]), heroes: spg.heroes.length, note: spg.status.note, failed: spg.status.failedKeys.slice(0, 4) }));
+  const anyGame = spg.rows.flatMap((x) => x.games)[0] ?? spg.heroes[0];
+  r.ok("sports game view carries display fields", !anyGame || (typeof anyGame.leagueLabel === "string" && typeof anyGame.statusText === "string" && typeof anyGame.quiet === "string" && typeof anyGame.key === "string"), JSON.stringify(anyGame && { league: anyGame.leagueLabel, status: anyGame.statusText, quiet: anyGame.quiet, home: anyGame.home.name, away: anyGame.away.name }));
+  const ssl = await r.timed("sports.page(live)", () => engine.sports.page({ mode: "live", group: "all", wait: true }));
+  r.ok("sports.page live groups by league (may be empty off-hours)", Array.isArray(ssl.rows) && ssl.rows.every((x) => x.key.startsWith("live:")), JSON.stringify(ssl.rows.map((x) => [x.title, x.games.length]).slice(0, 5)));
+  const ssc = await r.timed("sports.page(schedule, cached)", () => engine.sports.page({ mode: "schedule", group: "all", wait: true }));
+  r.ok("sports.page schedule rows keyed by league", Array.isArray(ssc.rows) && ssc.rows.every((x) => x.key.startsWith("schedule:")), JSON.stringify(ssc.rows.slice(0, 3).map((x) => [x.title, x.games.length])));
+  if (anyGame) {
+    const det = await r.timed("sports.detail(first game)", () => engine.sports.detail(anyGame).catch((e) => ({ error: e.message })));
+    r.ok("sports.detail returns a summary (or null/err for non-ESPN sources)", det === null || (det && (det.error || Array.isArray(det.homeRoster))), JSON.stringify(det && { err: det.error, roster: det.homeRoster && det.homeRoster.length, events: det.events && det.events.length }));
+  }
+  engine.sports.setLeagues(["NBA", "EPL"]);
+  r.ok("sports.setLeagues personalizes both stores", engine.sports.catalog().selected.join(",") === "NBA,EPL" && engine.sports.catalog().personalized === true);
+  r.eq("sports.decline", engine.sports.decline().status, "declined");
   r.eq("simkl.status when signed out", engine.simkl.status(), { authenticated: false, username: null });
   const spin = await r.timed("simkl.deviceCode()", () => engine.simkl.deviceCode().catch((e) => ({ error: e.message })));
   r.ok("simkl.deviceCode returns a PIN (or a clear error)", (spin && spin.userCode && spin.userCode.length >= 4 && spin.verificationUrl) || (spin && spin.error), JSON.stringify(spin));

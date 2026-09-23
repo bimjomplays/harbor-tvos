@@ -48,6 +48,8 @@ struct ShellView: View {
             LiveView()
         case .collections:
             CollectionsView()
+        case .sports:
+            SportsView()
         default: RoomPlaceholderView(room: app.room)
         }
     }
