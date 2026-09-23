@@ -11,7 +11,7 @@ export function playlists(): StoredPlaylist[] {
 
 export function addPlaylist(name: string, url: string): StoredPlaylist {
   const trimmed = url.trim();
-  const entry: StoredPlaylist = { id: `pl_${Date.now().toString(36)}`, name: name.trim() || trimmed, url: trimmed, kind: "m3u" };
+  const entry: StoredPlaylist = { id: `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, name: name.trim() || trimmed, url: trimmed, kind: "m3u" };
   writePlaylists([...readPlaylists().filter((p) => p.url !== trimmed), entry]);
   return entry;
 }

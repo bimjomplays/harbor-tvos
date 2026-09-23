@@ -12,6 +12,7 @@ final class LiveModel: ObservableObject {
     @Published private(set) var groups: [Group] = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
+    @Published private(set) var truncatedNote: String?
     @Published var selectedPlaylist: String?
     @Published var selectedGroup: String?
 
@@ -28,6 +29,7 @@ final class LiveModel: ObservableObject {
         do {
             let p: Parsed = try await HarborEngine.shared.call("live.channels", [id])
             groups = p.groups
+            truncatedNote = p.truncated ? "Showing the first 4,000 of \(p.total) channels." : nil
             if selectedGroup == nil || !groups.contains(where: { $0.name == selectedGroup }) { selectedGroup = groups.first?.name }
         } catch { self.error = error.localizedDescription; groups = [] }
     }
@@ -53,6 +55,7 @@ struct LiveView: View {
     @State private var addUrl = ""
     @State private var addName = ""
     @State private var showAdd = false
+    @State private var adding = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -79,8 +82,11 @@ struct LiveView: View {
             BPField(label: "Playlist name", placeholder: "My channels", text: $addName)
             BPField(label: "M3U URL", placeholder: "https://…/playlist.m3u", text: $addUrl, keyboard: .URL)
             HStack(spacing: BP.px(12)) {
-                Button("Add playlist") { Task { await model.add(name: addName, url: addUrl); addUrl = ""; addName = ""; showAdd = false } }
-                    .buttonStyle(BPActionStyle(primary: true)).disabled(addUrl.count < 8)
+                Button(adding ? "Adding…" : "Add playlist") {
+                    adding = true
+                    Task { await model.add(name: addName, url: addUrl); addUrl = ""; addName = ""; showAdd = false; adding = false }
+                }
+                .buttonStyle(BPActionStyle(primary: true)).disabled(adding || addUrl.count < 8)
                 if !model.playlists.isEmpty { Button("Cancel") { showAdd = false }.buttonStyle(BPActionStyle()) }
             }
             if let e = model.error { BPNote(text: e, tone: BP.danger) }
@@ -109,6 +115,7 @@ struct LiveView: View {
                         .buttonStyle(BPActionStyle(primary: model.selectedGroup == g.name))
                 }
                 if let e = model.error { BPNote(text: e, tone: BP.danger) }
+                if let t = model.truncatedNote { BPNote(text: t) }
             }
             .padding(.bottom, BP.hintHeight + BP.px(40))
         }
