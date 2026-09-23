@@ -6,7 +6,7 @@ import { saveLocalCw, clearLocalCw } from "@/lib/local-cw";
 import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
-import { inflateSync } from "fflate";
+import { unzlibSync } from "fflate";
 
 // lib/stremio-watched.ts canonicalVideoOrder (not exported): Stremio indexes the watched
 // bitfield against videos sorted by (season, episode, released); bit i is that position.
@@ -120,7 +120,12 @@ export async function watchedEpisodes(authKey: string | null, meta: Meta): Promi
   if (!authKey || !meta.videos || meta.videos.length === 0) return [];
   const item = await libraryGetOne(authKey, meta.id).catch(() => null);
   const field = (item?.state as { watched?: string } | undefined)?.watched;
-  if (!field) return [];
+  return decodeWatchedField(field, meta.videos);
+}
+
+/** Pure decoder for the `state.watched` field; see watchedEpisodes. */
+export function decodeWatchedField(field: string | null | undefined, videos: Meta["videos"]): string[] {
+  if (!field || !videos || videos.length === 0) return [];
   const parts = field.split(":");
   if (parts.length < 3) return [];
   const b64 = parts[parts.length - 1];
@@ -132,12 +137,12 @@ export async function watchedEpisodes(authKey: string | null, meta: Meta): Promi
     const bin = atob(b64);
     const raw = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
-    bytes = inflateSync(raw);
+    bytes = unzlibSync(raw);   // DecompressionStream("deflate") is zlib-framed, not raw deflate
   } catch {
     return [];
   }
   const bit = (i: number) => i >= 0 && i < bytes.length * 8 && (bytes[i >> 3] & (1 << (i & 7))) !== 0;
-  const sorted = canonicalVideoOrder(meta.videos);
+  const sorted = canonicalVideoOrder(videos);
   const anchorIdx = sorted.findIndex((v) => v.id === anchorVideoId);
   const offset = anchorLength - anchorIdx - 1;
   const keys: string[] = [];

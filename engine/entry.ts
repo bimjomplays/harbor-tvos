@@ -411,6 +411,7 @@ export const player = {
   saveProgress: playerGlue.saveProgress,
   localResume: playerGlue.localResume,
   watchedEpisodes: playerGlue.watchedEpisodes,
+  decodeWatchedField: playerGlue.decodeWatchedField,
 };
 
 // ================================================================================== runtime

@@ -221,6 +221,14 @@ if (!OFFLINE) {
     console.log("  (skipped rooms.anime: Jikan unreachable right now)");
   }
   r.eq("player.watchedEpisodes without auth", await engine.player.watchedEpisodes(null, shaw), []);
+  // Round-trip a synthetic Stremio watched bitfield (zlib-framed like DecompressionStream("deflate")).
+  {
+    const zlib = await import("node:zlib");
+    const vids = Array.from({ length: 10 }, (_, i) => ({ id: `tt1:1:${i + 1}`, season: 1, episode: i + 1, released: `2020-01-${String(i + 1).padStart(2, "0")}T00:00:00Z` }));
+    const bits = new Uint8Array(2); bits[0] |= 1 << 0; bits[0] |= 1 << 3; bits[1] |= 1 << 1; // episodes 1, 4, 10
+    const field = `tt1:1:10:10:${zlib.deflateSync(Buffer.from(bits)).toString("base64")}`;
+    r.eq("player.decodeWatchedField decodes a zlib bitfield", engine.player.decodeWatchedField(field, vids), ["1:1", "1:4", "1:10"]);
+  }
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

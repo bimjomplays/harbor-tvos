@@ -71,7 +71,7 @@ struct PlayerScreen: View {
         }
         .onPlayPauseCommand { togglePause() }
         .onExitCommand {
-            if panel != nil { panel = nil; focus = .surface }
+            if panel != nil { panel = nil; focus = .surface; wake() }
             else if chrome { chrome = false }
             else { finish(natural: false) }
         }
@@ -290,7 +290,7 @@ struct PlayerScreen: View {
     private func saveTick(flush: Bool) async {
         guard let c = controller, let context else { return }
         let s = c.snapshot()
-        guard s.duration > 0, flush || (!s.paused && abs(s.position - lastSavedPos) >= 4) else { return }
+        guard s.duration > 0, flush || (!s.paused && abs(s.position - lastSavedPos) >= 1.5) else { return }
         lastSavedPos = s.position
         _ = await context.save(positionSec: s.position, durationSec: s.duration, flush: flush)
     }
