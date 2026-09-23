@@ -190,6 +190,40 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------------------------- live EPG (recorded host)
+{
+  const now = Date.now();
+  const fmt = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, "0"); return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())} +0000`; };
+  const xml = `<?xml version="1.0"?><tv><channel id="cnn.us"><display-name>CNN</display-name></channel>
+<programme start="${fmt(now - 20 * 60000)}" stop="${fmt(now + 40 * 60000)}" channel="cnn.us"><title>Newsroom</title><desc>Live news.</desc><category>News</category></programme>
+<programme start="${fmt(now + 40 * 60000)}" stop="${fmt(now + 100 * 60000)}" channel="cnn.us"><title>The Lead</title></programme></tv>`;
+  const m3u = `#EXTM3U\n#EXTINF:-1 tvg-id="cnn.us" tvg-logo="https://x/cnn.png" group-title="News",CNN\nhttps://example.invalid/cnn.m3u8\n#EXTINF:-1 group-title="Sports",ESPN\nhttps://example.invalid/espn.m3u8\n`;
+  const rec = loadEngine({});
+  rec.node.host.fetch = async (req) => {
+    const ok = (body, type) => ({ status: 200, statusText: "OK", headers: { "content-type": type }, url: req.url, body });
+    if (req.url.endsWith("/list.m3u")) return ok(m3u, "audio/x-mpegurl");
+    if (req.url.endsWith("/guide.xml")) return ok(xml, "application/xml");
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const pl = rec.engine.live.addPlaylist("Test", "https://epg.example.invalid/list.m3u", "https://epg.example.invalid/guide.xml");
+  const view = await rec.engine.live.channels(pl.id);
+  r.eq("live.channels (recorded M3U) groups", view.groups.map((g) => g.name), ["News", "Sports"]);
+  const epg = await rec.engine.live.loadEpg(pl.id);
+  r.ok("live.loadEpg parses XMLTV", epg.channels === 1 && epg.programs === 2, JSON.stringify(epg));
+  const nn = rec.engine.live.nowNext(pl.id, view.channels.map((c) => c.id), now);
+  const cnn = nn.find((x) => x.id === view.channels.find((c) => c.name === "CNN").id);
+  r.ok("nowNext matches tvg-id and picks the airing programme", cnn && cnn.known && cnn.now && cnn.now.title === "Newsroom" && cnn.next && cnn.next.title === "The Lead", JSON.stringify(cnn));
+  const espn = nn.find((x) => x.id !== cnn.id);
+  r.ok("nowNext: unmatched channel is unknown, not guessed", espn && espn.known === false);
+  const sched = rec.engine.live.schedule(pl.id, cnn.id, now, now + 3 * 3600000);
+  r.eq("live.schedule returns the window's programmes", sched.map((p) => p.title), ["Newsroom", "The Lead"]);
+  r.ok("xtream login URL is detected and stored with creds + derived EPG", (() => {
+    const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
+    return x.kind === "xtream" && x.xtream && x.xtream.username === "u" && /xmltv\.php/.test(x.epgUrl || "");
+  })());
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());
@@ -314,8 +348,15 @@ if (!OFFLINE) {
   const pl = engine.live.addPlaylist("iptv-org US", "https://iptv-org.github.io/iptv/countries/us.m3u");
   r.ok("live.addPlaylist stores in harbor.iptv.playlists.v1", engine.live.playlists().some((p) => p.id === pl.id));
   const ch = await r.timed("live.channels(iptv-org US)", () => engine.live.channels(pl.id));
-  r.ok("live.channels parses groups and channels", ch && ch.groups.length > 3 && ch.total > 100 && ch.groups[0].channels[0].url.startsWith("http"), JSON.stringify(ch && { groups: ch.groups.length, total: ch.total, first: ch.groups[0] && [ch.groups[0].name, ch.groups[0].channels.length] }));
+  r.ok("live.channels loads through upstream's playlist store, grouped + ordered", ch && ch.groups.length > 3 && ch.total > 100 && ch.channels[0].url.startsWith("http"), JSON.stringify(ch && { groups: ch.groups.length, total: ch.total, first: ch.channels[0] && [ch.channels[0].name, ch.channels[0].group] }));
+  const pick = ch.channels[Math.min(40, ch.channels.length - 1)];
+  r.eq("live.toggleFavorite adds", engine.live.toggleFavorite(pick), true);
+  const ch2 = await engine.live.channels(pl.id);
+  r.ok("favorites lead the guide order (bp-guide-order band 1)", ch2.channels[0].id === pick.id && ch2.channels[0].favorite === true, JSON.stringify(ch2.channels[0]));
+  r.eq("live.toggleFavorite removes", engine.live.toggleFavorite(pick), false);
+  r.eq("live.nowNext without a guide reports unknown", engine.live.nowNext(pl.id, [pick.id])[0].known, false);
   engine.live.removePlaylist(pl.id);
+  r.ok("live.removePlaylist clears favorites for the source", !engine.live.favorites().some((f) => f.sourceId === pl.id));
   const sk = await r.timed("skip.segments(Breaking Bad S1E1)", () => engine.skip.segments("p_smoke", true, { id: "tt0903747", type: "series", name: "Breaking Bad" }, { season: 1, episode: 1, imdbId: "tt0903747", imdbSeason: 1, imdbEpisode: 1 }, 3480));
   r.ok("skip.segments returns a (possibly empty) segment list", Array.isArray(sk) && sk.every((x) => x.startSec < x.endSec), JSON.stringify(sk.slice(0, 3)));
   const fs = await import("node:fs");

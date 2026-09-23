@@ -467,12 +467,19 @@ export const cards = {
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
 export const skip = { segments: skipGlue.segments };
 
-/** Live TV: M3U playlists (upstream store + parser). EPG, Xtream and catch-up come later. */
+/** Live TV: M3U / Xtream / middleware sources, favorites, guide order, XMLTV now/next. */
 export const live = {
   playlists: liveGlue.playlists,
   addPlaylist: liveGlue.addPlaylist,
+  setEpgUrl: liveGlue.setEpgUrl,
   removePlaylist: liveGlue.removePlaylist,
   channels: liveGlue.channels,
+  favorites: liveGlue.favorites,
+  toggleFavorite: liveGlue.toggleFavorite,
+  recordPlay: liveGlue.recordPlay,
+  loadEpg: liveGlue.loadEpg,
+  nowNext: liveGlue.nowNext,
+  schedule: liveGlue.schedule,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */

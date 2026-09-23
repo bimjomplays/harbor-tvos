@@ -205,6 +205,7 @@ check("shims.events.on observes dispatch", run(`(()=>{const out=[];const off=Har
 // ------------------------------------------------------------------------------ real network
 const cine = await run(`fetch("https://v3-cinemeta.strem.io/catalog/movie/top.json").then(async r=>({ok:r.ok,status:r.status,ct:r.headers.get("content-type"),n:(await r.json()).metas.length}))`);
 ok("fetch cinemeta live", cine.ok && cine.status === 200 && cine.n > 0, JSON.stringify(cine));
+ok("response.body.getReader() yields the whole body once, then done", await run(`fetch("https://v3-cinemeta.strem.io/catalog/movie/top.json").then(async r=>{const rd=r.body.getReader();const a=await rd.read();const b=await rd.read();return !a.done&&a.value.length>100&&b.done&&r.bodyUsed;})`) === true);
 ok("fetch 404 is ok:false not a throw", await run(`fetch("https://v3-cinemeta.strem.io/definitely-not-a-thing.json").then(r=>r.ok===false&&r.status>=400,()=>"threw")`) === true);
 
 nodeHost.dispose();

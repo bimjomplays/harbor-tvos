@@ -1,40 +1,257 @@
-// Live TV (Stage 8 slice): playlists in upstream's store, M3U parsed by upstream's scanner.
+// Live TV on upstream's IPTV stack: sources (M3U, Xtream, middleware probing), the 6-hour
+// playlist cache, favorites/pins/stats ordering (bp-guide-order), and an XMLTV guide with
+// upstream's channel↔EPG resolver. Swift gets flat channel lists plus now/next per channel.
 import { readPlaylists, writePlaylists, type StoredPlaylist } from "@/lib/iptv/playlists-store";
-import { parseM3u, groupChannels } from "@/lib/iptv/m3u";
-import type { IptvChannel } from "@/lib/iptv/types";
+import { detectProviderShape } from "@/lib/iptv/ingest/detect";
+import { loadPlaylist, clearPlaylistCache } from "@/lib/iptv/store";
+import { deriveEpgUrls } from "@/lib/iptv/m3u";
+import { parseXmltv, indexProgramsByChannel, findCurrent } from "@/lib/iptv/xmltv";
+import { computeTvgIdCounts, epgProgramsForChannel } from "@/lib/iptv/epg-resolver";
+import { epgOffsetHoursPref } from "@/lib/iptv/settings-bridge";
+import { recordChannelPlay, removeStatsForSource } from "@/lib/iptv/channel-stats";
+import { removePinsForSource } from "@/lib/iptv/pins";
+import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
+import { headersFromChannel } from "@/lib/iptv/channel-headers";
+import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
+import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
+import { loadStoredSettings } from "@/lib/settings/load";
+import { gunzipSync } from "fflate";
 
-export type LiveGroup = { name: string; channels: Array<Pick<IptvChannel, "id" | "name" | "logo" | "url" | "group" | "tvgId">> };
+export type LiveChannel = {
+  id: string;
+  name: string;
+  logo: string | null;
+  url: string;
+  group: string | null;
+  tvgId: string | null;
+  /** Referer / User-Agent the playlist asked for (channel-headers.ts). */
+  headers: Record<string, string> | null;
+  favorite: boolean;
+};
+
+export type LiveGroup = { name: string; count: number };
+
+export type LivePlaylistView = {
+  id: string;
+  name: string;
+  kind: "m3u" | "xtream" | "epg";
+  /** Channels in guide order for the "All" category (favorites, pins, most watched, region networks, rest). */
+  channels: LiveChannel[];
+  groups: LiveGroup[];
+  total: number;
+  epgUrl: string | null;
+};
+
+export type NowNext = {
+  id: string;
+  now: ProgramView | null;
+  next: ProgramView | null;
+  /** False when the guide holds nothing for this channel (no match), so the row can say "Live". */
+  known: boolean;
+};
+
+export type ProgramView = { title: string; description: string | null; startMs: number; endMs: number; category: string | null };
+
+// ------------------------------------------------------------------------------ sources
 
 export function playlists(): StoredPlaylist[] {
   return readPlaylists();
 }
 
-export function addPlaylist(name: string, url: string): StoredPlaylist {
+/**
+ * Add any source upstream accepts: an M3U/M3U8 URL, a middleware host (probed for
+ * /iptv/m3u etc.), or an Xtream `get.php` / `player_api.php` login URL. The EPG URL is taken
+ * from the argument, else derived for Xtream logins.
+ */
+export function addPlaylist(name: string, url: string, epgUrl?: string | null): StoredPlaylist {
   const trimmed = url.trim();
-  const entry: StoredPlaylist = { id: `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`, name: name.trim() || trimmed, url: trimmed, kind: "m3u" };
+  const id = `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const probe = detectProviderShape({ id, name: name.trim() || trimmed, url: trimmed });
+  if (probe.kind === "invalid") throw new Error(probe.reason);
+  const entry: StoredPlaylist = { id, name: name.trim() || trimmed, url: trimmed, kind: probe.kind === "xtream" ? "xtream" : probe.kind === "epg" ? "epg" : "m3u" };
+  if (probe.kind === "xtream") entry.xtream = { server: probe.creds.base, username: probe.creds.username, password: probe.creds.password };
+  const epg = (epgUrl ?? "").trim() || (probe.kind === "xtream" ? deriveEpgUrls(trimmed)[0] ?? null : null);
+  if (epg) entry.epgUrl = epg;
   writePlaylists([...readPlaylists().filter((p) => p.url !== trimmed), entry]);
   return entry;
 }
 
-export function removePlaylist(id: string): void {
-  writePlaylists(readPlaylists().filter((p) => p.id !== id));
+export function setEpgUrl(id: string, epgUrl: string | null): void {
+  writePlaylists(readPlaylists().map((p) => (p.id === id ? { ...p, epgUrl: (epgUrl ?? "").trim() || undefined } : p)));
+  epgCache.delete(id);
 }
 
-const MAX_CHANNELS = 4000;
+export function removePlaylist(id: string): void {
+  writePlaylists(readPlaylists().filter((p) => p.id !== id));
+  clearPlaylistCache(id);
+  epgCache.delete(id);
+  removeFavoritesForSource(id);
+  removePinsForSource(id);
+  removeStatsForSource(id);
+  removeEpgOverridesForSource(id);
+}
 
-/** Fetches and parses one playlist into groups (group-title order of first appearance). */
-export async function channels(playlistId: string): Promise<{ groups: LiveGroup[]; total: number; truncated: boolean }> {
+// ---------------------------------------------------------------------------- favorites
+// lib/iptv/favorites.tsx storage, without the React provider.
+const FAV_KEY = "harbor.iptv.favorites.v2";
+type StoredFavorite = { id: string; name: string; logo: string | null; group: string | null; url: string; tvgId: string | null; sourceId: string };
+
+function readFavorites(): Map<string, StoredFavorite> {
+  const map = new Map<string, StoredFavorite>();
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FAV_KEY) ?? "[]");
+    if (Array.isArray(parsed)) for (const e of parsed) if (e && typeof e.id === "string") map.set(e.id, e as StoredFavorite);
+  } catch { /* ignore */ }
+  return map;
+}
+
+function writeFavorites(map: Map<string, StoredFavorite>): void {
+  localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(map.values())));
+}
+
+export function favorites(): StoredFavorite[] {
+  return Array.from(readFavorites().values());
+}
+
+export function toggleFavorite(channel: { id: string; name: string; logo?: string | null; group?: string | null; url: string; tvgId?: string | null }): boolean {
+  const map = readFavorites();
+  if (map.has(channel.id)) {
+    map.delete(channel.id);
+    writeFavorites(map);
+    return false;
+  }
+  map.set(channel.id, { id: channel.id, name: channel.name, logo: channel.logo ?? null, group: channel.group ?? null, url: channel.url, tvgId: channel.tvgId ?? null, sourceId: channel.id.split("::")[0] ?? "" });
+  writeFavorites(map);
+  return true;
+}
+
+function removeFavoritesForSource(sourceId: string): void {
+  const map = readFavorites();
+  let changed = false;
+  for (const [id, f] of map) {
+    if (f.sourceId === sourceId || id.startsWith(`${sourceId}::`)) { map.delete(id); changed = true; }
+  }
+  if (changed) writeFavorites(map);
+}
+
+function readPins(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("harbor.iptv.pins.v1") ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// ----------------------------------------------------------------------------- channels
+
+const MAX_CHANNELS = 6000;
+const loaded = new Map<string, IptvChannel[]>();
+
+function toView(ch: IptvChannel, favs: Map<string, StoredFavorite>): LiveChannel {
+  return { id: ch.id, name: ch.name, logo: ch.logo, url: ch.url, group: ch.group, tvgId: ch.tvgId, headers: headersFromChannel(ch) ?? null, favorite: favs.has(ch.id) };
+}
+
+/** Loads (or serves from upstream's cache) one playlist, ordered like the Big Picture guide. */
+export async function channels(playlistId: string, force = false): Promise<LivePlaylistView> {
   const pl = readPlaylists().find((p) => p.id === playlistId);
   if (!pl) throw new Error("playlist not found");
-  const res = await fetch(pl.url, { headers: { Accept: "*/*" } });
-  if (!res.ok) throw new Error(`playlist ${res.status}`);
-  const text = await res.text();
-  const all = parseM3u(text, pl.id);
-  const kept = all.slice(0, MAX_CHANNELS);
-  const grouped = groupChannels(kept);
-  const groups: LiveGroup[] = [];
-  for (const [name, list] of grouped) {
-    groups.push({ name, channels: list.map((c) => ({ id: c.id, name: c.name, logo: c.logo, url: c.url, group: c.group, tvgId: c.tvgId })) });
+  const playlist = await loadPlaylist(pl, { force });
+  const all = playlist.channels.slice(0, MAX_CHANNELS);
+  loaded.set(playlistId, all);
+  const favs = readFavorites();
+  const region = String(loadStoredSettings().region ?? "US");
+  const ordered = bpGuideOrder({ channels: all, favoriteIds: new Set(favs.keys()), pinnedOrder: readPins(), hiddenGroups: [], region, promoteNetworks: true });
+  const counts = new Map<string, number>();
+  for (const ch of all) {
+    const g = ch.group ?? "Uncategorized";
+    counts.set(g, (counts.get(g) ?? 0) + 1);
   }
-  return { groups, total: all.length, truncated: all.length > kept.length };
+  return {
+    id: pl.id,
+    name: pl.name,
+    kind: pl.kind ?? "m3u",
+    channels: ordered.map((ch) => toView(ch, favs)),
+    groups: Array.from(counts, ([name, count]) => ({ name, count })),
+    total: playlist.channels.length,
+    epgUrl: pl.epgUrl ?? null,
+  };
+}
+
+/** Tell the stats store a channel was tuned (feeds the "most watched" band). */
+export function recordPlay(playlistId: string, channelId: string): void {
+  const ch = loaded.get(playlistId)?.find((c) => c.id === channelId);
+  if (ch) recordChannelPlay(ch);
+}
+
+// ---------------------------------------------------------------------------------- EPG
+
+const EPG_TTL_MS = 60 * 60 * 1000;
+const epgCache = new Map<string, { index: EpgIndex; url: string; loading: Promise<EpgIndex> | null }>();
+
+async function fetchXmltv(url: string): Promise<EpgIndex> {
+  const res = await fetch(url, { headers: { "User-Agent": "VLC/3.0.20 LibVLC/3.0.20", Accept: "application/xml, text/xml, application/octet-stream, */*" } });
+  if (!res.ok) throw new Error(`EPG fetch failed: ${res.status}`);
+  let bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length > 1 && bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes);
+  const text = new TextDecoder().decode(bytes);
+  const parsed = parseXmltv(text);
+  return { byChannel: indexProgramsByChannel(parsed.programs), channelMeta: parsed.channelMeta, fetchedAt: Date.now() };
+}
+
+/** Loads the playlist's guide (once an hour); returns how many channels it covers. */
+export async function loadEpg(playlistId: string, force = false): Promise<{ channels: number; programs: number; url: string | null }> {
+  const pl = readPlaylists().find((p) => p.id === playlistId);
+  if (!pl) throw new Error("playlist not found");
+  const url = pl.epgUrl ?? (pl.kind === "xtream" || /get\.php|player_api\.php/.test(pl.url) ? deriveEpgUrls(pl.url)[0] ?? null : null);
+  if (!url) return { channels: 0, programs: 0, url: null };
+  const held = epgCache.get(playlistId);
+  if (held && held.url === url && !force && Date.now() - held.index.fetchedAt < EPG_TTL_MS) return summarize(held.index, url);
+  if (held?.loading) return summarize(await held.loading, url);
+  const loading = fetchXmltv(url);
+  epgCache.set(playlistId, { index: held?.index ?? { byChannel: new Map(), fetchedAt: 0 }, url, loading });
+  try {
+    const index = await loading;
+    epgCache.set(playlistId, { index, url, loading: null });
+    return summarize(index, url);
+  } catch (e) {
+    epgCache.set(playlistId, { index: held?.index ?? { byChannel: new Map(), fetchedAt: 0 }, url, loading: null });
+    throw e;
+  }
+}
+
+function summarize(index: EpgIndex, url: string) {
+  let programs = 0;
+  for (const list of index.byChannel.values()) programs += list.length;
+  return { channels: index.byChannel.size, programs, url };
+}
+
+function view(p: EpgProgram): ProgramView {
+  return { title: p.title, description: p.description, startMs: p.startMs, endMs: p.endMs, category: p.category };
+}
+
+/** Now/next for a screenful of channels (epg-resolver matching, tvg-shift + offset applied). */
+export function nowNext(playlistId: string, channelIds: string[], nowMs = Date.now()): NowNext[] {
+  const all = loaded.get(playlistId) ?? [];
+  const epg = epgCache.get(playlistId)?.index ?? null;
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const counts = computeTvgIdCounts(all);
+  const offset = epgOffsetHoursPref();
+  return channelIds.map((id) => {
+    const ch = byId.get(id);
+    const programs = ch && epg && epg.byChannel.size > 0 ? epgProgramsForChannel(ch, epg, counts, offset) : undefined;
+    if (!programs || programs.length === 0) return { id, now: null, next: null, known: false };
+    const { current, next } = findCurrent(programs, nowMs);
+    return { id, now: current ? view(current) : null, next: next ? view(next) : null, known: true };
+  });
+}
+
+/** One channel's programmes inside a window (the guide lane / "what's on later"). */
+export function schedule(playlistId: string, channelId: string, fromMs: number, toMs: number): ProgramView[] {
+  const all = loaded.get(playlistId) ?? [];
+  const epg = epgCache.get(playlistId)?.index ?? null;
+  const ch = all.find((c) => c.id === channelId);
+  if (!ch || !epg) return [];
+  const programs = epgProgramsForChannel(ch, epg, computeTvgIdCounts(all), epgOffsetHoursPref()) ?? [];
+  return programs.filter((p) => p.endMs > fromMs && p.startMs < toMs).map(view);
 }

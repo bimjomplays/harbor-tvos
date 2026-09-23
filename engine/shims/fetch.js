@@ -135,6 +135,33 @@ class Body {
   async blob() {
     throw new Error("HarborEngine fetch: Blob is not available on tvOS; use arrayBuffer()");
   }
+  /**
+   * A one-chunk stand-in for `response.body`: the host hands over whole bodies, so the
+   * reader yields everything at once. Enough for upstream's bounded/streaming readers
+   * (iptv/bounded-response.ts, iptv/xmltv.ts) that only need `getReader()` and `cancel()`.
+   */
+  get body() {
+    if (this._text === null && !this._bytes) return null;
+    const self = this;
+    let handed = false;
+    return {
+      getReader() {
+        self._consume();
+        return {
+          async read() {
+            if (handed) return { done: true, value: undefined };
+            handed = true;
+            const b = self._bytes ?? new TextEncoderShim().encode(self._text ?? "");
+            return { done: false, value: b };
+          },
+          async cancel() { handed = true; },
+          releaseLock() {},
+        };
+      },
+      async cancel() { handed = true; },
+      get locked() { return false; },
+    };
+  }
   /** What actually crosses the bridge. */
   _wireBody() {
     if (this._bytes) return { body: null, bodyBase64: bytesToBase64(this._bytes) };
