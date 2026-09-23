@@ -43,6 +43,8 @@ struct SettingsView: View {
                 }
                 section("Trakt") { TraktPanel() }
                 section("Simkl") { TraktPanel(service: "simkl", label: "Simkl") }
+                section("AniList") { PasteTrackerPanel(service: "anilist", label: "AniList") }
+                section("MyAnimeList") { PasteTrackerPanel(service: "mal", label: "MyAnimeList") }
                 section("Addons") {
                     row("Stream and catalog addons", detail: "Installed on this TV plus the ones on your Stremio account")
                     Button("Manage addons") { sheet = .addons }.buttonStyle(BPActionStyle(primary: true))

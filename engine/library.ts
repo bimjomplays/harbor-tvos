@@ -17,8 +17,9 @@ import { filterLibrary, mergeWatchlist } from "@/views/library/watchlist-tab";
 import { filterHistory, historyItemsToDated, mergeHistory } from "@/views/library/history-merge";
 import { applyFilter, parseTs, sortedGroups, type SortKey, type TypeKey } from "@/views/library/shared";
 import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
+import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 
-export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "trakt" | "simkl";
+export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "trakt" | "anilist" | "mal" | "simkl";
 type Status = "loading" | "ready" | "error";
 
 export type Entry = {
@@ -34,6 +35,8 @@ const CORE: Array<{ id: Tab; label: string }> = [
 export function tabs(): Array<{ id: Tab; label: string }> {
   const out = [...CORE];
   if (traktConnected()) out.push({ id: "trakt", label: "Trakt" });
+  if (anilistGlue.status().authenticated) out.push({ id: "anilist", label: "AniList" });
+  if (malGlue.status().authenticated) out.push({ id: "mal", label: "MyAnimeList" });
   if (simklConnected()) out.push({ id: "simkl", label: "Simkl" });
   return out;
 }
@@ -173,6 +176,9 @@ export async function feed(input: FeedInput) {
     for (const e of historyItemsToDated(tr.history)) entries.push({ key: `h:${e.key}`, meta: e.meta, date: e.date, group: "history" });
     groups = [{ id: "watchlist", label: "Watchlist" }, { id: "history", label: "History" }];
     status = tr.status;
+  } else if (tab === "anilist" || tab === "mal") {
+    const svc = await (tab === "anilist" ? anilistGlue : malGlue).entries(!!input.force);
+    entries = svc.entries; status = svc.status; groups = svc.groups;
   } else if (tab === "simkl") {
     const sk = await simklEntries(!!input.force);
     entries = sk.entries; status = sk.status;

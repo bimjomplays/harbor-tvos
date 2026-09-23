@@ -133,6 +133,8 @@ final class LiveModel: ObservableObject {
 struct LiveView: View {
     @StateObject private var model = LiveModel()
     @State private var playing: LiveModel.Channel?
+    @State private var replaying: Replay?
+    struct Replay: Identifiable { var id: String { url }; var channel: LiveModel.Channel; var program: LiveModel.Program; var url: String; var headers: [String: String] }
     @State private var showSources = false
     /// bp-live shows the guide grid; the list is the fallback when a source has no guide.
     @State private var grid = true
@@ -150,7 +152,8 @@ struct LiveView: View {
                         BPNote(text: model.category == LiveModel.favKey ? "No favorites yet. Press the star on a channel to keep it up here." : (model.error ?? "No channels in this category."), tone: model.error == nil ? BP.inkMuted : BP.danger)
                             .padding(.top, BP.px(20))
                     } else if grid && model.guideNote == nil {
-                        LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } })
+                        LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } },
+                                      replay: { ch, prog in Task { await startReplay(ch, prog) } })
                     } else {
                         guideList
                     }
@@ -162,9 +165,23 @@ struct LiveView: View {
         .fullScreenCover(item: $playing) { ch in
             PlayerScreen(title: ch.name, subtitle: model.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!, headers: ch.headers ?? [:], isLive: true) { _ in playing = nil }
         }
+        .fullScreenCover(item: $replaying) { r in
+            // A bounded replay: VOD cache profile, seekable, subtitle says so (use-live-actions.ts).
+            PlayerScreen(title: r.program.title, subtitle: "\(r.channel.name) · catch up", url: URL(string: r.url) ?? URL(string: "about:blank")!, headers: r.headers, isLive: false) { _ in replaying = nil }
+        }
         .fullScreenCover(isPresented: $showSources) {
             LiveSourcesSheet(model: model, firstRun: false, dismiss: { showSources = false })
         }
+    }
+
+    private func startReplay(_ ch: LiveModel.Channel, _ prog: LiveModel.Program) async {
+        struct Out: Decodable { var url: String; var headers: [String: String]? }
+        guard let id = model.selectedPlaylist,
+              let out: Out? = try? await HarborEngine.shared.call("live.catchupUrl", [id, ch.id, prog.startMs, prog.endMs]), let out else {
+            model.played(ch); playing = ch; return
+        }
+        model.played(ch)
+        replaying = Replay(channel: ch, program: prog, url: out.url, headers: out.headers ?? [:])
     }
 
     // bp-live.tsx: source button, then Favorites / All / groups chips (max 30).

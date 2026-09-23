@@ -10,7 +10,7 @@ final class LiveGuideModel: ObservableObject {
         var startMs: Double; var endMs: Double; var program: LiveModel.Program?
         var id: String { "\(startMs)" }
     }
-    struct Lane: Decodable { var id: String; var cells: [Cell] }
+    struct Lane: Decodable { var id: String; var catchup: Bool; var cells: [Cell] }
 
     static let slotMs: Double = 30 * 60_000
     static let pastPadMs: Double = 60 * 60_000
@@ -19,6 +19,7 @@ final class LiveGuideModel: ObservableObject {
     static let maxWindowMs: Double = 26 * 60 * 60_000
 
     @Published private(set) var lanes: [String: [Cell]] = [:]
+    @Published private(set) var catchup: Set<String> = []
     @Published private(set) var windowStart: Double = 0
     @Published private(set) var windowEnd: Double = 0
     @Published var viewStart: Double = 0
@@ -51,13 +52,15 @@ final class LiveGuideModel: ObservableObject {
         let mine = generation
         let missing = ids.filter { base[$0] == nil }
         var next = base
+        var replay = catchup
         if !missing.isEmpty, let out: [Lane] = try? await HarborEngine.shared.call("live.lanes", [playlistId, missing, start, end]) {
-            for l in out { next[l.id] = l.cells }
+            for l in out { next[l.id] = l.cells; if l.catchup { replay.insert(l.id) } else { replay.remove(l.id) } }
         }
         guard mine == generation else { return }
         windowStart = start
         windowEnd = end
         lanes = next
+        catchup = replay
     }
 
     /// bp-guide.tsx extendWindow / extendWindowBack: every lane is rebuilt for the new span,
@@ -87,6 +90,8 @@ struct LiveGuideView: View {
     @State private var now = Date().timeIntervalSince1970 * 1000
     let play: (LiveModel.Channel) -> Void
     let star: (LiveModel.Channel) -> Void
+    /// A past programme on a catch-up channel: play the replay instead of the live stream.
+    var replay: ((LiveModel.Channel, LiveModel.Program) -> Void)? = nil
 
     // bp-guide-geometry.ts at 1920×1080 (w×0.155 col clamp 220–340, h×0.155 rows 88–128, slot w×0.14 clamp 150–232).
     private let colPx = BP.px(300)
@@ -210,11 +215,13 @@ struct LiveGuideView: View {
         let tier: Int = width < BP.px(44) ? 0 : (width < BP.px(150) ? 1 : 2)
         let key = "\(ch.id)|\(cell.id)"
         let p = cell.program ?? LiveModel.Program(title: "", description: nil, startMs: cell.startMs, endMs: cell.endMs, category: nil)
-        return Button { play(ch) } label: {
+        let canReplay = past && !empty && model.catchup.contains(ch.id) && replay != nil
+        return Button { if canReplay { replay?(ch, p) } else { play(ch) } } label: {
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 HStack(spacing: BP.px(4)) {
                     if p.startMs < cell.startMs { Image(systemName: "chevron.left").font(.system(size: BP.px(9), weight: .bold)) }
                     if tier > 0 { Text(p.title).font(BP.sans(tier == 2 ? 13 : 11, .semibold)).lineLimit(1) }
+                    if canReplay && tier == 2 { Text("REPLAY").font(BP.sans(9, .bold)).foregroundStyle(BP.live) }
                     if p.endMs > cell.endMs { Image(systemName: "chevron.right").font(.system(size: BP.px(9), weight: .bold)) }
                 }
                 if tier == 2 {

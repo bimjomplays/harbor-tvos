@@ -69,6 +69,7 @@ import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
 import * as servicesGlue from "./services";
+import * as trackersGlue from "./trackers";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -543,6 +544,10 @@ export const services = {
   page: servicesGlue.page,
 };
 
+/** AniList and MyAnimeList: paste-code sign-in, status, disconnect, list rails. */
+export const anilist = trackersGlue.anilist;
+export const mal = trackersGlue.mal;
+
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
 export const skip = { segments: skipGlue.segments };
 
@@ -560,6 +565,7 @@ export const live = {
   nowNext: liveGlue.nowNext,
   schedule: liveGlue.schedule,
   lanes: liveGlue.lanes,
+  catchupUrl: liveGlue.catchupUrl,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */

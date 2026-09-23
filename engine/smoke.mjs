@@ -209,6 +209,18 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 
+// --------------------------------------------------------------------- anilist / mal
+{
+  r.ok("anilist.authorizeUrl carries the client id and the pin redirect", /anilist\.co\/api\/v2\/oauth\/authorize\?client_id=42941&redirect_uri=.*pin/.test(engine.anilist.authorizeUrl()), engine.anilist.authorizeUrl());
+  r.ok("mal.authorizeUrl carries a PKCE challenge", /myanimelist\.net\/v1\/oauth2\/authorize\?response_type=code&client_id=[0-9a-f]+&code_challenge=[^&]{60,}&code_challenge_method=plain/.test(engine.mal.authorizeUrl()), engine.mal.authorizeUrl());
+  r.eq("anilist.status signed out", engine.anilist.status(), { authenticated: false, username: null });
+  r.eq("mal.status signed out", engine.mal.status(), { authenticated: false, username: null });
+  r.ok("anilist.complete rejects an empty paste", await engine.anilist.complete("").then(() => false, (e) => /Paste the code/.test(e.message)));
+  r.ok("mal.complete rejects an empty paste", await engine.mal.complete("").then(() => false, (e) => /Paste the code/.test(e.message)));
+  r.eq("anilist.rails signed out", engine.anilist.rails(), { rails: [], loading: false, error: false });
+  r.eq("libraryRoom.tabs hides tracker tabs while signed out", engine.libraryRoom.tabs().some((t) => t.id === "anilist" || t.id === "mal"), false);
+}
+
 // --------------------------------------------------------------------------- services
 {
   const none = engine.services.list("default", true);
@@ -299,6 +311,18 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const lanesOut = rec.engine.live.lanes(pl.id, [cnn.id, espn.id], ws, ws + 6 * 3600000);
   const cnnLane = lanesOut[0].cells, espnLane = lanesOut[1].cells;
   r.ok("live.lanes: gapless, contiguous, ends at the window edge", cnnLane[0].startMs === ws && cnnLane[cnnLane.length - 1].endMs === ws + 6 * 3600000 && cnnLane.every((c, i) => i === 0 || c.startMs === cnnLane[i - 1].endMs), JSON.stringify(cnnLane.map((c) => [c.program && c.program.title, (c.endMs - c.startMs) / 60000])));
+  r.eq("live.lanes reports catch-up capability per channel (none in this playlist)", lanesOut.map((l) => l.catchup), [false, false]);
+  r.eq("live.catchupUrl is null without catch-up attrs", rec.engine.live.catchupUrl(pl.id, cnn.id, now - 3600000, now - 1800000), null);
+  {
+    // An Xtream-shaped live URL infers xtream catch-up: /timeshift/<user>/<pass>/<minutes>/<YYYY-MM-DD:HH-MM>/<id>.<ext>
+    const m3u3 = `#EXTM3U\n#EXTINF:-1 tvg-id="x" group-title="Sports" catchup="xc" catchup-days="3",ESPN X\nhttp://host.invalid:8080/live/user1/pass1/555.ts\n`;
+    rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3u3 });
+    const plx = rec.engine.live.addPlaylist("XC", "https://xc.example.invalid/list.m3u");
+    const vx = await rec.engine.live.channels(plx.id);
+    const cu = rec.engine.live.catchupUrl(plx.id, vx.channels[0].id, Date.UTC(2026, 8, 23, 18, 0), Date.UTC(2026, 8, 23, 19, 0));
+    r.ok("live.catchupUrl builds an Xtream timeshift URL", cu && /\/timeshift\/user1\/pass1\/60\/2026-09-23:18-00\/555\.ts/.test(cu.url), JSON.stringify(cu));
+    r.eq("live.lanes marks the catch-up channel", rec.engine.live.lanes(plx.id, [vx.channels[0].id], now, now + 3600000)[0].catchup, true);
+  }
   r.ok("live.lanes: programmes keep exact bounds, gaps are half-hour slices", cnnLane.some((c) => c.program && c.program.title === "Newsroom" && Math.abs(c.startMs - (now - 20 * 60000)) < 1000) && espnLane.every((c) => c.program === null && c.endMs - c.startMs <= slot));
   {
     // A sports channel in the playlist should match a fixture by team names (iptv-match).

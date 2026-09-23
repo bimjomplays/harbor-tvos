@@ -18,6 +18,7 @@ import { ANIME_CLOUD_ID, isAnimeCwItem, isCwMember, library, type LibraryItem } 
 import { readCollections } from "@/lib/collections";
 import { collectionPageIds } from "@/lib/page-collection-rows";
 import { loadEffective } from "@/lib/settings/profile-store";
+import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 
 const MAX_ITEMS = 80;
 const CW_CAP = 20;
@@ -165,11 +166,15 @@ export async function page(profileId: string, linked: boolean, authKey: string |
 
   const awards = mergeAwardWinners(specRows, []);
   const collections = readCollections().filter((c) => collectionPageIds("anime").includes(c.id));
+  const malConnected = malGlue.status().authenticated;
+  const anilistConnected = anilistGlue.status().authenticated;
+  const malRails = malConnected ? malGlue.rails(force) : { rails: [], loading: false, error: false };
+  const anilistRails = anilistConnected ? anilistGlue.rails(force) : { rails: [], loading: false, error: false };
   const groups = buildBpAnimeGroups({
     t, renamed: s.animeRows?.renamed ?? {},
     cwItems: cw, cwReady: true, cwPending: false,
-    malConnected: false, malRails: [], malState: { loading: false, error: false },
-    anilistConnected: false, anilistRails: [], anilistState: { loading: false, error: false },
+    malConnected, malRails: malRails.rails, malState: { loading: malRails.loading, error: malRails.error },
+    anilistConnected, anilistRails: anilistRails.rails, anilistState: { loading: anilistRails.loading, error: anilistRails.error },
     anilistTrending: [], anilistTop: [],
     awards, specRows, addonRows: dedupeAnimeAddonRows(addonRows, s.hideAdultAnime !== false), collections,
   });

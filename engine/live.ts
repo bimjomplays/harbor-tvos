@@ -12,6 +12,7 @@ import { recordChannelPlay, removeStatsForSource } from "@/lib/iptv/channel-stat
 import { removePinsForSource } from "@/lib/iptv/pins";
 import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
+import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
 import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
 import { loadStoredSettings } from "@/lib/settings/load";
@@ -282,7 +283,7 @@ function buildLane(programs: readonly EpgProgram[], windowStart: number, windowE
 }
 
 /** Guide lanes for a screenful of channels: gapless cells over [windowStart, windowEnd). */
-export function lanes(playlistId: string, channelIds: string[], windowStart: number, windowEnd: number): Array<{ id: string; cells: LaneCell[] }> {
+export function lanes(playlistId: string, channelIds: string[], windowStart: number, windowEnd: number): Array<{ id: string; catchup: boolean; cells: LaneCell[] }> {
   const all = loaded.get(playlistId) ?? [];
   const epg = epgCache.get(playlistId)?.index ?? null;
   const byId = new Map(all.map((c) => [c.id, c]));
@@ -291,8 +292,20 @@ export function lanes(playlistId: string, channelIds: string[], windowStart: num
   return channelIds.map((id) => {
     const ch = byId.get(id);
     const programs = ch && epg && epg.byChannel.size > 0 ? epgProgramsForChannel(ch, epg, counts, offset) ?? [] : [];
-    return { id, cells: buildLane(programs, windowStart, windowEnd) };
+    return { id, catchup: !!ch && channelHasCatchup(ch), cells: buildLane(programs, windowStart, windowEnd) };
   });
+}
+
+/**
+ * Replay URL for a past programme (lib/iptv/catchup.ts: flussonic / xtream timeshift /
+ * append / shift / catchup-source templates), or null when the channel offers none. Desktop's
+ * guide does this (use-live-actions.ts handlePlayCatchup); Big Picture never wired it.
+ */
+export function catchupUrl(playlistId: string, channelId: string, startMs: number, endMs: number): { url: string; headers: Record<string, string> | null } | null {
+  const ch = (loaded.get(playlistId) ?? []).find((c) => c.id === channelId);
+  if (!ch) return null;
+  const url = buildCatchupUrl(ch, startMs, endMs);
+  return url ? { url, headers: headersFromChannel(ch) ?? null } : null;
 }
 
 /** One channel's programmes inside a window (the guide lane / "what's on later"). */
