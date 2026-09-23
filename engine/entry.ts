@@ -62,6 +62,7 @@ import * as accountGlue from "./account";
 import * as syncGlue from "./sync";
 import * as cardsGlue from "./cards";
 import * as simklGlue from "./simkl";
+import * as anime4kGlue from "./anime4k";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -472,6 +473,13 @@ export const simkl = {
   status: simklGlue.status,
   disconnect: simklGlue.disconnect,
   scrobble: simklGlue.scrobble,
+};
+
+/** Anime4K: which shader chain applies to a title (settings gates), and the files to fetch. */
+export const anime4k = {
+  files: anime4kGlue.files,
+  modes: anime4kGlue.modes,
+  choose: anime4kGlue.choose,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

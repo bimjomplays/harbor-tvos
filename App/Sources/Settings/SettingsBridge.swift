@@ -29,6 +29,13 @@ final class SettingsBridge: ObservableObject {
         var subBoxColor: String? = "#000000"
         var subOpacity: Double? = 1
         var subLineSpacing: Double? = 0
+        // Anime4K (settings/defaults.ts:235-261), applied by the player through the engine's gates.
+        var playerAnime4k: Bool? = false
+        var playerAnime4kAnimeOnly: Bool? = true
+        var playerAnime4kIndicator: Bool? = true
+        var playerAnime4kMode: String? = "A"
+        var playerAnime4kTier: String? = "hq"
+        var playerAnime4kOverride: String? = "auto"
     }
 
     @Published private(set) var slice = Slice()

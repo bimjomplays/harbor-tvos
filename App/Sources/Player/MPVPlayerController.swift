@@ -206,6 +206,23 @@ final class MPVPlayerController: UIViewController {
     }
 
     /// `sub-add <file> select <title> <lang>` (mpv.rs:1063 uses "auto"; we select the one the viewer picked).
+    /// Replace the post-processing shader chain (`glsl-shaders`, colon-separated like mpv.rs).
+    func setShaders(_ paths: [String]) {
+        guard let mpv else { return }
+        queue.async { [weak self] in
+            guard let self, let mpv = self.mpv else { return }
+            let joined = paths.joined(separator: ":")
+            self.check(mpv_set_property_string(mpv, "glsl-shaders", joined))
+            self.push(paths.isEmpty ? "shaders cleared" : "shaders: \(paths.count) files")
+        }
+        _ = mpv
+    }
+
+    /// Source width in pixels once the file is loaded (0 before).
+    func videoWidth() -> Int {
+        Int(string("video-params/w") ?? "") ?? 0
+    }
+
     func addSubtitle(file: URL, title: String, lang: String) {
         command("sub-add", [file.path, "select", title, lang])
     }

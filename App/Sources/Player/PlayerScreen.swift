@@ -59,7 +59,10 @@ struct PlayerScreen: View {
         var source: String
     }
 
-    enum Panel { case audio, subtitles }
+    enum Panel { case audio, subtitles, anime4k }
+    struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
+    @State private var anime4k: Anime4KChoice?
+    @State private var anime4kAppliedFor: Int = -1
     enum FocusTarget: Hashable { case surface, chip(String), track(Int) }
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -97,6 +100,14 @@ struct PlayerScreen: View {
                 upNextPill(upNext).transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if let panel { panelView(panel).transition(.move(edge: .trailing).combined(with: .opacity)) }
+            if let a = anime4k, a.active, a.indicator, !chrome {
+                // anime4k-indicator.tsx: a quiet corner pill while a chain is live.
+                Text("Anime4K · Mode \(a.mode ?? "")").font(BP.sans(11, .bold)).foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(4))
+                    .background(Capsule().fill(BP.void_.opacity(0.7)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(BP.gutter)
+            }
         }
         .onPlayPauseCommand { togglePause() }
         .onExitCommand {
@@ -108,6 +119,10 @@ struct PlayerScreen: View {
         .task { startAt = await context?.startPosition() ?? 0 }
         .onReceive(tick) { _ in
             if let c = controller { snap = c.snapshot() }
+            if !isLive, let c = controller, status.state != "loading" {
+                let w = c.videoWidth()
+                if w > 0, w != anime4kAppliedFor { anime4kAppliedFor = w; Task { await applyAnime4k(srcWidth: w) } }
+            }
             Task { await saveTick(flush: false) }
             scrobbleTick()
             if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
@@ -208,6 +223,7 @@ struct PlayerScreen: View {
                 chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill") { togglePause() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
+                if !isLive { chip(anime4kChipLabel, "sparkles") { open(.anime4k) } }
                 Spacer()
                 Text(isLive ? "LIVE" : "\(fmt(snap.position)) / \(fmt(snap.duration))").font(BP.sans(14, .semibold)).foregroundStyle(isLive ? BP.live : BP.ink).monospacedDigit()
             }
@@ -241,10 +257,73 @@ struct PlayerScreen: View {
 
     // MARK: panels (audio / subtitle tracks)
 
+    private var anime4kChipLabel: String {
+        guard let a = anime4k else { return "Anime4K" }
+        if a.choice == "off" { return "Anime4K off" }
+        return a.active ? "Anime4K \(a.mode ?? "")" : "Anime4K auto"
+    }
+
+    /// use-anime4k.ts: ask the engine which chain applies, then hand mpv the shader paths.
+    private func applyAnime4k(srcWidth: Int) async {
+        guard let context, let c = controller else { return }
+        let display = Int(UIScreen.main.nativeBounds.width)
+        let meta: AnyJSON = .object(["id": .string(context.meta.id), "genres": .array((context.meta.genres ?? []).map { .string($0) })])
+        let p = ProfilesStore.shared.active
+        guard let choice: Anime4KChoice = try? await HarborEngine.shared.call("anime4k.choose", [p?.id ?? "default", p?.linked ?? true, meta, srcWidth, display]) else { return }
+        anime4k = choice
+        if choice.active {
+            if !Anime4KStore.shared.installed { await Anime4KStore.shared.ensure() }
+            c.setShaders(Anime4KStore.shared.paths(for: choice.files) ?? [])
+        } else {
+            c.setShaders([])
+        }
+    }
+
+    private func setAnime4k(_ override: String) {
+        Task {
+            try? await SettingsBridge.shared.patch(["playerAnime4kOverride": .string(override), "playerAnime4k": .bool(true)])
+            anime4kAppliedFor = -1
+            panel = nil; focus = .surface; wake()
+        }
+    }
+
+    private func anime4kPanel() -> some View {
+        let options: [(String, String, String)] = [("auto", "Auto", "Follows the Anime4K setting: anime only, or every title."), ("off", "Off", "No shaders for this title."),
+                                                   ("A", "Mode A", "Restore + upscale. The best all-rounder for most anime."), ("B", "Mode B", "Softer restore. Kinder to compressed or noisy sources."),
+                                                   ("C", "Mode C", "Denoise + upscale. Lightest, cleanest on already-sharp video."), ("AA", "Mode A+A", "Double restore. Sharpest detail, for high-quality sources."),
+                                                   ("BB", "Mode B+B", "Double soft restore. For heavy compression artifacts."), ("CA", "Mode C+A", "Denoise then restore. Balanced cleanup and detail.")]
+        let current = anime4k?.choice ?? "auto"
+        return HStack {
+            Spacer()
+            VStack(alignment: .leading, spacing: BP.px(8)) {
+                Text("Anime4K").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.bottom, BP.px(6))
+                ForEach(Array(options.enumerated()), id: \.offset) { i, o in
+                    Button { setAnime4k(o.0) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack { Text(o.1).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark") } }
+                            Text(o.2).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(BPActionStyle(primary: current == o.0))
+                    .focused($focus, equals: .track(-10 - i))
+                }
+                if let a = anime4k, a.active { BPNote(text: "Running mode \(a.mode ?? "") (\(a.tier == "fast" ? "fast" : "HQ")). Stutter? Switch the tier to Fast in Settings.") }
+                if !Anime4KStore.shared.installed { BPNote(text: "The shaders download on first use (about 3 MB).") }
+            }
+            .padding(BP.px(24))
+            .frame(width: BP.px(420), alignment: .leading)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(BP.panel.opacity(0.96))
+            .focusSection()
+        }
+        .ignoresSafeArea()
+    }
+
     private func panelView(_ which: Panel) -> some View {
+        if which == .anime4k { return AnyView(anime4kPanel()) }
         let kind = which == .subtitles ? "sub" : "audio"
         let list = tracks.filter { $0.type == kind }
-        return HStack {
+        return AnyView(HStack {
             Spacer()
             VStack(alignment: .leading, spacing: BP.px(8)) {
                 Text(which == .subtitles ? "Subtitles" : "Audio").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.bottom, BP.px(6))
@@ -276,7 +355,7 @@ struct PlayerScreen: View {
             .background(BP.panel.opacity(0.96))
             .focusSection()
         }
-        .ignoresSafeArea()
+        .ignoresSafeArea())
     }
 
     private func trackButton(_ t: MPVPlayerController.Track?, label: String, selected: Bool, kind: String) -> some View {
@@ -297,7 +376,7 @@ struct PlayerScreen: View {
         hideTask?.cancel()
         // Subtitles has an "Off" row (-1); Audio focuses its first track, or the panel's chip row is left to Menu.
         let kind = p == .subtitles ? "sub" : "audio"
-        let target = p == .subtitles ? -1 : (tracks.first { $0.type == kind }?.id ?? -1)
+        let target = p == .anime4k ? -10 : (p == .subtitles ? -1 : (tracks.first { $0.type == kind }?.id ?? -1))
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(target) }
     }
 

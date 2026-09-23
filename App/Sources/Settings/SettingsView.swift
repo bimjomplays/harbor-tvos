@@ -61,6 +61,7 @@ struct SettingsView: View {
                     row("Subtitle languages: \(settings.slice.preferredSubLangs.joined(separator: ", "))", detail: "First match wins when searching online subtitles")
                     Button("Choose subtitle languages") { sheet = .subLangs }.buttonStyle(BPActionStyle())
                 }
+                section("Anime4K") { Anime4KPanel() }
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
                     HStack(spacing: BP.px(12)) {

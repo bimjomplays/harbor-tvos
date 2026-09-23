@@ -190,6 +190,25 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------------------------------------- anime4k
+{
+  r.eq("anime4k.files lists the 11 shaders", engine.anime4k.files().length, 11);
+  r.ok("anime4k.files urls point at bloc97/Anime4K glsl", engine.anime4k.files().every((f) => f.url.startsWith("https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/") && f.local.endsWith(".glsl")));
+  const offDefault = engine.anime4k.choose("default", true, { id: "kitsu:1", genres: ["Anime"] }, 1920, 3840);
+  r.eq("anime4k.choose is off until playerAnime4k is on (upstream default)", offDefault.active, false);
+  engine.settings.patch({ playerAnime4k: true });
+  const a = engine.anime4k.choose("default", true, { id: "kitsu:1", genres: ["Anime"] }, 1920, 3840);
+  r.ok("anime4k.choose auto → mode A hq chain for anime", a.active && a.mode === "A" && a.tier === "hq" && a.files[0] === "Anime4K_Clamp_Highlights.glsl" && a.files.includes("Anime4K_Restore_CNN_VL.glsl") && a.files.length === 6, JSON.stringify(a));
+  const notAnime = engine.anime4k.choose("default", true, { id: "tt0111161", genres: ["Drama"] }, 1920, 3840);
+  r.eq("anime4k.choose auto skips non-anime when AnimeOnly", notAnime.active, false);
+  engine.settings.patch({ playerAnime4kMode: "AA", playerAnime4kTier: "fast" });
+  const gated = engine.anime4k.choose("default", true, { id: "kitsu:1" }, 3840, 3840);
+  r.ok("anime4k.choose drops the secondary pass at display width (AA → A) and honours fast tier", gated.mode === "A" && gated.tier === "fast" && gated.files.includes("Anime4K_Restore_CNN_M.glsl"), JSON.stringify(gated));
+  engine.settings.patch({ playerAnime4kOverride: "C" });
+  r.eq("anime4k.choose override C wins over auto", engine.anime4k.choose("default", true, { id: "tt1", genres: [] }, 1920, 3840).mode, "C");
+  engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
+}
+
 // ------------------------------------------------------------- live EPG (recorded host)
 {
   const now = Date.now();
