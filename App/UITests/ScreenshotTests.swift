@@ -59,6 +59,13 @@ final class ScreenshotTests: XCTestCase {
         let focused = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
         XCTAssertTrue(focused.exists && !focused.identifier.hasPrefix("tab-"), "Down from Settings cog did not enter the room (focus: \(focused.identifier) \(focused.label))")
         capture("15b-settings-focus")
+        dump(app, "hierarchy-settings-down")
+        // And Up must return to the top bar.
+        XCUIRemote.shared.press(.up)
+        sleep(1)
+        let back = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        dump(app, "hierarchy-settings-up")
+        XCTAssertTrue(back.exists && back.identifier.hasPrefix("tab-"), "Up from the settings panel did not reach the top bar (focus: \(back.identifier) \(back.label))")
     }
 
     func testHomeRail() {

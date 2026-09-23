@@ -8,6 +8,8 @@ struct SettingsView: View {
     @EnvironmentObject private var sync: SyncReader
     @State private var sheet: Sheet?
     @State private var pinDraft = ""
+    @State private var tmdbTesting = false
+    @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
     enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb; var id: Int { hashValue } }
@@ -37,9 +39,16 @@ struct SettingsView: View {
                     }
                 }
                 section("Artwork and rows") {
-                    row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB connected",
-                        detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : "Key saved on this device only")
-                    Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
+                    row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB key saved",
+                        detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : "Saved on this device only (\(settings.slice.tmdbKey.count) characters)")
+                    HStack(spacing: BP.px(12)) {
+                        Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
+                        if !settings.slice.tmdbKey.isEmpty {
+                            Button(tmdbTesting ? "Testing…" : "Test saved key") { Task { await testSavedKey() } }.buttonStyle(BPActionStyle()).disabled(tmdbTesting)
+                            Button("Remove key") { Task { try? await settings.patch(["tmdbKey": .string("")]); tmdbTestNote = nil } }.buttonStyle(BPActionStyle())
+                        }
+                    }
+                    if let tmdbTestNote { BPNote(text: tmdbTestNote, tone: tmdbTestNote.hasPrefix("OK") ? BP.live : BP.danger) }
                 }
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
@@ -104,6 +113,12 @@ struct SettingsView: View {
             }
             .environmentObject(app).environmentObject(account).environmentObject(profiles).environmentObject(sync).environmentObject(settings)
         }
+    }
+
+    private func testSavedKey() async {
+        tmdbTesting = true; defer { tmdbTesting = false }
+        let r = await settings.verifyTmdb(key: settings.slice.tmdbKey)
+        tmdbTestNote = r.ok ? "OK: TMDB accepted the saved key." : "Rejected. TMDB said: \(r.reason ?? "no details")"
     }
 
     private var syncLine: String {
