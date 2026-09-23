@@ -386,6 +386,101 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.libraryRoom.setSort("recent", "default", true);
 }
 
+// ---------------------------- collections editing, TVDB lists, Letterboxd, library repair
+// One recorded host: Harbor's TVDB proxy, Stremboxd and Stremio's datastore, all mocked.
+{
+  const rec = loadEngine({});
+  const E = rec.engine;
+  let tvdbDown = false;
+  let lbWatchlist = true;
+  let stremioPhase = "repair";
+  const puts = [];
+  rec.node.host.fetch = async (req) => {
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Error", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const u = req.url;
+    if (u.includes("/api/tvdb/v4/")) {
+      if (tvdbDown) return json({ error: "down" }, 502);
+      if (u.includes("/search?")) return json({ data: [{ tvdb_id: "123", name: "Smoke Saga Collection", image_url: "/lists/123.jpg", overview: "Every Smoke film." }] });
+      if (u.includes("/lists/123/extended")) return json({ data: { id: 123, name: "Smoke Saga Collection", overview: "Every Smoke film.", image: null, entities: [{ movieId: 5, order: 2 }, { seriesId: 7, order: 1 }, { movieId: 9, order: 3 }] } });
+      if (u.includes("/movies/5/extended")) return json({ data: { name: "Smoke Film", year: 2001, image: "/p5.jpg", remoteIds: [{ id: "tt0000005" }] } });
+      if (u.includes("/series/7/extended")) return json({ data: { name: "Smoke Show", year: "1999", image: null, remoteIds: [] } });
+      return json({ data: null }, 404);
+    }
+    if (u.startsWith("https://api.stremboxd.com/")) {
+      if (u.endsWith("/manifest.json")) return json({ id: "community.stremboxd", catalogs: [...(lbWatchlist ? [{ id: "letterboxd-watchlist", name: "smoke's Watchlist" }] : []), { id: "letterboxd-popular", name: "Popular This Week" }] });
+      if (u.includes("/catalog/movie/letterboxd-watchlist")) return json({ metas: [1, 2, 3, 4, 5].map((n) => ({ id: `tt000010${n}`, type: "movie", name: `Watch ${n}`, year: 2020 + n, imdbRating: "7.1", links: [{ name: "x", category: "Letterboxd", url: "https://letterboxd.com/film/x/" }] })) });
+      return json({ metas: [] });
+    }
+    if (u.startsWith("https://api.strem.io/api/")) {
+      const path = u.slice("https://api.strem.io/api/".length);
+      if (path === "datastoreMeta") return json({ result: [["tt1", "1"], ["tt2", "2"], ["tt3", "3"]] });
+      if (path === "datastoreGet") {
+        if (stremioPhase === "repair") return json({ result: [{ _id: "tt1", name: "Needs repair", type: "movie" }, { name: "No id" }] });
+        return json({ result: [
+          { _id: "tt3", name: "Mislabelled Anime", type: "series", removed: false, temp: false, state: { video_id: "kitsu:1:1" } },
+          { _id: "tt2", name: "Fine", type: "movie", removed: false, temp: false, state: { video_id: "tt2" } },
+        ] });
+      }
+      if (path === "datastorePut") { puts.push(1); return json({ result: { success: true } }); }
+    }
+    return json({ error: "not_found" }, 404);
+  };
+
+  // CL-2: own collections from the TV.
+  const made = E.collectionsRoom.create("Smoke picks");
+  r.ok("collectionsRoom.create makes an editable collection", made && made.source === "mine" && made.name === "Smoke picks" && made.count === 0, JSON.stringify(made));
+  const added = E.collectionsRoom.addItem(made.ref, { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", poster: null });
+  r.ok("collectionsRoom.addItem adds a title once", added.count === 1 && E.collectionsRoom.addItem(made.ref, { id: "tt0111161", type: "movie", name: "x" }).count === 1, JSON.stringify(added.items));
+  r.eq("collectionsRoom.rename", E.collectionsRoom.rename(made.ref, "  Smoke favourites ").name, "Smoke favourites");
+  r.eq("collectionsRoom.removeItem", E.collectionsRoom.removeItem(made.ref, "tt0111161").count, 0);
+  r.eq("collectionsRoom.create with no name uses upstream's default", E.collectionsRoom.create("  ").name, "Untitled collection");
+  E.collectionsRoom.remove(made.ref);
+  r.ok("collectionsRoom.remove deletes it", !E.collectionsRoom.mine().some((c) => c.ref === made.ref) && E.collectionsRoom.mine().length === 1, JSON.stringify(E.collectionsRoom.mine().map((c) => c.name)));
+  r.eq("collectionsRoom.searchTitles ignores a one-letter query", await E.collectionsRoom.searchTitles("a", "default", true), []);
+
+  // CL-1: TVDB lists through Harbor's proxy, no key.
+  const t1 = await E.collectionsRoom.tvdb("all", 0);
+  r.ok("collectionsRoom.tvdb pulls five seed names and dedupes hits", t1.next === 5 && !t1.done && !t1.failed && t1.cards.length === 1 && t1.cards[0].key === "tvdb:123" && t1.cards[0].count === null && t1.cards[0].image === "https://artworks.thetvdb.com/lists/123.jpg", JSON.stringify(t1));
+  const t2 = await E.collectionsRoom.tvdb("all", 5);
+  r.ok("collectionsRoom.tvdb 'all' stops at ten names and says more exist", t2.done && t2.capped && t2.next === 10, JSON.stringify({ ...t2, cards: t2.cards.length }));
+  const td = await E.collectionsRoom.tvdbDetail(123, "Fallback");
+  r.ok("collectionsRoom.tvdbDetail hydrates entries in list order and drops unknown ones", !td.failed && td.name === "Smoke Saga Collection" && td.items.map((i) => i.id).join(",") === "tvdb:series:7,tt0000005" && td.items[1].poster === "https://artworks.thetvdb.com/p5.jpg", JSON.stringify(td));
+  tvdbDown = true;
+  const t3 = await E.collectionsRoom.tvdb("tvdb", 40);
+  r.ok("collectionsRoom.tvdb reports an unreachable TVDB", t3.failed && t3.cards.length === 0, JSON.stringify(t3));
+  r.ok("collectionsRoom.tvdbDetail of an unknown list fails softly", (await E.collectionsRoom.tvdbDetail(999, "Fallback")).failed === true);
+  tvdbDown = false;
+
+  // LB-3 / DS-4: Letterboxd public mode.
+  r.eq("letterboxd.status off by default", E.letterboxd.status("default", true).active, false);
+  r.eq("libraryRoom.tabs hides Letterboxd until connected", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), false);
+  lbWatchlist = false;
+  const lbBad = await E.letterboxd.connect("default", true, "smoke");
+  r.ok("letterboxd.connect refuses a username with no public watchlist", lbBad.ok === false && /watchlist/.test(lbBad.message) && E.letterboxd.status("default", true).active === false, JSON.stringify(lbBad));
+  lbWatchlist = true;
+  const lbOk = await E.letterboxd.connect("default", true, "@smoke");
+  r.ok("letterboxd.connect turns public mode on", lbOk.ok && lbOk.catalogs === 2 && E.letterboxd.status("default", true).active && E.letterboxd.status("default", true).username === "smoke", JSON.stringify(lbOk));
+  r.eq("libraryRoom.tabs shows Letterboxd once connected", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), true);
+  const lbFeed = await E.libraryRoom.feed({ tab: "letterboxd", profileId: "default", linked: true, authKey: null });
+  r.ok("libraryRoom.feed(letterboxd) lists the watchlist", lbFeed.status === "ready" && lbFeed.total === 5 && lbFeed.sections[0].items[0].meta.type === "movie", JSON.stringify({ status: lbFeed.status, total: lbFeed.total }));
+  const lbRows = await E.letterboxd.movieRows("default", true);
+  r.ok("letterboxd.movieRows keeps rows with four titles or more, named from the manifest", lbRows.length === 1 && lbRows[0].key === "letterboxd-letterboxd-watchlist" && lbRows[0].name === "smoke's Watchlist" && lbRows[0].metas.length === 5, JSON.stringify(lbRows.map((x) => [x.key, x.name, x.metas.length])));
+  E.letterboxd.disable("default", true);
+  r.eq("letterboxd.disable hides the tab again", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), false);
+  r.eq("letterboxd.movieRows empty when off", await E.letterboxd.movieRows("default", true), []);
+
+  // LB-4: library repair.
+  r.ok("libraryRoom.repair needs a Stremio session", await E.libraryRoom.repair(null).then(() => false, (e) => /Sign in to Stremio first/.test(e.message)));
+  const rep = await E.libraryRoom.repair("auth_smoke");
+  r.ok("libraryRoom.repair rewrites dirty items and counts unrepairable ones", rep.total === 2 && rep.repaired === 1 && rep.unrepairable === 1 && rep.alreadyClean === 0 && puts.length === 1, JSON.stringify(rep));
+  stremioPhase = "anime";
+  const scan = await E.libraryRoom.animeScan("auth_smoke");
+  r.eq("libraryRoom.animeScan finds anime saved under a tt id", scan, [{ id: "tt3", name: "Mislabelled Anime" }]);
+  r.eq("libraryRoom.animeHeal removes what the scan found", await E.libraryRoom.animeHeal("auth_smoke"), 1);
+  r.eq("libraryRoom.animeHeal with nothing scanned", await E.libraryRoom.animeHeal("auth_smoke"), 0);
+  rec.dispose();
+}
+
 // ----------------------------------------------------------------------- profiles room
 {
   const av = engine.profilesRoom.avatars();

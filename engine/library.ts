@@ -1,6 +1,7 @@
 // Library room (use-bp-library.ts + use-bp-library-services.ts without React): tabs, one feed
-// per tab (Saved / Watchlist / History / My Lists / Favorites / Trakt / Simkl), the same merge
-// rules, then bp's sort → sections → cap. Local files and media servers do not exist on tvOS.
+// per tab (Saved / Watchlist / History / My Lists / Favorites / Trakt / AniList / MAL / Simkl /
+// Letterboxd), the same merge rules, then bp's sort → sections → cap, plus the library repair
+// actions. Local files do not exist on tvOS.
 import type { Meta } from "@/lib/cinemeta";
 import { library, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
 import { readLocalEntries } from "@/lib/watchlist";
@@ -20,8 +21,12 @@ import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 import { mediaServerConnections } from "@/lib/media-server/connections";
 import { titles as homeServerTitles } from "./homeServers";
+import { status as letterboxdStatus, watchlist as letterboxdWatchlist } from "./letterboxd";
+import { repairStremioLibrary, type RepairProgress, type RepairResult } from "@/lib/stremio-library-repair";
+import { findCorruptAnimeEntries, healCorruptAnimeEntries } from "@/lib/anime-cw-repair";
+import { clearResurfaceCache } from "@/lib/cw-resurface";
 
-export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "media-servers" | "trakt" | "anilist" | "mal" | "simkl";
+export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "media-servers" | "trakt" | "anilist" | "mal" | "simkl" | "letterboxd";
 type Status = "loading" | "ready" | "error";
 
 export type Entry = {
@@ -34,13 +39,15 @@ const CORE: Array<{ id: Tab; label: string }> = [
   { id: "lists", label: "My Lists" }, { id: "favorites", label: "Favorites" },
 ];
 
-export function tabs(): Array<{ id: Tab; label: string }> {
+export function tabs(profileId = "default", linked = true): Array<{ id: Tab; label: string }> {
   const out = [...CORE];
   if (mediaServerConnections().length > 0) out.push({ id: "media-servers", label: "Media Servers" });
   if (traktConnected()) out.push({ id: "trakt", label: "Trakt" });
   if (anilistGlue.status().authenticated) out.push({ id: "anilist", label: "AniList" });
   if (malGlue.status().authenticated) out.push({ id: "mal", label: "MyAnimeList" });
   if (simklConnected()) out.push({ id: "simkl", label: "Simkl" });
+  // use-bp-library.ts:72: Letterboxd joins while its integration is active.
+  if (letterboxdStatus(profileId || "default", linked !== false).active) out.push({ id: "letterboxd", label: "Letterboxd" });
   return out;
 }
 
@@ -203,6 +210,11 @@ export async function feed(input: FeedInput) {
     const sk = await simklEntries(!!input.force);
     entries = sk.entries; status = sk.status;
     groups = (Object.keys(SIMKL_STATUS_LABELS) as Array<keyof typeof SIMKL_STATUS_LABELS>).map((id) => ({ id, label: SIMKL_STATUS_LABELS[id] }));
+  } else if (tab === "letterboxd") {
+    // use-bp-library-services useLetterboxdFeed: the watchlist, undated.
+    const lb = await letterboxdWatchlist(input.profileId, input.linked);
+    entries = lb.metas.map((meta) => ({ key: meta.id, meta, date: null }));
+    status = lb.status;
   }
 
   // bp-library.tsx:210: chip counts describe the group-scoped set, before type/query filters.
@@ -226,6 +238,48 @@ export async function feed(input: FeedInput) {
   }
   const counts = { all: scoped.length, movie: scoped.filter((e) => e.meta.type === "movie").length, series: scoped.filter((e) => e.meta.type === "series").length };
   return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts };
+}
+
+// ----------------------------------------------------------------------------- repair
+// settings/advanced-panel/library-repair-rows.tsx: "Repair library" (rewrite every item to
+// Stremio's schema, progress as `harbor:library-repair`) and "Fix corrupted anime" (scan, then
+// remove the anime saved under a movie/series id). Both act on the active profile's Stremio library.
+let repairing = false;
+
+export async function repair(authKey: string | null): Promise<RepairResult> {
+  if (!authKey) throw new Error("Sign in to Stremio first. The repair scans only the active profile's library.");
+  if (repairing) throw new Error("A repair is already running.");
+  repairing = true;
+  const emit = (p: RepairProgress) => {
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("harbor:library-repair", { detail: p }));
+  };
+  try {
+    const result = await repairStremioLibrary(authKey, emit);
+    stremioCache = null;
+    return result;
+  } finally {
+    repairing = false;
+  }
+}
+
+let corrupt: { authKey: string; items: LibraryItem[] } | null = null;
+
+/** AnimeRepairRow scan: the corrupt entries (ids and names only; the items stay in the engine). */
+export async function animeScan(authKey: string | null): Promise<Array<{ id: string; name: string }>> {
+  if (!authKey) throw new Error("Sign in to Stremio first. This scans the active profile's library.");
+  const items = await findCorruptAnimeEntries(authKey);
+  corrupt = { authKey, items };
+  return items.map((i) => ({ id: i._id, name: i.name || i._id }));
+}
+
+/** AnimeRepairRow remove: deletes what the last scan found; returns how many. */
+export async function animeHeal(authKey: string | null): Promise<number> {
+  if (!authKey || !corrupt || corrupt.authKey !== authKey || corrupt.items.length === 0) return 0;
+  const n = await healCorruptAnimeEntries(authKey, corrupt.items);
+  corrupt = null;
+  clearResurfaceCache();
+  stremioCache = null;
+  return n;
 }
 
 /** Persist the sort choice like SortControl (settings.librarySort). */
