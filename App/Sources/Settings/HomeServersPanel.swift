@@ -6,8 +6,10 @@ import SwiftUI
 final class HomeServersModel: ObservableObject {
     struct Connection: Decodable, Identifiable {
         struct Summary: Decodable { var at: Double; var movies: Int; var shows: Int; var episodes: Int }
+        struct SyncResult: Decodable { var ok: Bool; var message: String; var at: Double }
         var id: String; var provider: String; var name: String; var origin: String; var enabled: Bool
-        var lastSyncAt: Double?; var lastSummary: Summary?
+        var lastSyncAt: Double?; var lastSummary: Summary?; var lastSyncResult: SyncResult?
+        var preferredQuality: String?; var refreshInterval: String?
     }
     struct Pin: Decodable { var pinId: Int; var code: String; var url: String; var expiresAt: Double }
     struct Poll: Decodable { struct Server: Decodable, Identifiable { var id: String; var name: String; var owned: Bool; var available: Bool; var origin: String }; var kind: String; var servers: [Server]? }
@@ -31,7 +33,7 @@ final class HomeServersModel: ObservableObject {
                 if p.active { self?.progress[p.connectionId] = p.message } else { self?.progress[p.connectionId] = nil; Task { await self?.load() } }
             }
         }
-        connections = (try? await HarborEngine.shared.call("homeServers.connectionsWithSummaries", [])) ?? []
+        connections = (try? await HarborEngine.shared.call("homeServers.connections", [])) ?? []
     }
 
     // Plex: mint a PIN, show it, poll until approved, then let the viewer pick a server.
@@ -107,6 +109,17 @@ final class HomeServersModel: ObservableObject {
         _ = try? await HarborEngine.shared.callJSON("homeServers.update", [.string(c.id), .object(["enabled": .bool(!c.enabled)])])
         await load()
     }
+
+    // home-servers-tab.tsx pickers, as cycling buttons.
+    static let qualities: [(String, String)] = [("original", "Original"), ("4k-40", "4K · 40 Mbps"), ("1080p-20", "1080p · 20 Mbps"), ("1080p-12", "1080p · 12 Mbps"), ("720p-4", "720p · 4 Mbps"), ("480p-2", "480p · 2 Mbps"), ("360p-0.7", "360p · 0.7 Mbps")]
+    static let intervals: [(String, String)] = [("launch", "Every launch"), ("daily", "Daily"), ("three-days", "Every 3 days"), ("weekly", "Weekly"), ("manual", "Manual")]
+
+    func cycle(_ c: Connection, field: String, options: [(String, String)], current: String?) async {
+        let at = options.firstIndex { $0.0 == current } ?? 0
+        let next = options[(at + 1) % options.count].0
+        _ = try? await HarborEngine.shared.callJSON("homeServers.update", [.string(c.id), .object([field: .string(next)])])
+        await load()
+    }
 }
 
 struct HomeServersPanel: View {
@@ -130,6 +143,12 @@ struct HomeServersPanel: View {
                     Button(c.enabled ? "Enabled" : "Disabled") { Task { await model.toggle(c) } }.buttonStyle(BPActionStyle(primary: c.enabled))
                     Button("Remove") { Task { await model.remove(c.id) } }.buttonStyle(BPActionStyle())
                 }
+                HStack(spacing: BP.px(10)) {
+                    Button("Quality: " + Self.label(HomeServersModel.qualities, c.preferredQuality ?? "original")) { Task { await model.cycle(c, field: "preferredQuality", options: HomeServersModel.qualities, current: c.preferredQuality) } }.buttonStyle(BPActionStyle())
+                    Button("Refresh: " + Self.label(HomeServersModel.intervals, c.refreshInterval ?? "launch")) { Task { await model.cycle(c, field: "refreshInterval", options: HomeServersModel.intervals, current: c.refreshInterval) } }.buttonStyle(BPActionStyle())
+                    if let r = c.lastSyncResult, !r.ok { Text("Last sync failed: \(r.message)").font(BP.sans(12)).foregroundStyle(BP.danger).lineLimit(1) }
+                }
+                .padding(.bottom, BP.px(6))
             }
             if model.connections.isEmpty && model.pin == nil && !showForm {
                 Text("Play from Plex, Jellyfin or Emby on your network; their libraries join the stream picker and the Library.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
@@ -169,6 +188,10 @@ struct HomeServersPanel: View {
             if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Indexed") ? BP.live : BP.danger) }
         }
         .task { await model.load() }
+    }
+
+    private static func label(_ options: [(String, String)], _ value: String) -> String {
+        options.first(where: { $0.0 == value })?.1 ?? options[0].1
     }
 
     private func summary(_ c: HomeServersModel.Connection) -> String {

@@ -57,7 +57,7 @@ struct WhoIsWatchingView: View {
 
     private func tile(_ p: ProfilesStore.Profile) -> some View {
         Button {
-            if p.kid != nil { notice = "Kids profiles are not available in Big Picture yet."; return }
+            // bpWhoKidSelectable() is true on a TV shell: Big Picture stays mounted and gates from inside.
             if p.passwordHash != nil { pinFor = p } else { profiles.select(p.id); app.stage = .shell }
         } label: {
             VStack(spacing: BP.px(12)) {

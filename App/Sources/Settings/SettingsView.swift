@@ -65,6 +65,11 @@ struct SettingsView: View {
                 section("Playback") {
                     row("Subtitle languages: \(settings.slice.preferredSubLangs.joined(separator: ", "))", detail: "First match wins when searching online subtitles")
                     Button("Choose subtitle languages") { sheet = .subLangs }.buttonStyle(BPActionStyle())
+                    HStack(spacing: BP.px(8)) {
+                        onOff("Resume where you left off", settings.slice.resumePlayback ?? true, key: "resumePlayback")
+                        onOff("Ask before resuming", settings.slice.resumePrompt ?? false, key: "resumePrompt")
+                        onOff("Confirm before leaving the player", settings.slice.playerConfirmLeave ?? true, key: "playerConfirmLeave")
+                    }
                 }
                 section("Anime4K") { Anime4KPanel() }
                 section("Sync") {
@@ -181,6 +186,10 @@ struct SettingsView: View {
         // The whole panel is a focus target, so Down from the Settings cog (far right) lands
         // on the buttons at the left instead of finding nothing under the cog.
         .focusSection()
+    }
+
+    private func onOff(_ label: String, _ on: Bool, key: String) -> some View {
+        Button("\(label): \(on ? "On" : "Off")") { Task { try? await settings.patch([key: .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
     }
 
     private func row(_ title: String, detail: String) -> some View {

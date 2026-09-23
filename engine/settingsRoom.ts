@@ -39,10 +39,16 @@ export function categories(profileId: string, linked: boolean) {
 export function controls(id: BpCatId, profileId: string, linked: boolean): BpControl[] {
   const s = loadEffective(profileId, linked);
   const out = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined");
-  // Service cells carry their brand tint so the TV can draw a chip without the SVG logo.
-  return out.map((c) => (c.kind === "multi" && c.id === "service"
-    ? { ...c, items: c.items.map((i) => ({ ...i, tint: serviceBadge(i.value as StreamingService).tint })) }
-    : c));
+  // bp-settings.tsx:193-201: push rows report what is connected / how many playlists were added.
+  const connected = bpConnectedNames(facts(s, profileId));
+  const playlists = (s.iptvPlaylists ?? []).length;
+  return out.map((c) => {
+    // Service cells carry their brand tint so the TV can draw a chip without the SVG logo.
+    if (c.kind === "multi" && c.id === "service") return { ...c, items: c.items.map((i) => ({ ...i, tint: serviceBadge(i.value as StreamingService).tint })) };
+    if (c.kind === "push" && c.pane === "connect" && connected.length > 0) return { ...c, detail: t("Connected: {list}", { list: connected.join(", ") }) };
+    if (c.kind === "push" && c.pane === "live" && playlists > 0) return { ...c, detail: t("{count} added", { count: playlists }) };
+    return c;
+  });
 }
 
 /** bp-settings-commit.ts, without React: writes the settings blob and marks synced sections. */

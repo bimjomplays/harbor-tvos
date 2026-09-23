@@ -40,6 +40,8 @@ final class AppModel: ObservableObject {
             profiles.attachEngine()
             await account.attachEngine()
             if account.isSignedIn { await refreshRoster() }
+            // App.tsx MediaServerSyncRunner: due home-server indexes at launch, then every 15 minutes.
+            _ = try? await HarborEngine.shared.callJSON("homeServers.startRunner", [])
         }
         try? await Task.sleep(for: .seconds(Fixtures.active ? 0.2 : 1.2))
         if let fixed = Fixtures.stage {

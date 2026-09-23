@@ -2,7 +2,7 @@
 
 "What Big Picture does that the TV app does not yet." Upstream = `reference/harbor/src/views/big-picture/**` at `1bfcfb6` (read-only). Port = `App/Sources/**` (SwiftUI) + `engine/*.ts` (upstream logic in JavaScriptCore; `engine/entry.ts` is the list of what Swift can call).
 
-Method: seven read-only research passes (one per area) read every BP file in their slice, then grepped the port for an equivalent (Swift views, `entry.ts` exports, glue files). The load-bearing claims that contradict `PROJECT_STATE.md` were re-verified by hand (see "Corrections" below). No files were edited other than this one.
+Method: eight parallel read-only research passes (one per area — shell/onboarding/who's-watching, Home/Movies/Shows/Discover, Search/Collections, Detail/Person, Streams/Player/Queue, Library/Anime, Live TV/Sports, Settings/Addons) each read every BP file in their slice and grepped the port for an equivalent (Swift views, `entry.ts` exports, glue files). Two passes independently over-ran their assigned slice and self-produced a full first draft of this document; a final orchestrating pass reconciled both drafts against all eight passes' findings, folded in items only the narrower passes had caught (search's idle mosaic/recent-query chips, Library's Episodes/Posters history toggle, Anime's row-customization UI, Collections' hidden-manga-count note), and is the version below. Load-bearing claims that contradict `PROJECT_STATE.md` were re-verified by hand (see "Corrections" below). No files other than this one were edited; upstream was never touched.
 
 Fields per gap: **Upstream** file(s) · **Behaviour** (user-visible) · **Engine** = is the data/logic already in the bundle (yes / partial / no, with the export or "not found") · **Effort** S/M/L · **Impact** for a TV viewer H/M/L.
 
@@ -76,6 +76,8 @@ Verified present: separate Movies and Shows tabs (`AppModel.Room`), Top-10 row, 
 | SR-7 | `bp-phone-typing.tsx`, `lib/tv-handoff/*` | QR → phone types into the TV over LAN (also used by Connect and onboarding "phone" step). Port: on-screen `BPKeyboardView` only (a faithful `bp-keyboard.tsx` port). | no | L | M |
 | SR-8 | `lib/search-addon-index.ts` | "Addons you could install" hits. | no | S-M | L |
 | SR-9 | `lib/search.ts searchManga` | Manga results. Zero manga surface in the port; needs a reader to be useful. | no | M | L |
+| SR-10 | `search/bp-search-input.tsx` `BpRecentRow` | Recent search queries shown as chips when the field is idle, with a clear-all button. Port: no recent-query storage/UI in `SearchModel.swift`. | no | S | M |
+| SR-11 | `bp-search.tsx` idle state (`BpMosaic` + `suggestions`) | Empty field shows an ambient poster mosaic background plus a "Suggested" grid pulled from Home rows. Port shows a plain empty-state message. | no | S | L |
 
 ## 5. Detail page
 
@@ -93,7 +95,7 @@ Verified present: separate Movies and Shows tabs (`AppModel.Room`), Top-10 row, 
 | DT-10 | `detail/bp-videos-row.tsx` | Trailers/clips/featurettes row. Port: `detailRoom.extras` already returns `videos` (14), `DetailModel.Extras` drops the field. Playback is best-effort on tvOS (no yt-dlp). | yes | S (row) / M (playback) | M |
 | DT-11 | `detail/use-bp-episode-facts.ts`, `detail/use-bp-episode-enrich.ts`, `use-bp-episode-art.ts`, `bp-episode-still.tsx` | Per-episode rating + runtime chip and a still-image fallback ladder (TMDB → TVDB → ani.zip → embedded → metahub). Port `EpisodeCell`: Cinemeta thumbnail + title only. | no | M | M |
 | DT-12 | `bp-gallery-row.tsx` | Backdrops/posters/logos gallery (24 each) with a lightbox. Port: `detailRoom.ts` returns counts only. | partial | M | L-M |
-| DT-13 | `detail/bp-crew-row.tsx` | Crew cells open the Person page. Port: `crew.prefix(4)` static text. | yes (`extras.crew`) | S | L-M |
+| DT-13 | `detail/bp-crew-row.tsx` | Crew cells are portrait cards (Director/Writer/Producer/Cinematography/Music/Editor groups), tappable into the Person page. Port: `crew.prefix(4)` static text, not tappable. | partial — `extras.crew` gives the grouped `{label, names}` text but not TMDB person ids/photos, so making it tappable needs a small `detailRoom.ts` addition, not just a Swift change | S | L-M |
 | DT-14 | `detail/use-bp-episode-strip.ts`, `bp-episode-window.tsx` | Episode strip auto-scrolls to the resume episode; windowed loading (+60). Port loads the season eagerly, no scroll-to-resume. | n/a | S | L-M |
 | DT-15 | `detail/bp-facts-dialog.tsx` | Facts preview → full scrollable dialog. Port: `facts.prefix(8)` inline, no dialog. | yes (`extras.facts` is uncapped) | S | L |
 | DT-16 | `bp-season-menu.tsx` | Seasons as a scrollable modal. Port: inline chip row (`DetailView.swift:250-254`). | n/a | S | L |
@@ -110,6 +112,7 @@ Verified present (`animeRoom.ts`): 16 Jikan spec rows, anime CW, seeded hero, aw
 | AN-1 | `bp-anime-hero.tsx:155-174`, `bp-anime-hero-actions.tsx`, `bp-anime-hero-meta.tsx` | Anime hero has actions (Resume / Start Watching, More Info), meta line ("Anime of the year", "New", award mark) and availability ("Sub and Dub"). Port: the anime room reuses the display-only `SpotlightView`. | partial (hero + resume data exist in `animeRoom.page`) | S-M | M |
 | AN-2 | `bp-anime-badges.tsx` | Anime card badges (award, DUB). Port: covered by `cards.ts` identity chip. | yes | — | — |
 | AN-3 | `bp-anime-announcement.tsx` | Never mounted in upstream (dead code). | — | — | — |
+| AN-4 | `bp-anime-groups.ts` row customisation (reorder/hide/rename rows) | User can reorder, hide, or rename anime rows from settings. Port has no UI anywhere for it (`grep -rn "animeRows\|reorder" App/Sources` → 0). | yes (`animeRoom.ts` already calls upstream's unmodified `applyAnimeRowCustomization`) | S | L-M |
 
 Seasons chips and Characters are on the anime **detail** page → DT-2.
 
@@ -146,6 +149,7 @@ Verified present: Saved/Watchlist/History/My Lists/Favorites + Trakt/Simkl/AniLi
 | LB-2 | `bp-list-dialog.tsx`, `lib/custom-lists.ts` (`createListStore`, `toggleInList`) | Create a list / add to list from the TV. Port `library.ts` imports `readLists` only. | no | M | M |
 | LB-3 | `bp-library-types.ts` `"letterboxd"`, `lib/stremboxd/*` | Letterboxd tab. | no | M | L-M |
 | LB-4 | `bp-library-search.tsx`, `use-bp-library-services.ts` | Library "repair"/services rail. Port has the tabs; no repair action. | partial | S | L |
+| LB-5 | `bp-library-sections.tsx`, `bp-cw-row.tsx` (`BpCwCard`) | History tab has a Posters/Episodes view toggle; Episodes mode shows wide episode-still cards with a resume progress bar and season/episode label instead of plain posters. Port: posters only, no toggle. | yes (`library.ts feed()` already returns `progress/season/episode/watched`) | S | M |
 
 ## 9. Collections
 
@@ -153,6 +157,7 @@ Verified present: Saved/Watchlist/History/My Lists/Favorites + Trakt/Simkl/AniLi
 |---|---|---|---|---|---|
 | CL-1 | `bp-collection-steps.ts` (all/mine/community/tvdb/tmdb), `use-bp-collection-feed.ts`, `lib/collections-catalog.ts`, `providers/tvdb-collections.ts`, `bp-collection-detail.tsx` | Source chips; TMDB curated (~110 franchises), TMDB open feed, TVDB lists, each with its own detail shape (backdrop hero, overview, year range). Port: mine + community only, so the tab is near-empty without Harbor social lists. | no (`collectionsRoom = {mine, community, all}`) | L | H |
 | CL-2 | `bp-collection-shell.tsx`, `bp-collection.tsx` | Collection editing (add/remove items, rename) from the TV. Port: read-only overlay. | no | M | M |
+| CL-3 | `bp-collection-items.tsx` | Personal/community collection overlays filter out manga items but tell the viewer how many were hidden ("N manga items are not shown"). Port: `collections.ts card()` filters manga but drops the count; overlay shows nothing. | partial (filter exists, count field missing) | S | L |
 
 ## 10. Addons
 
@@ -274,3 +279,28 @@ Honourable mentions (high impact for a subset, L effort): HM-2 Home Live TV row,
 - Correct the three PROJECT_STATE lines in §0.
 - `docs/livetv-spec.md` never mentions the Home Live TV row (HM-2); `docs/sports-spec.md` marks who/addon/broadcast-stage "out of scope" — this audit is the first place they are confirmed unported.
 - `docs/detail-spec.md` is accurate and line-cited; keep using it.
+
+## 20. Coverage checklist
+
+Every area the audit brief asked for, mapped to its section:
+
+| Asked for | Section |
+|---|---|
+| Top bar / hint bar / profile menu / phone typing | §1 (SH-4, SH-5, SH-13), §4 (SR-7) |
+| Home: hero cycle, CW/services/addons/live/collections/editorial rows, hero actions | §2 |
+| Movies/Shows: hero pool, genre/collection rows, "See all" grid, `bp-row-grid` | §3 (verified-present note + DS-1..4) |
+| Discover | §3 (DS-1, DS-2) |
+| Search, all result kinds incl. manga/characters/collections/addon index/phone typing | §4 |
+| Detail: every row incl. videos/gallery/awards dialog/facts dialog/episode facts, anime path, play-decision logic, stream picker, auto-play best | §5, §6 (AN-1), §9 (CL for collection-adjacent), §11 (stream picker/facets are DT-4/DT-5) |
+| Player: transport, subtitle panel, audio, chapters, skip, next-episode, PiP, speed, aspect, shaders, stats | §7 (chapters/PiP/speed/aspect/stats/shaders confirmed not in BP at all — see the note under the table) |
+| Library | §8 |
+| Anime: hero actions, seasons chips, characters, announcement, awards band | §6, §5 (DT-2, seasons/characters live on the anime detail path) |
+| Live TV: setup, sources modal, filters, guide portal, hero | §14, §2 (HM-2) |
+| Sports: event rows incl. who panel, addon panel, watch picker, reminders | §15 |
+| Collections: shell, editing | §9 |
+| Settings: connect pane, live setup pane, every catalog category | §11 |
+| Onboarding: every step | §12 |
+| Who's-watching: PIN, kid gating, sync phase | §13 |
+| Kids/parental: lockable tabs, hidden tabs, PIN gates | §13 (WW-1) |
+| Together/watch party | §1, closing note — no BP UI to create/join a room exists upstream; port has none either. Not a gap. |
+| Any BP file not mapped to anything in the port | §18 (dead-in-upstream + N/A-on-tvOS lists) covers every file that came up empty across all eight passes; every other file under `big-picture/**` is accounted for in a numbered gap or a "verified present" note in §§1–15 |

@@ -245,6 +245,14 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("libraryRoom.tabs shows Media Servers with a connection", rec.engine.libraryRoom.tabs().some((t) => t.id === "media-servers"), true);
   const bad = await rec.engine.homeServers.connect("jellyfin", "nowhere.invalid", "u", "p").then(() => "ok", (e) => e.message);
   r.ok("homeServers.connect reports a clear failure for an unreachable Jellyfin", typeof bad === "string" && bad !== "ok", bad);
+  rec.engine.homeServers.update(conn.id, { preferredQuality: "720p-4", refreshInterval: "manual" });
+  const upd = (await rec.engine.homeServers.connections())[0];
+  r.ok("homeServers.update patches quality and refresh interval", upd.preferredQuality === "720p-4" && upd.refreshInterval === "manual", JSON.stringify({ q: upd.preferredQuality, i: upd.refreshInterval }));
+  r.eq("homeServers.runDueSyncs skips a manual connection", await rec.engine.homeServers.runDueSyncs(), []);
+  await rec.engine.homeServers.sync(conn.id).catch(() => undefined);
+  const after = (await rec.engine.homeServers.connections())[0];
+  r.ok("homeServers.sync persists a lastSyncResult on the connection", !!after.lastSyncResult && typeof after.lastSyncResult.ok === "boolean" && typeof after.lastSyncResult.message === "string", JSON.stringify(after.lastSyncResult));
+  r.eq("homeServers.reportProgress ignores an unindexed item", await rec.engine.homeServers.reportProgress(conn.id, "nope", 1000, 2000, false), false);
   rec.engine.homeServers.remove(conn.id);
   r.eq("homeServers.remove clears the connection", (await rec.engine.homeServers.connections()).length, 0);
   rec.dispose();
@@ -440,6 +448,8 @@ if (!OFFLINE) {
 
   const sc = await r.timed("search.cinemeta('blade runner')", () => engine.search.cinemeta("blade runner"));
   r.ok("search.cinemeta finds movies and series", sc && sc.movies.length > 0 && Array.isArray(sc.series), JSON.stringify(sc && { movies: sc.movies.length, series: sc.series.length, first: sc.movies[0] && sc.movies[0].name }));
+  const fo = await r.timed("search.fanOut('blade runner')", () => engine.search.fanOut("blade runner", "default", true, null));
+  r.ok("search.fanOut fuses Cinemeta into Movies without a TMDB key", fo && fo.movies.length > 0 && typeof fo.requestId === "number" && Array.isArray(fo.addonQueries), JSON.stringify(fo && { movies: fo.movies.length, series: fo.series.length, anime: fo.anime.length, queries: fo.addonQueries.length, addons: fo.addons.length }));
   const sa = await r.timed("search.addonCatalogs(seeded)", () => engine.search.addonCatalogs(gathered ?? [], "inception"));
   r.ok("search.addonCatalogs uses the installed addon", sa && (sa.movies.length > 0 || sa.series.length > 0), JSON.stringify(sa && { movies: sa.movies.length, series: sa.series.length }));
   r.eq("search.detectIntent('1994')", engine.search.detectIntent("1994").kind, "year");

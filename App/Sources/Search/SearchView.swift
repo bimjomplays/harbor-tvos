@@ -45,6 +45,44 @@ struct SearchView: View {
     @State private var channel: SearchModel.Results.LiveTvHit?
     @State private var person: SearchModel.Results.Person?
 
+    @StateObject private var addons = AddonsModel()
+
+    // use-bp-search "Addons you could install": index hits, Select installs (or shows a tick).
+    private var addonIndexRow: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text("Addons you could install").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: BP.trackGap) {
+                    ForEach(model.addonHits) { hit in
+                        Button {
+                            guard !hit.installed, let url = hit.transportUrl else { return }
+                            Task { _ = await addons.install(url: url) }
+                        } label: {
+                            HStack(spacing: BP.px(10)) {
+                                RemoteImage(url: hit.logo, contentMode: .fit).frame(width: BP.px(36), height: BP.px(36)).clipShape(RoundedRectangle(cornerRadius: BP.px(8)))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: BP.px(6)) {
+                                        Text(hit.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                        if hit.installed { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.live) }
+                                    }
+                                    Text(hit.installed ? "Installed" : (hit.blurb ?? "Select to install")).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                                }
+                            }
+                            .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(8))
+                            .frame(width: BP.px(280), alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                        .disabled(addons.busy)
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
+    }
+
     // bp-search-rows BpChannelCell: a channel from your Live TV sources, Select tunes it.
     private var channelRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -115,6 +153,7 @@ struct SearchView: View {
                 ForEach(model.rows) { row in
                     BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
                 }
+                if !model.addonHits.isEmpty { addonIndexRow }
                 Color.clear.frame(height: BP.hintHeight + BP.px(40))
             }
         }

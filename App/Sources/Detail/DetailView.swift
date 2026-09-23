@@ -53,7 +53,7 @@ struct DetailView: View {
                     let ctx = PlaybackContext(meta: model.meta,
                                               season: ep?["season"]?.number.map { Int($0) }, episode: ep?["episode"]?.number.map { Int($0) },
                                               videoId: ep?["videoId"]?.string, imdbId: model.meta.id.hasPrefix("tt") ? model.meta.id : nil,
-                                              imdbVerified: model.meta.id.hasPrefix("tt"))
+                                              imdbVerified: model.meta.id.hasPrefix("tt"), homeServer: resolved.homeServer)
                     // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                             var upNext: String?

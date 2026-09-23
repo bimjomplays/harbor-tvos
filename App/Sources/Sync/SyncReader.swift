@@ -14,6 +14,7 @@ final class SyncReader: ObservableObject {
         var lastPullAt: Double
         var lastPushAt: Double
         var lastError: String?     // network | auth | rate-limited | server
+        var queuedSince: Double?   // ms; a queue older than QUEUE_STALE_MS is "not saved yet" (bp-status CloudOff)
     }
 
     enum Phase: Equatable { case idle, pulling, failed(String) }
@@ -29,6 +30,8 @@ final class SyncReader: ObservableObject {
     private init() {}
 
     var queued: Int { status?.queued ?? 0 }
+    /// profile-sync/status.ts isQueueStale: queued for over a minute, not merely a push in flight.
+    func stale(at now: Date) -> Bool { status?.queuedSince.map { now.timeIntervalSince1970 * 1000 - $0 > 60_000 } ?? false }
 
     /// Follow the engine's status events and start the scheduler (idempotent).
     func start() async {

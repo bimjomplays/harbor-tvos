@@ -73,6 +73,7 @@ import * as trackersGlue from "./trackers";
 import * as detailGlue from "./detailRoom";
 import * as personGlue from "./personRoom";
 import * as homeGlue from "./homeServers";
+import * as searchGlue from "./search";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -302,6 +303,7 @@ export const secretStore = {
  * falls back to before the user has entered one.
  */
 export const search = {
+  fanOut: searchGlue.fanOut,
   all: searchAll,
   cinemeta: searchCinemeta,
   anime: searchAnime,
@@ -574,6 +576,10 @@ export const homeServers = {
   titles: homeGlue.titles,
   copies: homeGlue.copies,
   play: homeGlue.play,
+  runDueSyncs: homeGlue.runDueSyncs,
+  startRunner: homeGlue.startRunner,
+  reportProgress: homeGlue.reportProgress,
+  stopPlayback: homeGlue.stopPlayback,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

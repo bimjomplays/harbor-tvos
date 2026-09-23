@@ -105,6 +105,7 @@ struct TopBarView: View {
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .accessibilityIdentifier("tab-settings")
                 .accessibilityLabel("Settings")
+            StatusGlyphs()
             ClockView().padding(.leading, BP.px(6))
         }
         .padding(.horizontal, BP.gutter)
@@ -142,6 +143,27 @@ struct BPTabStyleWide: ButtonStyle {
                 .scaleEffect(focused ? 1.04 : 1)
                 .animation(BP.easeFast, value: focused)
         }
+    }
+}
+
+/// bp-status.tsx: CloudOff while sync changes sit unsaved for over a minute, WifiOff when the
+/// network path is down. No battery on a television.
+struct StatusGlyphs: View {
+    @ObservedObject private var sync = SyncReader.shared
+    @ObservedObject private var net = NetworkStatus.shared
+    @State private var now = Date()
+    private let timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
+    var body: some View {
+        HStack(spacing: BP.px(10)) {
+            if sync.stale(at: now) {
+                Image(systemName: "icloud.slash").foregroundStyle(BP.danger)
+                    .accessibilityLabel("Changes not saved to your Harbor account yet")
+            }
+            Image(systemName: net.online ? "wifi" : "wifi.slash").foregroundStyle(net.online ? BP.inkMuted : BP.danger)
+        }
+        .font(.system(size: BP.px(15), weight: .semibold))
+        .padding(.leading, BP.px(8))
+        .onReceive(timer) { now = $0 }
     }
 }
 

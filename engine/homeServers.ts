@@ -2,7 +2,7 @@
 // Emby through address + credentials, one index per connection in the localStorage-backed
 // store, playable copies for a title, and playback sources. Progress writes follow later.
 import type { Meta } from "@/lib/cinemeta";
-import { mediaServerConnections, saveMediaServerConnection, removeMediaServerConnection, updateMediaServerConnection, mediaServerToken } from "@/lib/media-server/connections";
+import { mediaServerConnections, saveMediaServerConnection, removeMediaServerConnection, updateMediaServerConnection, mediaServerToken, mediaServerSyncDue } from "@/lib/media-server/connections";
 import { discoverAndAuthenticate } from "@/lib/media-server/discovery";
 import { synchronizeMediaServer, subscribeMediaServerSyncProgress, mediaServerAdapter } from "@/lib/media-server/sync";
 import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries } from "@/lib/media-server/index-store";
@@ -11,7 +11,7 @@ import { createMediaServerPlayerSrc } from "@/lib/media-server/playback";
 import { mediaServerRequest } from "@/lib/media-server/transport";
 import { getSecret, setSecret } from "@/lib/secret-store";
 import { activeProfileId } from "@/lib/active-profile-id";
-import type { MediaServerConnection, MediaServerProvider, MediaServerQuality } from "@/lib/media-server/types";
+import type { MediaServerConnection, MediaServerProvider, MediaServerQuality, MediaServerProgress } from "@/lib/media-server/types";
 
 const PLEX_ORIGIN = "https://plex.tv";
 const DEVICE_KEY = "harbor.plex-auth.device.v1";
@@ -134,9 +134,70 @@ export async function sync(id: string): Promise<{ libraries: number; itemCount: 
   ensureProgressBridge();
   const c = mediaServerConnections().find((x) => x.id === id);
   if (!c) throw new Error("connection not found");
-  const r = await synchronizeMediaServer(c);
-  updateMediaServerConnection(id, { lastSyncAt: Date.now(), lastSyncResult: { ok: true, message: `${r.itemCount} items`, at: Date.now() } });
-  return { libraries: r.libraries.length, itemCount: r.itemCount, removedItems: r.removedItems };
+  try {
+    // synchronizeMediaServer already records lastSyncAt and the detailed lastSyncResult.
+    const r = await synchronizeMediaServer(c);
+    return { libraries: r.libraries.length, itemCount: r.itemCount, removedItems: r.removedItems };
+  } catch (cause) {
+    // App.tsx MediaServerSyncRunner: a failure is persisted so the row can warn about it later.
+    updateMediaServerConnection(id, { lastSyncResult: { ok: false, message: cause instanceof Error ? cause.message : String(cause), at: Date.now() } }, c.profileId);
+    throw cause;
+  }
+}
+
+// ------------------------------------------------------------------------------ runner
+// App.tsx MediaServerSyncRunner: every due connection at launch (once per launch for the
+// "launch" interval), then every 15 minutes; failures are recorded on the connection.
+const RUNNER_MS = 15 * 60 * 1000;
+const launchSynced = new Set<string>();
+let runnerTimer: ReturnType<typeof setInterval> | null = null;
+let running = false;
+
+export async function runDueSyncs(): Promise<string[]> {
+  if (running) return [];
+  running = true;
+  const done: string[] = [];
+  try {
+    for (const c of mediaServerConnections().filter((e) => mediaServerSyncDue(e) && (e.refreshInterval !== "launch" || !launchSynced.has(e.id)))) {
+      if (c.refreshInterval === "launch") launchSynced.add(c.id);
+      await sync(c.id).then(() => done.push(c.id), () => undefined);
+    }
+  } finally {
+    running = false;
+  }
+  return done;
+}
+
+export function startRunner(): void {
+  if (runnerTimer) return;
+  ensureProgressBridge();
+  runnerTimer = setInterval(() => void runDueSyncs(), RUNNER_MS);
+  void runDueSyncs();
+}
+
+// ---------------------------------------------------------------------- progress writes
+/** progress-sync.ts report(): the server learns the position, or that the title was watched. */
+export async function reportProgress(connectionId: string, itemId: string, positionMs: number, durationMs: number | null, watched: boolean): Promise<boolean> {
+  const connection = mediaServerConnections().find((c) => c.id === connectionId);
+  if (!connection || !connection.writeProgress) return false;
+  const item = (await mediaServerItems(connectionId)).find((i) => i.id === itemId);
+  if (!item) return false;
+  const adapter = mediaServerAdapter(connection);
+  if (watched) await adapter.setWatched(connection, item, true);
+  else {
+    const progress: MediaServerProgress = { positionMs: Math.max(0, Math.round(positionMs)), durationMs: durationMs && durationMs > 0 ? Math.round(durationMs) : undefined, played: false, updatedAt: Date.now() };
+    await adapter.reportProgress(connection, item, progress);
+  }
+  return true;
+}
+
+/** progress-sync.ts session teardown: tells a transcoding server the session ended. */
+export async function stopPlayback(connectionId: string, itemId: string, playbackSessionId: string, positionMs: number): Promise<void> {
+  const connection = mediaServerConnections().find((c) => c.id === connectionId);
+  if (!connection) return;
+  const item = (await mediaServerItems(connectionId)).find((i) => i.id === itemId);
+  const adapter = mediaServerAdapter(connection);
+  if (item && adapter.stopPlayback) await adapter.stopPlayback(connection, item, playbackSessionId, Math.max(0, Math.round(positionMs)));
 }
 
 // ------------------------------------------------------------------------- library view
@@ -181,7 +242,12 @@ export async function play(meta: Meta, connectionId: string, itemId: string, ver
   const item = (await mediaServerItems(connectionId)).find((i) => i.id === itemId);
   if (!item) throw new Error("This home-server copy is no longer indexed.");
   const src = await createMediaServerPlayerSrc({ meta, connection, item, versionId, startPositionMs });
-  return { url: src.url, headers: src.headers ?? null, subtitle: src.subtitle ?? null, subtitles: (src.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang ?? null })), resumeMs: item.progress?.positionMs ?? 0 };
+  return {
+    url: src.url, headers: src.headers ?? null, subtitle: src.subtitle ?? null,
+    subtitles: (src.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang ?? null })),
+    resumeMs: item.progress?.positionMs ?? 0,
+    session: { connectionId, itemId: item.id, versionId: src.homeServer?.versionId ?? versionId ?? null, playbackSessionId: src.homeServer?.playbackSessionId ?? null },
+  };
 }
 
 export function hasToken(id: string): boolean {

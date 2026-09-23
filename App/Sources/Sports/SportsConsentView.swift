@@ -15,7 +15,7 @@ struct SportsConsentView: View {
     ]
     private let details = [
         "Official links and videos remain subject to the originating service's availability, regional restrictions and terms. Names and logos identify third parties and do not imply endorsement or affiliation.",
-        "Market data is optional and off by default. It is informational and does not enable trading in Harbor. Reminders send event details to Discord or Telegram only when you configure a destination and request a reminder.",
+        "Market data is optional and off by default. It is informational and does not enable trading in Harbor.",
         "ElfHosted provides separately hosted services. Its policies apply to those services; they do not grant rights to third-party broadcasts, metadata or artwork.",
     ]
     private let links = ["ESPN service terms: disneytermsofuse.com/english", "TheSportsDB terms: thesportsdb.com/docs_terms_of_use.php", "YouTube terms: youtube.com/t/terms", "ElfHosted terms: docs.elfhosted.com/legal/terms-of-service", "ElfHosted privacy policy: docs.elfhosted.com/legal/privacy-policy"]

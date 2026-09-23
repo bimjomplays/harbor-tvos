@@ -2,6 +2,16 @@ import Foundation
 
 /// What the player needs to know about the title it is playing, and the progress bridge
 /// to the engine (engine/player.ts): start position, 4-second saves, final flush.
+/// PlayerSrc.homeServer: the Plex/Jellyfin/Emby item this playback came from (progress-sync.ts).
+struct HomeServerSession: Codable, Equatable {
+    var connectionId: String
+    var itemId: String
+    var versionId: String?
+    var playbackSessionId: String?
+    /// The server's own saved position; an explicit start that wins over Harbor's resume rules.
+    var resumeSec: Double
+}
+
 struct PlaybackContext {
     var meta: Meta
     var season: Int?
@@ -9,6 +19,18 @@ struct PlaybackContext {
     var videoId: String?
     var imdbId: String?
     var imdbVerified: Bool = false
+    var homeServer: HomeServerSession? = nil
+
+    /// progress-sync.ts report(): position, or "watched" once, to the home server (writeProgress only).
+    func reportHomeServer(positionSec: Double, durationSec: Double, watched: Bool) async {
+        guard let h = homeServer else { return }
+        _ = try? await HarborEngine.shared.callJSON("homeServers.reportProgress", [.string(h.connectionId), .string(h.itemId), .number((positionSec * 1000).rounded()), durationSec > 0 ? .number((durationSec * 1000).rounded()) : .null, .bool(watched)])
+    }
+
+    func stopHomeServerSession(positionSec: Double) async {
+        guard let h = homeServer, let sid = h.playbackSessionId else { return }
+        _ = try? await HarborEngine.shared.callJSON("homeServers.stopPlayback", [.string(h.connectionId), .string(h.itemId), .string(sid), .number((positionSec * 1000).rounded())])
+    }
 
     @MainActor private var profile: (id: String, authKey: String?) {
         let p = ProfilesStore.shared.active

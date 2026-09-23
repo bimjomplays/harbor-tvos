@@ -37,6 +37,10 @@ final class SettingsBridge: ObservableObject {
         var playerAnime4kTier: String? = "hq"
         var playerAnime4kOverride: String? = "auto"
         var simklScrobbleEnabled: Bool? = true
+        // Player forks (settings/defaults.ts): resume automatically, ask first, confirm on Back.
+        var resumePlayback: Bool? = true
+        var resumePrompt: Bool? = false
+        var playerConfirmLeave: Bool? = true
         /// bp-settings "Edge margin": a fraction of the screen kept clear on every edge.
         var bigPictureOverscan: Double? = 0
     }

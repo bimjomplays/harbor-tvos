@@ -21,6 +21,11 @@ struct PlayerScreen: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var controller: MPVPlayerController?
     @State private var startAt: Double?
+    /// bp-resume-prompt: the saved position waits for "Pick up where you left off" / "Start over" (settings.resumePrompt).
+    @State private var resumePending: Double?
+    /// bp-leave-confirm: Back asks "Leave the show?" (settings.playerConfirmLeave) unless the viewer said don't ask again.
+    @State private var leaveConfirm = false
+    @State private var leaveRemember = false
     @State private var lastSavedPos: Double = -10
     @State private var snap: (position: Double, duration: Double, paused: Bool) = (0, 0, false)
     @State private var panel: Panel?
@@ -77,7 +82,8 @@ struct PlayerScreen: View {
                 MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
-                              onStatus: { status = $0 }, onEnded: { finish(natural: true) }, onReady: { controller = $0 })
+                              onStatus: { status = $0 }, onEnded: { finish(natural: true) },
+                              onReady: { controller = $0; if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
             } else {
                 BP.void_.ignoresSafeArea()
@@ -85,16 +91,19 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(panel != nil)
+                .disabled(panel != nil || resumePending != nil || leaveConfirm)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
                     case .left: controller?.seek(-10); wake()
                     case .right: controller?.seek(10); wake()
+                    case .up where activeSegment != nil: focus = .chip("skip")
                     default: wake()
                     }
                 }
-            if chrome { chromeView.transition(.opacity) }
+            if chrome, resumePending == nil, !leaveConfirm { chromeView.transition(.opacity) }
+            if let resumePending { resumePrompt(resumePending).transition(.opacity) }
+            if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if let seg = activeSegment {
                 skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
             } else if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
@@ -112,12 +121,30 @@ struct PlayerScreen: View {
         }
         .onPlayPauseCommand { togglePause() }
         .onExitCommand {
-            if panel != nil { panel = nil; focus = .surface; wake() }
+            if resumePending != nil { acknowledgeResume(true) }          // Back takes the default action (bp-resume-prompt)
+            else if leaveConfirm { leaveConfirm = false; focus = .surface; wake() }
+            else if panel != nil { panel = nil; focus = .surface; wake() }
+            else if focus == .chip("skip") { focus = .surface }
             else if chrome { chrome = false }
-            else { finish(natural: false) }
+            else { requestClose() }
         }
         .onAppear { focus = .surface; scheduleHide() }
-        .task { startAt = await context?.startPosition() ?? 0 }
+        .task {
+            // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
+            // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.
+            let slice = SettingsBridge.shared.slice
+            var sec = (!isLive && (slice.resumePlayback ?? true)) ? (await context?.startPosition() ?? 0) : 0
+            // A home-server copy carries the server's own position (use-bridge-load hasExplicitStart).
+            if let h = context?.homeServer, h.resumeSec > 0 { sec = h.resumeSec }
+            if sec <= 5 { sec = 0 }
+            if sec > 30, slice.resumePrompt ?? false, !isLive {
+                resumePending = sec
+                startAt = 0
+                focusLater(.chip("Pick up where you left off"))
+            } else {
+                startAt = sec
+            }
+        }
         .onReceive(tick) { _ in
             if let c = controller { snap = c.snapshot() }
             if !isLive, let c = controller, status.state != "loading" {
@@ -182,7 +209,8 @@ struct PlayerScreen: View {
             .padding(.bottom, chrome ? BP.px(150) : BP.px(40)).padding(.trailing, BP.gutter)
         }
         .ignoresSafeArea()
-        .onAppear { if panel == nil { focus = .chip("skip") } }
+        // bp-skip-pill: a soft target. It never takes the ring on arrival (Select must keep meaning
+        // pause); Up from the surface or the transport reaches it, Menu hands the ring back.
     }
 
     /// Up-next pill in the last 40 seconds; Play/Pause or Select skips straight to the next episode.
@@ -227,7 +255,7 @@ struct PlayerScreen: View {
             }
             if !isLive { seekBar }
             HStack(spacing: BP.px(10)) {
-                chip("Back", "chevron.left") { finish(natural: false) }
+                chip("Back", "chevron.left") { requestClose() }
                 chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill") { togglePause() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
@@ -496,6 +524,97 @@ struct PlayerScreen: View {
         guard s.duration > 0, flush || (!s.paused && abs(s.position - lastSavedPos) >= 1.5) else { return }
         lastSavedPos = s.position
         _ = await context.save(positionSec: s.position, durationSec: s.duration, flush: flush)
+        homeServerTick(s, flush: flush)
+    }
+
+    @State private var lastHomeReport: Double = 0
+    @State private var lastHomePaused = false
+    /// progress-sync.ts: every 15 s while playing, on pause, and when leaving; titles under 150 s never.
+    private func homeServerTick(_ s: (position: Double, duration: Double, paused: Bool), flush: Bool) {
+        guard let context, context.homeServer != nil, s.duration >= 150 else { return }
+        let now = Date().timeIntervalSince1970
+        let pausedNow = s.paused && !lastHomePaused
+        lastHomePaused = s.paused
+        guard flush || pausedNow || (!s.paused && now - lastHomeReport >= 15) else { return }
+        lastHomeReport = now
+        let watched = s.position / s.duration >= 0.9
+        Task { await context.reportHomeServer(positionSec: s.position, durationSec: s.duration, watched: watched) }
+    }
+
+    /// request-player-close.ts: Back leaves at once unless playerConfirmLeave is on.
+    private func requestClose() {
+        if !isLive, SettingsBridge.shared.slice.playerConfirmLeave ?? true {
+            leaveRemember = false
+            leaveConfirm = true
+            controller?.setPaused(true); if let c = controller { snap = c.snapshot() }
+            hideTask?.cancel()
+            focusLater(.chip("Keep watching"))
+        } else {
+            finish(natural: false)
+        }
+    }
+
+    private func acknowledgeResume(_ resume: Bool) {
+        guard let sec = resumePending else { return }
+        resumePending = nil
+        if resume, sec > 0 { controller?.seek(to: sec) }
+        controller?.setPaused(false)
+        focus = .surface
+        scheduleHide()
+    }
+
+    /// bp-resume-prompt.tsx: a fork over the paused first frame; the ring lands on Resume.
+    private func resumePrompt(_ sec: Double) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(14)) {
+            Spacer()
+            Text("Pick up where you left off").font(BP.display(34)).foregroundStyle(BP.ink)
+            Text("\(title)\(subtitle.map { " · \($0)" } ?? "") · \(fmt(sec))\(snap.duration > 0 ? " of \(fmt(snap.duration))" : "")")
+                .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineLimit(1)
+            if snap.duration > 0 {
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(BP.on)
+                        Capsule().fill(BP.accent).frame(width: g.size.width * min(1, max(0, sec / snap.duration)))
+                    }
+                }.frame(width: BP.px(420), height: BP.px(6))
+            }
+            HStack(spacing: BP.px(10)) {
+                chip("Pick up where you left off", "play.fill") { acknowledgeResume(true) }
+                chip("Start over", "arrow.counterclockwise") { acknowledgeResume(false) }
+            }
+            .focusSection()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BP.gutter).padding(.bottom, BP.px(20))
+        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .onAppear { controller?.setPaused(true); if let c = controller { snap = c.snapshot() } }
+    }
+
+    /// A focus target that is only being inserted this tick cannot take the ring yet.
+    private func focusLater(_ target: FocusTarget) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = target }
+    }
+
+    /// bp-leave-confirm.tsx: Keep watching / Leave / Don't ask again.
+    private var leaveConfirmView: some View {
+        VStack(alignment: .leading, spacing: BP.px(12)) {
+            Spacer()
+            Text("Leave the show?").font(BP.display(34)).foregroundStyle(BP.ink)
+            Text("We'll save your spot so you can pick up right where you left off.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
+            HStack(spacing: BP.px(10)) {
+                chip("Keep watching", "play.fill") { leaveConfirm = false; controller?.setPaused(false); focus = .surface; scheduleHide() }
+                chip("Leave", "rectangle.portrait.and.arrow.right") {
+                    if leaveRemember { Task { try? await SettingsBridge.shared.patch(["playerConfirmLeave": .bool(false)]) } }
+                    leaveConfirm = false
+                    finish(natural: false)
+                }
+                chip("Don't ask again", leaveRemember ? "checkmark.circle.fill" : "circle") { leaveRemember.toggle() }
+            }
+            .focusSection()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BP.gutter).padding(.bottom, BP.px(20))
+        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
 
     private func finish(natural: Bool) {
@@ -507,9 +626,11 @@ struct PlayerScreen: View {
             if natural, let c = controller, let context, c.snapshot().duration > 0 {
                 let s = c.snapshot()
                 _ = await context.save(positionSec: s.duration, durationSec: s.duration, flush: true)
+                if s.duration >= 150 { await context.reportHomeServer(positionSec: s.duration, durationSec: s.duration, watched: true) }
             } else {
                 await saveTick(flush: true)
             }
+            if let context, context.homeServer != nil, let c = controller { await context.stopHomeServerSession(positionSec: c.snapshot().position) }
             onClose(natural)
             // The watched check on the tiles reads the flags this session just wrote.
             await CardMarksStore.shared.remark()

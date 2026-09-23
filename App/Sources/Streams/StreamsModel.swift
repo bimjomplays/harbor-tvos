@@ -122,16 +122,21 @@ final class StreamsModel: ObservableObject {
         var data: Link?
         var via: String?
         var code: String?
+        /// Set for a home-server copy: who to report progress to, and where the server left off.
+        var homeServer: HomeServerSession?
     }
 
     /// A home-server copy resolves through the server (direct play or transcode).
     func play(copy: HomeCopy, meta: Meta) async -> Resolved {
-        struct Out: Decodable { var url: String; var headers: [String: String]?; var subtitle: String?; var subtitles: [Resolved.Link.Sub]; var resumeMs: Double }
+        struct Session: Decodable { var connectionId: String; var itemId: String; var versionId: String?; var playbackSessionId: String? }
+        struct Out: Decodable { var url: String; var headers: [String: String]?; var subtitle: String?; var subtitles: [Resolved.Link.Sub]; var resumeMs: Double; var session: Session }
         do {
             let o: Out = try await HarborEngine.shared.call("homeServers.play", [meta, copy.connectionId, copy.itemId, copy.versionId])
-            return Resolved(ok: true, data: Resolved.Link(url: o.url, filename: nil, headers: o.headers, notWebReady: true, subtitles: o.subtitles), via: o.subtitle, code: nil)
+            let session = HomeServerSession(connectionId: o.session.connectionId, itemId: o.session.itemId, versionId: o.session.versionId,
+                                            playbackSessionId: o.session.playbackSessionId, resumeSec: o.resumeMs / 1000)
+            return Resolved(ok: true, data: Resolved.Link(url: o.url, filename: nil, headers: o.headers, notWebReady: true, subtitles: o.subtitles), via: o.subtitle, code: nil, homeServer: session)
         } catch {
-            return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription)
+            return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription, homeServer: nil)
         }
     }
 
