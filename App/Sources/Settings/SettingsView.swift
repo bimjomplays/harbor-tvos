@@ -12,7 +12,7 @@ struct SettingsView: View {
     @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
-    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb; var id: Int { hashValue } }
+    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons; var id: Int { hashValue } }
 
     var body: some View {
         ScrollView {
@@ -37,6 +37,10 @@ struct SettingsView: View {
                             Button("Sign in") { sheet = .stremio }.buttonStyle(BPActionStyle(primary: true))
                         }
                     }
+                }
+                section("Addons") {
+                    row("Stream and catalog addons", detail: "Installed on this TV plus the ones on your Stremio account")
+                    Button("Manage addons") { sheet = .addons }.buttonStyle(BPActionStyle(primary: true))
                 }
                 section("Artwork and rows") {
                     row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB key saved",
@@ -107,6 +111,8 @@ struct SettingsView: View {
                         TmdbKeyForm(done: { sheet = nil }, skip: { sheet = nil })
                     }
                     .padding(BP.gutter)
+                case .addons:
+                    AddonsView()
                 case .spikes:
                     SpikeMenuView()
                 }
