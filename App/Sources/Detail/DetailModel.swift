@@ -20,6 +20,16 @@ final class DetailModel: ObservableObject {
     @Published private(set) var seasons: [Int] = []
     @Published var season: Int = 1
     @Published private(set) var loading = false
+    /// Resume state for the Play button (detail-spec §1.3/1.4): where the viewer left off.
+    @Published private(set) var resume: Resume?
+
+    struct Resume: Equatable {
+        var season: Int?
+        var episode: Int?
+        var positionMs: Double
+        var durationMs: Double
+        var progress: Double { durationMs > 0 ? min(1, max(0, positionMs / durationMs)) : 0 }
+    }
 
     init(meta: Meta) { self.meta = meta }
 
@@ -34,6 +44,59 @@ final class DetailModel: ObservableObject {
             meta = full
         }
         buildEpisodes()
+        await loadResume()
+    }
+
+    /// Cloud library entry first (Stremio), else the local resume store, like bpResumeMark.
+    private func loadResume() async {
+        struct Item: Decodable {
+            struct State: Decodable { var timeOffset: Double?; var duration: Double?; var season: Int?; var episode: Int?; var video_id: String? }
+            var state: State?
+        }
+        struct Local: Decodable { var ms: Double; var pct: Double? }
+        let p = ProfilesStore.shared.active
+        if let authKey = p.flatMap({ ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }),
+           let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, meta.id]),
+           let st = item?.state, let off = st.timeOffset, off > 0 {
+            var s = st.season, e = st.episode
+            if (s == nil || e == 0), let vid = st.video_id {
+                let parts = vid.split(separator: ":")
+                if parts.count >= 3, let ps = Int(parts[parts.count - 2]), let pe = Int(parts[parts.count - 1]) { s = ps; e = pe }
+            }
+            resume = Resume(season: isSeries ? s : nil, episode: isSeries ? e : nil, positionMs: off, durationMs: st.duration ?? 0)
+            if let s, isSeries, seasons.contains(s) { season = s }
+            return
+        }
+        if !isSeries, let local: Local? = try? await HarborEngine.shared.call("player.localResume", [meta.id, AnyJSON.null, AnyJSON.null]), let l = local {
+            resume = Resume(season: nil, episode: nil, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
+        } else if isSeries {
+            // Scan this season's episodes for the most recent local entry.
+            var best: (Episode, Local)?
+            for ep in episodes {
+                if let l: Local? = try? await HarborEngine.shared.call("player.localResume", [meta.id, ep.season, ep.episode]), let l, l.ms > 0 {
+                    best = (ep, l)
+                }
+            }
+            if let (ep, l) = best {
+                resume = Resume(season: ep.season, episode: ep.episode, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
+                season = ep.season
+            }
+        }
+    }
+
+    /// The episode Play should start with: the resume target, else the first of the current season.
+    var playTarget: Episode? {
+        if let r = resume, let s = r.season, let e = r.episode, let ep = episodes.first(where: { $0.season == s && $0.episode == e }) { return ep }
+        return seasonEpisodes.first
+    }
+
+    var playLabel: String {
+        if let r = resume {
+            if isSeries, let s = r.season, let e = r.episode { return "Resume S\(s):E\(e)" }
+            if r.positionMs > 60_000 { return "Resume" }
+        }
+        if isSeries, let t = playTarget { return "Play S\(t.season) E\(t.episode)" }
+        return "Play"
     }
 
     private func buildEpisodes() {

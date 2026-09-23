@@ -59,8 +59,8 @@ struct EngineBrowseSource: BrowseSource {
 
     func continueWatching() async throws -> [ContinueItem] {
         let p = await profile
-        guard let authKey = p.authKey else { return [] }
-        let items: [LibraryItem] = try await HarborEngine.shared.call("stremio.continueWatching", [authKey])
+        // Cloud library (when signed in to Stremio) merged with this TV's own resume entries.
+        let items: [LibraryItem] = try await HarborEngine.shared.call("rooms.continueWatchingFor", [p.id, p.linked, p.authKey])
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return items.map { i in

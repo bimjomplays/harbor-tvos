@@ -52,7 +52,16 @@ struct DetailView: View {
             }
         }
         .fullScreenCover(item: $playing) { t in
-            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context) { playing = nil }
+            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context) { natural in
+                playing = nil
+                // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
+                if natural, let s = t.context.season, let e = t.context.episode,
+                   let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }),
+                   idx + 1 < model.episodes.count {
+                    let next = model.episodes[idx + 1]
+                    if next.season > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, next.playEpisode) } }
+                }
+            }
         }
     }
 
@@ -89,10 +98,19 @@ struct DetailView: View {
             }
             HStack(spacing: BP.px(8)) {
                 Button {
-                    if model.isSeries, let first = model.seasonEpisodes.first { picker = (model.meta, first.playEpisode) }
+                    if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) }
                     else { picker = (model.meta, nil) }
                 } label: {
-                    Label(model.isSeries ? "Play S\(model.season) E\(model.seasonEpisodes.first?.episode ?? 1)" : "Play", systemImage: "play.fill")
+                    VStack(spacing: 0) {
+                        Label(model.playLabel, systemImage: "play.fill")
+                        // Progress under Play, only mid-way through (0.01 < progress < 0.97).
+                        if let r = model.resume, r.progress > 0.01, r.progress < 0.97 {
+                            GeometryReader { g in
+                                Capsule().fill(BP.accent).frame(width: g.size.width * r.progress, height: BP.px(3))
+                            }
+                            .frame(height: BP.px(3))
+                        }
+                    }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
                 .accessibilityIdentifier("detail-play")

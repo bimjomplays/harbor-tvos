@@ -9,7 +9,8 @@ struct PlayerScreen: View {
     let url: URL
     var headers: [String: String] = [:]
     var context: PlaybackContext? = nil
-    let onClose: () -> Void
+    /// `true` when the file played to its end (next-episode logic keys off this).
+    let onClose: (_ endedNaturally: Bool) -> Void
 
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
@@ -207,7 +208,7 @@ struct PlayerScreen: View {
             } else {
                 await saveTick(flush: true)
             }
-            onClose()
+            onClose(natural)
         }
     }
 }

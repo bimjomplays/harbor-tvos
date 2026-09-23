@@ -16,6 +16,9 @@ import { showSpecs } from "@/views/shows/show-specs";
 import { buildMovieHero, HERO_POOL_TARGET, movieSpecs, rotateDaily } from "@/views/movies/movie-specs";
 import type { Settings } from "@/lib/settings/types";
 import { loadEffective } from "@/lib/settings/profile-store";
+import { library, cwSortKey, isCwMember, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
+import { isCwDismissed } from "@/lib/cw-dismiss";
+import { listLocalCw, type LocalCwEntry } from "@/lib/local-cw";
 
 export type RoomKind = "movies" | "shows";
 export type RoomRow = {
@@ -202,4 +205,37 @@ export function homeFor(profileId: string, linked: boolean, authKey: string | nu
 /** Same as `catalog`, reading the effective settings for a profile inside the engine. */
 export function catalogFor(kind: RoomKind, profileId: string, linked: boolean): Promise<RoomBuild> {
   return catalog(kind, loadEffective(profileId, linked));
+}
+
+// ----------------------------------------------------------------- Continue Watching
+// views/mobile/mobile-cw-row.tsx useMobileCw: cloud library + local resume entries, merged and
+// sorted by recency. Trakt/Simkl imports join when those trackers arrive.
+function localToLibraryItem(e: LocalCwEntry): LibraryItem {
+  return {
+    _id: e.id, type: e.type, name: e.name, poster: e.poster, background: e.background,
+    state: {
+      timeOffset: e.positionMs, duration: e.durationMs, season: e.season, episode: e.episode, video_id: e.videoId,
+      flaggedWatched: e.durationMs > 0 && e.positionMs / e.durationMs >= 0.9 ? 1 : 0,
+      lastWatched: new Date(e.t).toISOString(),
+    },
+    removed: false, temp: false, _ctime: new Date(e.t).toISOString(), _mtime: new Date(e.t).toISOString(), local: true,
+  } as LibraryItem;
+}
+
+export async function continueWatching(authKey: string | null, settings: Settings, limit = 40): Promise<LibraryItem[]> {
+  const cloud = authKey ? await library(authKey).catch(() => [] as LibraryItem[]) : [];
+  const local = listLocalCw().map(localToLibraryItem);
+  const seen = new Set<string>();
+  const merged = [...cloud, ...local]
+    .filter((i) => (i.type as string) !== "other" && !i._id.startsWith("iptv:") && !isCwDismissed(i) && isCwMember(i)
+      && !(settings.animeOnlyInAnimeRoom && isAnimeCwItem(i)))
+    .map((i) => ({ i, k: cwSortKey(i) }))
+    .sort((a, b) => b.k - a.k)
+    .map((e) => e.i)
+    .filter((i) => (seen.has(i._id) ? false : (seen.add(i._id), true)));
+  return merged.slice(0, limit);
+}
+
+export function continueWatchingFor(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<LibraryItem[]> {
+  return continueWatching(authKey, loadEffective(profileId, linked), limit);
 }
