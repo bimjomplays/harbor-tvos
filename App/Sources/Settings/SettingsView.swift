@@ -12,7 +12,8 @@ struct SettingsView: View {
     @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
-    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons; var id: Int { hashValue } }
+    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs; var id: Int { hashValue } }
+    private static let languages = ["English", "Spanish", "Portuguese", "French", "German", "Italian", "Dutch", "Polish", "Russian", "Turkish", "Arabic", "Japanese", "Korean", "Chinese", "Hindi", "Swedish", "Norwegian", "Danish", "Finnish", "Greek", "Czech", "Hungarian", "Romanian", "Indonesian"]
 
     var body: some View {
         ScrollView {
@@ -53,6 +54,10 @@ struct SettingsView: View {
                         }
                     }
                     if let tmdbTestNote { BPNote(text: tmdbTestNote, tone: tmdbTestNote.hasPrefix("OK") ? BP.live : BP.danger) }
+                }
+                section("Playback") {
+                    row("Subtitle languages: \(settings.slice.preferredSubLangs.joined(separator: ", "))", detail: "First match wins when searching online subtitles")
+                    Button("Choose subtitle languages") { sheet = .subLangs }.buttonStyle(BPActionStyle())
                 }
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
@@ -113,6 +118,27 @@ struct SettingsView: View {
                     .padding(BP.gutter)
                 case .addons:
                     AddonsView()
+                case .subLangs:
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: BP.px(12)) {
+                            Text("Which subtitle languages, in order?").font(BP.display(30)).foregroundStyle(BP.ink)
+                            BPNote(text: "First match wins. Most people need only one. Pick again to remove.")
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(10)), count: 4), spacing: BP.px(10)) {
+                                ForEach(Self.languages, id: \.self) { lang in
+                                    let idx = settings.slice.preferredSubLangs.firstIndex(of: lang)
+                                    Button(idx.map { "\($0 + 1) · \(lang)" } ?? lang) {
+                                        var list = settings.slice.preferredSubLangs
+                                        if let i = idx { list.remove(at: i) } else { list.append(lang) }
+                                        if list.isEmpty { list = ["English"] }
+                                        Task { try? await settings.patch(["preferredSubLangs": .array(list.map { .string($0) })]) }
+                                    }
+                                    .buttonStyle(BPActionStyle(primary: idx != nil))
+                                }
+                            }
+                            Button("Done") { sheet = nil }.buttonStyle(BPActionStyle(primary: true))
+                        }
+                        .padding(BP.gutter)
+                    }
                 case .spikes:
                     SpikeMenuView()
                 }

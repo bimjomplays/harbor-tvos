@@ -14,6 +14,8 @@ final class SettingsBridge: ObservableObject {
         var homeMode: String = "harbor"
         var uiLanguage: String = "en"
         var animeOnlyInAnimeRoom: Bool = true
+        var preferredSubLangs: [String] = ["English"]
+        var preferredAudioLangs: [String]? = nil
     }
 
     @Published private(set) var slice = Slice()
