@@ -246,6 +246,54 @@ export function nowNext(playlistId: string, channelIds: string[], nowMs = Date.n
   });
 }
 
+export type LaneCell = { startMs: number; endMs: number; program: ProgramView | null };
+
+const SLOT_MS = 30 * 60_000;
+const MIN_GAP_MS = 1000;
+
+// use-bp-guide-data.ts buildLane/closeGap (not exported upstream): a lane is contiguous and
+// gapless across the window, empty stretches sliced on half-hour boundaries.
+function closeGap(out: LaneCell[], from: number, to: number): void {
+  if (to <= from) return;
+  if (to - from < MIN_GAP_MS && out.length > 0) { out[out.length - 1].endMs = to; return; }
+  let cur = from;
+  while (cur < to) {
+    const next = Math.min(to, Math.floor(cur / SLOT_MS) * SLOT_MS + SLOT_MS);
+    out.push({ startMs: cur, endMs: next, program: null });
+    cur = next;
+  }
+}
+
+function buildLane(programs: readonly EpgProgram[], windowStart: number, windowEnd: number): LaneCell[] {
+  const inWindow = programs.filter((p) => p.endMs > windowStart && p.startMs < windowEnd).sort((a, b) => a.startMs - b.startMs);
+  const out: LaneCell[] = [];
+  let cursor = windowStart;
+  for (const program of inWindow) {
+    const endMs = Math.min(program.endMs, windowEnd);
+    if (endMs <= cursor) continue;
+    const startMs = Math.max(program.startMs, cursor);
+    closeGap(out, cursor, startMs);
+    out.push({ startMs, endMs, program: view(program) });
+    cursor = endMs;
+  }
+  closeGap(out, cursor, windowEnd);
+  return out;
+}
+
+/** Guide lanes for a screenful of channels: gapless cells over [windowStart, windowEnd). */
+export function lanes(playlistId: string, channelIds: string[], windowStart: number, windowEnd: number): Array<{ id: string; cells: LaneCell[] }> {
+  const all = loaded.get(playlistId) ?? [];
+  const epg = epgCache.get(playlistId)?.index ?? null;
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const counts = computeTvgIdCounts(all);
+  const offset = epgOffsetHoursPref();
+  return channelIds.map((id) => {
+    const ch = byId.get(id);
+    const programs = ch && epg && epg.byChannel.size > 0 ? epgProgramsForChannel(ch, epg, counts, offset) ?? [] : [];
+    return { id, cells: buildLane(programs, windowStart, windowEnd) };
+  });
+}
+
 /** One channel's programmes inside a window (the guide lane / "what's on later"). */
 export function schedule(playlistId: string, channelId: string, fromMs: number, toMs: number): ProgramView[] {
   const all = loaded.get(playlistId) ?? [];

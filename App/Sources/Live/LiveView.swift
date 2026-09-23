@@ -132,6 +132,8 @@ struct LiveView: View {
     @StateObject private var model = LiveModel()
     @State private var playing: LiveModel.Channel?
     @State private var showSources = false
+    /// bp-live shows the guide grid; the list is the fallback when a source has no guide.
+    @State private var grid = true
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -145,6 +147,8 @@ struct LiveView: View {
                     } else if model.visible.isEmpty {
                         BPNote(text: model.category == LiveModel.favKey ? "No favorites yet. Press the star on a channel to keep it up here." : (model.error ?? "No channels in this category."), tone: model.error == nil ? BP.inkMuted : BP.danger)
                             .padding(.top, BP.px(20))
+                    } else if grid && model.guideNote == nil {
+                        LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } })
                     } else {
                         guideList
                     }
@@ -180,6 +184,9 @@ struct LiveView: View {
                         Task { await model.refreshNowNext() }
                     }
                     .buttonStyle(BPActionStyle(primary: model.category == c.key))
+                }
+                if model.guideNote == nil {
+                    Button(grid ? "List" : "Guide") { grid.toggle() }.buttonStyle(BPActionStyle())
                 }
                 if let note = model.guideNote { BPNote(text: note).padding(.leading, BP.px(8)) }
             }

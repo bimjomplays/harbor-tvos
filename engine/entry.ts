@@ -490,6 +490,7 @@ export const live = {
   loadEpg: liveGlue.loadEpg,
   nowNext: liveGlue.nowNext,
   schedule: liveGlue.schedule,
+  lanes: liveGlue.lanes,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */

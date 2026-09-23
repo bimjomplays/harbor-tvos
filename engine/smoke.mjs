@@ -217,6 +217,12 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("nowNext: unmatched channel is unknown, not guessed", espn && espn.known === false);
   const sched = rec.engine.live.schedule(pl.id, cnn.id, now, now + 3 * 3600000);
   r.eq("live.schedule returns the window's programmes", sched.map((p) => p.title), ["Newsroom", "The Lead"]);
+  const slot = 30 * 60000;
+  const ws = Math.floor((now - 60 * 60000) / slot) * slot;
+  const lanesOut = rec.engine.live.lanes(pl.id, [cnn.id, espn.id], ws, ws + 6 * 3600000);
+  const cnnLane = lanesOut[0].cells, espnLane = lanesOut[1].cells;
+  r.ok("live.lanes: gapless, contiguous, ends at the window edge", cnnLane[0].startMs === ws && cnnLane[cnnLane.length - 1].endMs === ws + 6 * 3600000 && cnnLane.every((c, i) => i === 0 || c.startMs === cnnLane[i - 1].endMs), JSON.stringify(cnnLane.map((c) => [c.program && c.program.title, (c.endMs - c.startMs) / 60000])));
+  r.ok("live.lanes: programmes keep exact bounds, gaps are half-hour slices", cnnLane.some((c) => c.program && c.program.title === "Newsroom" && Math.abs(c.startMs - (now - 20 * 60000)) < 1000) && espnLane.every((c) => c.program === null && c.endMs - c.startMs <= slot));
   r.ok("xtream login URL is detected and stored with creds + derived EPG", (() => {
     const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
     return x.kind === "xtream" && x.xtream && x.xtream.username === "u" && /xmltv\.php/.test(x.epgUrl || "");
