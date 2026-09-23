@@ -131,7 +131,8 @@ export const addonStore = {
   seedDefaultAddonsIfFirstRun: upstreamAddonStore.seedDefaultAddonsIfFirstRun,
   manifestToConfigureUrl: upstreamAddonStore.manifestToConfigureUrl,
   manifestToShareUrl: upstreamAddonStore.manifestToShareUrl,
-  loadDisabledAddons: upstreamAddonStore.loadDisabledAddons,
+  // A Set does not survive JSON.stringify; hand Swift an array.
+  loadDisabledAddons: () => Array.from(upstreamAddonStore.loadDisabledAddons()),
 };
 
 // ================================================================================ cinemeta

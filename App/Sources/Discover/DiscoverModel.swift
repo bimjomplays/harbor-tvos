@@ -21,7 +21,7 @@ final class DiscoverModel: ObservableObject {
 
     private var profile: (id: String, linked: Bool) {
         let p = ProfilesStore.shared.active
-        return (p?.id ?? "default", p?.isPrimary ?? true)
+        return (p?.id ?? "default", p?.linked ?? true)
     }
 
     func load() async {

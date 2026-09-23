@@ -25,7 +25,7 @@ final class SettingsBridge: ObservableObject {
         get async {
             let p = ProfilesStore.shared.active
             let id = p?.id ?? "default"
-            return (try? await HarborEngine.shared.call("settings.sourceKeyFor", [id, p?.isPrimary ?? true])) ?? "harbor.settings"
+            return (try? await HarborEngine.shared.call("settings.sourceKeyFor", [id, p?.linked ?? true])) ?? "harbor.settings"
         }
     }
 

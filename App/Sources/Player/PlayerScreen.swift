@@ -50,8 +50,9 @@ struct PlayerScreen: View {
                 BP.void_.ignoresSafeArea()
             }
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
-            Color.clear.contentShape(Rectangle())
-                .focusable(panel == nil)
+            Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .disabled(panel != nil)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
@@ -186,7 +187,10 @@ struct PlayerScreen: View {
         refreshTracks()
         panel = p
         hideTask?.cancel()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(-1) }
+        // Subtitles has an "Off" row (-1); Audio focuses its first track, or the panel's chip row is left to Menu.
+        let kind = p == .subtitles ? "sub" : "audio"
+        let target = p == .subtitles ? -1 : (tracks.first { $0.type == kind }?.id ?? -1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(target) }
     }
 
     private func refreshTracks() { tracks = controller?.tracks() ?? [] }
@@ -199,7 +203,7 @@ struct PlayerScreen: View {
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
         do {
             let results: [OnlineSubtitle] = try await HarborEngine.shared.call("subtitles.search",
-                [p?.id ?? "default", p?.isPrimary ?? true, authKey, context.meta, context.season, context.episode, context.imdbId])
+                [p?.id ?? "default", p?.linked ?? true, authKey, context.meta, context.season, context.episode, context.imdbId])
             online = results
             onlineState = results.isEmpty ? "Nothing found online." : nil
         } catch {

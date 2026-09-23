@@ -39,7 +39,7 @@ struct EngineBrowseSource: BrowseSource {
         let p = ProfilesStore.shared.active
         let id = p?.id ?? "default"
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
-        return (id, p?.isPrimary ?? true, authKey)
+        return (id, p?.linked ?? true, authKey)
     }
 
     func rows(for room: Room) async throws -> [BrowseRow] {

@@ -84,7 +84,7 @@ final class StreamsModel: ObservableObject {
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
         do {
             let r: SearchResult = try await HarborEngine.shared.call("streamsRoom.search",
-                [token, p?.id ?? "default", p?.isPrimary ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object([:])])
+                [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object([:])])
             if let err = r.error { phase = .failed(err); return }
             addonCount = r.addonCount
             debridErrors = (r.result?.debridErrors ?? []).map { "\($0.name): \($0.code)" }
@@ -119,7 +119,7 @@ final class StreamsModel: ObservableObject {
     func resolve(_ stream: ScoredStream) async -> Resolved {
         let p = ProfilesStore.shared.active
         do {
-            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.isPrimary ?? true, token, stream.index, true])
+            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true])
         } catch {
             return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription)
         }

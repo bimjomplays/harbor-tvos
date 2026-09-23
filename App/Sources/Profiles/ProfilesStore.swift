@@ -16,6 +16,9 @@ final class ProfilesStore: ObservableObject {
         var kid: SyncReader.WireProfile.Kid?
         var passwordHash: String?
         var createdAt: Double
+        /// Settings shared with the primary profile (upstream `settingsLinked`, default true).
+        var settingsLinked: Bool? = nil
+        var linked: Bool { settingsLinked ?? true }
     }
 
     struct StremioSession: Codable, Equatable {
@@ -50,6 +53,7 @@ final class ProfilesStore: ObservableObject {
             var p = existing ?? Profile(id: Self.newId(), syncId: w.syncId, name: w.name, avatar: w.avatar, color: w.color,
                                         isPrimary: w.isPrimary, kid: w.kid, passwordHash: nil, createdAt: w.createdAt)
             p.syncId = w.syncId; p.name = w.name; p.avatar = w.avatar; p.color = w.color; p.isPrimary = w.isPrimary; p.kid = w.kid
+            p.settingsLinked = w.settingsLinked
             idMap[p.id] = w.syncId
             next.append(p)
         }
