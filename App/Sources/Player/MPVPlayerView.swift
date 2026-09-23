@@ -5,6 +5,8 @@ struct MPVPlayerView: UIViewControllerRepresentable {
     var headers: [String: String] = [:]
     var startAt: Double = 0
     var isLive: Bool = false
+    var preferredAudio: [String] = []
+    var preferredSubs: [String] = []
     let onStatus: (MPVPlayerController.Status) -> Void
     var onEnded: (() -> Void)? = nil
     var onReady: ((MPVPlayerController) -> Void)? = nil
@@ -15,6 +17,8 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         c.headers = headers
         c.startAtSeconds = startAt
         c.isLive = isLive
+        c.preferredAudio = preferredAudio
+        c.preferredSubs = preferredSubs
         c.onStatus = onStatus
         c.onEnded = onEnded
         DispatchQueue.main.async { onReady?(c) }

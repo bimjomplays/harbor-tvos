@@ -16,6 +16,19 @@ final class SettingsBridge: ObservableObject {
         var animeOnlyInAnimeRoom: Bool = true
         var preferredSubLangs: [String] = ["English"]
         var preferredAudioLangs: [String]? = nil
+        // Subtitle style (settings/defaults.ts:265-293), mapped to mpv in MPVPlayerController.
+        var subFontSize: Double? = 32
+        var subFontColor: String? = "#FFFFFF"
+        var subBorderColor: String? = "#000000"
+        var subBorderSize: Double? = 0
+        var subMarginY: Double? = 12
+        var subAlignX: String? = "center"
+        var subStyle: String? = "shadow"
+        var subBold: Bool? = false
+        var subBoxOpacity: Double? = 0.6
+        var subBoxColor: String? = "#000000"
+        var subOpacity: Double? = 1
+        var subLineSpacing: Double? = 0
     }
 
     @Published private(set) var slice = Slice()

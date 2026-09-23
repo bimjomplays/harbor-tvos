@@ -68,7 +68,10 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             if let startAt {
-                MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive, onStatus: { status = $0 }, onEnded: { finish(natural: true) }, onReady: { controller = $0 })
+                MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
+                              preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
+                              preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                              onStatus: { status = $0 }, onEnded: { finish(natural: true) }, onReady: { controller = $0 })
                     .ignoresSafeArea()
             } else {
                 BP.void_.ignoresSafeArea()

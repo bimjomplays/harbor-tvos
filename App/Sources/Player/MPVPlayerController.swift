@@ -23,6 +23,9 @@ final class MPVPlayerController: UIViewController {
     var onEnded: (() -> Void)?
     /// Live stream: upstream's live cache set instead of the VOD one (mpv.rs:889-902).
     var isLive = false
+    /// Preferred audio / subtitle languages (upstream `preferredAudioLangs` / `preferredSubLangs`, names like "English").
+    var preferredAudio: [String] = []
+    var preferredSubs: [String] = []
 
     private let layer = MPVMetalLayer()
     private var mpv: OpaquePointer?
@@ -116,6 +119,7 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "sid", "no"))
         check(mpv_set_option_string(handle, "secondary-sid", "no"))
         check(mpv_set_option_string(handle, "embeddedfonts", "yes"))
+        applySubtitleStyle(handle)
         check(mpv_set_option_string(handle, "subs-fallback", "yes"))
         check(mpv_set_option_string(handle, "keep-open", "yes"))
         check(mpv_initialize(handle))
@@ -203,6 +207,64 @@ final class MPVPlayerController: UIViewController {
     /// `sub-add <file> select <title> <lang>` (mpv.rs:1063 uses "auto"; we select the one the viewer picked).
     func addSubtitle(file: URL, title: String, lang: String) {
         command("sub-add", [file.path, "select", title, lang])
+    }
+
+    /// src/lib/player/sub-style.ts applySubStyle → mpv sub-* options, from the viewer's settings.
+    private func applySubtitleStyle(_ handle: OpaquePointer) {
+        let s = SettingsBridge.shared.slice
+        let opacity = s.subOpacity ?? 1
+        func mpvColor(_ hex: String?, _ alpha: Double) -> String {
+            var h = (hex ?? "#FFFFFF").trimmingCharacters(in: .whitespaces); if h.hasPrefix("#") { h.removeFirst() }
+            guard h.count == 6 else { return "#FFFFFFFF" }
+            let a = String(format: "%02X", Int((min(max(alpha, 0), 1) * 255).rounded()))
+            return "#\(a)\(h.uppercased())"
+        }
+        let style = s.subStyle ?? "shadow"
+        let fontsDir = Bundle.main.bundleURL.path
+        check(mpv_set_option_string(handle, "sub-fonts-dir", fontsDir))
+        check(mpv_set_option_string(handle, "sub-font", "Switzer"))
+        check(mpv_set_option_string(handle, "sub-font-size", "32"))
+        check(mpv_set_option_string(handle, "sub-scale", String(min(max((s.subFontSize ?? 32) / 32, 0.4), 4))))
+        check(mpv_set_option_string(handle, "sub-color", mpvColor(s.subFontColor, opacity)))
+        check(mpv_set_option_string(handle, "sub-border-color", mpvColor(s.subBorderColor, opacity)))
+        check(mpv_set_option_string(handle, "sub-border-size", String(s.subBorderSize ?? 0)))
+        check(mpv_set_option_string(handle, "sub-back-color", style == "box" ? mpvColor(s.subBoxColor, (s.subBoxOpacity ?? 0.6) * opacity) : "#00000000"))
+        check(mpv_set_option_string(handle, "sub-shadow-color", mpvColor("#000000", opacity)))
+        check(mpv_set_option_string(handle, "sub-shadow-offset", style == "shadow" ? "1.4" : "0"))
+        check(mpv_set_option_string(handle, "sub-margin-y", String(Int(min(max(s.subMarginY ?? 12, 0), 100)))))
+        check(mpv_set_option_string(handle, "sub-align-x", s.subAlignX ?? "center"))
+        check(mpv_set_option_string(handle, "sub-spacing", String(s.subLineSpacing ?? 0)))
+        check(mpv_set_option_string(handle, "sub-bold", (s.subBold ?? false) ? "yes" : "no"))
+        check(mpv_set_option_string(handle, "sub-pos", String(Int(min(max(100 - (s.subMarginY ?? 12), 0), 100)))))
+    }
+
+    /// Pick the first audio track matching the preferred languages (in order); subtitles stay
+    /// off unless an embedded track matches a preferred language (upstream keeps `sid=no` until
+    /// its own choice; mpv.rs:991-1007, player-spec §2.9).
+    private func applyTrackPreferences() {
+        let list = tracks()
+        func matches(_ t: Track, _ names: [String]) -> Int? {
+            guard let lang = t.lang?.lowercased() else { return nil }
+            for (i, name) in names.enumerated() {
+                let code = Locale(identifier: "en").localizedString(forLanguageCode: lang)?.lowercased() ?? lang
+                if code == name.lowercased() || lang == name.lowercased() || lang.hasPrefix(String(name.lowercased().prefix(2))) && name.count <= 3 { return i }
+            }
+            return nil
+        }
+        if !preferredAudio.isEmpty {
+            let audio = list.filter { $0.type == "audio" }
+            if let best = audio.compactMap({ t in matches(t, preferredAudio).map { ($0, t) } }).min(by: { $0.0 < $1.0 }) {
+                select(track: best.1, type: "audio")
+                push("audio: \(best.1.label)")
+            }
+        }
+        if !preferredSubs.isEmpty {
+            let subs = list.filter { $0.type == "sub" }
+            if let best = subs.compactMap({ t in matches(t, preferredSubs).map { ($0, t) } }).min(by: { $0.0 < $1.0 }) {
+                select(track: best.1, type: "sub")
+                push("subs: \(best.1.label)")
+            }
+        }
     }
 
     func setPaused(_ paused: Bool) {
@@ -309,6 +371,7 @@ final class MPVPlayerController: UIViewController {
                 case MPV_EVENT_FILE_LOADED:
                     self.push("file loaded")
                     if self.startAtSeconds > 1 { self.seek(to: self.startAtSeconds); self.startAtSeconds = 0 }
+                    self.applyTrackPreferences()
                 case MPV_EVENT_END_FILE:
                     if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
                         if ef.pointee.error < 0 { self.push("end: \(String(cString: mpv_error_string(ef.pointee.error)))") }
