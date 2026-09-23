@@ -84,7 +84,12 @@ struct ProfileEditorView: View {
             groups = (try? await HarborEngine.shared.call("profilesRoom.avatars", [])) ?? []
             colors = (try? await HarborEngine.shared.call("profilesRoom.colors", [])) ?? ProfilesStore.colors
             if color.isEmpty {
-                color = editing?.color ?? ((try? await HarborEngine.shared.call("profilesRoom.pickColor", [profiles.profiles.map(\.color)])) ?? colors.first ?? ProfilesStore.colors[0])
+                if let c = editing?.color { color = c }
+                else {
+                    // Not inside `??`: its right-hand side is an autoclosure that cannot await.
+                    let picked: String? = try? await HarborEngine.shared.call("profilesRoom.pickColor", [profiles.profiles.map(\.color)])
+                    color = picked ?? colors.first ?? ProfilesStore.colors[0]
+                }
             }
         }
         .onExitCommand { dismiss() }

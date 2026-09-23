@@ -6,7 +6,7 @@ import SwiftUI
 /// `FixtureBrowseSource` feeds simulator screenshots without the network.
 protocol BrowseSource {
     func rows(for room: Room) async throws -> [BrowseRow]
-    func continueWatching() async throws -> [ContinueItem]
+    func continueWatching(for room: Room) async throws -> [ContinueItem]
 }
 
 @MainActor
@@ -23,17 +23,37 @@ final class BrowseModel: ObservableObject {
     private var cardFocused = false
     private var heroIndex = 0
 
+    private var unsubscribe: (() -> Void)?
+    private var refreshTask: Task<Void, Never>?
+
     init(room: Room, source: BrowseSource) {
         self.room = room
         self.source = source
+        if room == .anime, !(source is FixtureBrowseSource) {
+            // Jikan rows land one by one; re-read the page (from memory) after each burst.
+            unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
+                guard type == "harbor:anime-updated" else { return }
+                self?.refreshTask?.cancel()
+                self?.refreshTask = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    await self?.load()
+                }
+            }
+        }
     }
+
+    deinit { unsubscribe?(); refreshTask?.cancel(); heroTask?.cancel() }
 
     private var cacheKey: String { "bp.room.\(room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
     /// Fixture rows never touch the cache, so a screenshot run cannot poison a live one.
     private var cacheable: Bool { !(source is FixtureBrowseSource) }
 
+    private var reloadPending = false
+
     func load() async {
-        guard !loading else { return }
+        // A refresh asked for mid-load runs once this one finishes, so the last arrival is never lost.
+        guard !loading else { reloadPending = true; return }
         loading = true; failed = nil
         // Last session's shelves first (bp-home-cache): a TV kills the process between
         // sessions and nobody should watch an empty screen while the live build runs.
@@ -43,11 +63,11 @@ final class BrowseModel: ObservableObject {
         }
         do {
             async let r = source.rows(for: room)
-            async let cw = source.continueWatching()
+            async let cw = source.continueWatching(for: room)
             let live = try await r
             rows = live
             if cacheable { try? CacheStore.shared.set(live, for: cacheKey) }
-            continueWatching = room == .anime ? [] : ((try? await cw) ?? [])
+            continueWatching = (try? await cw) ?? []
             // A stale spotlight (from the cache, or a title that fell off the rows) resets.
             let known = Set(live.flatMap { $0.metas.map(\.id) })
             if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true { spotlight = live.first?.metas.first }
@@ -57,6 +77,7 @@ final class BrowseModel: ObservableObject {
             if rows.isEmpty { failed = error.localizedDescription }
         }
         loading = false
+        if reloadPending { reloadPending = false; await load() }
     }
 
     func focus(_ meta: Meta) {
@@ -110,7 +131,7 @@ struct FixtureBrowseSource: BrowseSource {
         }
     }
 
-    func continueWatching() async throws -> [ContinueItem] {
+    func continueWatching(for room: Room) async throws -> [ContinueItem] {
         [ContinueItem(id: "cw1", type: "series", name: "Severance", poster: nil, background: nil, logo: nil, season: 2, episode: 4, progress: 0.42, lastWatched: Date()),
          ContinueItem(id: "cw2", type: "movie", name: "Dune: Part Two", poster: nil, background: nil, logo: nil, season: nil, episode: nil, progress: 0.7, lastWatched: Date())]
     }

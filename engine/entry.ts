@@ -67,6 +67,7 @@ import * as sportsGlue from "./sports";
 import * as settingsRoomGlue from "./settingsRoom";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
+import * as animeGlue from "./animeRoom";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
@@ -522,6 +523,14 @@ export const libraryRoom = {
   tabs: libraryGlue.tabs,
   feed: libraryGlue.feed,
   setSort: libraryGlue.setSort,
+};
+
+/** Anime room: progressive Jikan spec rows, anime CW, hero, awards, addon rows (use-bp-anime). */
+export const animeRoom = {
+  page: animeGlue.page,
+  loadMore: animeGlue.loadMore,
+  refresh: animeGlue.refresh,
+  specPage: animeGlue.specPage,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

@@ -51,7 +51,11 @@ struct EngineBrowseSource: BrowseSource {
         case .movies, .shows:
             build = try await HarborEngine.shared.call("rooms.catalogFor", [room == .movies ? "movies" : "shows", p.id, p.linked])
         case .anime:
-            build = try await HarborEngine.shared.call("rooms.anime", [])
+            // use-bp-anime port: returns at once with whatever Jikan rows have landed; the room
+            // re-reads on `harbor:anime-updated`. Rows still loading carry no metas yet.
+            let anime: AnimeBuild = try await HarborEngine.shared.call("animeRoom.page", [p.id, p.linked, p.authKey])
+            if anime.failed { throw BrowseError.empty }
+            return anime.rows.filter { !$0.metas.isEmpty }.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
         default:
             return []
         }
@@ -59,10 +63,23 @@ struct EngineBrowseSource: BrowseSource {
         return build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
     }
 
-    func continueWatching() async throws -> [ContinueItem] {
+    struct AnimeBuild: Decodable {
+        struct Row: Decodable { var key: String; var name: String; var metas: [Meta]; var shape: String; var loading: Bool }
+        var rows: [Row]; var hero: [Meta]; var loading: Bool; var ready: Int; var total: Int; var failed: Bool
+    }
+
+    func continueWatching(for room: Room) async throws -> [ContinueItem] {
         let p = await profile
-        // Cloud library (when signed in to Stremio) merged with this TV's own resume entries.
-        let items: [LibraryItem] = try await HarborEngine.shared.call("rooms.continueWatchingFor", [p.id, p.linked, p.authKey])
+        // Cloud library (when signed in to Stremio) merged with this TV's own resume entries;
+        // the anime room gets upstream's anime-only Continue Watching (one per franchise).
+        let items: [LibraryItem]
+        if room == .anime {
+            struct Page: Decodable { var cw: [LibraryItem] }
+            let page: Page = try await HarborEngine.shared.call("animeRoom.page", [p.id, p.linked, p.authKey])
+            items = page.cw
+        } else {
+            items = try await HarborEngine.shared.call("rooms.continueWatchingFor", [p.id, p.linked, p.authKey])
+        }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return items.map { i in

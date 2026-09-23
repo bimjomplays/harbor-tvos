@@ -475,6 +475,15 @@ if (!OFFLINE) {
   r.ok("discoverRoom.awardDetail has categories with winners", ad.groups.length > 0 && ad.groups[0].entries.length > 0, JSON.stringify({ title: ad.title, groups: ad.groups.length, first: ad.groups[0] && ad.groups[0].entries[0] }));
   const pp = await r.timed("discoverRoom.people(24)", () => engine.discoverRoom.people(24));
   r.ok("discoverRoom.people returns ranked people (or [] if harbor.site is unreachable)", Array.isArray(pp), JSON.stringify(pp.slice(0, 2)));
+  {
+    const first = await engine.animeRoom.page("default", true, null);
+    r.ok("animeRoom.page returns at once while Jikan rows load", Array.isArray(first.rows) && first.total === 16 && typeof first.loading === "boolean", JSON.stringify({ rows: first.rows.length, ready: first.ready, loading: first.loading }));
+    let waited = 0;
+    while (waited < 60000) { await new Promise((res) => setTimeout(res, 2000)); waited += 2000; const p = await engine.animeRoom.page("default", true, null); if (!p.loading) break; }
+    const done = await engine.animeRoom.page("default", true, null);
+    r.ok("animeRoom rows fill in (or Jikan is down and every row reported)", done.ready === done.total, JSON.stringify({ ready: done.ready, rows: done.rows.map((x) => [x.key, x.metas.length, x.shape]).slice(0, 8), hero: done.hero.length }));
+    r.ok("animeRoom ranked rows carry at most 10 and the rank shape", done.rows.filter((x) => x.shape === "rank").every((x) => x.metas.length <= 10), JSON.stringify(done.rows.filter((x) => x.shape === "rank").map((x) => [x.key, x.metas.length])));
+  }
   r.eq("trakt.status when signed out", engine.trakt.status(), { authenticated: false, username: null });
   const dc = await r.timed("trakt.deviceCode()", () => engine.trakt.deviceCode().catch((e) => ({ error: e.message })));
   r.ok("trakt.deviceCode returns a user code (or a clear error)", (dc && dc.userCode && dc.userCode.length >= 6) || (dc && dc.error), JSON.stringify(dc && { code: dc.userCode, url: dc.verificationUrl, error: dc.error }));
