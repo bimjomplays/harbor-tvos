@@ -8,7 +8,11 @@ final class KeyValueStore {
 
     enum Tier { case secret, durable, cache }
 
-    private static let secretPrefixes = ["harbor.auth.", "harbor.theme-session.", "harbor.debrid.", "harbor.keys."]
+    /// Keychain-only keys: the app's own sessions plus upstream's secret-store prefixes
+    /// (docs/engine-report.md §4; `secretStore.isSecretKey` is the authoritative list).
+    private static let secretPrefixes = ["harbor.auth.", "harbor.theme-session", "harbor.debrid.", "harbor.keys.",
+                                         "harbor.trakt.session.v1", "harbor.simkl.session.v1", "harbor.mal.session.v1", "harbor.anilist.session.v1",
+                                         "harbor.lastfm.v1", "harbor.media-server.token.v1", "harbor.plex-auth.device.v1", "harbor.sports.api-sports.v1"]
     private static let durableKeys: Set<String> = ["harbor.profiles.v1", "harbor.active-profile", "harbor.settings.v1", "harbor.sync.account"]
     private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap"]
 

@@ -246,6 +246,11 @@ if (!OFFLINE) {
   r.ok("discoverRoom.awardDetail has categories with winners", ad.groups.length > 0 && ad.groups[0].entries.length > 0, JSON.stringify({ title: ad.title, groups: ad.groups.length, first: ad.groups[0] && ad.groups[0].entries[0] }));
   const pp = await r.timed("discoverRoom.people(24)", () => engine.discoverRoom.people(24));
   r.ok("discoverRoom.people returns ranked people (or [] if harbor.site is unreachable)", Array.isArray(pp), JSON.stringify(pp.slice(0, 2)));
+  r.eq("trakt.status when signed out", engine.trakt.status(), { authenticated: false, username: null });
+  const dc = await r.timed("trakt.deviceCode()", () => engine.trakt.deviceCode().catch((e) => ({ error: e.message })));
+  r.ok("trakt.deviceCode returns a user code (or a clear error)", (dc && dc.userCode && dc.userCode.length >= 6) || (dc && dc.error), JSON.stringify(dc && { code: dc.userCode, url: dc.verificationUrl, error: dc.error }));
+  const scrob = await engine.trakt.scrobble("start", "tt0111161", null, 5);
+  r.eq("trakt.scrobble skips when not connected", scrob, { sent: false, reason: "not-connected" });
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

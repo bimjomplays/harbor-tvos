@@ -63,6 +63,8 @@ struct PlayerScreen: View {
     enum FocusTarget: Hashable { case surface, chip(String), track(Int) }
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var scrobbleState: String?   // last action sent to Trakt
+    @State private var lastScrobblePaused = false
     private static let hideAfter: Double = 4.6   // use-bp-player-chrome.ts
 
     var body: some View {
@@ -107,6 +109,7 @@ struct PlayerScreen: View {
         .onReceive(tick) { _ in
             if let c = controller { snap = c.snapshot() }
             Task { await saveTick(flush: false) }
+            scrobbleTick()
             if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
         }
         .animation(.easeOut(duration: 0.32), value: chrome)
@@ -360,6 +363,29 @@ struct PlayerScreen: View {
         return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
     }
 
+    /// lib/trakt/scrobble-hook.ts: "start" when playing, "pause" on pause, "stop" at the end.
+    private func scrobbleTick() {
+        guard let context, !isLive, snap.duration > 150 else { return }
+        let paused = snap.paused
+        if scrobbleState == nil, !paused, snap.position > 1 { sendScrobble("start") }
+        else if scrobbleState == "start", paused, !lastScrobblePaused { sendScrobble("pause") }
+        else if scrobbleState == "pause", !paused { sendScrobble("start") }
+        lastScrobblePaused = paused
+        _ = context
+    }
+
+    private func sendScrobble(_ action: String) {
+        guard let context else { return }
+        scrobbleState = action
+        let progress = snap.duration > 0 ? snap.position / snap.duration * 100 : 0
+        let ep: AnyJSON = context.season.map { s in
+            .object(["season": .number(Double(s)), "episode": .number(Double(context.episode ?? 1)),
+                     "imdbId": context.imdbId.map { .string($0) } ?? .null,
+                     "imdbSeason": .number(Double(s)), "imdbEpisode": .number(Double(context.episode ?? 1))])
+        } ?? .null
+        Task { _ = try? await HarborEngine.shared.callJSON("trakt.scrobble", [.string(action), .string(context.meta.id), ep, .number(progress)]) }
+    }
+
     /// use-resume-autosave.ts: every 4 s while playing, only if moved ≥ 1.5 s since the last save.
     private func saveTick(flush: Bool) async {
         guard let c = controller, let context else { return }
@@ -370,6 +396,10 @@ struct PlayerScreen: View {
     }
 
     private func finish(natural: Bool) {
+        if scrobbleState != nil {
+            let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0
+            sendScrobble(progress >= 90 ? "stop" : "pause")
+        }
         Task {
             if natural, let c = controller, let context, c.snapshot().duration > 0 {
                 let s = c.snapshot()
