@@ -55,7 +55,7 @@ struct CatalogPageView: View {
     private func loadMore() async {
         guard !loading, !exhausted else { return }
         loading = true; defer { loading = false }
-        let kind = room == .home ? "home" : (room == .movies ? "movies" : "shows")
+        let kind = room == .home ? "home" : (room == .movies ? "movies" : (room == .anime ? "anime" : "shows"))
         let next: [Meta] = (try? await HarborEngine.shared.call("rooms.page", [kind, row.key, page + 1])) ?? []
         if next.isEmpty { exhausted = true; return }
         page += 1

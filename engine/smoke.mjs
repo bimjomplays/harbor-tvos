@@ -212,6 +212,14 @@ if (!OFFLINE) {
     const prep = await r.timed("subtitles.prepare(first)", () => engine.subtitles.prepare(subs[0].url));
     r.ok("subtitles.prepare returns text", prep && prep.text.length > 100 && ["srt", "vtt", "ass", "ssa"].includes(prep.format), JSON.stringify(prep && { format: prep.format, encoding: prep.encoding, len: prep.text.length }));
   }
+  // Jikan (api.jikan.moe) is public and often 429/504s; only judge the builder when it answers.
+  const jikanUp = await fetch("https://api.jikan.moe/v4/top/anime?sfw=true&filter=airing&page=1").then((x) => x.ok, () => false);
+  if (jikanUp) {
+    const an = await r.timed("rooms.anime()", () => engine.rooms.anime());
+    r.ok("rooms.anime returns Jikan rows", an && an.rows.length >= 2 && an.rows[0].metas.length >= 6, JSON.stringify(an && an.rows.map((x) => [x.name, x.metas.length])));
+  } else {
+    console.log("  (skipped rooms.anime: Jikan unreachable right now)");
+  }
   r.ok("rooms.page returns a second page for a pageable row", !pageable || (Array.isArray(pagedMetas) && pagedMetas.length > 0), JSON.stringify({ key: pageable && pageable.key, n: pagedMetas.length }));
 }
 

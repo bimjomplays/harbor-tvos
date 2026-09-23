@@ -47,7 +47,7 @@ final class BrowseModel: ObservableObject {
             let live = try await r
             rows = live
             if cacheable { try? CacheStore.shared.set(live, for: cacheKey) }
-            continueWatching = (try? await cw) ?? []
+            continueWatching = room == .anime ? [] : ((try? await cw) ?? [])
             // A stale spotlight (from the cache, or a title that fell off the rows) resets.
             let known = Set(live.flatMap { $0.metas.map(\.id) })
             if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true { spotlight = live.first?.metas.first }

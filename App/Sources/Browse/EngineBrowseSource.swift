@@ -50,6 +50,8 @@ struct EngineBrowseSource: BrowseSource {
             build = try await HarborEngine.shared.call("rooms.homeFor", [p.id, p.linked, p.authKey])
         case .movies, .shows:
             build = try await HarborEngine.shared.call("rooms.catalogFor", [room == .movies ? "movies" : "shows", p.id, p.linked])
+        case .anime:
+            build = try await HarborEngine.shared.call("rooms.anime", [])
         default:
             return []
         }

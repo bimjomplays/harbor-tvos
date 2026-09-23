@@ -371,6 +371,7 @@ export const rooms = {
   catalogFor: roomBuilders.catalogFor,
   page: roomBuilders.page,
   continueWatchingFor: roomBuilders.continueWatchingFor,
+  anime: roomBuilders.anime,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
 };
 export type { RoomBuild, RoomRow, RoomKind } from "./rooms";

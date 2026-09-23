@@ -4,7 +4,7 @@
 import type { Meta } from "@/lib/cinemeta";
 import { topMovies, topSeries } from "@/lib/cinemeta";
 import type { HomeRow, RowSpec } from "@/views/home/home-types";
-import { buildCinemetaRows, buildTmdbRows, isStreamingServiceRow, mergeRows } from "@/views/home/home-rows";
+import { buildAnimeHomeRows, buildCinemetaRows, buildTmdbRows, isStreamingServiceRow, mergeRows } from "@/views/home/home-rows";
 import { loadAddonRows, type AddonRow } from "@/lib/addons";
 import { applyHomeRowCustomization } from "@/lib/home-customization";
 import { applyPageRows, loadPageRows } from "@/lib/page-rows";
@@ -36,7 +36,7 @@ export type RoomBuild = { rows: RoomRow[]; hero: Meta[]; failed: boolean };
 const lastBuilds = new Map<string, HomeRow[]>();
 
 /** Page `rowKey` of the last `home`/`catalog` build; `page` is 1-based like upstream. */
-export async function page(room: "home" | RoomKind, rowKey: string, page: number): Promise<Meta[]> {
+export async function page(room: "home" | "anime" | RoomKind, rowKey: string, page: number): Promise<Meta[]> {
   const row = lastBuilds.get(room)?.find((r) => r.key === rowKey);
   if (!row?.fetcher) return [];
   return row.fetcher(page).catch(() => [] as Meta[]);
@@ -238,4 +238,12 @@ export async function continueWatching(authKey: string | null, settings: Setting
 
 export function continueWatchingFor(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<LibraryItem[]> {
   return continueWatching(authKey, loadEffective(profileId, linked), limit);
+}
+
+// ----------------------------------------------------------------------------- Anime
+/** views/home/home-rows.ts buildAnimeHomeRows: Jikan (MAL) airing / new / popular / upcoming. */
+export async function anime(): Promise<RoomBuild> {
+  const rows = await buildAnimeHomeRows().catch(() => [] as HomeRow[]);
+  lastBuilds.set("anime", rows);
+  return { rows: rows.map((r) => strip(r)), hero: rows[0]?.metas.slice(0, 6) ?? [], failed: rows.length === 0 };
 }

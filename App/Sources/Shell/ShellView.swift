@@ -36,12 +36,14 @@ struct ShellView: View {
     @ViewBuilder private var room: some View {
         switch app.room {
         case .settings: SettingsView()
-        case .home, .movies, .shows:
+        case .home, .movies, .shows, .anime:
             RoomView(room: app.room, source: app.browseSource).id(app.room)
         case .search:
             SearchView()
         case .discover:
             DiscoverView()
+        case .library:
+            LibraryView()
         default: RoomPlaceholderView(room: app.room)
         }
     }
