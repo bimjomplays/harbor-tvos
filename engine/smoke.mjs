@@ -459,6 +459,43 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   }
   r.ok("live.lanes: programmes keep exact bounds, gaps are half-hour slices", cnnLane.some((c) => c.program && c.program.title === "Newsroom" && Math.abs(c.startMs - (now - 20 * 60000)) < 1000) && espnLane.every((c) => c.program === null && c.endMs - c.startMs <= slot));
   {
+    // epg-match-modal + epg-map: ESPN has no tvg-id and no name match; the viewer matches it by hand.
+    const espnId = view.channels.find((c) => c.name === "ESPN").id;
+    const seeded = rec.engine.live.epgCandidates(pl.id, espnId, null);
+    r.ok("live.epgCandidates seeds the search with the channel name (no hit for ESPN)", seeded.query === "ESPN" && seeded.total === 1 && seeded.entries.length === 0 && seeded.current === null, JSON.stringify(seeded));
+    const all = rec.engine.live.epgCandidates(pl.id, espnId, "");
+    r.eq("live.epgCandidates with an empty query lists every guide channel with a sample title", all.entries, [{ id: "cnn.us", sample: "Newsroom" }]);
+    r.eq("live.epgCandidates matches the sample programme title too", rec.engine.live.epgCandidates(pl.id, espnId, "zzz newsroom").entries.map((e) => e.id), ["cnn.us"]);
+    r.eq("live.setEpgMatch stores the match", rec.engine.live.setEpgMatch(espnId, "cnn.us"), "cnn.us");
+    const mapped = rec.engine.live.nowNext(pl.id, [espnId], now)[0];
+    r.ok("nowNext honours the manual match", mapped.known && mapped.now && mapped.now.title === "Newsroom", JSON.stringify(mapped));
+    r.ok("live.lanes honour the manual match", rec.engine.live.lanes(pl.id, [espnId], ws, ws + 6 * 3600000)[0].cells.some((c) => c.program && c.program.title === "The Lead"));
+    const again = await rec.engine.live.channels(pl.id);
+    r.eq("live.channels reports the channel's match", again.channels.find((c) => c.id === espnId).epgMatch, "cnn.us");
+    r.eq("live.epgCandidates reports the current match", rec.engine.live.epgCandidates(pl.id, espnId, "").current, "cnn.us");
+    r.eq("live.setEpgMatch(null) clears the match", rec.engine.live.setEpgMatch(espnId, null), null);
+    r.eq("nowNext falls back to automatic matching after clearing", rec.engine.live.nowNext(pl.id, [espnId], now)[0].known, false);
+    rec.engine.live.setEpgMatch(espnId, "cnn.us");
+    rec.engine.live.removePlaylist(pl.id);
+    r.eq("live.removePlaylist drops the source's EPG matches", rec.engine.live.epgCandidates(pl.id, espnId, "").current, null);
+  }
+  {
+    // bp-live.tsx chips from use-live-home rails: themes (3+ matches), big groups (4+), VOD lines dropped.
+    const names = ["CNN", "BBC News", "Sky News", "Fox News"].map((n) => `#EXTINF:-1 group-title="News",${n}\nhttps://example.invalid/${n.replace(/ /g, "")}.m3u8`);
+    const vod = `#EXTINF:-1 group-title="Movies",Some Film\nhttp://host.invalid:8080/movie/u/p/1.mkv`;
+    const m3uc = `#EXTM3U\n${names.join("\n")}\n#EXTINF:-1 group-title="Sports",ESPN\nhttps://example.invalid/espn.m3u8\n${vod}\n`;
+    rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3uc });
+    const plc = rec.engine.live.addPlaylist("Cats", "https://cats.example.invalid/list.m3u");
+    const vc = await rec.engine.live.channels(plc.id);
+    r.ok("live.channels drops VOD lines (isLiveChannel)", vc.channels.length === 5 && !vc.channels.some((c) => c.name === "Some Film"), JSON.stringify(vc.channels.map((c) => c.name)));
+    const news = vc.categories.find((c) => c.key === "theme:news");
+    r.ok("live.channels categories: News theme rail with ids, then the News group rail", news && news.ids.length === 4 && news.group === null && vc.categories.some((c) => c.key === "cat:News" && c.group === "News" && c.count === 4) && !vc.categories.some((c) => c.group === "Sports"), JSON.stringify(vc.categories.map((c) => [c.key, c.count])));
+    rec.engine.live.toggleGroupHidden(plc.id, "News");
+    const hid = await rec.engine.live.channels(plc.id);
+    r.ok("a hidden group loses its chip and its channels leave theme rails", !hid.categories.some((c) => c.group === "News") && !hid.categories.some((c) => c.key === "theme:news"), JSON.stringify(hid.categories.map((c) => [c.key, c.count])));
+    rec.engine.live.removePlaylist(plc.id);
+  }
+  {
     // A sports channel in the playlist should match a fixture by team names (iptv-match).
     const m3u2 = `#EXTM3U\n#EXTINF:-1 group-title="Sports",ESPN Lakers vs Celtics\nhttps://example.invalid/lakers.m3u8\n#EXTINF:-1 group-title="News",CNN\nhttps://example.invalid/cnn.m3u8\n`;
     rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3u2 });

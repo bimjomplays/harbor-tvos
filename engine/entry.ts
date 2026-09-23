@@ -677,6 +677,8 @@ export const live = {
   schedule: liveGlue.schedule,
   lanes: liveGlue.lanes,
   catchupUrl: liveGlue.catchupUrl,
+  epgCandidates: liveGlue.epgCandidates,
+  setEpgMatch: liveGlue.setEpgMatch,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */

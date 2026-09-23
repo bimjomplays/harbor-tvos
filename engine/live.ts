@@ -11,7 +11,11 @@ import { epgOffsetHoursPref } from "@/lib/iptv/settings-bridge";
 import { recordChannelPlay, removeStatsForSource } from "@/lib/iptv/channel-stats";
 import { removePinsForSource, togglePin as togglePinUpstream, isPinned } from "@/lib/iptv/pins";
 import { toggleGroupHidden as toggleGroupHiddenUpstream } from "@/lib/iptv/group-order";
-import { removeEpgOverridesForSource } from "@/lib/iptv/epg-map";
+import { removeEpgOverridesForSource, getEpgOverride, setEpgOverride } from "@/lib/iptv/epg-map";
+import { recentChannels } from "@/lib/iptv/channel-stats";
+import { detectCountryFromGroup, flagUrl, indexChannelsByCountry, stripCountryPrefix } from "@/lib/iptv/country-detect";
+import { isLiveChannel } from "@/lib/iptv/vod-classify";
+import { sortChannelsByGroupRelevance } from "@/lib/iptv/group-relevance";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { buildCatchupUrl, channelHasCatchup } from "@/lib/iptv/catchup";
 import { hydrateShortEpg } from "@/lib/iptv/xtream-short-epg";
@@ -38,6 +42,8 @@ export type LiveChannel = {
   /** Referer / User-Agent the playlist asked for (channel-headers.ts). */
   headers: Record<string, string> | null;
   favorite: boolean;
+  /** epg-map.ts: the guide channel the viewer matched by hand (null = automatic tvg-id / name match). */
+  epgMatch: string | null;
 };
 
 export type LiveGroup = { name: string; count: number; hidden?: boolean };
@@ -50,6 +56,8 @@ export type LivePlaylistView = {
   channels: LiveChannel[];
   groups: LiveGroup[];
   hiddenGroups?: string[];
+  /** bp-live.tsx chips after Favorites and All (recent, pinned groups, themes or countries, top groups). */
+  categories: LiveCategory[];
   total: number;
   epgUrl: string | null;
 };
@@ -62,7 +70,7 @@ export type NowNext = {
   known: boolean;
 };
 
-export type ProgramView = { title: string; description: string | null; startMs: number; endMs: number; category: string | null };
+export type ProgramView = { title: string; description: string | null; startMs: number; endMs: number; category: string | null; iconUrl: string | null };
 
 // ------------------------------------------------------------------------------ sources
 
@@ -199,7 +207,7 @@ const loaded = new Map<string, IptvChannel[]>();
 function toView(ch: IptvChannel, favs: Map<string, StoredFavorite>): LiveChannel {
   // bp-guide-title: "##ESPN HD RAW##" → label "ESPN", badge "HD"; a group that repeats the name is dropped.
   const l = bpChannelLabel(ch.name);
-  return { id: ch.id, name: ch.name, label: l.name, badge: l.badge, groupLabel: bpGroupLabel(ch.group, l.name), logo: ch.logo, url: ch.url, group: ch.group, tvgId: ch.tvgId, headers: headersFromChannel(ch) ?? null, favorite: favs.has(ch.id) };
+  return { id: ch.id, name: ch.name, label: l.name, badge: l.badge, groupLabel: bpGroupLabel(ch.group, l.name), logo: ch.logo, url: ch.url, group: ch.group, tvgId: ch.tvgId, headers: headersFromChannel(ch) ?? null, favorite: favs.has(ch.id), epgMatch: getEpgOverride(ch.id) };
 }
 
 /** Loads (or serves from upstream's cache) one playlist, ordered like the Big Picture guide. */
@@ -207,10 +215,14 @@ export async function channels(playlistId: string, force = false): Promise<LiveP
   const pl = readPlaylists().find((p) => p.id === playlistId);
   if (!pl) throw new Error("playlist not found");
   const playlist = await loadPlaylist(pl, { force });
-  const all = playlist.channels.slice(0, MAX_CHANNELS);
+  const settings = loadStoredSettings();
+  const region = String(settings.region ?? "US");
+  const languages = Array.isArray(settings.preferredLanguages) ? (settings.preferredLanguages as string[]) : [];
+  // use-bp-live.ts: VOD lines (Xtream movie/series entries) are not channels, and the groups
+  // the viewer's region and languages care about come first.
+  const all = sortChannelsByGroupRelevance(playlist.channels.filter(isLiveChannel), region, languages).slice(0, MAX_CHANNELS);
   loaded.set(playlistId, all);
   const favs = readFavorites();
-  const region = String(loadStoredSettings().region ?? "US");
   const hidden = readHiddenGroups(pl.id);
   const ordered = bpGuideOrder({ channels: all, favoriteIds: new Set(favs.keys()), pinnedOrder: readPins(), hiddenGroups: hidden, region, promoteNetworks: true });
   const counts = new Map<string, number>();
@@ -226,9 +238,143 @@ export async function channels(playlistId: string, force = false): Promise<LiveP
     channels: ordered.map((ch) => ({ ...toView(ch, favs), pinned: pins.has(ch.id) })),
     groups: Array.from(counts, ([name, count]) => ({ name, count, hidden: hidden.includes(name) })),
     hiddenGroups: hidden,
+    categories: liveCategories(pl.id, all, new Set(favs.keys()), hidden, region),
     total: playlist.channels.length,
     epgUrl: pl.epgUrl ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------- categories
+// bp-live.tsx builds its filter chips from use-live-home's rails: Favorites, All, then
+// "Continue watching", pinned groups, and either the viewer's countries' groups or the theme
+// rails followed by the biggest groups, 30 chips at most. use-live-home.ts keeps THEMES,
+// JUNK_RE and railFor private, so they are reproduced here verbatim.
+export type LiveCategory = {
+  key: string;
+  label: string;
+  count: number;
+  /** A group rail: Swift filters the channel list by this group. */
+  group: string | null;
+  /** bp-live-filters FilterFlag: the flagcdn image for a country group. */
+  flag: string | null;
+  /** A rail that is not one group (recent, themes): its channels in guide order. */
+  ids?: string[];
+};
+
+const UNCATEGORIZED = "Uncategorized";
+const MIN_GROUP = 4;
+const MAX_RAILS = 120;
+const THEME_CAP = 60;
+const MAX_CATEGORIES = 30;
+const JUNK_RE = /\b(xxx|adult|adults|porn|ppv|vip|sex|hardcore|nsfw)\b|18\s*\+|\+\s*18|^[\s#*\-=._|~>]+$/i;
+const THEMES: Array<{ key: string; title: string; re: RegExp }> = [
+  { key: "sports", title: "Sports", re: /\b(sports?|espn|bein|sky\s?sport|nfl|nba|mlb|nhl|ufc|wwe|boxing|football|soccer|dazn|fubo|golf|tennis|nascar|motogp|formula)\b/i },
+  { key: "news", title: "News", re: /\b(news|cnn|bbc|msnbc|cnbc|bloomberg|newsmax|gb\s?news|al\s?jazeera|sky\s?news|fox\s?news)\b/i },
+  { key: "movies", title: "Movies", re: /\b(movies?|cinema|film|films|hbo|cinemax|starz|showtime|tcm|mgm|paramount)\b/i },
+  { key: "kids", title: "Kids & Family", re: /\b(kids?|cartoon|disney|nick|nickelodeon|junior|baby|boomerang|cbeebies|pbs\s?kids)\b/i },
+  { key: "entertainment", title: "Entertainment", re: /\b(entertain\w*|comedy|drama|lifestyle|reality|bravo|tlc|usa\s?network|tnt|fx|amc)\b/i },
+  { key: "docs", title: "Documentary", re: /\b(document\w*|discovery|history|nat\s?geo|national\s?geographic|science|animal|smithsonian)\b/i },
+  { key: "music", title: "Music", re: /\b(music|mtv|vevo|vh1|kerrang|stingray|trace|hits)\b/i },
+];
+
+type Rail = { key: string; title: string; group: string | null; flagCode?: string; channels: IptvChannel[] };
+
+function railFor(g: string, chs: IptvChannel[], code?: string): Rail {
+  return { key: code ? `co:${code}:${g}` : `cat:${g}`, title: stripCountryPrefix(g), group: g, flagCode: code ?? detectCountryFromGroup(g)?.code, channels: chs.slice(0, 30) };
+}
+
+function readGroupPins(sourceId: string): string[] {
+  try {
+    const all = JSON.parse(localStorage.getItem("harbor.iptv.groupPrefs.v1") ?? "{}") as Record<string, { pinned?: string[] }>;
+    return all?.[sourceId]?.pinned ?? [];
+  } catch { return []; }
+}
+
+// lib/iptv/country-prefs: the countries picked for this source (desktop's country filter).
+function readCountries(sourceId: string): string[] {
+  try {
+    const all = JSON.parse(localStorage.getItem("harbor.iptv.countryPrefs.v1") ?? "{}") as Record<string, { selected?: string[] }>;
+    return all?.[sourceId]?.selected ?? [];
+  } catch { return []; }
+}
+
+function liveCategories(sourceId: string, channels: IptvChannel[], favoriteIds: Set<string>, hiddenGroups: string[], region: string): LiveCategory[] {
+  // use-live-home index: channels by id and by group, theme matches (60 each), the big groups.
+  const byId = new Map<string, IptvChannel>();
+  const byGroup = new Map<string, IptvChannel[]>();
+  const themeCh: Record<string, IptvChannel[]> = {};
+  for (const t of THEMES) themeCh[t.key] = [];
+  for (const ch of channels) {
+    byId.set(ch.id, ch);
+    const g = ch.group ?? UNCATEGORIZED;
+    const arr = byGroup.get(g);
+    if (arr) arr.push(ch); else byGroup.set(g, [ch]);
+    for (const t of THEMES) {
+      const tc = themeCh[t.key];
+      if (tc.length < THEME_CAP && (t.re.test(g) || t.re.test(ch.name))) tc.push(ch);
+    }
+  }
+  const topGroups = [...byGroup.entries()].filter(([g, a]) => !JUNK_RE.test(g) && a.length >= MIN_GROUP).sort((a, b) => b[1].length - a[1].length).map(([g]) => g);
+
+  const rails: Rail[] = [];
+  const used = new Set<string>();
+  // A stat for a channel the playlist no longer lists cannot be tuned from this list: dropped.
+  const recent = recentChannels(20, sourceId).map((s) => byId.get(s.id)).filter((c): c is IptvChannel => !!c);
+  if (recent.length) rails.push({ key: "recent", title: "Continue watching", group: null, channels: recent });
+  for (const g of readGroupPins(sourceId)) {
+    if (used.has(g) || !byGroup.has(g)) continue;
+    rails.push(railFor(g, byGroup.get(g) ?? []));
+    used.add(g);
+  }
+  const categoryRails: Rail[] = [];
+  const { channelsByCountry } = indexChannelsByCountry(channels);
+  const selected = readCountries(sourceId).filter((c) => channelsByCountry.has(c));
+  if (selected.length) {
+    for (const code of selected.slice(0, 6)) {
+      const inCountry = new Map<string, IptvChannel[]>();
+      for (const ch of channelsByCountry.get(code) ?? []) {
+        const g = ch.group ?? UNCATEGORIZED;
+        const arr = inCountry.get(g);
+        if (arr) arr.push(ch); else inCountry.set(g, [ch]);
+      }
+      const byCount = [...inCountry.entries()].filter(([g]) => !JUNK_RE.test(g)).sort((a, b) => b[1].length - a[1].length);
+      for (const [g, chs] of byCount) {
+        if (categoryRails.length >= MAX_RAILS) break;
+        categoryRails.push(railFor(g, chs, code));
+      }
+      if (categoryRails.length >= MAX_RAILS) break;
+    }
+  } else {
+    for (const theme of THEMES) {
+      const chs = themeCh[theme.key];
+      if (chs.length >= 3) categoryRails.push({ key: `theme:${theme.key}`, title: theme.title, group: null, channels: chs.slice(0, 30) });
+    }
+    for (const g of topGroups) {
+      if (categoryRails.length >= MAX_RAILS) break;
+      if (used.has(g)) continue;
+      categoryRails.push(railFor(g, byGroup.get(g) ?? []));
+    }
+  }
+
+  // bp-live.tsx: hidden groups skipped, group rails re-derived from the full list (railFor caps
+  // at 30), empty rails dropped, 30 chips counting Favorites and All.
+  const hidden = new Set(hiddenGroups);
+  const pinnedOrder = readPins();
+  const out: LiveCategory[] = [];
+  for (const rail of [...rails, ...categoryRails]) {
+    if (out.length + 2 >= MAX_CATEGORIES) break;
+    if (rail.group != null) {
+      if (hidden.has(rail.group)) continue;
+      const count = byGroup.get(rail.group)?.length ?? 0;
+      if (count === 0) continue;
+      out.push({ key: rail.key, label: rail.title, count, group: rail.group, flag: rail.flagCode ? flagUrl(rail.flagCode) : null });
+      continue;
+    }
+    const ids = bpGuideOrder({ channels: rail.channels, favoriteIds, pinnedOrder, hiddenGroups, region, promoteNetworks: false }).map((c) => c.id);
+    if (ids.length === 0) continue;
+    out.push({ key: rail.key, label: rail.title, count: ids.length, group: null, flag: null, ids });
+  }
+  return out;
 }
 
 /** Tell the stats store a channel was tuned (feeds the "most watched" band). */
@@ -301,7 +447,7 @@ function summarize(index: EpgIndex, url: string) {
 }
 
 function view(p: EpgProgram): ProgramView {
-  return { title: p.title, description: p.description, startMs: p.startMs, endMs: p.endMs, category: p.category };
+  return { title: p.title, description: p.description, startMs: p.startMs, endMs: p.endMs, category: p.category, iconUrl: p.iconUrl ?? null };
 }
 
 /** Now/next for a screenful of channels (epg-resolver matching, tvg-shift + offset applied). */
@@ -388,6 +534,50 @@ export function schedule(playlistId: string, channelId: string, fromMs: number, 
   if (!ch || !epg) return [];
   const programs = epgProgramsForChannel(ch, epg, computeTvgIdCounts(all), epgOffsetHoursPref()) ?? [];
   return programs.filter((p) => p.endMs > fromMs && p.startMs < toMs).map(view);
+}
+
+// ------------------------------------------------------------------ manual EPG matching
+// views/live/guide/epg-match-modal.tsx: when a channel's tvg-id is wrong the viewer picks the
+// guide channel by hand; lib/iptv/epg-map.ts stores it and epg-resolver.ts honours it first, so
+// nowNext, lanes, schedule and the Home row all follow the match.
+export type EpgMatchEntry = { id: string; sample: string };
+export type EpgMatchList = { channelId: string; channelName: string; query: string; total: number; current: string | null; entries: EpgMatchEntry[] };
+
+const EPG_MATCH_CAP = 120;
+const matchEntriesCache = new WeakMap<EpgIndex, EpgMatchEntry[]>();
+
+function matchEntries(epg: EpgIndex): EpgMatchEntry[] {
+  const cached = matchEntriesCache.get(epg);
+  if (cached) return cached;
+  const out: EpgMatchEntry[] = [];
+  for (const [id, programs] of epg.byChannel) out.push({ id, sample: programs[0]?.title ?? "" });
+  out.sort((a, b) => a.id.localeCompare(b.id));
+  matchEntriesCache.set(epg, out);
+  return out;
+}
+
+/**
+ * The guide channels a playlist channel can be matched to, filtered like the modal: any query
+ * word found in "<tvg id> <first programme title>", 120 at most. A null query starts from the
+ * channel's own name (the modal's initial search).
+ */
+export function epgCandidates(playlistId: string, channelId: string, query?: string | null): EpgMatchList {
+  const ch = (loaded.get(playlistId) ?? []).find((c) => c.id === channelId);
+  const epg = epgCache.get(playlistId)?.index ?? null;
+  const q = query ?? ch?.name ?? "";
+  const entries = epg ? matchEntries(epg) : [];
+  const tokens = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visible = (tokens.length === 0 ? entries : entries.filter((e) => {
+    const hay = `${e.id} ${e.sample}`.toLowerCase();
+    return tokens.some((t) => hay.includes(t));
+  })).slice(0, EPG_MATCH_CAP);
+  return { channelId, channelName: ch?.name ?? "", query: q, total: entries.length, current: getEpgOverride(channelId), entries: visible };
+}
+
+/** epg-match-modal assign: a guide channel id, or null to clear the match. Returns the match now in force. */
+export function setEpgMatch(channelId: string, tvgId?: string | null): string | null {
+  setEpgOverride(channelId, tvgId || null);
+  return getEpgOverride(channelId);
 }
 
 

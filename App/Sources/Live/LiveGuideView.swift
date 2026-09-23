@@ -73,6 +73,13 @@ final class LiveGuideModel: ObservableObject {
         await load(ids: channelIds, base: [:], start: start, end: end)
     }
 
+    /// A manual EPG match changed one channel: rebuild its lane, keep every other one.
+    func refresh(_ id: String) async {
+        var base = lanes
+        base[id] = nil
+        await load(ids: channelIds, base: base, start: windowStart, end: windowEnd)
+    }
+
     /// viewStartFor: pan so the focused cell is visible; a cell wider than the view pins to its start.
     func reveal(cellStart: Double, cellEnd: Double, visibleMs: Double) {
         let last = max(windowStart, windowEnd - visibleMs)
@@ -96,6 +103,8 @@ struct LiveGuideView: View {
     var replay: ((LiveModel.Channel, LiveModel.Program) -> Void)? = nil
     /// The player or a sheet is up: the preview lets go of its stream.
     var previewSuspended = false
+    /// guide-view.tsx "Match EPG" (hold Select on a row): pick the guide channel by hand.
+    var match: ((LiveModel.Channel) -> Void)? = nil
     /// bp-guide dimmed: the portal hides while the focused row sits under it.
     @State private var focusedRowMaxY: CGFloat?
     @State private var listHeight: CGFloat = 0
@@ -145,6 +154,14 @@ struct LiveGuideView: View {
         .onChange(of: model.windowStart) { _, _ in
             // The window grew backwards: every cell moved; re-assert the focused key so the ring stays put.
             if let f = focused { let keep = f; DispatchQueue.main.async { focused = keep } }
+        }
+        .onChange(of: live.epgMapRevision) { _, _ in
+            guard let id = live.lastRemapped else { return }
+            Task {
+                await model.refresh(id)
+                if let f = focused, let hit = cellFor(f) { portal = (hit.1, hit.0) }
+                else if portal?.channel.id == id { portal = nil }
+            }
         }
         .onChange(of: focused) { _, id in
             guard let id, let hit = cellFor(id) else { return }
@@ -215,6 +232,7 @@ struct LiveGuideView: View {
                 .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.panel2))
             }
             .buttonStyle(BPTileStyle())
+            .onLongPressGesture(minimumDuration: 0.6) { requestMatch(ch) }
             .frame(width: colPx, alignment: .leading)
             ZStack(alignment: .topLeading) {
                 ForEach(model.lanes[ch.id] ?? []) { cell in
@@ -222,6 +240,24 @@ struct LiveGuideView: View {
                 }
                 if x(now) >= 0 && x(now) <= lanePx {
                     Rectangle().fill(BP.live).frame(width: 2, height: rowPx).offset(x: x(now))
+                }
+                if showsMatchHint(ch) {
+                    // guide-view.tsx: "No program info" + "Match EPG" on a lane the guide cannot fill.
+                    HStack(spacing: BP.px(10)) {
+                        Text("No program info")
+                        HStack(spacing: BP.px(5)) {
+                            Image(systemName: "link")
+                            Text("Match EPG")
+                        }
+                        .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(3))
+                        .overlay(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                        Text("Hold Select").foregroundStyle(BP.inkSubtle)
+                    }
+                    .font(BP.sans(11, .medium))
+                    .foregroundStyle(BP.inkMuted)
+                    .padding(.leading, BP.px(12))
+                    .frame(height: rowPx)
+                    .allowsHitTesting(false)
                 }
             }
             .frame(width: lanePx, height: rowPx, alignment: .topLeading)
@@ -277,7 +313,20 @@ struct LiveGuideView: View {
         }
         .buttonStyle(.plain)
         .focused($focused, equals: key)
+        .onLongPressGesture(minimumDuration: 0.6) { requestMatch(ch) }
         .offset(x: x(cell.startMs), y: BP.px(5))
+    }
+
+    /// Hold Select anywhere on a row opens the EPG match picker (the guide must list channels).
+    private func requestMatch(_ ch: LiveModel.Channel) {
+        guard let match, live.guideChannelCount > 0 else { return }
+        match(ch)
+    }
+
+    /// A lane the guide cannot fill: every cell is a gap.
+    private func showsMatchHint(_ ch: LiveModel.Channel) -> Bool {
+        guard match != nil, live.guideChannelCount > 0, let cells = model.lanes[ch.id], !cells.isEmpty else { return false }
+        return cells.allSatisfy { $0.program == nil }
     }
 
     private func dayHint(_ ms: Double) -> String {
