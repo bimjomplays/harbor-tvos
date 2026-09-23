@@ -42,8 +42,17 @@ final class SettingsBridge: ObservableObject {
     }
 
     /// Checks a TMDB v3 key by asking TMDB for one page of trending titles.
-    func verifyTmdb(key: String) async -> Bool {
-        let metas: [Meta]? = try? await HarborEngine.shared.call("tmdb.trending", [key, "movie", "week", 1])
-        return (metas?.count ?? 0) > 0
+    /// On failure returns what the engine logged for TMDB, so the screen can say why.
+    func verifyTmdb(key: String) async -> (ok: Bool, reason: String?) {
+        let before = HarborEngine.shared.recentLogs.count
+        do {
+            let metas: [Meta] = try await HarborEngine.shared.call("tmdb.trending", [key, "movie", "week", 1])
+            if !metas.isEmpty { return (true, nil) }
+        } catch {
+            return (false, error.localizedDescription)
+        }
+        let fresh = HarborEngine.shared.recentLogs.dropFirst(before)
+        let tmdbLine = fresh.last { $0.contains("[tmdb]") } ?? fresh.last
+        return (false, tmdbLine)
     }
 }

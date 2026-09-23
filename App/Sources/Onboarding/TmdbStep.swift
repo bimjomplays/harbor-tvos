@@ -49,13 +49,13 @@ struct TmdbKeyForm: View {
             note = "A TMDB v3 API key is exactly 32 letters and numbers; this one is \(trimmed.count). Check for a missed or extra character."
             return
         }
-        if await settings.verifyTmdb(key: trimmed) {
+        let result = await settings.verifyTmdb(key: trimmed)
+        if result.ok {
             await save()
         } else {
-            // Upstream distinguishes a rejected key from an unreachable TMDB; the engine folds
-            // both into an empty result, so offer the save-anyway path in both cases.
             unreachable = true
-            note = "TMDB did not accept that key, or could not be reached from this TV. Check you copied the v3 key, not the read access token."
+            let why = result.reason.map { "\n\nTMDB said: \($0.prefix(220))" } ?? ""
+            note = "TMDB did not accept that key, or could not be reached from this TV. Check you copied the v3 key, not the read access token.\(why)"
         }
     }
 
