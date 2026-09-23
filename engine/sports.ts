@@ -325,11 +325,13 @@ function tierCopy(m: ChannelMatch): string {
 }
 
 /**
- * Everything the Watch press can do for one game: `plan` is "channel" (an exact match, play
- * it), "picker" (weaker matches), "setup" (no Live TV source), or "finished".
+ * Everything the Watch press can do for one game: `plan` is "channel" (an exact or pinned match,
+ * play it), "addons" (an addon listing matches, or it is the only thing on offer), "picker"
+ * (weaker matches), "setup" (no Live TV source), or "finished". `addons` is the summary of
+ * `addonSources` once it has loaded (bp-sports-watch waits on neither).
  */
-export async function watch(game: SportsGame): Promise<{
-  plan: "channel" | "picker" | "setup" | "finished";
+export async function watch(game: SportsGame, addons?: { matched: number; available: number } | null): Promise<{
+  plan: "channel" | "addons" | "picker" | "setup" | "finished";
   fixture: string;
   channels: WatchOption[];
   providers: Array<{ name: string; url: string; logo: string }>;
@@ -348,7 +350,17 @@ export async function watch(game: SportsGame): Promise<{
     tier: m.tier, attached: m.attached, label: m.label, copy: tierCopy(m), reasons: m.reasons.map((r) => r.label), score: m.score,
   }));
   const stream = attachments.streams[game.id] ?? null;
-  const plan = game.state === "post" ? "finished" : sources === 0 ? "setup" : channels.length > 0 && channels[0].tier === "exact" ? "channel" : "picker";
+  // bp-sports-watch.tsx plan order (stream/broadcast plans are information-only here).
+  const selected = channels.some((c) => c.tier === "exact" || c.attached);
+  if (selected) channels.sort((a, b) => Number(b.tier === "exact" || b.attached) - Number(a.tier === "exact" || a.attached));
+  const matchedAddon = (addons?.matched ?? 0) > 0, anyAddon = (addons?.available ?? 0) > 0;
+  const plan = game.state === "post" ? "finished"
+    : selected ? "channel"
+    : matchedAddon ? "addons"
+    : sources > 0 && channels.length > 0 ? "picker"
+    : anyAddon ? "addons"
+    : sources > 0 ? "picker"
+    : "setup";
   return {
     plan, fixture, channels,
     providers: watchProviders(game).map((p) => ({ name: p.name, url: p.url, logo: p.logo })),
@@ -479,4 +491,105 @@ export function whoSides(game: SportsGame): { home: boolean; away: boolean } {
 export async function whoPlayer(leagueTag: string, player: { id: string; name: string; image?: string | null; source: "espn" | "thesportsdb" }): Promise<WhoView | null> {
   const subject = bpSportsWhoPlayerSubject({ id: player.id, name: player.name, image: player.image ?? undefined, source: player.source }, hubLeague(leagueTag), leagueTag);
   return subject ? whoView(subject) : null;
+}
+
+
+// ---------------------------------------------------------------- addon sources (SP-3)
+// bp-sports-addon-sources / -play: installed Stremio addons with sports catalogs, listings matched
+// to the game (lib/sports/addon-sources), their streams, and a resolved pick.
+import { gatherCatalogAddons, type Addon } from "@/lib/addons";
+import { isAddonEnabled } from "@/lib/addon-store";
+import { clearSportsAddonCatalogCache, loadSportsAddonListings, loadSportsAddonStreams, refreshSportsAddonManifests } from "@/lib/sports/addon-sources";
+import { sportsAddonCatalogs, type SportsAddonListing } from "@/lib/sports/addon-sources-model";
+import { parseStream } from "@/lib/streams/parser";
+import { resolveStream } from "@/lib/streams/resolve";
+import type { Stream } from "@/lib/streams/types";
+
+export type AddonListingView = { key: string; addonName: string; addonLogo: string | null; name: string; poster: string | null; match: "event" | "channel" | null };
+export type AddonSourcesView = { installed: boolean; failed: boolean; rows: AddonListingView[]; matched: number; available: number };
+
+const ADDON_HTTP = /^https?:\/\//i;
+const ADDON_CATALOGUE = /^(movie|series)$/i;
+let addonHeld: { identity: string; at: number; providers: Addon[]; rows: SportsAddonListing[]; view: AddonSourcesView } | null = null;
+let addonPicked: { key: string; streams: Stream[] } | null = null;
+
+function addonIdentity(game: SportsGame, authKey: string | null): string {
+  return JSON.stringify([game.id, game.startMs, game.home.name, game.away.name, game.context?.name ?? null, game.broadcasts ?? null, authKey]);
+}
+const listingView = (r: SportsAddonListing): AddonListingView => ({
+  key: r.key, addonName: r.addon.manifest.name, addonLogo: r.addon.manifest.logo || r.meta.logo || r.meta.poster || null,
+  name: r.meta.name, poster: r.meta.poster ?? null, match: r.match,
+});
+
+/** use-bp-sports-addon-sources: every listing (matching first) for a game; empty unless consented and not finished. */
+export async function addonSources(game: SportsGame, authKey: string | null = null, force = false): Promise<AddonSourcesView> {
+  const empty: AddonSourcesView = { installed: false, failed: false, rows: [], matched: 0, available: 0 };
+  if (getSportsConsentSnapshot().status !== "accepted" || game.state === "post") return empty;
+  const identity = addonIdentity(game, authKey);
+  if (force) { clearSportsAddonCatalogCache(); addonHeld = null; }
+  if (addonHeld && addonHeld.identity === identity && Date.now() - addonHeld.at < 45_000) return addonHeld.view;
+  const ac = new AbortController();
+  try {
+    const gathered = await gatherCatalogAddons(authKey);
+    const hydrated = await refreshSportsAddonManifests(gathered, ac.signal);
+    const eligible = hydrated.addons.filter((a) => sportsAddonCatalogs(a).length > 0);
+    const result = eligible.length ? await loadSportsAddonListings(eligible, game, ac.signal, () => {}) : { rows: [] as SportsAddonListing[], failed: 0, total: 0 };
+    const rows = [...result.rows.filter((r) => r.match !== null), ...result.rows.filter((r) => r.match === null)];
+    const view: AddonSourcesView = {
+      installed: eligible.length > 0, failed: result.failed > 0 || hydrated.failed > 0,
+      rows: rows.map(listingView), matched: rows.filter((r) => r.match !== null).length, available: rows.length,
+    };
+    addonHeld = { identity, at: Date.now(), providers: hydrated.addons, rows, view };
+    return view;
+  } catch {
+    return { ...empty, failed: true };
+  }
+}
+
+/** bp-sports-addon-play choose: the streams one listing offers (inline, its addon, then others that accept the id). */
+export async function addonStreams(key: string): Promise<{ status: "ok" | "listing" | "reload"; rows: Array<{ index: number; name: string; title: string; external: boolean }> }> {
+  const row = addonHeld?.rows.find((r) => r.key === key);
+  if (!row || !isAddonEnabled(row.addon.transportUrl)) { addonHeld = null; return { status: "reload", rows: [] }; }
+  try {
+    const providers = (addonHeld?.providers ?? []).filter((a) => isAddonEnabled(a.transportUrl));
+    const streams = await loadSportsAddonStreams(row, new AbortController().signal, providers);
+    addonPicked = { key, streams };
+    return {
+      status: "ok",
+      rows: streams.map((st, index) => ({
+        index, name: st.name || st.addonName || "Play stream", title: st.title || st.description || st.addonName || "",
+        external: !st.url && !!(st.externalUrl || st.ytId),
+      })),
+    };
+  } catch {
+    return { status: "listing", rows: [] };
+  }
+}
+
+/** bp-sports-addon-play play: a direct link plays live; an external page goes to the phone; a
+ *  torrent, non-http link or catalogue title hands off to the regular stream list for its meta. */
+export async function addonPlay(key: string, index: number): Promise<
+  | { kind: "play"; url: string; headers: Record<string, string> | null; title: string; subtitle: string }
+  | { kind: "external"; url: string }
+  | { kind: "handoff"; meta: unknown }
+  | { kind: "reload" }
+  | { kind: "error" }
+> {
+  const row = addonHeld?.rows.find((r) => r.key === key);
+  const stream = addonPicked && addonPicked.key === key ? addonPicked.streams[index] : undefined;
+  if (!row || !stream) return { kind: "error" };
+  if (!isAddonEnabled(row.addon.transportUrl) || (stream.addonUrl && !isAddonEnabled(stream.addonUrl))) { addonHeld = null; addonPicked = null; return { kind: "reload" }; }
+  if (!stream.url && (stream.externalUrl || stream.ytId)) {
+    const url = stream.externalUrl || `https://www.youtube.com/watch?v=${encodeURIComponent(stream.ytId ?? "")}`;
+    return ADDON_HTTP.test(url) ? { kind: "external", url } : { kind: "error" };
+  }
+  if (stream.infoHash || !stream.url || !ADDON_HTTP.test(stream.url) || (ADDON_CATALOGUE.test(row.meta.type) && row.match !== "event")) return { kind: "handoff", meta: row.meta };
+  try {
+    const result = await resolveStream(parseStream(stream), [], new AbortController().signal, true, false, undefined, false, false);
+    if (!result.ok) return { kind: "error" };
+    const headers = result.data.headers && Object.keys(result.data.headers).length > 0 ? result.data.headers : null;
+    return { kind: "play", url: result.data.url, headers, title: row.meta.name, subtitle: row.addon.manifest.name };
+  } catch {
+    return { kind: "error" };
+  }
 }

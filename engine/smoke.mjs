@@ -31,6 +31,50 @@ r.ok("benchmark still works", (() => {
   return b.streams === 850 && b.kept > 0 && typeof b.best === "string";
 })(), JSON.stringify(engine.benchmark(1)));
 
+// ------------------------------------------------------------ sports addon sources (SP-3)
+{
+  const base = "https://sportsaddon.example.invalid";
+  const manifest = { id: "org.example.sportslive", version: "1.0.0", name: "Sports Live", resources: ["catalog", "stream"], types: ["tv"], idPrefixes: ["ev"], catalogs: [{ type: "tv", id: "live", name: "Live Events" }] };
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.installed-addons.default", JSON.stringify([{ transportUrl: `${base}/manifest.json`, manifest }])],
+  ]) });
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === `${base}/manifest.json`) return json(manifest);
+    if (req.url.startsWith(`${base}/catalog/tv/live`)) return json({ metas: [
+      { id: "ev1", type: "tv", name: "Los Angeles Lakers vs Boston Celtics" },
+      { id: "ev2", type: "tv", name: "Some Other Channel" },
+    ] });
+    if (req.url === `${base}/stream/tv/ev1.json`) return json({ streams: [
+      { name: "HD", title: "Main feed", url: "https://cdn.example.invalid/ev1.m3u8" },
+      { name: "Web", externalUrl: "https://watch.example.invalid/ev1" },
+      { name: "P2P", infoHash: "0123456789abcdef0123456789abcdef01234567" },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const game = { id: "g-addon", league: "NBA", state: "in", detail: "Q2", home: { id: "1", name: "Boston Celtics", abbr: "BOS", logo: "", score: "50", winner: false }, away: { id: "2", name: "Los Angeles Lakers", abbr: "LAL", logo: "", score: "48", winner: false }, startMs: Date.now() - 3600000 };
+  const before = await rec.engine.sports.addonSources(game, null);
+  r.eq("sports.addonSources is empty before sports consent", [before.available, before.installed], [0, false]);
+  rec.engine.sports.accept();
+  const src = await rec.engine.sports.addonSources(game, null);
+  r.ok("sports.addonSources finds the matching addon listing first", src.installed && src.available >= 1 && src.matched >= 1 && /lakers/i.test(src.rows[0].name) && src.rows[0].match !== null && src.rows[0].addonName === "Sports Live", JSON.stringify(src));
+  const w = await rec.engine.sports.watch(game, { matched: src.matched, available: src.available });
+  r.eq("sports.watch plans addons when an addon listing matches and no Live TV source exists", w.plan, "addons");
+  r.eq("sports.watch without addons and no source plans setup", (await rec.engine.sports.watch(game, null)).plan, "setup");
+  const st = await rec.engine.sports.addonStreams(src.rows[0].key);
+  r.ok("sports.addonStreams lists the listing's streams", st.status === "ok" && st.rows.length === 3 && st.rows[0].name === "HD" && st.rows[0].title === "Main feed" && st.rows[1].external === true, JSON.stringify(st));
+  const play = await rec.engine.sports.addonPlay(src.rows[0].key, 0);
+  r.ok("sports.addonPlay resolves a direct link to play", play.kind === "play" && play.url === "https://cdn.example.invalid/ev1.m3u8" && play.subtitle === "Sports Live", JSON.stringify(play));
+  const ext = await rec.engine.sports.addonPlay(src.rows[0].key, 1);
+  r.eq("sports.addonPlay sends an external page to the phone", [ext.kind, ext.url], ["external", "https://watch.example.invalid/ev1"]);
+  r.eq("sports.addonPlay hands a torrent off to the stream list", (await rec.engine.sports.addonPlay(src.rows[0].key, 2)).kind, "handoff");
+  const post = await rec.engine.sports.addonSources({ ...game, id: "g-post", state: "post" }, null);
+  r.eq("sports.addonSources is empty for a finished game", post.available, 0);
+}
+
 // ------------------------------------------------------------------------ settings
 const defaults = engine.settings.DEFAULT;
 r.ok("settings.DEFAULT is a populated object", Object.keys(defaults).length > 50, `${Object.keys(defaults).length} keys`);
