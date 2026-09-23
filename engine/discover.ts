@@ -8,7 +8,10 @@ import { getStore } from "@/lib/discover/store";
 import { CATALOG_REQUEST_TIMEOUT_MS, withTimeout } from "@/lib/progressive-rows";
 import { metaLooksAnime } from "@/lib/anime-detect";
 import { GENRE_PALETTE } from "@/components/genre-tiles";
-import { BP_GENRES } from "@/views/big-picture/use-bp-discover";
+import { BP_GENRES, bpAwardSummaries, bpAwardDetail, bpAwardsOverview } from "@/views/big-picture/use-bp-discover";
+import type { AwardType } from "@/lib/providers/wikidata";
+import { fetchRankList, peekRankSnapshot } from "@/lib/harbor-rank";
+import { setBundledAwards, bundledAwardsVersion } from "@/lib/awards-history";
 import { loadEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
 
@@ -115,4 +118,45 @@ export function queueFor(profileId: string, linked: boolean, limit = 40): Promis
 
 export function genreArtFor(profileId: string, linked: boolean, genre: string): Promise<Meta[]> {
   return genreArt(loadEffective(profileId, linked), genre);
+}
+
+// ----------------------------------------------------------------------- awards / people
+/** The 4 MB awards catalog arrives from the app bundle as a JSON string (awards-history.ts:27-35). */
+export function installAwards(rawJson: string): number {
+  setBundledAwards(JSON.parse(rawJson), true);
+  return bundledAwardsVersion();
+}
+export function awardsInstalled(): boolean {
+  return bundledAwardsVersion() > 0;
+}
+/** Bundled awards (offline): one summary tile per award body plus the band blurb numbers. */
+export function awards() {
+  const summaries = bpAwardSummaries();
+  const overview = bpAwardsOverview();
+  return { summaries, overview };
+}
+
+/** Every category and its winners by year for one award body. */
+export function awardDetail(type: AwardType) {
+  const d = bpAwardDetail(type);
+  return {
+    type,
+    title: d.meta.title,
+    wins: d.wins,
+    span: d.span,
+    decades: d.decades,
+    groups: d.groups.map((g) => ({
+      category: g.category,
+      entries: g.entries.slice(0, 200),
+    })),
+  };
+}
+
+/** Harbor's own "Top People" ranking (harbor.site); snapshot first, then a refresh. */
+export async function people(limit = 24) {
+  const snap = peekRankSnapshot("harbor", "Acting", null);
+  const fresh = await fetchRankList("harbor", "Acting", null).catch(() => null);
+  const result = fresh ?? snap;
+  if (!result || result.source !== "harbor") return [];
+  return result.list.slice(0, limit).map((p) => ({ id: p.id, rank: p.rank, name: p.name, profilePath: p.profilePath, department: p.department, country: p.country, score: p.score }));
 }

@@ -18,6 +18,18 @@ final class DiscoverModel: ObservableObject {
     @Published private(set) var failed: String?
     @Published var spotlight: Meta?
     @Published private(set) var genreArt: [String: [Meta]] = [:]
+    @Published private(set) var awards: Awards?
+    @Published private(set) var people: [Person] = []
+
+    struct Awards: Decodable {
+        struct Summary: Decodable, Identifiable { var type: String; var title: String; var shorthand: String; var tint: String; var wins: Int; var span: String; var id: String { type } }
+        struct Overview: Decodable { var bodies: Int; var wins: Int; var span: String }
+        var summaries: [Summary]
+        var overview: Overview
+    }
+    struct Person: Decodable, Identifiable { var id: Int; var rank: Int; var name: String; var profilePath: String?; var country: String?
+        var portrait: String? { profilePath.map { "https://image.tmdb.org/t/p/w185\($0)" } }
+    }
 
     private var profile: (id: String, linked: Bool) {
         let p = ProfilesStore.shared.active
@@ -34,6 +46,9 @@ final class DiscoverModel: ObservableObject {
             failed = error.localizedDescription
         }
         loading = false
+        await AwardsCatalog.installIfNeeded()
+        awards = try? await HarborEngine.shared.call("discoverRoom.awards", [])
+        people = (try? await HarborEngine.shared.call("discoverRoom.people", [24])) ?? []
     }
 
     /// Genre tiles fetch their three backdrops only once the Genres band has focus (upstream defers the same way).
@@ -48,4 +63,18 @@ final class DiscoverModel: ObservableObject {
     }
 
     var rows: [BrowseRow] { (build?.rails ?? []).map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas) } }
+}
+
+
+/// Hands the bundled awards.json (4 MB, copied from upstream at build time) to the engine once.
+enum AwardsCatalog {
+    private static var installed = false
+    @MainActor static func installIfNeeded() async {
+        guard !installed else { return }
+        if let already: Bool = try? await HarborEngine.shared.call("discoverRoom.awardsInstalled", []), already { installed = true; return }
+        guard let url = Bundle.main.url(forResource: "awards", withExtension: "json"),
+              let raw = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let _: Int? = try? await HarborEngine.shared.call("discoverRoom.installAwards", [raw])
+        installed = true
+    }
 }

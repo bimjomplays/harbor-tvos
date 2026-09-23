@@ -387,6 +387,11 @@ export const discoverRoom = {
   queueFor: discoverBuilders.queueFor,
   genres: discoverBuilders.genres,
   genreArtFor: discoverBuilders.genreArtFor,
+  installAwards: discoverBuilders.installAwards,
+  awardsInstalled: discoverBuilders.awardsInstalled,
+  awards: discoverBuilders.awards,
+  awardDetail: discoverBuilders.awardDetail,
+  people: discoverBuilders.people,
 };
 export type { DiscoverBuild, DiscoverRail, QueuePeek, GenreTile } from "./discover";
 
