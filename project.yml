@@ -63,7 +63,9 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/rust/harbor-ffi/include
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/rust/out/$(PLATFORM_NAME)
-        OTHER_LDFLAGS: -lharbor_ffi
+        # CoreFoundation: librqbit -> chrono -> iana-time-zone reads the zone through CFTimeZone,
+        # and a staticlib does not carry its #[link] directives into the app link.
+        OTHER_LDFLAGS: -lharbor_ffi -framework CoreFoundation
         MTL_ENABLE_DEBUG_INFO: NO
   HarborUITests:
     type: bundle.ui-testing

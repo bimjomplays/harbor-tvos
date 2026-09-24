@@ -1,0 +1,27 @@
+# Harbor tvOS patch of librqbit-sha1-wrapper 4.1.0 (Apache-2.0, github.com/ikatson/rqbit).
+#
+# Upstream picks its SHA-1 from `crypto-hash` (OpenSSL off macOS/iOS, so it does not build for
+# tvOS) or, under librqbit's `rust-tls` feature, from `aws-lc-rs` (a C/assembly build through
+# aws-lc-sys). Both feature names stay so librqbit, librqbit-core and librqbit-bencode resolve
+# unchanged, but either one now maps to the pure-Rust RustCrypto `sha1` crate: nothing to
+# cross-compile for aarch64-apple-tvos(-sim), and hashing a few MB/s of torrent pieces is far
+# below what it sustains on an A15.
+[package]
+edition = "2018"
+name = "librqbit-sha1-wrapper"
+version = "4.1.0"
+description = "Common interface around various sha1 implementations used in rqbit torrent client (Harbor tvOS: pure-Rust sha1)."
+license = "Apache-2.0"
+repository = "https://github.com/ikatson/rqbit"
+
+[lib]
+name = "librqbit_sha1_wrapper"
+path = "src/lib.rs"
+
+[dependencies]
+sha1 = { version = "0.10", default-features = false }
+
+[features]
+default = ["sha1-crypto-hash"]
+sha1-crypto-hash = []
+sha1-ring = []

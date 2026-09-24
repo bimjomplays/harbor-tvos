@@ -1,8 +1,11 @@
-//! C ABI over harbor-core. Every function that returns a `*mut c_char` hands ownership to the
-//! caller, who must release it with `harbor_string_free`.
+//! C ABI over harbor-core and the librqbit torrent engine (`torrent`, Stage 6). Every function
+//! that returns a `*mut c_char` hands ownership to the caller, who must release it with
+//! `harbor_string_free`.
 use std::ffi::{c_char, CStr, CString};
 
 use harbor_core::{parser, scoring, trust, ParsedStream, ScoreOptions, ScoredStream, Stream, TrustOptions};
+
+pub mod torrent;
 
 fn to_c(s: String) -> *mut c_char {
     CString::new(s).unwrap_or_default().into_raw()
