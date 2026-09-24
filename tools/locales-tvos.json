@@ -832,5 +832,59 @@
     "ar": "تذكيرات جديدة: {n}", "de": "{n} neue Erinnerungen", "es": "{n} recordatorios nuevos", "fr": "{n} nouveaux rappels", "hi": "{n} नए रिमाइंडर",
     "id": "{n} pengingat baru", "it": "{n} nuovi promemoria", "ja": "新しいリマインダー {n} 件", "ko": "새 알림 {n}개", "pl": "Nowe przypomnienia: {n}",
     "pt": "{n} novos lembretes", "ru": "Новых напоминаний: {n}", "tr": "{n} yeni hatırlatıcı", "vi": "{n} lời nhắc mới", "zh": "{n} 条新提醒"
+  },
+
+  "Scan this with your phone to open the setup page. Pick your options there, then send the install link it gives you back to this TV.": {
+    "ar": "امسح هذا الرمز بهاتفك لفتح صفحة الإعداد. اختر إعداداتك هناك، ثم أرسل رابط التثبيت الذي تعطيك إياه إلى هذا التلفاز.",
+    "de": "Scanne das mit deinem Handy, um die Einrichtungsseite zu öffnen. Wähle dort deine Optionen und schick den Installationslink, den sie dir gibt, zurück an diesen Fernseher.",
+    "es": "Escanéalo con el móvil para abrir la página de configuración. Elige tus opciones allí y luego envía a esta TV el enlace de instalación que te dé.",
+    "fr": "Scannez ce code avec votre téléphone pour ouvrir la page de configuration. Choisissez vos options, puis renvoyez à cette TV le lien d'installation qu'elle vous donne.",
+    "hi": "सेटअप पेज खोलने के लिए इसे अपने फ़ोन से स्कैन करें। वहाँ अपने विकल्प चुनें, फिर मिला हुआ इंस्टॉल लिंक इस टीवी पर वापस भेजें।",
+    "id": "Pindai ini dengan ponsel untuk membuka halaman penyiapan. Pilih opsi di sana, lalu kirim tautan instal yang diberikannya kembali ke TV ini.",
+    "it": "Scansiona il codice con il telefono per aprire la pagina di configurazione. Scegli le opzioni, poi invia a questa TV il link di installazione che ti fornisce.",
+    "ja": "スマホでこれをスキャンしてセットアップページを開きます。そこでオプションを選び、表示されたインストールリンクをこのテレビに送ってください。",
+    "ko": "휴대폰으로 스캔해 설정 페이지를 여세요. 거기서 옵션을 고른 뒤, 받은 설치 링크를 이 TV로 보내세요.",
+    "pl": "Zeskanuj to telefonem, aby otworzyć stronę konfiguracji. Wybierz tam opcje, a potem wyślij otrzymany link instalacyjny z powrotem do tego telewizora.",
+    "pt": "Leia com o celular para abrir a página de configuração. Escolha suas opções lá e depois envie de volta para esta TV o link de instalação que ela fornecer.",
+    "ru": "Отсканируйте код телефоном, чтобы открыть страницу настройки. Выберите там параметры и отправьте полученную ссылку установки обратно на этот телевизор.",
+    "tr": "Kurulum sayfasını açmak için bunu telefonunuzla tarayın. Orada seçeneklerinizi belirleyin, ardından verdiği kurulum bağlantısını bu TV'ye geri gönderin.",
+    "vi": "Quét mã này bằng điện thoại để mở trang thiết lập. Chọn tùy chọn ở đó, rồi gửi liên kết cài đặt nhận được về TV này.",
+    "zh": "用手机扫描以打开设置页面。在那里选好选项，然后把它给出的安装链接发回这台电视。"
+  },
+
+  "Scan this with your phone camera, then paste the install link from the addon's setup page. It goes straight to this TV.": {
+    "ar": "امسح هذا الرمز بكاميرا هاتفك، ثم الصق رابط التثبيت من صفحة إعداد الإضافة. سيصل مباشرةً إلى هذا التلفاز.",
+    "de": "Scanne das mit der Handykamera und füge dann den Installationslink von der Einrichtungsseite des Add-ons ein. Er landet direkt auf diesem Fernseher.",
+    "es": "Escanéalo con la cámara del móvil y pega el enlace de instalación de la página de configuración del complemento. Llega directo a esta TV.",
+    "fr": "Scannez ce code avec l'appareil photo de votre téléphone, puis collez le lien d'installation de la page de configuration de l'add-on. Il arrive directement sur cette TV.",
+    "hi": "इसे अपने फ़ोन कैमरे से स्कैन करें, फिर ऐड-ऑन के सेटअप पेज से मिला इंस्टॉल लिंक पेस्ट करें। वह सीधे इस टीवी पर पहुँचेगा।",
+    "id": "Pindai ini dengan kamera ponsel, lalu tempel tautan instal dari halaman penyiapan add-on. Tautannya langsung masuk ke TV ini.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi incolla il link di installazione dalla pagina di configurazione del componente. Arriva direttamente su questa TV.",
+    "ja": "スマホのカメラでスキャンし、アドオンのセットアップページで得たインストールリンクを貼り付けてください。このテレビに直接届きます。",
+    "ko": "휴대폰 카메라로 스캔한 뒤, 애드온 설정 페이지의 설치 링크를 붙여 넣으세요. 이 TV로 바로 전송됩니다.",
+    "pl": "Zeskanuj to aparatem telefonu, a potem wklej link instalacyjny ze strony konfiguracji dodatku. Trafi prosto do tego telewizora.",
+    "pt": "Leia com a câmera do celular e cole o link de instalação da página de configuração do complemento. Ele vai direto para esta TV.",
+    "ru": "Отсканируйте код камерой телефона и вставьте ссылку установки со страницы настройки дополнения. Она сразу попадёт на этот телевизор.",
+    "tr": "Bunu telefon kameranızla tarayın, sonra eklentinin kurulum sayfasındaki kurulum bağlantısını yapıştırın. Doğrudan bu TV'ye gelir.",
+    "vi": "Quét mã này bằng camera điện thoại, rồi dán liên kết cài đặt từ trang thiết lập của tiện ích. Liên kết sẽ đến thẳng TV này.",
+    "zh": "用手机相机扫描，然后粘贴插件设置页面给出的安装链接。它会直接发送到这台电视。"
+  },
+
+  "Press Select on an addon to pick it up, move it with Up and Down, then press Select again to drop it.": {
+    "ar": "اضغط زر التحديد على إضافة لالتقاطها، وحرّكها بالأعلى والأسفل، ثم اضغط التحديد مرة أخرى لإفلاتها.",
+    "de": "Drück Auswählen auf einem Add-on, um es aufzunehmen, verschieb es mit Hoch und Runter und drück Auswählen noch einmal, um es abzulegen.",
+    "es": "Pulsa Seleccionar sobre un complemento para tomarlo, muévelo con Arriba y Abajo y vuelve a pulsar Seleccionar para soltarlo.",
+    "fr": "Appuyez sur Sélectionner sur un add-on pour le saisir, déplacez-le avec Haut et Bas, puis appuyez de nouveau sur Sélectionner pour le déposer.",
+    "hi": "किसी ऐड-ऑन को उठाने के लिए उस पर Select दबाएँ, ऊपर और नीचे से उसे खिसकाएँ, फिर छोड़ने के लिए दोबारा Select दबाएँ।",
+    "id": "Tekan Pilih pada add-on untuk mengambilnya, pindahkan dengan Atas dan Bawah, lalu tekan Pilih lagi untuk meletakkannya.",
+    "it": "Premi Seleziona su un componente per prenderlo, spostalo con Su e Giù, poi premi di nuovo Seleziona per rilasciarlo.",
+    "ja": "アドオンで選択ボタンを押して持ち上げ、上下で動かし、もう一度選択ボタンを押して置きます。",
+    "ko": "애드온에서 선택을 눌러 집고, 위아래로 옮긴 다음, 다시 선택을 눌러 내려놓으세요.",
+    "pl": "Naciśnij Wybierz na dodatku, aby go chwycić, przesuń go w górę lub w dół, a potem naciśnij Wybierz ponownie, aby go upuścić.",
+    "pt": "Pressione Selecionar em um complemento para pegá-lo, mova-o com Cima e Baixo e pressione Selecionar de novo para soltá-lo.",
+    "ru": "Нажмите «Выбрать» на дополнении, чтобы взять его, перемещайте кнопками «Вверх» и «Вниз», затем снова нажмите «Выбрать», чтобы отпустить.",
+    "tr": "Bir eklentiyi almak için üzerinde Seç'e basın, Yukarı ve Aşağı ile taşıyın, bırakmak için yeniden Seç'e basın.",
+    "vi": "Nhấn Chọn trên một tiện ích để nhấc lên, di chuyển bằng Lên và Xuống, rồi nhấn Chọn lần nữa để thả.",
+    "zh": "在插件上按选择键拿起它，用上下键移动，再按一次选择键放下。"
   }
 }

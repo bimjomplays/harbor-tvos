@@ -2036,6 +2036,144 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// ---------------------------------------- Addons manager (views/addons.tsx, recorded host, fixtures)
+{
+  const SA = "https://stremio-addons.net/api/v0";
+  const now = Date.now();
+  const mk = (id, name, extra = {}) => ({ id, version: "1.2.3", name, description: `${name} does things. More text.`, resources: ["catalog", "stream"], types: ["movie", "series"], idPrefixes: ["tt"], catalogs: [{ type: "movie", id: "top", name: "Top" }], logo: "/logo.png", ...extra });
+  const plain = mk("org.example.plain", "Plain Streams", { background: "https://img.example.invalid/plain-bg.jpg" });
+  const conf = mk("org.example.conf", "Configurable Streams", { behaviorHints: { configurable: true, configurationRequired: true } });
+  const adult = mk("org.example.adult", "Adult Things", { behaviorHints: { adult: true } });
+  const fresh = mk("org.example.fresh", "Fresh Catalog", { resources: ["catalog"] });
+  const sa = (m, url, stars, extra = {}) => ({ uuid: `u-${m.id}`, url: `https://stremio-addons.net/addons/${m.id}`, manifestUrl: url, manifest: m, slug: m.id.replace(/\./g, "-"), stars, categories: [{ name: "movies", slug: "movies" }], configureUrl: null, createdAt: new Date(now - 30 * 864e5).toISOString(), updatedAt: "", ...extra });
+  const plainUrl = "https://plain.example.invalid/manifest.json";
+  const confUrl = "https://conf.example.invalid/cfg-A/manifest.json";
+  const confUrlB = "https://conf.example.invalid/cfg-B/manifest.json";
+  const listing = [
+    sa(plain, plainUrl, 420),
+    sa(conf, confUrl, 300),
+    sa(adult, "https://adult.example.invalid/manifest.json", 200, { categories: [{ name: "nsfw", slug: "nsfw" }] }),
+    sa(fresh, "https://fresh.example.invalid/manifest.json", 5, { createdAt: new Date(now - 2 * 864e5).toISOString() }),
+  ];
+  const manifests = new Map([[plainUrl, plain], [confUrl, conf], [confUrlB, { ...conf, version: "2.0.0" }], ["https://fresh.example.invalid/manifest.json", fresh]]);
+  let cloud = [
+    { transportUrl: "https://one.example.invalid/manifest.json", transportName: "", manifest: mk("org.example.one", "One"), flags: { official: false, protected: false } },
+    { transportUrl: "https://two.example.invalid/manifest.json", transportName: "", manifest: mk("org.example.two", "Two"), flags: { official: false, protected: false } },
+  ];
+  const hits = [];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+  rec.node.host.fetch = async (req) => {
+    hits.push(`${req.method} ${req.url}`);
+    const u = new URL(req.url);
+    if (req.url.startsWith(`${SA}/addons?`)) {
+      const nsfw = u.searchParams.get("nsfw");
+      const search = (u.searchParams.get("search") ?? "").toLowerCase();
+      const cat = u.searchParams.getAll("category");
+      let list = listing.filter((a) => nsfw !== "exclude" || !a.manifest.behaviorHints?.adult);
+      if (search) list = list.filter((a) => a.manifest.name.toLowerCase().includes(search));
+      if (cat.length) list = list.filter((a) => a.categories.some((c) => cat.includes(c.slug)));
+      if (u.searchParams.get("sort_by") === "createdAt") list = [...list].sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+      const page = Number(u.searchParams.get("page") ?? 1);
+      return json(req, { addons: page > 1 ? [] : list, pagination: { page, limit: 50, total: list.length, totalPages: 1, hasNextPage: false, hasPreviousPage: page > 1 } });
+    }
+    if (req.url === `${SA}/rising`) return json(req, { addons: [{ ...listing[0], recentStars: 7 }] });
+    if (req.url === `${SA}/categories`) return json(req, { categories: [{ name: "movies", slug: "movies" }, { name: "nsfw", slug: "nsfw" }, { name: "anime", slug: "anime" }] });
+    if (req.url.startsWith(`${SA}/addons/`)) {
+      const slug = decodeURIComponent(u.pathname.split("/").pop());
+      const hit = listing.find((a) => a.slug === slug);
+      return hit ? json(req, { ...hit, instances: [], documentation: "## Setup\nPick a **debrid** service." }) : json(req, {}, 404);
+    }
+    if (u.host === "v3-cinemeta.strem.io" || req.url === "https://api.strem.io/addonsofficialcollection.json") return json(req, { addons: [] });
+    if (req.url === "https://api.strem.io/api/addonCollectionGet") return json(req, { result: { addons: cloud } });
+    if (req.url === "https://api.strem.io/api/addonCollectionSet") {
+      const body = JSON.parse(req.body || "{}");
+      cloud = body.addons;
+      return json(req, { result: { success: true } });
+    }
+    if (manifests.has(req.url)) return json(req, manifests.get(req.url));
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const am = rec.engine.addonsManager;
+  const cats = await am.categories(false);
+  r.eq("addonsManager.categories hides nsfw until adult addons are on", cats.map((c) => c.slug), ["movies", "anime"]);
+  r.eq("addonsManager.categories keeps nsfw with adult addons on", (await am.categories(true)).map((c) => c.slug), ["movies", "nsfw", "anime"]);
+  const top = await am.browse("top", null, null, false, 1);
+  r.ok("addonsManager.browse top: nsfw excluded, stars and the 24h rising badge", top.items.length === 3 && !top.items.some((i) => i.id === adult.id) && top.items[0].stars === 420 && top.items[0].rising === 7 && top.items[0].risingWindow === 1 && top.hasMore === false && hits.some((h) => h.includes("nsfw=exclude")), JSON.stringify(top.items.map((i) => [i.id, i.stars, i.rising])));
+  r.ok("addonsManager.browse resolves relative logos against the manifest URL", top.items[0].logo === "https://plain.example.invalid/logo.png", top.items[0].logo);
+  const adultTop = await am.browse("top", "nsfw", null, false, 1);
+  r.ok("addonsManager.browse: the nsfw category lifts the exclusion (community-browse-list)", adultTop.items.length === 1 && adultTop.items[0].id === adult.id, JSON.stringify(adultTop.items.map((i) => i.id)));
+  const nw = await am.browse("new", null, null, false, 1);
+  r.ok("addonsManager.browse new: newest first, New badge inside 14 days", nw.items[0].id === fresh.id && nw.items[0].isNew === true && nw.items.filter((i) => i.isNew).length === 1, JSON.stringify(nw.items.map((i) => [i.id, i.isNew])));
+  const found = await am.browse("top", "movies", "config", false, 1);
+  r.ok("addonsManager.browse search ignores the category and matches names", found.items.length === 1 && found.items[0].id === conf.id && hits.some((h) => h.includes("search=config") && !h.includes("category=")), JSON.stringify(found.items.map((i) => i.id)));
+  const rising = await am.browse("rising", null, null, false, 1);
+  r.ok("addonsManager.browse rising: the official 24h list", rising.items.length === 1 && rising.items[0].id === plain.id && rising.items[0].rising === 7, JSON.stringify(rising));
+  const spot = await am.spotlight(false);
+  r.ok("addonsManager.spotlight: a trending addon with a background", spot && spot.trending === true && spot.addon.id === plain.id && !!spot.addon.background, JSON.stringify(spot));
+  const railTop = await am.rail("stars", false);
+  r.ok("addonsManager.rail Top rated: no adult addons", railTop.length === 3 && !railTop.some((c) => c.id === adult.id), JSON.stringify(railTop.map((c) => c.id)));
+  const loaded0 = await am.load(null, false);
+  r.ok("addonsManager.load: community catalog, nothing installed yet, adult addon hidden", loaded0.installed.length === 0 && loaded0.installedCount === 0 && loaded0.total === 3, JSON.stringify(loaded0));
+  const cfg = await am.install(conf.id, confUrl);
+  r.ok("addonsManager.install sends a configurable addon to its setup page", cfg.kind === "configure" && cfg.configureUrl === "https://conf.example.invalid/cfg-A/configure", JSON.stringify(cfg));
+  const ins = await am.install(plain.id, plainUrl);
+  r.ok("addonsManager.install installs a plain addon", ins.kind === "installed" && ins.id === plain.id && ins.toast === "Installed", JSON.stringify(ins));
+  const dflt = await am.installDefault(conf.id, confUrl);
+  r.eq("addonsManager.installDefault installs the published manifest", dflt.kind, "installed");
+  const loaded1 = await am.load(null, false);
+  r.ok("addonsManager.load: installed tab in install order with positions and switches", loaded1.installed.map((c) => [c.id, c.position, c.enabled]).join("|") === `${plain.id},1,true|${conf.id},2,true`, JSON.stringify(loaded1.installed.map((c) => [c.id, c.position, c.enabled])));
+  const match = await am.resolveUrl("stremio://conf.example.invalid/cfg-B/manifest.json", { id: conf.id, name: conf.name });
+  r.ok("addonsManager.resolveUrl (manage): a same-id link is an update", match.matchKind === "id-match" && match.url === confUrlB && match.version === "2.0.0", JSON.stringify(match));
+  const hostMatch = await am.resolveUrl("https://conf.example.invalid/cfg-A/configure", null);
+  r.ok("addonsManager.resolveUrl strips /configure and sees an installed id", hostMatch.matchKind === "id-match" && hostMatch.url === confUrl, JSON.stringify(hostMatch));
+  r.ok("addonsManager.resolveUrl reports a bad link", !!(await am.resolveUrl("ftp://nope", null)).error);
+  const upd = await am.installUrl(confUrlB, null);
+  const afterUpd = rec.engine.addonStore.loadInstalled();
+  r.ok("addonsManager.installUrl replaces the configured copy in place", upd.ok && upd.replaced && upd.toast === "Updated" && afterUpd.length === 2 && afterUpd.some((a) => a.transportUrl === confUrlB) && !afterUpd.some((a) => a.transportUrl === confUrl), JSON.stringify({ upd, afterUpd: afterUpd.map((a) => a.transportUrl) }));
+  const det = await am.detail(conf.id, null, false);
+  const statLabels = det ? det.stats.map((s) => s.label) : [];
+  r.ok("addonsManager.detail: manifest facts, configure URL, masked URL, stremio link", det && det.configurable && det.configurationRequired && det.card.installed && det.version === "2.0.0" && ["Version", "Resources", "Types", "ID prefixes", "Catalogs", "ID"].every((l) => statLabels.includes(l)) && det.configureUrl === "https://conf.example.invalid/cfg-B/configure" && det.maskedUrl === "https://conf.example.invalid/…/manifest.json" && det.stremioUrl === "stremio://conf.example.invalid/cfg-B/manifest.json" && det.catalogs[0].name === "Top", JSON.stringify(det && { stats: det.stats, configureUrl: det.configureUrl, masked: det.maskedUrl, version: det.version }));
+  r.ok("addonsManager.detail: community stars, documentation, eyebrow, recommendations", det && det.community && det.community.stars === 300 && /debrid/.test(det.documentation ?? "") && /^Community · /.test(det.eyebrow) && Array.isArray(det.related) && Array.isArray(det.recommended), JSON.stringify(det && { community: det.community, eyebrow: det.eyebrow, doc: det.documentation, related: det.related.map((x) => x.id) }));
+  r.eq("addonsManager.detail returns null for an unknown id", await am.detail("org.example.nothing-at-all", null, false), null);
+  // Organize without an account: the device list, reordered and mirrored into the install order.
+  const orgLocal = await am.organizeLoad(null);
+  r.ok("addonsManager.organizeLoad without Stremio lists this device", orgLocal.ok && !orgLocal.signedIn && orgLocal.device.length === 2 && orgLocal.cloud.length === 0, JSON.stringify(orgLocal));
+  const savedLocal = await am.organizeSave([], [orgLocal.device[1].key, orgLocal.device[0].key]);
+  r.ok("addonsManager.organizeSave (device) rewrites the install order and the display order", savedLocal.ok && savedLocal.scope === "local" && rec.engine.addonStore.loadInstalled()[0].transportUrl === confUrlB && JSON.parse(rec.node.storage.get("harbor.addonOrder"))[0] === confUrlB, JSON.stringify(savedLocal));
+  r.eq("addonsManager.load follows the saved order", (await am.load(null, false, true)).installed.map((c) => c.id), [conf.id, plain.id]);
+  // Organize with an account: saveCollectionOrder writes, reads back, and backs up once.
+  const orgCloud = await am.organizeLoad("auth-1");
+  r.ok("addonsManager.organizeLoad with Stremio: account order + device-only addons", orgCloud.ok && orgCloud.signedIn && orgCloud.cloud.map((c) => c.name).join(",") === "One,Two" && orgCloud.device.length === 2, JSON.stringify(orgCloud));
+  const savedCloud = await am.organizeSave([orgCloud.cloud[1].key, orgCloud.cloud[0].key], orgCloud.device.map((d) => d.key));
+  r.ok("addonsManager.organizeSave (account) writes the new order and verifies it", savedCloud.ok && savedCloud.scope === "cloud" && cloud.map((a) => a.manifest.name).join(",") === "Two,One" && am.organizeBackups().length === 1, JSON.stringify({ savedCloud, order: cloud.map((a) => a.manifest.name) }));
+  const org2 = await am.organizeLoad("auth-1");
+  cloud = [...cloud, { transportUrl: "https://three.example.invalid/manifest.json", transportName: "", manifest: mk("org.example.three", "Three"), flags: { official: false, protected: false } }];
+  const stale = await am.organizeSave([org2.cloud[1].key, org2.cloud[0].key], []);
+  r.ok("addonsManager.organizeSave refuses when the account changed elsewhere", !stale.ok && stale.reload === true && /another device/.test(stale.text), JSON.stringify(stale));
+  const org3 = await am.organizeLoad("auth-1");
+  const restored = am.organizeRestore(0);
+  r.ok("addonsManager.organizeRestore lays a backup over the loaded list (newer addons stay at the end)", restored && restored.keys.length === 3 && restored.keys.map((k) => org3.cloud.find((c) => c.key === k).name).join(",") === "One,Two,Three", JSON.stringify({ restored, org3: org3.cloud }));
+  const moved = await am.organizeMoveAll();
+  r.ok("addonsManager.organizeMoveAll puts device-only addons on the account", moved.ok && cloud.length === 5 && /Moved 2 addons/.test(moved.text), JSON.stringify({ moved, n: cloud.length }));
+  const rm = await am.uninstall(plain.id, plainUrl);
+  r.ok("addonsManager.uninstall removes the install", rm.ok && rm.toast === "Removed" && !rec.engine.addonStore.loadInstalled().some((a) => a.transportUrl === plainUrl), JSON.stringify(rm));
+  // Age gate: upstream's banks, read from the component source.
+  const src = (await import("node:fs")).readFileSync(new URL("../reference/harbor/src/components/age-gate-modal.tsx", import.meta.url), "utf8");
+  const arStart = src.indexOf("AR_QUESTION_BANK");
+  const enCount = (src.slice(src.indexOf("QUESTION_BANK"), arStart).match(/\n\s+q:\s/g) ?? []).length;
+  const arCount = (src.slice(arStart).match(/\n\s+q:\s/g) ?? []).length;
+  const gate = am.ageGate("en", 12345);
+  r.ok("addonsManager.ageGate reads every upstream question (English bank)", gate.bankSize === enCount && enCount >= 10, JSON.stringify({ bank: gate.bankSize, enCount }));
+  r.ok("addonsManager.ageGate: three distinct questions of four options, answer in range", gate.questions.length === 3 && new Set(gate.questions.map((q) => q.q)).size === 3 && gate.questions.every((q) => q.options.length === 4 && q.correct >= 0 && q.correct < 4 && src.includes(q.options[q.correct])), JSON.stringify(gate.questions));
+  r.eq("addonsManager.ageGate is deterministic for a seed (pickThree)", am.ageGate("en", 12345).questions.map((q) => q.q), gate.questions.map((q) => q.q));
+  const ar = am.ageGate("ar", 777);
+  r.ok("addonsManager.ageGate uses the Arabic bank for Arabic", ar.bankSize === arCount && arCount >= 10 && /[\u0600-\u06FF]/.test(ar.questions[0].q), JSON.stringify({ bank: ar.bankSize, arCount, q: ar.questions[0].q }));
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());
