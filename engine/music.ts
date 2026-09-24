@@ -17,6 +17,7 @@ import { getLyricOffset, setLyricOffset as storeLyricOffset } from "@/lib/music/
 import * as src from "./musicSources";
 import * as radioLib from "./musicRadio";
 import * as scrobbling from "./musicScrobble";
+import * as spotify from "./musicSpotify";
 
 // ------------------------------------------------------------------------------ copy
 const COPY_KEYS = [
@@ -38,6 +39,13 @@ const COPY_KEYS = [
   "music.lastfm.apiKey", "music.lastfm.secret", "music.lastfm.finish", "music.lastfm.authorize", "music.lastfm.browserPrompt",
   "music.card.startRadio", "music.radio.error", "music.now.next",
   "Lyrics", "Lyric sync", "Lyrics earlier", "Lyrics later", "Finding lyrics", "No lyrics for this track",
+  // Spotify (music.ts spotify + spotifySetup, spotify-setup.tsx, recovery.ts)
+  "music.spotify.connect", "music.spotify.connectDetail", "music.spotify.connectAction", "music.spotify.connectedAs", "music.spotify.premium",
+  "music.spotifySetup.createTitle", "music.spotifySetup.createBody", "music.spotifySetup.dashboard", "music.spotifySetup.redirectTitle",
+  "music.spotifySetup.redirectBody", "music.spotifySetup.redirectLabel", "music.spotifySetup.clientTitle", "music.spotifySetup.clientPlaceholder",
+  "music.spotifySetup.accountHint", "music.spotifySetup.authorize", "music.spotifySetup.saved", "music.spotifySetup.savedHint",
+  "music.spotifySetup.missingSaved", "music.spotifySetup.rejected", "music.recovery.premium", "music.recovery.setup", "music.recovery.spotifySetup",
+  "music.source.spotifyQuality",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */
@@ -422,18 +430,50 @@ export const lastfmBegin = scrobbling.lastfmBegin;
 export const lastfmFinish = scrobbling.lastfmFinish;
 export const lastfmDisconnect = scrobbling.lastfmDisconnect;
 
+// ------------------------------------------------------------------------------ Spotify
+// spotify/mod.rs + auth.rs on the TV (engine/musicSpotify.ts); the librespot session itself is
+// Swift + rust/harbor-ffi, which report back through spotifySessionReady / spotifyFailed.
+export const spotifySetup = spotify.setup;
+export const spotifyStatus = spotify.status;
+export const spotifyRestore = spotify.restore;
+/** connector.rs connect: save a typed client id, then the authorize URL for the phone. */
+export async function spotifyBegin(clientId: string | null) {
+  return spotify.begin(clientId);
+}
+/** The pasted redirect, exchanged for the token Swift signs the librespot session in with. */
+export async function spotifyFinish(pasted: string) {
+  return spotify.finish(pasted);
+}
+export async function spotifySessionReady(rust: spotify.SpotifyStatus & { credentials?: string | null }, token: { accessToken: string; expiresAt: number } | null) {
+  const out = await spotify.sessionReady(rust, token);
+  homeCache = null;
+  return out;
+}
+export function spotifyFailed(error: string) {
+  homeCache = null;
+  return spotify.recordFailure(error);
+}
+/** mod.rs disconnect (Swift has already shut the librespot session down). */
+export function spotifyDisconnect() {
+  homeCache = null;
+  return spotify.forget();
+}
+
 // ------------------------------------------------------------------ sources + consent
 export function connections() {
   const consent = getMusicSourceConsent();
+  const sp = spotify.connection();
   const rows = src.connectors.map((c) => ({
     id: c.id,
     name: c.name,
     kind: c.kind as string,
-    status: c.ready() ? (c.health === "offline" ? "error" : "connected") : "disconnected",
+    // spotify/mod.rs connection(): a recorded failure is "error" until the next sign-in.
+    status: c.id === "spotify" && !c.ready() ? sp.status : c.ready() ? (c.health === "offline" ? "error" : "connected") : "disconnected",
     health: c.health as string,
     detail: (c.detail?.() ?? null) as string | null,
-    // subsonic/mod.rs connection(): the signed-in user is the account.
-    account: (c.id === "subsonic" ? src.subsonicPairing()?.username ?? null : null) as string | null,
+    // subsonic/mod.rs and spotify/mod.rs connection(): the signed-in user is the account.
+    account: (c.id === "subsonic" ? src.subsonicPairing()?.username ?? null : c.id === "spotify" ? sp.account : null) as string | null,
+    error: (c.id === "spotify" ? sp.error : null) as string | null,
     gated: c.id === "soundcloud",
     enabled: c.id === "soundcloud" ? !!consent.acceptedAt && consent.sources.soundcloud : c.ready(),
     capabilities: [c.searchable ? "search" : null, c.browsable ? "browse" : null, c.playable ? "play" : null, c.id === "subsonic" ? "library" : null].filter(Boolean) as string[],
@@ -448,6 +488,7 @@ export function connections() {
     health: fm.health,
     detail: null,
     account: fm.username,
+    error: null,
     gated: false,
     enabled: fm.connected,
     capabilities: ["scrobble"],

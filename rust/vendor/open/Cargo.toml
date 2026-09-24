@@ -1,0 +1,19 @@
+# Harbor tvOS stand-in for the `open` crate 5.4.4 (MIT, github.com/Byron/open-rs).
+#
+# librespot-core depends on librespot-oauth unconditionally, and librespot-oauth depends on `open`
+# to launch the desktop browser for its loopback OAuth flow. `open` has no tvOS backend and stops
+# the build with `compile_error!("open is not supported on this platform")` for
+# aarch64-apple-tvos(-sim). The TV never runs that flow (the phone does the OAuth hand-off, see
+# docs/music-spec.md), so the one function librespot-oauth calls is kept with the same signature
+# and reports that there is no browser to open.
+[package]
+edition = "2021"
+name = "open"
+version = "5.4.4"
+description = "Harbor tvOS stub of open 5.4.4: there is no browser to launch on the TV."
+license = "MIT"
+repository = "https://github.com/Byron/open-rs"
+
+[lib]
+name = "open"
+path = "src/lib.rs"

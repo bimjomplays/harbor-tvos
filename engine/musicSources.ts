@@ -7,9 +7,9 @@
 //   jellyfin    connectors/jellyfin/*.rs                     (adopts the home-server connection)
 //   plex        connectors/plex/*.rs                         (adopts the home-server connection)
 //   subsonic    connectors/subsonic/*.rs                     (its own sign-in: Navidrome / Subsonic)
-// plus the open databases the catalog leans on: catalog/listenbrainz.rs, musicbrainz.rs.
-// Left out, with the reasons in docs/music-spec.md: spotify (librespot), youtube (yt-dlp),
-// local (no user file system).
+// plus the open databases the catalog leans on: catalog/listenbrainz.rs, musicbrainz.rs, and
+//   spotify     music/spotify/*.rs (musicSpotify.ts; playback is librespot in rust/harbor-ffi)
+// Left out, with the reasons in docs/music-spec.md: youtube (yt-dlp), local (no user file system).
 import type {
   MusicAlbumRef,
   MusicArtistRef,
@@ -27,6 +27,7 @@ import { mediaServerConnections, mediaServerToken } from "@/lib/media-server/con
 import { musicSourceAllowed } from "@/lib/music/source-consent";
 import { getSecret, setSecret } from "@/lib/secret-store";
 import { md5Hex } from "./md5";
+import { spotifyConnector } from "./musicSpotify";
 
 export type MusicStream = { url: string; mimeType: string; bitrate: number; httpHeaders?: Record<string, string> };
 type Health = MusicConnectorHealth["health"];
@@ -1913,7 +1914,8 @@ const subsonicConnectorRef = subsonicConnector();
 
 // ================================================================================ registry
 // registry.rs + matching.rs + rows.rs, over the connectors above.
-export const connectors: Connector[] = [catalogConnector(), jellyfinConnector(), plexConnector(), subsonicConnectorRef, soundcloudConnector()];
+// music.rs registers Spotify after the built-in connectors (and Last.fm after it).
+export const connectors: Connector[] = [catalogConnector(), jellyfinConnector(), plexConnector(), subsonicConnectorRef, soundcloudConnector(), spotifyConnector()];
 export function connector(id: string | undefined | null): Connector | undefined {
   return connectors.find((c) => c.id === id);
 }

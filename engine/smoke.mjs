@@ -131,7 +131,7 @@ r.ok("benchmark still works", (() => {
   const m = rec.engine.music;
   r.eq("music.copy speaks upstream's English", [m.copy()["music.title"], m.copy()["music.row.upNext"]], ["Music", "Up next"]);
   const conns = m.connections();
-  r.ok("music.connections lists catalog, Jellyfin, Plex, Navidrome, SoundCloud and Last.fm; SoundCloud waits for consent", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,subsonic,soundcloud,lastfm" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
+  r.ok("music.connections lists catalog, Jellyfin, Plex, Navidrome, SoundCloud, Spotify and Last.fm; SoundCloud waits for consent, Spotify for a sign-in", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,subsonic,soundcloud,spotify,lastfm" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "spotify").status === "disconnected" && conns.find((c) => c.id === "spotify").detail === "Bring your own Spotify app" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
   const h = await m.home(true, null);
   const keys = h.bands.map((b) => b.key);
   r.ok("music.home: server notice, charts stand in for fresh (numbered), artists, catalog extras", keys[0] === "server" && h.bands[0].notice && keys.includes("fresh") && h.bands.find((b) => b.key === "fresh").numbered && h.bands.find((b) => b.key === "fresh").cards[0].track.connectorId === "catalog" && keys.includes("home:catalog:charting-artists") && keys.includes("home:catalog:charts") && !hits.some((x) => x.includes("soundcloud")), JSON.stringify({ keys, errors: h.errors }));
@@ -311,6 +311,132 @@ r.ok("benchmark still works", (() => {
   const legacy = m.library();
   const rawLegacy = store.get("harbor.music.liked.v1") ?? "";
   r.ok("music: an older liked list with X-Plex-Token is scrubbed in storage; without the Plex server it shows no art", !rawLegacy.includes("secret1") && rawLegacy.includes("/photo/:/transcode") && rawLegacy.includes("thumb") && legacy.liked[0].artwork === "" && legacy.likedIds[0] === "plex:7", rawLegacy);
+  rec.dispose();
+}
+
+// ---------------------------------- music: Spotify (music/spotify: auth.rs PKCE, tokens.rs, browse.rs)
+{
+  const { createHash } = await import("node:crypto");
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const hits = [];
+  const forms = [];
+  let meProduct = "premium";
+  let tokenReply = null;
+  const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
+  const img = (w) => ({ url: `https://i.scdn.co/image/${w}`, width: w, height: w });
+  const spTrack = (id, name, extra = {}) => ({ uri: `spotify:track:${id}`, name, duration_ms: 227000, explicit: false, artists: [{ name: "Muse" }], album: { name: "Absolution", images: [img(64), img(640)] }, ...extra });
+  rec.node.host.fetch = async (req) => {
+    const u = new URL(req.url);
+    hits.push(`${req.method} ${u.host}${u.pathname}?${u.searchParams.toString()} ${(req.headers && (req.headers.Authorization || req.headers.authorization)) || ""}`);
+    if (u.host === "accounts.spotify.com" && u.pathname === "/api/token") {
+      const form = Object.fromEntries(new URLSearchParams(req.body || ""));
+      forms.push(form);
+      if (tokenReply) return json(req, tokenReply.body, tokenReply.status);
+      if (form.grant_type === "authorization_code") return json(req, { access_token: "web-1", token_type: "Bearer", expires_in: 3600, refresh_token: "refresh-1", scope: "streaming user-library-read user-top-read" });
+      if (form.grant_type === "refresh_token") return json(req, { access_token: "web-2", token_type: "Bearer", expires_in: 3600, scope: "streaming" });
+    }
+    if (u.host === "api.spotify.com") {
+      const p = u.pathname.replace(/^\/v1/, "");
+      if (p === "/me") return json(req, { product: meProduct, country: "GB" });
+      if (p === "/me/player/recently-played") return json(req, { items: [{ played_at: "now", track: spTrack("r1", "Hysteria") }] });
+      if (p === "/me/top/tracks") return json(req, { items: [spTrack("t1", "Starlight")] });
+      if (p === "/me/top/artists") return json(req, { items: [{ uri: "spotify:artist:muse", name: "Muse", genres: ["rock"], images: [img(320)] }] });
+      if (p === "/me/playlists") return json(req, { items: [{ uri: "spotify:playlist:pl1", name: "Road trip", images: [img(300)], owner: { display_name: "alice" }, items: { total: 12 } }] });
+      if (p === "/me/albums") return json(req, { error: { status: 500 } }, 500);
+      if (p === "/me/tracks") return json(req, { items: [] });
+      if (p === "/search") {
+        if (u.searchParams.get("limit") !== "10") return json(req, { error: { status: 400, message: "Invalid limit" } }, 400);
+        return json(req, { tracks: { items: [spTrack("s1", "Hysteria")] }, albums: { items: [{ uri: "spotify:album:abs", name: "Absolution", artists: [{ name: "Muse" }], images: [img(640)], release_date: "2003-09-15", total_tracks: 14 }] }, artists: { items: [{ uri: "spotify:artist:muse", name: "Muse", images: [] }] }, playlists: { items: [null, { uri: "spotify:playlist:pl2", name: "This Is Muse", images: [], tracks: { total: 50 } }] } });
+      }
+      if (p === "/albums/abs/tracks") return json(req, { items: [{ uri: "spotify:track:a1", name: "Apocalypse Please", duration_ms: 252000, artists: [] }] });
+      if (p === "/artists/muse/top-tracks") return json(req, { error: { status: 403 } }, 403);
+      if (p === "/artists/muse/albums") return json(req, { items: [{ uri: "spotify:album:abs", name: "Absolution", artists: [{ name: "Muse" }], images: [img(640)] }], total: 1 });
+      if (p === "/playlists/pl1/items") return json(req, { error: { status: 404 } }, 404);
+      if (p === "/playlists/pl1/tracks") return json(req, { items: [{ added_at: "now", track: spTrack("p1", "Uprising") }, { added_at: "now", track: null }] });
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const m = rec.engine.music;
+  const store = rec.node.storage;
+
+  // auth.rs: no client id yet -> upstream's walkthrough; with one -> a PKCE S256 authorize URL
+  const missing = await m.spotifyBegin("").then(() => "begun", (e) => e.message);
+  r.eq("music.spotifyBegin without a client id asks for one with upstream's setup hint", missing, "Spotify needs your own client id. Create an app at developer.spotify.com/dashboard, add http://127.0.0.1:8898/login as a redirect URI, then paste the client id here.");
+  const begun = await m.spotifyBegin(" abc123client ");
+  const au = new URL(begun.authorizeUrl);
+  r.ok("music.spotifyBegin saves the client id and builds the authorize URL with upstream's redirect and scopes", au.origin === "https://accounts.spotify.com" && au.pathname === "/authorize" && au.searchParams.get("client_id") === "abc123client" && au.searchParams.get("redirect_uri") === "http://127.0.0.1:8898/login" && au.searchParams.get("code_challenge_method") === "S256" && /^[A-Za-z0-9_-]{43}$/.test(au.searchParams.get("code_challenge")) && au.searchParams.get("scope").split(" ").includes("streaming") && au.searchParams.get("scope").split(" ").length === 13 && store.get("harbor.spotify.v1.clientId") === "abc123client", begun.authorizeUrl);
+  const state = au.searchParams.get("state");
+  const wrongState = await m.spotifyFinish(`http://127.0.0.1:8898/login?code=AQBcode1234567890&state=other`).then(() => "ok", (e) => e.message);
+  r.eq("music.spotifyFinish refuses an address from another sign-in", wrongState, "That address belongs to another sign in. Authorize Spotify again.");
+  const denied = await m.spotifyFinish(`http://127.0.0.1:8898/login?error=access_denied&state=${state}`).then(() => "ok", (e) => e.message);
+  r.eq("music.spotifyFinish: a declined consent reads as upstream's cancelled sign-in", denied, "Spotify sign in was cancelled before it finished.");
+  const done = await m.spotifyFinish(`  http://127.0.0.1:8898/login?code=AQBcode1234567890&state=${state}  `);
+  const exchange = forms[forms.length - 1];
+  const challenge = createHash("sha256").update(exchange.code_verifier).digest("base64url");
+  r.ok("music.spotifyFinish exchanges the code with the PKCE verifier (no secret) and keeps the web token", done.accessToken === "web-1" && /^[0-9a-f-]{36}$/.test(done.deviceId) && exchange.grant_type === "authorization_code" && exchange.code === "AQBcode1234567890" && exchange.client_id === "abc123client" && exchange.redirect_uri === "http://127.0.0.1:8898/login" && challenge === au.searchParams.get("code_challenge") && !("client_secret" in exchange) && JSON.parse(store.get("harbor.spotify.v1.webToken")).refreshToken === "refresh-1", JSON.stringify({ done, exchange }));
+  r.eq("the Spotify keys live under harbor.spotify.v1 (the Keychain tier on the TV)", [...store.keys()].filter((k) => k.includes("spotify")).sort(), ["harbor.spotify.v1.clientId", "harbor.spotify.v1.deviceId", "harbor.spotify.v1.webToken"]);
+  const replay = await m.spotifyFinish(`http://127.0.0.1:8898/login?code=AQBcode1234567890&state=${state}`).then(() => "ok", (e) => e.message);
+  r.eq("a used sign-in cannot be finished twice", replay, "Spotify sign in timed out. Authorize Spotify again.");
+
+  // Before the librespot session reports in, Spotify is not browsable and asks for Premium
+  r.eq("Spotify stays out of search until the session is up (tokens.rs CONNECT_FIRST)", m.connections().find((c) => c.id === "spotify").status, "disconnected");
+
+  // The Rust session answered (Premium unknown): tokens.rs probe_tier via /me; credentials kept
+  const rust = { connected: true, username: "alice", country: "gb", premium: false, accountType: null, error: null, credentials: "{\"username\":\"alice\",\"auth_type\":1,\"auth_data\":\"c2VjcmV0\"}" };
+  const ready = await m.spotifySessionReady(rust, { accessToken: "session-1", expiresAt: Math.floor(Date.now() / 1000) + 3600 });
+  r.ok("music.spotifySessionReady keeps the reusable sign-in and reads Premium from /me", ready.connected && ready.premium && ready.accountType === "Premium" && !ready.shutdown && store.get("harbor.spotify.v1.credentials") === rust.credentials && m.spotifyRestore().credentials === rust.credentials, JSON.stringify(ready));
+  const row = m.connections().find((c) => c.id === "spotify");
+  r.ok("music.connections: Spotify connected as alice (Premium)", row.status === "connected" && row.account === "alice" && row.detail === "Premium" && row.capabilities.join(",") === "search,browse,play", JSON.stringify(row));
+
+  // browse.rs home: six rows in parallel; a failed row and an empty row drop out
+  const h = await m.home(true, null);
+  const keys = h.bands.map((b) => b.key);
+  r.ok("music.home carries Spotify's personal rows (recent, top tracks/artists, playlists) and drops the failed/empty ones", keys.includes("home:spotify:home:recently-played") && keys.includes("home:spotify:home:top-artists") && keys.includes("home:spotify:home:playlists") && !keys.some((k) => k.includes("saved-albums") || k.includes("saved-tracks")) && h.bands.find((b) => b.key === "home:spotify:home:recently-played").cards[0].artwork === "https://i.scdn.co/image/640" && h.bands.find((b) => b.key === "home:spotify:home:playlists").cards[0].subtitle === "alice", JSON.stringify(keys));
+  r.ok("Spotify Web API calls carry the OAuth token and the account's market", hits.some((x) => x.includes("/v1/me/albums?") && x.includes("market=GB") && x.endsWith("Bearer web-1")), hits.filter((x) => x.includes("api.spotify.com")).join("\n"));
+
+  // api.rs search: a restricted client (400) is retried at 10; browse.rs top_result prefers the exact artist
+  const s = await m.search("muse", "spotify");
+  r.ok("music.search scoped to Spotify retries at ten and the exact artist is the top result", s.top && s.top.kind === "artist" && s.top.title === "Muse" && s.tracks[0].track.sourceId === "spotify:track:s1" && s.albums[0].subtitle === "Muse · 2003" && s.playlists.length === 1 && hits.filter((x) => x.includes("/v1/search?")).length === 2, JSON.stringify(s));
+  const albumPage = await m.open(s.albums[0].item);
+  r.ok("a Spotify album opens with its tracks inheriting the album's artist and cover", albumPage.tracks[0].title === "Apocalypse Please" && albumPage.tracks[0].artist === "Muse" && albumPage.tracks[0].artwork === "https://i.scdn.co/image/640" && albumPage.tracks[0].durationLabel === "4:12", JSON.stringify(albumPage.tracks));
+  const artistPage = await m.open(s.artists[0].item);
+  r.ok("a Spotify artist whose top tracks are refused falls back to an artist: search, with the albums shelf", artistPage.tracks.length === 1 && hits.some((x) => x.includes("/v1/search?") && x.includes("q=artist%3A%22Muse%22")) && artistPage.bands[0] && artistPage.bands[0].title === "Albums", JSON.stringify(artistPage));
+  const playlistPage = await m.open(h.bands.find((b) => b.key === "home:spotify:home:playlists").cards[0].item);
+  r.eq("a Spotify playlist falls back from /items to /tracks and skips removed entries", playlistPage.tracks.map((t) => t.sourceId), ["spotify:track:p1"]);
+
+  // Playback: prepare() hands Swift the librespot marker instead of a URL (music_play_track routing)
+  const prep = await m.prepare(s.tracks[0].track, null, null);
+  r.ok("music.prepare of a Spotify track returns the spotify: URI for the native player", prep.track.connectorId === "spotify" && prep.stream.url === "spotify:track:s1" && prep.stream.mimeType === "audio/x-spotify-uri", JSON.stringify(prep));
+
+  // tokens.rs: an expired web token is refreshed with the refresh token (scopes kept)
+  const stale = JSON.parse(store.get("harbor.spotify.v1.webToken"));
+  store.set("harbor.spotify.v1.webToken", JSON.stringify({ ...stale, expiresAt: 10 }));
+  rec.engine.runtime.syncStorage("harbor.spotify.v1.webToken", JSON.stringify({ ...stale, expiresAt: 10 }));
+  const rec2 = await m.spotifyDisconnect();
+  r.ok("music.spotifyDisconnect forgets the sign-in and web token, keeps the client id", !rec2.connected && !store.has("harbor.spotify.v1.webToken") && !store.has("harbor.spotify.v1.credentials") && store.get("harbor.spotify.v1.clientId") === "abc123client" && m.connections().find((c) => c.id === "spotify").status === "disconnected", JSON.stringify(rec2));
+
+  // A Free account: /me says free -> upstream's copy and the session is shut down
+  meProduct = "free";
+  const free = await m.spotifySessionReady({ ...rust, credentials: null }, { accessToken: "session-2", expiresAt: Math.floor(Date.now() / 1000) + 3600 });
+  r.ok("a Spotify Free account is refused with upstream's copy and Swift is told to shut the session down", !free.connected && free.shutdown && free.error === "Spotify Free cannot stream through third party apps. Connect a Spotify Premium account." && m.connections().find((c) => c.id === "spotify").status === "error" && m.connections().find((c) => c.id === "spotify").error === free.error, JSON.stringify(free));
+
+  // A refresh with an expired grant (auth.rs describe invalid_grant) drops the stored web token
+  meProduct = "premium";
+  await m.spotifyBegin("");
+  store.set("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-old", expiresAt: 10, scopes: ["streaming"] }));
+  rec.engine.runtime.syncStorage("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-old", expiresAt: 10, scopes: ["streaming"] }));
+  await m.spotifySessionReady({ ...rust, credentials: null, accountType: "Premium", premium: true }, null);
+  tokenReply = { status: 400, body: { error: "invalid_grant", error_description: "Refresh token revoked" } };
+  const expired = await m.search("muse", "spotify").then(() => "ok", (e) => e.message);
+  r.ok("an expired refresh token is dropped and Spotify asks to connect again", /Connect Spotify Premium to use Spotify/.test(expired) && !store.has("harbor.spotify.v1.webToken") && forms[forms.length - 1].grant_type === "refresh_token" && forms[forms.length - 1].refresh_token === "refresh-old", JSON.stringify({ expired, form: forms[forms.length - 1] }));
+  tokenReply = null;
+  store.set("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-old", expiresAt: 10, scopes: ["streaming", "user-top-read"] }));
+  rec.engine.runtime.syncStorage("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-old", expiresAt: 10, scopes: ["streaming", "user-top-read"] }));
+  await m.search("muse", "spotify");
+  const refreshed = JSON.parse(store.get("harbor.spotify.v1.webToken"));
+  r.ok("a stale web token is refreshed; the old refresh token and the granted scopes are kept (tokens.rs)", refreshed.accessToken === "web-2" && refreshed.refreshToken === "refresh-old" && refreshed.scopes.join(",") === "streaming,user-top-read" && hits.some((x) => x.includes("/v1/search?") && x.endsWith("Bearer web-2")), JSON.stringify(refreshed));
   rec.dispose();
 }
 

@@ -19,11 +19,32 @@ tokio-util = { version = "0.7", features = ["io", "rt"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 futures-util = "0.3"
 url = "2"
+# Spotify Premium playback (Stage 12), as upstream src-tauri/Cargo.toml: librespot 0.8, component
+# crates in lockstep. No audio backend feature (rodio/cpal have no tvOS output): the player writes
+# into src/spotify/sink.rs, which Swift drains into AVAudioEngine. rustls with the bundled webpki
+# roots instead of native-tls, so nothing needs OpenSSL or Security.framework trust on tvOS.
+librespot-core = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"], optional = true }
+librespot-playback = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"], optional = true }
+librespot-metadata = { version = "=0.8.0", default-features = false, features = ["rustls-tls-webpki-roots"], optional = true }
+log = "0.4"
+
+[features]
+default = ["spotify"]
+spotify = ["dep:librespot-core", "dep:librespot-playback", "dep:librespot-metadata"]
 
 # librqbit's SHA-1 comes from aws-lc-rs (C + asm) under `rust-tls`; the vendored wrapper swaps in
 # pure-Rust sha1 so the tvOS targets need no C crypto build. See rust/vendor/librqbit-sha1-wrapper.
 [patch.crates-io]
 librqbit-sha1-wrapper = { path = "../vendor/librqbit-sha1-wrapper" }
+# Upstream's patched librespot-core 0.8.0 (reference/harbor/src-tauri/vendor/librespot-core, copied
+# unchanged): librqbit turns on governor's quanta clock while librespot hardcodes MonotonicClock in
+# its rate limiter, and a Spotify Free login calls process::exit(1) in the stock crate, which would
+# kill the app. Cargo.lock also pins vergen 9.0.6 for librespot-core's build script (vergen 9.1
+# splits vergen-lib and the build script no longer compiles), exactly as upstream's lockfile does.
+librespot-core = { path = "../vendor/librespot-core" }
+# librespot-oauth's browser launcher has no tvOS backend (compile_error! on aarch64-apple-tvos);
+# see rust/vendor/open/Cargo.toml.
+open = { path = "../vendor/open" }
 
 [profile.release]
 opt-level = "s"

@@ -22,7 +22,7 @@ jobs:
   screens:
     name: Simulator build and screenshots
     runs-on: macos-26
-    timeout-minutes: 60  # first librqbit build for two tvOS targets is slow; cached after
+    timeout-minutes: 75  # first librqbit + librespot build for two tvOS targets is slow; cached after
     steps:
       - uses: actions/checkout@v4
         with:

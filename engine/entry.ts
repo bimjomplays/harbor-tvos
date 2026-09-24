@@ -1072,6 +1072,15 @@ export const music = {
   radioExtend: musicGlue.radioExtend,
   lyrics: musicGlue.lyrics,
   setLyricOffset: musicGlue.setLyricOffset,
+  // Spotify (music/spotify; the librespot session is Swift + rust/harbor-ffi)
+  spotifySetup: musicGlue.spotifySetup,
+  spotifyStatus: musicGlue.spotifyStatus,
+  spotifyRestore: musicGlue.spotifyRestore,
+  spotifyBegin: musicGlue.spotifyBegin,
+  spotifyFinish: musicGlue.spotifyFinish,
+  spotifySessionReady: musicGlue.spotifySessionReady,
+  spotifyFailed: musicGlue.spotifyFailed,
+  spotifyDisconnect: musicGlue.spotifyDisconnect,
 };
 
 // ================================================================================== runtime

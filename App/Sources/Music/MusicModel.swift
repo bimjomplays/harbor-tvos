@@ -12,11 +12,23 @@ final class MusicModel: ObservableObject {
     /// views/music.tsx `stalled`: nothing loaded and nothing personal to show.
     @Published private(set) var failed = false
     private var generation = 0
+    private var spotifyRestoreStarted = false
 
     func load(force: Bool) async {
         generation += 1
         let run = generation
         loading = true
+        // spotify/mod.rs initialize: a saved Spotify sign-in comes back in the background (it can
+        // take a while on a slow network); its shelves join the home once the session is up.
+        if !spotifyRestoreStarted {
+            spotifyRestoreStarted = true
+            Task {
+                let spotify = SpotifyPlayback.shared
+                guard !spotify.connected else { return }
+                await spotify.restoreIfNeeded()
+                if spotify.connected { await self.load(force: true) }
+            }
+        }
         do {
             let home: MusicHomeData = try await HarborEngine.shared.call("music.home", [force, MusicPlayer.shared.upcoming])
             guard run == generation else { return }

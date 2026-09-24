@@ -488,7 +488,8 @@ struct MusicQueueList: View {
 /// on), Jellyfin and Plex (signed in under Settings › Home servers), Navidrome / Subsonic with its
 /// own sign-in (connectors/subsonic), SoundCloud behind upstream's source consent
 /// (music-source-consent.tsx; YouTube is not offered, docs/music-spec.md) and Last.fm
-/// scrobbling (music-lastfm.tsx).
+/// scrobbling (music-lastfm.tsx), and Spotify Premium with the listener's own Spotify app
+/// (spotify-setup.tsx; playback through librespot, SpotifyPlayback.swift).
 struct MusicSourcesView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var copy = MusicCopy.shared
@@ -496,6 +497,7 @@ struct MusicSourcesView: View {
     @State private var consentOpen = false
     @State private var subsonicOpen = false
     @State private var lastfmOpen = false
+    @State private var spotifyOpen = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -517,6 +519,7 @@ struct MusicSourcesView: View {
         .fullScreenCover(isPresented: $consentOpen, onDismiss: { Task { await reload() } }) { MusicConsentView() }
         .fullScreenCover(isPresented: $subsonicOpen, onDismiss: { Task { await reload() } }) { MusicSubsonicSignInView() }
         .fullScreenCover(isPresented: $lastfmOpen, onDismiss: { Task { await reload() } }) { MusicLastFmView() }
+        .fullScreenCover(isPresented: $spotifyOpen, onDismiss: { Task { await reload() } }) { MusicSpotifyView() }
     }
 
     private func reload() async {
@@ -542,12 +545,21 @@ struct MusicSourcesView: View {
             return [who, row.detail].compactMap { $0 }.joined(separator: " · ")
         case "lastfm":
             return row.status == "disconnected" ? copy("music.lastfm.history", "Keep your listening history") : (row.account ?? copy("music.lastfm.connected", "Scrobbling connected"))
+        case "spotify":
+            // mod.rs connection(): the account and tier when connected, else the setup line; a
+            // recorded failure (Free account, rejected sign-in) shows underneath.
+            if row.status == "connected" {
+                let who = copy("music.spotify.connectedAs", "Connected as {username}").replacingOccurrences(of: "{username}", with: row.account ?? "")
+                return [who, row.detail].compactMap { $0 }.joined(separator: " · ")
+            }
+            let base = "\(copy("music.spotify.connect", "Spotify Premium")) · \(copy("music.spotify.connectDetail", "Connect once for native, ad-free playback."))"
+            return row.error.map { "\(base)\n\($0)" } ?? base
         default: return row.detail
         }
     }
 
     /// Rows with their own action: SoundCloud (consent), Navidrome (sign-in), Last.fm (authorize).
-    private func actionable(_ row: MusicConnectionRow) -> Bool { row.gated || row.id == "subsonic" || row.id == "lastfm" }
+    private func actionable(_ row: MusicConnectionRow) -> Bool { row.gated || row.id == "subsonic" || row.id == "lastfm" || row.id == "spotify" }
 
     @ViewBuilder private func rowView(_ row: MusicConnectionRow) -> some View {
         HStack(alignment: .center, spacing: BP.px(16)) {
@@ -562,7 +574,21 @@ struct MusicSourcesView: View {
                 if let h = hint(row) { BPNote(text: h) }
             }
             Spacer()
-            if row.id == "subsonic" || row.id == "lastfm" {
+            if row.id == "spotify" {
+                let connected = row.status == "connected"
+                Button(connected ? copy("music.connect.disconnect", "Disconnect") : copy("music.spotify.connectAction", "Connect")) {
+                    if connected {
+                        Task {
+                            await SpotifyPlayback.shared.disconnect()
+                            await reload()
+                        }
+                    } else {
+                        spotifyOpen = true
+                    }
+                }
+                .buttonStyle(BPActionStyle(primary: !connected))
+                .accessibilityIdentifier("music-source-spotify")
+            } else if row.id == "subsonic" || row.id == "lastfm" {
                 let connected = row.status != "disconnected"
                 Button(connected ? copy("music.connect.disconnect", "Disconnect") : copy("music.connect.action", "Connect")) {
                     if connected {
@@ -833,6 +859,186 @@ struct MusicLastFmView: View {
             dismiss()
         } catch EngineError.js(let message) {
             error = MusicPlayer.cleanJSError(message)
+        } catch {
+            self.error = "\(error)"
+        }
+    }
+}
+
+// MARK: - Spotify
+
+/// components/music/music-connections/spotify-setup.tsx on the TV. Upstream ships no Spotify client
+/// id (auth.rs BRING_YOUR_OWN): the listener creates an app in Spotify's dashboard, adds Harbor's
+/// redirect URI and pastes the client id (typed on the phone here). Upstream then opens the
+/// authorize page in the desktop browser and catches the redirect on 127.0.0.1:8898; the TV shows
+/// the authorize page as a QR code, the phone signs in, and the address the phone ends on (which
+/// does not load) is pasted back, also from the phone. Premium only (librespot): a Free account
+/// gets upstream's copy (session.rs FREE_ACCOUNT).
+struct MusicSpotifyView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var copy = MusicCopy.shared
+    @ObservedObject private var spotify = SpotifyPlayback.shared
+    @State private var setup: MusicSpotifySetup?
+    @State private var clientId = ""
+    @State private var pending: MusicSpotifyAuthStart?
+    @State private var pasted = ""
+    @State private var working = false
+    @State private var error: String?
+
+    var body: some View {
+        ZStack {
+            BP.void_.opacity(0.92).ignoresSafeArea()
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: BP.px(16)) {
+                    Text(copy("music.spotify.connect", "Spotify Premium")).font(BP.sans(24, .bold)).foregroundStyle(BP.ink)
+                    Text(copy("music.spotify.connectDetail", "Connect once for native, ad-free playback.")).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+                    if let pending { authorize(pending) } else { steps }
+                    if let error { BPNote(text: error, tone: BP.danger) }
+                    HStack(spacing: BP.px(12)) {
+                        Button {
+                            Task { if pending == nil { await begin() } else { await finish() } }
+                        } label: {
+                            Label(label, systemImage: pending == nil ? "arrow.up.right" : "checkmark")
+                        }
+                        .buttonStyle(BPActionStyle(primary: true))
+                        .disabled(working || spotify.connecting || !canGo)
+                        .accessibilityIdentifier("music-spotify-go")
+                        if pending != nil {
+                            Button(copy("music.spotifySetup.authorize", "Authorize Spotify")) { pending = nil; pasted = ""; error = nil }
+                                .buttonStyle(BPActionStyle())
+                        }
+                        Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
+                    }
+                    .focusSection()
+                }
+                .padding(BP.px(32))
+            }
+            .frame(width: BP.px(900))
+            .frame(maxHeight: BP.px(900))
+            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
+        }
+        .onExitCommand { dismiss() }
+        .task {
+            setup = try? await HarborEngine.shared.call("music.spotifySetup")
+            if clientId.isEmpty, let saved = setup?.clientId { clientId = saved }
+        }
+    }
+
+    private var redirectUri: String { setup?.redirectUri ?? "http://127.0.0.1:8898/login" }
+
+    private var label: String {
+        if working || spotify.connecting { return copy("music.connect.connecting", "Connecting") }
+        return pending == nil ? copy("music.spotifySetup.authorize", "Authorize Spotify") : "Finish connection"
+    }
+
+    /// spotify-setup.tsx: a typed client id, or the one saved on this device (Use saved configuration).
+    private var canGo: Bool {
+        pending == nil ? !clientId.trimmingCharacters(in: .whitespaces).isEmpty : !pasted.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// The three numbered steps of spotify-setup.tsx.
+    @ViewBuilder private var steps: some View {
+        step(1, copy("music.spotifySetup.createTitle", "Create a Spotify app"), copy("music.spotifySetup.createBody", "Use a Spotify Premium account to create an app in the developer dashboard.")) {
+            HStack(alignment: .center, spacing: BP.px(14)) {
+                if let qr = QRCode.image(setup?.dashboardUrl ?? "https://developer.spotify.com/dashboard") {
+                    Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(120), height: BP.px(120))
+                        .padding(BP.px(6)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
+                }
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    Text(copy("music.spotifySetup.dashboard", "Open Spotify dashboard")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                    Text("Scan the code to open it on your phone.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                }
+            }
+        }
+        step(2, copy("music.spotifySetup.redirectTitle", "Add Harbor’s redirect URI"), copy("music.spotifySetup.redirectBody", "In your app’s settings, add this exact redirect URI and save.")) {
+            VStack(alignment: .leading, spacing: BP.px(4)) {
+                Text(copy("music.spotifySetup.redirectLabel", "Redirect URI")).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkSubtle)
+                Text(redirectUri).font(.system(size: BP.px(17), design: .monospaced)).foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(8))
+                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.glass))
+            }
+        }
+        step(3, copy("music.spotifySetup.clientTitle", "Paste your Client ID"), nil) {
+            VStack(alignment: .leading, spacing: BP.px(6)) {
+                BPField(label: copy("music.spotifySetup.clientTitle", "Paste your Client ID"), placeholder: copy("music.spotifySetup.clientPlaceholder", "Client ID from your Spotify app settings"), text: $clientId, phone: true)
+                BPNote(text: copy("music.spotifySetup.accountHint", "Connecting a different Spotify account? Add it in your app’s Settings → Users Management first."))
+                if setup?.clientId.isEmpty == false {
+                    BPNote(text: copy("music.spotifySetup.savedHint", "Already set up on this device? Continue with your saved Client ID."))
+                }
+            }
+        }
+    }
+
+    private func step<Content: View>(_ number: Int, _ title: String, _ detail: String?, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: BP.px(12)) {
+            Text("\(number)").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
+                .frame(width: BP.px(24), height: BP.px(24))
+                .background(Circle().fill(BP.glass))
+            VStack(alignment: .leading, spacing: BP.px(6)) {
+                Text(title).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
+                if let detail { Text(detail).font(BP.sans(14)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true) }
+                content()
+            }
+        }
+    }
+
+    /// The phone hand-off: the authorize page as a QR code, then the address the phone ended on.
+    @ViewBuilder private func authorize(_ started: MusicSpotifyAuthStart) -> some View {
+        HStack(alignment: .top, spacing: BP.px(18)) {
+            if let qr = QRCode.image(started.authorizeUrl) {
+                Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(190), height: BP.px(190))
+                    .padding(BP.px(8)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
+            }
+            VStack(alignment: .leading, spacing: BP.px(8)) {
+                Text("Scan the code with your phone and sign in with your Spotify Premium account.").font(BP.sans(15)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
+                Text("Spotify then sends your phone to an address starting with \(started.redirectUri) that does not open. Copy that whole address and paste it below.")
+                    .font(BP.sans(14)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        BPField(label: "Address your phone ended on", placeholder: "\(started.redirectUri)?code=…", text: $pasted, keyboard: .URL, phone: true)
+    }
+
+    /// music.spotifySetup.missingSaved / rejected: spotify-setup.ts spotifySetupErrorKey swaps the
+    /// backend's walkthrough for the form's own guidance.
+    private func describe(_ message: String) -> String {
+        if message.contains("Spotify needs your own client id") { return copy("music.spotifySetup.missingSaved", "No Client ID is saved on this device. Follow the setup steps and paste your Client ID.") }
+        if message.contains("Spotify rejected that client id") { return copy("music.spotifySetup.rejected", "Check the Client ID and redirect URI in your Spotify app settings, then try again.") }
+        return message
+    }
+
+    private func begin() async {
+        working = true
+        defer { working = false }
+        error = nil
+        do {
+            pending = try await HarborEngine.shared.call("music.spotifyBegin", [clientId])
+            pasted = ""
+        } catch EngineError.js(let message) {
+            error = describe(MusicPlayer.cleanJSError(message))
+        } catch {
+            self.error = "\(error)"
+        }
+    }
+
+    private func finish() async {
+        working = true
+        defer { working = false }
+        error = nil
+        do {
+            let granted: SpotifyPlayback.Granted = try await HarborEngine.shared.call("music.spotifyFinish", [pasted])
+            let status = try await spotify.connect(granted)
+            if status.connected {
+                dismiss()
+            } else {
+                // A Free account (or a session Spotify closed): upstream's message, and back to the start.
+                error = status.error ?? copy("music.recovery.premium", "Spotify playback here requires Premium. Check your subscription or choose another source.")
+                pending = nil
+            }
+        } catch EngineError.js(let message) {
+            error = describe(MusicPlayer.cleanJSError(message))
+        } catch let failure as SpotifyPlayback.Failure {
+            error = describe(failure.message)
+            pending = nil
         } catch {
             self.error = "\(error)"
         }
