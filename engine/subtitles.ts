@@ -5,6 +5,8 @@ import { loadEffective } from "@/lib/settings/profile-store";
 import { searchSubtitles, deduplicateAndRankSubtitleResults } from "@/lib/subtitles/search";
 import { normalizeLang, languageName, filterTracksByPreferredLanguage } from "@/lib/subtitles/language";
 import { prepareSubtitle } from "@/lib/subtitles/prepare";
+import { parseSubtitle, type SubCue, type SubFormat } from "@/lib/subtitles/parser";
+import { stripSdhText } from "@/lib/subtitles/sdh-filter";
 import type { SubResult } from "@/lib/subtitles/types";
 import type { TrackInfo } from "@/lib/player/bridge";
 import type { Settings } from "@/lib/settings";
@@ -62,6 +64,22 @@ export async function prepare(url: string): Promise<{ text: string; format: stri
   // No blob: URLs in JavaScriptCore; the native side writes `text` to a file for mpv.
   const p = await prepareSubtitle({ url }, { createPlayable: () => ({ url: "harbor-tvos://subtitle", cleanup: () => {} }) });
   return { text: p.text, format: p.format, encoding: p.encoding };
+}
+
+/**
+ * The AVPlayer engine draws sideloaded subtitles itself, as upstream's html5 engine does
+ * (lib/player/html5/bridge.ts ensureLoaded → prepareSubtitle's cues, parsed by
+ * lib/subtitles/parser.ts parseSubtitle: SRT / VTT, ASS reduced to its dialogue text).
+ * `text` is what `prepare` returned; `format` its format (anything else is sniffed).
+ * tickCues shows `stripSdhText(cue.text)` while settings.subHideSdh is on; that happens here,
+ * once per cue, and cues left empty by it are dropped (they would draw nothing).
+ */
+export function cues(profileId: string, linked: boolean, text: string, format?: string | null): SubCue[] {
+  const known: SubFormat[] = ["srt", "vtt", "ass", "ssa", "sub"];
+  const fmt = known.find((f) => f === (format ?? "").toLowerCase());
+  const list = parseSubtitle(text ?? "", fmt);
+  if (loadEffective(profileId, linked).subHideSdh !== true) return list;
+  return list.map((c) => ({ ...c, text: stripSdhText(c.text) })).filter((c) => c.text.length > 0);
 }
 
 // ------------------------------------------------------------------ Big Picture subtitle panel
