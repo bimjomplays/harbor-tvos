@@ -343,6 +343,9 @@ struct MusicNowPlayingView: View {
                             .accessibilityLabel(copy("music.position", "Track position"))
                     }
                     .focusSection()
+                    // The dock's mute button and volume slider (music-dock.tsx), by remote.
+                    MusicVolumeControl()
+                        .focusSection()
                     HStack(spacing: BP.px(18)) {
                         MusicTransportButtons()
                         Spacer()

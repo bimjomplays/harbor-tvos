@@ -111,9 +111,29 @@ nothing plays (both start again on resume or the next track).
 (upstream's Save is Harbor's own liked list; it writes nothing to `/me/tracks`), saved albums and
 followed artists as library views (upstream's library page has neither; saved albums are already a
 home row, and followed artists would need `user-follow-read`, which upstream does not request),
-Spotify Connect (spirc: the TV is not offered as a cast target), volume (the TV's own volume applies;
-the soft mixer stays at full), and the "Premium · 320 kbps" label (`music.source.spotifyQuality` is in
-upstream's catalog but no upstream view renders it).
+and the "Premium · 320 kbps" label (`music.source.spotifyQuality` is in upstream's catalog but no
+upstream view renders it).
+
+**Music volume (batch 5).** Upstream's dock has a mute button and a "Music volume" slider
+(`music-dock.tsx`, `player.ts setMusicVolume`, `harbor.music.volume.v1`, 0.82 until changed) that
+`music_engine_set_volume` hands to whichever engine plays: mpv's `volume` (× 100) or librespot's soft
+mixer (`control.rs set_volume`). The TV shows the same controls on Now Playing (tvOS has no slider:
+− / + step 5 %, the dock's wheel step) and keeps the level under upstream's key (durable tier).
+`MusicPlayer.setVolume` applies it to the AVQueuePlayer as the cube of the level (mpv scales its
+volume cubically, so upstream's curve is kept) and to Spotify through `harbor_spotify_set_volume`;
+`harbor_spotify_play` starts each track at it (it was pinned to 1.0). The ring already holds up to
+half a second decoded at the old level, so a Spotify change is heard within that. The remote's
+volume keys still set the TV's own volume. Default loudness drops to upstream's 0.82 level.
+
+**Spotify Connect is not in upstream.** Upstream depends on `librespot-core`, `-playback` and `-oauth`
+only (no `librespot-connect`, no Spirc, no zeroconf/mDNS discovery; `src-tauri/src/music/spotify`
+never announces a device), so the desktop is never offered in the phone's Spotify device list
+either. Nothing to port. If it is ever wanted: `librespot-connect` 0.8's `Spirc::new` would drive the
+same `Player`, but then Spirc skips and seeks behind the app's back, so the ring's flushes would
+have to follow Spirc's commands (today only `play`/`seek`/`stop` in mod.rs request them), MusicPlayer
+would follow Spirc's track changes instead of owning the queue, and zeroconf needs
+`_spotify-connect._tcp` in `NSBonjourServices` (project.yml already has the Local Network text for
+the phone hand-off).
 
 ## What the TV room does
 
@@ -166,5 +186,5 @@ upstream's catalog but no upstream view renders it).
   per-source picker (music-source-picker.tsx) for choosing which match plays.
 - Library sync of liked tracks / playlists and upstream's playlists (library.rs), Plex timeline
   scrobbles, MusicBrainz credits on the track page (recording-profile.ts is already bundled).
-- Spotify: Connect, Import to Harbor (with Harbor playlists); EQ through an AVAudioEngine graph
+- Spotify: Import to Harbor (with Harbor playlists); EQ through an AVAudioEngine graph
   (the Spotify output is already an AVAudioEngine).

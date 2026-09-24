@@ -29,6 +29,8 @@ final class KeyValueStore {
                                                    "harbor.ebook.sources.v1", "harbor.ebook.library.v1", "harbor.ebook.favorites.v1", "harbor.ebook.read-later.v1", "harbor.ebook.reader.v1",
                                                    // engine/music.ts LIKED_KEY: the viewer's liked songs (stored without source credentials).
                                                    "harbor.music.liked.v1",
+                                                   // lib/music/player.ts VOLUME_KEY: the music volume (MusicPlayer).
+                                                   "harbor.music.volume.v1",
                                                    // lib/player-prefs.ts + lib/subtitles/subtitle-memory.ts: per-show audio/subtitle
                                                    // language, subtitles off, subtitle delay (≤200 shows, ~20 KB); per-episode remembered
                                                    // subtitle (≤500 entries; past Prefs' 64 KB cap `set` moves it to Caches by itself).

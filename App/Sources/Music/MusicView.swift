@@ -436,6 +436,47 @@ struct MusicTransportButtons: View {
     }
 }
 
+/// music-dock.tsx volume: the mute button and the "Music volume" slider (0...1, titled
+/// "Music volume · 82%"). tvOS has no slider, so − / + either side of the bar step it by 5 % (the
+/// dock's wheel step), as the seek row's ten-second buttons do. This is the music's own level
+/// (upstream's mpv volume / librespot soft mixer); the remote still sets the TV's volume.
+struct MusicVolumeControl: View {
+    @ObservedObject private var player = MusicPlayer.shared
+    @ObservedObject private var copy = MusicCopy.shared
+
+    var body: some View {
+        let muted = player.volume <= 0
+        let label = copy("music.volume", "Music volume")
+        HStack(spacing: BP.px(12)) {
+            Button { player.toggleMute() } label: {
+                Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: BP.px(15), weight: .semibold))
+            }
+            .buttonStyle(MusicIconStyle())
+            .accessibilityLabel(muted ? copy("music.unmute", "Unmute") : copy("music.mute", "Mute"))
+            .accessibilityIdentifier("music-mute")
+            Button { player.stepVolume(by: -0.05) } label: { Image(systemName: "minus").font(.system(size: BP.px(15), weight: .semibold)) }
+                .buttonStyle(MusicIconStyle())
+                .accessibilityLabel(label)
+                .accessibilityValue("\(Int((player.volume * 100).rounded()))%")
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(BP.edge2)
+                    Capsule().fill(muted ? BP.inkSubtle : BP.ink).frame(width: g.size.width * CGFloat(min(1, max(0, player.volume))))
+                }
+            }
+            .frame(height: BP.px(4))
+            Button { player.stepVolume(by: 0.05) } label: { Image(systemName: "plus").font(.system(size: BP.px(15), weight: .semibold)) }
+                .buttonStyle(MusicIconStyle())
+                .accessibilityLabel(label)
+                .accessibilityValue("\(Int((player.volume * 100).rounded()))%")
+            Text(verbatim: "\(label) · \(Int((player.volume * 100).rounded()))%")
+                .font(BP.sans(12.5)).monospacedDigit().foregroundStyle(BP.inkSubtle).lineLimit(1)
+                .fixedSize()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 /// Round icon button in the Big Picture focus language (ring + lift).
 struct MusicIconStyle: ButtonStyle {
     var big = false

@@ -54,6 +54,8 @@ const COPY_KEYS = [
   "music.spotifyLibrary.createThenAdd", "music.spotifyLibrary.spotifyTrackOnly", "music.spotifyLibrary.readOnly", "music.spotifyLibrary.refresh",
   "music.spotifyLibrary.skipped", "music.spotifyLibrary.noImportable",
   "music.library.loadMore", "music.playlist.none", "music.playlist.namePlaceholder", "music.playlist.nameLabel", "music.card.addToPlaylist",
+  // music-dock.tsx volume (the mute button and the "Music volume" slider)
+  "music.volume", "music.mute", "music.unmute",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */
