@@ -587,7 +587,7 @@ struct DetailView: View {
         .onChange(of: model.animeSeasonKey) { old, new in
             guard old == nil, let new, model.animeHasChips, model.animeChips.count > 1 else { return }
             let wasOnKitsu = seasonFocus?.hasPrefix("kitsu-") == true
-                || (kitsuFocusLostAt.map { Date().timeIntervalSince($0) < 0.4 } ?? false)
+                || (kitsuFocusLostAt.map { Date().timeIntervalSince($0) < 0.1 } ?? false)   // the same update, not a move away (review 35)
             kitsuFocusLostAt = nil
             guard wasOnKitsu else { return }
             DispatchQueue.main.async { seasonFocus = "chip-\(new)" }

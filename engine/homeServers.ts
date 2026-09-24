@@ -283,13 +283,20 @@ async function copyServerHealth(ids: string[]): Promise<Record<string, MediaServ
   const conns = mediaServerConnections().filter((c) => ids.includes(c.id));
   const snapshot = getMediaServerHealthSnapshot();
   const now = Date.now();
-  await Promise.all(conns.map((c) => {
+  const out: Record<string, MediaServerHealth> = { ...snapshot };
+  await Promise.all(conns.map(async (c) => {
     const known = snapshot[c.id];
-    if (known && known !== "checking" && now - (probedAt.get(c.id) ?? 0) < HEALTH_FRESH_MS) return Promise.resolve(known);
+    if (known && known !== "checking" && now - (probedAt.get(c.id) ?? 0) < HEALTH_FRESH_MS) { out[c.id] = known; return; }
     probedAt.set(c.id, now);
-    return Promise.race([probeMediaServerHealth(c), new Promise<void>((r) => setTimeout(r, HEALTH_WAIT_MS))]);
+    // The race's own outcome: a server that was active earlier and now doesn't answer within the
+    // wait counts as offline (the snapshot would still say active) (review 35).
+    const answered = await Promise.race([
+      probeMediaServerHealth(c).then(() => true, () => true),
+      new Promise<false>((r) => setTimeout(() => r(false), HEALTH_WAIT_MS)),
+    ]);
+    out[c.id] = answered ? (getMediaServerHealthSnapshot()[c.id] ?? "inactive") : "inactive";
   }));
-  return getMediaServerHealthSnapshot();
+  return out;
 }
 
 /** Test hook: health.ts markMediaServerInactive (the settings panel's "server went away"). */

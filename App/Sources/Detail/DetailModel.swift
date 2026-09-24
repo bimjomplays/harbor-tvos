@@ -243,7 +243,9 @@ final class DetailModel: ObservableObject {
         if !w.orderTypes.isEmpty { animeOrders = w.orderTypes }
         animeOrderType = w.orderType
         animeHasChips = w.hasChips
-        animeSeasonKey = groups[w.seasonKey] != nil ? w.seasonKey : w.groups.first?.key
+        // A Kitsu season pressed while this request was out wins over the engine's default (review 35).
+        let seeded = animeSeasonPicked ?? kitsuSeasonPicked.map { String($0) }
+        animeSeasonKey = seeded.flatMap { groups[$0] != nil ? $0 : nil } ?? (groups[w.seasonKey] != nil ? w.seasonKey : w.groups.first?.key)
         await loadWatchedState()
         await loadEpisodeArt()
     }

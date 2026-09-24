@@ -329,7 +329,10 @@ struct PlayerScreen: View {
             if sec <= 5 { sec = 0 }
             // use-track-autoload.ts prefsAppliedRef: a title starts at the show's remembered rate
             // (player-prefs), else settings.defaultPlaybackSpeed (live has no speed).
-            if !isLive {
+            // Not for kid profiles: their transport has no speed control, and player-prefs is keyed by
+            // show, not profile (an adult's 1.5x would stick for a kid) (review 35).
+            if !isLive, isKid { rate = 1 }
+            else if !isLive {
                 let rp = ProfilesStore.shared.active
                 let remembered: Double? = try? await HarborEngine.shared.call("player.startRate", [rp?.id ?? "default", rp?.linked ?? true, trackMemory] as [any Encodable])
                 if let r = remembered ?? slice.defaultPlaybackSpeed, r.isFinite, r > 0 { rate = r }
