@@ -10,8 +10,8 @@ struct PlayerSubtitlesPanel: View {
     let title: String
     @Binding var subDelay: Double
     let onClose: () -> Void
-    /// The AVPlayer engine shows the file's own subtitle options only: no sideloaded (Find more),
-    /// shifted (Sync), restyled (Look) or second subtitle.
+    /// The AVPlayer engine draws sideloaded subtitles itself (html5 bridge), so Find more, Sync and
+    /// Look work on both engines; a second subtitle there must be one of those sideloaded tracks.
     private var mpvExtras: Bool { controller?.supportsMpvExtras ?? true }
 
     enum Lane: Hashable { case tracks, find, sync, style }
@@ -82,11 +82,9 @@ struct PlayerSubtitlesPanel: View {
 
                 HStack(spacing: BP.px(8)) {
                     laneChip(.tracks, "Tracks", "captions.bubble")
-                    if mpvExtras {
-                        laneChip(.find, "Find more", "magnifyingglass")
-                        laneChip(.sync, "Sync", "timer")
-                        laneChip(.style, "Look", "slider.horizontal.3")
-                    }
+                    laneChip(.find, "Find more", "magnifyingglass")
+                    laneChip(.sync, "Sync", "timer")
+                    laneChip(.style, "Look", "slider.horizontal.3")
                     Spacer(minLength: 0)
                     Button { onClose() } label: { Label("Close", systemImage: "xmark") }
                         .buttonStyle(PlayerChipStyle())
@@ -252,7 +250,7 @@ struct PlayerSubtitlesPanel: View {
             note("No tracks match these filters. Try toggling HI/SDH or Forced.")
         }
         if !mpvExtras {
-            note("AVPlayer shows the file's own subtitles. Online subtitles, sync, style and a second track need the mpv engine.")
+            note("AVPlayer draws the file's own subtitles itself: Sync and Look change the ones added from Find more.")
         }
     }
 
@@ -265,8 +263,8 @@ struct PlayerSubtitlesPanel: View {
             }
             .buttonStyle(PlayerLineStyle(on: t.selected))
             .focused($focus, equals: "line-\(t.id)")
-            // setSecondarySub: a second track under the first, or off again (mpv only).
-            if mpvExtras {
+            // setSecondarySub: a second track under the first, or off again (on AVPlayer, added tracks only).
+            if mpvExtras || t.external {
                 Button {
                     controller?.setSecondarySub(t.secondary ? nil : t)
                     refreshSoon()

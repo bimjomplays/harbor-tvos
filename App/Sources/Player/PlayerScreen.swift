@@ -35,6 +35,11 @@ struct PlayerScreen: View {
     @State private var tuned: LiveModel.Channel?
     /// goPrevChannel: the channels tuned before, newest last, 12 at most.
     @State private var prevChannels: [LiveModel.Channel] = []
+    /// KidsStreamSwitcher onPick: the stream picked in place of the one opened (nil = the one opened).
+    @State private var switched: SwitchedStream?
+    struct SwitchedStream { var url: URL; var headers: [String: String] }
+    /// TransportKids' subtitle toggle reads the subtitle tracks (refreshed while its chrome is up).
+    @State private var kidSubs: [MPVPlayerController.Track] = []
     @State private var subDelay: Double = 0
     /// bp-player-sources BpAudioLane: mpv audio-delay, ±0.1 / ±0.5 s.
     @State private var audioDelay: Double = 0
@@ -105,7 +110,7 @@ struct PlayerScreen: View {
         var seekForwardStepSec: Double = 10
     }
 
-    enum Panel { case audio, subtitles, anime4k, channels }
+    enum Panel { case audio, subtitles, anime4k, channels, kidsSources }
     struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
@@ -165,8 +170,13 @@ struct PlayerScreen: View {
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) { chromeView.transition(.opacity) }
-            if let resumePending { resumePrompt(resumePending).transition(.opacity) }
+            if chrome, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+                // transport.tsx: a kid profile gets TransportKids instead of the full transport.
+                Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
+            }
+            if let resumePending {
+                Group { if isKid { kidsResumePrompt } else { resumePrompt(resumePending) } }.transition(.opacity)
+            }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
             if status.state == "error", isLive, liveGuide != nil, panel == nil { liveErrorCard.transition(.opacity) }
@@ -207,7 +217,7 @@ struct PlayerScreen: View {
         // use-player-media: a torrent served by the TV's engine belongs to this player while it is
         // open, and is removed once it closes (TorrentEngine; a no-op for every other URL).
         .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url) }
-        .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: url) }
+        .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: switched?.url ?? url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         .fullScreenCover(isPresented: $roomOpen, onDismiss: { focus = .surface; wake() }) { TogetherView(inPlayer: true) }
         // The app now declares background audio for music; a film or channel still stops
@@ -242,6 +252,7 @@ struct PlayerScreen: View {
                 snap = c.snapshot()
                 muted = c.isMuted()
                 buffered = c.bufferedSec()
+                if isKid, chrome { kidSubs = c.tracks().filter { $0.type == "sub" } }
             }
             // Anime4K is an mpv shader chain (html5 bridge: setAnime4kShaders() {}).
             if !isLive, engine == .mpv, let c = controller, status.state != "loading" {
@@ -659,14 +670,103 @@ struct PlayerScreen: View {
             if let liveGuide {
                 LivePlayerGuidePanel(model: liveGuide, current: currentChannel, onPick: { tune($0) }, onClose: { closePanel() })
             }
+        case .kidsSources:
+            if let context {
+                KidsStreamSwitcher(meta: context.meta, episode: kidsEpisode(context), currentURL: playURL,
+                                   onPicked: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
+            }
         }
+    }
+
+    // MARK: kid profiles (transport-kids.tsx, kids-switcher.tsx, resume-prompt.tsx; useActiveKid)
+
+    private var isKid: Bool { ProfilesStore.shared.active?.kid != nil }
+
+    /// player.tsx canPickAnother, for a title the kid switcher can search again.
+    private var kidsCanSwitch: Bool {
+        guard let context, !isLive else { return false }
+        return !context.playlistVod && context.homeServer == nil
+    }
+
+    private var kidsChrome: some View {
+        KidsPlayerTransport(title: shownTitle, resolution: resolutionLabel, isLive: isLive, position: pendingSeek ?? snap.position,
+                            duration: snap.duration, buffered: buffered, paused: snap.paused, muted: muted,
+                            hasSubtitles: !kidSubs.isEmpty, subtitlesOn: kidSubs.contains { $0.selected }, canPickAnother: kidsCanSwitch,
+                            focus: $focus,
+                            onBack: { requestClose() },
+                            onPlayPause: { togglePause() },
+                            onSeekStep: { seekBy($0); wake() },
+                            onMute: { controller?.setMuted(!muted); muted.toggle(); wake() },
+                            onSubtitles: { toggleKidSubtitles(); wake() },
+                            onPickAnother: { open(.kidsSources) })
+    }
+
+    private var kidsResumePrompt: some View {
+        KidsResumePrompt(title: shownTitle, focus: $focus, onResume: { acknowledgeResume(true) }, onStartOver: { acknowledgeResume(false) })
+            .onAppear { controller?.setPaused(true); if let c = controller { snap = c.snapshot() } }
+    }
+
+    /// resolution-label.ts realQualityLabel from the decoded picture ("w h codec…" in status).
+    private var resolutionLabel: String? {
+        let parts = status.videoParams.split(separator: " ")
+        guard parts.count >= 2, let w = Int(parts[0]), let h = Int(parts[1]), w > 0 || h > 0 else { return nil }
+        if h >= 2160 || w >= 3840 { return "4K" }
+        if h >= 1440 || w >= 2560 { return "1440p" }
+        if h >= 1080 || w >= 1920 { return "1080p" }
+        if h >= 720 || w >= 1280 { return "720p" }
+        if h >= 480 || w >= 854 { return "480p" }
+        return "SD"
+    }
+
+    /// TransportKids toggleSub: off when one is on, else the first subtitle track.
+    private func toggleKidSubtitles() {
+        guard let c = controller else { return }
+        let subs = c.tracks().filter { $0.type == "sub" }
+        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub") }
+        else if let first = subs.first { c.select(track: first, type: "sub") }
+        kidSubs = c.tracks().filter { $0.type == "sub" }
+    }
+
+    /// The PlayEpisode the switcher searches with.
+    private func kidsEpisode(_ context: PlaybackContext) -> AnyJSON? {
+        guard let s = context.season else { return nil }
+        var ep: [String: AnyJSON] = ["season": .number(Double(s)), "episode": .number(Double(context.episode ?? 1))]
+        if let v = context.videoId { ep["videoId"] = .string(v) }
+        if let i = context.imdbId { ep["imdbId"] = .string(i) }
+        return .object(ep)
+    }
+
+    /// stream-switcher onPick: the picked stream replaces this one in place at the same position
+    /// (use-bridge-load hasExplicitStart), through the engine rule again; a torrent stays owned by
+    /// the player while it plays (use-player-media).
+    private func switchStream(to next: URL, headers nextHeaders: [String: String]) {
+        let at = snap.position > 5 ? snap.position : 0
+        let owned = switched?.url ?? url
+        if next != owned {
+            TorrentEngine.shared.playerOpened(url: next)
+            TorrentEngine.shared.playerClosed(url: owned)
+        }
+        switched = SwitchedStream(url: next, headers: nextHeaders)
+        status = MPVPlayerController.Status()
+        loadingSince = Date()
+        controller = nil
+        subDelay = 0
+        anime4kAppliedFor = -1
+        startAt = nil
+        let target = playURL
+        Task {
+            guard await settleEngine(for: target, hints: nil) else { return }
+            startAt = at
+            reloadToken += 1
+        }
+        closePanel()
     }
 
     // MARK: live channels (use-live-channel-overlay.ts)
 
     private var currentChannel: LiveModel.Channel? { tuned ?? liveChannel }
-    private var playURL: URL { tuned.flatMap { URL(string: $0.url) } ?? url }
-    private var playHeaders: [String: String] { tuned.map { $0.headers ?? [:] } ?? headers }
+    private var playURL: URL { tuned.flatMap { URL(string: $0.url) } ?? switched?.url ?? url }
+    private var playHeaders: [String: String] { tuned.map { $0.headers ?? [:] } ?? switched?.headers ?? headers }
     private var shownTitle: String { tuned?.name ?? title }
     private var shownSubtitle: String? {
         guard let t = tuned else { return subtitle }
@@ -752,9 +852,9 @@ struct PlayerScreen: View {
         return VStack(alignment: .leading, spacing: BP.px(10)) {
             Spacer()
             HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Connecting…").font(BP.display(28)).foregroundStyle(BP.ink) }
-            if TorrentEngine.streamRef(url) != nil {
+            if TorrentEngine.streamRef(playURL) != nil {
                 // bp-connecting with a torrent: bp-p2p-status's stage, readiness and peers/speed.
-                TorrentReadout(url: url)
+                TorrentReadout(url: playURL)
             } else {
                 Text(elapsed >= 22 ? "Still looking. Some sources take a while to answer." : "The player is opening the stream. \(elapsed) s").font(BP.sans(15)).foregroundStyle(BP.inkMuted)
             }

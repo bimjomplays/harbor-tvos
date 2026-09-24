@@ -1298,6 +1298,17 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("subtitles.trackView keeps preferred languages plus the secondary track", row("1").keep && !row("2").keep && row("3").keep && row("4").keep, JSON.stringify(tv.tracks.map((t) => [t.id, t.keep])));
   r.ok("subtitles.trackView labels rows like bp-subtitle-parts", row("1").title === "Embedded 1 · SUBRIP" && row("3").detail === "External · English" && row("3").tags.join() === "HI/SDH" && row("2").tags.join() === "Forced" && row("1").langDisplay === "English", JSON.stringify(tv.tracks));
   r.ok("subtitles.trackView ranks the release-matched external track as the best match", tv.ranked[0] && tv.ranked[0].id === "3" && tv.ranked[0].eligible === true, JSON.stringify(tv.ranked));
+  // subtitles.cues: upstream's parser.ts for the AVPlayer overlay (html5 bridge ensureLoaded).
+  const srt = "1\n00:00:01,500 --> 00:00:03,000\n<i>Hello</i> &amp; welcome\n\n2\n00:00:04,000 --> 00:00:05,250\n[DOOR SLAMS]\n\n3\n00:00:06,000 --> 00:00:07,000\nJOHN: Line one\nLine two\n";
+  r.eq("subtitles.cues parses SRT (tags and entities cleaned, sorted)", e.subtitles.cues("default", true, srt, "srt"),
+    [{ start: 1.5, end: 3, text: "Hello & welcome" }, { start: 4, end: 5.25, text: "[DOOR SLAMS]" }, { start: 6, end: 7, text: "JOHN: Line one\nLine two" }]);
+  r.eq("subtitles.cues sniffs WebVTT without hours", e.subtitles.cues("default", true, "WEBVTT\n\n00:01.000 --> 00:02.500 line:90%\n<b>Hi</b> there\n", null),
+    [{ start: 1, end: 2.5, text: "Hi there" }]);
+  const ass = "[Script Info]\nTitle: x\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:02.50,0:00:04.00,Default,,0,0,0,,{\\an8}Top, with comma\\Nsecond line\n";
+  r.eq("subtitles.cues reduces ASS to its dialogue text", e.subtitles.cues("default", true, ass, "ass"), [{ start: 2.5, end: 4, text: "Top, with comma\nsecond line" }]);
+  e.settings.patch({ subHideSdh: true });
+  r.eq("subtitles.cues strips SDH lines when subHideSdh is on", e.subtitles.cues("default", true, srt, "srt").map((c) => c.text), ["Hello & welcome", "Line one\nLine two"]);
+  e.settings.patch({ subHideSdh: false });
   const target = await e.subtitles.titleTarget("breaking bad s2e5", { imdbId: "tt0111161", type: "movie", title: "The Shawshank Redemption" });
   r.eq("subtitles.titleTarget parses S2E5 and picks the Cinemeta series", target, { imdbId: "tt0903747", type: "series", title: "Breaking Bad", season: 2, episode: 5 });
   r.eq("subtitles.titleTarget: a one-letter query re-runs the current target", await e.subtitles.titleTarget("b", { imdbId: "", type: "movie", title: "x" }), null);
