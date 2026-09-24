@@ -12,7 +12,7 @@ struct SettingsView: View {
     @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
-    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs, newProfile, editProfile, connect; var id: Int { hashValue } }
+    enum Sheet: Identifiable { case harbor, stremio, pin, removePin, spikes, tmdb, addons, subLangs, newProfile, editProfile, connect; var id: Int { hashValue } }
 
 
     var body: some View {
@@ -93,7 +93,7 @@ struct SettingsView: View {
                         HStack(spacing: BP.px(12)) {
                             Button("Switch profile") { app.switchProfile() }.buttonStyle(BPActionStyle())
                             Button(p.passwordHash == nil ? "Set a PIN" : "Remove PIN") {
-                                if p.passwordHash == nil { pinDraft = ""; sheet = .pin } else { profiles.setPin(nil, for: p.id) }
+                                if p.passwordHash == nil { pinDraft = ""; sheet = .pin } else { sheet = .removePin }
                             }.buttonStyle(BPActionStyle())
                             Button("Edit profile") { sheet = .editProfile }.buttonStyle(BPActionStyle())
                             Button("Add profile") { sheet = .newProfile }.buttonStyle(BPActionStyle())
@@ -120,6 +120,14 @@ struct SettingsView: View {
                 case .stremio:
                     if let p = profiles.active {
                         StremioSignInForm(profileId: p.id, done: { _ in sheet = nil }, skip: { sheet = nil }).padding(BP.gutter)
+                    }
+                case .removePin:
+                    // Removing a PIN needs that PIN, or it would unlock every locked tab.
+                    if let p = profiles.active {
+                        PinPadView(profile: p, finish: { ok in
+                            if ok { profiles.setPin(nil, for: p.id) }
+                            sheet = nil
+                        }, title: "Enter the PIN to remove it")
                     }
                 case .pin:
                     VStack(alignment: .leading, spacing: BP.px(16)) {
