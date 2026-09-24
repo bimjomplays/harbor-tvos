@@ -178,20 +178,19 @@ final class PlaylistVodModel: ObservableObject {
         guard tabLoading else { return nil }
         let loaded = tab == .movies ? (status?.movies ?? 0) : (status?.series ?? 0)
         let providerTotal = tab == .movies ? status?.movieTotal : status?.seriesTotal
-        let noun = tab == .movies ? "movies" : "shows"
-        guard let providerTotal else { return "Loading \(noun)..." }
-        return "Loaded \(loaded.formatted()) of \(max(providerTotal, loaded).formatted()) \(noun)..."
+        guard let providerTotal else { return T(tab == .movies ? "Loading movies..." : "Loading shows...") }
+        return T(tab == .movies ? "Loaded %@ of %@ movies..." : "Loaded %@ of %@ shows...", loaded.formatted(), max(providerTotal, loaded).formatted())
     }
 
     /// emptyMoviesText / emptyShowsText.
     var emptyText: String {
         let q = query.trimmingCharacters(in: .whitespaces)
         if tab == .movies {
-            if !q.isEmpty { return "No movies match \"\(q)\"." }
+            if !q.isEmpty { return T("No movies match \"%@\".", q) }
             if libraryTotal == 0 { return "This playlist has no movies. It may be live channels only, or an Xtream login that exposes movies separately." }
             return "No movies here."
         }
-        if !q.isEmpty { return "No shows match \"\(q)\"." }
+        if !q.isEmpty { return T("No shows match \"%@\".", q) }
         if libraryTotal == 0 { return "This playlist has no shows. It may be live channels only, or an Xtream login that exposes shows separately." }
         return "No shows here."
     }
@@ -199,8 +198,8 @@ final class PlaylistVodModel: ObservableObject {
     /// CapNote.
     var capNote: String? {
         guard total > items.count else { return nil }
-        let noun = tab == .movies ? "movies" : "shows"
-        return "Showing \(items.count.formatted()) of \(total.formatted()) \(noun). Scroll to load more."
+        return T(tab == .movies ? "Showing %@ of %@ movies. Scroll to load more." : "Showing %@ of %@ shows. Scroll to load more.",
+                 items.count.formatted(), total.formatted())
     }
 }
 
@@ -288,7 +287,7 @@ struct PlaylistVodView: View {
         Button { Task { await model.chooseTab(tab) } } label: {
             HStack(spacing: BP.px(6)) {
                 Image(systemName: icon)
-                Text(label)
+                Text(T(label))
                 if count > 0 { Text(count.formatted()).opacity(0.55) }
             }
         }
@@ -307,7 +306,7 @@ struct PlaylistVodView: View {
         } else if model.tabLoading && model.items.isEmpty {
             HStack(spacing: BP.px(10)) {
                 ProgressView().tint(BP.inkMuted)
-                Text(model.progressLine ?? "Loading playlist...").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                Text(model.progressLine ?? T("Loading playlist...")).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
             }
             .padding(.top, BP.px(20))
         } else if model.items.isEmpty {
@@ -409,8 +408,8 @@ struct VodSeriesDetail: View {
 
     private var facts: String {
         var parts: [String] = []
-        parts.append(loading ? "Loading episodes..." : (series.episodes.count == 1 ? "1 episode" : "\(series.episodes.count) episodes"))
-        if series.seasons.count > 1 { parts.append("\(series.seasons.count) seasons") }
+        parts.append(loading ? T("Loading episodes...") : (series.episodes.count == 1 ? T("1 episode") : T("%lld episodes", series.episodes.count)))
+        if series.seasons.count > 1 { parts.append(T("%lld seasons", series.seasons.count)) }
         if let g = series.group, !g.isEmpty { parts.append(g) }
         return parts.joined(separator: " · ")
     }

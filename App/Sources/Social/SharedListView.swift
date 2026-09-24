@@ -45,7 +45,7 @@ struct SharedListView: View {
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     Text("A LIST BY \(owner.alias.uppercased())").font(BP.sans(11, .bold)).tracking(2).foregroundStyle(BP.inkSubtle)
                     Text(list.name).font(BP.display(38, .medium)).foregroundStyle(BP.ink).lineLimit(2)
-                    Text("\(list.items.count) \(list.items.count == 1 ? "title" : "titles")").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                    Text(T(list.items.count == 1 ? "%lld title" : "%lld titles", list.items.count)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                 }
             }
             if let desc = list.description, !desc.isEmpty {
@@ -114,7 +114,7 @@ struct SharedListView: View {
         defer { busy = false }
         do {
             let r: Social.SaveResult = try await HarborEngine.shared.call("social.listSave", [ref.handle, ref.listId])
-            note = r.already == true ? "Already in your lists." : (r.full == true ? "Your lists are full." : "Saved to your lists.")
+            note = r.already == true ? "Already in your lists." : (r.full == true ? "List full" : "Saved")
         } catch {
             note = Social.message(error)
         }
@@ -133,7 +133,7 @@ struct SharedListOpenView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        SocialPage(eyebrow: "Lists", title: "Open a shared list",
+        SocialPage(eyebrow: "Lists", title: T("Open a shared list"),
                    subtitle: "Paste the list's share link on your phone, or type the maker's handle and the list id as handle/list.") {
             HStack(spacing: BP.px(10)) {
                 Button { typing = true } label: { Label(text.isEmpty ? "Type the link on your phone" : text, systemImage: "iphone") }

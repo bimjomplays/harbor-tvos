@@ -12,7 +12,7 @@ final class KeyValueStore {
     /// (docs/engine-report.md §4; `secretStore.isSecretKey` is the authoritative list).
     private static let secretPrefixes = ["harbor.manga.suwayomi.servers.v1", "harbor.auth.", "harbor.theme-session", "harbor.debrid.", "harbor.keys.",
                                          "harbor.trakt.session.v1", "harbor.simkl.session.v1", "harbor.mal.session.v1", "harbor.anilist.session.v1",
-                                         "harbor.lastfm.v1", "harbor.media-server.token.v1", "harbor.plex-auth.device.v1", "harbor.sports.api-sports.v1"]
+                                         "harbor.lastfm.v1", "harbor.subsonic.v1", "harbor.media-server.token.v1", "harbor.plex-auth.device.v1", "harbor.sports.api-sports.v1"]
     /// Small, user-authored state that must survive a cache purge: profiles, settings blobs
     /// (`harbor.settings`, `.shared`, `.<profile>`), sync bookkeeping, sports choices, consent.
     private static let durableKeys: Set<String> = ["harbor.profiles.v1", "harbor.active-profile", "harbor.settings", "harbor.settings.shared", "harbor.sync.account",

@@ -30,8 +30,8 @@ struct TogetherView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(22)) {
                     VStack(alignment: .leading, spacing: BP.px(6)) {
-                        Text("WATCH TOGETHER").font(BP.sans(11, .bold)).tracking(2.4).foregroundStyle(BP.inkSubtle)
-                        Text(room.view.inSession ? "Room \(room.view.room ?? "")" : "Watch together").font(BP.display(34, .medium)).foregroundStyle(BP.ink)
+                        Text("Watch together").textCase(.uppercase).font(BP.sans(11, .bold)).tracking(2.4).foregroundStyle(BP.inkSubtle)
+                        Text(room.view.inSession ? T("Room code") + " " + (room.view.room ?? "") : T("Watch together")).font(BP.display(34, .medium)).foregroundStyle(BP.ink)
                     }
                     relayBanner
                     if !room.view.enabled { noRelay }
@@ -68,7 +68,7 @@ struct TogetherView: View {
                 Button { Task { await room.setRelay(room.view.publicRelay) } } label: { Label("Use Harbor's public relay", systemImage: "antenna.radiowaves.left.and.right") }
                     .buttonStyle(BPActionStyle(primary: true)).focused($focus, equals: "public")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
-                Button { draft = ""; typing = .relay } label: { Label("Own relay URL", systemImage: "link") }.buttonStyle(BPActionStyle())
+                Button { draft = ""; typing = .relay } label: { Label("Your relay URL", systemImage: "link") }.buttonStyle(BPActionStyle())
                 Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
@@ -92,12 +92,12 @@ struct TogetherView: View {
                     Label(room.view.state == "connecting" ? "Starting…" : "Start a new room", systemImage: "plus")
                 }
                 .buttonStyle(BPActionStyle(primary: true)).disabled(room.view.state == "connecting").focused($focus, equals: "start")
-                Button { draft = ""; typing = .link } label: { Label("Join with a link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
+                Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                 Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
             HStack(alignment: .bottom, spacing: BP.px(10)) {
-                BPField(label: "or join with a code", placeholder: "ABCD23", text: $code, phone: true)
+                BPField(label: "or join", placeholder: "ABCD23", text: $code, phone: true)
                     .frame(width: BP.px(360))
                 Button("Join") { Task { await join(code) } }
                     .buttonStyle(BPActionStyle()).disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || room.view.state == "connecting")
@@ -111,7 +111,7 @@ struct TogetherView: View {
             } else if room.view.state == "connecting" {
                 HStack(spacing: BP.px(8)) { ProgressView().tint(BP.ink); Text("Connecting to the relay…").font(BP.sans(14)).foregroundStyle(BP.inkMuted) }
             }
-            Text(room.view.isPublicRelay ? "Relay: Harbor's public relay" : "Relay: \(room.view.relayUrl)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+            Text(T("Relay") + ": " + (room.view.isPublicRelay ? T("Harbor's public relay") : room.view.relayUrl)).font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
         }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if focus == nil { focus = "start" } } }
     }
@@ -132,8 +132,8 @@ struct TogetherView: View {
                             HStack(spacing: BP.px(12)) {
                                 RemoteImage(url: media.posterUrl).frame(width: BP.px(46), height: BP.px(68)).clipShape(RoundedRectangle(cornerRadius: BP.px(4)))
                                 VStack(alignment: .leading, spacing: BP.px(2)) {
-                                    Text("NOW WATCHING").font(BP.sans(10, .bold)).tracking(2).foregroundStyle(BP.live)
-                                    Text(media.mediaTitle ?? "Untitled").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
+                                    Text("Now watching").textCase(.uppercase).font(BP.sans(10, .bold)).tracking(2).foregroundStyle(BP.live)
+                                    Text(media.mediaTitle ?? T("Untitled")).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                                     if let e = media.episode { Text("S\(e.season) · E\(e.episode)").font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                                 }
                             }
@@ -157,11 +157,11 @@ struct TogetherView: View {
             HStack(spacing: BP.px(10)) {
                 if v.isHost || v.hostClientId == v.clientId {
                     Button { Task { await room.setGuestsPick(!v.guestsPick) } } label: {
-                        Label("Guests pick their source", systemImage: v.guestsPick ? "checkmark.circle.fill" : "circle")
+                        Label("Guests pick their own source", systemImage: v.guestsPick ? "checkmark.circle.fill" : "circle")
                     }
                     .buttonStyle(BPActionStyle())
                 }
-                Button { draft = room.view.displayName; typing = .name } label: { Label("Name: \(v.displayName)", systemImage: "pencil") }.buttonStyle(BPActionStyle())
+                Button { draft = room.view.displayName; typing = .name } label: { Label(T("Your name") + ": " + v.displayName, systemImage: "pencil") }.buttonStyle(BPActionStyle())
                 Button { Task { await room.leave() } } label: { Label("Leave room", systemImage: "rectangle.portrait.and.arrow.right") }.buttonStyle(BPActionStyle())
                 Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
             }
@@ -174,8 +174,8 @@ struct TogetherView: View {
             SocialAvatar(url: p.avatar, name: p.name, size: BP.px(36), tint: Color.room(p.color) ?? BP.accent)
             VStack(alignment: .leading, spacing: BP.px(1)) {
                 HStack(spacing: BP.px(6)) {
-                    Text(p.isSelf ? "\(p.name) (you)" : p.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
-                    if p.host { Text("HOST").font(BP.sans(9, .bold)).tracking(1).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(5)).padding(.vertical, BP.px(1)).background(Capsule().fill(BP.accent)) }
+                    Text(p.isSelf ? p.name + T(" (you)") : p.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
+                    if p.host { Text("Host").textCase(.uppercase).font(BP.sans(9, .bold)).tracking(1).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(5)).padding(.vertical, BP.px(1)).background(Capsule().fill(BP.accent)) }
                     if p.ready { Image(systemName: "checkmark.circle.fill").foregroundStyle(BP.live).font(.system(size: BP.px(12))) }
                 }
                 if let loc = p.locationLabel, !p.isSelf { Text(loc).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1) }
@@ -193,7 +193,7 @@ struct TogetherView: View {
                 }
                 ForEach(room.view.chat.suffix(12)) { m in
                     HStack(alignment: .firstTextBaseline, spacing: BP.px(8)) {
-                        Text(m.from == room.view.clientId ? "You" : m.name).font(BP.sans(14, .semibold))
+                        Text(m.from == room.view.clientId ? T("You") : m.name).font(BP.sans(14, .semibold))
                             .foregroundStyle(Color.room(room.view.participants.first(where: { $0.id == m.from })?.color) ?? BP.accent)
                         Text(m.text).font(BP.sans(14)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
                     }

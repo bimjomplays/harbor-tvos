@@ -138,8 +138,8 @@ final class LiveModel: ObservableObject {
     /// countries, top groups); 30 chips at most.
     var categories: [(key: String, label: String, count: Int, flag: String?)] {
         var out: [(key: String, label: String, count: Int, flag: String?)] = [
-            (key: Self.favKey, label: "Favorites", count: channels.filter(\.favorite).count, flag: nil),
-            (key: Self.allKey, label: "All", count: channels.count, flag: nil),
+            (key: Self.favKey, label: T("Favorites"), count: channels.filter(\.favorite).count, flag: nil),
+            (key: Self.allKey, label: T("All"), count: channels.count, flag: nil),
         ]
         for c in extraCategories.prefix(Self.maxCategories - 2) { out.append((key: c.key, label: c.label, count: c.count, flag: c.flag)) }
         return out
@@ -284,7 +284,9 @@ struct LiveView: View {
                     if model.loading && model.channels.isEmpty {
                         ProgressView().tint(BP.inkMuted).frame(maxWidth: .infinity, alignment: .center).padding(.top, BP.px(60))
                     } else if model.visible.isEmpty {
-                        BPNote(text: model.category == LiveModel.favKey ? "No favorites yet. Press the star on a channel to keep it up here." : (model.error ?? "No channels in this category."), tone: model.error == nil ? BP.inkMuted : BP.danger)
+                        BPNote(text: model.category == LiveModel.favKey
+                                   ? T("No favorites yet") + ". " + T("Press the star on any channel to keep it at the top of the guide.")
+                                   : (model.error ?? "No channels here"), tone: model.error == nil ? BP.inkMuted : BP.danger)
                             .padding(.top, BP.px(20))
                     } else if grid && model.guideNote == nil {
                         LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } },
@@ -455,7 +457,7 @@ struct LiveChannelRow: View {
                     VStack(alignment: .leading, spacing: BP.px(4)) {
                         HStack(spacing: BP.px(8)) {
                             Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
-                            Text(nowNext?.now?.title ?? (nowNext?.known == true ? "Nothing scheduled" : "Live"))
+                            Text(nowNext?.now?.title ?? T(nowNext?.known == true ? "No program info" : "Live"))
                                 .font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                             if let p = nowNext?.now { Text(Self.range(p)).font(BP.sans(11)).foregroundStyle(BP.inkMuted) }
                         }
@@ -469,7 +471,7 @@ struct LiveChannelRow: View {
                             .frame(height: BP.px(3))
                         }
                         if let n = nowNext?.next {
-                            Text("Next · \(Self.time(n.startMs)) \(n.title)").font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                            Text(T("Next %@", Self.time(n.startMs)) + " · " + n.title).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -546,7 +548,7 @@ struct LiveSourcesSheet: View {
                     // bp-live-setup kind picker: M3U link, Xtream Codes login, or guide data only.
                     HStack(spacing: BP.px(8)) {
                         ForEach([("m3u", "M3U playlist"), ("xtream", "Xtream Codes"), ("epg", "Guide only")], id: \.0) { k, label in
-                            Button(label) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k))
+                            Button(T(label)) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k))
                         }
                     }
                     BPField(label: "Name", placeholder: "My provider", text: $name)

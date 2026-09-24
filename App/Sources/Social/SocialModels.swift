@@ -254,16 +254,16 @@ enum Social {
     static func ago(ms: Double) -> String {
         guard ms > 0 else { return "" }
         let s = max(1, Int((Date().timeIntervalSince1970 * 1000 - ms) / 1000))
-        if s < 60 { return "just now" }
+        if s < 60 { return T("just now") }
         let m = s / 60
-        if m < 60 { return "\(m)m ago" }
+        if m < 60 { return T("%lldm ago", m) }
         let h = m / 60
-        if h < 24 { return "\(h)h ago" }
+        if h < 24 { return T("%lldh ago", h) }
         let d = h / 24
-        if d < 30 { return "\(d)d ago" }
+        if d < 30 { return T("%lldd ago", d) }
         let mo = d / 30
-        if mo < 12 { return "\(mo)mo ago" }
-        return "\(mo / 12)y ago"
+        if mo < 12 { return T("%lldmo ago", mo) }
+        return T("%lldy ago", mo / 12)
     }
 
     /// The profile of the engine's active profile, as the engine calls expect it.
@@ -321,7 +321,7 @@ struct SocialPage<Content: View>: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(22)) {
                     VStack(alignment: .leading, spacing: BP.px(6)) {
-                        Text(eyebrow.uppercased()).font(BP.sans(11, .bold)).tracking(2.4).foregroundStyle(BP.inkSubtle)
+                        Text(T(eyebrow).uppercased()).font(BP.sans(11, .bold)).tracking(2.4).foregroundStyle(BP.inkSubtle)
                         Text(title).font(BP.display(34, .medium)).foregroundStyle(BP.ink).lineLimit(2)
                         if let subtitle { Text(subtitle).font(BP.sans(15)).foregroundStyle(BP.inkMuted) }
                     }

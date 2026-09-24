@@ -86,8 +86,8 @@ final class SportsEventModel: ObservableObject {
         // Only whether a summary exists matters here; the rows come shaped from `sports.eventRows`.
         do {
             let d = try await HarborEngine.shared.callJSON("sports.detail", [game.wire])
-            note = d.isNull ? "No detail feed for this provider yet. Scores and the schedule above are live." : nil
-        } catch { note = "Detail unavailable: \(error.localizedDescription)" }
+            note = d.isNull ? "Match details are not available right now. The scoreboard above is still live." : nil
+        } catch { note = "Match details are not available right now. The scoreboard above is still live." }
         await loadRows(game)
     }
 
@@ -235,15 +235,15 @@ struct SportsEventView: View {
     @ViewBuilder private func primary(_ w: SportsEventModel.Watch) -> some View {
         switch w.plan {
         case "stream":
-            Button(w.label ?? "Watch") { playAttached(w) }.buttonStyle(BPActionStyle(primary: true))
+            Button(w.label ?? T("Watch")) { playAttached(w) }.buttonStyle(BPActionStyle(primary: true))
         case "broadcast":
-            Button(w.label ?? "Where to watch") {
+            Button(w.label ?? T("Where to watch")) {
                 // setAuto(pickCount > 1 ? null : shows[0]): a single broadcast opens straight away.
                 if w.broadcasts.count == 1 && w.channels.isEmpty, let b = w.broadcasts.first { link = broadcastLink(b) } else { broadcastsOpen = true }
             }
             .buttonStyle(BPActionStyle(primary: true))
         case "channel":
-            if let first = w.channels.first { Button("\(w.label ?? "Watch") · \(first.name)") { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
+            if let first = w.channels.first { Button((w.label ?? T("Watch")) + " · " + first.name) { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
         case "picker":
             Button(w.channels.isEmpty ? "Search your channels" : "Watch · \(w.channels.count) channel\(w.channels.count == 1 ? "" : "s") found") { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
         case "addons":
@@ -269,7 +269,7 @@ struct SportsEventView: View {
                     .buttonStyle(BPActionStyle(primary: f.on))
             }
             if let url = a.opendota {
-                Button { link = SportsLink(title: "View match statistics", url: url) } label: { Label("View match statistics", systemImage: "arrow.up.right.square") }
+                Button { link = SportsLink(title: T("View match statistics"), url: url) } label: { Label("View match statistics", systemImage: "arrow.up.right.square") }
                     .buttonStyle(BPActionStyle())
             }
         }
@@ -307,7 +307,7 @@ struct SportsEventView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BPActionStyle())
-                    Button(opt.attached ? "Unpin" : "Pin for \(game.leagueLabel)") { Task { await model.togglePin(game, opt) } }.buttonStyle(BPActionStyle(primary: opt.attached))
+                    Button(opt.attached ? T("Unpin") : T("Always use for %@", game.leagueLabel)) { Task { await model.togglePin(game, opt) } }.buttonStyle(BPActionStyle(primary: opt.attached))
                 }
             }
             if w.channels.isEmpty {
@@ -386,7 +386,7 @@ struct SportsEventView: View {
     }
 
     private func pill(_ text: String, _ color: Color) -> some View {
-        Text(text).font(BP.sans(10, .bold)).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(Capsule().fill(color))
+        Text(T(text)).font(BP.sans(10, .bold)).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(Capsule().fill(color))
     }
 
     // bp-sports-addon-row: up to eight matching listings, then "Browse addon channels".
@@ -401,7 +401,7 @@ struct SportsEventView: View {
                                 .buttonStyle(BPTileStyle(radius: BP.rMD))
                         }
                         Button { addonPanel = AddonOpen(row: nil) } label: {
-                            SportsAddonTile(logo: nil, title: "Browse addon channels", sub: "\(a.rows.count) listings from your addons", icon: "powerplug")
+                            SportsAddonTile(logo: nil, title: T("Browse addon channels"), sub: T("%lld listings from your addons", a.rows.count), icon: "powerplug")
                         }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
                     }

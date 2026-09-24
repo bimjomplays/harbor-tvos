@@ -38,6 +38,21 @@ final class NativePlayerController: UIViewController {
     private var legibleGroup: AVMediaSelectionGroup?
     private var codecName = ""
 
+    // Sideloaded subtitles (html5/bridge.ts subTracks / activeSubId / secondarySubId / subDelaySec):
+    // AVPlayer cannot take an external file into its own renderer, so, like upstream's html5
+    // engine, the cues are parsed (engine `subtitles.cues`) and drawn by NativeSubtitleOverlay.
+    /// External tracks get ids from here up, clear of the legible options (1…n) they sit beside.
+    static let externalSubBase = 1000
+    private struct ExternalSub { var id: Int; var title: String; var lang: String; var format: String; var file: URL; var cues: [SubtitleCue] }
+    private var externalSubs: [ExternalSub] = []
+    private var nextExternalId = NativePlayerController.externalSubBase
+    private var activeExternal: Int?
+    private var secondaryExternal: Int?
+    private var subDelaySec: Double = 0
+    private var lastCueKey = ""
+    private let subtitleState = NativeSubtitleState()
+    private var cueObserver: Any?
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
@@ -54,6 +69,20 @@ final class NativePlayerController: UIViewController {
         host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(host.view)
         host.didMove(toParent: self)
+        // subtitle-overlay.tsx over the picture, under PlayerScreen's chrome; never focusable.
+        let overlay = UIHostingController(rootView: NativeSubtitleOverlay(state: subtitleState))
+        overlay.view.backgroundColor = .clear
+        overlay.view.isUserInteractionEnabled = false
+        overlay.safeAreaRegions = []
+        addChild(overlay)
+        overlay.view.frame = view.bounds
+        overlay.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(overlay.view)
+        overlay.didMove(toParent: self)
+        // tickCues runs on requestAnimationFrame upstream; 20 Hz keeps a cue within 50 ms of its time.
+        cueObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 20), queue: .main) { [weak self] _ in
+            self?.tickCues()
+        }
         // Harbor, not the system, picks the audio and subtitle options (mpv.rs:991-1007: sid=no).
         player.appliesMediaSelectionCriteriaAutomatically = false
         if let url { load(url) }
@@ -71,6 +100,8 @@ final class NativePlayerController: UIViewController {
         tornDown = true
         timer?.invalidate()
         timer = nil
+        if let cueObserver { player.removeTimeObserver(cueObserver) }
+        cueObserver = nil
         observations.forEach { $0.invalidate() }
         observations = []
         notes.forEach { NotificationCenter.default.removeObserver($0) }
@@ -291,9 +322,28 @@ final class NativePlayerController: UIViewController {
         }
         if let g = legibleGroup {
             let on = item.currentMediaSelection.selectedMediaOption(in: g)
-            for (i, o) in g.options.enumerated() { out.append(track(o, id: i + 1, type: "sub", selected: o == on, group: g)) }
+            for (i, o) in g.options.enumerated() { out.append(track(o, id: i + 1, type: "sub", selected: o == on && activeExternal == nil, group: g)) }
+        }
+        // html5 bridge readCustomSubtitleTracks: the sideloaded files, flagged external.
+        for s in externalSubs {
+            var t = MPVPlayerController.Track(id: s.id, type: "sub", lang: s.lang, title: s.title, codec: Self.codecOf(format: s.format),
+                                              selected: s.id == activeExternal)
+            t.external = true
+            t.secondary = s.id == secondaryExternal
+            t.externalFilename = s.file.lastPathComponent
+            out.append(t)
         }
         return out
+    }
+
+    /// The codec name mpv reports for the same file, so the track rows read alike on both engines.
+    private static func codecOf(format: String) -> String {
+        switch format {
+        case "vtt": return "webvtt"
+        case "ass": return "ass"
+        case "ssa": return "ssa"
+        default: return "subrip"
+        }
     }
 
     private func track(_ o: AVMediaSelectionOption, id: Int, type: String, selected: Bool, group: AVMediaSelectionGroup) -> MPVPlayerController.Track {
@@ -307,6 +357,11 @@ final class NativePlayerController: UIViewController {
     }
 
     func select(track: MPVPlayerController.Track?, type: String) {
+        if type == "sub" {
+            // setSubtitleTrack(id): a sideloaded track is drawn by the overlay, the file's own by AVPlayer.
+            if let track, track.id >= Self.externalSubBase { selectExternal(track.id); return }
+            if activeExternal != nil { selectExternal(nil) }
+        }
         guard let item = player.currentItem, let g = type == "sub" ? legibleGroup : audioGroup else { return }
         guard let track else {
             if g.allowsEmptySelection { item.select(nil, in: g) }
@@ -348,14 +403,91 @@ final class NativePlayerController: UIViewController {
         }
     }
 
+    // MARK: sideloaded subtitles (html5/bridge.ts addSubtitle / setSubtitleTrack / tickCues)
+
+    /// addSubtitle(url, lang, title, select: true): the file PlayerSubtitlesPanel prepared (decoded
+    /// text, `.srt` / `.vtt` / `.ass`…) becomes a track and is shown at once, as mpv's `sub-add … select`.
+    /// Its cues arrive from the engine a moment later; a file with none is dropped again (ensureLoaded
+    /// → loaded false, and the selection settles back to nothing).
+    func addSubtitle(file: URL, title: String, lang: String) {
+        let id = nextExternalId
+        nextExternalId += 1
+        let format = file.pathExtension.lowercased()
+        externalSubs.append(ExternalSub(id: id, title: title, lang: lang, format: format, file: file, cues: []))
+        selectExternal(id)
+        let p = ProfilesStore.shared.active
+        Task { [weak self] in
+            let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+            let cues: [SubtitleCue] = (try? await HarborEngine.shared.call("subtitles.cues", [p?.id ?? "default", p?.linked ?? true, text, format])) ?? []
+            guard let self, !self.tornDown, let i = self.externalSubs.firstIndex(where: { $0.id == id }) else { return }
+            if cues.isEmpty {
+                self.externalSubs.remove(at: i)
+                if self.activeExternal == id { self.activeExternal = nil }
+                if self.secondaryExternal == id { self.secondaryExternal = nil }
+                self.push("subtitle: no cues in \(file.lastPathComponent)")
+            } else {
+                self.externalSubs[i].cues = cues
+                self.push("subtitle: \(cues.count) cues")
+            }
+            self.lastCueKey = "-"
+            self.tickCues()
+        }
+    }
+
+    /// The overlay takes over from AVPlayer's own subtitle rendering (and hands it back on nil).
+    private func selectExternal(_ id: Int?) {
+        if id != nil, let item = player.currentItem, let g = legibleGroup, g.allowsEmptySelection {
+            item.select(nil, in: g)
+        }
+        activeExternal = id
+        if let id, secondaryExternal == id { secondaryExternal = nil }
+        lastCueKey = "-"
+        tickCues()
+    }
+
+    /// setSecondarySubtitleTrack: only the engine's own (sideloaded) tracks can be drawn second.
+    func setSecondarySub(_ track: MPVPlayerController.Track?) {
+        if let track {
+            guard track.id >= Self.externalSubBase, externalSubs.contains(where: { $0.id == track.id }) else { return }
+            secondaryExternal = track.id
+        } else {
+            secondaryExternal = nil
+        }
+        tickCues()
+    }
+
+    /// setSubDelay: cues are looked up at `currentTime - delay` (+ late, − early, as mpv sub-delay).
+    func setSubDelay(_ seconds: Double) {
+        subDelaySec = seconds
+        lastCueKey = "-"
+        tickCues()
+    }
+
+    /// The overlay reads the Look settings itself; this only redraws it.
+    func refreshSubtitleStyle() { subtitleState.objectWillChange.send() }
+
+    /// tickCues: the active cue of the shown track (and of the second one) at the delayed time.
+    private func tickCues() {
+        guard !tornDown else { return }
+        let now = player.currentTime().seconds
+        let t = (now.isFinite ? now : 0) - subDelaySec
+        let shown = activeExternal.flatMap { id in externalSubs.first { $0.id == id } }
+        let cue = shown.flatMap { SubtitleCue.active(in: $0.cues, at: t) }
+        let key = cue.map { "\($0.start)|\($0.text)" } ?? ""
+        if key != lastCueKey {
+            lastCueKey = key
+            subtitleState.text = cue?.text ?? ""
+            subtitleState.startSec = cue?.start ?? 0
+        }
+        let second = secondaryExternal.flatMap { id in externalSubs.first { $0.id == id } }
+        let secondText = second.flatMap { SubtitleCue.active(in: $0.cues, at: t) }?.text ?? ""
+        if secondText != subtitleState.secondaryText { subtitleState.secondaryText = secondText }
+    }
+
     // MARK: what the native engine cannot do (html5 bridge: setAudioDelay() {}, setAnime4kShaders() {})
 
-    func setSecondarySub(_ track: MPVPlayerController.Track?) {}
     func setAudioDelay(_ seconds: Double) {}
-    func refreshSubtitleStyle() {}
-    func setSubDelay(_ seconds: Double) {}
     func setShaders(_ paths: [String]) {}
-    func addSubtitle(file: URL, title: String, lang: String) {}
 
     // MARK: status
 

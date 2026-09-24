@@ -285,7 +285,7 @@ struct LiveGuideView: View {
                 HStack(spacing: BP.px(4)) {
                     if p.startMs < cell.startMs { Image(systemName: "chevron.left").font(.system(size: BP.px(9), weight: .bold)) }
                     if tier > 0 { Text(p.title).font(BP.sans(tier == 2 ? 13 : 11, .semibold)).lineLimit(1) }
-                    if canReplay && tier == 2 { Text("REPLAY").font(BP.sans(9, .bold)).foregroundStyle(BP.live) }
+                    if canReplay && tier == 2 { Text("Replay").textCase(.uppercase).font(BP.sans(9, .bold)).foregroundStyle(BP.live) }
                     if p.endMs > cell.endMs { Image(systemName: "chevron.right").font(.system(size: BP.px(9), weight: .bold)) }
                 }
                 if tier == 2 {
@@ -332,10 +332,10 @@ struct LiveGuideView: View {
     private func dayHint(_ ms: Double) -> String {
         let cal = Calendar.current
         let d = Date(timeIntervalSince1970: ms / 1000)
-        if cal.isDateInToday(d) { return "Today" }
-        if cal.isDateInTomorrow(d) { return "Tomorrow" }
-        if cal.isDateInYesterday(d) { return "Yesterday" }
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f.string(from: d)
+        if cal.isDateInToday(d) { return T("Today") }
+        if cal.isDateInTomorrow(d) { return T("Tomorrow") }
+        if cal.isDateInYesterday(d) { return T("Yesterday") }
+        let f = DateFormatter(); f.locale = L10n.locale; f.setLocalizedDateFormatFromTemplate("EEEMMMd"); return f.string(from: d)
     }
 }
 

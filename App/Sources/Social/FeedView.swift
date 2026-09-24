@@ -12,8 +12,8 @@ struct FeedView: View {
     @State private var profile: Social.HandleRef?
 
     var body: some View {
-        SocialPage(eyebrow: "Friends", title: "Activity",
-                   subtitle: page.flatMap { $0.friendCount > 0 ? "\($0.sharingCount) of \($0.friendCount) friends are sharing what they watch." : nil }) {
+        SocialPage(eyebrow: "Friends", title: T("Activity"),
+                   subtitle: page.flatMap { $0.friendCount > 0 ? T("%lld of %lld friends are sharing what they watch.", $0.sharingCount, $0.friendCount) : nil }) {
             if !watching.isEmpty { strip }
             switch phase {
             case "loading":
@@ -48,7 +48,7 @@ struct FeedView: View {
 
     private var strip: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("WATCHING NOW").font(BP.sans(11, .bold)).tracking(2).foregroundStyle(BP.live)
+            Text("Watching right now").textCase(.uppercase).font(BP.sans(11, .bold)).tracking(2).foregroundStyle(BP.live)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(14)) {
                     ForEach(watching) { w in
@@ -73,18 +73,18 @@ struct FeedView: View {
 
     private func watchingLine(_ w: Social.WatchingNow) -> String {
         let title = w.title ?? "Something"
-        if w.kind == "party" { return "\(title) · together\(w.partySize.map { " (\(Int($0)))" } ?? "")" }
-        return w.paused ? "\(title) · paused" : title
+        if w.kind == "party" { return title + " · " + (w.partySize.map { T("In a watch party of %lld", Int($0)) } ?? T("In a watch party")) }
+        return w.paused ? title + " · " + T("Paused") : title
     }
 
     /// feed-row.tsx: "<verb> · <time>" over the title, the rating for "rated".
     private func row(_ item: Social.FeedItem) -> some View {
         let verb: String
         switch item.kind {
-        case "finished": verb = "finished"
-        case "favorited": verb = "favorited"
-        case "rated": verb = "rated"
-        default: verb = "watched"
+        case "finished": verb = T("finished")
+        case "favorited": verb = T("favorited")
+        case "rated": verb = T("rated")
+        default: verb = T("watched")
         }
         return HStack(spacing: BP.px(12)) {
             Button { profile = Social.HandleRef(handle: item.actor.handle) } label: {

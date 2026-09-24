@@ -169,21 +169,21 @@ struct LibraryView: View {
     // bp-library-filters: one labelled row per kind (Up/Down between kinds, Left/Right within).
     private var filters: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            filterRow("Type", [("all", "All \(model.feed?.counts.all ?? 0)"), ("movie", "Movies \(model.feed?.counts.movie ?? 0)"), ("series", "Series \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
-            filterRow("Sort", [("recent", "Recent"), ("title", "Title"), ("year", "Year")], active: model.sort) { model.set(sort: $0) }
-            filterRow("View", [("grouped", "Grouped"), ("flat", "One list")], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
+            filterRow("Type", [("all", T("All") + " \(model.feed?.counts.all ?? 0)"), ("movie", T("Movies") + " \(model.feed?.counts.movie ?? 0)"), ("series", T("Series") + " \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
+            filterRow("Sort", [("recent", T("Recent")), ("title", T("Title")), ("year", T("Year"))], active: model.sort) { model.set(sort: $0) }
+            filterRow("View", [("grouped", T("Grouped")), ("flat", T("One list"))], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
             if model.tab == "history" {
-                filterRow("Show", [("episodes", "Episodes"), ("posters", "Posters")], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
+                filterRow("Show", [("episodes", T("Episodes")), ("posters", T("Posters"))], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
             }
             if let groups = model.feed?.groups, !groups.isEmpty {
-                filterRow(model.tab == "lists" ? "List" : "Group", [("", "All")] + groups.map { ($0.id, $0.label) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
+                filterRow(model.tab == "lists" ? "List" : "Group", [("", T("All"))] + groups.map { ($0.id, $0.label) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
             }
         }
     }
 
     private func filterRow(_ heading: String, _ options: [(String, String)], active: String, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
-            Text(heading.uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+            Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
             ForEach(options, id: \.0) { o in
                 Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0))
             }
@@ -203,7 +203,7 @@ struct LibraryView: View {
     // bp-library.tsx emptyCopy: a service tab names the service it could not reach.
     private var errorText: String {
         let names = ["trakt": "Trakt", "anilist": "AniList", "mal": "MyAnimeList", "simkl": "Simkl", "letterboxd": "Letterboxd"]
-        if let name = names[model.tab] { return "Couldn't reach \(name). Try refreshing." }
+        if let name = names[model.tab] { return T("Couldn't reach %@. Try refreshing.", name) }
         return "Couldn't load your library. Try refreshing."
     }
 

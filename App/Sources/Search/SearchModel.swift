@@ -205,7 +205,7 @@ final class SearchModel: ObservableObject {
         let key = "addon:\(g.id)"
         var out = rows.filter { $0.key != key }
         if !g.metas.isEmpty {
-            let row = BrowseRow(key: key, title: "From \(g.name)", metas: g.metas)
+            let row = BrowseRow(key: key, title: T("From %@", g.name), metas: g.metas)
             if let at = out.firstIndex(where: { $0.key.hasPrefix("addon:") }) { out.insert(row, at: at) } else { out.append(row) }
         }
         rows = out
@@ -246,17 +246,17 @@ final class SearchModel: ObservableObject {
             engineRequestId = results.requestId ?? 0
             addonsPending = Set((results.addonQueries ?? []).filter { $0.state == "pending" }.map(\.id))
             var out: [BrowseRow] = []
-            if !results.movies.isEmpty { out.append(BrowseRow(key: "movies", title: "Movies", metas: results.movies)) }
-            if !results.series.isEmpty { out.append(BrowseRow(key: "series", title: "Series", metas: results.series)) }
+            if !results.movies.isEmpty { out.append(BrowseRow(key: "movies", title: T("Movies"), metas: results.movies)) }
+            if !results.series.isEmpty { out.append(BrowseRow(key: "series", title: T("Series"), metas: results.series)) }
             if let anime = results.anime, !anime.isEmpty {
                 let metas = anime.map { Meta(id: $0.kitsuId.map { "kitsu:\($0)" } ?? "mal:\($0.malId ?? 0)", type: "anime", name: $0.name, poster: $0.poster, background: $0.background, logo: nil, description: $0.overview, releaseInfo: $0.year, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
-                out.append(BrowseRow(key: "anime", title: "Anime", metas: metas))
+                out.append(BrowseRow(key: "anime", title: T("Anime"), metas: metas))
             }
             // use-bp-search slot "manga" (bp-search-rows BpMangaCell): after Anime, before Live TV.
             if let manga = results.manga, !manga.isEmpty {
                 // Covers sit on the viewer's own server: its image auth must be known first.
                 if MangaStore.shared.state == nil { await MangaStore.shared.refresh() }
-                out.append(BrowseRow(key: "manga", title: "Manga", metas: manga.map(\.meta)))
+                out.append(BrowseRow(key: "manga", title: T("Manga"), metas: manga.map(\.meta)))
             }
             // use-bp-search: one franchise row per character hit (AniList), its titles as anime metas.
             for c in results.characters ?? [] where !(c.anime + (c.manga ?? [])).isEmpty {
@@ -266,7 +266,7 @@ final class SearchModel: ObservableObject {
             // bp-search-rows: one row per addon that answered ("From <addon>"), after the catalogs.
             // addonQueries keeps every slot's own hits (never stripped against the fused rows).
             for g in results.addonQueries ?? results.addonGroups ?? [] where !g.metas.isEmpty {
-                out.append(BrowseRow(key: "addon:\(g.id)", title: "From \(g.name)", metas: g.metas))
+                out.append(BrowseRow(key: "addon:\(g.id)", title: T("From %@", g.name), metas: g.metas))
             }
             addonHits = results.addons ?? []
             collections = results.collections ?? []

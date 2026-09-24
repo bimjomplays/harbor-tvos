@@ -97,7 +97,7 @@ struct TogetherToastHost: View {
     // MARK: summon (together-summon-toast.tsx)
 
     private func summonToast(_ s: TogetherModel.IncomingSummon) -> some View {
-        let label = s.target.label ?? s.target.mediaTitle ?? (s.target.view.map { $0 == "queue" ? "My Library" : $0.capitalized } ?? "a title")
+        let label = s.target.label ?? s.target.mediaTitle ?? (s.target.view.map { $0 == "queue" ? T("My Library") : $0.capitalized } ?? T("a title"))
         return HStack(spacing: BP.px(12)) {
             Text("\(s.name) wants you here").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
             Text(label).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
@@ -172,7 +172,7 @@ struct TogetherPlayerLayer: View {
                     }
                     if let notice = playback.foreignNotice { banner(foreign(notice, v)) }
                     if let leaving = v.incomingHostLeaving {
-                        banner("\(leaving.name) left the video. Follow them out? Press Back to leave, or keep watching.")
+                        banner(T("%@ left the video", leaving.name) + ". " + T("Follow them out?") + " " + T("Back") + ": " + T("Leave the video") + " · " + T("Keep watching"))
                             .task(id: leaving.at) {
                                 try? await Task.sleep(for: .seconds(10))
                                 room.dismiss("hostLeaving")
@@ -203,7 +203,7 @@ struct TogetherPlayerLayer: View {
                 SocialAvatar(url: p.avatar, name: p.name, size: BP.px(34), tint: Color.room(p.color) ?? BP.accent)
                     .overlay(Circle().stroke(p.host ? BP.accent : BP.void_, lineWidth: 2))
             }
-            Text("Room \(v.room ?? "")").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(16))
+            Text(T("Room code") + " " + (v.room ?? "")).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(16))
         }
         .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(6))
         .background(Capsule().fill(BP.void_.opacity(0.6)))
@@ -226,8 +226,8 @@ struct TogetherPlayerLayer: View {
     private func lobby(_ v: TogetherModel.Snapshot) -> some View {
         let notReady = v.participants.filter { !$0.ready }
         let hostLine = notReady.isEmpty
-            ? "Everyone is loaded in. Press play to start watching."
-            : "Loading on \(notReady.map(\.name).joined(separator: ", "))… Press play to start anyway (\(notReady.count) still loading)."
+            ? T("Everyone is loaded in. Press play to start watching.")
+            : T("Loading on %@…", notReady.map(\.name).joined(separator: ", ")) + " ▶ " + T("Start anyway (%lld still loading)", notReady.count)
         return VStack(spacing: BP.px(10)) {
             Text(playback.isHost ? "Ready when you are" : "Waiting for the host to start")
                 .font(BP.display(28)).foregroundStyle(BP.ink)
@@ -235,11 +235,11 @@ struct TogetherPlayerLayer: View {
                 ForEach(v.participants) { p in
                     HStack(spacing: BP.px(6)) {
                         Image(systemName: p.ready ? "checkmark.circle.fill" : "circle.dotted").foregroundStyle(p.ready ? BP.live : BP.inkSubtle)
-                        Text(p.name + (p.isSelf ? " (you)" : "") + (p.ready ? "" : " · still loading")).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                        Text(p.name + (p.isSelf ? T(" (you)") : "") + (p.ready ? "" : T(" · still loading"))).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                     }
                 }
             }
-            Text(playback.isHost ? hostLine : (playback.guestEscapeReady ? "Press play to play without sync." : "The host starts playback for the whole room."))
+            Text(playback.isHost ? hostLine : (playback.guestEscapeReady ? "▶ " + T("Play without sync") : T("The host starts playback for the whole room.")))
                 .font(BP.sans(15)).foregroundStyle(BP.inkMuted)
         }
         .padding(BP.px(26))

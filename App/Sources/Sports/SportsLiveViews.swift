@@ -77,7 +77,7 @@ struct SportsPanelCell<Content: View>: View {
 private struct SportsTip: View {
     let text: String
     var body: some View {
-        if !text.isEmpty { Text(text).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+        if !text.isEmpty { Text(T(text)).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle).lineLimit(1) }
     }
 }
 
@@ -88,7 +88,7 @@ private struct LiveFigure: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(4)) {
             Text(value).font(BP.display(40)).foregroundStyle(BP.ink).monospacedDigit()
-            Text(label).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1)
+            Text(T(label)).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1)
         }
         .frame(minWidth: BP.px(70), alignment: .leading)
     }
@@ -104,7 +104,7 @@ private struct LivePips: View {
             HStack(spacing: BP.px(8)) {
                 ForEach(0..<total, id: \.self) { i in Circle().fill(i < filled ? BP.ink : BP.edge2).frame(width: BP.px(20), height: BP.px(20)) }
             }
-            Text(label).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
+            Text(T(label)).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
         }
     }
 }
@@ -171,7 +171,7 @@ struct SportsStatsRowView: View {
     @ViewBuilder private func playsCell(_ p: SportsEventRows.Plays) -> some View {
         let shown = Array(p.rows.prefix(playsOpen ? 24 : 6))
         let rest = p.rows.count - shown.count
-        SportsPanelCell(width: BP.px(700), foot: playsOpen ? "Show less" : rest > 0 ? "Show all \(min(p.total, 24))" : "",
+        SportsPanelCell(width: BP.px(700), foot: playsOpen ? T("Show less") : rest > 0 ? T("Show all %lld", min(p.total, 24)) : "",
                         action: { if rest > 0 || playsOpen { playsOpen.toggle() } }) {
             SportsTip(text: p.caption)
             ForEach(Array(shown.enumerated()), id: \.offset) { _, e in
@@ -198,7 +198,7 @@ struct SportsStatsRowView: View {
     @ViewBuilder private func teamCell(_ t: SportsEventRows.Team) -> some View {
         let more = t.lines.count > t.paired
         let shown = statsOpen ? t.lines : Array(t.lines.prefix(t.paired))
-        SportsPanelCell(width: BP.px(shown.count <= 6 ? 560 : 820), foot: more ? (statsOpen ? "Show less" : "Show all \(t.lines.count)") : "",
+        SportsPanelCell(width: BP.px(shown.count <= 6 ? 560 : 820), foot: more ? (statsOpen ? T("Show less") : T("Show all %lld", t.lines.count)) : "",
                         action: { if more { statsOpen.toggle() } }) {
             SportsTip(text: t.caption)
             let columns = shown.count <= 6 ? 1 : 2
@@ -301,7 +301,7 @@ struct SportsDiamondView: View {
     }
     private func labelled(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
+            Text(T(label)).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
             Text(value).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
         }
     }
@@ -404,7 +404,7 @@ struct SportsLineupsRowView: View {
 
     // bp-sports-extra-pitch: horizontal pitch, both formations, the bench on Select.
     @ViewBuilder private func pitchCell(_ p: SportsEventRows.Pitch) -> some View {
-        SportsPanelCell(width: BP.px(1060), foot: p.bench.isEmpty ? "" : (benchOpen ? "Hide bench" : "Show bench"), action: { benchOpen.toggle() }) {
+        SportsPanelCell(width: BP.px(1060), foot: p.bench.isEmpty ? "" : T(benchOpen ? "Hide bench" : "Show bench"), action: { benchOpen.toggle() }) {
             HStack(alignment: .firstTextBaseline) {
                 Text(p.homeName).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 Spacer()
@@ -450,7 +450,7 @@ struct SportsLineupsRowView: View {
         let open = openSides.contains(key)
         let shown = open ? side.players : Array(side.players.prefix(side.starters))
         let rest = side.players.count - shown.count
-        SportsPanelCell(width: BP.px(480), foot: rest > 0 ? "Show all \(side.players.count)" : open ? "Show less" : "",
+        SportsPanelCell(width: BP.px(480), foot: rest > 0 ? T("Show all %lld", side.players.count) : open ? T("Show less") : "",
                         action: { if open { _ = openSides.remove(key) } else { _ = openSides.insert(key) } }) {
             HStack(alignment: .firstTextBaseline) {
                 Text(side.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -473,7 +473,7 @@ struct SportsLineupsRowView: View {
         let open = openTables.contains(t.key)
         let shown = open ? t.rows : Array(t.rows.prefix(6))
         let rest = t.rows.count - shown.count
-        SportsPanelCell(width: BP.px(900), foot: rest > 0 ? "Show all \(t.rows.count)" : open ? "Show less" : "",
+        SportsPanelCell(width: BP.px(900), foot: rest > 0 ? T("Show all %lld", t.rows.count) : open ? T("Show less") : "",
                         action: { if open { _ = openTables.remove(t.key) } else { _ = openTables.insert(t.key) } }) {
             SportsTip(text: "Player statistics")
             Text(t.heading).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)

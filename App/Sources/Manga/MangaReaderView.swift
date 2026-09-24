@@ -302,7 +302,7 @@ struct MangaReaderView: View {
                 .font(BP.sans(13, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.accent)
             if model.atLastChapter {
                 Text("You have reached the latest chapter available.").font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
-                Text("Press Back to return to the details.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                Text("Back to details").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
             } else if let n = model.nextIndex {
                 Text(model.chapters[n].label).font(BP.display(26)).foregroundStyle(BP.ink)
                 Text(model.paged ? "Press \(model.rtl ? "◀" : "▶") for the next chapter" : "Press ▼ for the next chapter")
@@ -316,7 +316,7 @@ struct MangaReaderView: View {
 
     private var failedCard: some View {
         VStack(spacing: BP.px(12)) {
-            Text("This chapter would not load").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text("This chapter could not be loaded from this source.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             BPNote(text: "The source did not return any pages. Try again, or go back and pick another chapter.")
             HStack(spacing: BP.px(10)) {
                 Button("Retry") { model.reload() }.buttonStyle(BPActionStyle(primary: true))
@@ -371,7 +371,7 @@ struct MangaReaderView: View {
                 HStack(spacing: BP.px(8)) {
                     barButton("prev", "Previous chapter", icon: "backward.end.fill", enabled: model.prevIndex != nil) { model.previousChapter(); closeMenu() }
                     barButton("next", "Next chapter", icon: "forward.end.fill", enabled: model.nextIndex != nil) { model.nextChapter(); closeMenu() }
-                    barButton("mode", "Reading mode: \(model.autoLong ? "Long strip" : labelOf(Self.modes, model.prefs.tvMode))", icon: "rectangle.split.3x1") {
+                    barButton("mode", T("Reading mode") + ": " + T(model.autoLong ? "Long strip" : labelOf(Self.modes, model.prefs.tvMode)), icon: "rectangle.split.3x1") {
                         model.patch(["mode": .string(nextOf(Self.modes, model.prefs.tvMode))])
                     }
                     barButton("dir", model.prefs.rtl ? "Right to left" : "Left to right", icon: "arrow.left.arrow.right") {
@@ -384,10 +384,10 @@ struct MangaReaderView: View {
                 HStack(spacing: BP.px(8)) {
                     barButton("zoomOut", "Zoom out", icon: "minus.magnifyingglass", enabled: model.prefs.zoom > 0.5) { model.zoomBy(-0.25) }
                     barButton("zoomIn", "Zoom in", icon: "plus.magnifyingglass", enabled: model.prefs.zoom < 3) { model.zoomBy(0.25) }
-                    barButton("bg", "Brightness: \(labelOf(Self.bgs, model.prefs.bg))", icon: "sun.max") {
+                    barButton("bg", T("Brightness") + ": " + T(labelOf(Self.bgs, model.prefs.bg)), icon: "sun.max") {
                         model.patch(["bg": .string(nextOf(Self.bgs, model.prefs.bg))])
                     }
-                    barButton("auto", "Auto next chapter: \(model.prefs.autoNextChapter ? "On" : "Off")", icon: "arrow.turn.down.right", active: model.prefs.autoNextChapter) {
+                    barButton("auto", T("Auto next chapter") + ": " + T(model.prefs.autoNextChapter ? "On" : "Off"), icon: "arrow.turn.down.right", active: model.prefs.autoNextChapter) {
                         model.patch(["autoNextChapter": .bool(!model.prefs.autoNextChapter)])
                     }
                     barButton("close", "Close reader", icon: "xmark") { closeReader() }
@@ -409,7 +409,7 @@ struct MangaReaderView: View {
     }
 
     private func barButton(_ id: String, _ label: String, icon: String, enabled: Bool = true, active: Bool = false, run: @escaping () -> Void) -> some View {
-        Button(action: run) { Label(label, systemImage: icon) }
+        Button(action: run) { Label(T(label), systemImage: icon) }
             .buttonStyle(BPActionStyle(primary: active))
             .disabled(!enabled)
             .focused($focus, equals: .bar(id))

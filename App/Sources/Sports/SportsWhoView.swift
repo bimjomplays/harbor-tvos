@@ -66,7 +66,7 @@ struct SportsWhoView: View {
                                     }
                                 }
                                 if !w.note.isEmpty { BPNote(text: w.note) }
-                                if let l = w.link { Text("\(l.label): \(l.url)").font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
+                                if let l = w.link { Text(l.label + ": " + l.url).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
                             }
                         }
                         HStack(spacing: BP.px(10)) {

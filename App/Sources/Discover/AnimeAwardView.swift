@@ -169,7 +169,7 @@ struct AnimeAwardView: View {
             .opacity(inert || busy == key ? 0.55 : 1)
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
-        .accessibilityLabel("\(w.title), \(String(w.year))")
+        .accessibilityLabel(w.title + ", " + String(w.year))
     }
 
     private func open(_ w: Award.Winner, key: String) {

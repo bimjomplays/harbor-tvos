@@ -126,7 +126,7 @@ struct KidsTopBar: View {
     private func label(_ text: String, icon: String) -> some View {
         HStack(spacing: BP.px(8)) {
             Image(systemName: icon).font(.system(size: BP.px(18), weight: .bold))
-            Text(text).font(KidsTheme.font(16, .bold))
+            Text(T(text)).font(KidsTheme.font(16, .bold))
         }
         .padding(.horizontal, BP.px(14))
         .frame(height: BP.tabItem)

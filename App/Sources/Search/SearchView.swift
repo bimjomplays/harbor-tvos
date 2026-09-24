@@ -37,7 +37,7 @@ struct SearchView: View {
         .task { await model.loadSuggestions() }
         .onPlayPauseCommand { phoneOpen.toggle() }
         .fullScreenCover(isPresented: $phoneOpen) {
-            PhoneTypingSheet(label: "Search", placeholder: "Search movies, series, anime", text: $model.query,
+            PhoneTypingSheet(label: "Search", placeholder: "Search Harbor", text: $model.query,
                              onClose: { phoneOpen = false })
         }
         .onChange(of: detail?.id) { _, id in if id != nil { model.commitRecent() } }
@@ -59,7 +59,7 @@ struct SearchView: View {
     private var queryLine: some View {
         HStack(spacing: BP.px(8)) {
             Image(systemName: "magnifyingglass").foregroundStyle(BP.inkMuted)
-            Text(model.query.isEmpty ? "Search movies, series, anime" : model.query)
+            Text(model.query.isEmpty ? T("Search Harbor") : model.query)
                 .font(BP.sans(22, .semibold)).foregroundStyle(model.query.isEmpty ? BP.inkSubtle : BP.ink).lineLimit(1)
             Rectangle().fill(BP.ink).frame(width: 2, height: BP.px(26)).opacity(0.8)
             Spacer()
@@ -164,9 +164,9 @@ struct SearchView: View {
     /// bp-search chip strip label: never a running total. "Searching" while anything is still
     /// answering, "{n} results" once settled.
     private var resultsLabel: String {
-        if model.busy { return "Searching" }
+        if model.busy { return T("Searching") }
         let total = model.distinctCount(model.filter == .all ? nil : model.filter)
-        return model.settled && total > 0 ? "\(total) results" : ""
+        return model.settled && total > 0 ? T("%lld results", total) : ""
     }
 
     // bp-search kind chips (use-bp-search chips): All plus each group that found something,
@@ -179,7 +179,7 @@ struct SearchView: View {
                         Button { model.filter = chip.filter } label: {
                             HStack(spacing: BP.px(6)) {
                                 if model.filter == chip.filter { Circle().frame(width: BP.px(8), height: BP.px(8)) }
-                                Text(chip.filter.label)
+                                Text(T(chip.filter.label))
                                 Text("\(chip.count)").font(BP.sans(11, .bold)).opacity(0.6)
                             }
                         }
@@ -235,7 +235,7 @@ struct SearchView: View {
         switch model.status {
         case .loading: BPNote(text: "Searching…")
         case .failed(let why): BPNote(text: why, tone: BP.danger)
-        case .done where model.settled && model.distinctCount(nil) == 0: BPNote(text: "Nothing found for “\(model.query)”.")
+        case .done where model.settled && model.distinctCount(nil) == 0: BPNote(text: T("Nothing found for \"%@\"", model.query))
         default: EmptyView()
         }
     }
@@ -261,7 +261,7 @@ struct SearchView: View {
                         .focusSection()
                     }
                     if !model.suggestions.isEmpty {
-                        BPRowView(row: BrowseRow(key: "suggested", title: "Suggested", metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+                        BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
                     }
                 }
                 if model.status != .idle { chipStrip }

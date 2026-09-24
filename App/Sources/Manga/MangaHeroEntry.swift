@@ -41,7 +41,7 @@ struct MangaHeroEntry: View {
                         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rMD))
-                    .accessibilityLabel(Text(verbatim: "\(T(s.kind == "ebook" ? "Read the eBook" : "Read the Manga")) \(s.title)"))
+                    .accessibilityLabel(T(s.kind == "ebook" ? "Read the eBook" : "Read the Manga") + " " + s.title)
                     if missing { BPNote(text: "Your manga source does not have this title.", tone: BP.inkSubtle) }
                 }
                 .focusSection()

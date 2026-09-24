@@ -62,8 +62,8 @@ struct SportsAddonPanelView: View {
 
     static func matchCopy(_ row: SportsEventModel.AddonRow) -> String {
         switch row.match {
-        case "event": return "\(row.addonName) · Event matchup found"
-        case "channel": return "\(row.addonName) · Possible match · check the broadcast"
+        case "event": return row.addonName + " · " + T("Event matchup found")
+        case "channel": return row.addonName + " · " + T("Possible match · check the broadcast")
         default: return row.addonName
         }
     }
@@ -111,7 +111,7 @@ struct SportsAddonPanelView: View {
             : model.matchingAddons.isEmpty && !browse && query.isEmpty ? "No matching addon listing yet. Browse every addon channel to look for the broadcast."
             : filtered.isEmpty ? "No addon listing matches that name."
             : "Choose an addon source to see its streams."
-        Text(note).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+        Text(T(note)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
         HStack(spacing: BP.px(10)) {
             TextField("Channel or event name", text: $query).frame(width: BP.px(420))
                 .onChange(of: query) { _, _ in limit = Self.page }
@@ -127,7 +127,7 @@ struct SportsAddonPanelView: View {
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
                 }
                 if more > 0 {
-                    Button { limit += Self.page } label: { SportsAddonTile(logo: nil, title: "More addon channels (\(more) left)", sub: "", icon: "ellipsis") }
+                    Button { limit += Self.page } label: { SportsAddonTile(logo: nil, title: T("More addon channels (%lld left)", more), sub: "", icon: "ellipsis") }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
                 }
             }
@@ -145,7 +145,7 @@ struct SportsAddonPanelView: View {
             : streams.isEmpty ? "No streams returned. The event may not be available yet."
             : ""
         SportsAddonTile(logo: row.addonLogo, title: row.name, sub: row.addonName)
-        if !note.isEmpty { Text(note).font(BP.sans(14)).foregroundStyle(fault.isEmpty ? BP.inkMuted : BP.danger) }
+        if !note.isEmpty { Text(T(note)).font(BP.sans(14)).foregroundStyle(fault.isEmpty ? BP.inkMuted : BP.danger) }
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: BP.px(8)) {
                 ForEach(streams) { st in
