@@ -142,13 +142,13 @@ struct PlayerSubtitlesPanel: View {
         } else {
             where_ = name
         }
-        let on = tracks.first { $0.selected }.map { titleOf($0) } ?? "Off"
+        let on = tracks.first { $0.selected }.map { titleOf($0) } ?? T("Off")
         return "\(where_) · \(on) · \(offsetLabel)"
     }
 
     /// bp-subtitle-parts.tsx offsetLabel.
     private var offsetLabel: String {
-        subDelay == 0 ? "In sync" : "\(subDelay > 0 ? "+" : "")\(String(format: "%.1f", subDelay))s"
+        subDelay == 0 ? T("In sync") : "\(subDelay > 0 ? "+" : "")\(String(format: "%.1f", subDelay))s"
     }
 
     private func laneChip(_ id: Lane, _ label: String, _ icon: String) -> some View {
@@ -242,7 +242,7 @@ struct PlayerSubtitlesPanel: View {
         }
         let noneOn = !tracks.contains { $0.selected }
         Button { select(nil) } label: {
-            PlayerLineLabel(icon: noneOn ? "checkmark" : "captions.bubble.fill", title: "No subtitles")
+            PlayerLineLabel(icon: noneOn ? "checkmark" : "captions.bubble.fill", title: T("No subtitles"))
         }
         .buttonStyle(PlayerLineStyle(on: noneOn))
         .focused($focus, equals: "line-off")
@@ -257,7 +257,7 @@ struct PlayerSubtitlesPanel: View {
 
     private func trackLine(_ t: MPVPlayerController.Track) -> some View {
         var badges = row(t)?.tags ?? []
-        if best?.id == t.id { badges.insert("Best match", at: 0) }
+        if best?.id == t.id { badges.insert(T("Best match"), at: 0) }
         return HStack(spacing: BP.px(10)) {
             Button { select(t) } label: {
                 PlayerLineLabel(icon: t.selected ? "checkmark" : "captions.bubble", title: titleOf(t), detail: row(t)?.detail, badges: badges)
@@ -370,7 +370,7 @@ struct PlayerSubtitlesPanel: View {
             Button {
                 Task { await add(r) }
             } label: {
-                PlayerLineLabel(icon: isAdded ? "checkmark" : "plus", title: r.title, detail: r.detail, badges: isAdded ? ["Added"] + r.tags : r.tags)
+                PlayerLineLabel(icon: isAdded ? "checkmark" : "plus", title: r.title, detail: r.detail, badges: isAdded ? [T("Added")] + r.tags : r.tags)
             }
             .buttonStyle(PlayerLineStyle())
             .focused($focus, equals: "find-\(r.id)")
@@ -457,7 +457,7 @@ struct PlayerSubtitlesPanel: View {
             findNote = nil
             refreshSoon()
         } catch {
-            findNote = "Couldn't load that subtitle: \(error.localizedDescription)"
+            findNote = T("Couldn't load that subtitle: %@", error.localizedDescription)
         }
     }
 

@@ -237,7 +237,7 @@ final class MPVPlayerController: UIViewController {
         var channels: String?
         var label: String {
             let base = [title, lang.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
-            return base.isEmpty ? "\(type == "sub" ? "Subtitle" : "Audio") \(id)" : base
+            return base.isEmpty ? "\(T(type == "sub" ? "Subtitle" : "Audio")) \(id)" : base
         }
     }
 
