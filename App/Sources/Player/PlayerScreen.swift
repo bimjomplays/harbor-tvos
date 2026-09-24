@@ -37,6 +37,8 @@ struct PlayerScreen: View {
     @State private var prevChannels: [LiveModel.Channel] = []
     /// KidsStreamSwitcher onPick: the stream picked in place of the one opened (nil = the one opened).
     @State private var switched: SwitchedStream?
+    /// Whether the stream was swapped in place (the kid switcher, a quality change): TrackMemory keys by the original release otherwise.
+    var switchedInPlace: Bool { switched != nil }
     struct SwitchedStream { var url: URL; var headers: [String: String] }
     /// TransportKids' subtitle toggle reads the subtitle tracks (refreshed while its chrome is up).
     @State private var kidSubs: [MPVPlayerController.Track] = []

@@ -88,7 +88,9 @@ enum TrackPlanner {
     /// source"): downloaded again through the engine (subtitles.prepare), as Find more does, and
     /// shown. A source that is a local file (its URL was not known) is re-added while it is still in
     /// the cache. Returns whether a track was added.
-    static func restore(_ r: TrackPlan.Restore, into c: any PlayerEngineControlling) async -> Bool {
+    /// `stillWanted` is asked again once the download is done: a viewer who chose meanwhile keeps
+    /// their choice (upstream's subRestoreAddRef check, review 26).
+    static func restore(_ r: TrackPlan.Restore, into c: any PlayerEngineControlling, stillWanted: () -> Bool) async -> Bool {
         struct Prepared: Decodable { var text: String; var format: String }
         let lang = r.lang ?? ""
         let title = r.title ?? lang
@@ -104,6 +106,7 @@ enum TrackPlanner {
             } catch {
                 return false
             }
+            guard stillWanted() else { return false }
             c.addSubtitle(file: file, title: title, lang: lang)
             noteSource(file: file, source: r.source)
             return true
@@ -111,7 +114,7 @@ enum TrackPlanner {
         // mpv lists the full path, AVPlayer the file name; the container path can move between
         // launches, so look for the name in the subtitle folder.
         let file = subsDir.appendingPathComponent(URL(fileURLWithPath: r.source).lastPathComponent)
-        guard FileManager.default.fileExists(atPath: file.path) else { return false }
+        guard FileManager.default.fileExists(atPath: file.path), stillWanted() else { return false }
         c.addSubtitle(file: file, title: title, lang: lang)
         return true
     }
@@ -154,6 +157,8 @@ extension PlayerScreen {
     var trackMemory: TrackMemory? {
         guard let context, !isLive else { return nil }
         return TrackMemory(metaId: context.meta.id, season: context.season, episode: context.episode,
-                           genres: context.meta.genres ?? [], filename: streamHints?.filename)
+                           genres: context.meta.genres ?? [],
+                           // After an in-place switch the original release's filename no longer applies (review 26).
+                           filename: switchedInPlace ? nil : streamHints?.filename)
     }
 }
