@@ -6,6 +6,7 @@ struct SearchView: View {
     @EnvironmentObject private var app: AppModel
     @State private var spotlight: Meta?
     @State private var detail: Meta?
+    @State private var phoneOpen = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -15,6 +16,10 @@ struct SearchView: View {
                     BPKeyboardView(onChar: { model.query += $0 },
                                    onBackspace: { if !model.query.isEmpty { model.query.removeLast() } },
                                    onClear: { model.query = "" })
+                    // bp-phone-typing.tsx: on search, Options (here Play/Pause) opens it too.
+                    Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
+                        .buttonStyle(BPActionStyle())
+                        .accessibilityIdentifier("search-phone")
                     statusLine
                 }
                 .padding(.leading, BP.gutter)
@@ -28,6 +33,11 @@ struct SearchView: View {
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
         }
         .task { await model.loadSuggestions() }
+        .onPlayPauseCommand { phoneOpen.toggle() }
+        .fullScreenCover(isPresented: $phoneOpen) {
+            PhoneTypingSheet(label: "Search", placeholder: "Search movies, series, anime", text: $model.query,
+                             onClose: { phoneOpen = false })
+        }
         .onChange(of: detail?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: person?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: channel?.id) { _, id in if id != nil { model.commitRecent() } }
@@ -345,9 +355,9 @@ struct SearchCollectionView: View {
     var body: some View {
         ZStack {
             if let card, !card.items.isEmpty {
-                CollectionItemsOverlay(card: card, onClose: onClose) { item in
-                    detail = Meta(id: item.id, type: item.type, name: item.name, poster: item.poster, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
-                }
+                // A search hit is someone else's list: default limits, nothing to reload on change.
+                CollectionItemsOverlay(card: card, limits: CollectionsModel.Limits(collections: 24, items: 100),
+                                       onClose: onClose, onChanged: { _ in }, onOpen: { item in detail = item.meta })
             } else {
                 BP.void_.opacity(0.97).ignoresSafeArea()
                 VStack(alignment: .leading, spacing: BP.px(14)) {

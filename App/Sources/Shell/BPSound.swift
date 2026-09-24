@@ -94,6 +94,8 @@ final class BPSound {
     }
 
     private func play(_ cue: BPSoundCue) {
+        // Never over video: the player's own panels use the same focus styles (review 15).
+        if PlaybackState.shared.active { return }
         let t = theme
         let themed = cue != .turnNext && cue != .turnPrev
         if themed && t == "none" { return }

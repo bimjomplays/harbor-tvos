@@ -12,14 +12,14 @@ struct SettingsView: View {
     @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
-    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs, newProfile, editProfile; var id: Int { hashValue } }
+    enum Sheet: Identifiable { case harbor, stremio, pin, spikes, tmdb, addons, subLangs, newProfile, editProfile, connect; var id: Int { hashValue } }
 
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BP.px(28)) {
                 Text("Settings").font(BP.display(36)).foregroundStyle(BP.ink)
-                BPSettingsView(openConnect: { sheet = account.isSignedIn ? .tmdb : .harbor })
+                BPSettingsView(openConnect: { sheet = .connect })
                     .padding(.bottom, BP.px(10))
                 section("Harbor account") {
                     if let s = account.session {
@@ -56,6 +56,7 @@ struct SettingsView: View {
                         detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : "Saved on this device only (\(settings.slice.tmdbKey.count) characters)")
                     HStack(spacing: BP.px(12)) {
                         Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
+                        Button { sheet = .connect } label: { Label("Use your phone", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                         if !settings.slice.tmdbKey.isEmpty {
                             Button(tmdbTesting ? "Testing…" : "Test saved key") { Task { await testSavedKey() } }.buttonStyle(BPActionStyle()).disabled(tmdbTesting)
                             Button("Remove key") { Task { try? await settings.patch(["tmdbKey": .string("")]); tmdbTestNote = nil } }.buttonStyle(BPActionStyle())
@@ -138,6 +139,8 @@ struct SettingsView: View {
                     .padding(BP.gutter)
                 case .addons:
                     AddonsView()
+                case .connect:
+                    ConnectPane(onBack: { sheet = nil })
                 case .newProfile:
                     ProfileEditorView(editing: nil, dismiss: { sheet = nil })
                 case .editProfile:

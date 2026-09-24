@@ -10,9 +10,13 @@ struct OnboardingView: View {
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, tmdb, streaming, taste, stremio, harbor, layout, subtitles, done }
+    enum Step: Int, CaseIterable { case language, phone, tmdb, streaming, taste, stremio, harbor, layout, subtitles, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
+    /// bp-handoff-context.tsx: the host lives above the steps, not inside the phone screen, so the
+    /// code on screen survives Back and Continue and a delivery that lands after the TV moved on to
+    /// the Stremio screen still counts. Listening only from the phone step through the Harbor step.
+    @StateObject private var handoff = TvHandoff(mode: .setup(HandoffStep.allCases))
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +29,23 @@ struct OnboardingView: View {
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(40))
             Spacer()
         }
+        .onChange(of: step) { _, s in syncHandoff(s) }
+        .onChange(of: handoff.done) { _, d in
+            if d.contains(.stremio), stremioName == nil, let s = PendingStremio.session { stremioName = s.user.fullname ?? s.user.email }
+        }
+        .onDisappear { handoff.stop() }
+    }
+
+    private func syncHandoff(_ s: Step) {
+        guard s.rawValue >= Step.phone.rawValue, s.rawValue <= Step.harbor.rawValue else {
+            handoff.stop()
+            return
+        }
+        if handoff.onPayload == nil {
+            let a = app
+            handoff.onPayload = HandoffApply.make(profileId: nil, afterHarbor: { await a.refreshRoster() })
+        }
+        handoff.start()
     }
 
     @ViewBuilder private var copy: some View {
@@ -39,6 +60,7 @@ struct OnboardingView: View {
     private var text: (String, String, String) {
         switch step {
         case .language: ("Language", "Choose your language", "Harbor speaks this everywhere. You can change it later in Settings.")
+        case .phone: ("Your phone", "Finish setup on your phone", "The next three screens need typing. Scan this and your phone does it for you.")
         case .tmdb: ("Artwork and rows", "Connect TMDB", "Free, two minutes. Unlocks Trending, In Theaters, Top Rated and every service rail.")
         case .streaming: ("Your services", "Which services do you have?", "Their rows show on Home and Discover. Turn off the ones you don't use.")
         case .taste: ("Your taste", "Pick up to five you love", "Discover learns from these. Nothing is shared.")
@@ -57,6 +79,12 @@ struct OnboardingView: View {
                 Button("English") { advance() }.buttonStyle(BPActionStyle(primary: true))
                 BPNote(text: "More languages arrive with Stage 9.")
             }
+        case .phone:
+            PhoneSetupStep(handoff: handoff,
+                           tmdbConnected: !settings.slice.tmdbKey.isEmpty,
+                           stremioName: stremioName,
+                           harborName: account.session?.user.username,
+                           advance: { advance() })
         case .tmdb:
             TmdbKeyForm(done: { advance() }, skip: { advance() })
         case .streaming:
@@ -112,8 +140,20 @@ struct OnboardingView: View {
         .buttonStyle(BPTileStyle(radius: BP.rMD))
     }
 
+    /// Steps the phone already delivered are passed over, so nobody signs in twice.
     private func advance() {
-        withAnimation(BP.easeSlow) { step = Step(rawValue: step.rawValue + 1) ?? .done }
+        var next = Step(rawValue: step.rawValue + 1) ?? .done
+        while let h = Self.handoffStep(next), handoff.done.contains(h), let after = Step(rawValue: next.rawValue + 1) { next = after }
+        withAnimation(BP.easeSlow) { step = next }
+    }
+
+    private static func handoffStep(_ s: Step) -> HandoffStep? {
+        switch s {
+        case .tmdb: return .tmdb
+        case .stremio: return .stremio
+        case .harbor: return .harbor
+        default: return nil
+        }
     }
 }
 
