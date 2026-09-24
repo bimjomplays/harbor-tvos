@@ -62,13 +62,57 @@ final class SettingsBridge: ObservableObject {
         /// settings/defaults.ts mangaEnabled (off): the manga reader, its tab, Search's manga row
         /// and the anime hero's "Read the Manga" entry all wait for it (views/manga.tsx EnableGate).
         var mangaEnabled: Bool? = false
-        /// settings.hideContent: only the manga flag is read here (nav-items hideKey "manga").
-        var hideContent: HideContent? = nil
-        struct HideContent: Codable, Equatable { var manga: Bool? }
     }
 
-    /// Manga is on and not hidden: its tab shows and the manga hooks run.
-    var mangaOn: Bool { (slice.mangaEnabled ?? false) && !(slice.hideContent?.manga ?? false) }
+    /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
+    /// `manga: settings.mangaEnabled`). Hiding the tab is tab editing now (navLayout below):
+    /// upstream retired the hideContent.manga switch into sidebar editing.
+    var mangaOn: Bool { slice.mangaEnabled ?? false }
+
+    // MARK: Tab editing (engine/navEdit.ts: chrome/nav-items.tsx + chrome/nav-edit.tsx)
+
+    /// The top bar's arrangement from settings.navCustomization, the object the desktop sidebar
+    /// edits: every Room.tabs raw value in bar order, and the ones the viewer hid.
+    struct NavLayout: Decodable, Equatable {
+        var order: [String]
+        var hidden: [String]
+    }
+    @Published private(set) var navLayout: NavLayout?
+
+    func loadNavLayout() async {
+        await navEdit("navEdit.layout", [])
+    }
+
+    /// nav-edit.tsx NavHideBadge / the hidden tray's "Show this tab".
+    func toggleTabHidden(_ room: Room) async {
+        await navEdit("navEdit.toggleHidden", [room.rawValue])
+    }
+
+    /// context-menu.tsx "Move up" / "Move down": one step against a neighbouring tab.
+    func moveTab(_ room: Room, beside neighbour: Room, after: Bool) async {
+        await navEdit("navEdit.move", [room.rawValue, neighbour.rawValue, after ? "after" : "before"])
+    }
+
+    /// "Show all tabs".
+    func showAllTabs() async {
+        await navEdit("navEdit.showAll", [])
+    }
+
+    /// "Reset layout".
+    func resetTabs() async {
+        await navEdit("navEdit.reset", [])
+    }
+
+    private func navEdit(_ fn: String, _ lead: [any Encodable]) async {
+        let p = ProfilesStore.shared.active
+        let tabs: [String] = Room.tabs.map(\.rawValue)
+        var args: [any Encodable] = lead
+        args.append(tabs)
+        args.append(p?.id ?? "default")
+        args.append(p?.linked ?? true)
+        let next: NavLayout? = try? await HarborEngine.shared.call(fn, args)
+        if let next { navLayout = next }
+    }
 
     /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).
     @Published var sportsDeclined = false
@@ -107,6 +151,7 @@ final class SettingsBridge: ObservableObject {
             slice = s
             loaded = true
         }
+        await loadNavLayout()
     }
 
     func patch(_ change: [String: AnyJSON]) async throws {

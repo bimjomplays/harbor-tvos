@@ -197,12 +197,24 @@ export default {
 `,
     }));
 
+    // --- Nav icon animations ---------------------------------------------------------------
+    // chrome/nav-items.tsx (engine/navEdit.ts reads its pure order/hide helpers) renders each tab
+    // with lottie-web and ~200 KB of Lottie JSON. Both are render-only: the player throws if
+    // ever called, the animation data is an empty object.
+    b.onResolve({ filter: /^lottie-web($|\/)/ }, (a) => ({ path: a.path, namespace: "lottie-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "lottie-stub" }, () => ({
+      contents: "const dead = () => { throw new Error('HarborEngine: lottie-web is render-only'); }; export default { loadAnimation: dead }; export const loadAnimation = dead;",
+      loader: "js",
+    }));
+    b.onResolve({ filter: /[\\/]assets[\\/]lottie[\\/].*\.json$/ }, (a) => ({ path: a.path, namespace: "lottie-data-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "lottie-data-stub" }, () => ({ contents: "export default {};", loader: "js" }));
+
     // --- Vite asset imports ----------------------------------------------------------------
     // \`import poster from "@/assets/x.png"\` is a Vite URL string. tvOS ships no web assets,
     // so it becomes a stable "harbor-asset:" identifier the Swift side can map to a bundled
     // image (or ignore). Never a data URI: that would put megabytes in the JS.
-    b.onResolve({ filter: /\.(png|jpe?g|gif|webp|avif|svg|woff2?|ttf|otf|mp3|wav|mp4|webm)$/ }, (a) => ({
-      path: a.path.replace(/^.*[\\/]assets[\\/]/, ""),
+    b.onResolve({ filter: /\.(png|jpe?g|gif|webp|avif|svg|woff2?|ttf|otf|mp3|wav|mp4|webm)(\?raw)?$/ }, (a) => ({
+      path: a.path.replace(/^.*[\\/]assets[\\/]/, "").replace(/\?raw$/, ""),
       namespace: "asset-stub",
     }));
     b.onLoad({ filter: /.*/, namespace: "asset-stub" }, (a) => ({

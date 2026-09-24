@@ -123,7 +123,7 @@ struct ShellView: View {
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
         guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
-        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental)
+        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental, nav: settings.navLayout)
         guard !order.isEmpty else { return }
         let from = order.firstIndex(of: app.room) ?? 0
         let next = ((from + delta) % order.count + order.count) % order.count
@@ -199,10 +199,32 @@ enum BPHintAction: String {
 extension Room {
     /// bp-top-bar.tsx visibleTabs: the tab strip and the shoulder cycle both read this, so a tab
     /// can never be hidden from one and reachable through the other. Manga (Stage 13) shows only
-    /// while the reader is switched on and not hidden (nav-items hideKey "manga").
-    @MainActor static func shellTabs(sportsDeclined: Bool, mangaOn: Bool, gate: ParentalGate) -> [Room] {
-        tabs.filter { !(sportsDeclined && $0 == .sports) && !(!mangaOn && $0 == .manga) && !gate.hides($0) }
+    /// while the reader is switched on. `nav` is the viewer's tab editing (engine/navEdit.ts over
+    /// settings.navCustomization, chrome/nav-items.tsx applyNavCustomization): its order, and the
+    /// tabs it hides, which now include the retired "Hide manga" / "Hide Live TV" switches
+    /// (settings/load.ts _navHideMigrateV1). A hidden tab leaves the bar only; the room still opens
+    /// from Settings, Search or a deep link, as a hidden sidebar entry does upstream.
+    @MainActor static func shellTabs(sportsDeclined: Bool, mangaOn: Bool, gate: ParentalGate, nav: SettingsBridge.NavLayout?) -> [Room] {
+        let hidden = Set(nav?.hidden ?? [])
+        return arranged(nav).filter {
+            !(sportsDeclined && $0 == .sports) && !(!mangaOn && $0 == .manga) && !hidden.contains($0.rawValue) && !gate.hides($0)
+        }
     }
+
+    /// Room.tabs in the viewer's order; a tab the layout does not name keeps its default place at the end.
+    static func arranged(_ nav: SettingsBridge.NavLayout?) -> [Room] {
+        guard let nav else { return tabs }
+        var out: [Room] = []
+        for raw in nav.order {
+            if let r = Room(rawValue: raw), tabs.contains(r), !out.contains(r) { out.append(r) }
+        }
+        for r in tabs where !out.contains(r) { out.append(r) }
+        return out
+    }
+
+    /// engine/navEdit.ts `editable`: a tab with a NavItemId that is not pinned. Home stays first and
+    /// shown (Back lands there); Search is a Big Picture tab with no sidebar entry.
+    var navEditable: Bool { self != .home && self != .search && self != .settings }
 }
 
 /// Top bar (bp-top-bar.tsx): brand at the start, icon-only tabs in the middle,
@@ -221,10 +243,13 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
-            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental)) { r in
+            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental, nav: settings.navLayout)) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)
+                    // context-menu.tsx `kind: "nav"` (long press on the remote): hide the tab, show
+                    // every hidden one, or reset the layout. Reordering lives in Settings → Tabs.
+                    .contextMenu { tabMenu(r) }
                     .overlay(alignment: .bottom) { tabHint(r) }
                     // Calendar: nav-items.tsx unseen-reminder badge (Calendar/CalendarPanels.swift).
                     .overlay(alignment: .topTrailing) { if r == .calendar { CalendarTabBadge() } }
@@ -263,6 +288,15 @@ struct TopBarView: View {
             LinearGradient(colors: [BP.void_.opacity(0.95), BP.void_.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: BP.barHeight * 1.9), alignment: .top
         )
+    }
+
+    /// context-menu.tsx nav items: "Hide this tab", "Show all tabs", "Reset layout".
+    @ViewBuilder private func tabMenu(_ r: Room) -> some View {
+        if r.navEditable {
+            Button { Task { await settings.toggleTabHidden(r) } } label: { Label(T("Hide this tab"), systemImage: "eye.slash") }
+        }
+        Button { Task { await settings.showAllTabs() } } label: { Label(T("Show all tabs"), systemImage: "eye") }
+        Button { Task { await settings.resetTabs() } } label: { Label(T("Reset layout"), systemImage: "arrow.counterclockwise") }
     }
 
     @ViewBuilder private func tabHint(_ r: Room) -> some View {

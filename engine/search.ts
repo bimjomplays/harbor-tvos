@@ -130,9 +130,10 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
   // its tab not locked. `hiddenTabs` is the profile's lockedTabs whether or not a PIN is set.
   const hiddenTabs = hiddenTabsFor(profileId);
   const animeAllowed = !hiddenTabs.anime && !hide.anime;
-  // search-context: manga is asked for only when the reader is switched on and not hidden, and
-  // the franchise (character) search runs when either anime or manga is allowed.
-  const mangaAllowed = settings.mangaEnabled === true && !hide.manga;
+  // search-context / use-bp-search gates: manga is asked for whenever the reader is switched on
+  // (hiding the Manga tab is sidebar editing now and no longer filters search), and the franchise
+  // (character) search runs when either anime or manga is allowed.
+  const mangaAllowed = settings.mangaEnabled === true;
   const franchiseAllowed = animeAllowed || mangaAllowed;
   const lists = playlists();
   const liveTv = !hiddenTabs.liveTv && lists.length > 0 ? searchLiveTvChannels(trimmed, lists) : [];

@@ -849,6 +849,38 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   pg.dispose();
 }
 
+// -------------------------- tab editing (settings/load.ts _navHideMigrateV1, chrome/nav-items.tsx)
+{
+  // A blob saved before the retired switches: Live TV and Manga hidden through hideContent,
+  // Music already hidden from the sidebar.
+  const legacy = { hideContent: { anime: false, liveTv: true, sports: false, adult: true, manga: true }, navCustomization: { order: [], hidden: ["music"], renamed: {} } };
+  const hideOnly = { anime: false, liveTv: true, sports: true, adult: false, manga: true };
+  const blob = { activeId: "p1", profiles: [{ id: "p1", name: "One", isPrimary: true, passwordHash: null, lockedTabs: null, hideContent: hideOnly, createdAt: 1 }] };
+  const ne = loadEngine({ storage: new Map([["harbor.settings.shared", JSON.stringify(legacy)], ["harbor.profiles.v1", JSON.stringify(blob)]]) });
+  const E = ne.engine;
+  const tabs = ["home", "discover", "anime", "manga", "shows", "movies", "music", "live", "sports", "search", "calendar", "library", "collections"];
+  const eff = E.settings.loadForProfile("p1", true);
+  r.ok("settings load moves the retired manga / liveTv switches into navCustomization.hidden once", JSON.stringify(eff.navCustomization.hidden) === JSON.stringify(["music", "manga", "live"]) && !("manga" in eff.hideContent) && !("liveTv" in eff.hideContent) && eff.hideContent.adult === true, JSON.stringify({ nav: eff.navCustomization, hide: eff.hideContent }));
+  const l0 = E.navEdit.layout(tabs, "p1", true);
+  r.ok("navEdit.layout: default order, the migrated hides reach the TV's Manga and Live TV tabs", JSON.stringify(l0.order) === JSON.stringify(tabs) && JSON.stringify(l0.hidden) === JSON.stringify(["manga", "music", "live"]), JSON.stringify(l0));
+  const l1 = E.navEdit.move("calendar", "discover", "before", tabs, "p1", true);
+  r.ok("navEdit.move: moveNavItem before a neighbour; Home and Search keep their slots", l1.order[0] === "home" && l1.order[1] === "calendar" && l1.order[2] === "discover" && l1.order[9] === "search" && l1.order.length === tabs.length && new Set(l1.order).size === tabs.length, JSON.stringify(l1.order));
+  r.eq("navEdit.move refuses Home (pinned) and Search (no nav item)", [E.navEdit.move("home", "discover", "after", tabs, "p1", true).order, E.navEdit.move("search", "discover", "before", tabs, "p1", true).order], [l1.order, l1.order]);
+  r.eq("navEdit.toggleHidden shows a hidden tab and keeps the order", [E.navEdit.toggleHidden("manga", tabs, "p1", true).hidden, E.navEdit.layout(tabs, "p1", true).order], [["music", "live"], l1.order]);
+  r.eq("navEdit.toggleHidden never hides Home", E.navEdit.toggleHidden("home", tabs, "p1", true).hidden, ["music", "live"]);
+  const stored = E.settings.loadForProfile("p1", true);
+  r.ok("navEdit writes settings.navCustomization (order from effectiveNavOrder, the desktop's full list)", stored.navCustomization.order.length >= tabs.length - 1 && stored.navCustomization.order[0] === "home" && stored.navCustomization.order.indexOf("calendar") < stored.navCustomization.order.indexOf("discover"), JSON.stringify(stored.navCustomization));
+  r.eq("navEdit.showAll clears hidden, keeps order", [E.navEdit.showAll(tabs, "p1", true).hidden, E.navEdit.layout(tabs, "p1", true).order], [[], l1.order]);
+  r.eq("navEdit.reset: upstream's default layout", E.navEdit.reset(tabs, "p1", true), { order: tabs, hidden: [] });
+  // profile-identity-sync.tsx: only anime / sports / adult are copied from the profile now.
+  E.parental.syncIdentity();
+  const after = E.settings.loadForProfile("p1", true);
+  ne.node.host.fetch = async (req) => ({ status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" });
+  r.eq("cards.removeFromWatchlist: every cloud form of a title (watchlist.ts twin sweep)", [await E.cards.removeFromWatchlist("k", "tmdb:movie:603", "tt0133093"), await E.cards.removeFromWatchlist("k", "tt0133093", null), await E.cards.removeFromWatchlist("k", "kitsu:1", "tt1")], [["tt0133093", "tmdb:movie:603"], ["tt0133093"], ["kitsu:1"]]);
+  r.ok("parental.syncIdentity copies anime/sports/adult and leaves the retired keys behind", after.hideContent.sports === true && after.hideContent.adult === false && !("manga" in after.hideContent) && !("liveTv" in after.hideContent) && after.navCustomization.hidden.length === 0, JSON.stringify({ hide: after.hideContent, nav: after.navCustomization }));
+  ne.dispose();
+}
+
 // ------------------------------------------------------------------------- kids room
 {
   const profiles = JSON.stringify({ activeId: "k1", profiles: [{ id: "k1", isPrimary: true, kid: { age: 7, curfewMinutes: null, parentPinHash: null } }] });
@@ -1139,7 +1171,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
 {
   const near = (a, hex) => [16, 8, 0].every((sh, i) => Math.abs(Math.round(a[i] * 255) - ((hex >> sh) & 0xff)) <= 1) && a[3] === 1;
   const st = engine.themes.state("default", true);
-  r.eq("themes.state: upstream's library, built-in then featured", st.presets.map((p) => p.id), ["cool-grey", "nord", "stremio", "tokyo-night", "dracula", "forest", "noir", "velvet", "crunch", "kawaii", "aurora", "minui"]);
+  r.eq("themes.state: upstream's library, built-in then featured", st.presets.map((p) => p.id), ["cool-grey", "nord", "stremio", "tokyo-night", "dracula", "forest", "noir", "velvet", "crunch", "kawaii", "aurora", "minui", "minui-dark"]);
   r.eq("themes.state: default is Harbor default in Sentient + Switzer", [st.active, st.fontPair, st.faces.display, st.faces.sans, st.light], ["cool-grey", "sentient-switzer", "sentient", "switzer", false]);
   const shipped = { canvas: 0x111213, surface: 0x191b1c, elevated: 0x252628, raised: 0x323335, ink: 0xf4f5f7, inkMuted: 0xa3a5a6, inkSubtle: 0x626365, accent: 0xf4a25c, danger: 0xc53637, void: 0x0d0e0f, panel: 0x161819, panel2: 0x222325, on: 0x404142 };
   r.ok("themes.state: default palette matches Theme.swift's shipped tokens", Object.entries(shipped).every(([k, hex]) => near(st.palette[k], hex)), JSON.stringify(st.palette));
@@ -1153,6 +1185,8 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("themes.apply writes settings.theme", engine.settings.load().theme.preset, "stremio");
   r.eq("themes.apply ignores an unknown id", engine.themes.apply("not-a-theme", "default", true).active, "stremio");
   r.eq("themes.apply(minui) is a light theme", [engine.themes.apply("minui", "default", true).light, engine.themes.state("default", true).bokeh], [true, false]);
+  const minuiDark = engine.themes.apply("minui-dark", "default", true);
+  r.eq("themes.apply(minui-dark): MinUI's card and button styles on a dark canvas", [minuiDark.light, minuiDark.cardStyle, minuiDark.buttonStyle, minuiDark.fontPair, minuiDark.bokeh], [false, "minui", "minui", "general-sans", false]);
   r.eq("themes.apply(aurora) carries bokeh", engine.themes.apply("aurora", "default", true).bokeh, true);
   r.eq("themes.setFontPair: picked pair kept, preset without one uses it", (engine.themes.apply("nord", "default", true), engine.themes.setFontPair("fraunces-inter", "default", true).fontPair), "fraunces-inter");
   engine.themes.setFontPair("sentient-switzer", "default", true);
