@@ -155,6 +155,73 @@ export function awardDetail(type: AwardType) {
   };
 }
 
+// ----------------------------------------------------------------- anime award overlay
+// bp-award-tiles.tsx BpAnimeAwardTile (after the classic tiles, past a divider) and
+// bp-anime-awards.tsx BpAnimeAward: one tile per bundled anime award source ("{n} winners"),
+// and the overlay's data (source chips, "All years" + per-year chips with counts, categories
+// with the Grand prize first, winners newest first). The overlay filters by year on the TV.
+import { allAwardSources as animeAwardSourceIds, awardSourceMeta as animeAwardSourceMeta, readAnimeAwardSource, animeAwardId, type AwardSourceId } from "@/lib/anime-awards";
+import { tmdbImdbId as awardTmdbImdbId } from "@/lib/providers/tmdb/tmdb-imdb-resolve";
+
+export type AnimeAwardTile = { id: AwardSourceId; name: string; shortName: string; wins: number };
+export function animeAwardSources(): AnimeAwardTile[] {
+  return animeAwardSourceIds().map((id) => {
+    const d = readAnimeAwardSource(id);
+    const meta = animeAwardSourceMeta(id);
+    return { id, name: meta.name, shortName: meta.shortName, wins: d.categories.reduce((n, c) => n + c.winners.length, 0) };
+  });
+}
+
+export type AnimeAwardView = {
+  id: AwardSourceId; name: string; totalWins: number; yearSpan: string; years: number[];
+  perYear: Array<{ year: number; count: number }>;
+  categories: Array<{ key: string; name: string; isAOTY: boolean; winners: Array<{ year: number; title: string; mapped: boolean }> }>;
+};
+export function animeAward(source: string): AnimeAwardView {
+  const id = (animeAwardSourceIds() as string[]).includes(source) ? (source as AwardSourceId) : "crunchyroll";
+  const data = readAnimeAwardSource(id);
+  const totalWins = data.categories.reduce((n, c) => n + c.winners.length, 0);
+  const yearSpan = data.years.length === 0 ? "" : data.years.length === 1 ? String(data.years[0]) : `${data.years[data.years.length - 1]} - ${data.years[0]}`;
+  const counts = new Map<number, number>();
+  for (const c of data.categories) for (const w of c.winners) counts.set(w.year, (counts.get(w.year) ?? 0) + 1);
+  return {
+    id, name: data.meta.name, totalWins, yearSpan, years: data.years,
+    perYear: data.years.map((year) => ({ year, count: counts.get(year) ?? 0 })),
+    categories: data.categories.map((c) => ({ key: c.key, name: c.name, isAOTY: c.isAOTY,
+      winners: c.winners.map((w) => ({ year: w.year, title: w.title, mapped: animeAwardId(w.title) != null })) })),
+  };
+}
+
+// BpAwardWinner.activate: a mapped winner opens its kitsu/anilist id; otherwise TMDB search
+// (tv with first_air_date_year, then movie with year) when a key exists. The TV opens titles by
+// IMDb id, so a TMDB hit is resolved to one when it can be (the tmdb: id otherwise).
+async function awardSearchTmdb(key: string, title: string, year: number, type: "movie" | "tv"): Promise<number | null> {
+  const params = new URLSearchParams({ api_key: key, query: title, include_adult: "false" });
+  if (type === "movie") params.set("year", String(year));
+  else params.set("first_air_date_year", String(year));
+  try {
+    const res = await fetch(`https://api.themoviedb.org/3/search/${type}?${params}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { results?: Array<{ id?: number }> };
+    return data.results?.[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+export async function animeAwardOpen(title: string, year: number, profileId: string, linked: boolean): Promise<Meta | null> {
+  const mapped = animeAwardId(title);
+  if (mapped) return { id: mapped, type: "series", name: title } as Meta;
+  const key = loadEffective(profileId, linked).tmdbKey;
+  if (!key) return null;
+  const tv = await awardSearchTmdb(key, title, year, "tv");
+  const hit = tv ? { id: `tmdb:tv:${tv}`, type: "series" } : null;
+  const movie = hit ? null : await awardSearchTmdb(key, title, year, "movie");
+  const found = hit ?? (movie ? { id: `tmdb:movie:${movie}`, type: "movie" } : null);
+  if (!found) return null;
+  const imdb = await awardTmdbImdbId(key, found.id).catch(() => null);
+  return { id: imdb ?? found.id, type: found.type, name: title } as Meta;
+}
+
 /** Harbor's own "Top People" ranking (harbor.site); snapshot first, then a refresh. */
 export async function people(limit = 24) {
   const snap = peekRankSnapshot("harbor", "Acting", null);

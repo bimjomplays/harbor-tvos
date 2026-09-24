@@ -431,6 +431,9 @@ export const discoverRoom = {
   awardsInstalled: discoverBuilders.awardsInstalled,
   awards: discoverBuilders.awards,
   awardDetail: discoverBuilders.awardDetail,
+  animeAwardSources: discoverBuilders.animeAwardSources,
+  animeAward: discoverBuilders.animeAward,
+  animeAwardOpen: discoverBuilders.animeAwardOpen,
   people: discoverBuilders.people,
 };
 export type { DiscoverBuild, DiscoverRail, QueuePeek, GenreTile } from "./discover";
@@ -456,6 +459,8 @@ export type { StreamSearch } from "./streams";
 export const collectionsRoom = {
   categories: collectionsGlue.categories,
   tmdb: collectionsGlue.tmdb,
+  curatedRow: collectionsGlue.curatedRow,
+  tmdbCard: collectionsGlue.tmdbCard,
   tvdb: collectionsGlue.tvdb,
   tvdbDetail: collectionsGlue.tvdbDetail,
   mine: collectionsGlue.mine,
@@ -522,6 +527,7 @@ export const sync = {
 /** Card marks for browse tiles (identity chip, watchlist, watched, Top 10 ribbon). */
 export const cards = {
   marks: cardsGlue.marks,
+  heroAwards: cardsGlue.heroAwards,
   setTop10: cardsGlue.setTop10,
   refreshWatchlist: cardsGlue.refreshWatchlist,
 };
@@ -656,6 +662,7 @@ export const animeDetail = { load: animeDetailGlue.load };
 /** bp-home "Your addons" band and the addon page: cards, catalogs, paged feeds. */
 export const addonsRoom = {
   cards: addonsRoomGlue.cards,
+  bandPosters: addonsRoomGlue.bandPosters,
   catalogs: addonsRoomGlue.catalogs,
   feed: addonsRoomGlue.feed,
 };
