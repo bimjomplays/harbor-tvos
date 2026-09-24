@@ -53,6 +53,7 @@ import { randomUuid } from "@/lib/uuid";
 import * as upstreamSecrets from "@/lib/secret-store";
 import type { Meta } from "@/lib/cinemeta";
 import * as roomBuilders from "./rooms";
+import * as homeExtrasGlue from "./homeExtras";
 import * as discoverBuilders from "./discover";
 import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
@@ -425,6 +426,19 @@ export const rooms = {
   dismissContinueWatching: roomBuilders.dismissContinueWatching,
   anime: roomBuilders.anime,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,
+  // Home extra rows (use-bp-extra-rows.ts) and Settings → Home rows (lib/home-customization).
+  assembleHome: roomBuilders.assembleHome,
+  homeExtraPlan: homeExtrasGlue.extraPlan,
+  homeExtraRows: homeExtrasGlue.extraRows,
+  homeRowsState: homeExtrasGlue.homeRowsState,
+  homeRowMove: homeExtrasGlue.homeRowMove,
+  homeRowToggleHidden: homeExtrasGlue.homeRowToggleHidden,
+  homeRowRename: homeExtrasGlue.homeRowRename,
+  homeRowToggleNumerals: homeExtrasGlue.homeRowToggleNumerals,
+  homeListRowToggle: homeExtrasGlue.homeListRowToggle,
+  homeRowsReset: homeExtrasGlue.homeRowsReset,
+  homeSimklRail: homeExtrasGlue.homeSimklRail,
+  resetHomeExtras: homeExtrasGlue.resetExtraGroups,
 };
 export type { RoomBuild, RoomRow, RoomKind } from "./rooms";
 

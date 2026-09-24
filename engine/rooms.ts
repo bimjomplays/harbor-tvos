@@ -28,6 +28,7 @@ import { isLibraryItemWatched } from "@/lib/trakt/library-key";
 import { isAuthenticated as traktAuthenticated } from "@/lib/trakt/session";
 import { getWatchedBy } from "@/lib/watched-by";
 import { getAnimeCwId } from "@/lib/anime-cw-ids";
+import { extraRows, homeCustomization, lastHomeUpdate, markPendingLate, noteHomeRows } from "./homeExtras";
 
 export type RoomKind = "movies" | "shows";
 export type RoomRow = {
@@ -93,8 +94,33 @@ function strip(row: HomeRow, shape: RoomRow["shape"] = "poster"): RoomRow {
 }
 
 // --------------------------------------------------------------------------------- Home
-/** use-bp-catalog.ts without React: base rows (TMDB or Cinemeta), then installed addon rows. */
-export async function home(settings: Settings, authKey: string | null): Promise<RoomBuild> {
+/** bp-home.tsx VISIBLE_ROWS: Home renders at most this many catalog rows. */
+const HOME_VISIBLE_ROWS = 60;
+/** How long rooms.home keeps waiting for the extra rows once the catalog rows are in. */
+const EXTRA_GRACE_MS = 1500;
+/** A re-read that `harbor:home-updated` asked for reuses the catalog rows built this recently. */
+const BASE_REUSE_MS = 60_000;
+let lastBase: { key: string; at: number; merged: HomeRow[]; hero: Meta[] } | null = null;
+
+function activeProfileId(): string {
+  try {
+    const blob = JSON.parse(localStorage.getItem("harbor.profiles.v1") ?? "null") as { activeId?: string | null } | null;
+    return blob?.activeId || "default";
+  } catch { return "default"; }
+}
+
+/**
+ * The catalog half of use-bp-catalog.ts: base rows (TMDB or Cinemeta), then installed addon
+ * rows. Upstream caches it per key for the session; here only a re-read raised by
+ * `harbor:home-updated` (a late extra row, a row edit) reuses it, so a normal visit still
+ * picks up a new addon or key.
+ */
+async function homeCatalogRows(settings: Settings, authKey: string | null, profileId: string): Promise<{ merged: HomeRow[]; hero: Meta[] }> {
+  const key = [settings.tmdbKey ?? "", settings.tmdbLanguage ?? "", settings.homeMode ?? "", settings.region ?? "", settings.homeShowAllAddonRows ? "all" : "dedup", authKey ?? "", profileId].join("\u0000");
+  const now = Date.now();
+  if (lastBase && lastBase.key === key && now - lastHomeUpdate() < BASE_REUSE_MS && now - lastBase.at < BASE_REUSE_MS * 5) {
+    return { merged: lastBase.merged, hero: lastBase.hero };
+  }
   const classic = settings.homeMode === "classic";
   const EMPTY = { rows: [] as HomeRow[], hero: [] as Meta[] };
   let base: { rows: HomeRow[]; hero: Meta[] } = EMPTY;
@@ -109,21 +135,49 @@ export async function home(settings: Settings, authKey: string | null): Promise<
   const addons = await loadAddonRows(authKey, { dedup }).catch(() => [] as AddonRow[]);
   const usable = classic ? addons : addons.filter((a) => !looksAnimeRow(a) && !isStreamingServiceRow(a.name));
   const merged = mergeRows(base.rows, usable, { dedup });
+  if (merged.length > 0) lastBase = { key, at: Date.now(), merged, hero: base.hero };
+  return { merged, hero: base.hero };
+}
 
+/**
+ * use-bp-catalog.ts `ordered`: extra.before + catalog rows + extra.after, first of each key wins,
+ * then applyHomeRowCustomization, then useHideAnimeRows (hideContent.anime only; upstream keeps
+ * animeOnlyInAnimeRoom to Continue Watching).
+ */
+export function assembleHome(before: HomeRow[], catalog: HomeRow[], after: HomeRow[], settings: Settings): { all: HomeRow[]; shown: HomeRow[] } {
   const seen = new Set<string>();
   const all: HomeRow[] = [];
-  for (const row of merged) {
+  for (const row of [...before, ...catalog, ...after]) {
     if (seen.has(row.key)) continue;
     seen.add(row.key);
     all.push(row);
   }
-  const customized = applyHomeRowCustomization(all, settings.homeRows, false);
-  lastBuilds.set("home", customized);
-  const rows = hideAnime(customized, settings).map((r) => {
-    const rank = settings.homeRows?.numerals?.includes(r.key) && r.metas.length >= 10;
-    return strip(r, rank ? "rank" : "poster");
-  });
-  return { rows, hero: base.hero, failed: rows.length === 0 };
+  const ordered = applyHomeRowCustomization(all, homeCustomization(settings), false);
+  const shown = settings.hideContent?.anime === true
+    ? ordered.map((r) => ({ ...r, metas: r.metas.filter((m) => !metaLooksAnime(m)) })).filter((r) => r.metas.length > 0)
+    : ordered;
+  return { all, shown };
+}
+
+/** use-bp-catalog.ts + use-bp-extra-rows.ts without React. */
+export async function home(settings: Settings, authKey: string | null, profileId: string = activeProfileId(), linked = true): Promise<RoomBuild> {
+  // useBpExtraRows starts alongside the catalog build; its async rows get a short grace after it.
+  const early = extraRows(settings, profileId, linked);
+  const catalogRows = await homeCatalogRows(settings, authKey, profileId);
+  if (early.waits.length > 0) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    await Promise.race([Promise.all(early.waits), new Promise<void>((r) => { timer = setTimeout(r, EXTRA_GRACE_MS); })]);
+    if (timer) clearTimeout(timer);
+  }
+  const extra = extraRows(settings, profileId, linked);
+  markPendingLate();
+
+  const { all, shown } = assembleHome(extra.rows.before, catalogRows.merged, extra.rows.after, settings);
+  noteHomeRows(profileId, all);
+  lastBuilds.set("home", shown);
+  const numerals = homeCustomization(settings).numerals;
+  const rows = shown.slice(0, HOME_VISIBLE_ROWS).map((r) => strip(r, numerals.includes(r.key) && r.metas.length >= 10 ? "rank" : "poster"));
+  return { rows, hero: catalogRows.hero, failed: rows.length === 0 };
 }
 
 // ------------------------------------------------------------------------ Movies / Shows
@@ -217,7 +271,7 @@ export async function catalog(kind: RoomKind, settings: Settings): Promise<RoomB
 // ------------------------------------------------------------- convenience for Swift
 /** Same as `home`, reading the effective settings for a profile inside the engine. */
 export function homeFor(profileId: string, linked: boolean, authKey: string | null): Promise<RoomBuild> {
-  return home(loadEffective(profileId, linked), authKey);
+  return home(loadEffective(profileId, linked), authKey, profileId, linked);
 }
 
 /** Same as `catalog`, reading the effective settings for a profile inside the engine. */

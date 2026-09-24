@@ -75,6 +75,109 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }
 
+// --------------------------------------- Home extra rows (use-bp-extra-rows.ts), fixtures only
+{
+  const pinBase = "https://pinned.example.invalid";
+  const fixtureMetas = (prefix, n) => Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, type: "movie", name: `${prefix} ${i}`, poster: `https://img.example.invalid/${prefix}${i}.jpg` }));
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.customlists.v1", JSON.stringify([
+      { id: "L1", name: "Date night", createdAt: 1, updatedAt: 1, items: [{ id: "tt0000101", type: "movie", name: "One", addedAt: 1 }, { id: "tt0000102", type: "series", name: "Two", addedAt: 2 }] },
+      { id: "L2", name: "Empty list", createdAt: 1, updatedAt: 1, items: [] },
+    ])],
+    ["harbor.collections.v1", JSON.stringify([
+      { id: "C1", name: "Heists", createdAt: 1, updatedAt: 1, items: [{ id: "tt0000201", type: "movie", name: "Heat" }] },
+      { id: "C2", name: "Nothing yet", createdAt: 1, updatedAt: 2, items: [] },
+    ])],
+    ["harbor.pagecollrows.v1", JSON.stringify({ home: ["C2", "C1"], movies: [], shows: [], anime: [] })],
+    ["harbor.pinnedcatalogs.v1", JSON.stringify([
+      { id: "pin1", source: "catalog", name: "Pinned Picks", params: { base: pinBase, type: "movie", id: "picks" } },
+      { id: "pin2", source: "mal", name: "MAL watching", params: { railKey: "watching" } },
+    ])],
+    ["harbor.favorites.v1.default", JSON.stringify([{ id: "tt0000301", type: "movie", name: "Older fave", addedAt: 1 }, { id: "tt0000302", type: "series", name: "Newer fave", addedAt: 9 }])],
+    ["harbor.localwatchlist.v1.default", JSON.stringify(["tt0000401"])],
+  ]) });
+  let pinDelay = 0;
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.startsWith(`${pinBase}/catalog/movie/picks`)) {
+      if (pinDelay) await new Promise((r) => setTimeout(r, pinDelay));
+      return json({ metas: fixtureMetas(req.url.includes("skip=") ? "pinB" : "pinA", 20) });
+    }
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/")) return json({ metas: fixtureMetas(`cm${hits.length}-`, 12) });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = rec.engine;
+  const events = [];
+  E.runtime.onEvent((type) => { if (type === "harbor:home-updated") events.push(type); });
+  const base = E.settings.loadForProfile("default", true);
+  const s = { ...base, hideContent: { ...base.hideContent, anime: true }, homeRows: { ...base.homeRows, listRows: ["L1", "L2", "L-missing"] } };
+  E.settings.saveForProfile(s, "default", true);
+
+  const plan = (over, env) => E.rooms.homeExtraPlan({ ...s, ...over }, { uiLang: "en", trakt: false, simkl: false, letterboxd: false, ...env });
+  r.eq("home extras: hideContent.anime turns the anime rows off", plan({}, {}).anime, false);
+  r.eq("home extras: anime rows run by default", plan({ hideContent: { ...s.hideContent, anime: false } }, {}).anime, true);
+  r.eq("home extras: classic mode drops anime / Arabic / Russian rows", (() => { const p = plan({ homeMode: "classic", tmdbKey: "k", hideContent: { ...s.hideContent, anime: false } }, { uiLang: "ar" }); return [p.anime, p.arabic, p.russian]; })(), [false, false, false]);
+  r.eq("home extras: Arabic rows need the ar UI language and a TMDB key", [plan({ tmdbKey: "k" }, { uiLang: "ar" }).arabic, plan({ tmdbKey: "" }, { uiLang: "ar" }).arabic, plan({ tmdbKey: "k" }, { uiLang: "ru" }).russian], [true, false, true]);
+  r.eq("home extras: Trakt rails follow the connection", [plan({}, { trakt: true }).trakt, plan({}, {}).trakt], [true, false]);
+  r.eq("home extras: Simkl rails need simklHomeRailsEnabled", [plan({ simklHomeRailsEnabled: false }, { simkl: true }).simkl, plan({ simklHomeRailsEnabled: true }, { simkl: true }).simkl, plan({ simklHomeRailsEnabled: true }, {}).simkl], [false, true, false]);
+
+  const built = await r.timed("rooms.homeFor(extra rows, fixtures)", () => E.rooms.homeFor("default", true, null));
+  const keys = built ? built.rows.map((x) => x.key) : [];
+  const extraKeys = new Set(["list-L1", "collection-C1", "pinned:pin1", "harbor-favorites", "harbor-watchlist"]);
+  const catalogKeys = keys.filter((k) => !extraKeys.has(k));
+  r.ok("home extras: list, collection and pinned rows lead, Favorites and My Watchlist follow the catalog rows",
+    keys[0] === "list-L1" && keys[1] === "collection-C1" && keys[2] === "pinned:pin1" && catalogKeys.length > 0 &&
+    keys.indexOf(catalogKeys[catalogKeys.length - 1]) < keys.indexOf("harbor-favorites") && keys[keys.length - 1] === "harbor-watchlist" && keys[keys.length - 2] === "harbor-favorites",
+    JSON.stringify(keys));
+  r.ok("home extras: empty list / collection, a missing list and an unconnected MAL pin make no row", !keys.some((k) => k === "list-L2" || k === "list-L-missing" || k === "collection-C2" || k === "pinned:pin2"), JSON.stringify(keys));
+  const row = (k) => built && built.rows.find((x) => x.key === k);
+  r.eq("home extras: Favorites are newest first", row("harbor-favorites") && row("harbor-favorites").metas.map((m) => m.id), ["tt0000302", "tt0000301"]);
+  r.eq("home extras: a bare-id watchlist entry becomes a movie tile", row("harbor-watchlist") && row("harbor-watchlist").metas.map((m) => [m.id, m.type]), [["tt0000401", "movie"]]);
+  r.eq("home extras: list rows keep the list's items and name", row("list-L1") && [row("list-L1").name, row("list-L1").metas.map((m) => m.type)], ["Date night", ["movie", "series"]]);
+  r.ok("home extras: the pinned catalog row is capped at 30 and pages through its addon", row("pinned:pin1") && row("pinned:pin1").metas.length === 20 && row("pinned:pin1").hasMore === true, JSON.stringify(row("pinned:pin1") && row("pinned:pin1").metas.length));
+  const more = await E.rooms.page("home", "pinned:pin1", 2);
+  r.ok("home extras: rooms.page pages a pinned row", Array.isArray(more) && more.length > 0 && more[0].id.startsWith("pinB"), JSON.stringify(more && more.slice(0, 2)));
+  r.ok("home extras: anime rows were never asked for with anime hidden", !hits.some((u) => /jikan/i.test(u)), JSON.stringify(hits.filter((u) => /jikan/i.test(u)).slice(0, 2)));
+
+  // Settings → Home rows over lib/home-customization.
+  const st = E.rooms.homeRowsState("default", true);
+  r.ok("homeRowsState lists every built row and the custom lists", st.rows.length === keys.length && st.rows[0].key === "list-L1" && st.lists.length === 2 && st.lists.find((l) => l.id === "L1").onHome && st.simkl.connected === false, JSON.stringify({ n: st.rows.length, lists: st.lists }));
+  events.length = 0;
+  E.rooms.homeRowToggleHidden("default", true, "harbor-watchlist");
+  E.rooms.homeRowRename("default", true, "list-L1", "Tonight");
+  const fi0 = st.rows.findIndex((x) => x.key === "harbor-favorites");
+  let after = E.rooms.homeRowMove("default", true, "harbor-favorites", -1);
+  r.ok("homeRowMove swaps with the row above", after.rows[fi0 - 1].key === "harbor-favorites" && after.rows[fi0].key === st.rows[fi0 - 1].key, JSON.stringify(after.rows.map((x) => x.key)));
+  E.rooms.homeListRowToggle("default", true, "L2");
+  const offL2 = E.settings.loadForProfile("default", true).homeRows.listRows;
+  after = E.rooms.homeListRowToggle("default", true, "L2");
+  r.eq("homeListRowToggle removes, then re-adds a list in homeRows.listRows", [offL2, E.settings.loadForProfile("default", true).homeRows.listRows, after.lists.find((l) => l.id === "L2").onHome], [["L1", "L-missing"], ["L1", "L-missing", "L2"], true]);
+  await new Promise((res) => setTimeout(res, 400));
+  r.ok("row edits raise harbor:home-updated", events.length >= 1, JSON.stringify(events));
+  const edited = await E.rooms.homeFor("default", true, null);
+  const ek = edited.rows.map((x) => x.key);
+  r.ok("a hidden row leaves Home, a renamed row shows its new name", !ek.includes("harbor-watchlist") && edited.rows[0].name === "Tonight", JSON.stringify(edited.rows.slice(0, 2).map((x) => x.name)));
+  r.ok("homeRowsState keeps the hidden row listed", E.rooms.homeRowsState("default", true).rows.some((x) => x.key === "harbor-watchlist" && x.hidden), "");
+  E.rooms.homeRowsReset("default", true);
+  r.eq("homeRowsReset clears homeRows", (() => { const h = E.settings.loadForProfile("default", true).homeRows; return [h.hidden, h.order, h.listRows]; })(), [[], [], []]);
+
+  // A slow async row lands after the grace: Home is told to re-read.
+  E.rooms.resetHomeExtras();
+  E.settings.saveForProfile({ ...E.settings.loadForProfile("default", true), homeRows: { ...s.homeRows, listRows: [] } }, "default", true);
+  pinDelay = 2500;
+  events.length = 0;
+  const early = await E.rooms.homeFor("default", true, null);
+  r.ok("a slow pinned row is not waited for past the grace", !early.rows.some((x) => x.key === "pinned:pin1"), JSON.stringify(early.rows.map((x) => x.key).slice(0, 4)));
+  await new Promise((res) => setTimeout(res, 2000));
+  r.ok("its arrival raises harbor:home-updated", events.length >= 1, JSON.stringify(events));
+  const late = await E.rooms.homeFor("default", true, null);
+  r.ok("the next read has it in its upstream slot", late.rows[1] && late.rows[1].key === "pinned:pin1", JSON.stringify(late.rows.map((x) => x.key).slice(0, 4)));
+  rec.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";
