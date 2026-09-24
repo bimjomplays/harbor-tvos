@@ -6,6 +6,7 @@ struct SearchView: View {
     @EnvironmentObject private var app: AppModel
     @State private var spotlight: Meta?
     @State private var detail: Meta?
+    @State private var phoneOpen = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -15,6 +16,10 @@ struct SearchView: View {
                     BPKeyboardView(onChar: { model.query += $0 },
                                    onBackspace: { if !model.query.isEmpty { model.query.removeLast() } },
                                    onClear: { model.query = "" })
+                    // bp-phone-typing.tsx: on search, Options (here Play/Pause) opens it too.
+                    Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
+                        .buttonStyle(BPActionStyle())
+                        .accessibilityIdentifier("search-phone")
                     statusLine
                 }
                 .padding(.leading, BP.gutter)
@@ -28,6 +33,11 @@ struct SearchView: View {
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
         }
         .task { await model.loadSuggestions() }
+        .onPlayPauseCommand { phoneOpen.toggle() }
+        .fullScreenCover(isPresented: $phoneOpen) {
+            PhoneTypingSheet(label: "Search", placeholder: "Search movies, series, anime", text: $model.query,
+                             onClose: { phoneOpen = false })
+        }
         .onChange(of: detail?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: person?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: channel?.id) { _, id in if id != nil { model.commitRecent() } }

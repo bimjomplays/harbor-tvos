@@ -75,6 +75,94 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }
 
+// ----------------------------------- sports event rows, where, bell, broadcasts, api key (SP-1/4/7/8/11/12/13)
+{
+  const posts = [];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.sports.sources.v1", JSON.stringify({ channels: {}, streams: { "g-att": { url: "https://cdn.example.invalid/att.m3u8", kind: "hls", page: "https://page.example.invalid/x", title: "Attached", poster: "" } } })],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    if (req.method === "POST") posts.push(req);
+    return { status: req.method === "POST" ? 204 : 404, statusText: "", headers: {}, url: req.url, body: "" };
+  };
+  const S = rec.engine.sports;
+  S.accept();
+  const side = (id, name, abbr, score = "0") => ({ id, name, abbr, logo: "", score, winner: false });
+  const p = (id, name, position, starter, extra = {}) => ({ id, name, jersey: String(id).slice(-2), position, starter, goals: 0, yellowCards: 0, redCards: 0, ...extra });
+  const base = (league, extra) => ({ id: "g-" + league, league, state: "in", detail: "Live", home: side("h", "Home Side", "HOM", "2"), away: side("a", "Away Side", "AWY", "1"), startMs: Date.now() - 3600000, ...extra });
+  const det = (game, extra) => ({ ...game, homeRoster: [], awayRoster: [], homeStats: {}, awayStats: {}, allStats: [], events: [], ...extra });
+
+  const nba = base("NBA");
+  const five = (pre) => ["PG", "SG", "SF", "PF", "C"].map((pos, i) => p(`${pre}${i}`, `${pre.toUpperCase()} Player${i}`, pos, true));
+  const nbaRows = await S.eventRows(nba, det(nba, {
+    homeRoster: five("h"), awayRoster: five("a"),
+    allStats: [{ label: "Rebounds", homeValue: "30", awayValue: "10" }],
+    events: [{ id: "e1", time: "Q1 10:00", type: "other", text: "Jump ball won" }, { id: "e2", time: "Q1 9:40", type: "other", text: "Smith makes three point jumper" }],
+  }));
+  r.ok("sports.eventRows: live NBA shows the court, newest play first (a three is loud), stat share", nbaRows.stats && nbaRows.stats.title === "Live now" && nbaRows.stats.situation.kind === "court" && nbaRows.stats.situation.court.home.length === 5 && nbaRows.stats.situation.court.away[0].left === 63 && nbaRows.stats.plays.rows[0].id === "e2" && nbaRows.stats.plays.rows[0].loud === true && nbaRows.stats.plays.rows[0].icon === "three" && nbaRows.stats.team.lines[0].share === 25, JSON.stringify(nbaRows.stats && { t: nbaRows.stats.title, s: nbaRows.stats.situation, p: nbaRows.stats.plays && nbaRows.stats.plays.rows[0], l: nbaRows.stats.team }));
+  r.ok("sports.eventRows: rosters make the Lineups row, starters first", nbaRows.lineups && nbaRows.lineups.title === "Lineups" && nbaRows.lineups.home.starters === 5 && nbaRows.lineups.pitch === null, JSON.stringify(nbaRows.lineups && { t: nbaRows.lineups.title, s: nbaRows.lineups.home && nbaRows.lineups.home.starters }));
+
+  const mlb = base("MLB");
+  const mlbRows = await S.eventRows(mlb, det(mlb, { state: "in", homeRoster: [p("b1", "Babe Batter", "RF", true)], awayRoster: [p("p1", "Pat Pitcher", "P", true)], baseball: { balls: 2, strikes: 1, outs: 2, batterId: "b1", pitcherId: "p1", onSecondId: "b1" } }));
+  const dia = mlbRows.stats && mlbRows.stats.situation && mlbRows.stats.situation.diamond;
+  r.ok("sports.eventRows: live MLB shows the diamond (bases, count, batter, pitcher)", dia && JSON.stringify(dia.bases) === "[false,true,false]" && dia.balls === 2 && dia.outs === 2 && dia.batter === "Babe Batter" && dia.pitcher === "Pat Pitcher" && dia.runners === "Second base: Babe Batter" && mlbRows.stats.situation.caption === "On the diamond", JSON.stringify(mlbRows.stats));
+
+  const nfl = base("NFL");
+  const nflRows = await S.eventRows(nfl, det(nfl, { football: { source: "situation", down: 3, distance: 7, possessionTeamId: "a", yardLine: 50, yardLineText: "AWY 50" } }));
+  const fld = nflRows.stats && nflRows.stats.situation && nflRows.stats.situation.field;
+  r.ok("sports.eventRows: NFL shows the field with the ball marker at midfield", fld && fld.down === 3 && fld.distance === 7 && fld.owner.abbr === "AWY" && fld.marker === 50 && fld.yardLine === "AWY 50", JSON.stringify(nflRows.stats));
+
+  const epl = base("EPL");
+  const xi = (pre) => [p(`${pre}0`, `${pre} Keeper`, "G", true), ...Array.from({ length: 10 }, (_, i) => p(`${pre}${i + 1}`, `${pre} Out${i}`, i < 4 ? "D" : i < 7 ? "M" : "F", true)), p(`${pre}99`, `${pre} Bench`, "F", false)];
+  const eplRows = await S.eventRows(epl, det(epl, {
+    homeRoster: xi("h"), awayRoster: xi("a"), homeFormation: "4-3-3", awayFormation: "4-3-3",
+    playerStats: [{ teamId: "h", name: "Batting", labels: ["A", "B", "C", "D", "E", "F", "G"], descriptions: [], rows: [{ player: p("h1", "Hank One", "D", true), values: ["1", "2", "3", "4", "5", "6", "7"] }] }],
+    events: [{ id: "g1", time: "12'", type: "goal", text: "Goal! h Out8 scores", teamId: "h", participantName: "h Out8" }],
+  }));
+  const pitch = eplRows.lineups && eplRows.lineups.pitch;
+  r.ok("sports.eventRows: soccer lineups draw the pitch (22 spots, formations, bench) and player tables", pitch && pitch.spots.length === 22 && pitch.homeFormation === "4-3-3" && pitch.bench.length === 2 && pitch.spots.every((s) => s.left >= 0 && s.left <= 100) && eplRows.lineups.title === "Lineups and player statistics" && eplRows.lineups.players[0].labels.length === 6 && eplRows.lineups.players[0].trimmed === 1 && eplRows.lineups.players[0].heading === "Home Side · Batting", JSON.stringify(eplRows.lineups && { pitch: pitch && [pitch.spots.length, pitch.homeFormation, pitch.bench], players: eplRows.lineups.players }));
+  r.eq("sports.eventRows: no detail, no rows", await S.eventRows({ ...base("NBA"), id: "none", source: "nowhere" }, null).then((x) => [x.stats, x.lineups]).catch(() => "threw"), [null, null]);
+
+  const ufc = base("UFC", { state: "pre", startMs: Date.now() + 3600000, context: { id: "c", name: "UFC 999", round: "", draw: "", venue: "T-Mobile Arena", major: true } });
+  const wh = await S.where(ufc);
+  r.ok("sports.where: UFC lists Fight Pass (so no guide fallback) and the venue cell", wh && wh.marks.some((m) => m.id === "ufc" && m.note === "Check event availability") && !wh.marks.some((m) => m.url === "https://www.ufc.com/watch") && wh.venue && wh.venue.name === "T-Mobile Arena" && wh.title === "Venue and where to watch" && /does not bypass/.test(wh.note), JSON.stringify(wh));
+  const f1w = await S.where(base("F1", { home: side("", "", ""), away: side("", "", ""), context: { id: "r", name: "Monaco Grand Prix", round: "", draw: "", venue: "", major: true } }));
+  r.ok("sports.where: F1 adds the country broadcaster guide tile", f1w && f1w.marks.some((m) => m.id === "f1" && m.name === "Find your country's F1 broadcaster"), JSON.stringify(f1w && f1w.marks));
+
+  // SP-4: the bell asks for a webhook first, then arms a 15 minute reminder the loop delivers once.
+  const soon = base("NBA", { id: "g-soon", state: "pre", startMs: Date.now() + 60 * 60000 });
+  const a0 = S.actions(soon);
+  r.ok("sports.actions: the bell says Set up reminders without a webhook; both NBA sides can be followed", a0.reminder && a0.reminder.setup === true && a0.reminder.label === "Set up reminders" && a0.follow.length === 2 && a0.follow[0].label === "Follow Away Side", JSON.stringify(a0));
+  r.eq("sports.toggleReminder without a webhook asks for setup", S.toggleReminder(soon).state, "setup");
+  S.setWebhooks("https://discord.example.invalid/api/webhooks/1/x", "");
+  r.eq("sports.setWebhooks keeps the rest of settings.webhooks", [S.webhooks().discordUrl !== "", rec.engine.settings.load("harbor.settings.shared").webhooks.notifyMovies], [true, true]);
+  r.eq("sports.toggleReminder arms a reminder", S.toggleReminder(soon).state, "set");
+  r.eq("sports.actions shows Reminder set", S.actions(soon).reminder.label, "Reminder set");
+  r.eq("sports.runReminders sends nothing before the 15 minute lead", await S.runReminders(), 0);
+  const stored = JSON.parse(rec.run('localStorage.getItem("harbor.sports.reminders.v1")'));
+  stored[0].startMs = Date.now() + 5 * 60000;
+  rec.run(`localStorage.setItem("harbor.sports.reminders.v1", ${JSON.stringify(JSON.stringify(stored))})`);
+  r.eq("sports.runReminders delivers the due Discord webhook once", [await S.runReminders(), await S.runReminders()], [1, 0]);
+  r.ok("the Discord webhook carries upstream's reminder text", posts.length === 1 && /Harbor Sports · NBA/.test(posts[0].body) && /Starts in 5 minutes/.test(posts[0].body), JSON.stringify(posts.map((x) => x.body)));
+  r.eq("sports.testWebhook sends upstream's test message; Telegram without a URL says so", [await S.testWebhook("discord"), /Harbor test message \(Discord\)/.test(posts[1] && posts[1].body), (await S.testWebhook("telegram")).message], [{ ok: true, message: "Sent. Check your channel." }, true, "No URL configured"]);
+  r.eq("sports.toggleReminder clears a set reminder", [S.toggleReminder(soon).state, S.reminders().length], ["cleared", 0]);
+  r.eq("sports.toggleFollow follows a side", [S.toggleFollow(soon, "home"), S.actions(soon).follow[1].label], [true, "Following Home Side"]);
+
+  // SP-7 / SP-13: the watch plan follows bp-sports-watch (attached stream, official broadcasts).
+  const att = await S.watch({ ...base("NBA"), id: "g-att" }, null);
+  r.ok("sports.watch plays an attached stream first", att.plan === "stream" && att.label === "Watch" && att.attachedStream.url === "https://cdn.example.invalid/att.m3u8", JSON.stringify({ plan: att.plan, s: att.attachedStream }));
+  r.eq("sports.clearAttachedStream drops it (a channel pick replaces it)", [S.clearAttachedStream("g-att"), (await S.watch({ ...base("NBA"), id: "g-att" }, null)).plan], [true, "setup"]);
+  const rl = await S.watch(base("RLCS", { home: side("1", "Team One", "ONE"), away: side("2", "Team Two", "TWO") }), null);
+  r.ok("sports.watch: RLCS plans the official broadcast; Twitch opens its Apple TV app", rl.plan === "broadcast" && rl.broadcasts[0].platform === "twitch" && rl.broadcasts[0].app === "twitch://stream/RocketLeague" && rl.broadcasts[0].platformLabel === "Twitch", JSON.stringify({ plan: rl.plan, label: rl.label, b: rl.broadcasts }));
+
+  // SP-12: the api-sports key lives in the secret tier key and is additive.
+  const api0 = S.apiSports();
+  r.ok("sports.apiSports lists the four key leagues with no key saved", api0.saved === false && api0.leagues.length === 4, JSON.stringify(api0));
+  r.eq("sports.setApiSportsKey saves under the secret-store key and clears", [S.setApiSportsKey(" abc123 ").ok, S.apiSports().length, rec.run('localStorage.getItem("harbor.sports.api-sports.v1")'), S.setApiSportsKey("").ok, S.apiSports().saved], [true, 6, "abc123", true, false]);
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------ settings
 const defaults = engine.settings.DEFAULT;
 r.ok("settings.DEFAULT is a populated object", Object.keys(defaults).length > 50, `${Object.keys(defaults).length} keys`);
@@ -231,6 +319,31 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("sync status reached idle with a pull time", rec.engine.sync.status().phase === "idle" && rec.engine.sync.status().lastPullAt > 0, JSON.stringify(rec.engine.sync.status()));
   rec.engine.sync.stop();
   rec.engine.account.stop();
+  rec.dispose();
+}
+
+// ------------------------------------------- TV hand-off: account.adopt (recorded host)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const seen = [];
+  rec.node.host.fetch = async (req) => {
+    seen.push([req.url, JSON.stringify(req.headers || {})]);
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Unauthorized", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/identity/api/me")) {
+      return JSON.stringify(req.headers || {}).includes("tok_phone")
+        ? json({ user: { id: "u_phone", username: "deckhand", handle: "deckhand" } })
+        : json({ error: "unauthorized" }, 401);
+    }
+    return json({ error: "not_found" }, 404);
+  };
+  const adopted = await rec.engine.account.adopt("tok_phone", "deckhand", "ref_phone");
+  r.ok("account.adopt applies the phone's session with the server's user", adopted && adopted.user.id === "u_phone" && adopted.token === "tok_phone" && adopted.hasRefresh === true, JSON.stringify(adopted));
+  r.ok("account.adopt asked /identity/api/me with the delivered bearer", seen.some(([u, h]) => u.endsWith("/themes/api/identity/api/me") && h.includes("Bearer tok_phone")), JSON.stringify(seen));
+  const refused = await rec.engine.account.adopt("tok_bad", "deckhand", null).then(() => "applied", (e) => String(e && e.message));
+  r.ok("account.adopt refuses a token that does not resolve to a user", refused.includes("harbor-api:") && refused.includes("401"), refused);
+  r.ok("a refused adopt leaves the earlier session in place", rec.engine.account.session() && rec.engine.account.session().user.id === "u_phone");
   rec.dispose();
 }
 
@@ -939,7 +1052,7 @@ if (!OFFLINE) {
   }
   if (anyGame) {
     const w = await r.timed("sports.watch(first game, no Live TV source)", () => engine.sports.watch(anyGame));
-    r.ok("sports.watch plans setup without playlists and lists providers", (w.plan === "setup" || w.plan === "finished") && Array.isArray(w.providers) && typeof w.fixture === "string" && w.channels.length === 0, JSON.stringify({ plan: w.plan, fixture: w.fixture, providers: w.providers.map((p) => p.name) }));
+    r.ok("sports.watch plans setup without playlists and lists providers", ["setup", "finished", "broadcast"].includes(w.plan) && Array.isArray(w.providers) && typeof w.fixture === "string" && w.channels.length === 0, JSON.stringify({ plan: w.plan, fixture: w.fixture, providers: w.providers.map((p) => p.name) }));
   }
   engine.sports.setLeagues(["NBA", "EPL"]);
   r.ok("sports.setLeagues personalizes both stores", engine.sports.catalog().selected.join(",") === "NBA,EPL" && engine.sports.catalog().personalized === true);

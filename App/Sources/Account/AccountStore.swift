@@ -58,6 +58,14 @@ final class AccountStore: ObservableObject {
         } catch { throw Self.translate(error) }
     }
 
+    /// TV hand-off, Harbor step (bp-handoff-apply.ts): a session the phone signed in to.
+    func adopt(token: String, handle: String, refresh: String?) async throws {
+        busy = true; defer { busy = false }
+        do {
+            session = try await HarborEngine.shared.call("account.adopt", [token, handle, refresh])
+        } catch { throw Self.translate(error) }
+    }
+
     func signOut() {
         session = nil
         Task { _ = try? await HarborEngine.shared.callJSON("account.logout") }
