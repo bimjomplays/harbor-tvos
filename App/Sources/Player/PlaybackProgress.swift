@@ -34,8 +34,10 @@ struct PlaybackContext {
     }
 
     func stopHomeServerSession(positionSec: Double) async {
-        guard let h = homeServer, let sid = h.playbackSessionId else { return }
-        _ = try? await HarborEngine.shared.callJSON("homeServers.stopPlayback", [.string(h.connectionId), .string(h.itemId), .string(sid), .number((positionSec * 1000).rounded())])
+        // Always asked: a quality switch from direct play started a transcode session the engine
+        // holds even when the player opened without one (review 29).
+        guard let h = homeServer else { return }
+        _ = try? await HarborEngine.shared.callJSON("homeServers.stopPlayback", [.string(h.connectionId), .string(h.itemId), h.playbackSessionId.map { .string($0) } ?? .null, .number((positionSec * 1000).rounded())])
     }
 
     @MainActor private var profile: (id: String, authKey: String?) {
