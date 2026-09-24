@@ -15,6 +15,10 @@ final class DetailModel: ObservableObject {
         var playEpisode: AnyJSON
         /// anime franchise entries (KitsuEpisode.sourceMetaId): the id this card's watched marks live under.
         var watchMetaId: String? = nil
+        /// bp-anime-seasons.tsx BpAnimeEpisodeCard tag: "S{s} E{e}" when the strip spans seasons.
+        var tag: String? = nil
+        /// bp-anime-seasons.tsx facts: "Abs E{n}" when the absolute number is not the episode number.
+        var absoluteLabel: String? = nil
     }
 
     @Published private(set) var meta: Meta
@@ -42,7 +46,7 @@ final class DetailModel: ObservableObject {
         guard isSeries else { return }
         struct Ref: Encodable { var key: String; var season: Int; var episode: Int; var still: String? }
         let s = season
-        let refs = episodes.filter { $0.season == s }.map { Ref(key: $0.id, season: $0.season, episode: $0.episode, still: $0.thumbnail) }
+        let refs = seasonEpisodes.map { Ref(key: $0.id, season: $0.season, episode: $0.episode, still: $0.thumbnail) }
         guard !refs.isEmpty else { return }
         let p = ProfilesStore.shared.active
         let art: [String: [String]]? = try? await HarborEngine.shared.call("detailRoom.episodeArt", [meta, s, refs, p?.id ?? "default", p?.linked ?? true])
@@ -166,10 +170,90 @@ final class DetailModel: ObservableObject {
     struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String? }
     private struct AnimeDetail: Decodable {
         struct D: Decodable { var name: String?; var overview: String?; var backdrop: String?; var poster: String?; var year: String?; var genres: [String] }
-        struct Ep: Decodable { var id: Int; var season: Int; var number: Int; var title: String; var synopsis: String; var thumbnail: String?; var airdate: String?; var length: Int?; var filler: Bool; var playEpisode: AnyJSON; var sourceMetaId: String? }
+        struct Ep: Decodable {
+            var id: Int; var season: Int; var number: Int; var title: String; var synopsis: String; var thumbnail: String?; var airdate: String?; var length: Int?; var filler: Bool
+            var absoluteNumber: Int?; var imdbSeason: Int?; var imdbEpisode: Int?; var playEpisode: AnyJSON; var sourceMetaId: String?
+        }
         var canonicalId: String; var imdbId: String?; var detail: D; var episodes: [Ep]; var showSeason: Bool; var characters: [AnimeCharacter]
     }
     var isAnimeId: Bool { ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) } }
+
+    // MARK: anime named seasons and episode orders (bp-anime-seasons.tsx, engine/animeSeasons.ts)
+
+    /// bp-anime-season-chip.tsx: a named season, its year span and episode count ("2020-2021 · 12 episodes").
+    struct AnimeSeasonChip: Decodable, Equatable, Identifiable {
+        var key: String; var name: String; var count: Int; var years: String; var meta: String; var extra: Bool; var badge: String?
+        /// BpChipDivider before the first special / extra that follows a regular season.
+        var divider: Bool
+        var id: String { key }
+    }
+    /// The TVDB order types of the panel (Aired, Absolute, TVDB Absolute, DVD …), short labels as upstream draws them.
+    struct AnimeOrderChip: Decodable, Equatable, Identifiable {
+        var value: String; var label: String; var short: String
+        var id: String { value }
+    }
+    private struct AnimeSeasonsWire: Decodable {
+        struct Group: Decodable { var key: String; var showSeason: Bool; var episodes: [AnimeDetail.Ep] }
+        var source: String; var seasons: [AnimeSeasonChip]; var seasonKey: String; var orderTypes: [AnimeOrderChip]; var orderType: String; var hasChips: Bool; var groups: [Group]
+    }
+    @Published private(set) var animeChips: [AnimeSeasonChip] = []
+    @Published private(set) var animeOrders: [AnimeOrderChip] = []
+    @Published private(set) var animeOrderType = "aired"
+    /// bp-anime-seasons.tsx hasSeasonChips: more than one season or more than one order.
+    @Published private(set) var animeHasChips = false
+    /// The chip on screen; nil while the TVDB order has not resolved (the strip then groups by Kitsu season).
+    @Published private(set) var animeSeasonKey: String?
+    @Published private(set) var animeGroups: [String: [Episode]] = [:]
+    /// use-anime-tvdb-panel `touched` + `sel`: the viewer's pick survives an order change while it exists.
+    private var animeSeasonPicked: String?
+    /// use-bp-anime-detail episodeHint: the season the viewer arrived for (a Watch Together room episode).
+    var episodeHintSeason: Int?
+
+    private func animeEpisode(_ e: AnimeDetail.Ep, showSeason: Bool) -> Episode {
+        let released = e.airdate.flatMap { ISO8601DateFormatter.dateOnly.date(from: $0) }
+        var tag: String?
+        if showSeason, let s = e.imdbSeason, let n = e.imdbEpisode { tag = T("S%lld E%lld", s, n) }
+        var abs: String?
+        if let a = e.absoluteNumber, a != e.number { abs = T("Abs E%lld", a) }
+        // Keyed by the Kitsu / TVDB episode id: a TVDB-only card can share a season:episode pair with a Kitsu one.
+        return Episode(id: "\(meta.id):k\(e.id)", season: e.season, episode: e.number, title: e.title.isEmpty ? T("Episode %lld", e.number) : e.title,
+                       overview: e.synopsis.isEmpty ? nil : e.synopsis, thumbnail: e.thumbnail, released: released, playEpisode: e.playEpisode,
+                       watchMetaId: e.sourceMetaId, tag: tag, absoluteLabel: abs)
+    }
+
+    /// use-bp-anime-detail seasons / orderTypes: asked once the Kitsu episodes are in, again on every order change.
+    func loadAnimeSeasons() async {
+        guard isAnimeId, !episodes.isEmpty else { return }
+        let p = ProfilesStore.shared.active
+        guard let w: AnimeSeasonsWire = try? await HarborEngine.shared.call("animeDetail.seasons", [meta.id, p?.id ?? "default", p?.linked ?? true, animeSeasonPicked, episodeHintSeason]) else { return }
+        guard w.source != "none", !w.groups.isEmpty else { return }
+        var groups: [String: [Episode]] = [:]
+        for g in w.groups { groups[g.key] = g.episodes.map { animeEpisode($0, showSeason: g.showSeason) } }
+        animeGroups = groups
+        animeChips = w.seasons
+        animeOrders = w.orderTypes
+        animeOrderType = w.orderType
+        animeHasChips = w.hasChips
+        animeSeasonKey = groups[w.seasonKey] != nil ? w.seasonKey : w.groups.first?.key
+        await loadWatchedState()
+        await loadEpisodeArt()
+    }
+
+    /// BpAnimeSeasonChip onSelect.
+    func selectAnimeSeason(_ key: String) {
+        guard animeGroups[key] != nil, key != animeSeasonKey else { return }
+        animeSeasonPicked = key
+        animeSeasonKey = key
+        Task { await loadWatchedState(); await loadEpisodeArt() }
+    }
+
+    /// use-bp-anime-detail onOrderType: settings.tvdbSeasonType, then the seasons of that order.
+    func setAnimeOrder(_ value: String) async {
+        guard value != animeOrderType else { return }
+        animeOrderType = value
+        try? await SettingsBridge.shared.patch(["tvdbSeasonType": .string(value)])
+        await loadAnimeSeasons()
+    }
     @Published private(set) var collectionRow: BrowseRow?
 
     struct Extras: Decodable {
@@ -207,7 +291,11 @@ final class DetailModel: ObservableObject {
     init(meta: Meta) { self.meta = meta }
 
     var isSeries: Bool { meta.type == "series" || meta.type == "anime" }
-    var seasonEpisodes: [Episode] { episodes.filter { $0.season == season } }
+    /// The strip: the anime season chip's episodes when the TVDB order resolved, else this season's.
+    var seasonEpisodes: [Episode] {
+        if let k = animeSeasonKey, let g = animeGroups[k] { return g }
+        return episodes.filter { $0.season == season }
+    }
 
     func load() async {
         guard !loading else { return }
@@ -225,16 +313,14 @@ final class DetailModel: ObservableObject {
                 if let y = a.detail.year { m.releaseInfo = y }
                 if !a.detail.genres.isEmpty { m.genres = a.detail.genres }
                 meta = m
-                let iso = ISO8601DateFormatter.dateOnly
-                episodes = a.episodes.map { e in
-                    Episode(id: "\(meta.id):\(e.season):\(e.number)", season: e.season, episode: e.number, title: e.title.isEmpty ? "Episode \(e.number)" : e.title,
-                            overview: e.synopsis.isEmpty ? nil : e.synopsis, thumbnail: e.thumbnail, released: e.airdate.flatMap { iso.date(from: $0) }, playEpisode: e.playEpisode,
-                            watchMetaId: e.sourceMetaId)
-                }
+                episodes = a.episodes.map { animeEpisode($0, showSeason: false) }
                 seasons = Array(Set(episodes.map(\.season))).sorted()
                 if let first = seasons.first, !seasons.contains(season) { season = first }
                 characters = a.characters
                 canonicalId = a.canonicalId
+                // The TVDB panel lands after the Kitsu list, like use-anime-tvdb-panel's effects; until
+                // then (or when it never resolves) the strip groups by Kitsu season.
+                Task { await loadAnimeSeasons() }
             }
         } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
             meta = full
@@ -288,7 +374,16 @@ final class DetailModel: ObservableObject {
     private struct EpisodeRef: Encodable { var season: Int; var episode: Int; var metaId: String?; var released: String? }
     private var episodeRefs: [EpisodeRef] {
         let iso = ISO8601DateFormatter()
-        return episodes.map { EpisodeRef(season: $0.season, episode: $0.episode, metaId: $0.watchMetaId, released: $0.released.map { iso.string(from: $0) }) }
+        // The anime chips can hold TVDB-only episodes the Kitsu list lacks; their marks count too.
+        var seen = Set<String>()
+        var all: [Episode] = []
+        for e in episodes + animeGroups.values.flatMap({ $0 }) where seen.insert("\(e.watchMetaId ?? "")|\(e.season):\(e.episode)").inserted { all.append(e) }
+        return all.map { EpisodeRef(season: $0.season, episode: $0.episode, metaId: $0.watchMetaId, released: $0.released.map { iso.string(from: $0) }) }
+    }
+    /// The strip's cards as refs (anime-episodes.tsx displayEpisodes).
+    private var shownRefs: [EpisodeRef] {
+        let iso = ISO8601DateFormatter()
+        return seasonEpisodes.map { EpisodeRef(season: $0.season, episode: $0.episode, metaId: $0.watchMetaId, released: $0.released.map { iso.string(from: $0) }) }
     }
 
     /// engine/episodeWatched.ts state: the whole title's refs, this season's started keys and masks.
@@ -299,7 +394,12 @@ final class DetailModel: ObservableObject {
             var showEpisodeRating: Bool; var showEpisodeDescription: Bool
         }
         let p = ProfilesStore.shared.active
-        guard let s: WatchedState = try? await HarborEngine.shared.call("episodeWatched.state", [meta.id, episodeRefs, season, p?.id ?? "default", p?.linked ?? true]) else { return }
+        // An anime chip of the TVDB order mixes Kitsu seasons: started / next-up / masks follow the strip itself.
+        let chip = animeSeasonKey
+        let shown: [String]? = chip == nil ? nil : seasonEpisodes.map { "\($0.season):\($0.episode)" }
+        guard let s: WatchedState = try? await HarborEngine.shared.call("episodeWatched.state", [meta.id, episodeRefs, season, p?.id ?? "default", p?.linked ?? true, shown]) else { return }
+        // A chip change (or the TVDB order landing) started its own read; this one is stale.
+        guard chip == animeSeasonKey else { return }
         watched = Set(s.watched)
         started = Set(s.started)
         spoilerMasks = s.masks
@@ -321,7 +421,9 @@ final class DetailModel: ObservableObject {
     func markWatched(_ ep: Episode, _ scope: WatchedMark, watched on: Bool) async {
         let p = ProfilesStore.shared.active
         let target = EpisodeRef(season: ep.season, episode: ep.episode, metaId: ep.watchMetaId, released: nil)
-        let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.mark", [authKey, meta, imdbId, target, scope.rawValue, on, episodeRefs, p?.id ?? "default", p?.linked ?? true])
+        // anime-episodes.tsx markSeason = markMany(displayEpisodes): the chip on screen, not the Kitsu season.
+        let chip = scope == .season && animeSeasonKey != nil
+        let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.mark", [authKey, meta, imdbId, target, chip ? "shown" : scope.rawValue, on, chip ? shownRefs : episodeRefs, p?.id ?? "default", p?.linked ?? true])
         await loadWatchedState()
     }
 

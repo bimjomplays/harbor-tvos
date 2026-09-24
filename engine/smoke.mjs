@@ -151,6 +151,99 @@ r.ok("benchmark still works", (() => {
   ew.dispose();
 }
 
+// ------------------------- anime named seasons + episode orders (audit 5), TVDB proxy fixtures
+{
+  const TVDB = "https://harbor.site/api/tvdb/v4";
+  // TVDB series 100: aired S1E1-3 (2019), S2E1-2 (2020-10 → 2021-01), a special S0E1; absolute 1-5.
+  const tv = [
+    { id: 201, seasonNumber: 1, number: 1, absoluteNumber: 1, name: "Arrival", aired: "2019-01-06" },
+    { id: 202, seasonNumber: 1, number: 2, absoluteNumber: 2, name: "The Road", aired: "2019-01-13" },
+    { id: 203, seasonNumber: 1, number: 3, absoluteNumber: 3, name: "Harbor Lights", aired: "2019-03-24" },
+    { id: 204, seasonNumber: 2, number: 1, absoluteNumber: 4, name: "Return", aired: "2020-10-04" },
+    { id: 205, seasonNumber: 2, number: 2, absoluteNumber: 5, name: "The Long Night", aired: "2021-01-10", image: "/banners/ep205.jpg" },
+    { id: 290, seasonNumber: 0, number: 1, name: "Recap Special", aired: "2019-06-01" },
+  ];
+  const extended = { seasons: [
+    { number: 1, name: "Part One", type: { type: "official", name: "Aired Order" } },
+    { number: 2, name: "The Second Arc", type: { type: "official", name: "Aired Order" } },
+    { number: 0, name: "Specials", type: { type: "official", name: "Aired Order" } },
+    { number: 1, name: "Absolute", type: { type: "absolute", name: "Absolute Order" } },
+  ] };
+  const kitsuEps = [
+    { id: 11, number: 1, seasonNumber: 1, title: "Arrival", synopsis: "", thumbnail: null, airdate: "2019-01-06", length: 24, imdbSeason: 1, imdbEpisode: 1, absoluteNumber: 1 },
+    { id: 12, number: 2, seasonNumber: 1, title: "The Road", synopsis: "", thumbnail: null, airdate: "2019-01-13", length: 24, imdbSeason: 1, imdbEpisode: 2, absoluteNumber: 2 },
+    { id: 13, number: 3, seasonNumber: 1, title: "Harbor Lights", synopsis: "", thumbnail: null, airdate: "2019-03-24", length: 24, imdbSeason: 1, imdbEpisode: 3, absoluteNumber: 3 },
+    { id: 14, number: 4, seasonNumber: 1, title: "Return", synopsis: "", thumbnail: null, airdate: "2020-10-04", length: 24, imdbSeason: 2, imdbEpisode: 1, absoluteNumber: 4 },
+    { id: 15, number: 99, seasonNumber: 1, title: "Picture Drama", synopsis: "", thumbnail: null, airdate: "2021-05-01", length: 5, absoluteNumber: 99 },
+  ];
+  const an = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const hits = [];
+  an.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === "https://api.ani.zip/mappings?kitsu_id=1") return json({ mappings: { kitsu_id: 1, thetvdb_id: 100 } });
+    if (req.url === `${TVDB}/series/100/extended?short=true`) return json({ data: extended });
+    const m = /\/series\/100\/episodes\/(default|absolute)(?:\/eng)?\?page=(\d+)$/.exec(req.url);
+    if (m && req.url.startsWith(TVDB)) return json({ data: { episodes: m[2] === "0" ? tv : [] } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const A = an.engine;
+  const input = { metaId: "kitsu:1", kitsuId: 1, imdbId: null, canonicalId: "kitsu:1", episodes: kitsuEps };
+  const key = A.settings.sourceKeyFor("default", true);
+
+  r.eq("animeSeasons.seasonYears spans a two cour run", [A.animeSeasons.seasonYears({ from: "2020-10-04", to: "2021-01-10" }), A.animeSeasons.seasonYears({ year: "2019" }), A.animeSeasons.seasonYears({ from: "2019-01-06", to: "2019-03-24" })], ["2020-2021", "2019", "2019"]);
+  r.eq("animeSeasons.shortOrderLabel drops the trailing Order", ["Aired Order", "TVDB Absolute Order", "DVD"].map(A.animeSeasons.shortOrderLabel), ["Aired", "TVDB Absolute", "DVD"]);
+  r.eq("animeSeasons.intentSeasonKey: an entry that is all one later season opens on it", [A.animeSeasons.intentSeasonKey([{ id: 1, number: 1, imdbSeason: 3 }], 0), A.animeSeasons.intentSeasonKey(kitsuEps, 0), A.animeSeasons.intentSeasonKey(kitsuEps, 2)], ["3", null, "2"]);
+  r.eq("animeSeasons.activeSeasonKey: a touched pick, then intent, then preferred", [["1", "2", "2"], ["gone", "2", "1"], [null, null, "2"], ["gone", null, null]].map(([s, i, p]) => A.animeSeasons.activeSeasonKey([{ key: "1" }, { key: "2" }], s, i, p)), ["1", "2", "2", "1"]);
+  r.eq("animeSeasons.effectiveOrderType: official reads as aired, a missing type falls back", [A.animeSeasons.effectiveOrderType([{ value: "aired" }, { value: "absolute" }], "official"), A.animeSeasons.effectiveOrderType([{ value: "aired" }], "dvd"), A.animeSeasons.effectiveOrderType([{ value: "dvd" }], "absolute")], ["aired", "aired", "dvd"]);
+
+  const v = await A.animeDetail.seasonsFor(input, "default", true, null, null);
+  r.eq("animeDetail.seasons: the TVDB panel resolves through the Kitsu → TVDB mapping", v.source, "panel");
+  r.eq("animeDetail.seasons: named chips in order, specials and extras last", v.seasons.map((s) => [s.key, s.name]), [["1", "Part One"], ["2", "The Second Arc"], ["0", "Specials"], ["specials", "Extras"]]);
+  r.eq("animeDetail.seasons: year spans + episode counts on the chip (bp-anime-season-chip meta)", v.seasons.slice(0, 2).map((s) => s.meta), ["2019 · 3 episodes", "2020-2021 · 2 episodes"]);
+  r.eq("animeDetail.seasons: one divider before the first extra", v.seasons.map((s) => s.divider), [false, false, true, false]);
+  r.eq("animeDetail.seasons: the non-empty TVDB orders, short labels", v.orderTypes.map((o) => [o.value, o.short]), [["aired", "Aired"], ["absolute", "Absolute"], ["tvdbabsolute", "TVDB Absolute"]]);
+  r.eq("animeDetail.seasons: aired order by default, opening on the first unwatched season", [v.orderType, v.seasonKey, v.hasChips], ["aired", "1", true]);
+  const s2 = v.groups.find((g) => g.key === "2");
+  r.ok("animeDetail.seasons: a Kitsu episode joins its TVDB season by S:E pair, TVDB fills the gap", s2 && s2.episodes.length === 2 && s2.episodes[0].id === 14 && s2.episodes[0].season === 1 && s2.episodes[0].number === 4
+    && s2.episodes[1].id === -205 && s2.episodes[1].title === "The Long Night" && s2.episodes[1].thumbnail === "https://artworks.thetvdb.com/banners/ep205.jpg"
+    && s2.episodes[1].playEpisode.season === 2 && s2.episodes[1].playEpisode.episode === 2 && s2.episodes[1].playEpisode.absoluteNumber === 5, JSON.stringify(s2));
+  r.eq("animeDetail.seasons: an unclaimed Kitsu episode lands under Extras", v.groups.find((g) => g.key === "specials")?.episodes.map((e) => e.id), [15]);
+
+  // The preferred season follows the viewer: S1 watched → the chip opens on season 2.
+  const refs = kitsuEps.map((e) => ({ season: 1, episode: e.number, released: e.airdate }));
+  A.episodeWatched.mark(null, { id: "kitsu:1", type: "anime", name: "Smoke Anime" }, null, { season: 1, episode: 3 }, "upTo", true, refs, "default", true);
+  r.eq("animeDetail.seasons: with season 1 watched it opens on season 2", (await A.animeDetail.seasonsFor(input, "default", true, null, null)).seasonKey, "2");
+  r.eq("animeDetail.seasons: a picked chip wins over the preferred one", (await A.animeDetail.seasonsFor(input, "default", true, "0", null)).seasonKey, "0");
+  const shown = A.episodeWatched.state("kitsu:1", refs, null, "default", true, ["1:4"]);
+  r.eq("episodeWatched.state scopes started / masks to the shown chip", [shown.watched.includes("1:1"), shown.started], [true, []]);
+  A.episodeWatched.mark(null, { id: "kitsu:1", type: "anime", name: "Smoke Anime" }, null, { season: 1, episode: 4 }, "shown", true, [refs[3], refs[4]], "default", true);
+  r.eq("episodeWatched.mark shown marks exactly the chip's episodes (markMany)", [...A.episodeWatched.state("kitsu:1", refs, null, "default", true).watched].sort(), ["1:1", "1:2", "1:3", "1:4", "1:99"]);
+  A.episodeWatched.mark(null, { id: "kitsu:1", type: "anime", name: "Smoke Anime" }, null, { season: 1, episode: 4 }, "shown", false, [refs[3], refs[4]], "default", true);
+
+  // The order toggle writes tvdbSeasonType (use-bp-anime-detail onOrderType); absolute joins the run.
+  A.settings.patch({ tvdbSeasonType: "absolute" }, key);
+  const abs = await A.animeDetail.seasonsFor(input, "default", true, "2", null);
+  r.eq("animeDetail.seasons: absolute order is one All Episodes season plus Extras", abs.seasons.map((s) => [s.key, s.name, s.count]), [["1", "All Episodes", 5], ["specials", "Extras", 1]]);
+  r.eq("animeDetail.seasons: a pick the new order lacks falls back, the toggle stays", [abs.orderType, abs.seasonKey, abs.orderTypes.length, abs.hasChips], ["absolute", "1", 3, true]);
+  r.eq("animeDetail.seasons: absolute keeps the aired season:episode pairs apart", abs.groups[0].episodes.map((e) => e.imdbSeason + ":" + e.imdbEpisode), ["1:1", "1:2", "1:3", "2:1", "2:2"]);
+  r.eq("animeDetail.seasons: the strip shows seasons when one chip spans several", abs.groups[0].showSeason, true);
+
+  // tvdbOrderPanel off: buildAnimeOrder names the seasons without a toggle.
+  A.settings.patch({ tvdbSeasonType: "aired", tvdbOrderPanel: false }, key);
+  const ord = await A.animeDetail.seasonsFor(input, "default", true, null, null);
+  r.eq("animeDetail.seasons: panel off → buildAnimeOrder seasons, Specials for the rest, no toggle", [ord.source, ord.seasons.map((s) => s.name), ord.orderTypes.length], ["order", ["Part One", "The Second Arc", "Specials"], 0]);
+  A.settings.patch({ tvdbOrderPanel: true }, key);
+  const none = await A.animeDetail.seasonsFor({ ...input, metaId: "kitsu:2", kitsuId: 2, canonicalId: "kitsu:2" }, "default", true, null, null);
+  r.eq("animeDetail.seasons: no TVDB mapping → nothing, the page keeps its own grouping", [none.source, none.seasons.length, none.hasChips], ["none", 0, false]);
+  r.eq("animeDetail.seasons before load → null", await A.animeDetail.seasons("kitsu:3", "default", true, null, null), null);
+  r.ok("animeDetail.seasons asked only the TVDB proxy and ani.zip-style mappings", hits.some((u) => u.startsWith(`${TVDB}/series/100/episodes/default`)), JSON.stringify(hits.slice(0, 8)));
+  await A.episodeWatched.settle();
+  an.dispose();
+}
+
 // --------------------------------------- Home extra rows (use-bp-extra-rows.ts), fixtures only
 {
   const pinBase = "https://pinned.example.invalid";
