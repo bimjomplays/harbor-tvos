@@ -25,7 +25,11 @@ final class KeyValueStore {
                                                    // Stage 13 eBooks (lib/ebook/sources, library, reader-state): sources, shelf, favourites, reader prefs.
                                                    "harbor.ebook.sources.v1", "harbor.ebook.library.v1", "harbor.ebook.favorites.v1", "harbor.ebook.read-later.v1", "harbor.ebook.reader.v1",
                                                    // engine/music.ts LIKED_KEY: the viewer's liked songs (stored without source credentials).
-                                                   "harbor.music.liked.v1"]
+                                                   "harbor.music.liked.v1",
+                                                   // lib/player-prefs.ts + lib/subtitles/subtitle-memory.ts: per-show audio/subtitle
+                                                   // language, subtitles off, subtitle delay (≤200 shows, ~20 KB); per-episode remembered
+                                                   // subtitle (≤500 entries; past Prefs' 64 KB cap `set` moves it to Caches by itself).
+                                                   "harbor.player.prefs.v1", "harbor.subtitle.memory.v1"]
     private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap", "harbor.settings.", "harbor.installed-addons.", "harbor.tvsettings.v1.",
                                           "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1.",
                                           "harbor.ebook.progress.v1.", "harbor.ebook.resume.v1.", "harbor.ebook.bookmarks.v1.",

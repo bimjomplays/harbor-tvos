@@ -115,6 +115,8 @@ struct PlayerSubtitlesPanel: View {
         }
         .onAppear {
             if target == nil { target = home; query = context?.meta.name ?? title }
+            // The show's remembered delay was applied when the file opened.
+            if let d = controller?.currentSubDelay() { subDelay = (d * 10).rounded() / 10 }
             Task {
                 await refresh()
                 seedFocus()
@@ -278,6 +280,8 @@ struct PlayerSubtitlesPanel: View {
 
     private func select(_ t: MPVPlayerController.Track?) {
         controller?.select(track: t, type: "sub")
+        // bp-ten-foot onSubtitle → rememberSubChoice: the show's language (or off) and this episode's track.
+        controller?.rememberSubtitle(t)
         refreshSoon()
     }
 
@@ -453,6 +457,7 @@ struct PlayerSubtitlesPanel: View {
             let file = dir.appendingPathComponent("\(safe).\(prep.format)")
             try prep.text.write(to: file, atomically: true, encoding: .utf8)
             controller?.addSubtitle(file: file, title: r.title, lang: r.lang)
+            controller?.rememberAddedSubtitle(file: file, source: r.url, title: r.title, lang: r.lang)
             added.insert(r.url)
             findNote = nil
             refreshSoon()
@@ -479,6 +484,7 @@ struct PlayerSubtitlesPanel: View {
     private func setDelay(_ value: Double) {
         subDelay = value
         controller?.setSubDelay(value)
+        controller?.rememberSubDelay(value)
     }
 
     // MARK: Look (bp-subtitle-tune.tsx BpSubtitleLook)

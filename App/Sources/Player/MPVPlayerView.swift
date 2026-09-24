@@ -7,6 +7,8 @@ struct MPVPlayerView: UIViewControllerRepresentable {
     var isLive: Bool = false
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// Per-show track memory key (TrackMemory.swift); nil remembers nothing.
+    var trackMemory: TrackMemory? = nil
     /// Muted guide preview (see MPVPlayerController.preview).
     var preview = false
     /// A Multiview tile (see MPVPlayerController.tile): never touches the display mode.
@@ -28,6 +30,7 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         c.muted = muted
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
+        c.trackMemory = trackMemory
         c.onStatus = onStatus
         c.onEnded = onEnded
         DispatchQueue.main.async { onReady?(c) }

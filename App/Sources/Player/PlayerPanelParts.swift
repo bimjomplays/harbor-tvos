@@ -126,6 +126,8 @@ struct PlayerAudioPanel: View {
                         ForEach(tracks) { t in
                             Button {
                                 controller?.select(track: t, type: "audio")
+                                // bp-ten-foot onAudio: the track's language becomes the show's audio language.
+                                controller?.rememberAudio(t)
                                 onClose()
                             } label: {
                                 PlayerLineLabel(icon: t.selected ? "checkmark" : "character.bubble", title: lines(t).0, detail: lines(t).1)

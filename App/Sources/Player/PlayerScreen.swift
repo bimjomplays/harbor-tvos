@@ -134,6 +134,7 @@ struct PlayerScreen: View {
                 NativePlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                                  preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                                  preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                                 trackMemory: trackMemory,
                                  onStatus: { s in if engine == .native { status = s } },
                                  onEnded: { if engine == .native { endedNaturally() } },
                                  onUnsupported: { nativeUnsupported($0) },
@@ -150,6 +151,7 @@ struct PlayerScreen: View {
                 MPVPlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                              trackMemory: trackMemory,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
                               onReady: { controller = $0; pipActive = false; if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
@@ -779,8 +781,8 @@ struct PlayerScreen: View {
     private func toggleKidSubtitles() {
         guard let c = controller else { return }
         let subs = c.tracks().filter { $0.type == "sub" }
-        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub") }
-        else if let first = subs.first { c.select(track: first, type: "sub") }
+        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub"); c.rememberSubtitle(nil) }
+        else if let first = subs.first { c.select(track: first, type: "sub"); c.rememberSubtitle(first) }
         kidSubs = c.tracks().filter { $0.type == "sub" }
     }
 
