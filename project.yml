@@ -55,6 +55,8 @@ targets:
         UIUserInterfaceStyle: Dark
         UIAppFonts: [Switzer-Regular.otf, Switzer-Medium.otf, Switzer-Semibold.otf, Switzer-Bold.otf, Sentient-Regular.otf, Sentient-Medium.otf, Sentient-Bold.otf, Fraunces-Medium.ttf]
         ITSAppUsesNonExemptEncryption: false
+        # Stage 12 music keeps playing on the Apple TV home screen (App/Sources/Music/MusicPlayer.swift).
+        UIBackgroundModes: [audio]
         # Stage 10 phone hand-off: the TV listens on the LAN only while a phone code is on screen.
         NSLocalNetworkUsageDescription: Harbor opens a small page on your network while a phone code is on screen, so your phone can type and sign in for this TV.
         # lib/deep-link.ts: harbor://detail/<type>/<id>[/<videoId>], stremio://detail/..., stremio://<host>/manifest.json

@@ -92,6 +92,7 @@ import * as letterboxdGlue from "./letterboxd";
 import * as kidsGlue from "./kids";
 import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
+import * as musicGlue from "./music";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -872,6 +873,25 @@ export const wrapped = {
   load: wrappedGlue.load,
   enrich: wrappedGlue.enrich,
   enabled: wrappedGlue.enabled,
+};
+
+/** Music room (Stage 12; views/music.tsx over the connectors in musicSources.ts). */
+export const music = {
+  copy: musicGlue.copy,
+  home: musicGlue.home,
+  search: musicGlue.search,
+  open: musicGlue.open,
+  prepare: musicGlue.prepare,
+  stopped: musicGlue.stopped,
+  library: musicGlue.library,
+  addRecent: musicGlue.addRecent,
+  setLiked: musicGlue.setLiked,
+  isLiked: musicGlue.isLiked,
+  connections: musicGlue.connections,
+  consent: musicGlue.consent,
+  acceptSoundCloud: musicGlue.acceptSoundCloud,
+  setSoundCloud: musicGlue.setSoundCloud,
+  withdrawConsent: musicGlue.withdrawConsent,
 };
 
 // ================================================================================== runtime

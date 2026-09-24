@@ -55,7 +55,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         capture("14-shell-home")
         XCUIRemote.shared.press(.up)
-        // Walk past every tab (Calendar made it eleven) and the profile chip to the cog.
+        // Walk past every tab (Music made it twelve) and the profile chip to the cog.
         for _ in 0..<14 { XCUIRemote.shared.press(.right) }
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
@@ -124,7 +124,7 @@ final class ScreenshotTests: XCTestCase {
         XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.up)
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
-        for _ in 0..<7 { XCUIRemote.shared.press(.right) }
+        for _ in 0..<8 { XCUIRemote.shared.press(.right) }  // Search sits after Music, Live TV, Sports
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.buttons["key-q"].waitForExistence(timeout: 20))
         let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tile-'")).firstMatch

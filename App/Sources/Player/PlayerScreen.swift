@@ -204,6 +204,9 @@ struct PlayerScreen: View {
         .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url) }
         .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
+        // The app now declares background audio for music; a film or channel still stops
+        // when the viewer leaves the app (mpv would otherwise keep sounding).
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in controller?.setPaused(true) }
         .task {
             // use-player-bridge.ts / player-utils.ts pickBridge: settle the engine before anything loads.
             await settleEngine(for: playURL, hints: streamHints)
