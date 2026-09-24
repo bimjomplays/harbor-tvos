@@ -46,6 +46,8 @@ struct ShellView: View {
         }
         .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
+        // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
+        .overlay(alignment: .top) { ReminderToastHost() }
         .overlay(alignment: .top) {
             if let n = app.deepLinkNote {
                 Text(n).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))
@@ -66,6 +68,8 @@ struct ShellView: View {
             DiscoverView()
         case .library:
             LibraryView()
+        case .calendar:
+            CalendarView()
         case .live:
             LiveView()
         case .collections:
@@ -191,6 +195,8 @@ struct TopBarView: View {
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)
                     .overlay(alignment: .bottom) { tabHint(r) }
+                    // Calendar: nav-items.tsx unseen-reminder badge (Calendar/CalendarPanels.swift).
+                    .overlay(alignment: .topTrailing) { if r == .calendar { CalendarTabBadge() } }
                     .accessibilityIdentifier("tab-\(r.rawValue)")
                     .accessibilityLabel(r.label)
             }

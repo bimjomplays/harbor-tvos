@@ -55,7 +55,8 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         capture("14-shell-home")
         XCUIRemote.shared.press(.up)
-        for _ in 0..<12 { XCUIRemote.shared.press(.right) }
+        // Walk past every tab (Calendar made it eleven) and the profile chip to the cog.
+        for _ in 0..<14 { XCUIRemote.shared.press(.right) }
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
         sleep(1)

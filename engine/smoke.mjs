@@ -600,6 +600,93 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.libraryRoom.setSort("recent", "default", true);
 }
 
+// -------------------------------------------- calendar, reminders, stats (recorded host)
+{
+  const T0 = Date.now();
+  const d = new Date();
+  const y = d.getFullYear(), m = d.getMonth();
+  const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  const mid = iso(new Date(y, m, 15));
+  const thisMonth = `gte=${iso(new Date(y, m, 1))}`;
+  const cal = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.playback-history.v1.default", JSON.stringify({
+      "tt0903747|1:1": { savedAt: T0 - 86400000, title: "Breaking Bad" },
+      "tt0903747|1:2": { savedAt: T0 - 86000000, title: "Breaking Bad" },
+      "tt0111161": { savedAt: T0 - 3600000, title: "The Shawshank Redemption" },
+    })],
+  ]) });
+  cal.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.includes("api.themoviedb.org/3/discover/movie") && req.url.includes("page=1") && req.url.includes(thisMonth)) return json({ results: [
+      { id: 101, title: "Future Film", release_date: mid, poster_path: "/p.jpg", vote_average: 7.2, genre_ids: [28], overview: "A film." },
+    ] });
+    if (req.url.includes("api.themoviedb.org/3/discover/tv") && req.url.includes("page=1") && req.url.includes(thisMonth)) return json({ results: [
+      { id: 202, name: "New Show", first_air_date: mid, poster_path: null, vote_average: 0, genre_ids: [18] },
+    ] });
+    if (req.url.includes("api.themoviedb.org")) return json({ results: [] });
+    if (req.url === "https://v3-cinemeta.strem.io/meta/series/tt9999999.json") return json({ meta: { id: "tt9999999", type: "series", name: "Remind Show", videos: [
+      { season: 1, episode: 1, released: new Date(T0 - 30 * 86400000).toISOString() },
+      { season: 1, episode: 2, released: new Date(T0 + 3600000).toISOString() },
+    ] } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = cal.engine;
+  const signedOut = await E.calendar.month({ profileId: "default", linked: true, authKey: null, year: y, month: m });
+  r.ok("calendar.month: My library signed out asks to sign in, 42 cells, 7 weekdays", signedOut.source === "library" && signedOut.status === "not-signed-in" && signedOut.cells.length === 42 && signedOut.weekdays.length === 7 && signedOut.weekdays[0] === "Sun", JSON.stringify({ s: signedOut.status, c: signedOut.cells.length, w: signedOut.weekdays }));
+  r.eq("calendar.month: switcher hides My Trakt / My Simkl / Simkl premieres while disconnected", signedOut.sources.map((s) => s.id), ["library", "all", "anticipated", "anime", "custom"]);
+  E.calendar.setPref("default", true, { calendarSource: "all", weekStartsMonday: true });
+  const noKey = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+  r.ok("calendar.month: All upcoming without a TMDB key shows the key state; week starts Monday", noKey.status === "no-key" && noKey.weekdays[0] === "Mon" && noKey.watchlistToggle === true, JSON.stringify({ s: noKey.status, w: noKey.weekdays[0] }));
+  E.settings.patch({ tmdbKey: "k" }, E.settings.sourceKeyFor("default", true));
+  const all = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+  const day = all.cells.find((c) => c.iso === mid);
+  r.ok("calendar.month: All upcoming groups TMDB releases on their day with Meta and tag", all.status === "ready" && all.total === 2 && day && day.inMonth && day.items.length === 2 && day.items.some((i) => i.meta.id === "tmdb:movie:101" && i.meta.type === "movie" && i.tag === "Movie" && i.poster.endsWith("/p.jpg")) && day.items.some((i) => i.meta.type === "series" && i.poster === null), JSON.stringify(day));
+  r.eq("calendar.month: filter chips (no Anime on All upcoming) with counts", all.filters.map((f) => `${f.id}:${f.count}`), ["all:2", "movie:1", "tv:1"]);
+  const movies = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m, filter: "movie" });
+  r.ok("calendar.month: the Movies filter narrows the grid", movies.total === 1 && movies.filter === "movie", JSON.stringify({ t: movies.total }));
+  const later = await E.calendar.month({ profileId: "default", linked: true, year: y + 1, month: 0 });
+  r.eq("calendar.month: an empty month carries upstream's empty copy", [later.status, later.emptyHeading], ["empty", "Nothing this month"]);
+  r.ok("calendar.month: month label and 0-based month", later.monthLabel === `January ${y + 1}` && later.month === 0, later.monthLabel);
+
+  E.calendar.setPref("default", true, { calendarSource: "custom" });
+  let rail = E.calendar.customRail("default", true);
+  r.ok("calendar.customRail: no filters yet, three media types on, Trakt watchlist needs Trakt", rail.activeCount === 0 && rail.summary === "No filters yet" && rail.mediaTypes.every((c) => c.selected) && rail.trakt[1].disabled === true && rail.groups.map((g) => g.id).join() === "genres,providers,countries,people", JSON.stringify(rail.summary));
+  rail = E.calendar.customToggle("default", true, "genre:movie:28");
+  rail = E.calendar.customToggle("default", true, "prov:8");
+  rail = E.calendar.customToggle("default", true, "media:anime");
+  r.ok("calendar.customToggle: genre + provider count, media type flips", rail.activeCount === 2 && rail.groups[0].count === 1 && rail.groups[0].chips.find((c) => c.key === "genre:movie:28").selected && rail.mediaTypes[2].selected === false && /1 genre/.test(rail.summary), JSON.stringify(rail.summary));
+  r.ok("calendar.customToggle: the stored genre keeps upstream's shape", JSON.stringify(E.settings.loadForProfile("default", true).customCalendar.genres) === JSON.stringify([{ id: 28, name: "Action", mediaType: "movie" }]), JSON.stringify(E.settings.loadForProfile("default", true).customCalendar.genres));
+  const custom = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+  r.ok("calendar.month: Custom source reports the rail summary", custom.source === "custom" && custom.custom && custom.custom.activeCount === 2, JSON.stringify(custom.custom));
+  rail = E.calendar.customToggle("default", true, "clear");
+  r.eq("calendar.customToggle clear resets the filters", rail.activeCount, 0);
+
+  r.eq("calendar.reminders starts empty", E.calendar.reminders().length, 0);
+  E.actions.toggleReminder({ id: "tt9999999", type: "series", name: "Remind Show" });
+  const rem = E.calendar.reminders();
+  r.ok("calendar.reminders lists the Detail reminder with the manager's summary", rem.length === 1 && rem[0].summary === "Episodes + Seasons · Chime" && rem[0].unseen === false, JSON.stringify(rem));
+  const fired = [];
+  const off = E.runtime.onEvent((type, detail) => { if (type === "harbor:reminder-fired") fired.push(detail); });
+  const first = await E.calendar.checkReminders("default", true, T0 + 1000);
+  r.eq("calendar.checkReminders: the first check only records what already aired", [first, fired.length], [0, 0]);
+  const second = await E.calendar.checkReminders("default", true, T0 + 2 * 3600000);
+  off();
+  r.ok("calendar.checkReminders: a new episode inside the day window fires once", second === 1 && fired.length === 1 && fired[0].text === "Remind Show: S1 E2 is out now", JSON.stringify(fired));
+  const un = E.calendar.unseen();
+  r.ok("calendar.unseen counts it and keeps the message", un.count === 1 && un.fired[0].body === "S1 E2 is out now" && E.calendar.reminders()[0].unseen === true, JSON.stringify(un));
+  const cleared = E.calendar.clearUnseen();
+  r.ok("calendar.clearUnseen hands the messages over once", cleared.length === 1 && E.calendar.unseen().count === 0, JSON.stringify(cleared));
+  r.eq("calendar.removeReminder", E.calendar.removeReminder("tt9999999").length, 0);
+  r.eq("calendar.remaining formats a countdown like use-now", E.calendar.remaining((2 * 1440 + 3 * 60 + 5) * 60000), "2d 3h 5m");
+
+  const stats = await E.wrapped.load();
+  r.ok("wrapped.load aggregates local history (plays, titles, split, heatmap weeks)", stats && stats.source === "local" && stats.totalPlays === 3 && stats.totalTitles === 2 && stats.split.series === 3 && stats.topTitles[0].id === "tt0903747" && stats.topTitles[0].count === 2 && stats.heatWeeks.length === 52 && stats.heatWeeks[0].length === 7, JSON.stringify(stats && { s: stats.source, p: stats.totalPlays, t: stats.totalTitles, split: stats.split }));
+  r.ok("wrapped.load: archetype and highlights come from upstream's rules", stats && stats.archetype.id === "serialist" && stats.archetype.label === "The Series Slayer" && stats.longestBinge.count >= 1 && typeof stats.bingeDate === "string", JSON.stringify(stats && stats.archetype));
+  r.eq("wrapped.enabled follows settings.wrappedButton", E.wrapped.enabled("default", true), true);
+  cal.dispose();
+}
+
 // ---------------------------- collections editing, TVDB lists, Letterboxd, library repair
 // One recorded host: Harbor's TVDB proxy, Stremboxd and Stremio's datastore, all mocked.
 {

@@ -85,6 +85,8 @@ import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
 import * as letterboxdGlue from "./letterboxd";
+import * as calendarGlue from "./calendar";
+import * as wrappedGlue from "./wrapped";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -770,6 +772,29 @@ export const player = {
   decodeWatchedField: playerGlue.decodeWatchedField,
   /** Up-next lead, auto-advance and seek steps for the Big Picture chrome. */
   prefs: playerGlue.prefs,
+};
+
+/** Calendar room (views/calendar.tsx): one month per call, header prefs, the Custom rail, reminders. */
+export const calendar = {
+  month: calendarGlue.month,
+  setPref: calendarGlue.setPref,
+  customRail: calendarGlue.customRail,
+  customToggle: calendarGlue.customToggle,
+  reminders: calendarGlue.reminders,
+  removeReminder: calendarGlue.removeReminder,
+  unseen: calendarGlue.unseen,
+  clearUnseen: calendarGlue.clearUnseen,
+  checkReminders: calendarGlue.checkReminders,
+  startReminders: calendarGlue.startReminders,
+  stopReminders: calendarGlue.stopReminders,
+  remaining: calendarGlue.remaining,
+};
+
+/** Stats / Wrapped (views/wrapped.tsx): the year's stats, then posters/genres/people. */
+export const wrapped = {
+  load: wrappedGlue.load,
+  enrich: wrappedGlue.enrich,
+  enabled: wrappedGlue.enabled,
 };
 
 // ================================================================================== runtime
