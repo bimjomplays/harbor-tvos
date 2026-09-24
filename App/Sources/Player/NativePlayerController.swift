@@ -422,19 +422,21 @@ final class NativePlayerController: UIViewController {
         if type == "sub" {
             // setSubtitleTrack(id): a sideloaded track draws from its parsed cues, the file's own from
             // the legible output; the overlay draws both.
-            embeddedTimeline = []
             lastCueKey = "-"
-            if let track, track.id >= Self.externalSubBase { selectExternal(track.id); return }
+            if let track, track.id >= Self.externalSubBase { embeddedTimeline = []; selectExternal(track.id); return }
             if activeExternal != nil { selectExternal(nil) }
         }
         guard let item = player.currentItem, let g = type == "sub" ? legibleGroup : audioGroup else { return }
+        let target: AVMediaSelectionOption? = track.flatMap { g.options.indices.contains($0.id - 1) ? g.options[$0.id - 1] : nil }
+        // Picking the track that is already on keeps what the output reported ahead (review 24):
+        // re-selecting it brings no flush and no new reports.
+        if type == "sub", item.currentMediaSelection.selectedMediaOption(in: g) != target { embeddedTimeline = [] }
         guard let track else {
             if g.allowsEmptySelection { item.select(nil, in: g) }
             return
         }
-        let i = track.id - 1
-        guard g.options.indices.contains(i) else { return }
-        item.select(g.options[i], in: g)
+        guard let target, g.options.indices.contains(track.id - 1) else { return }
+        item.select(target, in: g)
     }
 
     /// The same language matching as MPVPlayerController.applyTrackPreferences: the first audio
@@ -598,7 +600,7 @@ final class NativePlayerController: UIViewController {
             return
         }
         pipPossibleObservation?.invalidate()
-        pipPossibleObservation = pip.observe(\.isPictureInPicturePossible, options: [.new]) { [weak self] _, _ in
+        pipPossibleObservation = pip.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] _, _ in
             guard let self else { return }
             Task { @MainActor in self.pipPossibleChanged(attempt) }
         }
@@ -666,6 +668,8 @@ final class NativePlayerController: UIViewController {
         subtitleHost?.view.isHidden = false
         applyLegibleRendering()
         push("PiP: off")
+        // The PiP window closed with Harbor in the background: nothing on screen is left to stop it.
+        if UIApplication.shared.applicationState == .background { setPaused(true) }
         lastCueKey = "-"
         tickCues()
         refreshState()

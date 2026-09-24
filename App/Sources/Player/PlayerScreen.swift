@@ -183,12 +183,12 @@ struct PlayerScreen: View {
                 Group { if isKid { kidsResumePrompt } else { resumePrompt(resumePending) } }.transition(.opacity)
             }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
-            if status.state == "error", !isLive, !roomOpen { sourceErrorCard.transition(.opacity) }
-            if status.state == "error", isLive, liveGuide != nil, panel == nil, !roomOpen { liveErrorCard.transition(.opacity) }
-            if status.state == "loading", !isKid, !isLive, !roomOpen, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            if status.state == "error", !isLive, !roomOpen, !pipActive { sourceErrorCard.transition(.opacity) }
+            if status.state == "error", isLive, liveGuide != nil, panel == nil, !roomOpen, !pipActive { liveErrorCard.transition(.opacity) }
+            if status.state == "loading", !isKid, !isLive, !roomOpen, !pipActive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
             // cinematic-player-loader.tsx: a kid gets the sea loader over everything until the first frame.
             if kidsLoading { kidsLoader.transition(.opacity) }
-            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, status.state != "error" {
+            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
             }
             if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive {
@@ -947,7 +947,7 @@ struct PlayerScreen: View {
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(Self.hideAfter))
-            if !Task.isCancelled, panel == nil, !roomOpen, !snap.paused { chrome = false; focus = .surface }
+            if !Task.isCancelled, panel == nil, !roomOpen, !pipActive, !snap.paused { chrome = false; focus = .surface }
         }
     }
 
@@ -1063,12 +1063,15 @@ struct PlayerScreen: View {
     /// pip://entered / pip://exited: the chrome stands aside while the picture is in the PiP window,
     /// and comes back with it.
     private func pipChanged(_ on: Bool) {
-        if on, pipActive { return }
+        // A start that failed or timed out reports "off" without ever being on: focus stays put (review 24).
+        guard on != pipActive else { return }
         pipActive = on
         if on {
             hideTask?.cancel()
             chrome = false
             if panel != nil { panel = nil }
+            leaveConfirm = false
+            roomOpen = false
             focusLater(.chip("pip-exit"))
         } else {
             focus = .surface
