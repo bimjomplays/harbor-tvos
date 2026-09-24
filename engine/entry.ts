@@ -782,6 +782,8 @@ export const animeRoom = {
     topPicksGlue.animeTopPicks(input, { excludeOrigins: filterOpts.excludeOrigins ?? [], hideWatched: filterOpts.hideWatched === true },
       () => window.dispatchEvent(new CustomEvent("harbor:anime-updated"))),
   topPicksSettled: topPicksGlue.topPicksSettled,
+  /** use-bp-anime-watched isAnimeWatched over the CW watched maps (tests). */
+  watchedFrom: animeGlue.animeWatchedFrom,
   resetTopPicks: topPicksGlue.resetAnimeTopPicks,
 };
 
@@ -841,6 +843,8 @@ export const homeServers = {
   reportProgress: homeGlue.reportProgress,
   stopPlayback: homeGlue.stopPlayback,
   preferredSource: homeGlue.preferredSource,
+  /** Test hook: mark a server offline (lib/media-server/health.ts). */
+  markInactive: homeGlue.markInactive,
   qualityOptions: homeGlue.qualityOptions,
   switchQuality: homeGlue.switchQuality,
 };
@@ -1052,6 +1056,8 @@ export const player = {
   rememberAudio: playerGlue.rememberAudio,
   rememberSubtitle: playerGlue.rememberSubtitle,
   rememberSubDelay: playerGlue.rememberSubDelay,
+  rememberRate: playerGlue.rememberRate,
+  startRate: playerGlue.startRate,
   noteSubtitleSource: playerGlue.noteSubtitleSource,
   trackMemory: playerGlue.trackMemory,
 };

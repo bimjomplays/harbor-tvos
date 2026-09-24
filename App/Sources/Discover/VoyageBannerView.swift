@@ -20,7 +20,7 @@ struct VoyageBannerView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     BP.canvas
-                    VoyageMarquee(items: items, height: height)
+                    VoyageMarquee(items: items, height: height, visibleWidth: geo.size.width * 0.61 + BP.px(34))
                         .frame(width: geo.size.width * 0.61 + BP.px(34), height: height, alignment: .leading)
                         .clipped()
                         .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.14, d: 1, tx: height * 0.07, ty: 0))
@@ -88,13 +88,24 @@ struct VoyageBannerView: View {
 struct VoyageMarquee: View {
     let items: [Meta]
     let height: CGFloat
+    /// The strip's visible width: one set must cover it for a seamless loop.
+    var visibleWidth: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shift: CGFloat = 0
     private let cell = BP.px(236)
     private let gap = BP.px(8)
 
+    /// How many copies of `items` make one loop: enough to cover the visible strip, so a short list
+    /// (two titles) loops without the gap upstream's CSS shows (review 33). At least one.
+    private var reps: Int {
+        guard items.count >= 2, visibleWidth > 0 else { return 1 }
+        let setWidth = CGFloat(items.count) * (cell + gap)
+        return max(1, Int((visibleWidth / setWidth).rounded(.up)))
+    }
+
     var body: some View {
-        let strip = items.count >= 2 ? items + items : items
+        let set = Array(Array(repeating: items, count: reps).joined())
+        let strip = items.count >= 2 ? set + set : items
         HStack(spacing: gap) {
             ForEach(Array(strip.enumerated()), id: \.offset) { _, m in
                 VoyageCapsule(meta: m).frame(width: cell, height: height)
@@ -104,6 +115,7 @@ struct VoyageMarquee: View {
         .offset(x: shift)
         .onAppear { drift() }
         .onChange(of: items.map(\.id)) { _, _ in drift() }
+        .onChange(of: reps) { _, _ in drift() }
         // Upstream pauses the marquee off screen; Reduce Motion is honoured live (review 33).
         .onChange(of: reduceMotion) { _, _ in drift() }
         .onDisappear {
@@ -118,9 +130,11 @@ struct VoyageMarquee: View {
         t.disablesAnimations = true
         withTransaction(t) { shift = 0 }
         guard !reduceMotion, items.count >= 2 else { return }
-        let loop = CGFloat(items.count) * (cell + gap)
+        let n = reps
+        let loop = CGFloat(items.count * n) * (cell + gap)
+        // 48 s per set of items, as upstream, so a repeated set drifts at the same speed.
         DispatchQueue.main.async {
-            withAnimation(.linear(duration: 48).repeatForever(autoreverses: false)) { shift = -loop }
+            withAnimation(.linear(duration: 48 * Double(n)).repeatForever(autoreverses: false)) { shift = -loop }
         }
     }
 }

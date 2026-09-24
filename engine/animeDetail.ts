@@ -96,7 +96,9 @@ function remember(input: SeasonsInput) {
  * Absolute, TVDB Absolute, DVD …) and the episodes of every chip. `selected` is the chip the
  * viewer picked (kept while the order still has it); `hintSeason` is where the viewer came from
  * (use-bp-anime-detail episodeHint). The order toggle writes settings.tvdbSeasonType, as upstream's
- * onOrderType does, and then calls this again. Null when `load` has not run for this id.
+ * onOrderType does, and then calls this again. `meta` (the page's own meta) lets a page whose
+ * `load` fell out of the 8-page cache (a deep detail stack) run `load` again instead of answering
+ * null, so the order toggle still works there (review 31). Null when there is nothing to load from.
  */
 export async function seasons(
   metaId: string,
@@ -104,8 +106,13 @@ export async function seasons(
   linked: boolean,
   selected: string | null,
   hintSeason: number | null,
+  meta: Meta | null = null,
 ): Promise<SeasonsView<AnimeEpisode> | null> {
-  const input = loadedById.get(metaId);
+  let input = loadedById.get(metaId);
+  if (!input && meta && meta.id === metaId) {
+    await load(meta, profileId, linked).catch(() => null);
+    input = loadedById.get(metaId);
+  }
   if (!input) return null;
   return resolveSeasons(input, loadEffective(profileId, linked), selected, hintSeason ?? 0, toEpisode);
 }

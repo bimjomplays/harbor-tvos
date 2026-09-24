@@ -348,9 +348,10 @@ async function traktWatchedKeys(): Promise<Set<string>> {
  * keys (Home only; the Anime room passes an empty set), Simkl watched + status maps, and the
  * AniList watched map for the row's anime ids.
  */
-export async function cwWatchedSources(items: LibraryItem[], withTrakt: boolean): Promise<Pick<CwAdvanceOpts, "traktWatched" | "simklWatched" | "simklStatus" | "anilistWatched">> {
+export async function cwWatchedSources(items: LibraryItem[], withTrakt: boolean, extraIds: string[] = []): Promise<Pick<CwAdvanceOpts, "traktWatched" | "simklWatched" | "simklStatus" | "anilistWatched">> {
   const simkl = simklAuthenticated();
-  const animeIds = items.filter((i) => /^(kitsu|mal|anilist):/.test(i._id)).map((i) => i._id);
+  // extraIds: use-bp-anime.ts watchedIds also covers the hero and picks ids (the AniList map is per id).
+  const animeIds = [...new Set([...items.map((i) => i._id), ...extraIds])].filter((id) => /^(kitsu|mal|anilist):/.test(id));
   const [traktWatched, simklWatched, simklStatus, anilistWatched] = await Promise.all([
     withTrakt ? traktWatchedKeys() : Promise.resolve(new Set<string>()),
     simkl ? within(loadSimklWatchedMap(), 6000, new Map<string, Set<string>>()) : Promise.resolve(new Map<string, Set<string>>()),

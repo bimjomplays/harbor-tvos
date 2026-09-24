@@ -28,6 +28,10 @@ struct DetailView: View {
     /// bp-status-dialog: the tracker whose list status is being changed.
     @State private var trackerDialog: DetailModel.Tracker?
     @FocusState private var heroFocus: String?
+    /// The season row: a Kitsu season button ("kitsu-<n>") or a TVDB chip ("chip-<key>").
+    @FocusState private var seasonFocus: String?
+    /// When a Kitsu season button last lost focus by vanishing (the TVDB chips replacing it).
+    @State private var kitsuFocusLostAt: Date?
     @Environment(\.dismiss) private var dismiss
 
     /// use-bp-detail-actions BpDetailAction.
@@ -196,7 +200,7 @@ struct DetailView: View {
         .fullScreenCover(isPresented: $factsDialog) { FactsDialogView(title: model.meta.name, facts: model.extras?.facts ?? []) }
         .fullScreenCover(item: $trailer) { t in TrailerView(ytId: t.ytId, title: model.meta.name, clipName: t.name) { trailer = nil } }
         .fullScreenCover(isPresented: $seasonsSheet) {
-            SeasonsSheet(seasons: model.seasons, counts: Dictionary(grouping: model.episodes, by: \.season).mapValues(\.count), season: Binding(get: { model.season }, set: { model.season = $0 }))
+            SeasonsSheet(seasons: model.seasons, counts: Dictionary(grouping: model.episodes, by: \.season).mapValues(\.count), season: Binding(get: { model.season }, set: { model.pickKitsuSeason($0) }))
         }
         .fullScreenCover(item: $awardType) { g in AwardsDialogView(group: g, entries: (model.awards?.entries ?? []).filter { $0.type == g.type }) }
         // The Rate cell shows the score, so it re-reads the rating when the dialog closes.
@@ -284,7 +288,8 @@ struct DetailView: View {
                     VStack(spacing: 0) {
                         Label(model.playLabel, systemImage: "play.fill")
                         // Progress under Play, only mid-way through (0.01 < progress < 0.97).
-                        if let r = model.resume, r.progress > 0.01, r.progress < 0.97 {
+                        // Hidden when an AI search episode pick names another episode (it plays from its start).
+                        if let r = model.resume, !model.hintElsewhere, r.progress > 0.01, r.progress < 0.97 {
                             GeometryReader { g in
                                 Capsule().fill(BP.accent).frame(width: g.size.width * r.progress, height: BP.px(3))
                             }
@@ -531,11 +536,15 @@ struct DetailView: View {
             } else {
                 HStack(spacing: BP.px(8)) {
                     ForEach(model.seasons.prefix(8), id: \.self) { s in
-                        Button(s == 0 ? "Specials" : "Season \(s)") { model.season = s }
+                        Button(s == 0 ? "Specials" : "Season \(s)") { model.pickKitsuSeason(s) }
                             .buttonStyle(BPActionStyle(primary: model.season == s))
+                            .focused($seasonFocus, equals: "kitsu-\(s)")
                     }
                     // bp-season-menu: long runs open the scrollable list instead of a chip wall.
-                    if model.seasons.count > 8 { Button("All \(model.seasons.count) seasons") { seasonsSheet = true }.buttonStyle(BPActionStyle()) }
+                    if model.seasons.count > 8 {
+                        Button("All \(model.seasons.count) seasons") { seasonsSheet = true }.buttonStyle(BPActionStyle())
+                            .focused($seasonFocus, equals: "kitsu-all")
+                    }
                 }
                 .focusSection()
             }
@@ -558,15 +567,30 @@ struct DetailView: View {
                 .padding(.vertical, BP.px(14))
             }
             .scrollClipDisabled()
-            // use-bp-episode-strip: land on the resume episode when the strip first shows.
-            .onChange(of: model.seasonEpisodes.count) { _, n in
+            // use-bp-episode-strip: land on the hinted (AI search pick) or resume episode when the strip first shows.
+            // Keyed by the strip's first card too: the hint's season can replace the resume season with the same count.
+            .onChange(of: "\(model.seasonEpisodes.first?.id ?? ""):\(model.seasonEpisodes.count)") { _, _ in
                 // An anime chip can hold several Kitsu seasons, so the card is found by its own pair.
-                guard n > 0, let r = model.resume, let s = r.season, let e = r.episode,
+                guard !model.seasonEpisodes.isEmpty, let s = model.stripTarget?.season, let e = model.stripTarget?.episode,
                       let target = model.seasonEpisodes.first(where: { $0.season == s && $0.episode == e }) else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { proxy.scrollTo(target.id, anchor: .leading) } }
             }
             }
             .focusSection()
+        }
+        // Review 31: the TVDB chips replace the Kitsu season buttons under the viewer's focus. The
+        // focused button vanishes first (focus falls to nil), so a loss in the last moment counts too;
+        // focus lands on the chip that opened (seeded from the viewer's Kitsu pick) and stays in the row.
+        .onChange(of: seasonFocus) { old, new in
+            if new == nil, old?.hasPrefix("kitsu-") == true { kitsuFocusLostAt = Date() }
+        }
+        .onChange(of: model.animeSeasonKey) { old, new in
+            guard old == nil, let new, model.animeHasChips, model.animeChips.count > 1 else { return }
+            let wasOnKitsu = seasonFocus?.hasPrefix("kitsu-") == true
+                || (kitsuFocusLostAt.map { Date().timeIntervalSince($0) < 0.4 } ?? false)
+            kitsuFocusLostAt = nil
+            guard wasOnKitsu else { return }
+            DispatchQueue.main.async { seasonFocus = "chip-\(new)" }
         }
     }
 
@@ -591,6 +615,7 @@ struct DetailView: View {
                                 if c.divider { AnimeChipDivider() }
                                 Button { model.selectAnimeSeason(c.key) } label: { AnimeSeasonChipLabel(chip: c, selected: c.key == model.animeSeasonKey) }
                                     .buttonStyle(AnimeSeasonChipStyle(selected: c.key == model.animeSeasonKey))
+                                    .focused($seasonFocus, equals: "chip-\(c.key)")
                                     .accessibilityIdentifier("anime-season-\(c.key)")
                             }
                         }
