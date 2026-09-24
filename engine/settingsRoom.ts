@@ -74,6 +74,16 @@ export function tvHwdec(value: string | undefined): "auto" | "off" {
 }
 
 /**
+ * "Play button behavior" on the TV: there is no Local Library here, and upstream's bp-streams with
+ * a "local" preference and no local files opens every source without playing one (decidePlaybackSource
+ * → chooser), which is what "Ask every time" does. The TV drops the Local Library option and a
+ * synced "local" reads as Ask (the stored value stays until the viewer picks another; review 29).
+ */
+export function tvPlaybackSource(value: Settings["playbackSourcePreference"] | undefined): string {
+  return value === "local" ? "ask" : (value ?? "online");
+}
+
+/**
  * The TV's own push row: upstream edits AI search on the desktop settings page
  * (views/settings/library-panel/ai-tab.tsx → ai-search-section.tsx), which Big Picture has no row
  * for. The TV has no other settings page, so Setup carries it beside the accounts and playlists
@@ -115,6 +125,7 @@ export function controls(id: BpCatId, profileId: string, linked: boolean): TvCon
     // Service cells carry their brand tint so the TV can draw a chip without the SVG logo.
     // "Player engine": upstream's "html5" value selects the TV's AVPlayer engine (player.ts pickEngine).
     if (c.kind === "options" && c.id === "hwdec") return { ...c, value: tvHwdec(s.mpvHwdec), options: c.options.filter((o) => o.value !== "on") };
+    if (c.kind === "options" && c.id === "playbackSource") return { ...c, value: tvPlaybackSource(s.playbackSourcePreference), options: c.options.filter((o) => o.value !== "local") };
     if (c.kind === "options" && c.id === "engine") return { ...c, options: c.options.map((o) => (o.value === "html5" ? { ...o, label: NATIVE_ENGINE_LABEL } : o)) };
     if (c.kind === "multi" && c.id === "service") return { ...c, items: c.items.map((i) => ({ ...i, tint: serviceBadge(i.value as StreamingService).tint })) };
     if (c.kind === "push" && c.pane === "connect" && connected.length > 0) return { ...c, detail: t("Connected: {list}", { list: connected.join(", ") }) };
@@ -249,7 +260,7 @@ export function pane(profileId: string, linked: boolean) {
   const connected = bpConnectedNames(facts(s, profileId));
   const overscan = s.bigPictureOverscan ?? 0;
   const language = LANGUAGES.find((l) => l.code === s.uiLanguage) ?? null;
-  const source = s.playbackSourcePreference;
+  const source = tvPlaybackSource(s.playbackSourcePreference);
   return {
     still: STILL,
     overscan,
@@ -265,7 +276,7 @@ export function pane(profileId: string, linked: boolean) {
     language: language ? { code: language.code, nativeLabel: language.nativeLabel, greeting: language.greeting, rtl: language.rtl } : null,
     playback: [
       [t("Player engine"), s.playerEngine === "auto" ? t("Auto") : s.playerEngine],
-      [t("Play button behavior"), t(source === "ask" ? "Ask every time" : source === "local" ? "Local Library" : source === "online" ? "Online streams" : "Home server")],
+      [t("Play button behavior"), t(source === "ask" ? "Ask every time" : source === "online" ? "Online streams" : "Home server")],
       [t("Hardware acceleration"), t(tvHwdec(s.mpvHwdec) === "auto" ? "Auto" : "Off")],
       [t("Skip intros"), t(s.autoSkipIntro ? "On" : "Off")],
       [t("Auto-play next episode"), t(s.autoPlayNextEpisode ? "On" : "Off")],

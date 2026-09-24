@@ -241,7 +241,20 @@ let enriched: { of: Meta[]; metas: Meta[] } | null = null;
 let seed: number | null = null;
 let version = 0;
 let builtKey: string | null = null;
+/** builtKey without the genres: a change of genres alone is debounced. */
+let builtBase: string | null = null;
 let generation = 0;
+const GENRE_DEBOUNCE_MS = 1000;
+let genreTimer: ReturnType<typeof setTimeout> | null = null;
+let genreTimerDone: (() => void) | null = null;
+
+function cancelGenreTimer(): void {
+  if (genreTimer) clearTimeout(genreTimer);
+  genreTimer = null;
+  const done = genreTimerDone;
+  genreTimerDone = null;
+  done?.();
+}
 let subscribed = false;
 let bumpTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -380,11 +393,30 @@ export function animeTopPicks(input: TopPicksInput, filterOpts: AnimeFilterOpts,
   const finishedKey = finishedFranchises(input.libItems).seeds.map((s) => s._id).join(",");
   const cwKey = input.continueWatching.map((i) => i._id).join(",");
   const genreKey = input.favoriteGenres.join(",");
-  const key = `${version}|${finishedKey}|${cwKey}|${genreKey}`;
+  const baseKey = `${version}|${finishedKey}|${cwKey}`;
+  const key = `${baseKey}|${genreKey}`;
   if (key !== builtKey) {
+    // Upstream saves the genre dialog once (anime.tsx onSave); the TV writes animeFavoriteGenres on
+    // every toggle, so a change of genres alone waits GENRE_DEBOUNCE_MS after the last one (review 32).
+    const genreOnly = builtKey !== null && builtBase === baseKey;
     builtKey = key;
-    const gen = ++generation;
-    running = build(input, gen, notify).catch(() => {});
+    builtBase = baseKey;
+    cancelGenreTimer();
+    if (genreOnly) {
+      const gen = ++generation; // a build in flight for the old genres no longer lands
+      running = new Promise<void>((resolve) => {
+        genreTimerDone = resolve;
+        genreTimer = setTimeout(() => {
+          genreTimer = null;
+          genreTimerDone = null;
+          if (gen !== generation) return resolve();
+          build(input, gen, notify).catch(() => {}).finally(resolve);
+        }, GENRE_DEBOUNCE_MS);
+      });
+    } else {
+      const gen = ++generation;
+      running = build(input, gen, notify).catch(() => {});
+    }
   }
   const base = enriched && enriched.of === raw && enriched.metas.length > 0 ? enriched.metas : raw;
   return base.filter((m) => !animeFiltered(m, filterOpts));
@@ -402,6 +434,8 @@ export function resetAnimeTopPicks(): void {
   enriched = null;
   seed = null;
   builtKey = null;
+  builtBase = null;
+  cancelGenreTimer();
   generation += 1;
   malCache = null;
   recCache = null;

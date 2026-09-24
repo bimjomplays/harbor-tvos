@@ -562,6 +562,24 @@ export function rememberAudio(key: TrackMemoryKey | null, track: TrackIn | null)
   return true;
 }
 
+/** shell-layer.tsx onRate: the speed picked for this show (player-prefs rate). */
+export function rememberRate(key: TrackMemoryKey | null, rate: number): boolean {
+  if (!key?.metaId || typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) return false;
+  writePlayerPrefs(key.metaId, { rate });
+  return true;
+}
+
+/**
+ * use-track-autoload.ts prefsAppliedRef: a title starts at the show's remembered rate, else
+ * settings.defaultPlaybackSpeed, else 1.
+ */
+export function startRate(profileId: string, linked: boolean, key: TrackMemoryKey | null): number {
+  const saved = key?.metaId ? readPlayerPrefs(key.metaId)?.rate : undefined;
+  const fallback = loadEffective(profileId, linked).defaultPlaybackSpeed;
+  const wanted = typeof saved === "number" ? saved : (fallback ?? 1);
+  return Number.isFinite(wanted) && wanted > 0 ? wanted : 1;
+}
+
 /** bp-ten-foot.tsx onSubDelay: the show's subtitle delay. */
 export function rememberSubDelay(key: TrackMemoryKey | null, sec: number): boolean {
   if (!key?.metaId || typeof sec !== "number" || !Number.isFinite(sec)) return false;

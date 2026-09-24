@@ -239,6 +239,13 @@ r.ok("benchmark still works", (() => {
   const none = await A.animeDetail.seasonsFor({ ...input, metaId: "kitsu:2", kitsuId: 2, canonicalId: "kitsu:2" }, "default", true, null, null);
   r.eq("animeDetail.seasons: no TVDB mapping → nothing, the page keeps its own grouping", [none.source, none.seasons.length, none.hasChips], ["none", 0, false]);
   r.eq("animeDetail.seasons before load → null", await A.animeDetail.seasons("kitsu:3", "default", true, null, null), null);
+  // Review 31: a page that fell out of the 8-page cache reloads from its meta instead of answering null.
+  const beforeReload = hits.length;
+  r.eq("animeDetail.seasons: a cache miss with the page's meta runs load again (null when that fails too)",
+    await A.animeDetail.seasons("kitsu:3", "default", true, null, null, { id: "kitsu:3", type: "anime", name: "Evicted" }), null);
+  r.ok("animeDetail.seasons: the reload asked the Kitsu chain", hits.length > beforeReload && hits.slice(beforeReload).some((u) => /kitsu/i.test(u)), JSON.stringify(hits.slice(beforeReload, beforeReload + 6)));
+  const beforeOther = hits.length;
+  r.eq("animeDetail.seasons: a meta for another id doesn't reload", [await A.animeDetail.seasons("kitsu:4", "default", true, null, null, { id: "kitsu:5", type: "anime", name: "Other" }), hits.length - beforeOther], [null, 0]);
   r.ok("animeDetail.seasons asked only the TVDB proxy and ani.zip-style mappings", hits.some((u) => u.startsWith(`${TVDB}/series/100/episodes/default`)), JSON.stringify(hits.slice(0, 8)));
   await A.episodeWatched.settle();
   an.dispose();
@@ -448,6 +455,7 @@ r.ok("benchmark still works", (() => {
     if (u.includes("filter=airing")) return json({ data: [jikan(5, "Hero Show"), jikan(6, "Seed Show"), ...list("Airing", 100, 20)] });
     if (u.includes("order_by=start_date")) return json({ data: list("Fresh", 200, 6) });
     if (u.includes("genres=22")) return json({ data: list("Romance", 300, 8, ["Romance"]) });
+    if (u.includes("genres=14")) return json({ data: list("Mystery", 500, 8, ["Mystery"]) });
     if (u.includes("genres=1&") || u.includes("genres=1")) return json({ data: list("Action", 400, 8, ["Action"]) });
     return json({ data: [] });
   };
@@ -482,6 +490,15 @@ r.ok("benchmark still works", (() => {
   E.animeRoom.topPicks(input([22, 1]), {});
   await E.animeRoom.topPicksSettled();
   r.ok("top picks: a new favourite genre rebuilds with it", hits.slice(before).some((h) => h.url.includes("genres=1&") || /genres=1(&|$)/.test(h.url)) && !hits.slice(before).some((h) => h.url.includes("recommendations")), JSON.stringify(hits.slice(before).map((h) => h.url)));
+  // Review 32: the TV writes genres per toggle, so a genre-only change waits ~1 s after the last one.
+  const beforeToggles = hits.length;
+  E.animeRoom.topPicks(input([10]), {});
+  E.animeRoom.topPicks(input([14]), {});
+  await new Promise((res) => setTimeout(res, 400));
+  r.eq("top picks: genre toggles don't rebuild until ~1 s after the last change", hits.length, beforeToggles);
+  await E.animeRoom.topPicksSettled();
+  const toggled = hits.slice(beforeToggles).map((h) => h.url);
+  r.ok("top picks: one debounced rebuild with the final genres only", toggled.some((u) => /genres=14(&|$)/.test(u)) && !toggled.some((u) => /genres=10(&|$)/.test(u)), JSON.stringify(toggled));
 
   // Settings: the Tune anime picker (favourite genres, origins, hide watched).
   const tune = E.actions.animeTune("default", true);
@@ -494,6 +511,15 @@ r.ok("benchmark still works", (() => {
   E.actions.animeTuneHideWatched("default", true, false);
   const s2 = E.settings.loadForProfile("default", true);
   r.eq("animeTune toggles a genre off again, CN back in, hide-watched off", [s2.animeFavoriteGenres, s2.animeExcludeOrigins, s2.animeHideWatchedPicks], [[], [], false]);
+  // Review 32: "Hide anime I've already watched" reads the Simkl / AniList maps (use-bp-anime-watched).
+  const isW = E.animeRoom.watchedFrom({
+    simklWatched: new Map([["kitsu:1", new Set(["1:1"])], ["kitsu:2", new Set()]]),
+    simklStatus: new Map([["mal:3", "completed"], ["mal:4", "watching"]]),
+    anilistWatched: new Map([["anilist:5", new Set(["1:1", "1:2"])]]),
+  });
+  r.eq("animeRoom watched filter: Simkl episodes, Simkl completed, AniList progress count; empty sets and watching don't",
+    ["kitsu:1", "kitsu:2", "mal:3", "mal:4", "anilist:5", "kitsu:9"].map(isW), [true, false, true, false, true, false]);
+  r.eq("animeRoom watched filter: missing maps read as nothing watched", E.animeRoom.watchedFrom({})("kitsu:1"), false);
   rec.dispose();
 
   // A later session: the cached picks show at once as the room's first row.
@@ -1598,20 +1624,27 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   // bp-streams.tsx applyPreference + playback-policy.ts decidePlaybackSource.
   const pref = (copies) => engine.homeServers.preferredSource("default", true, copies);
   const one = [{ key: "k1", connectionId: "c1" }], two = [{ key: "k1", connectionId: "c1" }, { key: "k2", connectionId: "c2" }];
-  r.eq("homeServers.preferredSource: online preference leaves the list alone", pref(two), { action: "none" });
+  r.eq("homeServers.preferredSource: online preference leaves the list alone", await pref(two), { action: "none" });
   const commitPref = (id, v) => engine.settingsRoom.commit(id, v, "default", true);
   commitPref("playbackSource", "local");
   r.eq("settingsRoom.commit playbackSource sticks across loads (migration flags kept)", [engine.settings.loadForProfile("default", true).playbackSourcePreference, engine.settings.loadForProfile("default", true).playbackSourcePreference], ["local", "local"]);
-  r.eq("homeServers.preferredSource: local with no Local Library shows everything", pref(two), { action: "show-all" });
+  r.eq("homeServers.preferredSource: local with no Local Library shows everything", await pref(two), { action: "show-all" });
+  // Review 29: the TV has no Local Library, so the row drops it and a synced "local" reads as Ask.
+  const psRow = engine.settingsRoom.controls("playback", "default", true).find((c) => c.id === "playbackSource");
+  r.eq("settingsRoom.controls(playback): no Local Library option on the TV; a synced local shows as Ask", [psRow?.options.map((o) => o.value), psRow?.value, engine.settings.loadForProfile("default", true).playbackSourcePreference], [["ask", "online", "home-server"], "ask", "local"]);
+  r.ok("settingsRoom.pane: a synced local reads as Ask every time", engine.settingsRoom.pane("default", true).playback.some(([k, v]) => k === "Play button behavior" && v === "Ask every time"));
   commitPref("playbackSource", "home-server"); commitPref("preferredMediaServer", "");
-  r.eq("homeServers.preferredSource: home server, no preferred server → the Media servers list", pref(one), { action: "show-media-server" });
-  r.eq("homeServers.preferredSource: home server, no copy of this title → every source", pref([]), { action: "show-all" });
+  r.eq("homeServers.preferredSource: home server, no preferred server → the Media servers list", await pref(one), { action: "show-media-server" });
+  r.eq("homeServers.preferredSource: home server, no copy of this title → every source", await pref([]), { action: "show-all" });
   commitPref("preferredMediaServer", "c2");
-  r.eq("homeServers.preferredSource: the preferred server's one copy plays", pref(two), { action: "play", copyKey: "k2" });
-  r.eq("homeServers.preferredSource: two copies on the preferred server → ask", pref([...two, { key: "k3", connectionId: "c2" }]), { action: "none" });
-  r.eq("homeServers.preferredSource: the preferred server has no copy → ask", pref(one), { action: "none" });
+  r.eq("homeServers.preferredSource: the preferred server's one copy plays", await pref(two), { action: "play", copyKey: "k2" });
+  r.eq("homeServers.preferredSource: two copies on the preferred server → ask", await pref([...two, { key: "k3", connectionId: "c2" }]), { action: "none" });
+  r.eq("homeServers.preferredSource: the preferred server has no copy → ask", await pref(one), { action: "none" });
+  // Review 29: bp-streams availableHomeServerCopies — a server known offline never auto-plays.
+  engine.homeServers.markInactive("c2");
+  r.eq("homeServers.preferredSource: the preferred server is offline → no auto-play", await pref(two), { action: "none" });
   commitPref("playbackSource", "ask");
-  r.eq("homeServers.preferredSource: ask never plays by itself", pref(two), { action: "none" });
+  r.eq("homeServers.preferredSource: ask never plays by itself", await pref(two), { action: "none" });
   commitPref("playbackSource", "online"); commitPref("preferredMediaServer", "");
   const qo = engine.homeServers.qualityOptions("nope", "x");
   r.ok("homeServers.qualityOptions: MEDIA_SERVER_QUALITIES, Original when nothing plays", qo.current === "original" && qo.options.length === 7 && qo.options[0].id === "original" && qo.options[0].label === "Original" && qo.options[4].id === "720p-4", JSON.stringify(qo));
@@ -2453,6 +2486,17 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     r.eq("player.trackPlan: a remembered added subtitle is fetched again (same release)", again.restore && again.restore.source, "https://subs.example.invalid/os_1.srt");
     const otherRelease = e.player.trackPlan("default", true, { ...film, filename: "Film.2020.2160p.BluRay.x265-OTHER.mkv" }, [S(1, "fre", "French")]);
     r.eq("player.trackPlan: another release does not restore it (subtitle-memory streamKey)", otherRelease.restore, null);
+    // Per-show speed (shell-layer.tsx onRate → player-prefs rate; use-track-autoload applies it on load).
+    const rateShow = { metaId: "tt7000004", season: 1, episode: 1 };
+    r.eq("player.startRate: nothing remembered → 1 at the default settings", e.player.startRate("default", true, rateShow), 1);
+    e.settings.patch({ defaultPlaybackSpeed: 1.25 });
+    r.eq("player.startRate: nothing remembered → settings.defaultPlaybackSpeed", e.player.startRate("default", true, rateShow), 1.25);
+    r.eq("player.rememberRate: bad rates are refused", [e.player.rememberRate(rateShow, 0), e.player.rememberRate(null, 1.5), e.player.rememberRate(rateShow, Number.NaN)], [false, false, false]);
+    r.ok("player.rememberRate saves the show's speed", e.player.rememberRate(rateShow, 1.5), "");
+    r.eq("player.startRate: the show's rate beats the default, on any episode; other shows keep the default",
+      [e.player.startRate("default", true, { ...rateShow, episode: 5 }), e.player.startRate("default", true, { metaId: "tt7000005" }), e.player.startRate("default", true, null)], [1.5, 1.25, 1.25]);
+    r.eq("player.trackMemory carries the rate beside the track prefs", e.player.trackMemory(rateShow).prefs.rate, 1.5);
+    e.settings.patch({ defaultPlaybackSpeed: 1 });
   }
   r.ok("settingsRoom: the html5 engine option reads AVPlayer on the TV", e.settingsRoom.controls("playback", "default", true).some((c) => c.id === "engine" && c.options.some((o) => o.value === "html5" && o.label === "AVPlayer") && c.options.some((o) => o.value === "auto")), "");
   r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);

@@ -229,7 +229,11 @@ final class DetailModel: ObservableObject {
         animeSeasonsGen += 1
         let gen = animeSeasonsGen
         let p = ProfilesStore.shared.active
-        guard let w: AnimeSeasonsWire = try? await HarborEngine.shared.call("animeDetail.seasons", [meta.id, p?.id ?? "default", p?.linked ?? true, animeSeasonPicked, episodeHintSeason]) else { return }
+        // A Kitsu season button the viewer pressed before the chips arrived seeds the pick (TVDB keys
+        // seasons by number, "0" for Specials), so the chips open where the viewer already was.
+        let picked = animeSeasonPicked ?? kitsuSeasonPicked.map { String($0) }
+        // The page's meta rides along: a page evicted from the engine's 8-page cache reloads (review 31).
+        guard let w: AnimeSeasonsWire = try? await HarborEngine.shared.call("animeDetail.seasons", [meta.id, p?.id ?? "default", p?.linked ?? true, picked, episodeHintSeason, meta]) else { return }
         // A newer order toggle's reply wins; an empty one leaves the current order on screen (review 31).
         guard gen == animeSeasonsGen, w.source != "none", !w.groups.isEmpty else { return }
         var groups: [String: [Episode]] = [:]
@@ -239,9 +243,20 @@ final class DetailModel: ObservableObject {
         if !w.orderTypes.isEmpty { animeOrders = w.orderTypes }
         animeOrderType = w.orderType
         animeHasChips = w.hasChips
-        animeSeasonKey = groups[w.seasonKey] != nil ? w.seasonKey : w.groups.first?.key
+        // A Kitsu season pressed while this request was out wins over the engine's default (review 35).
+        let seeded = animeSeasonPicked ?? kitsuSeasonPicked.map { String($0) }
+        animeSeasonKey = seeded.flatMap { groups[$0] != nil ? $0 : nil } ?? (groups[w.seasonKey] != nil ? w.seasonKey : w.groups.first?.key)
         await loadWatchedState()
         await loadEpisodeArt()
+    }
+
+    /// A Kitsu season button pressed before the TVDB chips arrived.
+    private var kitsuSeasonPicked: Int?
+
+    /// The Kitsu season buttons (before or without TVDB chips): the pick is remembered for the chips.
+    func pickKitsuSeason(_ s: Int) {
+        if animeSeasonKey == nil, isAnimeId { kitsuSeasonPicked = s }
+        season = s
     }
 
     /// BpAnimeSeasonChip onSelect.
@@ -509,11 +524,24 @@ final class DetailModel: ObservableObject {
         return seasonEpisodes.first
     }
 
-    var playLabel: String {
-        // A hinted episode other than the resume point plays from its start ("Play S E").
-        let hintElsewhere = episodeHint.map { h in
+    /// An episodeHint that names an episode on the page other than the resume point: Play starts it
+    /// from the beginning, so the resume label and progress bar stand down (review 34).
+    var hintElsewhere: Bool {
+        episodeHint.map { h in
             episodes.contains { $0.season == h.season && $0.episode == h.episode } && (resume?.season != h.season || resume?.episode != h.episode)
         } ?? false
+    }
+
+    /// The episode the strip lands on when it first shows: the hinted episode when it is on the page,
+    /// else the resume point (use-bp-episode-strip initial focus follows views/detail.tsx lastPlay).
+    var stripTarget: (season: Int, episode: Int)? {
+        if let h = episodeHint, episodes.contains(where: { $0.season == h.season && $0.episode == h.episode }) { return h }
+        if let r = resume, let s = r.season, let e = r.episode { return (s, e) }
+        return nil
+    }
+
+    var playLabel: String {
+        // A hinted episode other than the resume point plays from its start ("Play S E").
         if let r = resume, !hintElsewhere {
             if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }
             if r.positionMs > 60_000 { return T("Resume") }
