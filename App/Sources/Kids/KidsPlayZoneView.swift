@@ -1,16 +1,20 @@
 import SwiftUI
 import UIKit
 
-/// kids/play/play-zone.tsx: the underwater Play Zone with its activity picker. Upstream's first
-/// activity, "Games", embeds Scratch projects in an iframe; tvOS has no web view, so the TV
-/// offers the three activities that are Harbor's own: Match the Pals, Bubble Numbers and Ocean
-/// Wonders. Back leaves an activity first, then the Play Zone.
+/// kids/play/play-zone.tsx: the underwater Play Zone with its four activities. Match the Pals,
+/// Bubble Numbers and Ocean Wonders are Harbor's own code and are ported natively below. "Games"
+/// (games.tsx) is a catalog of 53 third-party Scratch projects that upstream plays in an iframe
+/// of scratch.mit.edu/projects/<id>/embed; tvOS has no web view (and Scratch's player needs a
+/// browser: JavaScript, WebGL, Web Audio and a keyboard or mouse), so the TV keeps the same
+/// catalog and hands the chosen game to a phone, tablet or computer by QR code (PLAN.md
+/// decision 7). Back leaves an open game first, then the activity, then the Play Zone.
 struct KidsPlayZoneView: View {
     enum Activity: String, CaseIterable, Identifiable {
-        case memory, bubbles, facts
+        case games, memory, bubbles, facts
         var id: String { rawValue }
         var name: String {
             switch self {
+            case .games: return "Games"
             case .memory: return "Match the Pals"
             case .bubbles: return "Bubble Numbers"
             case .facts: return "Ocean Wonders"
@@ -18,6 +22,7 @@ struct KidsPlayZoneView: View {
         }
         var blurb: String {
             switch self {
+            case .games: return "Hand-picked mini games"
             case .memory: return "Find the matching pairs"
             case .bubbles: return "Pop the bubbles in order"
             case .facts: return "Amazing true sea facts"
@@ -25,14 +30,16 @@ struct KidsPlayZoneView: View {
         }
         var art: String {
             switch self {
+            case .games: return "lilbluewhale"
             case .memory: return "lilpurpocto"
             case .bubbles: return "liloctored"
             case .facts: return "lilwhale1"
             }
         }
-        /// lucide Puzzle / Hash / Fish.
+        /// lucide Gamepad2 / Puzzle / Hash / Fish.
         var icon: String {
             switch self {
+            case .games: return "gamecontroller.fill"
             case .memory: return "puzzlepiece.fill"
             case .bubbles: return "number"
             case .facts: return "fish.fill"
@@ -40,6 +47,7 @@ struct KidsPlayZoneView: View {
         }
         var chip: Color {
             switch self {
+            case .games: return Color(hex: 0xf472b6)
             case .memory: return Color(hex: 0xa78bfa)
             case .bubbles: return Color(hex: 0x38bdf8)
             case .facts: return Color(hex: 0x4ade80)
@@ -48,6 +56,8 @@ struct KidsPlayZoneView: View {
     }
 
     @State private var activity: Activity?
+    /// The arcade game that is open (upstream's `gameOpen`): Back closes it before the activity.
+    @State private var game: KidsArcadeGame?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -57,6 +67,7 @@ struct KidsPlayZoneView: View {
                 header
                 Group {
                     switch activity {
+                    case .games: KidsGameArcade(playing: $game)
                     case .memory: KidsMemoryMatch()
                     case .bubbles: KidsBubblePop()
                     case .facts: KidsOceanFacts()
@@ -74,7 +85,7 @@ struct KidsPlayZoneView: View {
     }
 
     private func goBack() {
-        if activity != nil { activity = nil } else { dismiss() }
+        if game != nil { game = nil } else if activity != nil { activity = nil } else { dismiss() }
     }
 
     private var header: some View {
