@@ -86,6 +86,7 @@ import * as actionsGlue from "./actions";
 import * as episodeWatchedGlue from "./episodeWatched";
 import { scores as scoreBadges } from "./scores";
 import * as addonsRoomGlue from "./addonsRoom";
+import * as addonsManagerGlue from "./addonsManager";
 import * as animeDetailGlue from "./animeDetail";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
@@ -768,6 +769,33 @@ export const addonsRoom = {
   bandPosters: addonsRoomGlue.bandPosters,
   catalogs: addonsRoomGlue.catalogs,
   feed: addonsRoomGlue.feed,
+};
+
+/**
+ * The Addons manager (views/addons.tsx + views/addons/*): the catalog behind Discover / Browse /
+ * Installed, stremio-addons.net browsing (categories, Top rated / Top rising / Just added,
+ * search), the spotlight and community rail, addon detail, install / configure / uninstall,
+ * the Organize page (account + device order, backups, move to account) and the age check.
+ */
+export const addonsManager = {
+  load: addonsManagerGlue.load,
+  categories: addonsManagerGlue.categories,
+  browse: addonsManagerGlue.browse,
+  spotlight: addonsManagerGlue.spotlight,
+  rail: addonsManagerGlue.rail,
+  detail: addonsManagerGlue.detail,
+  install: addonsManagerGlue.install,
+  installDefault: addonsManagerGlue.installDefault,
+  resolveUrl: addonsManagerGlue.resolveUrl,
+  installUrl: addonsManagerGlue.installUrl,
+  uninstall: addonsManagerGlue.uninstall,
+  organizeLoad: addonsManagerGlue.organizeLoad,
+  organizeSave: addonsManagerGlue.organizeSave,
+  organizeBackups: addonsManagerGlue.organizeBackups,
+  organizeBackupNow: addonsManagerGlue.organizeBackupNow,
+  organizeRestore: addonsManagerGlue.organizeRestore,
+  organizeMoveAll: addonsManagerGlue.organizeMoveAll,
+  ageGate: addonsManagerGlue.ageGate,
 };
 
 /** use-bp-card-badges: provider score chips for a hero ("card" gates) or a detail page ("detail" gates). */
