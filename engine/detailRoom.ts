@@ -6,6 +6,7 @@ import { tmdbDetails } from "@/lib/providers/tmdb/tmdb-details";
 import { tmdbWatchProviders } from "@/lib/providers/tmdb/tmdb-watch";
 import { tmdbCollection } from "@/lib/providers/tmdb/tmdb-collection";
 import { loadEffective } from "@/lib/settings/profile-store";
+import { metaLooksAnime } from "@/lib/anime-detect";
 
 const IMG = "https://image.tmdb.org/t/p/w342";
 const portrait = (path: string | null | undefined): string | null => (!path ? null : path.startsWith("http") ? path : `${IMG}${path}`);
@@ -49,8 +50,14 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
   const s = loadEffective(profileId, linked);
   if (!s.tmdbKey) return null;
   const key = `${meta.id}|${s.tmdbKey}|${s.region}`;
+  // bp-detail.tsx useHideAnimeMetas(recSource / similarSource): applied on the way out, so a
+  // cached build follows a profile that hides anime.
+  const shown = (v: DetailExtras | null): DetailExtras | null =>
+    v && s.hideContent?.anime === true
+      ? { ...v, recommendations: v.recommendations.filter((m) => !metaLooksAnime(m)), similar: v.similar.filter((m) => !metaLooksAnime(m)) }
+      : v;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.value;
+  if (hit && Date.now() - hit.at < 10 * 60_000) return shown(hit.value);
   const d = await tmdbDetails(s.tmdbKey, meta).catch(() => null);
   if (!d) { cache.set(key, { at: Date.now(), value: null }); return null; }
   // bp-crew-row: Director/Creator/Writer/Producers/Cinematography/Music/Editor, capped 2-4 each.
@@ -94,7 +101,7 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
     gallery: { backdrops: d.gallery.backdrops.length, posters: d.gallery.posters.length, logos: d.gallery.logos.length },
   };
   cache.set(key, { at: Date.now(), value });
-  return value;
+  return shown(value);
 }
 
 /** Franchise parts (dropped below 2, like use-bp-detail). */

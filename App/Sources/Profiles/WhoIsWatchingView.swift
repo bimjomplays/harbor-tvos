@@ -38,7 +38,8 @@ struct WhoIsWatchingView: View {
             .opacity(pinFor == nil ? 1 : 0)
             if let pinFor {
                 PinPadView(profile: pinFor) { ok in
-                    if ok { profiles.select(pinFor.id); app.stage = .shell }
+                    // bp-who-is-watching commit(id, unlocked): the PIN unlocks the profile's locked tabs for the session.
+                    if ok { profiles.select(pinFor.id, unlocked: true); app.stage = .shell }
                     self.pinFor = nil
                 }
                 .transition(.opacity)

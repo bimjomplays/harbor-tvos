@@ -23,6 +23,8 @@ struct ShellView: View {
     @Environment(\.resetFocus) private var resetFocus
 
     @EnvironmentObject private var settings: SettingsBridge
+    /// Per-profile tab locks and hidden anime (Profiles/ParentalGate.swift).
+    @ObservedObject private var parental = ParentalGate.shared
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -43,7 +45,14 @@ struct ShellView: View {
         .onAppear {
             ShellFocus.shared.request = { resetFocus(in: focusNS) }
             GamepadMonitor.shared.onTab = { delta in cycleTab(delta) }
+            ParentalGate.shared.attach()
+            leaveHiddenRoom()
         }
+        // App.tsx: a room the profile may not see (anime hidden, a locked tab) falls back to
+        // Home, whichever way it was reached: the bar, a shoulder button, a settings row, a
+        // profile switch or a lock that just took effect.
+        .onChange(of: app.room) { _, _ in leaveHiddenRoom() }
+        .onChange(of: parental.gate) { _, _ in leaveHiddenRoom() }
         .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
@@ -80,6 +89,10 @@ struct ShellView: View {
         }
     }
 
+    private func leaveHiddenRoom() {
+        if parental.hides(app.room) { app.room = .home }
+    }
+
     private var backToHome: (() -> Void)? {
         if app.room == .home { return nil }
         return { app.room = .home }
@@ -102,7 +115,7 @@ struct ShellView: View {
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
         guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
-        let order = Room.tabs.filter { !(settings.sportsDeclined && $0 == .sports) }
+        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, gate: parental)
         guard !order.isEmpty else { return }
         let from = order.firstIndex(of: app.room) ?? 0
         let next = ((from + delta) % order.count + order.count) % order.count
@@ -175,12 +188,21 @@ enum BPHintAction: String {
     }
 }
 
+extension Room {
+    /// bp-top-bar.tsx visibleTabs: the tab strip and the shoulder cycle both read this, so a tab
+    /// can never be hidden from one and reachable through the other.
+    @MainActor static func shellTabs(sportsDeclined: Bool, gate: ParentalGate) -> [Room] {
+        tabs.filter { !(sportsDeclined && $0 == .sports) && !gate.hides($0) }
+    }
+}
+
 /// Top bar (bp-top-bar.tsx): brand at the start, icon-only tabs in the middle,
 /// profile chip + Settings cog at the end, clock last. Sits over an upward scrim.
 struct TopBarView: View {
     @EnvironmentObject private var settings: SettingsBridge
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var profiles: ProfilesStore
+    @ObservedObject private var parental = ParentalGate.shared
     @FocusState private var focusedTab: Room?
 
     var body: some View {
@@ -190,7 +212,7 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
-            ForEach(Room.tabs.filter { !(settings.sportsDeclined && $0 == .sports) }) { r in
+            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, gate: parental)) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)
