@@ -80,6 +80,9 @@ struct LibraryView: View {
     @StateObject private var model = LibraryModel()
     @State private var detail: Meta?
     @State private var draft = ""
+    /// views/library.tsx "Stats" (settings.wrappedButton) opens the Wrapped view.
+    @State private var statsEnabled = false
+    @State private var showStats = false
 
     private let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(14)), count: 9)
 
@@ -133,7 +136,12 @@ struct LibraryView: View {
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16)).padding(.bottom, BP.hintHeight + BP.px(40))
         }
         .task { await model.start() }
+        .task {
+            let p = ProfilesStore.shared.active
+            statsEnabled = (try? await HarborEngine.shared.call("wrapped.enabled", [p?.id ?? "default", p?.linked ?? true]) as Bool) ?? false
+        }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(isPresented: $showStats) { WrappedView() }
     }
 
     // bp-library.tsx chip row: tabs, then Filters / Search / Refresh.
@@ -149,6 +157,9 @@ struct LibraryView: View {
                 Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.buttonStyle(BPActionStyle())
                 // library-repair-rows.tsx lives in desktop Settings → Advanced; the TV keeps it beside the library.
                 Button { model.showRepair.toggle() } label: { Label("Repair library", systemImage: "wrench.and.screwdriver") }.buttonStyle(BPActionStyle(primary: model.showRepair))
+                if statsEnabled {
+                    Button { showStats = true } label: { Label("Stats", systemImage: "chart.bar") }.buttonStyle(BPActionStyle())
+                }
                 if let f = model.feed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
             }
         }

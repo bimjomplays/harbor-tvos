@@ -128,7 +128,7 @@ final class AppModel: ObservableObject {
 }
 
 enum Room: String, CaseIterable, Identifiable {
-    case home, discover, anime, shows, movies, live, sports, search, library, collections, settings
+    case home, discover, anime, shows, movies, live, sports, search, calendar, library, collections, settings
     var id: String { rawValue }
 
     var label: String {
@@ -141,6 +141,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .live: return "Live TV"
         case .sports: return "Sports"
         case .search: return "Search"
+        case .calendar: return "Calendar"
         case .library: return "Library"
         case .collections: return "Collections"
         case .settings: return "Settings"
@@ -156,6 +157,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .live: return "antenna.radiowaves.left.and.right"
         case .sports: return "sportscourt"
         case .search: return "magnifyingglass"
+        case .calendar: return "calendar"
         case .library: return "books.vertical"
         case .collections: return "square.grid.2x2"
         case .settings: return "gearshape.fill"
@@ -165,7 +167,7 @@ enum Room: String, CaseIterable, Identifiable {
     var arrivesIn: Int {
         switch self {
         case .home, .discover, .shows, .movies, .search, .collections: return 2
-        case .library: return 5
+        case .library, .calendar: return 5
         case .anime: return 7
         case .live: return 8
         case .sports: return 11
