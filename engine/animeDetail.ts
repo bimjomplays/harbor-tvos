@@ -14,6 +14,8 @@ export type AnimeEpisode = {
   id: number; season: number; number: number; title: string; synopsis: string; thumbnail: string | null;
   airdate: string | null; length: number | null; filler: boolean; absoluteNumber: number | null;
   imdbSeason: number | null; imdbEpisode: number | null; playEpisode: ReturnType<typeof bpAnimePlayEpisode>;
+  /** A franchise entry merged into this list: its manual watched marks live under this id. */
+  sourceMetaId: string | null;
 };
 export type AnimeDetail = {
   canonicalId: string;
@@ -37,6 +39,7 @@ function toEpisode(ep: KitsuEpisode): AnimeEpisode {
     id: ep.id, season: animeSeasonKey(ep), number: ep.number, title: ep.title, synopsis: ep.synopsis, thumbnail: ep.thumbnail ?? ep.thumbnailFallback ?? null,
     airdate: ep.airdate, length: ep.length, filler: ep.filler === true, absoluteNumber: ep.absoluteNumber ?? null,
     imdbSeason: ep.imdbSeason ?? null, imdbEpisode: ep.imdbEpisode ?? null, playEpisode: bpAnimePlayEpisode(ep),
+    sourceMetaId: ep.sourceMetaId ?? null,
   };
 }
 

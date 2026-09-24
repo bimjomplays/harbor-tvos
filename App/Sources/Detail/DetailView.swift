@@ -160,14 +160,17 @@ struct DetailView: View {
                     switchFromSec = nil
                     // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        Task { @MainActor in
                             var upNext: String?
-                        if let s = ctx.season, let e = ctx.episode, let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < model.episodes.count {
-                            let n = model.episodes[idx + 1]
-                            if n.season > 0 { upNext = "S\(n.season) E\(n.episode) · \(n.title)" }
+                            if let s = ctx.season, let e = ctx.episode, let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < model.episodes.count {
+                                let n = model.episodes[idx + 1]
+                                // views/player.tsx nextEpMask: a hidden title leaves only "S E" on the up-next card.
+                                if n.season > 0 { upNext = await model.upNextText(n) }
+                            }
+                            let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
+                                                          hdrFormat: stream?.hdrFormat, filename: link.filename)
+                            playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints)
                         }
-                        let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
-                                                      hdrFormat: stream?.hdrFormat, filename: link.filename)
-                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints)
                     }
                 }
             }
@@ -194,6 +197,8 @@ struct DetailView: View {
                          onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
                          onPreviousEpisode: previousEpisodeAction(t.context)) { natural in
                 playing = nil
+                // The strip's started / next-up (and so its spoiler masks) move with what was just played.
+                Task { await model.loadWatchedState() }
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
                    let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }),
@@ -512,9 +517,12 @@ struct DetailView: View {
                     ForEach(model.seasonEpisodes) { ep in
                         // use-bp-detail play(ep, fromStrip): the strip fires like Play when instant play is on.
                         Button { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; picker = (model.meta, ep.playEpisode) } label: {
-                            EpisodeCell(episode: ep, watched: model.isWatched(ep), fact: model.fact(for: ep), chain: model.stillChain(for: ep), backdrop: model.meta.background)
+                            EpisodeCell(episode: ep, watched: model.isWatched(ep), fact: model.fact(for: ep), chain: model.stillChain(for: ep), backdrop: model.meta.background,
+                                        spoiler: model.spoilerMask(for: ep), showRating: model.showEpisodeRating, showDescription: model.showEpisodeDescription)
                         }
                             .buttonStyle(BPTileStyle())
+                            // episode-watched-menu.tsx on hold-Select, plus use-mark-season's season toggle.
+                            .contextMenu { episodeWatchedMenu(ep) }
                             .id(ep.id)
                             .accessibilityIdentifier("episode-\(ep.season)-\(ep.episode)")
                     }
@@ -529,6 +537,27 @@ struct DetailView: View {
             }
             }
             .focusSection()
+        }
+    }
+
+    /// components/episode-watched-menu.tsx: a watched episode offers "Mark as unwatched"; an
+    /// unwatched one "Mark as watched" and "Mark watched up to here", plus "Mark as unwatched" once
+    /// it has been started. The season item is episode-grid-controls OptionsMenu (use-mark-season).
+    @ViewBuilder
+    private func episodeWatchedMenu(_ ep: DetailModel.Episode) -> some View {
+        if model.isWatched(ep) {
+            Button { Task { await model.markWatched(ep, .episode, watched: false) } } label: { Label(T("Mark as unwatched"), systemImage: "eye.slash") }
+        } else {
+            Button { Task { await model.markWatched(ep, .episode, watched: true) } } label: { Label(T("Mark as watched"), systemImage: "checkmark") }
+            Button { Task { await model.markWatched(ep, .upTo, watched: true) } } label: { Label(T("Mark watched up to here"), systemImage: "eye") }
+            if model.isStarted(ep) {
+                Button { Task { await model.markWatched(ep, .episode, watched: false) } } label: { Label(T("Mark as unwatched"), systemImage: "eye.slash") }
+            }
+        }
+        if model.seasonAllWatched {
+            Button { Task { await model.markWatched(ep, .season, watched: false) } } label: { Label(T("Mark season as unwatched"), systemImage: "eye.slash") }
+        } else {
+            Button { Task { await model.markWatched(ep, .season, watched: true) } } label: { Label(T("Mark season as watched"), systemImage: "checkmark.circle") }
         }
     }
 }
@@ -645,18 +674,34 @@ struct EpisodeCell: View {
     /// use-bp-episode-art ladder; nil draws the Cinemeta thumbnail alone.
     var chain: [String]? = nil
     var backdrop: String? = nil
+    /// lib/spoilers.ts spoilerMaskFor for this card; nil shows everything.
+    var spoiler: DetailModel.SpoilerMask? = nil
+    /// bp-episode-card.tsx: settings.showEpisodeRating / showEpisodeDescription !== false.
+    var showRating = true
+    var showDescription = true
+    /// The episode button's focus (the nearest focusable ancestor): bp-episode-still BP_SPOILER_THUMB /
+    /// BP_SPOILER_TEXT lift the blur on focus, since a remote has no hover to reveal it.
+    @Environment(\.isFocused) private var focused
     private static let size = CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded())
+
+    private var hideThumb: Bool { spoiler?.thumb == true && !focused }
+    private var hideTitle: Bool { spoiler?.title == true && !focused }
+    private var hideDesc: Bool { spoiler?.desc == true && !focused }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             ZStack(alignment: .bottomLeading) {
                 EpisodeStill(chain: chain ?? episode.thumbnail.map { [$0] } ?? [], label: episode.episode, backdrop: backdrop)
+                    // BP_SPOILER_THUMB: blur-[16px] scale-[1.05], back to sharp on focus.
+                    .blur(radius: hideThumb ? BP.px(16) : 0)
+                    .scaleEffect(hideThumb ? 1.05 : 1)
+                    .animation(BP.easeFast, value: hideThumb)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
                 Text("E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
                 // use-bp-episode-facts chip: rating (IMDb mark when it is IMDb's) and runtime.
-                if let f = fact, f.rating != nil || f.runtime != nil {
+                if let f = fact, (f.rating != nil && showRating) || f.runtime != nil {
                     HStack(spacing: BP.px(4)) {
-                        if let r = f.rating { Text((f.ratingIsImdb ? "IMDb " : "★ ") + String(format: "%.1f", r)) }
+                        if let r = f.rating, showRating { Text((f.ratingIsImdb ? "IMDb " : "★ ") + String(format: "%.1f", r)) }
                         if let m = f.runtime { Text("\(m) min") }
                     }
                     .font(BP.sans(9.5, .bold)).foregroundStyle(BP.ink)
@@ -679,7 +724,15 @@ struct EpisodeCell: View {
             .frame(width: Self.size.width, height: Self.size.height)
             .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
             Text(episode.title).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                .blur(radius: hideTitle ? BP.px(6) : 0)
+                .animation(BP.easeFast, value: hideTitle)
             if let d = episode.released { Text(d.formatted(date: .abbreviated, time: .omitted)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
+            // bp-episode-card.tsx: the overview, two lines, when showEpisodeDescription is on.
+            if showDescription, let o = episode.overview, !o.isEmpty {
+                Text(o).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(2).lineSpacing(2)
+                    .blur(radius: hideDesc ? BP.px(6) : 0)
+                    .animation(BP.easeFast, value: hideDesc)
+            }
         }
         .frame(width: Self.size.width, alignment: .leading)
     }

@@ -75,6 +75,82 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }
 
+// ------------------------------------ episode watched state, marks, spoiler masks (audit 4 + 6)
+{
+  const zlib = await import("node:zlib");
+  const id = "tt7000001";
+  const vids = Array.from({ length: 8 }, (_, i) => ({ id: `${id}:1:${i + 1}`, season: 1, episode: i + 1, released: `2020-01-${String(i + 1).padStart(2, "0")}T00:00:00Z` }));
+  vids.push({ id: `${id}:2:1`, season: 2, episode: 1, released: "2099-01-01T00:00:00Z" });
+  const meta = { id, type: "series", name: "Smoke Show", videos: vids };
+  const refs = vids.map((v) => ({ season: v.season, episode: v.episode, released: v.released }));
+  const bits = new Uint8Array(2); bits[0] |= 1 << 0; bits[0] |= 1 << 1; bits[0] |= 1 << 4; // S1E1, S1E2, S1E5
+  const libField = `${id}:1:5:5:${zlib.deflateSync(Buffer.from(bits)).toString("base64")}`;
+  let libItem = { _id: id, type: "series", name: "Smoke Show", state: { watched: libField, timeOffset: 0, duration: 0 }, removed: false, temp: false, _ctime: "2024-01-01T00:00:00.000Z", _mtime: "2024-01-01T00:00:00.000Z" };
+  const puts = [];
+  const ew = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.resume", JSON.stringify({ [`${id}|s1e7`]: { ms: 120000, t: 1 } })],
+  ]) });
+  ew.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/api/datastoreGet")) return json({ result: libItem ? [libItem] : [] });
+    if (req.url.endsWith("/api/datastorePut")) { const b = JSON.parse(req.body); puts.push(b.changes[0]); libItem = b.changes[0]; return json({ result: { success: true } }); }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = ew.engine;
+  const st = () => E.episodeWatched.state(id, refs, 1, "default", true);
+  const sorted = (a) => [...a].sort();
+
+  const enc = E.player.encodeWatchedField(["1:1", "1:4", "1:8"], vids);
+  r.eq("player.encodeWatchedField round-trips through decodeWatchedField", E.player.decodeWatchedField(enc, vids), ["1:1", "1:4", "1:8"]);
+  r.ok("player.encodeWatchedField anchors on the last watched video", typeof enc === "string" && enc.startsWith(`${id}:1:8:8:`), enc);
+
+  r.eq("episodeWatched.state is empty before any source", st().watched, []);
+  await E.episodeWatched.load("AUTH", meta, id);
+  r.eq("episodeWatched.load adopts the Stremio library bitfield as remote marks", sorted(st().watched), ["1:1", "1:2", "1:5"]);
+  r.eq("episodeWatched.state: an unwatched episode with a resume entry reads started", st().started, ["1:7"]);
+  r.eq("episodeWatched.state: no masks and both detail toggles on by default", [Object.keys(st().masks).length, st().showEpisodeRating, st().showEpisodeDescription], [0, true, true]);
+
+  E.episodeWatched.mark("AUTH", meta, id, { season: 1, episode: 2 }, "episode", false, refs, "default", true);
+  r.eq("episodeWatched.mark unwatched drops a library-sourced mark at once", sorted(st().watched), ["1:1", "1:5"]);
+  await E.episodeWatched.settle();
+  const pushed = puts.at(-1);
+  r.ok("episodeWatched.mark pushes the merged bitfield into the library entry", pushed && pushed._id === id && pushed.name === "Smoke Show" && JSON.stringify(E.player.decodeWatchedField(pushed.state.watched, vids)) === JSON.stringify(["1:1", "1:5"]), JSON.stringify(pushed && pushed.state));
+  // A later pull of the same (older than the unmark) library write must not bring it back.
+  E.episodeWatched.reconcileLibraryWatched({ ...libItem, state: { watched: libField }, _mtime: "2024-01-01T00:00:00.000Z" }, meta);
+  r.eq("a library write older than the unmark does not re-add it", sorted(st().watched), ["1:1", "1:5"]);
+
+  E.episodeWatched.mark("AUTH", meta, id, { season: 1, episode: 3 }, "upTo", true, refs, "default", true);
+  r.eq("episodeWatched.mark upTo marks every aired episode up to here", sorted(st().watched), ["1:1", "1:2", "1:3", "1:5"]);
+  await E.episodeWatched.settle();
+  r.eq("episodeWatched.mark upTo reaches the library bitfield", E.player.decodeWatchedField(puts.at(-1).state.watched, vids), ["1:1", "1:2", "1:3", "1:5"]);
+  E.episodeWatched.mark(null, meta, id, { season: 1, episode: 7 }, "episode", true, refs, "default", true);
+  r.eq("episodeWatched.mark watched adds one episode", st().watched.includes("1:7") && !st().started.includes("1:7"), true);
+  E.episodeWatched.mark(null, meta, id, { season: 2, episode: 1 }, "season", true, refs, "default", true);
+  r.eq("episodeWatched.mark season watched skips unaired episodes", E.episodeWatched.state(id, refs, 2, "default", true).watched.includes("2:1"), false);
+  E.episodeWatched.mark(null, meta, id, { season: 1, episode: 1 }, "season", false, refs, "default", true);
+  r.eq("episodeWatched.mark season unwatched clears the season", st().watched, []);
+  E.episodeWatched.mark(null, meta, id, { season: 1, episode: 2 }, "upTo", true, refs, "default", true);
+
+  // lib/spoilers.ts spoilerMaskFor: watched and next-up (spoilerSkipNext) cards stay clear.
+  const base = E.settings.loadForProfile("default", true);
+  E.settings.saveForProfile({ ...base, hideSpoilers: true, spoilerHideDescriptions: false, showEpisodeRating: false }, "default", true);
+  const masked = st();
+  r.eq("spoilers: watched episodes and the next-up are clear, later ones masked", sorted(Object.keys(masked.masks)), ["1:4", "1:5", "1:6", "1:7", "1:8"]);
+  r.eq("spoilers: the mask follows the per-part toggles", masked.masks["1:4"], { thumb: true, title: true, desc: false });
+  r.eq("showEpisodeRating off reaches the strip", masked.showEpisodeRating, false);
+  E.settings.saveForProfile({ ...base, hideSpoilers: true, spoilerSkipNext: false }, "default", true);
+  r.ok("spoilers: spoilerSkipNext off masks the next-up card too", "1:3" in st().masks);
+  r.eq("episodeWatched.upNextMask masks an unwatched next episode", E.episodeWatched.upNextMask("default", true, false), { thumb: true, title: true, desc: true });
+  r.eq("episodeWatched.upNextMask leaves a watched next episode clear", E.episodeWatched.upNextMask("default", true, true), { thumb: false, title: false, desc: false });
+  E.settings.saveForProfile({ ...base, hideSpoilers: true, spoilerSkipNext: true }, "default", true);
+  r.eq("episodeWatched.upNextMask: spoilerSkipNext keeps the up-next clear", E.episodeWatched.upNextMask("default", true, false), { thumb: false, title: false, desc: false });
+  E.settings.saveForProfile({ ...base, hideSpoilers: false }, "default", true);
+  r.eq("spoilers: hideSpoilers off clears every mask", Object.keys(st().masks).length, 0);
+  await E.episodeWatched.settle();
+  ew.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";

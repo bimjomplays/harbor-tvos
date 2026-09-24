@@ -8,7 +8,7 @@ import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
 import { loadEffective } from "@/lib/settings/profile-store";
-import { unzlibSync } from "fflate";
+import { unzlibSync, zlibSync } from "fflate";
 
 /**
  * The playback settings the Big Picture chrome reads (settings/defaults.ts): the up-next lead
@@ -173,6 +173,39 @@ export function decodeWatchedField(field: string | null | undefined, videos: Met
     if (v?.season != null && v?.episode != null && bit(i + offset)) keys.push(`${v.season}:${v.episode}`);
   }
   return keys;
+}
+
+/**
+ * lib/stremio-watched.ts encodeWatchedEpisodes: "season:episode" keys back into Stremio's
+ * "<anchorVideoId>:<anchorLength>:<base64 zlib bitfield>". fflate's zlibSync stands in for
+ * CompressionStream("deflate") (zlib-framed too), which JavaScriptCore does not have.
+ */
+export function encodeWatchedField(keys: Iterable<string>, videos: Meta["videos"]): string | null {
+  if (!videos || videos.length === 0) return null;
+  const set = new Set(keys);
+  const sorted = canonicalVideoOrder(videos);
+  const bytes = new Uint8Array(Math.ceil(sorted.length / 8));
+  let lastWatched = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    const v = sorted[i];
+    if (v?.season != null && v?.episode != null && set.has(`${v.season}:${v.episode}`)) {
+      bytes[i >> 3] |= 1 << (i & 7);
+      lastWatched = i;
+    }
+  }
+  let b64: string;
+  try {
+    const out = zlibSync(bytes);
+    let bin = "";
+    for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+    b64 = btoa(bin);
+  } catch {
+    return null;
+  }
+  const anchorIdx = Math.max(0, lastWatched);
+  const anchorVideoId = sorted[anchorIdx]?.id;
+  if (!anchorVideoId) return null;
+  return `${anchorVideoId}:${anchorIdx + 1}:${b64}`;
 }
 
 /** What the picker knows about the stream the player is about to open (streams/types.ts fields). */

@@ -82,6 +82,7 @@ import * as homeGlue from "./homeServers";
 import * as searchGlue from "./search";
 import * as onboardingGlue from "./onboarding";
 import * as actionsGlue from "./actions";
+import * as episodeWatchedGlue from "./episodeWatched";
 import { scores as scoreBadges } from "./scores";
 import * as addonsRoomGlue from "./addonsRoom";
 import * as animeDetailGlue from "./animeDetail";
@@ -778,6 +779,21 @@ export const actions = {
 };
 
 /**
+ * Detail episode strip (use-bp-episode-strip.ts watchedOf, episode-watched-menu.tsx,
+ * use-mark-season.ts, lib/spoilers.ts): watched state from the manual store, the Stremio library
+ * bitfield and Trakt/Simkl; the hold-Select marks; the spoiler masks and episode detail toggles.
+ */
+export const episodeWatched = {
+  load: episodeWatchedGlue.load,
+  state: episodeWatchedGlue.state,
+  mark: episodeWatchedGlue.mark,
+  settle: episodeWatchedGlue.settle,
+  upNextMask: episodeWatchedGlue.upNextMask,
+  reconcileLibraryWatched: episodeWatchedGlue.reconcileLibraryWatched,
+  pushToLibrary: episodeWatchedGlue.pushToLibrary,
+};
+
+/**
  * bp-intro-pool.ts: the poster urls the front-door wall (bp-intro.tsx) drew from last session, so
  * every boot after the first opens on real art at the first frame. Urls only, capped at 96.
  */
@@ -865,6 +881,7 @@ export const player = {
   localResume: playerGlue.localResume,
   watchedEpisodes: playerGlue.watchedEpisodes,
   decodeWatchedField: playerGlue.decodeWatchedField,
+  encodeWatchedField: playerGlue.encodeWatchedField,
   /** Up-next lead, auto-advance and seek steps for the Big Picture chrome. */
   prefs: playerGlue.prefs,
   /** Auto / mpv / native (AVPlayer) for one stream: use-player-bridge.ts + player-utils.ts pickBridge. */
