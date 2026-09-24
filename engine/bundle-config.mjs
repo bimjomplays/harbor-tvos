@@ -87,8 +87,9 @@ export const stubs = {
     }));
     // esbuild inlines dynamic imports in an IIFE bundle, so upstream's lazy locale catalogs
     // (~20 MB of translations behind setUiLanguage) and the 4 MB awards JSON would land in
-    // the bundle. The TV app is English-only for now and feeds the awards catalog through
-    // discoverRoom.installAwards, so both lazy loads resolve to empty modules.
+    // the bundle. The app feeds both from its own bundle instead: the chosen language's catalog
+    // through settingsRoom.installUiCatalog (tools/build_locales.mjs → App/Locales/<lang>.json)
+    // and the awards through discoverRoom.installAwards, so both lazy loads resolve to empty modules.
     b.onResolve({ filter: /(^|\/)load-locale$/ }, (a) =>
       /lib\/i18n\//.test(a.importer) ? { path: a.path, namespace: "locale-stub" } : undefined);
     b.onLoad({ filter: /.*/, namespace: "locale-stub" }, () => ({

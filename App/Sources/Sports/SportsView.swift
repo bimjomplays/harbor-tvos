@@ -160,8 +160,8 @@ struct SportsView: View {
         let title = p.status.busy ? "Loading your sports…" : pitch ? "Less searching. More of your sport." : (model.mode == .live ? "Nothing live right now" : model.mode == .schedule ? "Nothing scheduled" : model.mode == .hot ? "Nothing hot yet" : "Nothing here yet")
         let body = p.status.busy ? "Schedules and scores are on their way." : pitch ? "Pick your sports, leagues and teams. Harbor keeps what matters up top." : "Try another day, another sport, or refresh."
         return VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text(title).font(BP.display(24)).foregroundStyle(BP.ink)
-            Text(body).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+            Text(T(title)).font(BP.display(24)).foregroundStyle(BP.ink)
+            Text(T(body)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
             HStack(spacing: BP.px(8)) {
                 if model.mode == .schedule { Button("Today") { model.setDay(p.today) }.buttonStyle(BPActionStyle()) }
                 Button("Make it yours") { personalize = true }.buttonStyle(BPActionStyle(primary: pitch))

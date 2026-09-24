@@ -270,11 +270,11 @@ struct CalendarEmptyShell: View {
     var body: some View {
         VStack(spacing: BP.px(10)) {
             Image(systemName: "calendar").font(.system(size: BP.px(26), weight: .light)).foregroundStyle(BP.inkSubtle)
-            Text(heading).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
-            Text(bodyText).font(BP.sans(13)).foregroundStyle(BP.inkMuted).multilineTextAlignment(.center)
+            Text(T(heading)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
+            Text(T(bodyText)).font(BP.sans(13)).foregroundStyle(BP.inkMuted).multilineTextAlignment(.center)
                 .frame(maxWidth: BP.px(460)).fixedSize(horizontal: false, vertical: true)
             if let action {
-                Button(action.0) { action.1() }.buttonStyle(BPActionStyle(primary: true)).padding(.top, BP.px(4))
+                Button(T(action.0)) { action.1() }.buttonStyle(BPActionStyle(primary: true)).padding(.top, BP.px(4))
             }
         }
         .frame(maxWidth: .infinity)

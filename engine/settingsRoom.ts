@@ -1,7 +1,9 @@
 // Big Picture settings (bp-settings-catalog.ts + bp-settings-commit.ts) as data: categories with
 // summaries, controls per category, and one commit function. Swift renders rows generically.
 import { bpSettingsCategories, bpSettingsControls, bpConnectedNames, bpOverscanLabel, bpServiceItems, bpSoundLabel, type BpCatId, type BpControl } from "@/views/big-picture/bp-settings-catalog";
-import { LANGUAGES, getUiLanguage, normalizeLanguage, setUiLanguage, type UiLanguage } from "@/lib/i18n";
+// t() is lib/i18n's: English until the host installs the chosen catalog (installUiCatalog below).
+import { LANGUAGES, getUiLanguage, normalizeLanguage, setUiLanguage, t, type UiLanguage } from "@/lib/i18n";
+import { registerUiCatalog, uiCatalogLoaded } from "@/lib/i18n/translate";
 import { serviceBadge } from "@/lib/providers/streaming";
 import type { StreamingService } from "@/lib/settings";
 import type { Settings } from "@/lib/settings/types";
@@ -23,8 +25,6 @@ function playlistCount(): number {
     return 0;
   }
 }
-
-const t = (key: string, vars?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? `{${k}}`));
 
 /** What the TV calls upstream's "html5" engine value: AVPlayer plays it (engine/player.ts pickEngine). */
 const NATIVE_ENGINE_LABEL = "AVPlayer";
@@ -164,6 +164,22 @@ export function applyUiLanguage(profileId: string, linked: boolean): string {
   const lang = normalizeLanguage(loadEffective(profileId, linked).uiLanguage);
   if (lang !== getUiLanguage()) setUiLanguage(lang);
   return lang;
+}
+
+/**
+ * load-locale.ts, host-fed: the bundle stubs upstream's lazy catalog import (20 MB), so the app
+ * hands the chosen language's catalog over as JSON (tools/build_locales.mjs → App/Locales/<lang>.json)
+ * and it is registered exactly as ensureUiLocale would. Returns whether that language is loaded.
+ */
+export function installUiCatalog(lang: string, rawJson: string): boolean {
+  const code = normalizeLanguage(lang);
+  if (code === "en") return true;
+  if (!uiCatalogLoaded(code)) registerUiCatalog(code, JSON.parse(rawJson) as Record<string, string>);
+  return uiCatalogLoaded(code);
+}
+export function uiCatalogInstalled(lang: string): boolean {
+  const code = normalizeLanguage(lang);
+  return code === "en" || uiCatalogLoaded(code);
 }
 
 // bp-settings-pane.tsx constants.

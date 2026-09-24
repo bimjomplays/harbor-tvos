@@ -59,9 +59,9 @@ struct DiscoverView: View {
     private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             VStack(alignment: .leading, spacing: BP.px(2)) {
-                Text(eyebrow).font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                Text(title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
-                Text(blurb).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                Text(T(eyebrow)).font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+                Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text(T(blurb)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
             }
             .padding(.horizontal, BP.gutter)
             content()

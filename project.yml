@@ -4,9 +4,12 @@ options:
   deploymentTarget:
     tvOS: "17.0"
   createIntermediateGroups: true
+  developmentLanguage: en
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    # App/Locales: 15 upstream catalogs; binary plists are smaller and faster to load than UTF-16.
+    STRINGS_FILE_OUTPUT_ENCODING: binary
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "3"
@@ -24,6 +27,9 @@ targets:
       - path: App/Engine
         buildPhase: resources
       - path: App/Fonts
+        buildPhase: resources
+      # Upstream's UI catalogs (tools/build_locales.mjs): <lang>.lproj for SwiftUI, <lang>.json for the engine.
+      - path: App/Locales
         buildPhase: resources
       # The phone hand-off page the TV serves on the LAN (App/Sources/Handoff); never fetched.
       - path: App/Phone
@@ -48,6 +54,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Harbor
+        # lib/i18n/languages.ts: the 16 UI languages (the app follows settings.uiLanguage, not the system).
+        CFBundleLocalizations: [en, ar, de, es, fr, hi, id, it, ja, ko, pl, pt, ru, tr, vi, zh]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}

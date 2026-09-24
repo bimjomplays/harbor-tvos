@@ -138,7 +138,7 @@ struct AddonsView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text(title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             content()
         }
         .padding(BP.px(22))

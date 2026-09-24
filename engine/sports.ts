@@ -31,7 +31,8 @@ import { syncSportsReminders } from "@/lib/sports/reminders";
 
 export type Mode = "for-you" | "live" | "schedule" | "hot" | "explore";
 
-const t = (key: string) => key;
+// lib/i18n t(): English until the host installs the chosen catalog (settingsRoom.installUiCatalog).
+import { t } from "@/lib/i18n";
 const LIVE_SCOREBOARDS = liveScoreboardKeys(HUB_LEAGUES);
 const HOT_LEAGUE_LIMIT = 24;
 const UPCOMING_BROWSE_LIMIT = 16;

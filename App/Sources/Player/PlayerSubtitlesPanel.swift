@@ -153,7 +153,7 @@ struct PlayerSubtitlesPanel: View {
     }
 
     private func laneChip(_ id: Lane, _ label: String, _ icon: String) -> some View {
-        Button { lane = id } label: { Label(label, systemImage: icon) }
+        Button { lane = id } label: { Label(T(label), systemImage: icon) }
             .buttonStyle(PlayerChipStyle(on: lane == id))
             .focused($focus, equals: "lane-\(label)")
     }
@@ -161,14 +161,14 @@ struct PlayerSubtitlesPanel: View {
     /// `id` names the focus target when the label alone is not unique (a stepper's − and +).
     private func chip(_ label: String, on: Bool = false, icon: String? = nil, id: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            if let icon { Label(label, systemImage: icon) } else { Text(label) }
+            if let icon { Label(T(label), systemImage: icon) } else { Text(T(label)) }
         }
         .buttonStyle(PlayerChipStyle(on: on))
         .focused($focus, equals: id ?? "chip-\(label)")
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle).padding(.vertical, BP.px(4))
+        Text(T(text)).font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle).padding(.vertical, BP.px(4))
     }
 
     /// The shell seeds focus from the panel id, never the lane, so each lane seeds its own ring.

@@ -28,7 +28,8 @@ const MAX_ITEMS = 80;
 const CW_CAP = 20;
 const AUTO_FILL_BUDGET = 4;
 
-const t = (key: string, vars?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? `{${k}}`));
+// lib/i18n t(): English until the host installs the chosen catalog (settingsRoom.installUiCatalog).
+import { t } from "@/lib/i18n";
 
 // ------------------------------------------------------------------------- spec rows
 const rowsByKey: Record<string, RowState> = {};

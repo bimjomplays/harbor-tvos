@@ -326,11 +326,11 @@ final class DetailModel: ObservableObject {
 
     var playLabel: String {
         if let r = resume {
-            if isSeries, let s = r.season, let e = r.episode { return "Resume S\(s):E\(e)" }
-            if r.positionMs > 60_000 { return "Resume" }
+            if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }
+            if r.positionMs > 60_000 { return T("Resume") }
         }
         if isSeries, let t = playTarget { return "Play S\(t.season) E\(t.episode)" }
-        return "Play"
+        return T("Play")
     }
 
     private func buildEpisodes() {

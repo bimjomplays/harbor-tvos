@@ -374,9 +374,9 @@ struct SocialEmpty: View {
 
     var body: some View {
         VStack(spacing: BP.px(10)) {
-            Text(title).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
-            Text(message).font(BP.sans(14)).foregroundStyle(BP.inkSubtle).multilineTextAlignment(.center).frame(maxWidth: BP.px(520))
-            if let action { Button(action.label, action: action.run).buttonStyle(BPActionStyle(primary: true)) }
+            Text(T(title)).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
+            Text(T(message)).font(BP.sans(14)).foregroundStyle(BP.inkSubtle).multilineTextAlignment(.center).frame(maxWidth: BP.px(520))
+            if let action { Button(T(action.label), action: action.run).buttonStyle(BPActionStyle(primary: true)) }
         }
         .padding(.vertical, BP.px(44)).frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).strokeBorder(BP.edge2, style: StrokeStyle(lineWidth: 1, dash: [6, 5])))

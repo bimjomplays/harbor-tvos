@@ -9,6 +9,9 @@ struct RootView: View {
     @ObservedObject private var pool = AmbientPool.shared
     /// The active profile decides which shell a `.shell` stage shows (kid → Kids).
     @ObservedObject private var profiles = ProfilesStore.shared
+    /// settings.uiLanguage drives every string on screen (App/L10n.swift), not the system language.
+    @ObservedObject private var settings = SettingsBridge.shared
+    private var language: String { L10n.normalize(settings.slice.uiLanguage) }
 
     var body: some View {
         ZStack {
@@ -32,8 +35,13 @@ struct RootView: View {
             // bp-shell.tsx: {introUp && <BpIntro …/>}, the front door after the boot splash.
             if app.stage != .boot, intro.phase != .done { IntroView(model: intro).zIndex(30) }
         }
-        // Stage 9: a theme change re-renders every view against the new BP tokens.
-        .id(theme.revision)
+        // Stage 9: a theme change re-renders every view against the new BP tokens; a language
+        // change does the same, so T() copy and engine-built rows are read again in it.
+        .id("\(theme.revision)|\(language)")
+        // lib/i18n/store.ts applyDocument: lang and dir follow the chosen language. SwiftUI resolves
+        // every Text/Button/Label key against this locale in App/Locales/<lang>.lproj.
+        .environment(\.locale, Locale(identifier: language))
+        .environment(\.layoutDirection, L10n.rtlLanguages.contains(language) ? .rightToLeft : .leftToRight)
         .onAppear { GamepadMonitor.shared.start() }
         .onChange(of: app.stage) { old, st in
             // bp-shell.tsx mount (the first Big Picture surface, settings now loaded): SFX.boot(); SFX.open().

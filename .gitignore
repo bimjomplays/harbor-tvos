@@ -15,3 +15,5 @@ App/Engine/harbor-engine.js
 App/Harbor.entitlements
 App/Upstream/
 App/Engine/awards.json
+# tools/build_locales.mjs output (upstream catalogs as .strings / .stringsdict / engine JSON)
+App/Locales/

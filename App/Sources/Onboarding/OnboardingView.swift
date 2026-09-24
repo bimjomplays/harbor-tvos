@@ -64,9 +64,9 @@ struct OnboardingView: View {
     @ViewBuilder private var copy: some View {
         let (eyebrow, headline, body) = text
         VStack(alignment: .leading, spacing: BP.px(14)) {
-            Text(eyebrow).font(BP.sans(13, .semibold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-            Text(headline).font(BP.display(36)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
-            Text(body).font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            Text(T(eyebrow)).font(BP.sans(13, .semibold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+            Text(T(headline)).font(BP.display(36)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
+            Text(T(body)).font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }
         .id(step)
         .transition(.opacity)
@@ -184,8 +184,8 @@ struct OnboardingView: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: BP.px(8)) {
-                Text(title).font(BP.display(22)).foregroundStyle(BP.ink)
-                Text(blurb).font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+                Text(T(title)).font(BP.display(22)).foregroundStyle(BP.ink)
+                Text(T(blurb)).font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
                 if settings.slice.homeMode == mode { Text("Current").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase) }
             }
             .padding(BP.px(20))
@@ -241,7 +241,7 @@ struct RecapRow: View {
     var body: some View {
         HStack(spacing: BP.px(10)) {
             Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed").foregroundStyle(ok ? BP.live : BP.inkSubtle)
-            Text(text).font(BP.sans(15)).foregroundStyle(BP.ink)
+            Text(T(text)).font(BP.sans(15)).foregroundStyle(BP.ink)
         }
     }
 }

@@ -548,7 +548,7 @@ struct PlayerScreen: View {
     }
 
     private func chip(_ label: String, _ icon: String, id: String? = nil, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: { action(); wake() }) { Label(label, systemImage: icon) }
+        Button(action: { action(); wake() }) { Label(T(label), systemImage: icon) }
             .buttonStyle(BPActionStyle(primary: active))
             .focused($focus, equals: .chip(id ?? label))
     }

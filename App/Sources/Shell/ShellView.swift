@@ -227,7 +227,7 @@ struct TopBarView: View {
                     // Calendar: nav-items.tsx unseen-reminder badge (Calendar/CalendarPanels.swift).
                     .overlay(alignment: .topTrailing) { if r == .calendar { CalendarTabBadge() } }
                     .accessibilityIdentifier("tab-\(r.rawValue)")
-                    .accessibilityLabel(r.label)
+                    .accessibilityLabel(T(r.label))
             }
             Spacer(minLength: BP.px(8))
             Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(26))
@@ -265,7 +265,7 @@ struct TopBarView: View {
 
     @ViewBuilder private func tabHint(_ r: Room) -> some View {
         if focusedTab == r {
-            Text(r.label)
+            Text(T(r.label))
                 .font(BP.sans(12, .semibold)).foregroundStyle(BP.ink)
                 .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
@@ -335,7 +335,7 @@ struct HintBarView: View {
         let usable = pads.usingPad ? shown : shown.filter { $0.remoteGlyph != nil }
         return usable.map { a in
             let glyph = (pads.usingPad ? a.padGlyph : a.remoteGlyph) ?? a.keyGlyph
-            return Hint(id: a.rawValue, glyph: glyph, label: a.label)
+            return Hint(id: a.rawValue, glyph: glyph, label: T(a.label))
         }
     }
 
@@ -365,7 +365,7 @@ struct RoomPlaceholderView: View {
     let room: Room
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text(room.label).font(BP.display(36)).foregroundStyle(BP.ink)
+            Text(T(room.label)).font(BP.display(36)).foregroundStyle(BP.ink)
             Text("Coming in Stage \(room.arrivesIn).").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
         }
         .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))

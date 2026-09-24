@@ -489,7 +489,7 @@ struct DetailView: View {
 
     private func creditLine(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: BP.px(8)) {
-            Text(label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+            Text(T(label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
             Text(value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
         }
     }

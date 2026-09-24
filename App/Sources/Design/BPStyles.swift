@@ -131,10 +131,10 @@ struct BPField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
-            Text(label).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
+            Text(T(label)).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
             HStack(spacing: BP.px(8)) {
                 Group {
-                    if secure { SecureField(placeholder, text: $text) } else { TextField(placeholder, text: $text) }
+                    if secure { SecureField(T(placeholder), text: $text) } else { TextField(T(placeholder), text: $text) }
                 }
                 .font(BP.sans(17))
                 .keyboardType(keyboard)
@@ -165,7 +165,7 @@ struct BPField: View {
 struct BPNote: View {
     let text: String
     var tone: Color = BP.inkMuted
-    var body: some View { Text(text).font(BP.sans(14)).foregroundStyle(tone).fixedSize(horizontal: false, vertical: true) }
+    var body: some View { Text(T(text)).font(BP.sans(14)).foregroundStyle(tone).fixedSize(horizontal: false, vertical: true) }
 }
 
 /// index.css html[data-theme-card="glass"] on a surface panel: an ink sheen from the top and an

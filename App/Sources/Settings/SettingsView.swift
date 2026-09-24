@@ -25,7 +25,7 @@ struct SettingsView: View {
                 section("Appearance") { AppearancePanel() }
                 section("Harbor account") {
                     if let s = account.session {
-                        row("Signed in as \(s.user.username)", detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")
+                        row(T("Signed in as %@", s.user.username), detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")
                         Button("Sign out") { app.signOutHarbor() }.buttonStyle(BPActionStyle())
                     } else {
                         row("Not signed in", detail: "Sync, themes and friends")
@@ -35,7 +35,7 @@ struct SettingsView: View {
                 section("Stremio") {
                     if let p = profiles.active {
                         if let s = profiles.stremioSession(for: p.id) {
-                            row("Signed in as \(s.user.fullname ?? s.user.email)", detail: "For the \(p.name) profile")
+                            row(T("Signed in as %@", s.user.fullname ?? s.user.email), detail: "For the \(p.name) profile")
                             Button("Sign out") { profiles.setStremioSession(nil, for: p.id) }.buttonStyle(BPActionStyle())
                         } else {
                             row("Not signed in", detail: "Your Stremio library for the \(p.name) profile")
@@ -200,7 +200,7 @@ struct SettingsView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text(title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             content()
         }
         .padding(BP.px(22))
@@ -214,13 +214,13 @@ struct SettingsView: View {
     }
 
     private func onOff(_ label: String, _ on: Bool, key: String) -> some View {
-        Button("\(label): \(on ? "On" : "Off")") { Task { try? await settings.patch([key: .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
+        Button("\(T(label)): \(T(on ? "On" : "Off"))") { Task { try? await settings.patch([key: .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
     }
 
     private func row(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: BP.px(3)) {
-            Text(title).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
-            Text(detail).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+            Text(T(title)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
+            Text(T(detail)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
         }
     }
 }

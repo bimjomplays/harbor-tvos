@@ -940,8 +940,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("settingsRoom.flagEmoji(Portuguese (Brazil))", engine.settingsRoom.flagEmoji("Portuguese (Brazil)"), "\u{1F1E7}\u{1F1F7}");
   engine.settingsRoom.commit("uiLanguage", "fr", "default", true);
   r.eq("commit uiLanguage fr reaches settings, i18n and the pane", [engine.settingsRoom.languages("default", true).current, engine.settingsRoom.applyUiLanguage("default", true), engine.settingsRoom.pane("default", true).language.greeting], ["fr", "fr", "Bonjour"]);
+  r.eq("installUiCatalog registers a host-fed catalog and t() follows it", [engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.installUiCatalog("fr", JSON.stringify({ "This is how a subtitle will look.": "Voici un sous-titre." })), engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.pane("default", true).subtitle.text], [false, true, true, "Voici un sous-titre."]);
   engine.settingsRoom.commit("uiLanguage", "en", "default", true);
-  const pane = engine.settingsRoom.pane("default", true);
+  const pane =engine.settingsRoom.pane("default", true);
   r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 3, "Off"]);
   r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
   const setupKey = engine.settings.sourceKeyFor("default", true);

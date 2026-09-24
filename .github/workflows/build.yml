@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
-    paths: ["App/**", "project.yml", "ci/**", "engine/**", "rust/**", ".github/workflows/build.yml"]
+    paths: ["App/**", "project.yml", "ci/**", "engine/**", "rust/**", "tools/**", ".github/workflows/build.yml"]
   workflow_dispatch:
     inputs:
       testflight:
@@ -41,6 +41,7 @@ jobs:
       - name: Build engine bundle
         run: |
           cd engine && npm ci --no-audit --no-fund && node build.mjs
+          node ../tools/build_locales.mjs
           mkdir -p ../App/Engine && cp dist/harbor-engine.js ../App/Engine/
       - name: Generate project
         run: |
@@ -113,6 +114,7 @@ jobs:
       - name: Build engine bundle
         run: |
           cd engine && npm ci --no-audit --no-fund && node build.mjs
+          node ../tools/build_locales.mjs
           mkdir -p ../App/Engine && cp dist/harbor-engine.js ../App/Engine/
       - name: Generate project
         run: |

@@ -76,7 +76,7 @@ struct PlayerLineLabel: View {
 struct PlayerRowLabel: View {
     let text: String
     var body: some View {
-        Text(text).font(BP.sans(11.5, .bold)).textCase(.uppercase).tracking(1.8).foregroundStyle(BP.inkSubtle)
+        Text(T(text)).font(BP.sans(11.5, .bold)).textCase(.uppercase).tracking(1.8).foregroundStyle(BP.inkSubtle)
             .fixedSize()
             .padding(.trailing, BP.px(6))
     }

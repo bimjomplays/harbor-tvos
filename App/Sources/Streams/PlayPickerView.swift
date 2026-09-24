@@ -560,8 +560,8 @@ struct StreamDialogShell<Extra: View, Buttons: View>: View {
             BP.void_.opacity(0.8).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(22)) {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
-                    Text(title).font(BP.display(26)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
-                    Text(message).font(BP.sans(15)).foregroundStyle(BP.inkSubtle).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    Text(T(title)).font(BP.display(26)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
+                    Text(T(message)).font(BP.sans(15)).foregroundStyle(BP.inkSubtle).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                 }
                 extra
                 HStack(spacing: BP.px(12)) { buttons }

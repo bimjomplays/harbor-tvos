@@ -73,7 +73,8 @@ final class SettingsBridge: ObservableObject {
     /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).
     @Published var sportsDeclined = false
 
-    @Published private(set) var slice = Slice()
+    /// T() and RootView's locale follow the slice's uiLanguage the moment it changes (App/L10n.swift).
+    @Published private(set) var slice = Slice() { didSet { L10n.setLanguage(slice.uiLanguage) } }
     @Published private(set) var loaded = false
 
     private var storageKey: String {
@@ -95,13 +96,17 @@ final class SettingsBridge: ObservableObject {
             }
         }
         let key = await storageKey
-        if let s: Slice = try? await HarborEngine.shared.call("settings.load", [key]) {
+        let s: Slice? = try? await HarborEngine.shared.call("settings.load", [key])
+        // lib/i18n follows the profile's uiLanguage (store.ts only reads it once, at load), with
+        // its catalog installed first (load-locale.ts). Both land before the slice is published,
+        // so the rooms a language change rebuilds already read translated engine copy.
+        let p = ProfilesStore.shared.active
+        let lang: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [p?.id ?? "default", p?.linked ?? true])
+        if let lang = lang ?? s?.uiLanguage { await L10n.installEngineCatalog(lang) }
+        if let s {
             slice = s
             loaded = true
         }
-        // lib/i18n follows the profile's uiLanguage (store.ts only reads it once, at load).
-        let p = ProfilesStore.shared.active
-        let _: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [p?.id ?? "default", p?.linked ?? true])
     }
 
     func patch(_ change: [String: AnyJSON]) async throws {

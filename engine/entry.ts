@@ -615,6 +615,9 @@ export const settingsRoom = {
   languages: settingsRoomGlue.languages,
   /** Re-applies the profile's uiLanguage to lib/i18n after a settings reload. */
   applyUiLanguage: settingsRoomGlue.applyUiLanguage,
+  /** load-locale.ts ensureUiLocale, fed by the host: registers App/Locales/<lang>.json. */
+  installUiCatalog: settingsRoomGlue.installUiCatalog,
+  uiCatalogInstalled: settingsRoomGlue.uiCatalogInstalled,
   flagEmoji: settingsRoomGlue.flagEmoji,
 };
 
