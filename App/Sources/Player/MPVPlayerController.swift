@@ -191,6 +191,15 @@ final class MPVPlayerController: UIViewController {
         var title: String?
         var codec: String?
         var selected: Bool
+        // lib/player/mpv.ts track-list mapping: the flags the Big Picture panels filter and badge on.
+        var external = false
+        var forced = false
+        var hearingImpaired = false
+        var isDefault = false
+        /// Shown as the second subtitle (mpv secondary-sid); `selected` then stays false.
+        var secondary = false
+        var externalFilename: String?
+        var channels: String?
         var label: String {
             let base = [title, lang.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
             return base.isEmpty ? "\(type == "sub" ? "Subtitle" : "Audio") \(id)" : base
@@ -203,14 +212,56 @@ final class MPVPlayerController: UIViewController {
         var count: Int64 = 0
         mpv_get_property(mpv, "track-list/count", MPV_FORMAT_INT64, &count)
         var out: [Track] = []
+        let secondarySid = string("secondary-sid")
         for i in 0..<Int(count) {
             let type = string("track-list/\(i)/type") ?? ""
             guard type == "audio" || type == "sub" else { continue }
             let id = Int(string("track-list/\(i)/id") ?? "") ?? 0
-            out.append(Track(id: id, type: type, lang: string("track-list/\(i)/lang"), title: string("track-list/\(i)/title"),
-                             codec: string("track-list/\(i)/codec"), selected: string("track-list/\(i)/selected") == "yes"))
+            let isSelected = string("track-list/\(i)/selected") == "yes"
+            // mpv.ts: a selected sub whose main-selection is 1 (or, on older mpv, the secondary-sid) is the 2nd one.
+            let mainSelection = string("track-list/\(i)/main-selection")
+            let isSecondary = type == "sub" && isSelected && (mainSelection == "1" || (mainSelection == nil && secondarySid == String(id)))
+            var t = Track(id: id, type: type, lang: string("track-list/\(i)/lang"), title: string("track-list/\(i)/title"),
+                          codec: string("track-list/\(i)/codec"), selected: isSelected && !isSecondary)
+            t.external = string("track-list/\(i)/external") == "yes"
+            t.forced = string("track-list/\(i)/forced") == "yes"
+            t.hearingImpaired = string("track-list/\(i)/hearing-impaired") == "yes"
+            t.isDefault = string("track-list/\(i)/default") == "yes"
+            t.secondary = isSecondary
+            t.externalFilename = string("track-list/\(i)/external-filename")
+            t.channels = string("track-list/\(i)/demux-channels")
+            out.append(t)
         }
         return out
+    }
+
+    /// bp-player-subtitles "2nd" (lib/player/secondary-sub.ts): mpv's secondary-sid, or off.
+    func setSecondarySub(_ track: Track?) {
+        guard let mpv else { return }
+        check(mpv_set_property_string(mpv, "secondary-sid", track.map { String($0.id) } ?? "no"))
+    }
+
+    /// bp-player-sources BpAudioLane "Sync Offset": mpv audio-delay in seconds.
+    func setAudioDelay(_ seconds: Double) { command("set", ["audio-delay", String(format: "%.2f", seconds)]) }
+
+    /// bp-player-rail mute chip: mpv's `mute` property.
+    func setMuted(_ muted: Bool) {
+        guard let mpv else { return }
+        check(mpv_set_property_string(mpv, "mute", muted ? "yes" : "no"))
+    }
+
+    func isMuted() -> Bool { string("mute") == "yes" }
+
+    /// bp-player-scrub buffered fill: the last timestamp the demuxer holds (demuxer-cache-time).
+    func bufferedSec() -> Double { Double(string("demuxer-cache-time") ?? "") ?? 0 }
+
+    /// The stream's file name (mpv `filename`), the release evidence for the subtitle best match.
+    func streamFilename() -> String? { string("filename") }
+
+    /// bp-subtitle-tune BpSubtitleLook: re-apply the viewer's subtitle style to the running player.
+    func refreshSubtitleStyle() {
+        guard let mpv else { return }
+        applySubtitleStyle(mpv, live: true)
     }
 
     func select(track: Track?, type: String) {
@@ -247,7 +298,11 @@ final class MPVPlayerController: UIViewController {
     }
 
     /// src/lib/player/sub-style.ts applySubStyle → mpv sub-* options, from the viewer's settings.
-    private func applySubtitleStyle(_ handle: OpaquePointer) {
+    /// `live`: the player is running, so the values go through mpv_set_property_string.
+    private func applySubtitleStyle(_ handle: OpaquePointer, live: Bool = false) {
+        func set(_ name: String, _ value: String) {
+            check(live ? mpv_set_property_string(handle, name, value) : mpv_set_option_string(handle, name, value))
+        }
         let s = SettingsBridge.shared.slice
         let opacity = s.subOpacity ?? 1
         func mpvColor(_ hex: String?, _ alpha: Double) -> String {
@@ -258,21 +313,21 @@ final class MPVPlayerController: UIViewController {
         }
         let style = s.subStyle ?? "shadow"
         let fontsDir = Bundle.main.bundleURL.path
-        check(mpv_set_option_string(handle, "sub-fonts-dir", fontsDir))
-        check(mpv_set_option_string(handle, "sub-font", "Switzer"))
-        check(mpv_set_option_string(handle, "sub-font-size", "32"))
-        check(mpv_set_option_string(handle, "sub-scale", String(min(max((s.subFontSize ?? 32) / 32, 0.4), 4))))
-        check(mpv_set_option_string(handle, "sub-color", mpvColor(s.subFontColor, opacity)))
-        check(mpv_set_option_string(handle, "sub-border-color", mpvColor(s.subBorderColor, opacity)))
-        check(mpv_set_option_string(handle, "sub-border-size", String(s.subBorderSize ?? 0)))
-        check(mpv_set_option_string(handle, "sub-back-color", style == "box" ? mpvColor(s.subBoxColor, (s.subBoxOpacity ?? 0.6) * opacity) : "#00000000"))
-        check(mpv_set_option_string(handle, "sub-shadow-color", mpvColor("#000000", opacity)))
-        check(mpv_set_option_string(handle, "sub-shadow-offset", style == "shadow" ? "1.4" : "0"))
-        check(mpv_set_option_string(handle, "sub-margin-y", String(Int(min(max(s.subMarginY ?? 12, 0), 100)))))
-        check(mpv_set_option_string(handle, "sub-align-x", s.subAlignX ?? "center"))
-        check(mpv_set_option_string(handle, "sub-spacing", String(s.subLineSpacing ?? 0)))
-        check(mpv_set_option_string(handle, "sub-bold", (s.subBold ?? false) ? "yes" : "no"))
-        check(mpv_set_option_string(handle, "sub-pos", String(Int(min(max(100 - (s.subMarginY ?? 12), 0), 100)))))
+        if !live { set("sub-fonts-dir", fontsDir) }
+        set("sub-font", "Switzer")
+        set("sub-font-size", "32")
+        set("sub-scale", String(min(max((s.subFontSize ?? 32) / 32, 0.4), 4)))
+        set("sub-color", mpvColor(s.subFontColor, opacity))
+        set("sub-border-color", mpvColor(s.subBorderColor, opacity))
+        set("sub-border-size", String(s.subBorderSize ?? 0))
+        set("sub-back-color", style == "box" ? mpvColor(s.subBoxColor, (s.subBoxOpacity ?? 0.6) * opacity) : "#00000000")
+        set("sub-shadow-color", mpvColor("#000000", opacity))
+        set("sub-shadow-offset", style == "shadow" ? "1.4" : "0")
+        set("sub-margin-y", String(Int(min(max(s.subMarginY ?? 12, 0), 100))))
+        set("sub-align-x", s.subAlignX ?? "center")
+        set("sub-spacing", String(s.subLineSpacing ?? 0))
+        set("sub-bold", (s.subBold ?? false) ? "yes" : "no")
+        set("sub-pos", String(Int(min(max(100 - (s.subMarginY ?? 12), 0), 100))))
     }
 
     /// Pick the first audio track matching the preferred languages (in order); subtitles stay

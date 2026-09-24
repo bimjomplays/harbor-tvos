@@ -178,7 +178,8 @@ struct DetailView: View {
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
                          onChooseAnother: { pickerAuto = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
-                         onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
+                         onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
+                         onPreviousEpisode: previousEpisodeAction(t.context)) { natural in
                 playing = nil
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
@@ -188,6 +189,20 @@ struct DetailView: View {
                     if next.season > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; picker = (model.meta, next.playEpisode) } }
                 }
             }
+        }
+    }
+
+    /// bp-player-controls "Previous episode": the episode before this one opens its picker (after
+    /// the player's cover has dismissed, like Switch source); nil on the first episode or a movie.
+    private func previousEpisodeAction(_ ctx: PlaybackContext) -> (() -> Void)? {
+        guard let s = ctx.season, let e = ctx.episode,
+              let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx > 0 else { return nil }
+        let prev = model.episodes[idx - 1]
+        guard prev.season > 0 else { return nil }
+        let episode = prev.playEpisode
+        return {
+            pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, episode) }
         }
     }
 
