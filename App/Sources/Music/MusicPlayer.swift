@@ -584,10 +584,13 @@ final class MusicPlayer: ObservableObject {
     private static func readVolume() -> Double {
         // A viewer who listened before the level existed heard both engines at full: they keep it
         // rather than a sudden drop to upstream's 0.82 (about -5 dB streams, -11 dB Spotify) (review 37).
-        if KeyValueStore.shared.get(volumeKey) == nil,
-           KeyValueStore.shared.get("harbor.music.recents.v1") != nil || KeyValueStore.shared.get("harbor.music.liked.v1") != nil {
-            try? KeyValueStore.shared.set("1", for: volumeKey)
-            return 1
+        // One-shot: the first read stores the level either way, so a new listener's own history
+        // (recents written by their first play) can't lift them to 1.0 on the next launch (review 38).
+        if KeyValueStore.shared.get(volumeKey) == nil {
+            let listenedBefore = KeyValueStore.shared.get("harbor.music.recents.v1") != nil || KeyValueStore.shared.get("harbor.music.liked.v1") != nil
+            let level = listenedBefore ? 1.0 : 0.82
+            try? KeyValueStore.shared.set(String(level), for: volumeKey)
+            return level
         }
         let parsed = Double(KeyValueStore.shared.get(volumeKey) ?? "0.82") ?? .nan
         return parsed.isFinite ? max(0, min(1, parsed)) : 0.82

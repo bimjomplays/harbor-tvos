@@ -91,11 +91,15 @@ struct KidsGameArcade: View {
     }
 
     var body: some View {
-        Group {
+        // The arcade stays mounted (hidden, not focusable) under an open game, so its scroll position
+        // and lazily built cards are still there when the game closes and focus returns (review 38).
+        ZStack {
+            arcade
+                .opacity(playing == nil ? 1 : 0)
+                .disabled(playing != nil)
+                .accessibilityHidden(playing != nil)
             if let game = playing {
                 KidsGameHandoff(game: game, onBack: { playing = nil })
-            } else {
-                arcade
             }
         }
         .onChange(of: playing) { old, now in
@@ -162,12 +166,18 @@ struct KidsGameHandoff: View {
     let game: KidsArcadeGame
     let onBack: () -> Void
     private let qr: UIImage?
+    private static var qrCache: [String: UIImage] = [:]
     @FocusState private var pickFocused: Bool
 
     init(game: KidsArcadeGame, onBack: @escaping () -> Void) {
         self.game = game
         self.onBack = onBack
-        self.qr = QRCode.image(game.embedURL)
+        // One Core Image pass per game, not per body re-evaluation (review 38).
+        if let hit = Self.qrCache[game.embedURL] { self.qr = hit } else {
+            let made = QRCode.image(game.embedURL)
+            if let made { Self.qrCache[game.embedURL] = made }
+            self.qr = made
+        }
     }
 
     var body: some View {
