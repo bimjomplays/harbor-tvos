@@ -753,6 +753,7 @@ r.ok("benchmark still works", (() => {
   };
   const m = rec.engine.music;
   r.eq("music.copy speaks upstream's English", [m.copy()["music.title"], m.copy()["music.row.upNext"]], ["Music", "Up next"]);
+  r.eq("music.copy carries the dock's volume copy", [m.copy()["music.volume"], m.copy()["music.mute"], m.copy()["music.unmute"]], ["Music volume", "Mute", "Unmute"]);
   const conns = m.connections();
   r.ok("music.connections lists catalog, Jellyfin, Plex, Navidrome, SoundCloud, Spotify and Last.fm; SoundCloud waits for consent, Spotify for a sign-in", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,subsonic,soundcloud,spotify,lastfm" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "spotify").status === "disconnected" && conns.find((c) => c.id === "spotify").detail === "Bring your own Spotify app" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
   const h = await m.home(true, null);

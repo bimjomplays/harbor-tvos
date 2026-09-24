@@ -90,7 +90,17 @@ final class MusicPlayer: ObservableObject {
     private var radioExtending = false
     private var radioGeneration = 0
 
+    /// player.ts state.volume: the music's own level, 0...1 (upstream's VOLUME_KEY, 0.82 until the
+    /// viewer changes it). Both engines follow it; the TV's volume stays with the remote.
+    @Published private(set) var volume: Double = 0.82
+    /// music-dock.tsx audibleVolume: the level Unmute goes back to.
+    private var audibleVolume: Double = 0.82
+    private static let volumeKey = "harbor.music.volume.v1"
+
     private init() {
+        volume = Self.readVolume()
+        if volume > 0 { audibleVolume = volume }
+        player.volume = Self.streamGain(volume)
         player.actionAtItemEnd = .advance
         // Every callback below is @Sendable (never actor-isolated) and hops to the main actor.
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { @Sendable [weak self] _ in
@@ -568,6 +578,44 @@ final class MusicPlayer: ObservableObject {
         try? session.setActive(true)
     }
 
+    // MARK: - volume (player.ts setMusicVolume, music-dock.tsx mute / slider)
+
+    /// player.ts readVolume
+    private static func readVolume() -> Double {
+        let parsed = Double(KeyValueStore.shared.get(volumeKey) ?? "0.82") ?? .nan
+        return parsed.isFinite ? max(0, min(1, parsed)) : 0.82
+    }
+
+    /// player.ts setMusicVolume: clamped (musicVolumeCeiling is 1: the TV has no volume boost),
+    /// remembered, and applied (music_engine_set_volume). Both engines get it, so whichever plays
+    /// next starts at this level too (music_play_track passes state.volume).
+    func setVolume(_ value: Double) {
+        let next = value.isFinite ? max(0, min(1, value)) : 0.82
+        try? KeyValueStore.shared.set(String(next), for: Self.volumeKey)
+        volume = next
+        if next > 0 { audibleVolume = next }
+        player.volume = Self.streamGain(next)
+        spotify.setVolume(next)
+    }
+
+    /// The remote's step: music-dock.tsx's wheel moves 5 % a notch (kept to whole percents).
+    func stepVolume(by delta: Double) {
+        setVolume(((volume + delta) * 100).rounded() / 100)
+    }
+
+    /// music-dock.tsx mute button: to 0, or back to the last audible level.
+    func toggleMute() {
+        setVolume(volume > 0 ? 0 : audibleVolume)
+    }
+
+    /// engine.rs set_volume hands mpv `volume * 100`, and mpv scales its volume cubically
+    /// (player/audio.c audio_update_volume). AVPlayer's volume is a linear gain, so the cube keeps
+    /// upstream's curve for the stream engine. Spotify takes the 0...1 value as upstream's mixer does.
+    nonisolated static func streamGain(_ volume: Double) -> Float {
+        let v = volume.isFinite ? max(0, min(1, volume)) : 0.82
+        return Float(v * v * v)
+    }
+
     // MARK: - Spotify (music/spotify through SpotifyPlayback)
 
     /// engine/music.ts prepare() hands back the Spotify URI with this marker instead of a URL.
@@ -580,7 +628,7 @@ final class MusicPlayer: ObservableObject {
         player.pause()
         clearItems()
         do {
-            try spotify.play(uri: prepared.stream.url)
+            try spotify.play(uri: prepared.stream.url, volume: volume)
         } catch let failure as SpotifyPlayback.Failure {
             throw MusicPlaybackError.message(failure.message)
         }

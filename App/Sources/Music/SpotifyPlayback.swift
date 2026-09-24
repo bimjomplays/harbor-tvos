@@ -222,11 +222,18 @@ final class SpotifyPlayback: ObservableObject {
 
     // MARK: transport (control.rs)
 
-    /// player.rs play: one track from the start. Volume stays at full; the TV's own volume rules.
-    func play(uri: String) throws {
+    /// control.rs play: one track from the start at the music volume (0...1, the soft mixer).
+    func play(uri: String, volume: Double) throws {
         activateSession()
         output.start()
-        _ = try Self.now(OK.self) { harbor_spotify_play(uri, 1.0) }
+        _ = try Self.now(OK.self) { harbor_spotify_play(uri, volume) }
+    }
+
+    /// control.rs set_volume: librespot's soft mixer scales what it decodes from now on; the ring
+    /// already holds up to half a second at the old level, so the change is heard within that.
+    /// Without a session this is a no-op (the next play() passes the level).
+    func setVolume(_ volume: Double) {
+        _ = try? Self.now(OK.self) { harbor_spotify_set_volume(volume) }
     }
 
     /// A pause drops the buffered audio in Rust (set_paused), so the output has nothing left to
