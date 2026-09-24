@@ -878,6 +878,8 @@ export const calendar = {
   setPref: calendarGlue.setPref,
   customRail: calendarGlue.customRail,
   customToggle: calendarGlue.customToggle,
+  customPeopleSearch: calendarGlue.customPeopleSearch,
+  customAddPerson: calendarGlue.customAddPerson,
   reminders: calendarGlue.reminders,
   removeReminder: calendarGlue.removeReminder,
   unseen: calendarGlue.unseen,

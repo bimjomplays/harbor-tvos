@@ -490,6 +490,30 @@ export function customToggle(profileId: string, linked: boolean, key: string): C
   return customRail(pid, lk);
 }
 
+// config/people-field.tsx: search TMDB people (searchAll, 8 results) and add one to the Custom
+// filter as config-rail.tsx addPerson does ({id, name, profile, role: "any"}).
+import { searchAll } from "@/lib/search";
+export type PeopleHit = { id: number; name: string; profile: string | null; knownFor: string; tracked: boolean };
+export async function customPeopleSearch(profileId: string, linked: boolean, query: string): Promise<{ needsKey: boolean; people: PeopleHit[] }> {
+  const s = loadEffective(profileId || "default", linked !== false);
+  const q = (query ?? "").trim();
+  if (!s.tmdbKey) return { needsKey: true, people: [] };
+  if (!q) return { needsKey: false, people: [] };
+  const tracked = new Set(s.customCalendar.trackedPeople.map((p) => p.id));
+  const r = await searchAll(s.tmdbKey, q).catch(() => null);
+  const people = (r?.people ?? []).slice(0, 8).map((p) => ({ id: p.id, name: p.name, profile: p.profile ?? null, knownFor: p.knownFor ?? "", tracked: tracked.has(p.id) }));
+  return { needsKey: false, people };
+}
+export function customAddPerson(profileId: string, linked: boolean, person: { id: number; name: string; profile: string | null }): CustomRail {
+  const pid = profileId || "default";
+  const lk = linked !== false;
+  const value: CustomCalendar = loadEffective(pid, lk).customCalendar;
+  if (person && Number.isFinite(person.id) && !value.trackedPeople.some((x) => x.id === person.id)) {
+    writeSettings(pid, lk, { customCalendar: { ...value, trackedPeople: [...value.trackedPeople, { id: person.id, name: person.name, profile: person.profile ?? null, role: "any" }] } });
+  }
+  return customRail(pid, lk);
+}
+
 // ------------------------------------------------------------------------ reminders
 // components/reminders-manager.tsx summary(): "Episodes + Seasons · Chime".
 function reminderSummary(entry: ReminderEntry): string {

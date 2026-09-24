@@ -1019,6 +1019,17 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("calendar.month: Custom source reports the rail summary", custom.source === "custom" && custom.custom && custom.custom.activeCount === 2, JSON.stringify(custom.custom));
   rail = E.calendar.customToggle("default", true, "clear");
   r.eq("calendar.customToggle clear resets the filters", rail.activeCount, 0);
+  {
+    const found = await E.calendar.customPeopleSearch("default", true, "nolan");
+    const blank = await E.calendar.customPeopleSearch("default", true, "  ");
+    r.ok("calendar.customPeopleSearch answers with the key present (people list, blank query empty)", found.needsKey === false && Array.isArray(found.people) && blank.people.length === 0, JSON.stringify({ found, blank }));
+    let pr = E.calendar.customAddPerson("default", true, { id: 525, name: "Christopher Nolan", profile: null });
+    pr = E.calendar.customAddPerson("default", true, { id: 525, name: "Christopher Nolan", profile: null });
+    const people = pr.groups.find((g) => g.id === "people");
+    r.ok("calendar.customAddPerson adds once (config-rail addPerson, role any)", people.count === 1 && people.chips[0].key === "person:525" && JSON.stringify(E.settings.loadForProfile("default", true).customCalendar.trackedPeople) === JSON.stringify([{ id: 525, name: "Christopher Nolan", profile: null, role: "any" }]), JSON.stringify(people));
+    pr = E.calendar.customToggle("default", true, "person:525");
+    r.eq("calendar.customToggle person:<id> removes the tracked person", pr.groups.find((g) => g.id === "people").count, 0);
+  }
 
   r.eq("calendar.reminders starts empty", E.calendar.reminders().length, 0);
   E.actions.toggleReminder({ id: "tt9999999", type: "series", name: "Remind Show" });

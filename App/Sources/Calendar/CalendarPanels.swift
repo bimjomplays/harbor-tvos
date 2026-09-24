@@ -165,12 +165,13 @@ struct RemindersManagerView: View {
 
 /// calendar/config/config-rail.tsx for the Custom source: the result pill, Show (media types),
 /// Genres / Where to watch / Origin country / Track people chip groups, the two Trakt sources and
-/// Clear all. People are added on the desktop (PeopleField searches TMDB); here they can be removed.
+/// Clear all. People are added through CalendarPeopleSearchView (PeopleField: TMDB search).
 struct CalendarConfigRailView: View {
     let resultCount: Int
     @Environment(\.dismiss) private var dismiss
     @State private var rail: Rail?
     @State private var open: Set<String> = ["genres"]
+    @State private var addingPerson = false
 
     struct Chip: Decodable, Identifiable, Equatable { var key: String; var label: String; var selected: Bool; var id: String { key } }
     struct RailGroup: Decodable, Identifiable, Equatable { var id: String; var title: String; var count: Int; var summary: String; var chips: [Chip] }
@@ -185,6 +186,7 @@ struct CalendarConfigRailView: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             BP.void_.opacity(0.55).ignoresSafeArea()
+            peopleSheet
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     HStack(alignment: .firstTextBaseline) {
@@ -278,8 +280,13 @@ struct CalendarConfigRailView: View {
                 if g.count > 0 { Button("Clear") { toggle("clear:\(g.id)") }.buttonStyle(BPActionStyle()) }
             }
             if open.contains(g.id) {
+                // people-field.tsx: the search that adds a person (TMDB people, 8 results).
+                if g.id == "people" {
+                    Button { addingPerson = true } label: { Label(T("Search actors, directors…"), systemImage: "person.badge.plus") }
+                        .buttonStyle(BPActionStyle())
+                }
                 if g.chips.isEmpty {
-                    BPNote(text: g.id == "people" ? "Add people from Harbor on your computer." : "Nothing here yet.")
+                    if g.id != "people" { BPNote(text: T("Nothing here yet.")) }
                 } else {
                     LazyVGrid(columns: Self.chipColumns, alignment: .leading, spacing: BP.px(6)) {
                         ForEach(g.chips) { c in chip(c) }
@@ -308,6 +315,13 @@ struct CalendarConfigRailView: View {
     private func load() async {
         let p = profile
         rail = try? await HarborEngine.shared.call("calendar.customRail", [p.id, p.linked])
+    }
+
+    /// The sheet is mounted from the rail's body (below) so the panel keeps its own focus state.
+    fileprivate var peopleSheet: some View {
+        Color.clear.frame(width: 0, height: 0).fullScreenCover(isPresented: $addingPerson) {
+            CalendarPeopleSearchView(onAdded: { next in rail = next })
+        }
     }
 
     private func toggle(_ key: String) {
@@ -364,5 +378,89 @@ struct ReminderToastHost: View {
         .animation(BP.easeFast, value: center.toast)
         .allowsHitTesting(false)
         .task { await center.attach() }
+    }
+}
+
+
+/// calendar/config/people-field.tsx on the TV: type a name (or on the phone), TMDB people after
+/// 220 ms, Select adds the person (config-rail.tsx addPerson, role "any"); already tracked people
+/// are shown but disabled, as upstream.
+struct CalendarPeopleSearchView: View {
+    let onAdded: (CalendarConfigRailView.Rail) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var result: Found?
+    @State private var busy = false
+
+    struct Person: Decodable, Identifiable { var id: Int; var name: String; var profile: String?; var knownFor: String; var tracked: Bool }
+    struct Found: Decodable { var needsKey: Bool; var people: [Person] }
+    private struct Pick: Encodable { var id: Int; var name: String; var profile: String? }
+
+    private var profile: (id: String, linked: Bool) {
+        let p = ProfilesStore.shared.active
+        return (p?.id ?? "default", p?.linked ?? true)
+    }
+
+    var body: some View {
+        ZStack {
+            BP.void_.opacity(0.94).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: BP.px(14)) {
+                Text(T("Track people")).font(BP.display(30)).foregroundStyle(BP.ink)
+                BPField(label: T("Track people"), placeholder: T("Search actors, directors…"), text: $query, phone: true)
+                    .frame(maxWidth: BP.px(720))
+                if result?.needsKey == true {
+                    BPNote(text: T("Add a TMDB key in settings first"), tone: BP.danger)
+                } else if busy {
+                    ProgressView().tint(BP.inkMuted)
+                }
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: BP.px(8)) {
+                        ForEach(result?.people ?? []) { person in
+                            Button { add(person) } label: {
+                                HStack(spacing: BP.px(12)) {
+                                    RemoteImage(url: person.profile).frame(width: BP.px(44), height: BP.px(44)).clipShape(Circle())
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(person.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                        if !person.knownFor.isEmpty { Text(person.knownFor).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1) }
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: person.tracked ? "checkmark" : "plus").foregroundStyle(BP.inkMuted)
+                                }
+                                .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(8))
+                                .frame(width: BP.px(720), alignment: .leading)
+                            }
+                            .buttonStyle(BPTileStyle(radius: BP.rMD))
+                            .disabled(person.tracked)
+                        }
+                    }
+                    .padding(.vertical, BP.px(6))
+                }
+                .scrollClipDisabled()
+                Button(T("Close")) { dismiss() }.buttonStyle(BPActionStyle())
+            }
+            .padding(BP.gutter).padding(.top, BP.px(40))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .onExitCommand { dismiss() }
+        .task(id: query) {
+            // people-field.tsx: 220 ms after the last keystroke.
+            try? await Task.sleep(for: .milliseconds(220))
+            if Task.isCancelled { return }
+            busy = true
+            let p = profile
+            let found: Found? = try? await HarborEngine.shared.call("calendar.customPeopleSearch", [p.id, p.linked, query])
+            if !Task.isCancelled { result = found }
+            busy = false
+        }
+    }
+
+    private func add(_ person: Person) {
+        let p = profile
+        Task {
+            if let next: CalendarConfigRailView.Rail = try? await HarborEngine.shared.call("calendar.customAddPerson", [p.id, p.linked, Pick(id: person.id, name: person.name, profile: person.profile)] as [any Encodable]) {
+                onAdded(next)
+            }
+            dismiss()
+        }
     }
 }
