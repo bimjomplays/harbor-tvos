@@ -197,7 +197,8 @@ enum EPUBMarkup {
         } else if bytes.count >= 3, bytes[0] == 0xef, bytes[1] == 0xbb, bytes[2] == 0xbf {
             bytes.removeFirst(3)
         }
-        return Parser(bytes).run()
+        var parser = Parser(bytes)
+        return parser.run()
     }
 
     private struct Parser {

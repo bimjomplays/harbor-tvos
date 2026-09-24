@@ -426,10 +426,14 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
     private func setSpokenLine(_ line: Int) {
         guard let pages = pages else { spokenLine = line; return }
         let full = NSRange(location: 0, length: pages.storage.length)
-        pages.layout.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
+        // NSLayoutManager's temporary attributes are macOS-only; a background colour on the storage
+        // changes no glyph positions, so the pagination stays as it was.
+        pages.storage.beginEditing()
+        pages.storage.removeAttribute(NSAttributedString.Key.backgroundColor, range: full)
         if pages.paragraphRanges.indices.contains(line) {
-            pages.layout.addTemporaryAttribute(.backgroundColor, value: UIColor(rgb: 0xff9f4d, alpha: 0.22), forCharacterRange: pages.paragraphRanges[line])
+            pages.storage.addAttribute(NSAttributedString.Key.backgroundColor, value: UIColor(rgb: 0xff9f4d, alpha: 0.22), range: pages.paragraphRanges[line])
         }
+        pages.storage.endEditing()
         spokenLine = line
         paint += 1
     }
