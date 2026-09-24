@@ -29,6 +29,8 @@ final class SettingsBridge: ObservableObject {
         var subBoxColor: String? = "#000000"
         var subOpacity: Double? = 1
         var subLineSpacing: Double? = 0
+        /// stage-overlays.tsx `!pipMode || subShowInPip`: subtitles stay on in Picture in Picture.
+        var subShowInPip: Bool? = true
         // Anime4K (settings/defaults.ts:235-261), applied by the player through the engine's gates.
         var playerAnime4k: Bool? = false
         var playerAnime4kAnimeOnly: Bool? = true

@@ -10,8 +10,9 @@ struct PlayerSubtitlesPanel: View {
     let title: String
     @Binding var subDelay: Double
     let onClose: () -> Void
-    /// The AVPlayer engine draws sideloaded subtitles itself (html5 bridge), so Find more, Sync and
-    /// Look work on both engines; a second subtitle there must be one of those sideloaded tracks.
+    /// The AVPlayer engine draws every subtitle itself (sideloaded ones as the html5 bridge does, the
+    /// file's own through its legible output), so Find more, Sync and Look work on both engines; a
+    /// second subtitle there must be one of the sideloaded tracks.
     private var mpvExtras: Bool { controller?.supportsMpvExtras ?? true }
 
     enum Lane: Hashable { case tracks, find, sync, style }
@@ -250,7 +251,7 @@ struct PlayerSubtitlesPanel: View {
             note("No tracks match these filters. Try toggling HI/SDH or Forced.")
         }
         if !mpvExtras {
-            note("AVPlayer draws the file's own subtitles itself: Sync and Look change the ones added from Find more.")
+            note("On the AVPlayer engine, a second subtitle has to be one added from Find more.")
         }
     }
 

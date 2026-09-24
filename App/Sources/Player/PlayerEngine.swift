@@ -32,16 +32,28 @@ protocol PlayerEngineControlling: AnyObject {
     func setShaders(_ paths: [String])
     func videoWidth() -> Int
     func addSubtitle(file: URL, title: String, lang: String)
+    /// bridge.ts capabilities().pictureInPicture: the overlay shows its PiP control only when true.
+    var supportsPictureInPicture: Bool { get }
+    var isPictureInPictureActive: Bool { get }
+    /// bridge.ts requestPiP / exitPiP.
+    func startPictureInPicture()
+    func stopPictureInPicture()
 }
 
 extension MPVPlayerController: PlayerEngineControlling {
     var engineKind: PlayerEngineKind { .mpv }
+    // mpv.ts requestPiP() {} / exitPiP() {}: mpv draws into its own Metal layer, which AVKit's
+    // Picture in Picture cannot lift, so the control stays hidden on this engine.
+    var supportsPictureInPicture: Bool { false }
+    var isPictureInPictureActive: Bool { false }
+    func startPictureInPicture() {}
+    func stopPictureInPicture() {}
 }
 
 extension PlayerEngineControlling {
-    /// html5 bridge capabilities: no audio offset, no shaders, and only the engine's own
-    /// (sideloaded) subtitles can be shifted, restyled or drawn second; the file's embedded tracks
-    /// stay with AVPlayer's renderer (NativePlayerController, NativeSubtitleOverlay).
+    /// html5 bridge capabilities: no audio offset, no shaders, and a second subtitle only from the
+    /// engine's own (sideloaded) tracks. Sync and Look apply to every track on both engines: the
+    /// AVPlayer engine draws the file's own tracks too (NativePlayerController, NativeSubtitleOverlay).
     var supportsMpvExtras: Bool { engineKind == .mpv }
 }
 

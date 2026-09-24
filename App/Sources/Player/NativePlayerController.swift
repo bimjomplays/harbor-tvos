@@ -52,6 +52,31 @@ final class NativePlayerController: UIViewController {
     private var lastCueKey = ""
     private let subtitleState = NativeSubtitleState()
     private var cueObserver: Any?
+    private var subtitleHost: UIViewController?
+
+    // The file's own subtitles (the legible AVMediaSelectionGroup) come out through an
+    // AVPlayerItemLegibleOutput with AVPlayer's renderer suppressed, so NativeSubtitleOverlay draws
+    // them too and Sync and Look apply to every track, as on mpv. The output reports each change of
+    // the showing text with the item time it takes effect; the changes are kept as a timeline and
+    // read at `currentTime - delay`, like the sideloaded cues.
+    private struct EmbeddedChange { var time: Double; var text: String }
+    private var subtitleOutput: AVPlayerItemLegibleOutput?
+    private var embeddedTimeline: [EmbeddedChange] = []
+    /// How far ahead the output reports: enough for a negative (early) offset to show on time.
+    private static let legibleLead: Double = 5
+
+    // Picture in Picture (bridge.ts requestPiP / exitPiP, capabilities().pictureInPicture). The
+    // AVPlayerViewController above stays for display matching; PiP lifts a plain AVPlayerLayer of
+    // the same player, attached only while PiP is starting or on.
+    private let pipLayerView = NativePlayerLayerView()
+    private var pip: AVPictureInPictureController?
+    private var pipPossibleObservation: NSKeyValueObservation?
+    private var pipAttempt = 0
+    private var pipStarting = false
+    /// PiP is on (didStart … willStop).
+    private(set) var isPictureInPictureActive = false
+    /// usePipMode's pip://entered / pip://exited: true when PiP starts, false once it is stopping.
+    var onPictureInPicture: ((Bool) -> Void)?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -61,6 +86,8 @@ final class NativePlayerController: UIViewController {
         host.player = player
         host.showsPlaybackControls = false
         host.appliesPreferredDisplayCriteriaAutomatically = true
+        // PiP goes through NativePlayerController's own AVPictureInPictureController (below): the
+        // hidden transport has no PiP button, and AVPlayerViewController has no call to start one.
         host.allowsPictureInPicturePlayback = false
         host.view.backgroundColor = .black
         host.view.isUserInteractionEnabled = false
@@ -69,6 +96,13 @@ final class NativePlayerController: UIViewController {
         host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(host.view)
         host.didMove(toParent: self)
+        // The PiP source: the same picture, drawn only while PiP starts (see startPictureInPicture).
+        pipLayerView.frame = view.bounds
+        pipLayerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        pipLayerView.backgroundColor = .clear
+        pipLayerView.isUserInteractionEnabled = false
+        pipLayerView.playerLayer.videoGravity = .resizeAspect
+        view.addSubview(pipLayerView)
         // subtitle-overlay.tsx over the picture, under PlayerScreen's chrome; never focusable.
         let overlay = UIHostingController(rootView: NativeSubtitleOverlay(state: subtitleState))
         overlay.view.backgroundColor = .clear
@@ -79,6 +113,7 @@ final class NativePlayerController: UIViewController {
         overlay.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(overlay.view)
         overlay.didMove(toParent: self)
+        subtitleHost = overlay
         // tickCues runs on requestAnimationFrame upstream; 20 Hz keeps a cue within 50 ms of its time.
         cueObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 20), queue: .main) { [weak self] _ in
             self?.tickCues()
@@ -105,6 +140,18 @@ final class NativePlayerController: UIViewController {
         timer = nil
         if let cueObserver { player.removeTimeObserver(cueObserver) }
         cueObserver = nil
+        // Leaving the player ends PiP with it (use-player-exit.ts awaits exitPiP first).
+        pipPossibleObservation?.invalidate()
+        pipPossibleObservation = nil
+        if isPictureInPictureActive || pipStarting { pip?.stopPictureInPicture() }
+        pip?.delegate = nil
+        pip = nil
+        pipLayerView.playerLayer.player = nil
+        isPictureInPictureActive = false
+        pipStarting = false
+        onPictureInPicture = nil
+        subtitleOutput?.setDelegate(nil, queue: nil)
+        subtitleOutput = nil
         observations.forEach { $0.invalidate() }
         observations = []
         notes.forEach { NotificationCenter.default.removeObserver($0) }
@@ -138,6 +185,15 @@ final class NativePlayerController: UIViewController {
         if !rest.isEmpty { options["AVURLAssetHTTPHeaderFieldsKey"] = rest }
         let asset = AVURLAsset(url: url, options: options)
         let item = AVPlayerItem(asset: asset)
+        // The file's own subtitles reach NativeSubtitleOverlay through this output (see subtitleOutput).
+        subtitleOutput?.setDelegate(nil, queue: nil)
+        let output = AVPlayerItemLegibleOutput(mediaSubtypesForNativeRepresentation: [])
+        output.suppressesPlayerRendering = true
+        output.advanceIntervalForDelegateInvocation = max(Self.legibleLead, 1 - subDelaySec)
+        output.setDelegate(self, queue: .main)
+        item.add(output)
+        subtitleOutput = output
+        embeddedTimeline = []
         // KVO and notification blocks may arrive off the main thread; everything hops back to it.
         observations.append(item.observe(\.status, options: [.new]) { [weak self] _, _ in
             guard let self else { return }
@@ -280,6 +336,9 @@ final class NativePlayerController: UIViewController {
 
     func seek(to seconds: Double) {
         guard seconds.isFinite else { return }
+        // The output reports what shows at the new spot; what it reported for the old one is stale.
+        embeddedTimeline = []
+        lastCueKey = "-"
         player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
@@ -361,7 +420,10 @@ final class NativePlayerController: UIViewController {
 
     func select(track: MPVPlayerController.Track?, type: String) {
         if type == "sub" {
-            // setSubtitleTrack(id): a sideloaded track is drawn by the overlay, the file's own by AVPlayer.
+            // setSubtitleTrack(id): a sideloaded track draws from its parsed cues, the file's own from
+            // the legible output; the overlay draws both.
+            embeddedTimeline = []
+            lastCueKey = "-"
             if let track, track.id >= Self.externalSubBase { selectExternal(track.id); return }
             if activeExternal != nil { selectExternal(nil) }
         }
@@ -437,7 +499,7 @@ final class NativePlayerController: UIViewController {
         }
     }
 
-    /// The overlay takes over from AVPlayer's own subtitle rendering (and hands it back on nil).
+    /// A sideloaded track replaces the file's own one (and nil hands the overlay back to it).
     private func selectExternal(_ id: Int?) {
         if id != nil, let item = player.currentItem, let g = legibleGroup, g.allowsEmptySelection {
             item.select(nil, in: g)
@@ -462,6 +524,8 @@ final class NativePlayerController: UIViewController {
     /// setSubDelay: cues are looked up at `currentTime - delay` (+ late, − early, as mpv sub-delay).
     func setSubDelay(_ seconds: Double) {
         subDelaySec = seconds
+        // An early (negative) offset needs the file's own changes at least that far ahead.
+        subtitleOutput?.advanceIntervalForDelegateInvocation = max(Self.legibleLead, 1 - seconds)
         lastCueKey = "-"
         tickCues()
     }
@@ -469,13 +533,163 @@ final class NativePlayerController: UIViewController {
     /// The overlay reads the Look settings itself; this only redraws it.
     func refreshSubtitleStyle() { subtitleState.objectWillChange.send() }
 
-    /// tickCues: the active cue of the shown track (and of the second one) at the delayed time.
+    // MARK: the file's own subtitles (AVPlayerItemLegibleOutput)
+
+    /// One change reported by the legible output: from `time` on, `text` shows ("" = nothing).
+    /// A report replaces whatever the timeline held at or after its time (the output reports in
+    /// time order, so anything later is left over from before a jump back).
+    fileprivate func embeddedChange(_ text: String, at time: Double, from output: ObjectIdentifier) {
+        guard !tornDown, let subtitleOutput, ObjectIdentifier(subtitleOutput) == output, time.isFinite else { return }
+        if let i = embeddedTimeline.firstIndex(where: { $0.time >= time }) {
+            embeddedTimeline.removeSubrange(i...)
+        }
+        embeddedTimeline.append(EmbeddedChange(time: time, text: text))
+        if embeddedTimeline.count > 400 { embeddedTimeline.removeFirst(embeddedTimeline.count - 400) }
+        tickCues()
+    }
+
+    /// outputSequenceWasFlushed (a seek, a new selection): the reports so far no longer hold.
+    fileprivate func embeddedFlushed(_ output: ObjectIdentifier) {
+        guard !tornDown, let subtitleOutput, ObjectIdentifier(subtitleOutput) == output else { return }
+        embeddedTimeline = []
+        lastCueKey = "-"
+        tickCues()
+    }
+
+    /// The file's own text at `time`, as a cue that started with the last change before it.
+    private func embeddedCue(at time: Double) -> SubtitleCue? {
+        guard let last = embeddedTimeline.last(where: { $0.time <= time }), !last.text.isEmpty else { return nil }
+        return SubtitleCue(start: last.time, end: .infinity, text: last.text)
+    }
+
+    /// AVPlayer's own renderer stays off (the overlay draws), except in PiP when the viewer wants
+    /// subtitles there (settings.subShowInPip): the overlay is not part of the PiP picture, AVPlayer's
+    /// rendering of the file's own track is.
+    private func applyLegibleRendering() {
+        let inPip = isPictureInPictureActive && (SettingsBridge.shared.slice.subShowInPip ?? true)
+        subtitleOutput?.suppressesPlayerRendering = !inPip
+    }
+
+    // MARK: Picture in Picture (bridge.ts requestPiP / exitPiP)
+
+    /// capabilities().pictureInPicture: what the device allows.
+    var supportsPictureInPicture: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
+
+    /// requestPiP: the PiP layer takes the player, and PiP starts as soon as AVKit says it can
+    /// (the layer needs its first frame); after 4 s without that it gives up.
+    func startPictureInPicture() {
+        guard !tornDown, supportsPictureInPicture, player.currentItem != nil, !isPictureInPictureActive, !pipStarting else { return }
+        pipLayerView.playerLayer.player = player
+        if pip == nil {
+            let made = AVPictureInPictureController(playerLayer: pipLayerView.playerLayer)
+            pip = made
+            pip?.delegate = self
+        }
+        guard let pip else {
+            pipLayerView.playerLayer.player = nil
+            push("PiP: unavailable")
+            return
+        }
+        pipStarting = true
+        pipAttempt += 1
+        let attempt = pipAttempt
+        if pip.isPictureInPicturePossible {
+            pip.startPictureInPicture()
+            return
+        }
+        pipPossibleObservation?.invalidate()
+        pipPossibleObservation = pip.observe(\.isPictureInPicturePossible, options: [.new]) { [weak self] _, _ in
+            guard let self else { return }
+            Task { @MainActor in self.pipPossibleChanged(attempt) }
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            self?.pipGiveUp(attempt)
+        }
+    }
+
+    /// exitPiP: back to the full picture.
+    func stopPictureInPicture() {
+        if isPictureInPictureActive { pip?.stopPictureInPicture() }
+        else if pipStarting { pipGiveUp(pipAttempt) }
+    }
+
+    private func pipPossibleChanged(_ attempt: Int) {
+        guard !tornDown, pipStarting, attempt == pipAttempt, let pip, pip.isPictureInPicturePossible else { return }
+        pipPossibleObservation?.invalidate()
+        pipPossibleObservation = nil
+        // AVKit has it from here (didStart or failedToStart); the 4 s give-up no longer applies.
+        pipAttempt += 1
+        pip.startPictureInPicture()
+    }
+
+    private func pipGiveUp(_ attempt: Int) {
+        guard !tornDown, pipStarting, attempt == pipAttempt, !isPictureInPictureActive else { return }
+        pipStarting = false
+        pipPossibleObservation?.invalidate()
+        pipPossibleObservation = nil
+        pipLayerView.playerLayer.player = nil
+        push("PiP: not possible")
+        onPictureInPicture?(false)
+    }
+
+    fileprivate func pipDidStart() {
+        guard !tornDown else { return }
+        pipStarting = false
+        pipPossibleObservation?.invalidate()
+        pipPossibleObservation = nil
+        isPictureInPictureActive = true
+        // The picture is in the PiP window now; nothing needs drawing here meanwhile.
+        host.view.isHidden = true
+        subtitleHost?.view.isHidden = true
+        applyLegibleRendering()
+        push("PiP: on")
+        onPictureInPicture?(true)
+    }
+
+    fileprivate func pipWillStop() {
+        guard !tornDown else { return }
+        // Back under the PiP layer before the window animates home.
+        host.view.isHidden = false
+        subtitleHost?.view.isHidden = false
+        isPictureInPictureActive = false
+        applyLegibleRendering()
+        onPictureInPicture?(false)
+    }
+
+    fileprivate func pipDidStop() {
+        guard !tornDown else { return }
+        isPictureInPictureActive = false
+        pipStarting = false
+        pipLayerView.playerLayer.player = nil
+        host.view.isHidden = false
+        subtitleHost?.view.isHidden = false
+        applyLegibleRendering()
+        push("PiP: off")
+        lastCueKey = "-"
+        tickCues()
+        refreshState()
+    }
+
+    fileprivate func pipFailed(_ error: NSError?) {
+        guard !tornDown else { return }
+        pipStarting = false
+        pipPossibleObservation?.invalidate()
+        pipPossibleObservation = nil
+        pipLayerView.playerLayer.player = nil
+        push("PiP failed: \(error?.localizedDescription ?? "?")")
+        onPictureInPicture?(false)
+    }
+
+    /// tickCues: the active cue of the shown track (and of the second one) at the delayed time. With
+    /// no sideloaded track on, the file's own track (if one is selected) is what shows.
     private func tickCues() {
         guard !tornDown else { return }
         let now = player.currentTime().seconds
         let t = (now.isFinite ? now : 0) - subDelaySec
         let shown = activeExternal.flatMap { id in externalSubs.first { $0.id == id } }
-        let cue = shown.flatMap { SubtitleCue.active(in: $0.cues, at: t) }
+        let cue: SubtitleCue?
+        if let shown { cue = SubtitleCue.active(in: shown.cues, at: t) } else { cue = embeddedCue(at: t) }
         let key = cue.map { "\($0.start)|\($0.text)" } ?? ""
         if key != lastCueKey {
             lastCueKey = key
@@ -496,6 +710,11 @@ final class NativePlayerController: UIViewController {
 
     private func refreshState() {
         guard !tornDown, let item = player.currentItem else { return }
+        // PiP's own play / pause buttons drive the player directly; the transport follows them.
+        if isPictureInPictureActive {
+            if player.timeControlStatus == .paused { wantsPlay = false }
+            else if player.timeControlStatus == .playing { wantsPlay = true }
+        }
         if status.state == "error" { return }
         guard item.status == .readyToPlay else { return }
         if status.state == "ended", player.timeControlStatus != .playing { return }
@@ -548,6 +767,58 @@ extension NativePlayerController: PlayerEngineControlling {
     var engineKind: PlayerEngineKind { .native }
 }
 
+/// The legible output reports on the main queue; the hop keeps the controller's state on the main actor.
+extension NativePlayerController: AVPlayerItemLegibleOutputPushDelegate {
+    nonisolated func legibleOutput(_ output: AVPlayerItemLegibleOutput, didOutputAttributedStrings strings: [NSAttributedString],
+                                   nativeSampleBuffers nativeSamples: [Any], forItemTime itemTime: CMTime) {
+        // parser.ts cue text: plain lines; the Look settings style them, not the file.
+        let text = strings.map { $0.string.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        let time = itemTime.seconds
+        let id = ObjectIdentifier(output)
+        Task { @MainActor in self.embeddedChange(text, at: time, from: id) }
+    }
+
+    nonisolated func outputSequenceWasFlushed(_ output: AVPlayerItemOutput) {
+        let id = ObjectIdentifier(output)
+        Task { @MainActor in self.embeddedFlushed(id) }
+    }
+}
+
+/// AVPictureInPictureControllerDelegate, hopping to the main actor like the output above.
+extension NativePlayerController: AVPictureInPictureControllerDelegate {
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.pipDidStart() }
+    }
+
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                failedToStartPictureInPictureWithError error: Error) {
+        let ns = error as NSError
+        Task { @MainActor in self.pipFailed(ns) }
+    }
+
+    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.pipWillStop() }
+    }
+
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.pipDidStop() }
+    }
+
+    /// The player screen never leaves while PiP is on, so there is nothing to bring back.
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        completionHandler(true)
+    }
+}
+
+/// A view whose layer is an AVPlayerLayer: the source AVPictureInPictureController lifts.
+final class NativePlayerLayerView: UIView {
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+}
+
 /// PlayerScreen's native surface, the counterpart of MPVPlayerView.
 struct NativePlayerView: UIViewControllerRepresentable {
     let url: URL
@@ -560,6 +831,8 @@ struct NativePlayerView: UIViewControllerRepresentable {
     var onEnded: (() -> Void)? = nil
     var onUnsupported: ((String) -> Void)? = nil
     var onReady: ((NativePlayerController) -> Void)? = nil
+    /// Picture in Picture started (true) or is ending (false).
+    var onPictureInPicture: ((Bool) -> Void)? = nil
 
     func makeUIViewController(context: Context) -> NativePlayerController {
         let c = NativePlayerController()
@@ -572,6 +845,7 @@ struct NativePlayerView: UIViewControllerRepresentable {
         c.onStatus = onStatus
         c.onEnded = onEnded
         c.onUnsupported = onUnsupported
+        c.onPictureInPicture = onPictureInPicture
         DispatchQueue.main.async { onReady?(c) }
         return c
     }
