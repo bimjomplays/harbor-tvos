@@ -251,7 +251,14 @@ final class DetailModel: ObservableObject {
         await loadEpisodeArt()
         await loadExtras()
         // The favourite check also answers to the IMDb id TMDB just resolved.
-        if !meta.id.hasPrefix("tt"), extras?.imdbId != nil { await loadHero() }
+        if !meta.id.hasPrefix("tt"), extras?.imdbId != nil {
+            await loadHero()
+            // Trakt history is keyed by the IMDb id, which a TMDB-sourced series only has now (review 27).
+            if isSeries {
+                let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.load", [authKey, meta, imdbId])
+                await loadWatchedState()
+            }
+        }
         await loadEpisodeFacts()
         await loadAwards()
         await loadTrackers()

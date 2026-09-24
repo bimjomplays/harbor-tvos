@@ -222,7 +222,10 @@ function watchTrackerRails(): void {
   const once = () => {
     window.removeEventListener("harbor:anime-updated", once);
     railsListener = false;
-    notifyHome();
+    // Only when a list actually arrived: a failed load re-reading Home would fetch again (review 27).
+    const ani = anilistGlue.status().authenticated ? anilistGlue.rails() : null;
+    const mal = malGlue.status().authenticated ? malGlue.rails() : null;
+    if ((ani && ani.rails.length > 0) || (mal && mal.rails.length > 0)) notifyHome();
   };
   window.addEventListener("harbor:anime-updated", once);
 }

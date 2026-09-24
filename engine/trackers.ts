@@ -38,6 +38,9 @@ function anilistRailsFrom(groups: AnilistListGroup[]): Rail[] {
 
 let anilistLoad: Promise<AnilistListGroup[]> | null = null;
 let anilistFailed = false;
+/** When the last AniList load settled without data: no new try for a minute (review 27). */
+let anilistTriedAt = 0;
+const RETRY_MS = 60_000;
 
 export const anilist = {
   authorizeUrl: (): string => anilistAuth.buildAuthorizeUrl(),
@@ -59,9 +62,13 @@ export const anilist = {
     const s = anilistSession.getSession();
     if (!s || !anilistSession.isAuthenticated()) return { rails: [], loading: false, error: false };
     const cached = readCachedCollection(s.userId);
-    if ((!cached || force) && !anilistLoad) {
+    if ((!cached || force) && !anilistLoad && (force || cached || Date.now() - anilistTriedAt >= RETRY_MS)) {
       anilistLoad = fetchMediaListCollection(s.userId);
-      anilistLoad.then(() => { anilistFailed = false; }).catch(() => { anilistFailed = true; }).finally(() => { anilistLoad = null; window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
+      // fetchMediaListCollection resolves [] on failure without caching: "failed" is "still no
+      // cache", or every Home read would fetch and re-read again (review 27).
+      const uid = s.userId;
+      anilistLoad.then(() => { anilistFailed = readCachedCollection(uid) == null; }).catch(() => { anilistFailed = true; })
+        .finally(() => { if (anilistFailed) anilistTriedAt = Date.now(); }).finally(() => { anilistLoad = null; window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
     }
     return { rails: cached ? anilistRailsFrom(cached) : [], loading: !cached && !anilistFailed, error: anilistFailed && !cached };
   },
@@ -110,6 +117,7 @@ function malRailsFrom(groups: MalListGroup[]): Rail[] {
 
 let malLoad: Promise<MalListGroup[]> | null = null;
 let malFailed = false;
+let malTriedAt = 0;
 
 export const mal = {
   authorizeUrl: (): string => malAuth.buildAuthorizeUrl(),
@@ -129,9 +137,10 @@ export const mal = {
   rails(force = false): RailsState {
     if (!malSession.isAuthenticated()) return { rails: [], loading: false, error: false };
     const cached = readCachedMalList();
-    if ((!cached || force) && !malLoad) {
+    if ((!cached || force) && !malLoad && (force || cached || Date.now() - malTriedAt >= RETRY_MS)) {
       malLoad = fetchMalList();
-      malLoad.then(() => { malFailed = false; }).catch(() => { malFailed = true; }).finally(() => { malLoad = null; window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
+      malLoad.then(() => { malFailed = readCachedMalList() == null; }).catch(() => { malFailed = true; })
+        .finally(() => { if (malFailed) malTriedAt = Date.now(); }).finally(() => { malLoad = null; window.dispatchEvent(new CustomEvent("harbor:anime-updated")); });
     }
     return { rails: cached ? malRailsFrom(cached) : [], loading: !cached && !malFailed, error: malFailed && !cached };
   },

@@ -139,6 +139,9 @@ async function externalKeys(meta: Meta, imdbId: string | null): Promise<Set<stri
 export async function load(authKey: string | null, meta: Meta, imdbId: string | null): Promise<boolean> {
   const pull = async () => {
     if (!authKey || !meta.videos?.length || ANIME_ID.test(meta.id)) return;
+    // stremio-watched-pull decodes against Cinemeta's own videos for the tt id: only a list that
+    // lines up with it (the check pushToLibrary makes) may be decoded (review 27).
+    if (!meta.id.startsWith("tt") || !String(meta.videos[0]?.id ?? "").startsWith(meta.id)) return;
     const item = await timeout(libraryGetOne(authKey, meta.id), 8000, null);
     reconcileLibraryWatched(item, meta);
   };

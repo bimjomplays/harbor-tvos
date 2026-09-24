@@ -182,6 +182,9 @@ export function decodeWatchedField(field: string | null | undefined, videos: Met
   const bit = (i: number) => i >= 0 && i < bytes.length * 8 && (bytes[i >> 3] & (1 << (i & 7))) !== 0;
   const sorted = canonicalVideoOrder(videos);
   const anchorIdx = sorted.findIndex((v) => v.id === anchorVideoId);
+  // stremio-core construct_and_resize: an anchor that is not in this video list gives an empty
+  // field; guessing an offset would land marks on the wrong episodes (review 27).
+  if (anchorIdx < 0) return [];
   const offset = anchorLength - anchorIdx - 1;
   const keys: string[] = [];
   for (let i = 0; i < sorted.length; i++) {
