@@ -41,6 +41,11 @@ enum EPUBZip {
         let count = u16(eocd + 10)
         var cd = u32(eocd + 16)
         var out: [String: Data] = [:]
+        // A real EPUB has a few hundred files and tens of MB; a crafted archive must not be able to
+        // inflate its way past tvOS's memory limit through many entries (review 21).
+        guard count <= 10_000 else { throw EPUBError.notZip }
+        var totalOut = 0
+        let totalBudget = 300 * 1024 * 1024
         for _ in 0..<count {
             guard cd + 46 <= n, u32(cd) == 0x0201_4b50 else { break }
             let method = u16(cd + 10)
@@ -56,10 +61,12 @@ enum EPUBZip {
                 let start = localOff + 30 + u16(localOff + 26) + u16(localOff + 28)
                 let end = start + compSize
                 if start <= end, end <= n {
+                    let claimed = method == 8 ? size : compSize
+                    if totalOut + claimed > totalBudget { break }
                     if method == 8 {
-                        if let d = inflate(Array(b[start..<end]), size: size) { out[name] = d }
+                        if let d = inflate(Array(b[start..<end]), size: size) { out[name] = d; totalOut += d.count }
                     } else if method == 0 {
-                        out[name] = Data(b[start..<end])
+                        out[name] = Data(b[start..<end]); totalOut += compSize
                     }
                 }
             }
@@ -355,8 +362,12 @@ enum EPUBMarkup {
                 if i < s.count { i = find(">", from: i).map { $0 + 1 } ?? s.count }
                 return
             }
-            stack.append(node)
+            // Past this depth nesting is flattened into the parent, so every recursive walk over the
+            // tree (descendants, textContent, documentSections…) stays bounded (review 21).
+            if stack.count < Self.maxDepth { stack.append(node) }
         }
+
+        static let maxDepth = 256
 
         mutating func closeTag() {
             i += 2
