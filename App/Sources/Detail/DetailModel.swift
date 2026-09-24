@@ -224,14 +224,17 @@ final class DetailModel: ObservableObject {
     /// use-bp-anime-detail seasons / orderTypes: asked once the Kitsu episodes are in, again on every order change.
     func loadAnimeSeasons() async {
         guard isAnimeId, !episodes.isEmpty else { return }
+        animeSeasonsGen += 1
+        let gen = animeSeasonsGen
         let p = ProfilesStore.shared.active
         guard let w: AnimeSeasonsWire = try? await HarborEngine.shared.call("animeDetail.seasons", [meta.id, p?.id ?? "default", p?.linked ?? true, animeSeasonPicked, episodeHintSeason]) else { return }
-        guard w.source != "none", !w.groups.isEmpty else { return }
+        // A newer order toggle's reply wins; an empty one leaves the current order on screen (review 31).
+        guard gen == animeSeasonsGen, w.source != "none", !w.groups.isEmpty else { return }
         var groups: [String: [Episode]] = [:]
         for g in w.groups { groups[g.key] = g.episodes.map { animeEpisode($0, showSeason: g.showSeason) } }
         animeGroups = groups
         animeChips = w.seasons
-        animeOrders = w.orderTypes
+        if !w.orderTypes.isEmpty { animeOrders = w.orderTypes }
         animeOrderType = w.orderType
         animeHasChips = w.hasChips
         animeSeasonKey = groups[w.seasonKey] != nil ? w.seasonKey : w.groups.first?.key
@@ -248,13 +251,14 @@ final class DetailModel: ObservableObject {
     }
 
     /// use-bp-anime-detail onOrderType: settings.tvdbSeasonType, then the seasons of that order.
+    /// The chip shows the order the engine answers with (review 31: not set ahead of the reload).
     func setAnimeOrder(_ value: String) async {
         guard value != animeOrderType else { return }
-        animeOrderType = value
         try? await SettingsBridge.shared.patch(["tvdbSeasonType": .string(value)])
         await loadAnimeSeasons()
     }
     @Published private(set) var collectionRow: BrowseRow?
+    private var animeSeasonsGen = 0
 
     struct Extras: Decodable {
         struct Cast: Decodable, Identifiable { var id: Int; var name: String; var character: String; var profile: String? }

@@ -370,6 +370,8 @@ struct PlayerScreen: View {
         }
         // views/player.tsx: an auto pick that fails before it ever played goes on to the next source.
         .onChange(of: status.state) { _, state in if state == "error" { autoNextOnError() } }
+        // A retry or the switch to mpv starts the stall wait over (review 31).
+        .onChange(of: reloadToken) { _, _ in openedAt = Date() }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
         .animation(.easeOut(duration: 0.32), value: roomOpen)
@@ -437,6 +439,12 @@ struct PlayerScreen: View {
         guard let again = onPickAgain, !sentBack, !finishing else { return }
         sentBack = true
         let ref = markDead ? pick?.streamRef : nil
+        // MAX_AUTORETRY_ATTEMPTS, and a stream that can't be marked would only fire again: the
+        // stream is still marked, but the viewer keeps the error / connecting card and decides (review 31).
+        if (pick?.attempt ?? 0) + 1 > 5 || (markDead && ref == nil) {
+            if let ref { Task { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) } }
+            return
+        }
         finish(natural: false)
         Task { @MainActor in
             if let ref { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) }

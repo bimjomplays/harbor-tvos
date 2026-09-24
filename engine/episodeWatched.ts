@@ -9,6 +9,7 @@
 //     (manual store, Simkl history, AniList/MAL progress for anime, and the Stremio library
 //     bitfield as views/detail.tsx pushes it on every manual-watched change).
 //   - lib/spoilers.ts spoilerMaskFor for each card, next-up exempt like use-episode-progress-map.ts.
+import { airedOnly } from "@/lib/aired";
 import type { Meta } from "@/lib/cinemeta";
 import { meta as fetchCinemetaMeta, narrowMediaType } from "@/lib/cinemeta";
 import {
@@ -342,7 +343,8 @@ export function mark(
  * highest episode when their auto-sync is on, then the Stremio library bitfield of the page's own id.
  */
 function markShown(authKey: string | null, meta: Meta, imdbId: string | null, refs: EpisodeRef[], watched: boolean, profileId: string, linked: boolean): boolean {
-  const eligible = watched ? refs.filter((e) => airedByNow(e.released)) : refs;
+  // use-anime-watched-routing markMany uses lib/aired airedOnly: undated episodes after the last aired one stay unmarked (review 31).
+  const eligible = watched ? airedOnly(refs, (e) => e.released) : refs;
   if (eligible.length === 0) return false;
   const groups = new Map<string, Array<{ season: number; episode: number }>>();
   for (const e of eligible) {
