@@ -117,8 +117,8 @@ function watchedPredicate(
 
 /**
  * use-cw-advance.ts listCacheRef: episode lists per series. Upstream keeps them for the life of
- * the mounted row; the TV engine lives for the whole session, so an entry ages out after an
- * hour and a newly announced episode is picked up.
+ * the mounted row; here an entry ages out after an hour. (fetchEpisodeList itself is served from
+ * series-episodes.ts's session caches, so a newly announced episode still waits for a relaunch.)
  */
 const LIST_TTL_MS = 60 * 60 * 1000;
 const listCache = new Map<string, { list: PlayEpisode[]; at: number }>();
@@ -276,10 +276,18 @@ function stateMark(items: LibraryItem[], st: CwAdvanceState | null): string {
  * soonest countdown ends (use-cw-advance.ts:334-346: +30 s, at least 30 s, at most 6 h).
  */
 export async function advanceCw(room: string, items: LibraryItem[], o: CwAdvanceOpts, notify: () => void, graceMs = CW_ADVANCE_GRACE_MS): Promise<LibraryItem[]> {
-  if (!o.enabled) return items;
+  if (!o.enabled) {
+    // Turned off: an armed air timer must not fire a stray re-read later (review 32).
+    const off = slots.get(room);
+    if (off?.timer) { clearTimeout(off.timer); off.timer = null; }
+    return items;
+  }
   const sig = itemsSig(items, o);
   let slot = slots.get(room);
   if (!slot) {
+    // A profile switch: the other profiles' slots of this room stop their timers (review 32).
+    const prefix = room.split(":")[0] + ":";
+    for (const [k, s] of slots) if (k !== room && k.startsWith(prefix) && s.timer) { clearTimeout(s.timer); s.timer = null; }
     slot = { sig: "", state: null, mark: "", inflight: null, inflightSig: "", timer: null };
     slots.set(room, slot);
   }
@@ -292,8 +300,8 @@ export async function advanceCw(room: string, items: LibraryItem[], o: CwAdvance
       if (mine.inflight !== p) { pending.delete(p); return; }
       mine.inflight = null;
       const mark = stateMark(items, st);
-      const changed = mine.sig === sig && mark !== mine.mark;
-      const late = mine.sig !== sig || changed;
+      // Late answers re-read only when what shows would change (review 32).
+      const late = mark !== mine.mark;
       mine.sig = sig;
       mine.state = st;
       mine.mark = mark;
@@ -301,7 +309,8 @@ export async function advanceCw(room: string, items: LibraryItem[], o: CwAdvance
       mine.timer = null;
       if (st.soonestAir !== null) {
         const delay = Math.min(Math.max(st.soonestAir - Date.now() + 30000, 30000), 21600000);
-        mine.timer = setTimeout(() => { mine.timer = null; mine.sig = ""; notify(); }, delay);
+        // The next call recomputes anyway (no pass is in flight once this one is done).
+        mine.timer = setTimeout(() => { mine.timer = null; notify(); }, delay);
       }
       if (late && pending.has(p)) notify();
       pending.delete(p);
@@ -318,7 +327,9 @@ export async function advanceCw(room: string, items: LibraryItem[], o: CwAdvance
   }
   // Late: the answer lands after this call returned, so it asks for a re-read if it differs.
   pending.add(p);
-  if (mine.sig === sig && mine.state) {
+  // use-cw-advance keeps the previous advanced / removed state applied while it recomputes: a
+  // changed row (progress after playback) must not bring hidden shows back meanwhile (review 32).
+  if (mine.state) {
     mine.mark = stateMark(items, mine.state);
     return applyCwAdvance(items, mine.state);
   }

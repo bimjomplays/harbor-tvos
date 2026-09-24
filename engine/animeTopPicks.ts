@@ -289,16 +289,17 @@ function ensureSubscribed(): void {
 async function build(input: TopPicksInput, gen: number, notify: () => void): Promise<void> {
   const live = () => gen === generation;
   const { libItems, continueWatching, heroMetas, favoriteGenres } = input;
-  if (seed === null) seed = dayIndex() * 1000 + nextVisit();
+  // Upstream seeds per mount; the engine lives all session, so at least a new day re-seeds (review 32).
+  if (seed === null || Math.floor(seed / 1000) !== dayIndex()) seed = dayIndex() * 1000 + nextVisit();
   const rotation = seed;
-  // useWatchHistoryRecommendations feeds the hook as `watchHistoryRecs`; here it is awaited
-  // first rather than arriving as a second pass.
-  const recs = await watchHistoryRecs(continueWatching).catch(() => [] as Meta[]);
-  if (!live()) return;
+  // useWatchHistoryRecommendations feeds the hook as `watchHistoryRecs`: started alongside the
+  // pages (as upstream runs them) and awaited with them (review 32).
+  const recsP = watchHistoryRecs(continueWatching).catch(() => [] as Meta[]);
   const genres = animeSeedGenres(favoriteGenres);
   const { seeds } = finishedFranchises(libItems);
   const pageSeed = dayIndex();
-  const [airing, fresh, ...genreLists] = await Promise.all([
+  const [recs, airing, fresh, ...genreLists] = await Promise.all([
+    recsP,
     jikanTopAiring(pageFor("airing", pageSeed)).catch(() => [] as Meta[]),
     jikanNewReleases(pageFor("new", pageSeed)).catch(() => [] as Meta[]),
     ...genres.map((id) => jikanByGenre(id, pageFor(`g${id}`, pageSeed)).catch(() => [] as Meta[])),

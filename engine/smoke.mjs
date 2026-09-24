@@ -471,6 +471,8 @@ r.ok("benchmark still works", (() => {
   const gaps = hits.slice(1).map((h, k) => h.at - hits[k].at);
   r.ok("top picks: Jikan requests go through the 400 ms queue", gaps.length >= 3 && Math.min(...gaps) >= 380, JSON.stringify(gaps));
   r.ok("top picks: an update event fired as picks landed", events.length >= 1, JSON.stringify(events.length));
+  // The MAL-id / recs caches save on a 400 ms debounce after the last write (recs now land with the pages).
+  await new Promise((res) => setTimeout(res, 500));
   const store = rec.node.storage;
   r.ok("top picks: picks, recs and the MAL id are cached", JSON.parse(store.get("harbor.anime.toppicks.cache.v2") ?? "[]").length === 24 && "900" in JSON.parse(store.get("harbor.anime.recs_by_mal.v1") ?? "{}") && Object.values(JSON.parse(store.get("harbor.anime.mal_id_by_franchise.v1") ?? "{}")).includes(900), JSON.stringify([...store.keys()].filter((k) => k.startsWith("harbor.anime."))));
   const before = hits.length;
