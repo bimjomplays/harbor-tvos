@@ -17,6 +17,9 @@ struct PickerAutoStep: View {
     let p2p: Bool
     /// useActiveKid().
     let kid: Bool
+    /// auto-play-transition.tsx stubNotice: the player just sent a stub back (consumeRecentStubEvent);
+    /// the picker clears it after 6 s.
+    var stubNotice = false
     /// use-bp-stream-play cancelAuto: auto stops and the list is the picker again.
     let onCancel: () -> Void
 
@@ -101,6 +104,9 @@ struct PickerAutoStep: View {
                         Text(attemptIdx > 0 ? T("Trying source %lld", attemptIdx + 1) : T("Connecting"))
                             .font(BP.sans(14, .semibold)).foregroundStyle(BP.inkSubtle)
                     }
+                    // BpAutoStep has no stub notice; auto-play-transition.tsx (the desktop's auto
+                    // screen, and the kid branch below) shows it under the loader.
+                    if stubNotice { stubNoticeText }
                 }
                 Button(action: onCancel) {
                     HStack(spacing: BP.px(7)) {
@@ -114,6 +120,15 @@ struct PickerAutoStep: View {
             }
             .padding(.horizontal, BP.gutter)
         }
+    }
+
+    /// auto-play-transition.tsx stubNotice: `max-w-md text-[13px] leading-relaxed text-amber-200/80`.
+    private var stubNoticeText: some View {
+        Text("Last source wasn't actually cached on your debrid yet. Trying another.")
+            .font(BP.sans(13)).foregroundStyle(Color(red: 0.992, green: 0.902, blue: 0.541).opacity(0.8))
+            .multilineTextAlignment(.center).lineSpacing(BP.px(4))
+            .frame(maxWidth: BP.px(448))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: auto-play-transition.tsx, kid branch
@@ -172,6 +187,7 @@ struct PickerAutoStep: View {
                         .font(BP.sans(13)).foregroundStyle(.white.opacity(0.6))
                         .multilineTextAlignment(.center).frame(maxWidth: BP.px(448))
                 }
+                if stubNotice { stubNoticeText }
             }
             .frame(maxWidth: BP.px(1100))
             .padding(.horizontal, BP.gutter)

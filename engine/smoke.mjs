@@ -1082,6 +1082,60 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------- dead streams (lib/dead-streams, views/player.tsx stall skip)
+{
+  const base = "https://direct.example.invalid";
+  const manifest = { id: "org.example.direct", version: "1.0.0", name: "Direct", resources: ["stream"], types: ["movie"], idPrefixes: ["tt"], catalogs: [] };
+  const hash = "89abcdef0123456789abcdef0123456789abcdef";
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.installed-addons.default", JSON.stringify([{ transportUrl: `${base}/manifest.json`, manifest }])],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === `${base}/manifest.json`) return json(manifest);
+    if (req.url.startsWith(`${base}/stream/movie/tt0111161`)) return json({ streams: [
+      { name: "Direct\n1080p", title: "The.Shawshank.Redemption.1994.1080p.WEB-DL.x264-AAA\n💾 2.1 GB", url: "https://cdn.example.invalid/a.mp4" },
+      { name: "Direct\n720p", title: "The.Shawshank.Redemption.1994.720p.WEB-DL.x264-BBB\n💾 1.1 GB", url: "https://cdn.example.invalid/b.mp4" },
+      { name: "Direct\n1080p", title: "The.Shawshank.Redemption.1994.1080p.BluRay.x264-CCC\n💾 2.4 GB", url: "https://cdn.example.invalid/c.mp4", infoHash: hash, fileIdx: 2 },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  const film = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", runtime: "142 min" };
+  const found = await e.streamsRoom.search("dead", "default", true, null, film, null);
+  const all = found.result?.picker.all ?? [];
+  const at = (tag) => all.findIndex((s) => (s.url ?? "").endsWith(`/${tag}.mp4`));
+  const [ia, ib, ic] = [at("a"), at("b"), at("c")];
+  const auto = () => e.streamsRoom.autoCandidates("dead", "default", true, film, null, null, false, null);
+  r.ok("dead streams: the three direct links are auto candidates", ia >= 0 && ib >= 0 && ic >= 0 && [ia, ib, ic].every((i) => auto().includes(i)), JSON.stringify({ all: all.map((s) => s.url), auto: auto() }));
+  const refA = e.streamsRoom.deadRef("dead", ia), refC = e.streamsRoom.deadRef("dead", ic);
+  r.ok("streamsRoom.deadRef carries what dead-streams fingerprints (url, infoHash + fileIdx, addon, title)", refA?.url === "https://cdn.example.invalid/a.mp4" && refA.infoHash === null && refA.addonId === manifest.id && typeof refA.title === "string" && refC?.infoHash === hash && refC.fileIdx === 2, JSON.stringify({ refA, refC }));
+  r.eq("streamsRoom.deadRef with an unknown token or index", [e.streamsRoom.deadRef("nope", 0), e.streamsRoom.deadRef("dead", 99)], [null, null]);
+  r.eq("deadStreams.markDead refuses a ref with nothing to fingerprint", [e.deadStreams.markDead(null), e.deadStreams.markDead({ addonId: "x" })], [false, false]);
+  r.eq("deadStreams.isDead before any mark", e.deadStreams.isDead(refA), false);
+  r.eq("deadStreams.markDead (the player's stall / load-failed skip)", e.deadStreams.markDead(refA, "load-failed"), true);
+  r.ok("the picker's auto candidates skip the stalled stream, the rest stay in order", !auto().includes(ia) && auto().includes(ib) && auto().includes(ic) && e.deadStreams.isDead(refA), JSON.stringify(auto()));
+  const stored = JSON.parse(rec.node.storage.get("harbor.dead-streams.v1") ?? "{}");
+  r.ok("the mark is stored under harbor.dead-streams.v1 with the 4 h stub TTL", stored["u:https://cdn.example.invalid/a.mp4"]?.reason === "load-failed" && stored["u:https://cdn.example.invalid/a.mp4"].ttl === 4 * 60 * 60 * 1000, JSON.stringify(stored));
+  e.deadStreams.markDead(refC);
+  r.ok("a torrent-backed stream is marked by infoHash + fileIdx and skipped too", !auto().includes(ic) && e.deadStreams.isDead({ infoHash: hash.toUpperCase(), fileIdx: 2 }) && !e.deadStreams.isDead({ infoHash: hash, fileIdx: 3 }), JSON.stringify(auto()));
+  const stub = (over) => e.deadStreams.flagStub({ meta: film, url: "https://cdn.example.invalid/b.mp4", title: film.name, ref: e.streamsRoom.deadRef("dead", ib), durationSec: 42, playing: true, season: null, episode: null, ...over });
+  r.eq("deadStreams.flagStub: not a stub when long, paused, HLS, a channel or a short film", [
+    stub({ durationSec: 200 }), stub({ playing: false }), stub({ url: "https://cdn.example.invalid/b.m3u8" }),
+    stub({ meta: { ...film, id: "iptv:1" } }), stub({ meta: { ...film, type: "tv" } }), stub({ meta: { ...film, runtime: "1 min" } }),
+  ], [false, false, false, false, false, false]);
+  r.eq("deadStreams.consumeStubEvent: nothing recorded yet", e.deadStreams.consumeStubEvent(8000), null);
+  e.streamsRoom.rememberPlayback("dead", "default", true, film, ib, "https://cdn.example.invalid/b.mp4", null, null);
+  r.eq("the stub's stream was the remembered pick", e.streamsRoom.remembered("dead", "default", true, film, null, null), ib);
+  r.eq("deadStreams.flagStub: a 42 s file of a 142 min film is a stub", stub({}), true);
+  r.ok("the stub is marked dead, its remembered pick forgotten, and no auto candidate is left", !auto().includes(ib) && auto().length === 0 && e.streamsRoom.remembered("dead", "default", true, film, null, null) === null, JSON.stringify({ auto: auto() }));
+  r.eq("deadStreams.consumeStubEvent: the next picker reads the stub once", [e.deadStreams.consumeStubEvent(8000), e.deadStreams.consumeStubEvent(8000)], ["stub_42s", null]);
+  e.deadStreams.clear();
+  r.ok("deadStreams.clear brings every stream back", [ia, ib, ic].every((i) => auto().includes(i)) && !e.deadStreams.isDead(refA), JSON.stringify(auto()));
+  rec.dispose();
+}
+
 // ----------------------------------------------------------------------- home servers
 {
   r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);
@@ -1888,7 +1942,10 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
   const e = rec.engine;
-  r.eq("player.prefs: upstream defaults (auto lead, auto-advance on, 10 s steps)", e.player.prefs("default", true), { autoPlayNextEpisode: true, nextEpisodeLeadSec: -1, seekBackStepSec: 10, seekForwardStepSec: 10 });
+  r.eq("player.prefs: upstream defaults (auto lead, auto-advance on, 10 s steps)", e.player.prefs("default", true), { autoPlayNextEpisode: true, nextEpisodeLeadSec: -1, seekBackStepSec: 10, seekForwardStepSec: 10, autoNextStreamOnStall: false, autoNextStreamOnStallSec: 10, instantPlay: true });
+  e.settings.patch({ autoNextStreamOnStall: true, autoNextStreamOnStallSec: 400 });
+  r.eq("player.prefs: autoNextStreamOnStall with the wait clamped like stall-wait.ts (5–120 s)", [e.player.prefs("default", true).autoNextStreamOnStall, e.player.prefs("default", true).autoNextStreamOnStallSec], [true, 120]);
+  e.settings.patch({ autoNextStreamOnStall: false, autoNextStreamOnStallSec: 10 });
   // Auto / mpv / native (AVPlayer): use-player-bridge.ts chosenEngine + player-utils.ts pickBridge, TV mapping.
   const pe = (want, h) => e.player.pickEngine(want, h).engine;
   r.eq("player.pickEngine: Auto keeps MKV / not-web-ready / raw TS live on mpv", [

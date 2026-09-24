@@ -34,6 +34,9 @@ struct PlayPickerView: View {
     /// use-bp-stream-play failedStreams: rows that already failed read "Unavailable, try another."
     @State private var failedIds: Set<String> = []
     @State private var alive = true
+    /// play-picker.tsx stubBanner / auto-play-transition.tsx stubNotice: the player just sent a stub
+    /// back (use-stub-detection.ts recordStubEvent), shown for 6 s.
+    @State private var stubNotice = false
     @Environment(\.dismiss) private var dismiss
 
     enum PickerDialog: Identifiable {
@@ -59,7 +62,7 @@ struct PlayPickerView: View {
                 // profile's is auto-play-transition.tsx's kid branch).
                 PickerAutoStep(meta: meta, episode: episode, attemptIdx: autoTried, resolving: autoFiring,
                                p2p: model.p2pStarting, kid: ProfilesStore.shared.active?.kid != nil,
-                               onCancel: { cancelAuto() })
+                               stubNotice: stubNotice, onCancel: { cancelAuto() })
                     .transition(.opacity)
             } else {
                 HStack(alignment: .top, spacing: BP.px(40)) {
@@ -68,6 +71,7 @@ struct PlayPickerView: View {
                         Text(meta.name).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(3)
                         if let ep = episodeLabel { Text(ep).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted) }
                         statusLine
+                        if stubNotice { stubBanner }
                         if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
                         RemoteImage(url: meta.poster).frame(width: BP.px(177), height: BP.px(265)).clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)).padding(.top, BP.px(10))
                     }
@@ -93,6 +97,15 @@ struct PlayPickerView: View {
                 try? await Task.sleep(for: .milliseconds(400))
                 await autoTick(done: false)
             }
+        }
+        .task {
+            // play-picker.tsx / auto-play-transition.tsx: consumeRecentStubEvent(8000) as the picker
+            // opens; the notice clears itself after 6 s.
+            let ev: String? = try? await HarborEngine.shared.call("deadStreams.consumeStubEvent", [8000])
+            guard ev != nil, !Task.isCancelled else { return }
+            stubNotice = true
+            try? await Task.sleep(for: .seconds(6))
+            stubNotice = false
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
         .onChange(of: model.copiesLoaded) { _, loaded in if loaded { Task { await applySourcePreference() } } }
@@ -267,7 +280,12 @@ struct PlayPickerView: View {
         if r.ok, r.data != nil {
             debridFailStreak = 0
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
-            onPlay(s, r)
+            // use-pick-handler: PlayerSrc.autoFired + streamRef, so a stall or a failed open can
+            // mark this stream dead and bring the picker back on the next candidate (views/player.tsx).
+            var handed = r
+            handed.autoPicked = true
+            handed.streamRef = await model.deadRef(s)
+            onPlay(s, handed)
         } else {
             failedIds.insert(s.id)
             autoTried += 1
@@ -311,6 +329,17 @@ struct PlayPickerView: View {
         case .exhausted: BPNote(text: "Nothing started on its own. Pick a source.", tone: BP.inkMuted)
         default: EmptyView()
         }
+    }
+
+    /// play-picker.tsx stubBanner: the amber card over the list (border amber-300/30, fill
+    /// amber-400/10, text amber-100).
+    private var stubBanner: some View {
+        Text("Last source wasn't actually cached on your debrid yet. Pick another from the list.")
+            .font(BP.sans(13.5)).foregroundStyle(Color(red: 0.996, green: 0.953, blue: 0.78))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(12))
+            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(Color(red: 0.984, green: 0.749, blue: 0.141).opacity(0.1)))
+            .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(Color(red: 0.988, green: 0.827, blue: 0.302).opacity(0.3), lineWidth: 1))
     }
 
     @ViewBuilder private var statusLine: some View {
@@ -653,7 +682,11 @@ struct PlayPickerView: View {
         if r.ok, r.data != nil {
             debridFailStreak = 0
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
-            onPlay(s, r)
+            // PlayerSrc.streamRef for use-stub-detection.ts; a pick by hand is never autoFired.
+            var handed = r
+            handed.autoPicked = false
+            handed.streamRef = await model.deadRef(s)
+            onPlay(s, handed)
         } else {
             failedIds.insert(s.id)
             if countDebridFailure(r) { dialog = .debridDown; return }

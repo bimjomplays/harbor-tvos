@@ -88,6 +88,7 @@ import { scores as scoreBadges } from "./scores";
 import * as addonsRoomGlue from "./addonsRoom";
 import * as addonsManagerGlue from "./addonsManager";
 import * as animeDetailGlue from "./animeDetail";
+import * as deadStreamsGlue from "./deadStreams";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
@@ -486,8 +487,21 @@ export const streamsRoom = {
   streamFilters: streamGlue.streamFilters,
   setActiveStreamFilter: streamGlue.setActiveStreamFilter,
   pickerRowText: streamGlue.pickerRowText,
+  deadRef: streamGlue.deadRef,
 };
 export type { StreamSearch } from "./streams";
+
+/**
+ * lib/dead-streams.ts: streams that stalled, failed or turned out to be stubs, skipped by
+ * streamsRoom.autoCandidates; the stub event behind the picker's "wasn't actually cached" notice.
+ */
+export const deadStreams = {
+  markDead: deadStreamsGlue.markDead,
+  isDead: deadStreamsGlue.isDead,
+  flagStub: deadStreamsGlue.flagStub,
+  consumeStubEvent: deadStreamsGlue.consumeStubEvent,
+  clear: deadStreamsGlue.clear,
+};
 
 /** Collections: this device's collections (editable), community (harbor.site), TMDB curated, TVDB lists. */
 export const collectionsRoom = {

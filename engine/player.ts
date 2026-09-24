@@ -25,6 +25,7 @@ import { langScore, pickBestTrack, normalizeLang } from "@/lib/subtitles/languag
 import { isAutoSelectableSubtitleTrack, pickDesiredSubtitleTrack } from "@/lib/subtitles/track-selection";
 import type { Settings } from "@/lib/settings";
 import type { PlayerStreamRef } from "@/lib/view";
+import { stallWaitSec } from "@/lib/player/stall-wait";
 
 /**
  * The playback settings the Big Picture chrome reads (settings/defaults.ts): the up-next lead
@@ -39,6 +40,12 @@ export function prefs(profileId: string, linked: boolean) {
     nextEpisodeLeadSec: num(s.nextEpisodeLeadSec, -1),
     seekBackStepSec: num(s.seekBackStepSec, 10) || 10,
     seekForwardStepSec: num(s.seekForwardStepSec, 10) || 10,
+    // views/player.tsx: an auto-picked stream that has not started within stallWaitMs moves on
+    // to the next candidate (opt-in; lib/player/stall-wait.ts clamps the wait to 5–120 s).
+    autoNextStreamOnStall: s.autoNextStreamOnStall === true,
+    autoNextStreamOnStallSec: stallWaitSec(s.autoNextStreamOnStallSec),
+    // use-stub-detection.ts runs only under instantPlay.
+    instantPlay: s.instantPlay !== false,
   };
 }
 

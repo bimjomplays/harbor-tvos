@@ -10,6 +10,9 @@ struct DetailView: View {
     /// bp-detail.tsx onSources(…, applyPreference): the list was opened by Play (the hero, an
     /// episode, a Play handed over), so the Play button behavior setting applies to it.
     @State private var pickerPref = false
+    /// view.ts picker frame `attempt`: how many times the player sent this title back to the picker
+    /// (a stalled or failed auto pick, a stub); 0 for every picker the viewer opens.
+    @State private var pickerAttempt = 0
     @State private var playing: PlayTarget?
     /// bp-player-sources: the position the next pick resumes from after "Switch source".
     @State private var switchFromSec: Double?
@@ -105,6 +108,8 @@ struct DetailView: View {
         var episode: AnyJSON?
         /// What the Auto engine rule reads (engine/player.ts pickEngine).
         var hints: PlayerStreamHints? = nil
+        /// PlayerSrc autoFired / attempt / streamRef (views/player.tsx next-stream skip).
+        var pick: PlayerPickInfo? = nil
     }
 
     /// Quick panel / Discovery Queue "Play now": open the picker as soon as the page knows what to play.
@@ -146,7 +151,7 @@ struct DetailView: View {
                 } else if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
             }
         }
-        .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {
+        .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0 }) {
             if let picker {
                 PlayPickerView(meta: picker.meta, episode: picker.episode, autoPlay: pickerAuto, applyPreference: pickerPref) { stream, resolved in
                     guard let link = resolved.data, let url = URL(string: link.url) else { return }
@@ -156,6 +161,7 @@ struct DetailView: View {
                         return "S\(Int(s)) E\(Int(n))" + (e["name"]?.string.map { " · \($0)" } ?? "")
                     }
                     self.picker = nil
+                    let pick = PlayerPickInfo(autoPicked: resolved.autoPicked ?? false, attempt: pickerAttempt, streamRef: resolved.streamRef)
                     let ctx = PlaybackContext(meta: model.meta,
                                               season: ep?["season"]?.number.map { Int($0) }, episode: ep?["episode"]?.number.map { Int($0) },
                                               videoId: ep?["videoId"]?.string, imdbId: model.meta.id.hasPrefix("tt") ? model.meta.id : nil,
@@ -173,7 +179,7 @@ struct DetailView: View {
                             }
                             let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
                                                           hdrFormat: stream?.hdrFormat, filename: link.filename)
-                            playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints)
+                            playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints, pick: pick)
                         }
                     }
                 }
@@ -199,7 +205,13 @@ struct DetailView: View {
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext, streamHints: t.hints,
                          onChooseAnother: { pickerAuto = false; pickerPref = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
                          onSwitchSource: { at in pickerAuto = false; pickerPref = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
-                         onPreviousEpisode: previousEpisodeAction(t.context)) { natural in
+                         onPreviousEpisode: previousEpisodeAction(t.context), pick: t.pick,
+                         onPickAgain: { auto in
+                             // views/player.tsx openPicker(meta, episode, { autoPlay: true, attempt: attempt + 1 }).
+                             pickerAuto = auto; pickerPref = false
+                             let next = (t.pick?.attempt ?? 0) + 1
+                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAttempt = next; picker = (model.meta, t.episode) }
+                         }) { natural in
                 playing = nil
                 // The strip's started / next-up (and so its spoiler masks) move with what was just played.
                 Task { await model.loadWatchedState() }
