@@ -453,7 +453,7 @@ export function spotifyFailed(error: string) {
   homeCache = null;
   return spotify.recordFailure(error);
 }
-/** mod.rs disconnect (Swift has already shut the librespot session down). */
+/** mod.rs disconnect: the saved sign-in goes first; Swift shuts the librespot session down right after. */
 export function spotifyDisconnect() {
   homeCache = null;
   return spotify.forget();

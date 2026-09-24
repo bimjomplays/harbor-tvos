@@ -344,7 +344,9 @@ export async function finish(pasted: string): Promise<{ accessToken: string; dev
   const redirect = readRedirect(pasted);
   if (redirect.error) throw new Error(describeAuth(redirect.error));
   if (!redirect.code) throw new Error("Paste the whole address your phone ended on (it starts with http://127.0.0.1:8898/login).");
-  if (redirect.state && redirect.state !== flow.state) throw new Error("That address belongs to another sign in. Authorize Spotify again.");
+  // A pasted address must carry this flow's state; only a bare code (no address around it) goes without.
+  const bare = /^[A-Za-z0-9_-]{16,}$/.test((pasted ?? "").trim());
+  if (!bare && redirect.state !== flow.state) throw new Error("That address belongs to another sign in. Authorize Spotify again.");
   const granted = await tokenRequest({
     grant_type: "authorization_code",
     code: redirect.code,

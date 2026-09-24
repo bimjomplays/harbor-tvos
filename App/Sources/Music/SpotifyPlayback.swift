@@ -63,6 +63,7 @@ final class SpotifyPlayback: ObservableObject {
     let output = SpotifyAudioOutput()
     nonisolated static let queue = DispatchQueue(label: "harbor.spotify", qos: .userInitiated)
     private var restoreTask: Task<Void, Never>?
+    private var restoreSerial = 0
     /// Bumped by disconnect: a sign-in still in flight from before is shut down when it lands.
     private var generation = 0
 
@@ -123,8 +124,11 @@ final class SpotifyPlayback: ObservableObject {
             _ = try? await self.establish(ConnectRequest(cacheDir: Self.cacheDir, deviceId: saved.deviceId, accessToken: nil, credentials: credentials))
         }
         restoreTask = task
+        restoreSerial += 1
+        let serial = restoreSerial
         await task.value
-        restoreTask = nil
+        // Only clear our own attempt: a disconnect may have dropped it and a newer restore taken its place.
+        if restoreSerial == serial { restoreTask = nil }
     }
 
     /// mod.rs connect_interactive, after the phone hand-off produced a token.
@@ -139,19 +143,9 @@ final class SpotifyPlayback: ObservableObject {
         defer { connecting = false }
         let started = generation
         let body = (try? JSONEncoder().encode(request)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        let rust: RustStatus
         do {
-            let rust = try await Self.run(RustStatus.self) { harbor_spotify_connect(body) }
-            guard started == generation else {
-                _ = try? await Self.run(OK.self) { harbor_spotify_disconnect() }
-                throw Failure(message: "Spotify was disconnected")
-            }
-            let token = try? await Self.run(SessionToken.self) { harbor_spotify_session_token() }
-            let status: Status = try await HarborEngine.shared.call("music.spotifySessionReady", [rust, token])
-            if status.shutdown == true {
-                _ = try? await Self.run(OK.self) { harbor_spotify_disconnect() }
-            }
-            connected = status.connected
-            return status
+            rust = try await Self.run(RustStatus.self) { harbor_spotify_connect(body) }
         } catch let failure as Failure {
             // mod.rs record_failure: the Sources row shows it; a saved sign-in is left alone.
             if started == generation {
@@ -160,6 +154,44 @@ final class SpotifyPlayback: ObservableObject {
             }
             throw failure
         }
+        // A session is live in Rust from here on: any way out that doesn't end connected shuts it down.
+        // After a disconnect (generation moved on) the engine's saved sign-in is forgotten again.
+        do {
+            try abandonIfStale(started)
+            let token = try? await Self.run(SessionToken.self) { harbor_spotify_session_token() }
+            try abandonIfStale(started)
+            let status: Status = try await HarborEngine.shared.call("music.spotifySessionReady", [rust, token])
+            if started != generation {
+                // Disconnected while the engine was saving the sign-in: forget it again.
+                let _: Status? = try? await HarborEngine.shared.call("music.spotifyDisconnect")
+                throw Failure(message: "Spotify was disconnected")
+            }
+            if status.shutdown == true {
+                _ = try? await Self.run(OK.self) { harbor_spotify_disconnect() }
+            }
+            connected = status.connected
+            return status
+        } catch {
+            // A stale attempt leaves Rust alone: disconnect() queued its own shutdown behind this
+            // connect on the serial queue, and a newer sign-in may own the session by now.
+            let stale = started != generation
+            if !stale { _ = try? await Self.run(OK.self) { harbor_spotify_disconnect() } }
+            let message: String
+            switch error {
+            case let failure as Failure: message = failure.message
+            case EngineError.js(let raw): message = MusicPlayer.cleanJSError(raw)
+            default: message = error.localizedDescription
+            }
+            if !stale {
+                let _: Status? = try? await HarborEngine.shared.call("music.spotifyFailed", [message])
+                connected = false
+            }
+            throw Failure(message: message)
+        }
+    }
+
+    private func abandonIfStale(_ started: Int) throws {
+        if started != generation { throw Failure(message: "Spotify was disconnected") }
     }
 
     /// mod.rs disconnect: stop, shut the session down, forget the saved sign-in (the client id stays).
@@ -302,7 +334,9 @@ final class SpotifyAudioOutput {
 
     private func resume() {
         guard wanted, !engine.isRunning else { return }
+        // An interruption deactivates the session; it must be active again before the engine starts.
+        try? AVAudioSession.sharedInstance().setActive(true)
         engine.prepare()
-        try? engine.start()
+        do { try engine.start() } catch { NSLog("Spotify audio engine: %@", String(describing: error)) }
     }
 }

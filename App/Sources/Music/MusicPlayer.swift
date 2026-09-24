@@ -579,7 +579,13 @@ final class MusicPlayer: ObservableObject {
         engine = .spotify
         spotifyEntry = (prepared.track, i)
         startSpotifyClock()
-        phase = .playing
+        if PlaybackState.shared.active {
+            // A film or channel took the TV while this resolved: queued paused, as the stream path does.
+            spotify.setPaused(true)
+            phase = .paused
+        } else {
+            phase = .playing
+        }
         lastSource = prepared.track.connectorId
         beginScrobble(prepared.track)
         addRecent(prepared.track)

@@ -43,6 +43,12 @@ pub struct PcmRing {
     flush: AtomicBool,
     /// The next `Sink::stop` (a pause the host asked for) flushes instead of draining.
     discard_on_stop: AtomicBool,
+    /// Bumped by every flush: a write still copying a packet from before a seek or skip drops the
+    /// rest of it instead of playing stale audio after the flush.
+    epoch: AtomicUsize,
+    /// The sink that may write. A reconnect builds a new Player while the retired one can still be
+    /// mid-write; only the newest sink stores `written`, keeping the ring single-producer.
+    owner: AtomicUsize,
 }
 
 impl PcmRing {
@@ -54,6 +60,8 @@ impl PcmRing {
             read: AtomicUsize::new(0),
             flush: AtomicBool::new(false),
             discard_on_stop: AtomicBool::new(false),
+            epoch: AtomicUsize::new(0),
+            owner: AtomicUsize::new(0),
         }
     }
 
@@ -74,7 +82,15 @@ impl PcmRing {
     }
 
     pub fn request_flush(&self) {
+        self.epoch.fetch_add(1, Ordering::AcqRel);
         self.flush.store(true, Ordering::Release);
+    }
+
+    /// A new sink takes the ring over; whatever an older one buffered is dropped.
+    fn claim(&self) -> usize {
+        let id = self.owner.fetch_add(1, Ordering::AcqRel) + 1;
+        self.request_flush();
+        id
     }
 
     pub fn discard_next_stop(&self) {
@@ -90,10 +106,22 @@ impl PcmRing {
     /// Producer: copies `data` in, waiting for room. Fails when the consumer stops reading for
     /// `stall` while the ring is full.
     pub fn push(&self, data: &[f32], stall: Duration) -> Result<(), String> {
+        self.push_as(0, data, stall)
+    }
+
+    /// `push` for sink `owner` (0: no owner check). Returns early, without error, once the sink
+    /// was replaced or a flush happened mid-packet.
+    fn push_as(&self, owner: usize, data: &[f32], stall: Duration) -> Result<(), String> {
         let capacity = self.capacity();
+        let epoch = self.epoch.load(Ordering::Acquire);
         let mut offset = 0;
         let mut waiting: Option<(usize, Instant)> = None;
         while offset < data.len() {
+            if self.epoch.load(Ordering::Acquire) != epoch
+                || (owner != 0 && self.owner.load(Ordering::Acquire) != owner)
+            {
+                return Ok(());
+            }
             let written = self.written.load(Ordering::Relaxed);
             let read = self.read.load(Ordering::Acquire);
             let free = capacity.saturating_sub(written.saturating_sub(read));
@@ -171,11 +199,13 @@ impl PcmRing {
 /// librespot `Sink` over a shared `PcmRing`.
 pub struct RingSink {
     ring: Arc<PcmRing>,
+    id: usize,
 }
 
 impl RingSink {
     pub fn new(ring: Arc<PcmRing>) -> Self {
-        Self { ring }
+        let id = ring.claim();
+        Self { ring, id }
     }
 }
 
@@ -197,7 +227,9 @@ impl Sink for RingSink {
         match packet {
             AudioPacket::Samples(samples) => {
                 let converted = converter.f64_to_f32(&samples);
-                self.ring.push(&converted, STALL).map_err(SinkError::OnWrite)
+                self.ring
+                    .push_as(self.id, &converted, STALL)
+                    .map_err(SinkError::OnWrite)
             }
             // Only the passthrough decoder yields raw Ogg pages, and the TV never enables it.
             AudioPacket::Raw(_) => Err(SinkError::InvalidParams(
@@ -210,6 +242,35 @@ impl Sink for RingSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_replaced_sink_stops_writing() {
+        let ring = Arc::new(PcmRing::new(256));
+        let old = RingSink::new(ring.clone());
+        let new = RingSink::new(ring.clone());
+        ring.push_as(old.id, &[0.5; 8], STALL).unwrap();
+        assert_eq!(ring.buffered(), 0);
+        ring.push_as(new.id, &[0.5; 8], STALL).unwrap();
+        assert_eq!(ring.buffered(), 8);
+    }
+
+    #[test]
+    fn a_flush_mid_packet_drops_the_rest_of_it() {
+        let ring = Arc::new(PcmRing::new(128));
+        let writer = {
+            let ring = ring.clone();
+            std::thread::spawn(move || ring.push(&vec![0.5; 1000], STALL))
+        };
+        while ring.buffered() < 128 {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        ring.request_flush();
+        let mut left = vec![0.0; 64];
+        let mut right = vec![0.0; 64];
+        ring.read_planar(&mut left, &mut right);
+        writer.join().unwrap().unwrap();
+        assert_eq!(ring.buffered(), 0);
+    }
 
     fn frames(ring: &PcmRing, count: usize) -> (Vec<f32>, Vec<f32>, usize) {
         let mut left = vec![9.0; count];

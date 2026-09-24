@@ -372,6 +372,8 @@ pub async fn connect(request: ConnectRequest) -> Result<SpotifyStatus, String> {
 /// off the caller's thread, as upstream does.
 fn retire(live: Option<Live>) {
     if let Some(live) = live {
+        // Nothing the old player buffered is heard after it (the next sink claims the ring too).
+        ring().request_flush();
         live.player.stop();
         live.session.shutdown();
         std::thread::spawn(move || drop(live));
