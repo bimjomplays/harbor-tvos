@@ -122,6 +122,9 @@ struct BPSettingsView: View {
             BPSettingsPane(cat: model.active, title: model.categories.first { $0.id == model.active }?.label ?? "", pane: model.pane)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        // The page spans the width, so Down from the top bar's cog (far right, above the
+        // preview, which has nothing focusable) still lands in the category column.
+        .focusSection()
         .task { await model.load() }
         .onDisappear { BPSound.shared.audition = nil }
     }
