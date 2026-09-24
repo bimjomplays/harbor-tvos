@@ -86,6 +86,7 @@ import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
 import * as letterboxdGlue from "./letterboxd";
+import * as kidsGlue from "./kids";
 import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
 
@@ -676,6 +677,18 @@ export const homeServers = {
   startRunner: homeGlue.startRunner,
   reportProgress: homeGlue.reportProgress,
   stopPlayback: homeGlue.stopPlayback,
+};
+
+/** Kids mode (views/kids.tsx, kids-franchise-rail, grid kidsHero, kids-detail.tsx): the kid profile's surface. */
+export const kidsRoom = {
+  page: kidsGlue.page,
+  loadMore: kidsGlue.loadMore,
+  logo: kidsGlue.logo,
+  franchises: kidsGlue.franchises,
+  franchisePage: kidsGlue.franchisePage,
+  detail: kidsGlue.detail,
+  episodes: kidsGlue.episodes,
+  gradStops: kidsGlue.gradStops,
 };
 
 /** use-bp-anime-detail: the Kitsu chain for anime ids (episodes as PlayEpisodes, characters). */

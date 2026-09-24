@@ -582,6 +582,65 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("services.rows without a key: hasKey false, no rows", noRows.hasKey === false && noRows.rows.length === 0 && noRows.name === "Netflix");
 }
 
+// ------------------------------------------------------------------------- kids room
+{
+  const profiles = JSON.stringify({ activeId: "k1", profiles: [{ id: "k1", isPrimary: true, kid: { age: 7, curfewMinutes: null, parentPinHash: null } }] });
+  const json = (url, body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url, body: JSON.stringify(body) });
+  // Cinemeta fallback (no TMDB key): Animation and Family top lists through the kid filters.
+  const cm = loadEngine({ storage: new Map([["harbor.profiles.v1", profiles]]) });
+  cm.node.host.fetch = async (req) => {
+    const mk = (prefix, genres) => Array.from({ length: 10 }, (_, i) => ({ id: `tt${prefix}${i}`, type: "movie", name: `${prefix} ${i}`, releaseInfo: "2001", background: `https://img.invalid/${prefix}${i}.jpg`, genres }));
+    if (req.url.includes("/catalog/movie/top/genre=Animation")) return json(req.url, { metas: [...mk("91", ["Animation", "Comedy"]), { id: "tt9900", type: "movie", name: "Scary", releaseInfo: "2001", genres: ["Animation", "Horror", "Family"] }, { id: "tt9901", type: "movie", name: "Later", releaseInfo: "2999", genres: ["Family"] }] });
+    if (req.url.includes("/catalog/movie/top/genre=Family")) return json(req.url, { metas: [...mk("92", ["Family"]), { id: "tt9902", type: "movie", name: "Drama only", releaseInfo: "2001", genres: ["Drama"] }] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const plain = await cm.engine.kidsRoom.page("k1", true);
+  const plainIds = plain.rows.flatMap((x) => x.metas.map((m) => m.id));
+  r.ok("kidsRoom.page without TMDB: Cinemeta Animated/Family rows, hero from Animation", !plain.hasTmdb && plain.hero.length === 5 && JSON.stringify(plain.rows.map((x) => [x.key, x.title])) === JSON.stringify([["cinemeta-animation", "Animated Movies"], ["cinemeta-family", "Family Movies"]]), JSON.stringify({ hero: plain.hero.length, rows: plain.rows.map((x) => [x.key, x.metas.length]) }));
+  r.ok("kidsRoom.page drops unsafe genres, unreleased and non-family titles, and hero repeats", !plainIds.some((id) => ["tt9900", "tt9901", "tt9902"].includes(id)) && !plain.hero.some((h) => plainIds.includes(h.id)), JSON.stringify(plainIds));
+  r.eq("kidsRoom.franchises is empty without a TMDB key (the rail renders nothing)", cm.engine.kidsRoom.franchises("k1", true), []);
+  r.eq("kidsRoom.episodes without a TMDB key", await cm.engine.kidsRoom.episodes(1, 1, "k1", true), []);
+  cm.dispose();
+
+  // TMDB: kidsSpecs rows and the hero, with the US certification ceiling on movie discovers.
+  const tm = loadEngine({ storage: new Map([["harbor.profiles.v1", profiles]]) });
+  tm.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, tm.engine.settings.sourceKeyFor("k1", true));
+  const urls = [];
+  let serial = 0;
+  tm.node.host.fetch = async (req) => {
+    urls.push(req.url);
+    if (req.url.includes("api.themoviedb.org/3/discover/")) {
+      const tv = req.url.includes("/discover/tv");
+      const results = Array.from({ length: 20 }, () => {
+        serial += 1;
+        return tv
+          ? { id: serial, name: `Show ${serial}`, first_air_date: "2010-01-01", backdrop_path: "/b.jpg", poster_path: "/p.jpg", genre_ids: [10762] }
+          : { id: serial, title: `Film ${serial}`, release_date: "2010-01-01", backdrop_path: "/b.jpg", poster_path: "/p.jpg", genre_ids: [10751], adult: serial % 20 === 1 };
+      });
+      return json(req.url, { page: 1, total_pages: 5, results });
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const built = await tm.engine.kidsRoom.page("k1", true);
+  const ids = built.rows.flatMap((x) => x.metas.map((m) => m.id));
+  r.ok("kidsRoom.page with TMDB builds kidsSpecs rows in upstream order", built.hasTmdb && built.rows.length >= 5 && built.rows.map((x) => x.key).join(",").startsWith("trending-kids,animated-movies,g-pg-picks,kids-tv"), JSON.stringify(built.rows.map((x) => [x.key, x.metas.length])));
+  r.ok("kidsRoom.page hero: at most 10, no adult titles, never repeated in the rows", built.hero.length > 0 && built.hero.length <= 10 && built.hero.every((m) => !m.adult) && !built.hero.some((h) => ids.includes(h.id)) && new Set(ids).size === ids.length, JSON.stringify(built.hero.map((m) => m.id)));
+  r.ok("kidsRoom movie discovers carry certification.lte=PG, US and no horror/thriller", urls.filter((u) => u.includes("/discover/movie")).every((u) => u.includes("certification.lte=PG") && u.includes("certification_country=US") && /without_genres=(16%2C)?27%2C53/.test(u)), urls.filter((u) => u.includes("/discover/movie")).slice(0, 2).join(" "));
+  const before = built.rows.find((x) => x.key === "trending-kids").metas.length;
+  const more = await tm.engine.kidsRoom.loadMore("k1", true, "trending-kids");
+  r.ok("kidsRoom.loadMore appends the next page of a row", more && more.key === "trending-kids" && more.metas.length > before && urls.some((u) => u.includes("/discover/movie") && u.includes("page=2")), JSON.stringify({ before, after: more && more.metas.length }));
+  r.eq("kidsRoom.loadMore for an unknown row", await tm.engine.kidsRoom.loadMore("k1", true, "nope"), null);
+  const tiles = tm.engine.kidsRoom.franchises("k1", true);
+  r.ok("kidsRoom.franchises: every Pick a World tile has three gradient stops and its cta art", tiles.length === 14 && tiles[0].key === "toy-story" && tiles.every((t) => t.stops.length === 3 && t.stops.every((c) => /^#[0-9a-f]{6}$/.test(c)) && t.art === `/kids/cta/${t.key}.webp`) && tiles.find((t) => t.key === "hotel-t").drop === 18, JSON.stringify(tiles.filter((t) => t.stops.length !== 3).map((t) => t.key)));
+  r.eq("kidsRoom.gradStops maps Tailwind classes to hex", tm.engine.kidsRoom.gradStops("from-sky-400 via-sky-300 to-amber-300"), ["#38bdf8", "#7dd3fc", "#fcd34d"]);
+  const lego = await tm.engine.kidsRoom.franchisePage("k1", true, "lego", 1);
+  r.ok("kidsRoom.franchisePage (keyword franchise) filters adult titles", Array.isArray(lego) && lego.every((m) => !m.adult), JSON.stringify(lego.length));
+  r.eq("kidsRoom.franchisePage for an unknown franchise", await tm.engine.kidsRoom.franchisePage("k1", true, "nope", 1), []);
+  const det = await tm.engine.kidsRoom.detail({ id: "tmdb:movie:5", type: "movie", name: "Film 5", releaseInfo: "2010", poster: "https://img.invalid/p.jpg" }, "k1", true);
+  r.ok("kidsRoom.detail falls back to the meta when TMDB and Cinemeta have nothing", det.name === "Film 5" && det.backdrop === "https://img.invalid/p.jpg" && det.year === "2010" && det.tvId === null && det.recs.length === 0 && det.collection === null, JSON.stringify(det));
+  tm.dispose();
+}
+
 // ------------------------------------------------------------------------ library room
 {
   r.eq("libraryRoom.tabs (signed out of trackers)", engine.libraryRoom.tabs().map((t) => t.id), ["library", "watchlist", "history", "lists", "favorites"]);

@@ -4,6 +4,8 @@ struct RootView: View {
     @StateObject private var saver = ScreensaverModel()
     @ObservedObject private var curfew = CurfewState.shared
     @StateObject private var app = AppModel()
+    /// The active profile decides which shell a `.shell` stage shows (kid → Kids).
+    @ObservedObject private var profiles = ProfilesStore.shared
 
     var body: some View {
         ZStack {
@@ -12,7 +14,8 @@ struct RootView: View {
             case .boot: BootSplashView()
             case .onboarding: OnboardingView()
             case .whoIsWatching: WhoIsWatchingView()
-            case .shell: ShellView()
+            // App.tsx: a kid profile is pinned to the Kids surface (see KidsShellView).
+            case .shell: if profiles.active?.kid != nil { KidsShellView() } else { ShellView() }
             }
             if app.stage == .shell, saver.active { ScreensaverView(model: saver).transition(.opacity).zIndex(10) }
             // curfew-guard: topmost on every entry, or it is the appearance of child safety without any of it.
