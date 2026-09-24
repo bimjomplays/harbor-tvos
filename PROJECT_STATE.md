@@ -83,9 +83,9 @@ Docs: browse-spec, big-picture-design, harbor-protocol, engine-report, detail-sp
 
 ## Next (pick up here — updated 2026-09-24 ~01:00 UTC, session on branch `claude/determined-hopper-smvu37`)
 **Where things stand**
-- All of 09-24's work (sports who panel → manga, see Status) is on the branch `claude/determined-hopper-smvu37`, not on `main`. `Build` only runs by itself on `main`, so each batch was built with a manual `workflow_dispatch` on the branch. Last green run: 144 (through Kids); 145 compiled but failed one UI test (Down from the Settings cog), fixed in 2ed99bb; run 146 checks it.
+- All of 09-24's work (sports who panel → translation pass, see Status) is on the branch `claude/determined-hopper-smvu37`, not on `main`. `Build` only runs by itself on `main`, so each batch was built with a manual `workflow_dispatch` on the branch. **Run 149 (998c2e9) is green: everything through the translation pass and reviews 19/20 compiles and the UI tests pass.**
 - **Owner action needed:** merge the branch into `main` (or open a PR), then run `Build` with `testflight=true` from GitHub Actions (only the repository owner can). Nothing from 09-24 is on TestFlight yet.
-- No subagent is in flight; everything is merged into this branch.
+- Subagents in flight when this was written: translation coverage for Kids/Manga/Live/Social/Music/Sports/Calendar, AVPlayer subtitle renderer + kid player UI, music batch 2 (Subsonic, Last.fm, radio, lyrics). They merge into this branch when they report.
 **Then**
 1. Device checklist for the owner (nothing below has run on real hardware): torrent streaming (peers, ports, disk), phone hand-off (Local Network prompt, QR, sign-in from the LAN page), Multiview 4 decodes, AVPlayer Auto mode (HLS / Dolby Vision, fallback to mpv), guide and Home live previews, UI sounds, themes, manga reader memory.
 2. Translation: done for ~77% of Swift literals plus the main String-typed surfaces; Kids, Manga, Live, Social and Together are partly covered — extend `T()` there. Verify on device that the locale environment switches `Text("…")` at runtime.
