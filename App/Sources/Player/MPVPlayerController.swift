@@ -91,6 +91,9 @@ final class MPVPlayerController: UIViewController {
         tornDown = true
         // A preview or tile never set criteria; resetting here could clear the real player's.
         if ownsDisplay { resetDisplayCriteria() }
+        // Like NativePlayerController: nothing reports into a view that is gone (review 22).
+        onStatus = nil
+        onEnded = nil
         let handle = mpv
         mpv = nil
         guard let handle else { return }

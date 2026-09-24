@@ -211,7 +211,8 @@ struct PlayerScreen: View {
         }
         .onPlayPauseCommand { togglePause() }
         .onExitCommand {
-            if resumePending != nil { acknowledgeResume(true) }          // Back takes the default action (bp-resume-prompt)
+            if roomOpen { roomOpen = false; focus = .surface; wake() }   // the inline Watch Together room closes first (review 22)
+            else if resumePending != nil { acknowledgeResume(true) }     // Back takes the default action (bp-resume-prompt)
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
             else if panel != nil { closePanel() }
             else if noAudioWarning, engine == .native { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
