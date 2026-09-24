@@ -62,6 +62,8 @@ final class SettingsBridge: ObservableObject {
         /// use-still-watching.ts: ask "Still watching?" after this many auto-advanced episodes.
         var stillWatching: Bool? = false
         var stillWatchingAfter: Double? = 3
+        /// xray-overlay.tsx (settings/defaults.ts xrayEnabled, off): the cast while paused (PlayerXRay.swift).
+        var xrayEnabled: Bool? = false
         /// speed-menu.tsx / use-track-autoload.ts: the rate a title starts at, and the viewer's own
         /// speed and sleep presets (numbers, kept as Double so an odd value never fails the decode).
         var defaultPlaybackSpeed: Double? = 1

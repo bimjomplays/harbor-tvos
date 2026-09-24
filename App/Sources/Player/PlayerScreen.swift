@@ -109,6 +109,8 @@ struct PlayerScreen: View {
     @State private var skipHideTask: Task<Void, Never>?
     /// use-still-watching.ts prompt: the auto-advance waits on "Still watching?".
     @State private var stillPrompt = false
+    /// xray-overlay.tsx (PlayerXRay.swift): X-Ray's browser, a person page or a trailer covers the player.
+    @State private var xrayOpen = false
     /// speed-menu.tsx rate (bridge setRate); a title starts at settings.defaultPlaybackSpeed.
     @State private var rate: Double = 1
     /// use-sleep-timer.ts: the app-wide sleep timer, on the Speed & sleep control's face.
@@ -210,7 +212,7 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading || stillPrompt)
+                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading || stillPrompt || xrayOpen)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
@@ -218,11 +220,12 @@ struct PlayerScreen: View {
                     case .right: if isLive { controller?.seek(10); wake() } else { nudgeSeek(ahead: true) }
                     case .up where showUpNextCard: StillWatching.reset(); focus = .chip("upnext-keep")
                     case .up where activeSkip != nil: StillWatching.reset(); focus = .chip("skip")
+                    case .up where xrayMeta != nil: focus = PlayerXRayOverlay.entry
                     default: wake()
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, !stillPrompt, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, !stillPrompt, !xrayOpen, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport
                 // (`kid && !pipMode`; TransportKids has no PiP control, so a kid never leaves for PiP).
                 Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
@@ -239,13 +242,15 @@ struct PlayerScreen: View {
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
             }
-            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt {
+            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !xrayOpen {
                 if showUpNextCard, let upNext {
                     upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if let seg = activeSkip {
                     skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
+            // xray-overlay.tsx: X-Ray while paused (PlayerXRay.swift), when settings.xrayEnabled.
+            if let meta = xrayMeta { PlayerXRayOverlay(meta: meta, open: $xrayOpen, focus: $focus).transition(.opacity) }
             // player.tsx StillWatchingPrompt: over everything but the Together room and PiP.
             if stillPrompt, !roomOpen, !pipActive {
                 StillWatchingPrompt(show: context?.meta.name ?? title, nextLabel: stillWatchingNextLabel, focus: $focus,
@@ -1244,7 +1249,19 @@ struct PlayerScreen: View {
         if together.interceptToggle(controller) { wake(); return }
         controller?.togglePause()
         if let c = controller { snap = c.snapshot() }
+        // X-Ray lives while paused: playing again closes its browser / person page.
+        if !snap.paused { xrayOpen = false }
         wake()
+    }
+
+    /// player-overlay-layers.tsx mounts XrayOverlay unless PiP (or drawing) and shows it with the
+    /// chrome; the TV opens it on pause and keeps it clear of every prompt, panel and the Together
+    /// room. Kids get it too (upstream does not gate it), when their profile turned it on.
+    private var xrayMeta: Meta? {
+        guard SettingsBridge.shared.slice.xrayEnabled ?? false, snap.paused, chrome || xrayOpen, let meta = context?.meta,
+              panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !kidsLoading,
+              status.state != "error" else { return nil }
+        return meta
     }
 
     private func wake() {

@@ -507,6 +507,87 @@ r.ok("benchmark still works", (() => {
   again.dispose();
 }
 
+// --------------------------- X-Ray while paused (components/player/xray, use-xray-cast.ts), fixtures
+{
+  const TMDB = "https://api.themoviedb.org/3";
+  const TVDB = "https://harbor.site/api/tvdb/v4";
+  const hits = [];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const u = req.url;
+    if (u.startsWith(`${TMDB}/movie/603?`)) return json({
+      id: 603, title: "The Matrix", original_title: "The Matrix", original_language: "en", overview: "A hacker learns the truth.", tagline: "Welcome to the Real World.",
+      release_date: "1999-03-31", runtime: 136, vote_average: 8.2, vote_count: 26543, status: "Released", genres: [{ id: 28, name: "Action" }],
+      backdrop_path: "/bd.jpg", poster_path: "/p.jpg", spoken_languages: [{ iso_639_1: "en", english_name: "English", name: "English" }],
+      production_countries: [{ iso_3166_1: "US", name: "United States of America" }], production_companies: [{ id: 1, name: "Village Roadshow" }],
+      external_ids: { imdb_id: "tt0133093" },
+      images: { logos: [{ file_path: "/logo.png", iso_639_1: "en", vote_average: 5 }], backdrops: [{ file_path: "/b1.jpg", vote_average: 5 }, { file_path: "/b2.jpg", vote_average: 4 }], posters: [] },
+      videos: { results: [{ key: "vKQi3bBA1y8", site: "YouTube", type: "Trailer", official: true, name: "Official Trailer" }, { key: "extra123", site: "YouTube", type: "Behind the Scenes", name: "Making Of" }] },
+      credits: {
+        cast: [
+          { id: 6384, name: "Keanu Reeves", character: "Neo", profile_path: "/keanu.jpg", order: 0 },
+          { id: 2975, name: "Laurence Fishburne", character: "Morpheus", profile_path: null, order: 1 },
+          { id: 6384, name: "Keanu Reeves", character: "Neo", profile_path: "/keanu.jpg", order: 2 },
+        ],
+        crew: [
+          { id: 9340, name: "Lana Wachowski", job: "Director", department: "Directing", profile_path: "/lana.jpg" },
+          { id: 9340, name: "Lana Wachowski", job: "Writer", department: "Writing", profile_path: null },
+          { id: 9339, name: "Lilly Wachowski", job: "Director", department: "Directing", profile_path: null },
+          { id: 5, name: "Don Davis", job: "Original Music Composer", department: "Sound", profile_path: null },
+          { id: 6, name: "Grip Person", job: "Key Grip", department: "Crew", profile_path: null },
+        ],
+      },
+    });
+    if (u.startsWith(`${TVDB}/search/remoteid/tt9100001`)) return json({ data: [{ series: { id: 777 } }] });
+    if (u.startsWith(`${TVDB}/series/777/extended`)) return json({ data: { characters: [
+      { name: "Captain", personName: "Ann Actor", peopleId: 42, peopleType: "Actor", personImgURL: "/person/42.jpg", sort: 2 },
+      { name: "Pilot", personName: "Bob Player", peopleId: 43, peopleType: "Actor", image: "https://artworks.thetvdb.com/c/43.jpg", sort: 1 },
+      { name: "", personName: "Dee Director", peopleId: 44, peopleType: "Director", sort: 0 },
+    ] } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: u, body: "" };
+  };
+  const E = rec.engine;
+  r.eq("xray.enabled: off by default (settings.xrayEnabled)", E.xray.enabled("default", true), false);
+  const pb = () => E.settingsRoom.controls("playback", "default", true);
+  const row = pb().find((c) => c.id === "xray");
+  r.ok("settingsRoom.controls(playback): the TV's X-Ray row follows Instant play, Off", row && row.kind === "options" && row.value === "off" && row.label === "X-Ray" && pb().findIndex((c) => c.id === "xray") === pb().findIndex((c) => c.id === "instantPlay") + 1, JSON.stringify(pb().map((c) => c.id)));
+  r.eq("settingsRoom.controls: X-Ray is a Playback row only", E.settingsRoom.controls("interface", "default", true).some((c) => c.id === "xray"), false);
+  r.eq("settingsRoom.commit xray on writes settings.xrayEnabled", [E.settingsRoom.commit("xray", "on", "default", true).ok, E.xray.enabled("default", true), E.settings.loadForProfile("default", true).xrayEnabled], [true, true, true]);
+  r.ok("settingsRoom.pane(playback) reports X-Ray", E.settingsRoom.pane("default", true).playback.some(([k, v]) => k === "X-Ray" && v === "On"));
+
+  // No TMDB key: use-xray-cast still asks TVDB (no key needed), sorted by TVDB's sort, actors only.
+  const series = { id: "tt9100001", type: "series", name: "Fixture Show", description: "A crew in space." };
+  const noKey = await r.timed("xray.load(no key, TVDB fixtures)", () => E.xray.load(series, "default", true));
+  r.eq("xray.load without a key: rail from TVDB actors in sort order, negative ids", noKey.rail.map((p) => [p.id, p.name, p.sub]), [[-43, "Bob Player", "Pilot"], [-42, "Ann Actor", "Captain"]]);
+  r.eq("xray.load: TVDB photos become artworks URLs", noKey.rail.map((p) => p.photo), ["https://artworks.thetvdb.com/c/43.jpg", "https://artworks.thetvdb.com/person/42.jpg"]);
+  r.ok("xray.load without a key: no details, no TMDB call, the browser's key note, About from the meta", noKey.needsTmdbKey && !noKey.hasDetails && noKey.cast.length === 0 && noKey.crew.length === 0 && noKey.about?.overview === "A crew in space." && noKey.tabs.map((x) => x.id).join() === "about" && noKey.empty.details === "Add a TMDB key in Settings to see the cast, crew, and details." && !hits.some((h) => h.startsWith(TMDB)), JSON.stringify(noKey));
+  r.eq("xray.load: the rail needs no status line when it has people", noKey.railStatus, null);
+
+  // With a key: TMDB details (cast, crew, about).
+  E.settings.saveForProfile({ ...E.settings.loadForProfile("default", true), tmdbKey: "0123456789abcdef0123456789abcdef" }, "default", true);
+  const movie = { id: "tmdb:movie:603", type: "movie", name: "The Matrix" };
+  const x = await r.timed("xray.load(TMDB fixture)", () => E.xray.load(movie, "default", true));
+  r.eq("xray.load: cast cards (w185 photo, character, initials) deduped by id:character", x.cast.map((p) => [p.id, p.name, p.sub, p.photo, p.initials]), [[6384, "Keanu Reeves", "Neo", "https://image.tmdb.org/t/p/w185/keanu.jpg", "KR"], [2975, "Laurence Fishburne", "Morpheus", null, "LF"]]);
+  r.eq("xray.load: the rail is TMDB's cast when there is one", x.rail.map((p) => p.id), [6384, 2975]);
+  r.eq("xray.load: crew by CREW_PRIORITY with jobs merged per person, unlisted jobs left out", x.crew.map((p) => [p.name, p.sub]), [["Lana Wachowski", "Director, Writer"], ["Lilly Wachowski", "Director"], ["Don Davis", "Original Music Composer"]]);
+  r.eq("xray.load: tabs Cast / Crew / About, opening on Cast", [x.tabs.map((t) => t.id), x.initialTab], [["cast", "crew", "about"], "cast"]);
+  const a = x.about;
+  r.ok("xray.load about: title, tagline, rating + votes, year, runtime, status, genres", a.title === "The Matrix" && a.tagline === "Welcome to the Real World." && a.rating === "8.2" && a.votes === "27K" && a.year === "1999" && a.runtime === "136 min" && a.status === "Released" && a.genres.join() === "Action", JSON.stringify(a));
+  r.eq("xray.load about: facts (Director, Writers, Network, Language, Country)", a.facts.map((f) => f.label), ["Director", "Writers", "Network", "Language", "Country"]);
+  r.ok("xray.load about: lead trailer then extras; the backdrop leads the stills", a.videos.map((v) => v.ytId).join() === "vKQi3bBA1y8,extra123" && a.videos[0].name === "The Matrix trailer" && a.videos[0].thumb === "https://img.youtube.com/vi/vKQi3bBA1y8/mqdefault.jpg" && a.hero.endsWith("/bd.jpg") && a.strip[0] === a.hero && a.showStrip, JSON.stringify({ v: a.videos, hero: a.hero, strip: a.strip }));
+  const before = hits.length;
+  await E.xray.load(movie, "default", true);
+  r.eq("xray.load: a second pause is served from the cache", hits.length, before);
+  r.eq("xray.fmtVotes / initials follow xray-about / xray-actor-card", [E.xray.fmtVotes(1_250_000), E.xray.fmtVotes(1_000_000), E.xray.fmtVotes(999), E.xray.initials("  Cher "), E.xray.initials("")], ["1.3M", "1M", "999", "C", "?"]);
+  const none = E.xray.assemble({ id: "x", type: "movie", name: "Nothing" }, null, [], true);
+  r.eq("xray.assemble: nothing found says so on the rail and has no tabs", [none.railStatus, none.tabs.length, none.initialTab], ["No cast information for this title.", 0, null]);
+  rec.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";
@@ -1963,7 +2044,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("installUiCatalog registers a host-fed catalog and t() follows it", [engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.installUiCatalog("fr", JSON.stringify({ "This is how a subtitle will look.": "Voici un sous-titre." })), engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.pane("default", true).subtitle.text], [false, true, true, "Voici un sous-titre."]);
   engine.settingsRoom.commit("uiLanguage", "en", "default", true);
   const pane =engine.settingsRoom.pane("default", true);
-  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 1, "Off"]);
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 7, 3, 1, "Off"]); // playback: six upstream lines + the TV's X-Ray
   r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
   const setupKey = engine.settings.sourceKeyFor("default", true);
   const before = engine.settingsRoom.pane("default", true).setup[1][1];

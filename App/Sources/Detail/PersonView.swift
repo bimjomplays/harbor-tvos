@@ -50,7 +50,18 @@ struct PersonView: View {
     @State private var bioExpanded = false
     @Environment(\.dismiss) private var dismiss
 
-    init(personId: Int, name: String) { _model = StateObject(wrappedValue: PersonModel(personId: personId)); self.name = name }
+    /// Set when the page is drawn inside the player (PlayerXRay.swift, xray-overlay.tsx CastModal
+    /// without onOpenDetail/onPlay): Back and Menu call it instead of dismissing the presentation
+    /// (the player's own cover), and titles and collaborators stay put, because a fullScreenCover
+    /// over the player makes it disappear (PlaybackState, the torrent's owner).
+    let onClose: (() -> Void)?
+
+    init(personId: Int, name: String, onClose: (() -> Void)? = nil) {
+        _model = StateObject(wrappedValue: PersonModel(personId: personId)); self.name = name; self.onClose = onClose
+    }
+
+    private func close() { if let onClose { onClose() } else { dismiss() } }
+    private func openTitle(_ m: Meta) { if onClose == nil { detail = m } }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -60,8 +71,8 @@ struct PersonView: View {
                     hero.padding(.horizontal, BP.gutter)
                     if let pg = model.page {
                         if !pg.hasKey { BPNote(text: "Add a TMDB key in Settings to see filmographies.").padding(.horizontal, BP.gutter) }
-                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: "Known For", metas: k), onFocus: { _ in }, onSelect: { detail = $0 }) }
-                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: "IMDb Top", metas: t), onFocus: { _ in }, onSelect: { detail = $0 }) }
+                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: "Known For", metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: "IMDb Top", metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }) }
                         if let c = pg.collaborators, c.count >= 3 { collaborators(c) }
                         if let secs = pg.sections, !secs.isEmpty {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -70,7 +81,7 @@ struct PersonView: View {
                                 filterRow("Rating", [("0", "Any rating"), ("6", "Rated 6+"), ("7", "Rated 7+"), ("8", "Rated 8+")], active: String(model.minRating), trailing: nil) { model.minRating = Int($0) ?? 0; Task { await model.load() } }
                             }
                             .padding(.horizontal, BP.gutter)
-                            ForEach(secs) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { detail = $0 }) }
+                            ForEach(secs) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }) }
                         }
                     } else if model.loading {
                         ProgressView().tint(BP.inkMuted).padding(.horizontal, BP.gutter)
@@ -81,7 +92,7 @@ struct PersonView: View {
             }
         }
         .task { await model.load() }
-        .onExitCommand { dismiss() }
+        .onExitCommand { close() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $other) { c in PersonView(personId: c.id, name: c.name) }
     }
@@ -108,7 +119,7 @@ struct PersonView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+                Button { close() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
             }
         }
         .focusSection()
@@ -121,7 +132,7 @@ struct PersonView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(people.prefix(18)) { c in
-                        Button { other = c } label: {
+                        Button { if onClose == nil { other = c } } label: {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {
                                     Circle().fill(BP.panel2)
