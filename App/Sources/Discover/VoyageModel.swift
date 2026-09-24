@@ -89,11 +89,17 @@ final class VoyageModel: ObservableObject {
     }
 
     /// store.ts chooseHeading, then the headings the pick's TMDB related titles refine (refineAfterPick).
+    /// Returns once the pick shows; `settle` brings the refinement later (review 33: focus moves
+    /// at the pick, not a network round trip after it).
     func choose(_ meta: Meta) async {
         let p = profile
         guard let s: Snapshot = try? await HarborEngine.shared.call("voyageRoom.choose", [p.id, p.linked, meta.id]) else { return }
         snapshot = s
-        guard let a = s.active, !a.ready else { return }
+    }
+
+    func settle(_ meta: Meta) async {
+        guard let a = snapshot?.active, !a.ready else { return }
+        let p = profile
         if let settled: Snapshot = try? await HarborEngine.shared.call("voyageRoom.settle", [p.id, p.linked, meta.id]) { snapshot = settled }
     }
 
@@ -123,7 +129,10 @@ final class VoyageModel: ObservableObject {
     func loadCredits(_ meta: Meta) async {
         guard credits[meta.id] == nil else { return }
         let p = profile
-        let c = try? await HarborEngine.shared.call("voyageRoom.credits", [p.id, p.linked, meta.id, meta.type]) as Credits
-        credits[meta.id] = .some(c)
+        // A failed call is not cached as "no credits": the next focus asks again (review 33).
+        do {
+            let c: Credits? = try await HarborEngine.shared.call("voyageRoom.credits", [p.id, p.linked, meta.id, meta.type])
+            credits[meta.id] = .some(c)
+        } catch {}
     }
 }

@@ -51,6 +51,7 @@ struct VoyageView: View {
         }
         .onChange(of: model.active?.headings.map(\.id) ?? []) { _, ids in
             // The headings changed under the viewer (a pick, a reroll, the TMDB refinement).
+            // (The pick itself settles focus as soon as it shows, before the refinement lands; review 33.)
             if let f = focus, f.hasPrefix("heading-"), !ids.contains(String(f.dropFirst(8))) { settleFocus() }
         }
         .fullScreenCover(item: $playing, onDismiss: { Task { await model.refresh(); settleFocus() } }) { t in
@@ -155,7 +156,7 @@ struct VoyageView: View {
             HStack(alignment: .top, spacing: BP.px(24)) {
                 HStack(alignment: .top, spacing: BP.px(14)) {
                     ForEach(Array(a.headings.enumerated()), id: \.element.id) { i, m in
-                        Button { Task { await model.choose(m); settleFocus() } } label: {
+                        Button { Task { await model.choose(m); settleFocus(); await model.settle(m) } } label: {
                             BPTileView(meta: m, shape: .poster, focused: focus == "heading-\(m.id)")
                         }
                         .buttonStyle(BPTileStyle())

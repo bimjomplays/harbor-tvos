@@ -104,6 +104,13 @@ struct VoyageMarquee: View {
         .offset(x: shift)
         .onAppear { drift() }
         .onChange(of: items.map(\.id)) { _, _ in drift() }
+        // Upstream pauses the marquee off screen; Reduce Motion is honoured live (review 33).
+        .onChange(of: reduceMotion) { _, _ in drift() }
+        .onDisappear {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { shift = 0 }
+        }
     }
 
     private func drift() {
