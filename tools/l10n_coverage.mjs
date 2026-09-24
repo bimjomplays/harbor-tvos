@@ -13,6 +13,14 @@
 // Interpolation outside a SwiftUI initialiser bakes the value into the key, so it never matches:
 // such strings want a T("… %@ …", value) format key. Heuristic, not a compiler: use it to find
 // untranslated copy and to compare coverage before/after, not as a gate.
+//
+// Music looks copy up by upstream id key through the engine (MusicCopy: copy("music.play", "Play"),
+// MusicCopy.shared(…), MusicSpotifyCopy.text(…)): engine/music.ts copy() translates only the keys
+// in its COPY_KEYS list, so such a lookup (kind "copy") counts when COPY_KEYS lists it AND the catalog
+// has the key, or its upstream English (a key upstream's catalogs lack comes back in English and
+// MusicCopy hands that to T(), so tools/locales-tvos.json can cover it). The English fallback
+// argument is not counted again. Any other literal that is an upstream id key ("music.consent.terms"
+// in an array, an error set to a key) counts the same way; T("an.id.key") only needs the catalog.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +51,21 @@ for (const line of fs.readFileSync(stringsPath, "utf8").split("\n")) {
 const fold = (k) => k.replace(/%(\d+\$)?(lld|ld|d|@|f|\.\d+f)/g, "%@");
 const folded = new Set([...keys].map(fold));
 
+// Upstream id keys (en.lproj holds exactly those) and the keys engine/music.ts copy() translates.
+const idKeys = new Map(); // id key → upstream English
+for (const line of fs.readFileSync(path.join(root, "App/Locales/en.lproj/Localizable.strings"), "utf8").split("\n")) {
+  const m = /^"((?:[^"\\]|\\.)*)" = "((?:[^"\\]|\\.)*)";/.exec(line);
+  if (m) idKeys.set(unesc(m[1]), unesc(m[2]));
+}
+const copyKeys = new Set();
+{
+  const m = /const COPY_KEYS = \[([\s\S]*?)\] as const/.exec(fs.readFileSync(path.join(root, "engine/music.ts"), "utf8"));
+  if (m) for (const k of m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)) copyKeys.add(k[1]);
+}
+const ID_KEY = /^[a-z][\w-]*(\.[\w-]+)+$/;
+// MusicCopy lookups: copy(key, fallback), MusicCopy.shared(key, fallback), MusicSpotifyCopy.text(key).
+const COPY_CALLS = new Set(["copy", "MusicCopy.shared", "text"]);
+
 // Letter-free keys ("%@ %@", "%@: %@") that some language re-orders or re-punctuates: a SwiftUI
 // literal like Text("\(a) \(b)") looks one up and borrows that unrelated entry (review 20).
 const risky = new Set();
@@ -72,7 +95,8 @@ const SKIP_CALLS = new Set(["call", "Image", "systemName", "print", "NSLog", "UR
   "forResource", "path", "url", "value", "setValue", "addValue", "dateFormat", "DateFormatter", "Locale", "TimeZone",
   "identifier", "id", "tag", "accessibilityIdentifier", "matchedGeometryEffect", "namespace", "decode", "encode",
   "CodingKeys", "key", "Key", "forKey", "forHTTPHeaderField", "rawValue", "NSPredicate", "Regex", "NSRegularExpression",
-  "Bundle", "UIImage", "SFSymbol", "resource", "cString", "dlsym", "getenv", "Selector", "ofType", "withExtension"]);
+  "Bundle", "UIImage", "SFSymbol", "resource", "cString", "dlsym", "getenv", "Selector", "ofType", "withExtension",
+  "push"]); // push: the player controllers' status log lines
 const SKIP_LABELS = new Set(["systemImage", "systemName", "id", "key", "forKey", "icon", "image", "symbol", "glyph", "kind", "type",
   "route", "action", "event", "name", "code", "lang", "url", "path", "format", "identifier", "accessibilityIdentifier", "tag",
   "keyPath", "sfSymbol", "mode", "style", "fn", "method", "category", "sport", "league", "provider", "source", "scheme", "host"]);
@@ -81,7 +105,7 @@ const SKIP_LABELS = new Set(["systemImage", "systemName", "id", "key", "forKey",
 function literals(src) {
   const out = [];
   const stack = []; // { callee, label } per open paren/bracket
-  let i = 0, line = 1, label = "", lastWord = "", prevTok = "";
+  let i = 0, line = 1, label = "", lastWord = "", lastDotted = "", prevTok = "";
   const n = src.length;
   while (i < n) {
     const c = src[i];
@@ -111,24 +135,26 @@ function literals(src) {
         text += d; j++;
       }
       const top = stack[stack.length - 1];
-      out.push({ line, text, interp, callee: top?.callee ?? "", bracket: top?.bracket ?? false, label: top ? label : "", prevTok });
+      out.push({ line, text, interp, callee: top?.callee ?? "", dotted: top?.dotted ?? "", arg: top?.arg ?? 0, bracket: top?.bracket ?? false, label: top ? label : "", prevTok,
+        dictKey: /^\s*:(?!:)/.test(src.slice(j + (raw ? 2 : 1), j + 8)), plusNext: /^\s*\+/.test(src.slice(j + (raw ? 2 : 1), j + 8)) });
       void depth;
       i = j + (raw ? 2 : 1); prevTok = "str"; continue;
     }
     if (c === "(" || c === "[") {
-      stack.push({ callee: prevTok === "word" ? lastWord : "", bracket: c === "[", savedLabel: label });
+      stack.push({ callee: prevTok === "word" ? lastWord : "", dotted: prevTok === "word" ? lastDotted : "", arg: 0, bracket: c === "[", savedLabel: label });
       label = ""; prevTok = c; i++; continue;
     }
     if (c === ")" || c === "]") { const s = stack.pop(); label = s?.savedLabel ?? ""; prevTok = "close"; i++; continue; }
     if (c === "{" ) { stack.push({ callee: "{", bracket: false, savedLabel: label }); label = ""; prevTok = "{"; i++; continue; }
     if (c === "}") { const s = stack.pop(); label = s?.savedLabel ?? ""; prevTok = "close"; i++; continue; }
-    if (c === ",") { label = ""; prevTok = ","; i++; continue; }
+    if (c === ",") { label = ""; prevTok = ","; if (stack.length) stack[stack.length - 1].arg++; i++; continue; }
     if (/[A-Za-z_]/.test(c)) {
       let j = i; while (j < n && /[A-Za-z0-9_]/.test(src[j])) j++;
       const w = src.slice(i, j);
       // "label:" (not "::" nor a ternary "a ? b : c" — a label directly follows "(" or ",")
       let k = j; while (src[k] === " ") k++;
       if (src[k] === ":" && src[k + 1] !== ":" && (prevTok === "(" || prevTok === ",")) { label = w; i = k + 1; prevTok = ":label"; continue; }
+      lastDotted = src[i - 1] === "." && /[A-Za-z0-9_]/.test(src[i - 2] ?? "") ? `${lastWord}.${w}` : w;
       lastWord = w; prevTok = w === "return" ? "return" : "word"; i = j; continue;
     }
     if (c === "=" && src[i + 1] === "=") { prevTok = "=="; i += 2; continue; }
@@ -140,18 +166,27 @@ function literals(src) {
 }
 
 const PROSE = /^[A-Z¿¡][^\n]*[a-z]/; // capitalised and has a lowercase letter
-const DATAISH = /^[a-z0-9_.-]+$|:\/\/|^X?\/|^[A-Za-z]+\.[A-Za-z.]+$|^[A-Z0-9_]+$|^#?[0-9A-Fa-f]{6,8}$|\.(jpe?g|JPE?G|png|PNG|gif|svg|webp|json|m3u8?)$/;
+// Data, not copy: ids, URLs, paths, key paths, CONSTANTS, colors, a user agent or version ("VLC/3.0.20"), a camelCase
+// identifier (AVURLAssetHTTPUserAgentKey), a file name.
+const DATAISH = /^[a-z0-9_.-]+$|:\/\/|^X?\/|^[A-Za-z]+\.[A-Za-z.]+$|^[A-Z0-9_]+$|^#?[0-9A-Fa-f]{6,8}$|\/\d|^[A-Za-z]*[a-z][A-Z][A-Za-z0-9]*$|\.(jpe?g|JPE?G|png|PNG|gif|svg|webp|json|m3u8?|glsl)$/;
 
-function classify(l) {
+function classify(l, musicCopy) {
   const t = l.text;
   if (!/[A-Za-z]/.test(t.replace(/\u0000/g, ""))) return null;
+  if (musicCopy && !l.label && !l.bracket && (COPY_CALLS.has(l.dotted) || COPY_CALLS.has(l.callee))) {
+    if (l.arg === 0 && !l.interp) return "copy";
+    if (l.arg === 1 && (l.callee === "copy" || l.dotted === "MusicCopy.shared")) return null; // the English fallback
+  }
   if (l.label && SKIP_LABELS.has(l.label)) return null;
   if (SKIP_CALLS.has(l.callee)) return null;
   if (l.prevTok === "==") return null;
-  if (l.callee === "T" && !l.label) return "T";
-  if (SWIFTUI.has(l.callee) && !l.label) return "swiftui";
+  if (!l.interp && !l.dictKey && ID_KEY.test(t) && (idKeys.has(t) || copyKeys.has(t))) return "copy";
+  if (l.callee === "T" && !l.label) return l.arg === 0 ? "T" : null; // later arguments are the format's values
+  // Text("a" + b): a String piece, not a LocalizedStringKey (it falls through to the bare check).
+  const concat = l.prevTok === "+" || l.plusNext;
+  if (SWIFTUI.has(l.callee) && !l.label && !concat) return "swiftui";
   if (SWIFTUI.has(l.callee) && (l.label === "title" || l.label === "label")) return "swiftui";
-  if (l.label && UI_LABELS.has(l.label)) return "arg";
+  if (l.label && UI_LABELS.has(l.label)) return DATAISH.test(t.replace(/\u0000/g, "X")) ? null : "arg"; // a URL placeholder is not copy
   const plain = t.replace(/\u0000/g, "X");
   if (DATAISH.test(plain) || !PROSE.test(plain)) return null;
   if (l.bracket && l.prevTok !== "," && l.prevTok !== "[") return null; // subscript key
@@ -180,7 +215,9 @@ let total = 0, hit = 0;
 for (const t of targets) for (const file of swiftFiles(t)) {
   const misses = [];
   let ft = 0, fh = 0;
-  for (const l of literals(fs.readFileSync(file, "utf8"))) {
+  const src = fs.readFileSync(file, "utf8");
+  const musicCopy = src.includes("MusicCopy");
+  for (const l of literals(src)) {
     if (l.interp && SWIFTUI.has(l.callee) && !l.label && !/[A-Za-z]/.test(l.text.replace(/\u0000/g, ""))) {
       const k = keyOf(l, "swiftui");
       if ([...risky].some((r) => fold(r) === fold(k))) {
@@ -189,11 +226,13 @@ for (const t of targets) for (const file of swiftFiles(t)) {
       }
       continue;
     }
-    const kind = classify(l);
+    const kind = classify(l, musicCopy);
     if (!kind) continue;
     ft++;
     const key = keyOf(l, kind);
-    const ok = key !== null && (keys.has(key) || folded.has(fold(key)) || folded.has(fold(key.replace(/%%/g, "%"))));
+    // A key upstream's catalog lacks comes back in English; MusicCopy then asks T() for that English.
+    const ok = kind === "copy" ? (l.callee === "T" || copyKeys.has(key)) && (keys.has(key) || keys.has(idKeys.get(key) ?? key))
+      : key !== null && (keys.has(key) || folded.has(fold(key)) || folded.has(fold(key.replace(/%%/g, "%"))));
     if (ok) fh++;
     if (!ok || all) misses.push({ line: l.line, kind: ok ? kind : `${kind}!`, text: l.text.replace(/\u0000/g, "\\(…)") });
   }

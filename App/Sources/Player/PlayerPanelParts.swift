@@ -197,8 +197,8 @@ struct PlayerAudioPanel: View {
         let lang = t.lang.map { Locale(identifier: "en").localizedString(forLanguageCode: $0) ?? $0.uppercased() } ?? ""
         let trimmed = t.title?.trimmingCharacters(in: .whitespaces) ?? ""
         let named = (trimmed.isEmpty || trimmed == t.lang) ? "" : trimmed
-        let detail = [lang, t.codec?.uppercased() ?? "", t.channels ?? "", t.isDefault ? "Default" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
-        let head = !named.isEmpty ? named : (!lang.isEmpty ? lang : "Track")
+        let detail = [lang, t.codec?.uppercased() ?? "", t.channels ?? "", t.isDefault ? T("Default") : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        let head = !named.isEmpty ? named : (!lang.isEmpty ? lang : T("Track"))
         return (head, detail)
     }
 }
