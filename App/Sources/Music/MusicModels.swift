@@ -205,6 +205,11 @@ final class MusicCopy: ObservableObject {
     func load() async {
         if let s: [String: String] = try? await HarborEngine.shared.call("music.copy") { strings = s }
     }
-    /// The engine's text, else the English fallback given here (the same upstream string).
-    func callAsFunction(_ key: String, _ fallback: String) -> String { strings[key] ?? fallback }
+    /// The engine's text, else the English fallback given here (the same upstream string). A key
+    /// upstream's catalogs lack comes back in English (translate.ts falls back to en), so that
+    /// English goes through T(): the Swift catalog may have it (tools/locales-tvos.json).
+    func callAsFunction(_ key: String, _ fallback: String) -> String {
+        let text = strings[key] ?? fallback
+        return text == fallback ? T(fallback) : text
+    }
 }

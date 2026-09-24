@@ -21,6 +21,8 @@ final class NativePlayerController: UIViewController {
     var isLive = false
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// lib/player-prefs.ts / subtitle-memory.ts key for this playback (PlayerScreen); nil remembers nothing.
+    var trackMemory: TrackMemory?
     /// Where playback should start, applied once the item is ready.
     var startAtSeconds: Double = 0
 
@@ -285,7 +287,7 @@ final class NativePlayerController: UIViewController {
         audioGroup = try? await asset.loadMediaSelectionGroup(for: .audible)
         legibleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
         guard !tornDown, player.currentItem === item else { return }
-        applyTrackPreferences()
+        await applyTrackPlan(item)
         if let video = try? await asset.loadTracks(withMediaType: .video).first,
            let desc = try? await video.load(.formatDescriptions).first {
             codecName = Self.codecName(CMFormatDescriptionGetMediaSubType(desc))
@@ -445,8 +447,45 @@ final class NativePlayerController: UIViewController {
         item.select(target, in: g)
     }
 
-    /// The same language matching as MPVPlayerController.applyTrackPreferences: the first audio
-    /// option in a preferred language; subtitles stay off unless one matches a preferred language.
+    /// use-track-autoload.ts's track choice, made by the engine (player.trackPlan) as on mpv: the
+    /// preferred languages, the show's remembered audio / subtitle language and delay, this
+    /// episode's remembered subtitle, and the track rules (trackBlockWords, subtitlesOffByDefault,
+    /// preferEmbeddedSubs, forcedSubsWhenNativeAudio, secondarySubLang). With no subtitle choice
+    /// the file's own subtitles are turned off, like mpv's empty `sid` slot.
+    private func applyTrackPlan(_ item: AVPlayerItem) async {
+        let list = tracks()
+        guard let plan = await TrackPlanner.plan(memory: trackMemory, tracks: list) else {
+            guard !tornDown, player.currentItem === item else { return }
+            applyTrackPreferences()
+            return
+        }
+        guard !tornDown, player.currentItem === item else { return }
+        func find(_ id: String?, _ type: String) -> MPVPlayerController.Track? {
+            guard let id else { return nil }
+            return list.first { $0.type == type && String($0.id) == id }
+        }
+        if let a = find(plan.audioId, "audio") { select(track: a, type: "audio") }
+        if plan.sub == "select", let s = find(plan.subId, "sub") {
+            select(track: s, type: "sub")
+        } else {
+            select(track: nil, type: "sub")
+        }
+        // setSecondarySub keeps to the sideloaded tracks by itself.
+        if let s = find(plan.secondaryId, "sub") { setSecondarySub(s) }
+        if plan.subDelaySec != 0 { setSubDelay(plan.subDelaySec) }
+        plan.notes.forEach { push($0) }
+        if let r = plan.restore {
+            Task { [weak self] in
+                guard let self, !self.tornDown else { return }
+                if await TrackPlanner.restore(r, into: self) { self.push("subs: remembered subtitle added") }
+            }
+        }
+    }
+
+    func currentSubDelay() -> Double { subDelaySec }
+
+    /// Fallback when the engine does not answer (the same language matching as mpv's fallback):
+    /// the first audio option in a preferred language; subtitles stay off unless one matches.
     private func applyTrackPreferences() {
         guard let item = player.currentItem else { return }
         func rank(_ o: AVMediaSelectionOption, _ names: [String]) -> Int? {
@@ -837,6 +876,8 @@ struct NativePlayerView: UIViewControllerRepresentable {
     var isLive: Bool = false
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// Per-show track memory key (TrackMemory.swift); nil remembers nothing.
+    var trackMemory: TrackMemory? = nil
     let onStatus: (MPVPlayerController.Status) -> Void
     var onEnded: (() -> Void)? = nil
     var onUnsupported: ((String) -> Void)? = nil
@@ -852,6 +893,7 @@ struct NativePlayerView: UIViewControllerRepresentable {
         c.isLive = isLive
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
+        c.trackMemory = trackMemory
         c.onStatus = onStatus
         c.onEnded = onEnded
         c.onUnsupported = onUnsupported

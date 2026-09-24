@@ -31,6 +31,10 @@ protocol PlayerEngineControlling: AnyObject {
     func streamFilename() -> String?
     func refreshSubtitleStyle()
     func setSubDelay(_ seconds: Double)
+    /// The subtitle delay in force (a show's remembered delay is applied when the file opens).
+    func currentSubDelay() -> Double
+    /// lib/player-prefs.ts / subtitle-memory.ts key for this playback; nil remembers nothing.
+    var trackMemory: TrackMemory? { get }
     func setShaders(_ paths: [String])
     func videoWidth() -> Int
     func addSubtitle(file: URL, title: String, lang: String)

@@ -80,6 +80,8 @@ struct SettingsView: View {
                     }
                 }
                 section("Anime4K") { Anime4KPanel() }
+                // settings.homeRows (lib/home-customization) and the Simkl home rails (Settings/HomeRowsPanel.swift).
+                section("Home rows") { HomeRowsPanel() }
                 section("Anime rows") { AnimeRowsPanel() }
                 // settings.mangaEnabled (views/manga.tsx EnableGate): the Manga tab, Search's manga
                 // results and the anime hero's "Read the Manga" all wait for it.
