@@ -25,6 +25,7 @@ struct ShellView: View {
     @EnvironmentObject private var settings: SettingsBridge
     /// Per-profile tab locks and hidden anime (Profiles/ParentalGate.swift).
     @ObservedObject private var parental = ParentalGate.shared
+    @ObservedObject private var pipBrowse = PiPBrowse.shared
     /// The eBook tab, off until Settings turns it on (EBook/EBookModels.swift EBookGate).
     @AppStorage(EBookGate.key) private var ebookOn = false
 
@@ -45,8 +46,13 @@ struct ShellView: View {
         .focusScope(focusNS)
         .environment(\.shellFocusNamespace, focusNS)
         .onAppear {
-            ShellFocus.shared.request = { resetFocus(in: focusNS) }
-            GamepadMonitor.shared.onTab = { delta in cycleTab(delta) }
+            let request: () -> Void = { resetFocus(in: focusNS) }
+            let onTab: (Int) -> Void = { delta in cycleTab(delta) }
+            // Under the PiP browse layer the main shell's hooks wait in PiPBrowse's stash (review 36).
+            if inBrowseLayer || !PiPBrowse.shared.stashMainHooks(request: request, onTab: onTab, appearing: true) {
+                ShellFocus.shared.request = request
+                GamepadMonitor.shared.onTab = onTab
+            }
             ParentalGate.shared.attach()
             leaveHiddenRoom()
         }
@@ -63,14 +69,18 @@ struct ShellView: View {
         .onChange(of: settings.mangaOn) { _, _ in leaveHiddenTab() }
         .onChange(of: settings.sportsDeclined) { _, _ in leaveHiddenTab() }
         // The PiP browse layer's shell leaves the hooks alone: PiPBrowse hands them back to the main shell.
-        .onDisappear { if !inBrowseLayer { GamepadMonitor.shared.onTab = nil } }
+        .onDisappear {
+            if !inBrowseLayer, !PiPBrowse.shared.stashMainHooks(request: nil, onTab: nil, appearing: false) { GamepadMonitor.shared.onTab = nil }
+        }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
         .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
         // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
         .overlay(alignment: .top) { ReminderToastHost() }
         // Watch Together invites, summons and chat while browsing (Together/TogetherOverlays.swift).
-        .overlay { TogetherToastHost() }
+        // Only the visible shell hosts invites: the main shell under the PiP browse layer would
+        // auto-join into a window nobody sees (review 36).
+        .overlay { if inBrowseLayer || !pipBrowse.isUp { TogetherToastHost() } }
         .overlay(alignment: .top) {
             if let n = app.deepLinkNote {
                 Text(n).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))

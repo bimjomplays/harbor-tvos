@@ -1,6 +1,11 @@
 {
   "_about": "Apple TV copy that upstream's catalogs have no key for. tools/build_locales.mjs merges these into App/Locales/<lang>.lproj after upstream's keys (upstream wins). Keys are the English source string; {name} placeholders get Swift-format twins (%@ / %lld) like upstream's. Keep every language; keep the key's placeholders.",
 
+  "Browse Harbor": {
+    "ar": "تصفّح Harbor", "de": "Harbor durchsuchen", "es": "Explorar Harbor", "fr": "Parcourir Harbor", "hi": "Harbor ब्राउज़ करें",
+    "id": "Jelajahi Harbor", "it": "Sfoglia Harbor", "ja": "Harbor を見る", "ko": "Harbor 둘러보기", "pl": "Przeglądaj Harbor",
+    "pt": "Explorar o Harbor", "ru": "Обзор Harbor", "tr": "Harbor'a göz at", "vi": "Duyệt Harbor", "zh": "浏览 Harbor"
+  },
   "Couldn't load this room.": {
     "ar": "تعذّر تحميل هذا القسم.", "de": "Dieser Bereich konnte nicht geladen werden.", "es": "No se pudo cargar esta sección.",
     "fr": "Impossible de charger cette section.", "hi": "यह सेक्शन लोड नहीं हो सका।", "id": "Tidak dapat memuat bagian ini.",

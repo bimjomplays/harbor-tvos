@@ -39,7 +39,7 @@ extension UIWindow {
 @MainActor
 final class PlaybackState: ObservableObject {
     static let shared = PlaybackState()
-    @Published var active = false
+    @Published private(set) var active = false
     /// The players (and Multiview) that hold playback. Two can overlap for a moment: a video
     /// started from the PiP browse layer opens while the one in Picture in Picture is still
     /// closing, and the late close must not clear the new one's claim (PiPBrowse).

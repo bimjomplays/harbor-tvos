@@ -161,7 +161,9 @@ struct MultiviewView: View {
         }
         // No reset here: presenting the full player can report a disappear while Multiview stays
         // underneath; the grid is cleared by leave() and goes with this view otherwise.
-        .onDisappear { if fullScreen == nil { PlaybackState.shared.release(playbackClaim) } }
+        // Released on any disappear: the full player holds its own claim, and onDismiss claims again
+        // (a teardown with the player up must not leave an orphaned claim; review 36).
+        .onDisappear { PlaybackState.shared.release(playbackClaim) }
         .fullScreenCover(item: $fullScreen, onDismiss: { PlaybackState.shared.claim(playbackClaim) }) { ch in
             // The grid is under this player: its PiP keeps the placard rather than stepping aside.
             PlayerScreen(title: ch.name, subtitle: live.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!,

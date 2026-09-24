@@ -46,6 +46,16 @@ final class PiPBrowse: ObservableObject {
     /// The main shell's hooks, which the layer's ShellView takes over while it is up.
     private var savedFocusRequest: (() -> Void)?
     private var savedOnTab: ((Int) -> Void)?
+
+    /// The main shell's onAppear / onDisappear while the layer is up (its player cover closing
+    /// under the layer re-appears it): its hooks go to the stash the layer hands back on lowering,
+    /// never over the layer's own (review 36). Returns whether the stash took them.
+    func stashMainHooks(request: (() -> Void)?, onTab: ((Int) -> Void)?, appearing: Bool) -> Bool {
+        guard window != nil else { return false }
+        if appearing { savedFocusRequest = request }
+        savedOnTab = onTab
+        return true
+    }
     private var bag = Set<AnyCancellable>()
 
     private init() {
