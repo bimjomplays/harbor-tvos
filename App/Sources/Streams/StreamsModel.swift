@@ -84,6 +84,8 @@ final class StreamsModel: ObservableObject {
     @Published private(set) var rememberedIndex: Int?
     /// Home-server copies of this title (use-bp-streams homeServerCopies), loaded beside the addon search.
     @Published private(set) var copies: [HomeCopy] = []
+    /// A picked torrent is being added to the TV's engine (metadata, up to a minute).
+    @Published private(set) var p2pStarting = false
     struct HomeCopy: Decodable, Identifiable { var key: String; var label: String; var sourceLabel: String; var connectionId: String; var itemId: String; var versionId: String; var quality: String?; var sizeBytes: Double?; var resolution: String?; var progressMs: Double; var id: String { key } }
 
     let token = UUID().uuidString
@@ -159,6 +161,8 @@ final class StreamsModel: ObservableObject {
         var message: String? = nil
         /// picker-utils isDebridFailure: the debrid's side failed, not the source.
         var debridFailure: Bool? = nil
+        /// engine/streams.ts P2pPlan: resolve would have handed this torrent to the local engine.
+        var p2p: TorrentEngine.Plan? = nil
     }
 
     /// A home-server copy resolves through the server (direct play or transcode).
@@ -194,9 +198,30 @@ final class StreamsModel: ObservableObject {
     }
 
     func resolve(_ stream: ScoredStream, forceP2p: Bool = false) async -> Resolved {
-        let p = ProfilesStore.shared.active
+        let r = await resolveInEngine(stream, forceP2p: forceP2p, afterP2p: false)
+        guard !r.ok, let plan = r.p2p else { return r }
+        // resolve.ts tryLocalEngine, through the TV's librqbit engine (App/Sources/Torrent).
+        p2pStarting = true
+        defer { p2pStarting = false }
         do {
-            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true, forceP2p])
+            let s = try await TorrentEngine.shared.stream(plan)
+            let subs = plan.subtitles?.map { Resolved.Link.Sub(url: $0.url, lang: $0.lang) }
+            return Resolved(ok: true, data: Resolved.Link(url: s.url, filename: plan.filename, headers: nil, notWebReady: plan.notWebReady, subtitles: subs), via: "p2p", code: nil)
+        } catch {
+            // resolveStream's P2P-first pick continues with the debrids when the engine fails.
+            if plan.debridFallback == true { return await resolveInEngine(stream, forceP2p: false, afterP2p: true) }
+            let code = (error as? TorrentEngine.Failure)?.code ?? "engine-not-ready"
+            let message: String? = try? await HarborEngine.shared.call("streamsRoom.failureMessage", [code])
+            return Resolved(ok: false, data: nil, via: nil, code: code, message: message, debridFailure: false)
+        }
+    }
+
+    private func resolveInEngine(_ stream: ScoredStream, forceP2p: Bool, afterP2p: Bool) async -> Resolved {
+        let p = ProfilesStore.shared.active
+        // The episode hint picks the file inside a season pack (resolve.ts selectEngineFileIdx, debrids).
+        let season = lastEpisode?["season"]?.number.map { Int($0) }, ep = lastEpisode?["episode"]?.number.map { Int($0) }
+        do {
+            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true, forceP2p, afterP2p, season, ep])
         } catch {
             return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription)
         }

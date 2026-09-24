@@ -19,7 +19,9 @@ import { resolveStream, type ResolveResult } from "@/lib/streams/resolve";
 import type { ScoredStream } from "@/lib/streams/types";
 import type { PlayEpisode } from "@/lib/view";
 import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure } from "@/views/play-picker/picker-utils";
-import { engineP2pEligible } from "@/lib/torrent/stremio-stream";
+import { isVideoFile, trackersFromSources, type TorrentFile } from "@/lib/torrent/stremio-stream";
+import { magnetFromHash } from "@/lib/debrid/types";
+import { matchEpisodeFileIndex, type EpisodeHint } from "@/lib/streams/episode-file";
 import { hasUncachedMarker } from "@/lib/streams/cached";
 import { persistEffective } from "@/lib/settings/profile-store";
 import { markSettingsPatched } from "./sync";
@@ -178,7 +180,88 @@ export function failureMessage(code: string): string | null {
 
 export type ResolveOutcome =
   | (ResolveResult & { ok: true })
-  | { ok: false; code: string; tried: Array<{ slug: string; code: string }>; webUrl?: string; message: string | null; debridFailure: boolean };
+  | { ok: false; code: string; tried: Array<{ slug: string; code: string }>; webUrl?: string; message: string | null; debridFailure: boolean; p2p?: P2pPlan };
+
+// ------------------------------------------------------------------ P2P (Stage 6, librqbit)
+// Upstream reaches its torrent engine through Tauri commands (lib/torrent/local-engine.ts). The
+// bundle has no Tauri, so resolveStream's local-engine attempt (tryLocalEngine) always comes back
+// empty and it reports an engine failure code. The TV's engine is the librqbit static library
+// behind App/Sources/Torrent/TorrentEngine.swift: when resolveStream would have handed the stream
+// to the local engine, the outcome carries a P2pPlan and Swift streams it there.
+
+/** Everything TorrentEngine.swift needs to stream one torrent the way tryLocalEngine would. */
+export type P2pPlan = {
+  infoHash: string;
+  magnet: string;
+  trackers: string[];
+  /** The addon's fileIdx; null → selectEngineFileIdx over the torrent's files (p2pFileIdx). */
+  fileIdx: number | null;
+  filename: string | null;
+  season: number | null;
+  episode: number | null;
+  notWebReady: boolean;
+  subtitles: Array<{ url: string; lang?: string; id?: string }>;
+  /** settings.streamCacheRetentionHours / streamCacheMaxGb for the engine's cache sweep. */
+  retentionHours: number;
+  maxGb: number;
+  /** resolveStream's P2P-first pick (committed, uncached, with debrids): when the engine fails,
+   * resolve again with afterP2p so the debrids get their turn, as resolveStream continues upstream. */
+  debridFallback: boolean;
+};
+
+/** resolve.ts engineFailureCode values after which upstream's tryTorrentEngine had tried (or
+ * would try) the local engine: "unreachable"/"no-files" from a non-strict remote server fall
+ * through to it, and "engine-not-ready" is what the missing Tauri engine reports. */
+const LOCAL_ENGINE_CODES = new Set(["engine-not-ready", "engine-no-peers", "remote-server-unreachable"]);
+
+/** stremio-stream.ts localTorrentAllowed / torrentsDisabled and resolve.ts tryLocalEngine's
+ * remoteStreamServerStrict guard, read from the profile's effective settings. */
+function localEngineAllowed(settings: Settings): boolean {
+  if (settings.torrentsDisabled === true) return false;
+  if (settings.directTorrentStream === false) return false;
+  return !(settings.remoteStreamServerStrict === true && (settings.remoteStreamServerUrl ?? "").trim() !== "");
+}
+
+const P2P_MIN_SEEDERS = 2;
+
+/** stremio-stream.ts engineP2pEligible (directStreamAvailable + the seeders floor), with the TV's
+ * engine standing in for its Tauri check. */
+function tvEngineP2pEligible(stream: ScoredStream, settings: Settings): boolean {
+  if (settings.torrentsDisabled === true || !stream.infoHash) return false;
+  const remote = (settings.remoteStreamServerUrl ?? "").trim() !== "";
+  if (!remote && settings.directTorrentStream === false) return false;
+  if (stream.seeders != null && stream.seeders < P2P_MIN_SEEDERS) return false;
+  return true;
+}
+
+function p2pPlan(stream: ScoredStream, settings: Settings, hint: EpisodeHint | undefined, debridFallback: boolean): P2pPlan {
+  const infoHash = stream.infoHash!.toLowerCase();
+  return {
+    infoHash,
+    magnet: magnetFromHash(infoHash),
+    trackers: trackersFromSources(stream.sources),
+    fileIdx: typeof stream.fileIdx === "number" && stream.fileIdx >= 0 ? stream.fileIdx : null,
+    filename: stream.behaviorHints?.filename ?? stream.behaviorHints?.fileName ?? null,
+    season: hint?.season ?? stream.season ?? null,
+    episode: hint?.episode ?? stream.episode ?? null,
+    notWebReady: stream.behaviorHints?.notWebReady === true,
+    subtitles: (stream.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang, id: s.id })),
+    retentionHours: settings.streamCacheRetentionHours ?? 12,
+    maxGb: settings.streamCacheMaxGb ?? 20,
+    debridFallback,
+  };
+}
+
+/** resolve.ts selectEngineFileIdx: the episode's file when the names say which, else the largest
+ * video (or the largest file when there is no video). */
+export function p2pFileIdx(files: TorrentFile[], season: number | null, episode: number | null): number {
+  if (files.length === 0) return 0;
+  const vids = files.filter(isVideoFile);
+  const pool = vids.length > 0 ? vids : files;
+  const mi = matchEpisodeFileIndex(pool.map((f) => f.name), { season: season ?? null, episode: episode ?? null });
+  if (mi >= 0) return pool[mi].idx;
+  return pool.reduce((a, b) => (b.length > a.length ? b : a)).idx;
+}
 
 /**
  * Turn a picked stream into a playable link (debrid unrestrict, direct URL, or P2P handoff).
@@ -192,31 +275,61 @@ export async function resolve(
   streamIndex: number,
   userCommitted = true,
   forceP2p = false,
+  afterP2p = false,
+  season: number | null = null,
+  episode: number | null = null,
 ): Promise<ResolveOutcome> {
   const settings = loadEffective(profileId, linked);
   const stream: ScoredStream | undefined = lastResults.get(token)?.picker.all[streamIndex];
   if (!stream) return { ok: false, code: "no-such-stream", tried: [], message: null, debridFailure: false };
   const ac = new AbortController();
+  const debrids = debridsFor(settings);
+  const hint: EpisodeHint | undefined = season != null || episode != null ? { season, episode } : undefined;
+  const fail = (r: { code: string; tried: Array<{ slug: string; code: string }>; webUrl?: string }, p2p?: P2pPlan): ResolveOutcome => ({
+    ok: false, code: r.code, tried: r.tried, ...(r.webUrl ? { webUrl: r.webUrl } : {}),
+    message: failureMessage(r.code), debridFailure: isDebridFailure(r.code, r.tried), ...(p2p ? { p2p } : {}),
+  });
   // use-pick-handler: allowP2pFallback = streamMode !== "addons" || !!stream.infoHash.
   const allowP2pFallback = settings.streamMode !== "addons" || !!stream.infoHash;
-  const r = await resolveStream(stream, debridsFor(settings), ac.signal, userCommitted, forceP2p, undefined, allowP2pFallback);
+  const local = localEngineAllowed(settings);
+
+  // P2P first: the consent dialog's "Stream" (forceP2p) and streamMode "p2p" (use-pick-handler
+  // onPlay) go straight to the engine; resolveStream also tries it before the debrids for a
+  // committed uncached pick that carries an uncached marker. A configured remote Stremio server
+  // (tryRemoteEngine) still answers first, exactly as tryTorrentEngine orders them.
+  if (!afterP2p && tvEngineP2pEligible(stream, settings)) {
+    const straight = forceP2p || (settings.streamMode === "p2p" && userCommitted);
+    const beforeDebrids = userCommitted && allowP2pFallback && debrids.length > 0 && !streamIsCached(stream, debrids) && hasUncachedMarker(stream);
+    if (straight || beforeDebrids) {
+      const r = await resolveStream({ ...stream, url: undefined }, [], ac.signal, true, false, hint, true, false);
+      if (r.ok) return r;
+      if (local && LOCAL_ENGINE_CODES.has(r.code)) return fail(r, p2pPlan(stream, settings, hint, !straight));
+      if (straight) return fail(r);
+    }
+  }
+
+  const r = await resolveStream(stream, debrids, ac.signal, userCommitted, false, hint, afterP2p ? false : allowP2pFallback);
   if (r.ok) return r;
-  return { ...r, message: failureMessage(r.code), debridFailure: isDebridFailure(r.code, r.tried) };
+  // resolveStream fell back to the torrent engine (no debrid, or every debrid failed on an
+  // uncached source) and found none: stream it through the TV's engine.
+  if (!afterP2p && local && stream.infoHash && LOCAL_ENGINE_CODES.has(r.code)) return fail(r, p2pPlan(stream, settings, hint, false));
+  return fail(r);
 }
 
 /**
  * use-pick-handler onPlay: a committed pick of an uncached torrent the P2P engine could stream
- * asks first (BpP2pDialog) unless p2pAutoConsent is on or a kid profile is watching. On tvOS
- * engineP2pEligible is false until a torrent engine exists, so this answers false today.
+ * asks first (BpP2pDialog) unless p2pAutoConsent is on or a kid profile is watching.
+ * engineP2pEligible's Tauri check is the TV's librqbit engine here (tvEngineP2pEligible).
  */
 export function p2pConsentNeeded(token: string, profileId: string, linked: boolean, streamIndex: number, kid = false): boolean {
   const settings = loadEffective(profileId, linked);
   const stream = lastResults.get(token)?.picker.all[streamIndex];
   if (!stream) return false;
   const debrids = debridsFor(settings);
+  const eligible = tvEngineP2pEligible(stream, settings);
   if (settings.p2pAutoConsent || kid) return false;
-  if (settings.streamMode === "p2p" && stream.infoHash && engineP2pEligible(stream)) return false;
-  return !streamIsCached(stream, debrids) && engineP2pEligible(stream) && (hasUncachedMarker(stream) || (!stream.url && debrids.length === 0));
+  if (settings.streamMode === "p2p" && stream.infoHash && eligible) return false;
+  return !streamIsCached(stream, debrids) && eligible && (hasUncachedMarker(stream) || (!stream.url && debrids.length === 0));
 }
 
 /** BpP2pDialog "Always stream P2P": update({ p2pAutoConsent: true }). */
@@ -261,8 +374,8 @@ const LIKELY_PACK_BYTES = 12 * 1024 * 1024 * 1024;
 
 /**
  * views/play-picker/use-auto-candidates.ts without React or Together: the streams worth firing
- * without asking, best first, as indexes into the token's picker.all. Only cached or direct-URL
- * streams qualify (no P2P engine on the TV). The remembered pick and the season lock lead.
+ * without asking, best first, as indexes into the token's picker.all. Cached and direct-URL
+ * streams qualify, torrents only with P2P consent. The remembered pick and the season lock lead.
  */
 export function autoCandidates(token: string, profileId: string, linked: boolean, meta: Meta, season: number | null, episode: number | null, isAnime: boolean, expectedTitles: string[] | null, prefer1080 = false): number[] {
   const result = lastResults.get(token);
@@ -315,7 +428,9 @@ export function autoCandidates(token: string, profileId: string, linked: boolean
   const push = (i: number) => {
     const s = all[i];
     if (!s || isStreamDead(s) || isWatchHub(s) || episodeConflict(s)) return;
-    if (!isCached(s) && !s.url) return;
+    // use-auto-fire topInstantPlayable: a torrent only fires on its own with P2P consent
+    // (p2pAutoConsent || kid; prefer1080 is use-bp-stream-play's !!kid).
+    if (!isCached(s) && !s.url && !((settings.p2pAutoConsent || prefer1080) && tvEngineP2pEligible(s, settings))) return;
     const k = key(s);
     if (seen.has(k)) return;
     seen.add(k);
