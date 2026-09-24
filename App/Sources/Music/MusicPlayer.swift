@@ -49,6 +49,9 @@ final class MusicPlayer: ObservableObject {
     /// The Spotify entry playing (its queue index); nil while nothing is bound to its events.
     private var spotifyEntry: (track: MusicTrack, index: Int)?
     private var spotifyClock: Timer?
+    /// Ticks in a row with nothing playing on Spotify and no events: after two seconds of that the
+    /// clock stops (and the output with it) until the next play or resume.
+    private var spotifyIdleTicks = 0
     /// player.ts playRequest: a newer play() makes every older async step a no-op.
     private var request = 0
     /// Items in the AVQueuePlayer and the queue entry each one plays.
@@ -188,6 +191,7 @@ final class MusicPlayer: ObservableObject {
                 // After the queue ran out the Spotify track has ended: play the entry again.
                 guard spotifyEntry != nil else { if index >= 0 { failed = []; start(at: index) }; return }
                 spotify.setPaused(false)
+                startSpotifyClock()
                 phase = .playing
             } else {
                 activateSession()
@@ -598,11 +602,11 @@ final class MusicPlayer: ObservableObject {
         guard engine == .spotify else { return }
         spotify.stop()
         spotifyEntry = nil
-        spotifyClock?.invalidate()
-        spotifyClock = nil
+        stopSpotifyClock()
     }
 
     private func startSpotifyClock() {
+        spotifyIdleTicks = 0
         guard spotifyClock == nil else { return }
         // Upstream's player emits time-pos every 250 ms (position_update_interval).
         let timer = Timer(timeInterval: 0.25, repeats: true) { @Sendable [weak self] _ in
@@ -612,10 +616,19 @@ final class MusicPlayer: ObservableObject {
         spotifyClock = timer
     }
 
+    private func stopSpotifyClock() {
+        spotifyClock?.invalidate()
+        spotifyClock = nil
+        spotifyIdleTicks = 0
+    }
+
     /// player.rs spawn_events on this side: time-pos, pause, end-file (eof), player-failure.
+    /// The clock runs while a Spotify entry is bound and playing; with no entry bound (the queue
+    /// ended, or the next entry is resolving: play() clears Rust's events) it stops, and after two
+    /// quiet seconds paused it stops too. A resume or the next play starts it again.
     private func spotifyTick() {
         let batch = spotify.drainEvents()
-        guard engine == .spotify, let entry = spotifyEntry else { return }
+        guard engine == .spotify, let entry = spotifyEntry else { stopSpotifyClock(); return }
         for event in batch.events {
             switch event.event {
             case "playing":
@@ -647,6 +660,18 @@ final class MusicPlayer: ObservableObject {
             spotifyEntry = nil
             spotify.sessionLost()
             recover(entry.track, at: entry.index, "Spotify session connection failed: the session closed")
+            return
+        }
+        // Paused (by the viewer, a film, or the player itself) and quiet: the pause event has been
+        // read by now, so stop polling and let the output go quiet until play resumes.
+        if phase == .playing || !batch.events.isEmpty {
+            spotifyIdleTicks = 0
+        } else {
+            spotifyIdleTicks += 1
+            if spotifyIdleTicks >= 8 {
+                stopSpotifyClock()
+                spotify.idle()
+            }
         }
     }
 

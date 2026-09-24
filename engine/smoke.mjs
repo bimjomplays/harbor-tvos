@@ -327,9 +327,40 @@ r.ok("benchmark still works", (() => {
   const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
   const img = (w) => ({ url: `https://i.scdn.co/image/${w}`, width: w, height: w });
   const spTrack = (id, name, extra = {}) => ({ uri: `spotify:track:${id}`, name, duration_ms: 227000, explicit: false, artists: [{ name: "Muse" }], album: { name: "Absolution", images: [img(64), img(640)] }, ...extra });
+  // library.rs ids are 22 base62 characters
+  const lid = (n) => `track${String(n).padStart(17, "0")}`;
+  const OWN = "OwnPlaylist00000000000", PUB = "PublicPlaylist00000000", FOLLOWED = "FollowedPlaylist000000", COLLAB = "CollabPlaylist00000000", BADPAGE = "BadPagePlaylist0000000", NEWPL = "NewPlaylist00000000000";
+  const posts = [];
   rec.node.host.fetch = async (req) => {
     const u = new URL(req.url);
     hits.push(`${req.method} ${u.host}${u.pathname}?${u.searchParams.toString()} ${(req.headers && (req.headers.Authorization || req.headers.authorization)) || ""}`);
+    if (u.host === "api.spotify.com") {
+      const p = u.pathname.replace(/^\/v1/, "");
+      const pl = (id, name, owner, extra = {}) => ({ uri: `spotify:playlist:${id}`, name, images: [img(300)], owner: { id: owner, display_name: owner }, items: { total: 3 }, ...extra });
+      if (req.method === "POST") {
+        const body = JSON.parse(req.body || "{}");
+        posts.push({ path: p, body });
+        if (p === "/me/playlists") return json(req, pl(NEWPL, body.name, "alice", { public: false }), 201);
+        if (p === `/playlists/${OWN}/items`) return json(req, { snapshot_id: "snap-1" }, 201);
+        return json(req, { error: { status: 403 } }, 403);
+      }
+      // library.rs pages ask for 50; the home rows ask for 20
+      if (u.searchParams.get("limit") === "50" && p === "/me/tracks") {
+        if (u.searchParams.get("offset") === "0")
+          return json(req, { items: [{ track: spTrack(lid(1), "Liked one") }, { track: spTrack(lid(2), "Local file", { is_local: true }) }, { track: { uri: `spotify:episode:${lid(3)}`, name: "Episode", type: "episode" } }, { track: null }], next: "https://api.spotify.com/v1/me/tracks?offset=4&limit=50", total: 5 });
+        return json(req, { items: [{ track: spTrack(lid(4), "Liked two") }], next: null, total: 5 });
+      }
+      if (u.searchParams.get("limit") === "50" && p === "/me/playlists")
+        return json(req, { items: [pl(OWN, "Mine", "alice", { public: false }), pl(PUB, "Mine in public", "alice", { public: true }), pl(FOLLOWED, "Followed", "someone", { public: true }), pl(COLLAB, "Together", "bob", { public: false, collaborative: true }), null], next: null, total: 5 });
+      if (p === `/playlists/${OWN}/items`) return json(req, { items: [{ item: spTrack(lid(5), "In mine") }], next: null, total: 1 });
+      if (p === `/playlists/${BADPAGE}/items`) return json(req, { items: [{ item: spTrack(lid(6), "Elsewhere") }], next: "https://example.test/v1/playlists/x/items?offset=50", total: 60 });
+      if (p === `/playlists/${OWN}`) return json(req, pl(OWN, "Mine", "alice", { public: false }));
+      if (p === `/playlists/${FOLLOWED}`) return json(req, pl(FOLLOWED, "Followed", "someone", { public: true }));
+      if (p === "/artists/muse/albums") {
+        if (u.searchParams.get("offset") === "10") return json(req, { items: [{ uri: "spotify:album:showbiz", name: "Showbiz", artists: [{ name: "Muse" }], images: [img(640)], release_date: "1999-10-04" }], next: null, total: 11 });
+        return json(req, { items: [{ uri: "spotify:album:abs", name: "Absolution", artists: [{ name: "Muse" }], images: [img(640)] }], next: "https://api.spotify.com/v1/artists/muse/albums?offset=10&limit=10", total: 11 });
+      }
+    }
     if (u.host === "accounts.spotify.com" && u.pathname === "/api/token") {
       const form = Object.fromEntries(new URLSearchParams(req.body || ""));
       forms.push(form);
@@ -339,7 +370,7 @@ r.ok("benchmark still works", (() => {
     }
     if (u.host === "api.spotify.com") {
       const p = u.pathname.replace(/^\/v1/, "");
-      if (p === "/me") return json(req, { product: meProduct, country: "GB" });
+      if (p === "/me") return json(req, { product: meProduct, country: "GB", id: "alice" });
       if (p === "/me/player/recently-played") return json(req, { items: [{ played_at: "now", track: spTrack("r1", "Hysteria") }] });
       if (p === "/me/top/tracks") return json(req, { items: [spTrack("t1", "Starlight")] });
       if (p === "/me/top/artists") return json(req, { items: [{ uri: "spotify:artist:muse", name: "Muse", genres: ["rock"], images: [img(320)] }] });
@@ -352,7 +383,6 @@ r.ok("benchmark still works", (() => {
       }
       if (p === "/albums/abs/tracks") return json(req, { items: [{ uri: "spotify:track:a1", name: "Apocalypse Please", duration_ms: 252000, artists: [] }] });
       if (p === "/artists/muse/top-tracks") return json(req, { error: { status: 403 } }, 403);
-      if (p === "/artists/muse/albums") return json(req, { items: [{ uri: "spotify:album:abs", name: "Absolution", artists: [{ name: "Muse" }], images: [img(640)] }], total: 1 });
       if (p === "/playlists/pl1/items") return json(req, { error: { status: 404 } }, 404);
       if (p === "/playlists/pl1/tracks") return json(req, { items: [{ added_at: "now", track: spTrack("p1", "Uprising") }, { added_at: "now", track: null }] });
     }
@@ -405,6 +435,53 @@ r.ok("benchmark still works", (() => {
   r.ok("a Spotify artist whose top tracks are refused falls back to an artist: search, with the albums shelf", artistPage.tracks.length === 1 && hits.some((x) => x.includes("/v1/search?") && x.includes("q=artist%3A%22Muse%22")) && artistPage.bands[0] && artistPage.bands[0].title === "Albums", JSON.stringify(artistPage));
   const playlistPage = await m.open(h.bands.find((b) => b.key === "home:spotify:home:playlists").cards[0].item);
   r.eq("a Spotify playlist falls back from /items to /tracks and skips removed entries", playlistPage.tracks.map((t) => t.sourceId), ["spotify:track:p1"]);
+
+  // artist_catalog.rs: the albums shelf carries a cursor bound to the artist; the next page follows it
+  const albumsBand = artistPage.bands[0];
+  const moreAlbums = await m.artistMore(s.artists[0].item, albumsBand.more);
+  r.ok("a Spotify artist's albums shelf pages ten at a time with an artist-bound cursor (artist_catalog.rs)", JSON.parse(albumsBand.more).offset === 10 && JSON.parse(albumsBand.more).artist === "muse" && moreAlbums.cards.map((c) => c.title).join() === "Showbiz" && moreAlbums.more === null && hits.some((x) => x.includes("/v1/artists/muse/albums?") && x.includes("offset=10") && x.includes("include_groups=album%2Csingle%2Cappears_on%2Ccompilation")), JSON.stringify({ more: albumsBand.more, moreAlbums }));
+  const otherCursor = await m.artistMore(s.artists[0].item, JSON.stringify({ artist: "other", collection: "albums", offset: 10 })).then(() => "ok", (e) => e.message);
+  const extraField = await m.artistMore(s.artists[0].item, JSON.stringify({ artist: "muse", collection: "albums", offset: 10, limit: 50 })).then(() => "ok", (e) => e.message);
+  r.ok("an album cursor for another artist, or with unknown fields, is refused", otherCursor === "Spotify album cursor does not match this artist" && extraField === "Spotify album cursor is invalid", JSON.stringify({ otherCursor, extraField }));
+
+  // library.rs: Liked songs 50 a page with the market, local files / episodes / removed entries skipped
+  const liked = await m.spotifyLibraryPage("liked", null, null);
+  r.ok("music.spotifyLibraryPage liked: playable tracks only, skipped count, next offset from Spotify's link, total", liked.tracks.map((t) => t.sourceId).join() === `spotify:track:${lid(1)}` && liked.skipped === 3 && liked.nextOffset === 4 && liked.total === 5 && hits.some((x) => x.includes("/v1/me/tracks?") && x.includes("limit=50") && x.includes("offset=0") && x.includes("market=GB")), JSON.stringify(liked));
+  const liked2 = await m.spotifyLibraryPage("liked", 4, null);
+  r.ok("the next Liked songs page ends the list", liked2.tracks[0].title === "Liked two" && liked2.nextOffset === null, JSON.stringify(liked2));
+  r.ok("without the playlist-modify scopes nothing can be created or changed", !liked.canCreate && !liked.writePermission, JSON.stringify(liked));
+  const lists = await m.spotifyLibraryPage("playlists", 0, null);
+  const access = Object.fromEntries(lists.playlists.map((x) => [x.name, `${x.canRead}/${x.editable}`]));
+  r.ok("music.spotifyLibraryPage playlists: owned and collaborative ones are readable, nothing editable without the scopes, no market on /me/playlists", JSON.stringify(access) === JSON.stringify({ Mine: "true/false", "Mine in public": "true/false", Followed: "false/false", Together: "true/false" }) && lists.skipped === 1 && hits.some((x) => x.includes("/v1/me/playlists?") && x.includes("limit=50") && !x.includes("market=")), JSON.stringify(lists));
+  const noScope = await m.spotifyCreatePlaylist("Road").then(() => "ok", (e) => e.message);
+  r.eq("creating a playlist without playlist-modify-private asks to reconnect for permission", noScope, "music.spotifyLibrary.permission");
+  const badPage = await m.spotifyLibraryPage("playlist", 0, `spotify:playlist:${BADPAGE}`).then(() => "ok", (e) => e.message);
+  const badId = await m.spotifyLibraryPage("playlist", 0, "../me").then(() => "ok", (e) => e.message);
+  r.ok("a next link off Spotify's endpoint, or a playlist id that could change the path, is refused (library.rs)", badPage === "music.spotifyLibrary.error" && badId === "music.spotifyLibrary.error" && !hits.some((x) => x.includes("/v1/../me") || x.includes("/v1/me/items")), JSON.stringify({ badPage, badId }));
+
+  // Sign in again with playlist-modify-private (upstream's "Reconnect for permission")
+  const again = new URL((await m.spotifyBegin("")).authorizeUrl);
+  tokenReply = { status: 200, body: { access_token: "web-3", token_type: "Bearer", expires_in: 3600, refresh_token: "refresh-3", scope: "streaming user-library-read playlist-read-private playlist-modify-private" } };
+  await m.spotifyFinish(`http://127.0.0.1:8898/login?code=AQBcode0987654321&state=${again.searchParams.get("state")}`);
+  tokenReply = null;
+  const lists2 = await m.spotifyLibraryPage("playlists", 0, null);
+  const access2 = Object.fromEntries(lists2.playlists.map((x) => [x.name, x.editable]));
+  r.ok("with playlist-modify-private: private playlists you own or share are editable, public ones need the public scope", lists2.canCreate && lists2.writePermission && access2.Mine === true && access2["Mine in public"] === false && access2.Together === true && access2.Followed === false, JSON.stringify(access2));
+  const created = await m.spotifyCreatePlaylist("  Road trip  ");
+  r.ok("music.spotifyCreatePlaylist posts a private playlist with the trimmed name", created.name === "Road trip" && created.id === `spotify:playlist:${NEWPL}` && created.canRead && created.editable && JSON.stringify(posts[posts.length - 1]) === JSON.stringify({ path: "/me/playlists", body: { name: "Road trip", public: false } }), JSON.stringify({ created, post: posts[posts.length - 1] }));
+  const tooLong = await m.spotifyCreatePlaylist("x".repeat(101)).then(() => "ok", (e) => e.message);
+  r.eq("a playlist name over 100 characters is refused before any request", tooLong, "music.spotifyLibrary.error");
+  const catalogTrack = { id: "catalog:1", connectorId: "catalog", title: "Hysteria", artist: "Muse", artwork: "", durationSeconds: 1, durationLabel: "0:01" };
+  const notSpotify = await m.spotifyAddToPlaylist(`spotify:playlist:${OWN}`, catalogTrack).then(() => "ok", (e) => e.message);
+  r.eq("only a Spotify track can go into a Spotify playlist", notSpotify, "music.spotifyLibrary.spotifyTrackOnly");
+  const followedAdd = await m.spotifyAddToPlaylist(`spotify:playlist:${FOLLOWED}`, liked.tracks[0]).then(() => "ok", (e) => e.message);
+  r.eq("adding to a playlist you only follow is refused with upstream's copy", followedAdd, "music.spotifyLibrary.restricted");
+  const added = await m.spotifyAddToPlaylist(`spotify:playlist:${OWN}`, liked.tracks[0]);
+  r.ok("music.spotifyAddToPlaylist posts the track URI to /items and needs Spotify's snapshot id", added === true && JSON.stringify(posts[posts.length - 1]) === JSON.stringify({ path: `/playlists/${OWN}/items`, body: { uris: [`spotify:track:${lid(1)}`] } }) && hits.some((x) => x.startsWith(`GET api.spotify.com/v1/playlists/${OWN}?`)), JSON.stringify(posts));
+  const inMine = await m.spotifyLibraryPage("playlist", 0, `spotify:playlist:${OWN}`);
+  r.ok("a readable playlist opens from /playlists/{id}/items with the market", inMine.tracks[0].title === "In mine" && inMine.nextOffset === null && hits.some((x) => x.includes(`/v1/playlists/${OWN}/items?`) && x.includes("market=GB")), JSON.stringify(inMine));
+  const keys2 = m.copy();
+  r.ok("the library page's copy comes from upstream's catalog", keys2["music.spotifyLibrary.title"] === "Spotify library" && keys2["music.spotifyLibrary.permission"] === "Reconnect Spotify to allow playlist changes." && keys2["music.library.loadMore"] === "Load more", JSON.stringify([keys2["music.spotifyLibrary.title"], keys2["music.library.loadMore"]]));
 
   // Playback: prepare() hands Swift the librespot marker instead of a URL (music_play_track routing)
   const prep = await m.prepare(s.tracks[0].track, null, null);

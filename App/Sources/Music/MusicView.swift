@@ -8,10 +8,12 @@ struct MusicView: View {
     @StateObject private var model = MusicModel()
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
+    @ObservedObject private var spotify = SpotifyPlayback.shared
     @State private var page: MusicPageTarget?
     @State private var searchOpen = false
     @State private var sourcesOpen = false
     @State private var nowPlayingOpen = false
+    @State private var spotifyLibraryOpen = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -47,6 +49,8 @@ struct MusicView: View {
         .fullScreenCover(isPresented: $searchOpen) { MusicSearchView() }
         .fullScreenCover(isPresented: $sourcesOpen, onDismiss: { Task { await model.load(force: true) } }) { MusicSourcesView() }
         .fullScreenCover(isPresented: $nowPlayingOpen) { MusicNowPlayingView() }
+        .fullScreenCover(isPresented: $spotifyLibraryOpen) { MusicSpotifyLibraryView() }
+        .musicSpotifyDestinationHost()
     }
 
     private var mast: some View {
@@ -61,6 +65,14 @@ struct MusicView: View {
             }
             .buttonStyle(BPActionStyle(primary: true))
             .accessibilityIdentifier("music-search")
+            // music-library.tsx "Spotify" view (music-spotify-library.tsx): Liked songs and playlists.
+            if spotify.connected {
+                Button { spotifyLibraryOpen = true } label: {
+                    Label(copy("music.spotifyLibrary.title", "Spotify library"), systemImage: "music.note.list")
+                }
+                .buttonStyle(BPActionStyle())
+                .accessibilityIdentifier("music-spotify-library")
+            }
             Button { sourcesOpen = true } label: {
                 Label(copy("music.connections.title", "Connections"), systemImage: "dot.radiowaves.left.and.right")
             }
@@ -100,6 +112,8 @@ struct MusicView: View {
 struct MusicBandView: View {
     let band: MusicBand
     let onCard: (MusicCard, MusicBand) -> Void
+    /// views/music.tsx loadMoreArtistReleases: a "Load more" tile ends a shelf that has more.
+    var onMore: (() -> Void)? = nil
     @FocusState private var focused: Int?
 
     var body: some View {
@@ -150,7 +164,30 @@ struct MusicBandView: View {
                         .focused($focused, equals: i)
                         .musicTrackMenu(card.track)
                 }
+                if let onMore, band.more != nil {
+                    Button(action: onMore) { MusicMoreTile() }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                        .focused($focused, equals: band.cards.count)
+                        .accessibilityIdentifier("music-band-more")
+                }
             }
+        }
+    }
+}
+
+/// music.library.loadMore as a cover-sized tile at the end of a shelf.
+struct MusicMoreTile: View {
+    @ObservedObject private var copy = MusicCopy.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(8)) {
+            ZStack {
+                BP.panel2
+                Image(systemName: "ellipsis").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.inkMuted)
+            }
+            .frame(width: BP.px(150), height: BP.px(150))
+            .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+            Text(copy("music.library.loadMore", "Load more")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                .frame(width: BP.px(150), alignment: .leading)
         }
     }
 }
@@ -258,9 +295,16 @@ struct MusicTrackMenuItems: View {
     let track: MusicTrack
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
+    @ObservedObject private var spotify = SpotifyPlayback.shared
+    @Environment(\.musicAddToSpotifyPlaylist) private var addToSpotifyPlaylist
     var body: some View {
         Button { player.playNext(track) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
         Button { player.enqueue(track) } label: { Label(copy("music.card.addToQueue", "Add to queue"), systemImage: "text.append") }
+        // music-track-row.tsx onAddToPlaylist → music-playlist-picker.tsx. The TV has no Harbor
+        // playlists yet, so the picker is its Spotify destination, offered for Spotify tracks.
+        if let addToSpotifyPlaylist, spotify.connected, track.spotifyTrackUri != nil {
+            Button { addToSpotifyPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
+        }
         // music-track-menu.tsx "Start radio" (radio.ts): a station seeded by this track.
         Button { player.startRadio(track) } label: { Label(copy("music.card.startRadio", "Start radio"), systemImage: "dot.radiowaves.left.and.right") }
         Button { player.toggleLiked(track) } label: {

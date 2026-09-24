@@ -59,6 +59,8 @@ final class SpotifyPlayback: ObservableObject {
 
     @Published private(set) var connected = false
     @Published private(set) var connecting = false
+    /// spotify-library.ts harbor:spotify-library-changed: a playlist was created or a track added.
+    @Published private(set) var libraryVersion = 0
 
     let output = SpotifyAudioOutput()
     nonisolated static let queue = DispatchQueue(label: "harbor.spotify", qos: .userInitiated)
@@ -227,12 +229,26 @@ final class SpotifyPlayback: ObservableObject {
         _ = try Self.now(OK.self) { harbor_spotify_play(uri, 1.0) }
     }
 
+    /// A pause drops the buffered audio in Rust (set_paused), so the output has nothing left to
+    /// play: it stops shortly after instead of rendering silence, and starts again on resume.
     func setPaused(_ paused: Bool) {
         if !paused {
             activateSession()
             output.start()
         }
         _ = try? Self.now(OK.self) { harbor_spotify_pause(paused) }
+        if paused { output.stopSoon() }
+    }
+
+    /// Nothing is playing on Spotify (the player paused itself, or the queue ended on a Spotify
+    /// track): the output stops once any tail has been heard; play() or a resume starts it again.
+    func idle() {
+        output.stopSoon()
+    }
+
+    /// music-spotify-destination.tsx dispatches harbor:spotify-library-changed after a write.
+    func libraryChanged() {
+        libraryVersion += 1
     }
 
     func seek(to seconds: Double) {

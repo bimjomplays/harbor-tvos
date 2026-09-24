@@ -670,14 +670,261 @@ export async function artistTop(ref: MusicArtistRef): Promise<MusicTrack[]> {
   }
 }
 
+/** An artist page shelf that can load more (artist_catalog.rs MusicCatalogPage.next_cursor). */
+export type MusicCatalogRowWithMore = MusicCatalogRow & { nextCursor?: string | null };
+
 /** artist_catalog.rs load(kind: albums), first page, as the artist page's Albums shelf. */
-export async function artistRows(ref: MusicArtistRef): Promise<MusicCatalogRow[]> {
+export async function artistRows(ref: MusicArtistRef): Promise<MusicCatalogRowWithMore[]> {
+  if (!base62(ref.id)) return [];
+  const page = await artistAlbums(ref, null);
+  if (!page.items.length) return [];
+  const row: MusicCatalogRowWithMore = { id: "artist:albums", title: "music.search.albums", titleLiteral: false, subtitle: SOURCE_LABEL, layout: "covers", source: CONNECTOR, items: page.items, nextCursor: page.nextCursor };
+  return [row];
+}
+
+// ------------------------------------------------------------------------- artist catalog
+// artist_catalog.rs: albums ten at a time, the cursor bound to the artist and the collection.
+const ARTIST_ALBUM_PAGE = 10;
+const MAX_OFFSET = 100_000;
+
+/** artist_catalog.rs offset: no cursor is the first page; a cursor must be this artist's albums. */
+export function albumCursorOffset(cursor: string | null | undefined, artistId: string): number {
+  if (cursor == null) return 0;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cursor);
+  } catch {
+    throw new Error("Spotify album cursor is invalid");
+  }
+  const o = obj(parsed);
+  // serde(deny_unknown_fields) with artist: String, collection: String, offset: usize
+  const exact = !!o && Object.keys(o).every((k) => k === "artist" || k === "collection" || k === "offset") && typeof o.artist === "string" && typeof o.collection === "string" && typeof o.offset === "number" && Number.isSafeInteger(o.offset) && o.offset >= 0;
+  if (!exact || !o) throw new Error("Spotify album cursor is invalid");
+  const offset = o.offset as number;
+  if (o.artist !== artistId || o.collection !== "albums" || offset === 0 || offset > MAX_OFFSET) throw new Error("Spotify album cursor does not match this artist");
+  return offset;
+}
+
+/**
+ * artist_catalog.rs load(kind: albums): one page of the artist's releases and the cursor for the
+ * next. Upstream checks the id with library::spotify_id; the TV's artist pages have always taken
+ * parse.rs base62 ids (the first page did before paging), so both pages keep that check.
+ */
+export async function artistAlbums(ref: MusicArtistRef, cursor: string | null): Promise<{ items: MusicCatalogItem[]; nextCursor: string | null; total: number | null }> {
   const id = base62(ref.id);
-  if (!id) return [];
+  if (!id) throw new Error("Spotify artist id is invalid");
+  const at = albumCursorOffset(cursor, id);
   const token = await webToken();
-  const body = await apiGet(token, `/artists/${id}/albums`, { limit: "10", offset: "0", include_groups: "album,single,appears_on,compilation", market: market() });
-  const items = list(body, ["items"]).map(album).filter(defined).map((a) => ({ kind: "album" as const, ...a }));
-  return items.length ? [{ id: "artist:albums", title: "music.search.albums", titleLiteral: false, subtitle: SOURCE_LABEL, layout: "covers", source: CONNECTOR, items }] : [];
+  const path = `/artists/${id}/albums`;
+  const body = await apiGet(token, path, { limit: String(ARTIST_ALBUM_PAGE), offset: String(at), include_groups: "album,single,appears_on,compilation", market: market() });
+  if (!Array.isArray(body.items)) throw new Error("Spotify album response is invalid");
+  const next = nextOffset(body, at, body.items.length, [path]);
+  return {
+    items: list(body, ["items"]).map(album).filter(defined).map((a) => ({ kind: "album" as const, ...a })),
+    nextCursor: next === null ? null : JSON.stringify({ artist: id, collection: "albums", offset: next }),
+    total: wholeNumber(body.total),
+  };
+}
+
+function wholeNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
+}
+
+/** library.rs next_offset: the `next` link must stay on the same Spotify endpoint and move forward. */
+export function nextOffset(body: Json, offset: number, count: number, paths: string[]): number | null {
+  const invalid = () => new Error("Spotify returned invalid library pagination");
+  if (!("next" in body)) throw invalid();
+  const next = body.next;
+  if (next === null) return null;
+  if (typeof next !== "string") throw invalid();
+  let url: URL;
+  try {
+    url = new URL(next);
+  } catch {
+    throw invalid();
+  }
+  if (url.protocol !== "https:" || url.hostname !== "api.spotify.com" || !paths.some((p) => url.pathname === `/v1${p}`)) throw invalid();
+  const raw = url.searchParams.get("offset");
+  const at = raw !== null && /^\+?\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(at) || count === 0 || at <= offset || at > MAX_OFFSET) throw invalid();
+  return at;
+}
+
+// -------------------------------------------------------------------------------- library
+// library.rs (music_spotify_library_page / create_playlist / add_to_playlist) and
+// lib/music/spotify-library.ts (spotifyTrackUri, spotifyLibraryErrorKey). Liked songs and the
+// listener's playlists, 50 a page; new playlists are private; a track is added only to a playlist
+// the listener owns or collaborates on, with the matching playlist-modify scope granted.
+const LIBRARY_PAGE_SIZE = 50;
+const PRIVATE_SCOPE = "playlist-modify-private";
+const PUBLIC_SCOPE = "playlist-modify-public";
+const WRITE_PERMISSION = "Spotify playlist permission is missing. Reconnect Spotify to allow playlist changes.";
+const UNCONFIRMED = "Spotify did not confirm the change. Check the playlist on Spotify before trying again.";
+
+export type SpotifyLibraryKind = "liked" | "playlists" | "playlist";
+export type SpotifyLibraryPlaylist = MusicPlaylistRef & { canRead: boolean; editable: boolean };
+export type SpotifyLibraryPage = {
+  tracks: MusicTrack[];
+  playlists: SpotifyLibraryPlaylist[];
+  nextOffset: number | null;
+  total: number | null;
+  skipped: number;
+  canCreate: boolean;
+  writePermission: boolean;
+};
+
+/** library.rs scopes: what the OAuth sign-in granted (the session's login5 token carries none). */
+function grantedScopes(): string[] {
+  return (webTokenCache ?? storedWebToken())?.scopes ?? [];
+}
+const hasScope = (scopes: string[], required: string) => scopes.includes(required);
+/** library.rs can_add: a public playlist needs the public scope, a private one the private scope. */
+function canAdd(scopes: string[], isPublic: boolean | null): boolean {
+  if (isPublic === true) return hasScope(scopes, PUBLIC_SCOPE);
+  if (isPublic === false) return hasScope(scopes, PRIVATE_SCOPE);
+  return hasScope(scopes, PUBLIC_SCOPE) && hasScope(scopes, PRIVATE_SCOPE);
+}
+
+/** library.rs spotify_id: 22 base62 characters, so an id can never change the request path. */
+export function spotifyId(value: string, kind: string): string {
+  const prefix = `spotify:${kind}:`;
+  const raw = value ?? "";
+  const id = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+  if (id.length !== 22 || !/^[A-Za-z0-9]+$/.test(id)) throw new Error(`Spotify ${kind} id is invalid`);
+  return id;
+}
+
+/** library.rs library_track: local files, unavailable tracks and podcast episodes are skipped. */
+export function libraryTrack(container: Json): MusicTrack | undefined {
+  const item = entry(container);
+  const uri = typeof item.uri === "string" ? item.uri : "";
+  if (!uri.startsWith("spotify:track:") || !/^spotify:track:[A-Za-z0-9]{22}$/.test(uri)) return undefined;
+  if (item.is_local === true || item.is_playable === false) return undefined;
+  if (typeof item.type === "string" && item.type !== "track") return undefined;
+  return track(item);
+}
+
+/** lib/music/spotify-library.ts spotifyTrackUri: the Spotify URI a track can be added by. */
+export function spotifyTrackUri(t: Pick<MusicTrack, "id" | "sourceId">): string | null {
+  return [t.sourceId, t.id].find((v): v is string => !!v && /^spotify:track:[a-zA-Z0-9]{22}$/.test(v)) ?? null;
+}
+
+/** library.rs profile_id */
+async function profileId(token: string): Promise<string> {
+  const me = await apiGet(token, "/me", {});
+  const id = typeof me.id === "string" ? me.id : "";
+  if (!id) throw new Error("Spotify did not return the account id");
+  return id;
+}
+
+/** library.rs playlist_access: readable when owned or collaborative, editable with the scope too. */
+function playlistAccess(item: Json, accountId: string, scopes: string[]): SpotifyLibraryPlaylist | undefined {
+  const p = playlist(item);
+  if (!p) return undefined;
+  const owned = pointer(item, ["owner", "id"]) === accountId;
+  const canRead = owned || item.collaborative === true;
+  return { ...p, canRead, editable: canRead && canAdd(scopes, typeof item.public === "boolean" ? item.public : null) };
+}
+
+/** api.rs post: never retried (a lost answer may still mean Spotify applied the change). */
+async function apiPost(token: string, path: string, payload: unknown): Promise<Json> {
+  let response: Response;
+  try {
+    response = await fetch(`${API}${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      harborTimeoutMs: 25000,
+    } as RequestInit);
+  } catch {
+    throw new ApiError(UNCONFIRMED, null);
+  }
+  const text = await response.text();
+  if (!response.ok) throw new ApiError(describeApi(response.status, text), response.status);
+  try {
+    return obj(JSON.parse(text)) ?? {};
+  } catch {
+    throw new ApiError(UNCONFIRMED, response.status);
+  }
+}
+
+/** library.rs music_spotify_library_page */
+export async function libraryPage(kind: SpotifyLibraryKind, offset: number | null, playlistId: string | null): Promise<SpotifyLibraryPage> {
+  if (kind !== "liked" && kind !== "playlists" && kind !== "playlist") throw new Error("Spotify library kind is invalid");
+  const at = offset ?? 0;
+  if (!Number.isSafeInteger(at) || at < 0 || at > MAX_OFFSET) throw new Error("Spotify library offset is too large");
+  const token = await webToken();
+  const scopes = grantedScopes();
+  const query: Record<string, string> = { limit: String(LIBRARY_PAGE_SIZE), offset: String(at) };
+  const path = kind === "liked" ? "/me/tracks" : kind === "playlists" ? "/me/playlists" : `/playlists/${spotifyId(playlistId ?? "", "playlist")}/items`;
+  if (kind !== "playlists") query.market = market();
+  const body = await apiGet(token, path, query);
+  if (!Array.isArray(body.items)) throw new Error("Spotify returned an invalid library page");
+  const entries = body.items as unknown[];
+  const next = nextOffset(body, at, entries.length, [path]);
+  let tracks: MusicTrack[] = [];
+  let playlists: SpotifyLibraryPlaylist[] = [];
+  const objects = entries.map(obj).filter(defined);
+  if (kind === "playlists") {
+    const account = await profileId(token);
+    playlists = objects.map((e) => playlistAccess(e, account, scopes)).filter(defined);
+  } else {
+    tracks = objects.map(libraryTrack).filter(defined);
+  }
+  return {
+    tracks,
+    playlists,
+    nextOffset: next,
+    total: wholeNumber(body.total),
+    skipped: Math.max(0, entries.length - (tracks.length + playlists.length)),
+    canCreate: hasScope(scopes, PRIVATE_SCOPE),
+    writePermission: hasScope(scopes, PRIVATE_SCOPE) || hasScope(scopes, PUBLIC_SCOPE),
+  };
+}
+
+/** library.rs music_spotify_create_playlist: always private. */
+export async function createPlaylist(name: string): Promise<SpotifyLibraryPlaylist> {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed || [...trimmed].length > 100) throw new Error("Playlist name must be between 1 and 100 characters");
+  const token = await webToken();
+  const scopes = grantedScopes();
+  if (!hasScope(scopes, PRIVATE_SCOPE)) throw new Error(WRITE_PERMISSION);
+  const account = await profileId(token);
+  const body = await apiPost(token, "/me/playlists", { name: trimmed, public: false });
+  const access = playlistAccess(body, account, scopes);
+  if (!access) throw new Error("Spotify created the playlist but did not return its details. Check Spotify before trying again.");
+  return access;
+}
+
+/** library.rs music_spotify_add_to_playlist */
+export async function addToPlaylist(playlistId: string, trackUri: string): Promise<void> {
+  const id = spotifyId(playlistId, "playlist");
+  if (!(trackUri ?? "").startsWith("spotify:track:")) throw new Error("Only Spotify tracks can be added to a Spotify playlist");
+  spotifyId(trackUri, "track");
+  const token = await webToken();
+  const scopes = grantedScopes();
+  if (!hasScope(scopes, PRIVATE_SCOPE) && !hasScope(scopes, PUBLIC_SCOPE)) throw new Error(WRITE_PERMISSION);
+  const body = await apiGet(token, `/playlists/${id}`, {});
+  const account = await profileId(token);
+  const access = playlistAccess(body, account, scopes);
+  if (!access) throw new Error("Spotify playlist is unavailable");
+  if (!access.canRead) throw new Error("Only playlists you own or collaborate on can be changed");
+  if (!access.editable) throw new Error(WRITE_PERMISSION);
+  const result = await apiPost(token, `/playlists/${id}/items`, { uris: [trackUri] });
+  if (!(typeof result.snapshot_id === "string" && result.snapshot_id.length > 0)) throw new Error(UNCONFIRMED);
+}
+
+/** lib/music/spotify-library.ts spotifyLibraryErrorKey: the message key the library page shows. */
+export function libraryErrorKey(error: unknown): string {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  if (message.includes("permission is missing")) return "music.spotifyLibrary.permission";
+  if (message.includes("sign in expired") || message.includes("connect spotify premium")) return "music.spotifyLibrary.reconnectNeeded";
+  if (message.includes("did not confirm") || message.includes("created the playlist but")) return "music.spotifyLibrary.unconfirmed";
+  if (message.includes("refused this request") || message.includes("only playlists you own")) return "music.spotifyLibrary.restricted";
+  if (message.includes("rate limiting")) return "music.spotifyLibrary.rateLimit";
+  if (message.includes("no importable tracks")) return "music.spotifyLibrary.noImportable";
+  if (message.includes("only spotify tracks")) return "music.spotifyLibrary.spotifyTrackOnly";
+  return "music.spotifyLibrary.error";
 }
 
 /** browse.rs playlist_tracks (api.rs playlist_items: /items, else the older /tracks). */

@@ -29,6 +29,15 @@ struct MusicTrack: Codable, Equatable, Hashable, Identifiable {
         if let o = collectionOrigin?.id, o != id { out.append(o) }
         return out
     }
+    /// spotify-library.ts spotifyTrackUri: the URI this track can be added to a Spotify playlist by.
+    var spotifyTrackUri: String? {
+        let prefix = "spotify:track:"
+        return [sourceId, id].compactMap { $0 }.first { value in
+            guard value.hasPrefix(prefix) else { return false }
+            let rest = value.dropFirst(prefix.count)
+            return rest.count == 22 && rest.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        }
+    }
 }
 
 /// engine/music.ts MusicCard: one catalog item, flattened for display. `item` is the upstream
@@ -57,7 +66,42 @@ struct MusicBand: Decodable, Identifiable {
     var numbered: Bool
     var cards: [MusicCard]
     var notice: String?
+    /// artist_catalog.rs next_cursor: the shelf has more (a Spotify artist's albums), for `music.artistMore`.
+    var more: String?
     var id: String { key }
+}
+
+/// engine/music.ts artistMore (views/music.tsx loadMoreArtistReleases): the next albums and cursor.
+struct MusicArtistMore: Decodable {
+    var cards: [MusicCard]
+    var more: String?
+}
+
+/// engine/musicSpotify.ts SpotifyLibraryPlaylist (library.rs): a playlist and what the account may
+/// do with it (read: owned or collaborative; editable: readable and the playlist-modify scope granted).
+struct MusicSpotifyLibraryPlaylist: Decodable, Identifiable, Hashable {
+    var id: String
+    var connectorId: String
+    var name: String
+    var artwork: [String]
+    var trackCount: Int?
+    var subtitle: String?
+    var canRead: Bool
+    var editable: Bool
+
+    /// music-spotify-library.tsx: open.spotify.com/playlist/<id>.
+    var webUrl: String { "https://open.spotify.com/playlist/\(id.split(separator: ":").last.map(String.init) ?? id)" }
+}
+
+/// engine/musicSpotify.ts SpotifyLibraryPage (library.rs music_spotify_library_page).
+struct MusicSpotifyLibraryPage: Decodable {
+    var tracks: [MusicTrack]
+    var playlists: [MusicSpotifyLibraryPlaylist]
+    var nextOffset: Int?
+    var total: Int?
+    var skipped: Int
+    var canCreate: Bool
+    var writePermission: Bool
 }
 
 struct MusicSourceError: Decodable, Hashable { var source: String; var message: String }

@@ -71,6 +71,8 @@ struct PlayerScreen: View {
     @State private var engineFallbackTried = false
     /// player.tsx showNoAudioWarning: the native engine plays but cannot decode the audio.
     @State private var noAudioWarning = false
+    /// use-pip-mode.ts pipMode: the picture is in the Picture in Picture window (AVPlayer engine only).
+    @State private var pipActive = false
     @State private var startAt: Double?
     /// bp-resume-prompt: the saved position waits for "Pick up where you left off" / "Start over" (settings.resumePrompt).
     @State private var resumePending: Double?
@@ -138,8 +140,10 @@ struct PlayerScreen: View {
                                  onReady: { c in
                                      guard engine == .native else { return }
                                      controller = c
+                                     pipActive = false
                                      if resumePending != nil { c.setPaused(true) }
-                                 })
+                                 },
+                                 onPictureInPicture: { on in if engine == .native { pipChanged(on) } })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else if let startAt {
@@ -147,7 +151,7 @@ struct PlayerScreen: View {
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
-                              onReady: { controller = $0; if resumePending != nil { $0.setPaused(true) } })
+                              onReady: { controller = $0; pipActive = false; if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else {
@@ -158,7 +162,7 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen)
+                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
@@ -170,7 +174,7 @@ struct PlayerScreen: View {
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, !roomOpen, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport.
                 Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
             }
@@ -184,7 +188,7 @@ struct PlayerScreen: View {
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
             }
-            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil {
+            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive {
                 if showUpNextCard, let upNext {
                     upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if let seg = activeSegment {
@@ -208,10 +212,12 @@ struct PlayerScreen: View {
                 TogetherView(inPlayer: true, onClose: { roomOpen = false; focus = .surface; wake() })
                     .transition(.opacity)
             }
+            if pipActive { pipPlacard.transition(.opacity) }
         }
         .onPlayPauseCommand { togglePause() }
         .onExitCommand {
-            if roomOpen { roomOpen = false; focus = .surface; wake() }   // the inline Watch Together room closes first (review 22)
+            if pipActive { controller?.stopPictureInPicture() }                 // back to the full picture first
+            else if roomOpen { roomOpen = false; focus = .surface; wake() }   // the inline Watch Together room closes first (review 22)
             else if resumePending != nil { acknowledgeResume(true) }     // Back takes the default action (bp-resume-prompt)
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
             else if panel != nil { closePanel() }
@@ -227,8 +233,11 @@ struct PlayerScreen: View {
         .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: switched?.url ?? url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         // The app now declares background audio for music; a film or channel still stops
-        // when the viewer leaves the app (mpv would otherwise keep sounding).
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in controller?.setPaused(true) }
+        // when the viewer leaves the app (mpv would otherwise keep sounding), unless it is
+        // playing in Picture in Picture, which is how it keeps going over other apps.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            if controller?.isPictureInPictureActive != true { controller?.setPaused(true) }
+        }
         .task {
             // use-player-bridge.ts / player-utils.ts pickBridge: settle the engine before anything loads.
             await settleEngine(for: playURL, hints: streamHints)
@@ -257,6 +266,7 @@ struct PlayerScreen: View {
             if let c = controller {
                 snap = c.snapshot()
                 muted = c.isMuted()
+                if pipActive, !c.isPictureInPictureActive { pipChanged(false) }
                 buffered = c.bufferedSec()
                 if isKid, chrome { kidSubs = c.tracks().filter { $0.type == "sub" } }
             }
@@ -474,6 +484,11 @@ struct PlayerScreen: View {
                 chip("Back", "chevron.left") { requestClose() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
+                // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
+                // mpv cannot, so the control is not there on that engine.
+                if controller?.supportsPictureInPicture == true {
+                    chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
+                }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
@@ -1008,6 +1023,44 @@ struct PlayerScreen: View {
         .padding(BP.gutter).padding(.bottom, BP.px(20))
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .onAppear { controller?.setPaused(true); if let c = controller { snap = c.snapshot() } }
+    }
+
+    // MARK: Picture in Picture (use-pip-mode.ts)
+
+    /// pip://entered / pip://exited: the chrome stands aside while the picture is in the PiP window,
+    /// and comes back with it.
+    private func pipChanged(_ on: Bool) {
+        if on, pipActive { return }
+        pipActive = on
+        if on {
+            hideTask?.cancel()
+            chrome = false
+            if panel != nil { panel = nil }
+            focusLater(.chip("pip-exit"))
+        } else {
+            focus = .surface
+            wake()
+        }
+    }
+
+    /// The stage while the picture plays in the PiP window: where it went and the way back. The
+    /// viewer can press the TV button and keep watching over other apps.
+    private var pipPlacard: some View {
+        ZStack {
+            BP.void_.ignoresSafeArea()
+            VStack(spacing: BP.px(14)) {
+                Image(systemName: "pip").font(.system(size: BP.px(56), weight: .light)).foregroundStyle(BP.inkMuted)
+                Text(T("Picture in Picture")).font(BP.display(30)).foregroundStyle(BP.ink)
+                Text(verbatim: shownTitle).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                HStack(spacing: BP.px(10)) {
+                    chip("Exit Picture in Picture", "pip.exit", id: "pip-exit") { controller?.stopPictureInPicture() }
+                    chip("Leave", "rectangle.portrait.and.arrow.right", id: "pip-leave") { finish(natural: false) }
+                }
+                .padding(.top, BP.px(8))
+                .focusSection()
+            }
+            .padding(BP.gutter)
+        }
     }
 
     /// A focus target that is only being inserted this tick cannot take the ring yet.

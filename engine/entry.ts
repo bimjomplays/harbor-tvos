@@ -1081,6 +1081,10 @@ export const music = {
   spotifySessionReady: musicGlue.spotifySessionReady,
   spotifyFailed: musicGlue.spotifyFailed,
   spotifyDisconnect: musicGlue.spotifyDisconnect,
+  spotifyLibraryPage: musicGlue.spotifyLibraryPage,
+  spotifyCreatePlaylist: musicGlue.spotifyCreatePlaylist,
+  spotifyAddToPlaylist: musicGlue.spotifyAddToPlaylist,
+  artistMore: musicGlue.artistMore,
 };
 
 // ================================================================================== runtime
