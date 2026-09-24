@@ -64,6 +64,7 @@ import * as cardsGlue from "./cards";
 import * as simklGlue from "./simkl";
 import * as anime4kGlue from "./anime4k";
 import * as sportsGlue from "./sports";
+import * as sportsEventGlue from "./sportsEvent";
 import * as settingsRoomGlue from "./settingsRoom";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
@@ -569,6 +570,22 @@ export const sports = {
   watch: sportsGlue.watch,
   toggleAttachedChannel: sportsGlue.toggleAttachedChannel,
   recordChannelWatch: sportsGlue.recordChannelWatch,
+  clearAttachedStream: sportsGlue.clearAttachedStream,
+  officialBroadcasts: sportsGlue.officialBroadcasts,
+  // Event rows, where-to-watch, hero actions, reminders, api-sports key (engine/sportsEvent.ts).
+  eventRows: sportsEventGlue.eventRows,
+  where: sportsEventGlue.where,
+  actions: sportsEventGlue.actions,
+  toggleFollow: sportsEventGlue.toggleFollow,
+  toggleReminder: sportsEventGlue.toggleReminder,
+  reminders: sportsEventGlue.reminders,
+  runReminders: sportsEventGlue.runReminders,
+  startReminders: sportsEventGlue.startReminders,
+  webhooks: sportsEventGlue.webhooks,
+  setWebhooks: sportsEventGlue.setWebhooks,
+  testWebhook: sportsEventGlue.testWebhook,
+  apiSports: sportsEventGlue.apiSports,
+  setApiSportsKey: sportsEventGlue.setApiSportsKey,
 };
 
 /** Big Picture settings catalog: categories, controls per category, commit. */

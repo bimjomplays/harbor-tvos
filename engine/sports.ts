@@ -27,6 +27,7 @@ import type { IptvChannel } from "@/lib/iptv/types";
 import { buildSportsChannelIndex, matchChannelsForGameAsync, type ChannelMatch, type SportsChannelIndex } from "@/lib/sports/iptv-match";
 import { watchProviders } from "@/lib/sports/watch-providers";
 import { SPORTS_BROADCASTS } from "@/lib/sports/broadcasts";
+import { syncSportsReminders } from "@/lib/sports/reminders";
 
 export type Mode = "for-you" | "live" | "schedule" | "hot" | "explore";
 
@@ -77,6 +78,10 @@ export function toggleTeam(team: FavouriteTeam): boolean {
 const slices = new Map<string, SportsSlice>();
 const readSlice = (key: string) => slices.get(key);
 const saveSlice = (key: string, slice: SportsSlice) => { slices.set(key, slice); };
+/** use-hub sportsApiRevision: a changed api-sports key must refetch those leagues, so their cached slices go. */
+export function forgetSlices(leagueKeys: string[]): void {
+  for (const key of [...slices.keys()]) if (leagueKeys.includes(key.split("@")[0])) slices.delete(key);
+}
 
 type FeedMode = "day" | "live" | "upcoming";
 const inflight = new Map<string, Promise<void>>();
@@ -180,6 +185,8 @@ export async function page(input: PageInput) {
   const upcomingFeed = upcomingOn ? await feed(upcomingLeagues.map((k) => `${k}@${today}@upcoming`), "upcoming", !!input.force, wait) : EMPTY;
   const upcomingGames = gamesInSportsSelection(upcomingFeed.games, HUB_LEAGUES, leagues);
   const all = mergeSlices([{ at: 1, games: upcomingGames }, { at: 2, games: boardGames }]);
+  // use-bp-sports.ts:157: a reminder follows its game's published start time.
+  syncSportsReminders(all);
 
   let hot: ReturnType<typeof hotEvents> = [];
   let hotFeed: SportsSnapshot = EMPTY;
@@ -267,10 +274,12 @@ export async function detail(game: SportsGame): Promise<unknown> {
 }
 
 // ------------------------------------------------------------------------------ watch
-// bp-sports-watch.tsx plan, minus embedded web players: attached streams and official
-// Twitch/YouTube broadcasts are listed as information, Live TV channels are playable.
+// bp-sports-watch.tsx plan: an attached stream plays directly, official broadcasts open the
+// broadcast list (bp-sports-broadcast-source), Live TV channels are playable, then addons,
+// picker, setup.
 const ATTACH_KEY = "harbor.sports.sources.v1";
-type Attachments = { channels: Record<string, string[]>; streams: Record<string, { url: string; kind: string; headers?: Record<string, string>; page: string; title: string; poster: string }> };
+type AttachedStream = { url: string; kind: string; headers?: Record<string, string>; page: string; title: string; poster: string };
+type Attachments = { channels: Record<string, string[]>; streams: Record<string, AttachedStream> };
 
 function readAttachments(): Attachments {
   try {
@@ -291,6 +300,125 @@ export function toggleAttachedChannel(leagueTag: string, channelId: string): boo
   if (kept.length) channels[leagueTag] = kept; else delete channels[leagueTag];
   localStorage.setItem(ATTACH_KEY, JSON.stringify({ channels, streams: a.streams }));
   return on;
+}
+
+/**
+ * source-store setAttachedStream(gameId, null): bp-sports-watch `pick` / `playSearched` drop a
+ * game's attached stream when a channel is chosen instead. Big Picture never attaches a stream
+ * (only the desktop watch-sources panel does, watch-sources.tsx:338), so clearing is the only
+ * write the TV makes to `Attachments.streams`.
+ */
+export function clearAttachedStream(gameId: string): boolean {
+  const a = readAttachments();
+  if (!(gameId in a.streams)) return false;
+  const streams = { ...a.streams };
+  delete streams[gameId];
+  localStorage.setItem(ATTACH_KEY, JSON.stringify({ channels: a.channels, streams }));
+  return true;
+}
+
+// bp-sports-broadcast-source.ts: organizer channels + the esports game's catalog broadcasts, and
+// the live feed's streams for this exact match when an esports feed has it.
+import { esportsGame } from "@/lib/sports/esports-catalog";
+import { fetchEsportsFeed, type EsportsGameId, type EsportsMatch } from "@/lib/sports/esports-feeds";
+import { esportsEmbedUrl, esportsExternalUrl, type EsportsStream } from "@/lib/sports/esports-streams";
+
+const LEAGUE_GAMES: Record<string, EsportsGameId> = {
+  DOTA2: "dota2", DOTA: "dota2", TI: "dota2", LCK: "lol", LEC: "lol", LPL: "lol", LCS: "lol", LTA: "lol", MSI: "lol", WORLDS: "lol",
+  RLCS: "rocketleague", VCT: "valorant", VALORANT: "valorant", CS: "cs2", CS2: "cs2", IEM: "cs2", BLAST: "cs2", ESL: "cs2",
+};
+const NEAR_MS = 3 * 60 * 60_000;
+function bpEsportsGameId(league: string, source?: string): EsportsGameId | null {
+  if (source === "opendota") return "dota2";
+  return LEAGUE_GAMES[(league || "").toUpperCase()] ?? null;
+}
+const normalizeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+function sameTeam(a: string, b: string): boolean {
+  const left = normalizeName(a), right = normalizeName(b);
+  if (left.length < 3 || right.length < 3) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+function feedMatchFor(matches: EsportsMatch[], game: SportsGame): EsportsMatch | null {
+  const names = [game.home.name, game.away.name].filter(Boolean);
+  if (names.length === 0) return null;
+  let loose: EsportsMatch | null = null;
+  for (const match of matches) {
+    const hits = match.teams.filter((team) => names.some((name) => sameTeam(team.name, name))).length;
+    if (hits === 0) continue;
+    const near = !Number.isFinite(game.startMs) || Math.abs(match.startMs - game.startMs) <= NEAR_MS;
+    if (!near) continue;
+    if (hits >= 2) return match;
+    if (!loose) loose = match;
+  }
+  return loose;
+}
+function playableStreams(streams: readonly EsportsStream[]): EsportsStream[] {
+  const seen = new Set<string>();
+  const out: EsportsStream[] = [];
+  for (const stream of streams) {
+    const url = esportsExternalUrl(stream.url);
+    if (!url || seen.has(url) || !stream.title) continue;
+    seen.add(url);
+    out.push({ ...stream, url });
+  }
+  return out;
+}
+function catalogBroadcasts(league: string, source?: string): EsportsStream[] {
+  const id = bpEsportsGameId(league, source);
+  const def = id ? esportsGame(id) : undefined;
+  const organizer = SPORTS_BROADCASTS.filter((item) => item.league && item.league === league).map<EsportsStream>((item) => ({
+    title: `${item.title} · ${item.competition}`, url: `https://www.twitch.tv/${item.channel}`, platform: "twitch",
+  }));
+  return playableStreams([...organizer, ...(def?.broadcasts ?? [])]);
+}
+
+/**
+ * One official broadcast as the TV can use it. Upstream embeds the Twitch/YouTube/Kick public
+ * player in an iframe (bp-sports-broadcast-stage + esportsEmbedUrl) and never extracts the
+ * provider's HLS, so neither does the port: tvOS has no web view, so the TV opens the provider's
+ * own Apple TV app when it answers a URL scheme (`app`: Twitch, YouTube) and otherwise hands the
+ * page to the phone (`url`, shown as a QR code; Kick has no Apple TV app).
+ */
+export type BroadcastView = { title: string; url: string; platform: string; platformLabel: string; app: string | null };
+const PLATFORM_LABELS: Record<string, string> = { twitch: "Twitch", youtube: "YouTube", kick: "Kick", external: "" };
+export function broadcastView(stream: EsportsStream): BroadcastView {
+  let app: string | null = null;
+  const embed = esportsEmbedUrl(stream, "localhost");
+  if (embed && stream.platform === "twitch") {
+    const channel = new URL(embed).searchParams.get("channel");
+    if (channel) app = `twitch://stream/${channel}`;
+  } else if (embed && stream.platform === "youtube") {
+    const id = embed.match(/\/embed\/([a-zA-Z0-9_-]{11})/)?.[1];
+    if (id) app = `youtube://watch/${id}`;
+  }
+  return { title: stream.title, url: stream.url, platform: stream.platform, platformLabel: PLATFORM_LABELS[stream.platform] || "Official broadcast", app };
+}
+
+const feedHeld = new Map<string, { at: number; list: EsportsStream[] }>();
+/** useBpOfficialBroadcasts: this match's feed streams first (`onAir`), then the catalog. */
+export async function officialBroadcasts(game: SportsGame): Promise<{ list: BroadcastView[]; onAir: boolean }> {
+  const catalogList = catalogBroadcasts(game.league, game.source);
+  const kind = bpEsportsGameId(game.league, game.source);
+  let feedList: EsportsStream[] = [];
+  if (kind) {
+    const key = `${kind}:${game.id}`;
+    const hit = feedHeld.get(key);
+    if (hit && Date.now() - hit.at < 60_000) feedList = hit.list;
+    else {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      try {
+        const result = await fetchEsportsFeed(kind, { signal: controller.signal });
+        feedList = playableStreams(feedMatchFor(result.matches, game)?.streams ?? []);
+        feedHeld.set(key, { at: Date.now(), list: feedList });
+      } catch {
+        feedList = [];
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  }
+  return { list: playableStreams([...feedList, ...catalogList]).map(broadcastView), onAir: feedList.length > 0 };
 }
 
 let indexCache: { signature: string; index: SportsChannelIndex; channels: IptvChannel[] } | null = null;
@@ -325,24 +453,27 @@ function tierCopy(m: ChannelMatch): string {
 }
 
 /**
- * Everything the Watch press can do for one game: `plan` is "channel" (an exact or pinned match,
- * play it), "addons" (an addon listing matches, or it is the only thing on offer), "picker"
- * (weaker matches), "setup" (no Live TV source), or "finished". `addons` is the summary of
- * `addonSources` once it has loaded (bp-sports-watch waits on neither).
+ * Everything the Watch press can do for one game, in bp-sports-watch.tsx's plan order:
+ * "stream" (an attached stream plays), "broadcast" (official broadcasts, the list opens),
+ * "channel" (an exact or pinned match plays), "addons" (an addon listing matches, or it is the
+ * only thing on offer), "picker" (weaker matches), "setup" (no Live TV source), or "finished".
+ * `addons` is the summary of `addonSources` once it has loaded (bp-sports-watch waits on neither).
  */
 export async function watch(game: SportsGame, addons?: { matched: number; available: number } | null): Promise<{
-  plan: "channel" | "addons" | "picker" | "setup" | "finished";
+  plan: "stream" | "broadcast" | "channel" | "addons" | "picker" | "setup" | "finished";
+  label: string;
   fixture: string;
   channels: WatchOption[];
   providers: Array<{ name: string; url: string; logo: string }>;
-  broadcasts: Array<{ title: string; competition: string; channel: string; source: string }>;
-  attachedStream: { url: string; title: string; page: string } | null;
+  broadcasts: BroadcastView[];
+  onAir: boolean;
+  attachedStream: { url: string; title: string; page: string; kind: string; headers: Record<string, string> | null; poster: string } | null;
   sources: number;
   scanned: number;
 }> {
   const fixture = game.away.name ? `${game.away.name} v ${game.home.name}` : game.context?.name || game.home.name;
   const attachments = readAttachments();
-  const { index, sources } = await channelIndex();
+  const [{ index, sources }, shows] = await Promise.all([channelIndex(), officialBroadcasts(game)]);
   const attachedIds = attachments.channels[game.league] ?? [];
   const matches = sources > 0 ? await matchChannelsForGameAsync(game, index, { attachedIds, broadcastNames: game.broadcasts ?? [], limit: 8 }) : [];
   const channels: WatchOption[] = matches.map((m) => ({
@@ -350,22 +481,35 @@ export async function watch(game: SportsGame, addons?: { matched: number; availa
     tier: m.tier, attached: m.attached, label: m.label, copy: tierCopy(m), reasons: m.reasons.map((r) => r.label), score: m.score,
   }));
   const stream = attachments.streams[game.id] ?? null;
-  // bp-sports-watch.tsx plan order (stream/broadcast plans are information-only here).
   const selected = channels.some((c) => c.tier === "exact" || c.attached);
   if (selected) channels.sort((a, b) => Number(b.tier === "exact" || b.attached) - Number(a.tier === "exact" || a.attached));
   const matchedAddon = (addons?.matched ?? 0) > 0, anyAddon = (addons?.available ?? 0) > 0;
   const plan = game.state === "post" ? "finished"
+    : stream ? "stream"
+    : shows.list.length > 0 ? "broadcast"
     : selected ? "channel"
     : matchedAddon ? "addons"
     : sources > 0 && channels.length > 0 ? "picker"
     : anyAddon ? "addons"
     : sources > 0 ? "picker"
     : "setup";
+  // bp-sports-watch.tsx copy.
+  const pickCount = shows.list.length + channels.length + (stream ? 1 : 0);
+  const label = plan === "finished" ? "Game finished"
+    : plan === "stream" ? "Watch"
+    : plan === "broadcast" ? (pickCount > 1 ? "Where to watch" : "Watch the broadcast")
+    : plan === "channel" ? (game.state === "pre" ? "Preview channel" : "Watch")
+    : plan === "addons" ? "Addon sources"
+    : plan === "picker" ? (channels.length > 0 ? "Choose a channel" : "No channel found")
+    : "Set up Live TV";
   return {
-    plan, fixture, channels,
+    plan, label, fixture, channels,
     providers: watchProviders(game).map((p) => ({ name: p.name, url: p.url, logo: p.logo })),
-    broadcasts: SPORTS_BROADCASTS.filter((b) => b.league === game.league).map((b) => ({ title: b.title, competition: b.competition, channel: b.channel, source: b.source })),
-    attachedStream: stream ? { url: stream.url, title: stream.title, page: stream.page } : null,
+    broadcasts: shows.list, onAir: shows.onAir,
+    attachedStream: stream ? {
+      url: stream.url, title: stream.title ?? "", page: stream.page ?? "", kind: stream.kind ?? "hls",
+      headers: stream.headers && Object.keys(stream.headers).length ? stream.headers : null, poster: stream.poster ?? "",
+    } : null,
     sources, scanned: index.scanned,
   };
 }

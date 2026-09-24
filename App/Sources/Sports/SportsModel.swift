@@ -21,6 +21,8 @@ final class SportsModel: ObservableObject {
                                         "home": side(home), "away": side(away)]
             if let source { o["source"] = .string(source) }
             if let dateOnly { o["dateOnly"] = .string(dateOnly) }
+            // watchProviders / channel matching read the listed broadcasters (watch-providers.ts).
+            if let broadcasts { o["broadcasts"] = .array(broadcasts.map { .string($0) }) }
             if let c = context { o["context"] = .object(["id": .string(c.id), "name": .string(c.name), "round": .string(c.round), "draw": .string(c.draw), "venue": .string(c.venue), "major": .bool(c.major)]) }
             return .object(o)
         }
@@ -61,6 +63,9 @@ final class SportsModel: ObservableObject {
     func start() async {
         consent = ((try? await HarborEngine.shared.call("sports.consent", [])) as Consent?)?.status ?? "unknown"
         guard consent == "accepted" else { return }
+        // sports-reminder-loop: the engine's 30 s reminder timer (runs only while Harbor is open;
+        // tvOS cannot send a webhook reminder in the background). Idempotent.
+        _ = try? await HarborEngine.shared.callJSON("sports.startReminders", [])
         if unsubscribe == nil {
             unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
                 guard type == "harbor:sports-updated" else { return }

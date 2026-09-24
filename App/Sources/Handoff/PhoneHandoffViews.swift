@@ -143,7 +143,8 @@ struct PhoneTypingSheet: View {
                     Image(systemName: "iphone").font(.system(size: BP.px(22), weight: .semibold)).foregroundStyle(BP.inkMuted)
                     Text("Type on your phone").font(BP.display(30)).foregroundStyle(BP.ink)
                     Spacer()
-                    Button { onClose() } label: { Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .bold)) }
+                    // bp-phone-typing.tsx: SFX.close() then onClose.
+                    Button { BPSound.shared.close(); onClose() } label: { Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .bold)) }
                         .buttonStyle(BPActionStyle())
                         .focused($closeFocused)
                         .accessibilityLabel("Close")

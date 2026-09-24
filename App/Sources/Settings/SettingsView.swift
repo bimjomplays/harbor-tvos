@@ -75,6 +75,9 @@ struct SettingsView: View {
                 }
                 section("Anime4K") { Anime4KPanel() }
                 section("Anime rows") { AnimeRowsPanel() }
+                // settings/webhooks-panel.tsx (sports reminders) and sports-api-setting.tsx.
+                section("Where alerts go") { SportsWebhooksPanel() }
+                section("Sports metadata") { SportsApiKeyPanel() }
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
                     HStack(spacing: BP.px(12)) {

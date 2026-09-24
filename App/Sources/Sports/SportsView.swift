@@ -9,12 +9,17 @@ struct SportsView: View {
     @State private var heroIndex = 0
 
     @State private var directPlay: SportsEventModel.WatchOption?
+    @State private var directStream: SportsAddonPanelView.Play?
 
-    /// useBpWatchGame: a live game with an exact channel match plays at once; anything else opens the event.
+    /// useBpWatchGame: a live game with an attached stream, or an exact (or pinned) channel match,
+    /// plays at once; anything else opens the event.
     private func open(_ g: SportsModel.Game) {
         guard g.state == "in" else { event = g; return }
         Task {
-            if let w: SportsEventModel.Watch = try? await HarborEngine.shared.call("sports.watch", [g.wire]), w.plan == "channel", let best = w.channels.first {
+            let w: SportsEventModel.Watch? = try? await HarborEngine.shared.call("sports.watch", [g.wire])
+            if let s = w?.attachedStream, let url = URL(string: s.url) {
+                directStream = SportsAddonPanelView.Play(url: url, headers: s.headers ?? [:], title: w?.fixture ?? g.headline, subtitle: URL(string: s.page)?.host, isLive: s.kind != "file")
+            } else if let best = w?.channels.first, best.tier == "exact" || best.attached {
                 _ = try? await HarborEngine.shared.callJSON("sports.recordChannelWatch", [.string(best.channelId)])
                 directPlay = best
             } else { event = g }
@@ -33,6 +38,9 @@ struct SportsView: View {
         .fullScreenCover(item: $event) { g in SportsEventView(game: g, dismiss: { event = nil }) }
         .fullScreenCover(item: $directPlay) { opt in
             PlayerScreen(title: opt.name, subtitle: opt.label, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in directPlay = nil }
+        }
+        .fullScreenCover(item: $directStream) { p in
+            PlayerScreen(title: p.title, subtitle: p.subtitle, url: p.url, headers: p.headers, isLive: p.isLive) { _ in directStream = nil }
         }
         .fullScreenCover(isPresented: $personalize) { SportsPersonalizeView(model: model, dismiss: { personalize = false }) }
     }
