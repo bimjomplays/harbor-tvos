@@ -16,7 +16,7 @@ final class KeyValueStore {
     /// Small, user-authored state that must survive a cache purge: profiles, settings blobs
     /// (`harbor.settings`, `.shared`, `.<profile>`), sync bookkeeping, sports choices, consent.
     private static let durableKeys: Set<String> = ["harbor.profiles.v1", "harbor.active-profile", "harbor.settings", "harbor.settings.shared", "harbor.sync.account",
-                                                   "harbor.sports.favourites.v1", "harbor.sports.sources.v1", "harbor-sports-consent", "harbor.iptv.playlists.v1",
+                                                   "harbor.sports.favourites.v1", "harbor.sports.sources.v1", "harbor.sports.reminders.v1", "harbor-sports-consent", "harbor.iptv.playlists.v1",
                                                    "harbor.iptv.favorites.v2", "harbor.iptv.pins.v1", "harbor.iptv.epgmap.v1", "harbor.iptv.groupPrefs.v1", "harbor.iptv.countryPrefs.v1", "harbor.iptv.stats.v1",
                                                    "harbor.installed-addons", "harbor.onboarding.bp", "harbor.customlists.v1",
                                                    "harbor.reminders.v1", "harbor.reminders.unseen.v1", "harbor.moviewatched.v1",
