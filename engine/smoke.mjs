@@ -75,6 +75,97 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }
 
+// ------------------------------------------------ music (Stage 12): sources, rows, matching, library
+{
+  const jf = "http://jf.example.invalid";
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    // Jellyfin adopts the home-server connection the video side saved (added mid-test below).
+  ]) });
+  const hits = [];
+  let jellyfinOn = false;
+  const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
+  const chartTrack = { id: 3135556, title: "Harder, Better, Faster, Stronger", duration: 224, explicit_lyrics: false, artist: { id: 27, name: "Daft Punk" }, album: { title: "Discovery", cover_big: "https://cdn.example.invalid/discovery.jpg" } };
+  const scTrack = (id, title, user, ms) => ({ id, title, duration: ms, full_duration: ms, policy: "ALLOW", streamable: true, user: { id: 9, username: user, avatar_url: "https://i1.sndcdn.com/avatars-large.jpg" }, artwork_url: "https://i1.sndcdn.com/art-large.jpg",
+    media: { transcodings: [
+      { url: `https://api-v2.soundcloud.com/media/${id}/opus/stream/hls`, preset: "opus_0_0", format: { protocol: "hls", mime_type: "audio/ogg; codecs=\"opus\"" } },
+      { url: `https://api-v2.soundcloud.com/media/${id}/aac/stream/hls`, preset: "aac_160k", format: { protocol: "hls", mime_type: "audio/mp4; codecs=\"mp4a.40.2\"" } },
+    ] }, track_authorization: "auth-token" });
+  rec.node.host.fetch = async (req) => {
+    hits.push(`${req.method} ${req.url}`);
+    const u = new URL(req.url);
+    if (u.host === "api.deezer.com") {
+      if (u.pathname === "/chart/0/tracks") return json(req, { data: [chartTrack] });
+      if (u.pathname === "/chart/0/albums") return json(req, { data: [{ id: 302127, title: "Discovery", cover_big: "https://cdn.example.invalid/discovery.jpg", release_date: "2001-03-07", nb_tracks: 14, artist: { id: 27, name: "Daft Punk" } }] });
+      if (u.pathname === "/chart/0/artists") return json(req, { data: [{ id: 27, name: "Daft Punk", picture_big: "https://cdn.example.invalid/dp.jpg", position: 1 }] });
+      if (u.pathname === "/editorial/0/selection") return json(req, { error: { code: 800, message: "no data" } });
+      if (u.pathname === "/search/artist") return json(req, { data: [{ id: 27, name: "Daft Punk" }] });
+      if (u.pathname === "/artist/27/top") return json(req, { data: [chartTrack] });
+      if (u.pathname === "/artist/27/albums") return json(req, { data: [{ id: 302127, title: "Discovery", cover_big: "x", release_date: "2001-03-07" }] });
+      if (u.pathname === "/artist/27/related") return json(req, { data: [{ id: 28, name: "Justice" }] });
+    }
+    if (u.host === "itunes.apple.com") return json(req, { results: [
+      { kind: "song", trackId: 11, trackName: "One More Time", artistName: "Daft Punk", collectionName: "Discovery", trackTimeMillis: 320000, artworkUrl100: "https://is1.example.invalid/100x100bb.jpg" },
+      { collectionId: 22, collectionName: "Homework", artistName: "Daft Punk", releaseDate: "1997-01-20T08:00:00Z", trackCount: 16 },
+    ] });
+    if (u.host === "soundcloud.com") return { status: 200, statusText: "OK", headers: { "content-type": "text/html" }, url: req.url, body: '<script src="https://a-v2.sndcdn.com/assets/0-abc.js"></script><script src="https://a-v2.sndcdn.com/assets/49-def.js"></script>' };
+    if (u.host === "a-v2.sndcdn.com") return { status: 200, statusText: "OK", headers: {}, url: req.url, body: u.pathname.includes("49-def") ? 'x={client_id:"ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",y:1}' : "nothing here" };
+    if (u.host === "api-v2.soundcloud.com") {
+      if (u.searchParams.get("client_id") !== "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345") return json(req, {}, 401);
+      if (u.pathname === "/search/tracks") return json(req, { collection: [scTrack(1, "Harder Better Faster Stronger (cover)", "Some Band", 200000), scTrack(2, "Harder, Better, Faster, Stronger", "Daft Punk", 226000)] });
+      if (u.pathname === "/search/users" || u.pathname === "/search/playlists") return json(req, { collection: [] });
+      if (u.pathname === "/tracks") return json(req, [scTrack(Number(u.searchParams.get("ids")), "Harder, Better, Faster, Stronger", "Daft Punk", 226000)]);
+      if (u.pathname === "/media/2/aac/stream/hls") return json(req, { url: u.searchParams.get("track_authorization") === "auth-token" ? "https://playback.media-streaming.soundcloud.cloud/x/aac_160k/playlist.m3u8?sig=1" : "https://evil.example.invalid/x.m3u8" });
+      if (u.pathname === "/mixed-selections") return json(req, { collection: [] });
+    }
+    if (jellyfinOn && u.origin === jf) {
+      if (u.pathname === "/UserViews") return json(req, { Items: [{ Id: "lib1", Name: "Music", CollectionType: "music" }] });
+      if (u.pathname === "/Items" && u.searchParams.get("includeItemTypes") === "MusicAlbum" && !u.searchParams.get("searchTerm")) return json(req, { Items: [{ Id: "alb1", Name: "Random Access Memories", Type: "MusicAlbum", AlbumArtist: "Daft Punk", ProductionYear: 2013, ChildCount: 13, ImageTags: { Primary: "t1" } }] });
+      if (u.pathname === "/Items" && u.searchParams.get("parentId") === "alb1") return json(req, { Items: [{ Id: "trk1", Name: "Give Life Back to Music", Type: "Audio", Artists: ["Daft Punk"], Album: "Random Access Memories", AlbumId: "alb1", AlbumPrimaryImageTag: "t1", RunTimeTicks: 2750000000 }] });
+      if (u.pathname === "/Items") return json(req, { Items: [] });
+      if (u.pathname === "/Items/trk1/PlaybackInfo") return json(req, { MediaSources: [{ Id: "src1", Container: "flac", SupportsDirectPlay: true, Bitrate: 900000 }], PlaySessionId: "ps1" });
+      if (u.pathname.startsWith("/Sessions/Playing")) return { status: 204, statusText: "No Content", headers: {}, url: req.url, body: "" };
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const m = rec.engine.music;
+  r.eq("music.copy speaks upstream's English", [m.copy()["music.title"], m.copy()["music.row.upNext"]], ["Music", "Up next"]);
+  const conns = m.connections();
+  r.ok("music.connections lists catalog, Jellyfin, Plex and SoundCloud; SoundCloud waits for consent", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,soundcloud" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
+  const h = await m.home(true, null);
+  const keys = h.bands.map((b) => b.key);
+  r.ok("music.home: server notice, charts stand in for fresh (numbered), artists, catalog extras", keys[0] === "server" && h.bands[0].notice && keys.includes("fresh") && h.bands.find((b) => b.key === "fresh").numbered && h.bands.find((b) => b.key === "fresh").cards[0].track.connectorId === "catalog" && keys.includes("home:catalog:charting-artists") && keys.includes("home:catalog:charts") && !hits.some((x) => x.includes("soundcloud")), JSON.stringify({ keys, errors: h.errors }));
+  r.ok("music.home cards carry display fields and the item to open", h.bands.find((b) => b.key === "home:catalog:charting-artists").cards[0].circle === true && h.bands.find((b) => b.key === "home:catalog:charts").cards[0].subtitle === "Daft Punk · 2001", JSON.stringify(h.bands.map((b) => [b.key, b.cards[0] && b.cards[0].subtitle])));
+  const s = await m.search("daft punk", null);
+  r.ok("music.search merges iTunes songs/albums with Deezer artists", s.tracks[0].title === "One More Time" && s.albums[0].title === "Homework" && s.artists[0].title === "Daft Punk" && s.tracks[0].track.durationLabel === "5:20", JSON.stringify({ t: s.tracks.map((x) => x.title), a: s.albums.map((x) => x.title), ar: s.artists.map((x) => x.title), e: s.errors }));
+  const artist = await m.open(s.artists[0].item);
+  r.ok("music.open(artist) loads top tracks, albums and related artists", artist.tracks.length === 1 && artist.bands.map((b) => b.title).join("|") === "Albums|Related artists", JSON.stringify({ t: artist.tracks.length, b: artist.bands.map((b) => b.title) }));
+  const catalogTrack = h.bands.find((b) => b.key === "fresh").cards[0].track;
+  const none = await m.prepare(catalogTrack, null, null).then(() => "played", (e) => e.message);
+  r.eq("music.prepare: a catalog track with no playable source says so", none, "No matching source is available right now.");
+  r.eq("music.acceptSoundCloud records consent", m.acceptSoundCloud(), { accepted: true, soundcloud: true });
+  const p = await m.prepare(catalogTrack, null, null);
+  r.ok("music.prepare matches the chart track to the SoundCloud upload (not the cover) and resolves AAC HLS, never Opus", p.track.connectorId === "soundcloud" && p.track.sourceId === "2" && p.track.collectionOrigin.id === catalogTrack.id && p.stream.mimeType === "application/vnd.apple.mpegurl" && p.stream.url.startsWith("https://playback.media-streaming.soundcloud.cloud/") && p.stream.bitrate === 160000, JSON.stringify(p));
+  r.ok("SoundCloud client id is scraped from the web app's bundle and cached", hits.some((x) => x.includes("a-v2.sndcdn.com/assets/49-def.js")) && rec.node.storage.get("harbor.music.soundcloud-client-id") === "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
+  const lib = m.setLiked(p.track, true);
+  r.ok("music.setLiked / isLiked follow liked.ts (the playing copy answers to its catalog origin)", lib.liked.length === 1 && m.isLiked(p.track) && !m.isLiked(catalogTrack) && m.setLiked(p.track, false).liked.length === 0);
+  m.addRecent(p.track);
+  const h2 = await m.home(false, [catalogTrack]);
+  r.ok("music.home with history: recents first, charts leave fresh, up next from the queue", h2.bands[0].key === "recents" && !h2.bands.some((b) => b.key === "fresh") && h2.bands.some((b) => b.key === "charts") && h2.bands.find((b) => b.key === "liked").title === "Up next" && h2.bands.some((b) => b.key === "artists" && b.cards[0].title === "Daft Punk"), JSON.stringify(h2.bands.map((b) => b.key)));
+  jellyfinOn = true;
+  for (const [k, v] of [["harbor.media-server.connections.v1", JSON.stringify([{ id: "ms1", profileId: "default", provider: "jellyfin", name: "Jellyfin · den", origin: jf, userId: "u1", enabled: true }])], ["harbor.media-server.token.v1.default.ms1", "tok1"]]) {
+    rec.node.storage.set(k, v);
+    rec.engine.runtime.syncStorage(k, v);
+  }
+  const h3 = await m.home(true, null);
+  const server = h3.bands.find((b) => b.key === "server:jellyfin:home:recent");
+  r.ok("music.home shows the Jellyfin shelf once a Jellyfin server is connected", !!server && server.title === "On your server" && server.subtitle === "Jellyfin · den" && server.cards[0].artwork.startsWith(`${jf}/Items/alb1/Images/Primary?`) && !h3.bands.some((b) => b.key === "server"), JSON.stringify(h3.bands.map((b) => b.key)));
+  const album = server ? await m.open(server.cards[0].item) : { tracks: [] };
+  const jp = album.tracks[0] ? await m.prepare(album.tracks[0], null, null) : { stream: { url: "", mimeType: "" } };
+  r.ok("Jellyfin album opens and a FLAC track resolves to the universal URL with its session", album.tracks[0] && album.tracks[0].durationLabel === "4:35" && jp.stream.mimeType === "audio/flac" && jp.stream.url.includes("/Audio/trk1/universal?") && jp.stream.url.includes("playSessionId=ps1") && !/opus|ogg/.test(new URL(jp.stream.url).searchParams.get("container")) && hits.some((x) => x.startsWith("POST") && x.endsWith("/Sessions/Playing")), JSON.stringify(jp));
+  rec.dispose();
+}
+
 // ----------------------------------- sports event rows, where, bell, broadcasts, api key (SP-1/4/7/8/11/12/13)
 {
   const posts = [];

@@ -89,6 +89,8 @@ struct ShellView: View {
             CollectionsView()
         case .sports:
             SportsView()
+        case .music:
+            MusicView()
         case .manga:
             MangaView()
         default: RoomPlaceholderView(room: app.room)

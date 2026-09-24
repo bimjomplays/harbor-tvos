@@ -125,7 +125,7 @@ final class ScreenshotTests: XCTestCase {
         XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.up)
         for _ in 0..<10 { XCUIRemote.shared.press(.left) }
-        for _ in 0..<7 { XCUIRemote.shared.press(.right) }
+        for _ in 0..<8 { XCUIRemote.shared.press(.right) }  // Search sits after Music, Live TV, Sports
         XCUIRemote.shared.press(.select)
         XCTAssertTrue(app.buttons["key-q"].waitForExistence(timeout: 20))
         let tile = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tile-'")).firstMatch

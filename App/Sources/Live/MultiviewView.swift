@@ -98,6 +98,7 @@ final class MultiviewModel: ObservableObject {
 }
 
 struct MultiviewView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var live: LiveModel
     /// "Add to Multiview" from the player: this channel starts in tile 1 with the sound.
     let seed: LiveModel.Channel?
@@ -241,7 +242,9 @@ struct MultiviewView: View {
 
     private func cell(_ i: Int) -> some View {
         let ch = model.slots[i]
-        return MultiviewCell(slot: i, channel: ch, audio: model.audioFocus == i,
+        // The app declares background audio for music; the tile with the sound goes quiet when
+        // the viewer leaves the app instead of sounding from the home screen.
+        return MultiviewCell(slot: i, channel: ch, audio: model.audioFocus == i && scenePhase != .background,
                              nowTitle: ch.flatMap { live.guide[$0.id]?.now?.title },
                              suspended: fullScreen != nil,
                              focus: $focus,
