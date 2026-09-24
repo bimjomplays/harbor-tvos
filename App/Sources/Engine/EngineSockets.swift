@@ -98,7 +98,7 @@ final class EngineSockets: NSObject, URLSessionWebSocketDelegate {
 
     // MARK: URLSessionWebSocketDelegate
 
-    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol proto: String?) {
         lock.lock()
         let id = idByTask[webSocketTask.taskIdentifier]
         lock.unlock()
