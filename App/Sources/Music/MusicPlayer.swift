@@ -220,7 +220,8 @@ final class MusicPlayer: ObservableObject {
         phase = .idle
         Task { let _: AnyJSON? = try? await HarborEngine.shared.callJSON("music.stopped") }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // The session stays active: mpv, AVPlayer and the UI sounds (BPSound) share it and never
+        // reactivate it themselves (review 19).
     }
 
     /// The rest of the queue, for the home's "Up next" shelf.
