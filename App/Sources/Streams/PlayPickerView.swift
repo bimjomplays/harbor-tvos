@@ -45,19 +45,28 @@ struct PlayPickerView: View {
     var body: some View {
         ZStack {
             BPAmbientBackground()
-            HStack(alignment: .top, spacing: BP.px(40)) {
-                VStack(alignment: .leading, spacing: BP.px(10)) {
-                    Text("Play").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                    Text(meta.name).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(3)
-                    if let ep = episodeLabel { Text(ep).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted) }
-                    statusLine
-                    if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
-                    RemoteImage(url: meta.poster).frame(width: BP.px(177), height: BP.px(265)).clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)).padding(.top, BP.px(10))
+            if showAutoStep {
+                // bp-streams.tsx: while auto is busy BpAutoStep stands in for the panel (a kid
+                // profile's is auto-play-transition.tsx's kid branch).
+                PickerAutoStep(meta: meta, episode: episode, attemptIdx: autoTried, resolving: autoFiring,
+                               p2p: model.p2pStarting, kid: ProfilesStore.shared.active?.kid != nil,
+                               onCancel: { cancelAuto() })
+                    .transition(.opacity)
+            } else {
+                HStack(alignment: .top, spacing: BP.px(40)) {
+                    VStack(alignment: .leading, spacing: BP.px(10)) {
+                        Text("Play").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+                        Text(meta.name).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(3)
+                        if let ep = episodeLabel { Text(ep).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted) }
+                        statusLine
+                        if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
+                        RemoteImage(url: meta.poster).frame(width: BP.px(177), height: BP.px(265)).clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)).padding(.top, BP.px(10))
+                    }
+                    .frame(width: BP.px(300), alignment: .leading)
+                    list
                 }
-                .frame(width: BP.px(300), alignment: .leading)
-                list
+                .padding(.horizontal, BP.gutter).padding(.top, BP.px(50))
             }
-            .padding(.horizontal, BP.gutter).padding(.top, BP.px(50))
         }
         .ignoresSafeArea()
         .task {
@@ -143,6 +152,25 @@ struct PlayPickerView: View {
             }
             .onExitCommand { browseManually() }
         }
+    }
+
+    /// use-bp-stream-play autoBusy: auto is still finding or starting a source. Before the first
+    /// task sets `.waiting`, an auto picker already shows the step (no flash of the list).
+    private var showAutoStep: Bool {
+        switch autoState {
+        case .waiting, .firing: return true
+        case .off: return autoPlay
+        case .cancelled, .exhausted: return false
+        }
+    }
+
+    private var autoFiring: Bool { if case .firing = autoState { return true }; return false }
+
+    /// use-bp-stream-play cancelAuto: the resolve in flight stops counting (its result is dropped by
+    /// autoTick) and auto is off for good; the list is the picker again.
+    private func cancelAuto() {
+        if case .firing(let id) = autoState, resolving == id { resolving = nil }
+        autoState = .cancelled
     }
 
     /// use-bp-stream-play browseManually: auto stops for good and the list is the picker again.
@@ -241,13 +269,8 @@ struct PlayPickerView: View {
     }
 
     @ViewBuilder private var autoBanner: some View {
+        // While auto is busy PickerAutoStep covers the list; only its outcome shows here.
         switch autoState {
-        case .waiting, .firing:
-            HStack(spacing: BP.px(8)) {
-                ProgressView().tint(BP.accent)
-                Text(autoState == .waiting ? "Finding the best source…" : "Starting…").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
-                Button("Choose instead") { autoState = .cancelled }.buttonStyle(BPActionStyle())
-            }
         case .exhausted: BPNote(text: "Nothing started on its own. Pick a source.", tone: BP.inkMuted)
         default: EmptyView()
         }
