@@ -582,6 +582,50 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("services.rows without a key: hasKey false, no rows", noRows.hasKey === false && noRows.rows.length === 0 && noRows.name === "Netflix");
 }
 
+// ------------------------------------------ parental gating (lockedTabs, hideContent)
+{
+  const locks = { anime: true, movies: true, liveTv: true, library: false, bogus: true };
+  const hide = { anime: true, liveTv: false, sports: false, adult: false, manga: false };
+  const blob = { activeId: "p2", profiles: [
+    { id: "p1", name: "Parent", isPrimary: true, passwordHash: "abc", lockedTabs: locks, hideContent: hide, settingsLinked: false, createdAt: 1 },
+    { id: "p2", name: "Open", isPrimary: false, passwordHash: null, lockedTabs: { movies: true }, hideContent: null, createdAt: 2 },
+  ] };
+  const pg = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify(blob)]]) });
+  const urls = [];
+  pg.node.host.fetch = async (req) => { urls.push(req.url); return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" }; };
+  const P = pg.engine.parental;
+  const g1 = P.gate("p1", false, false);
+  r.ok("parental.gate: PIN + locked tabs hide the Big Picture tabs that carry the key (live TV has none)", g1.locked && g1.hasPin && g1.anyLocked && JSON.stringify(g1.hiddenRooms) === JSON.stringify(["anime", "movies"]) && g1.hiddenTabs.liveTv === true && !("bogus" in g1.hiddenTabs), JSON.stringify(g1));
+  const g1u = P.gate("p1", false, true);
+  r.ok("parental.gate: a session unlock shows every tab", !g1u.locked && g1u.hiddenRooms.length === 0, JSON.stringify(g1u));
+  const g2 = P.gate("p2", true, false);
+  r.ok("parental.gate: locks without a PIN stay inert, hiddenTabs still reports them", !g2.locked && !g2.hasPin && g2.anyLocked && g2.hiddenRooms.length === 0 && g2.hiddenTabs.movies === true, JSON.stringify(g2));
+  r.eq("parental.hiddenTabsFor an unknown profile is DEFAULT_HIDDEN", Object.values(P.hiddenTabsFor("nope")).some(Boolean), false);
+  r.ok("parental.lockable lists upstream's nine tabs in order", P.lockable().length === 9 && P.lockable()[0].key === "discover" && P.lockable()[5].label === "Live TV", JSON.stringify(P.lockable()));
+  const lv = P.lockedTabsValue({ calendar: true, junk: true });
+  r.ok("parental.lockedTabsValue: full HiddenTabs when any tab is locked, null when none", lv && lv.calendar === true && lv.movies === false && Object.keys(lv).length === 9 && !("junk" in lv) && P.lockedTabsValue({ movies: false }) === null && P.lockedTabsValue(null) === null, JSON.stringify(lv));
+  r.eq("parental.syncIdentity: nothing to copy for a profile without hideContent", P.syncIdentity(), false);
+  // Before the switch below: afterwards p2 (linked, no shared blob yet) reads the harbor.settings mirror.
+  urls.length = 0;
+  await pg.engine.search.fanOut("naruto", "p2", true, null);
+  r.ok("search.fanOut still asks anime sources for a profile that allows anime", urls.some((u) => /anilist|jikan|kitsu/.test(u)), JSON.stringify(urls.slice(0, 6)));
+  let seen = 0;
+  pg.engine.runtime.onEvent((type, detail) => { if (type === "harbor:settings-updated" && detail && detail.fields && detail.fields.includes("hideContent")) seen++; });
+  pg.engine.runtime.syncStorage("harbor.profiles.v1", JSON.stringify({ ...blob, activeId: "p1" }));
+  pg.engine.runtime.emitEvent("harbor:active-profile-changed", { id: "p1" });
+  const eff = pg.engine.settings.loadForProfile("p1", false);
+  const mirror = JSON.parse(pg.node.storage.get("harbor.settings") || "{}");
+  r.ok("profile switch copies the profile's hideContent into its settings and the adult-filter mirror", eff.hideContent.anime === true && eff.hideContent.adult === false && mirror.hideContent && mirror.hideContent.adult === false && seen === 1, JSON.stringify({ hide: eff.hideContent, mirror: mirror.hideContent, seen }));
+  r.eq("parental.syncIdentity is idempotent once settings match", P.syncIdentity(), false);
+  const g3 = P.gate("p1", false, true);
+  r.ok("parental.gate: hideContent.anime hides the Anime tab even when unlocked", g3.animeHidden && JSON.stringify(g3.hiddenRooms) === JSON.stringify(["anime"]), JSON.stringify(g3));
+  urls.length = 0;
+  const hidden = await pg.engine.search.fanOut("naruto", "p1", false, null);
+  const animeHits = urls.filter((u) => /anilist|jikan|kitsu/.test(u));
+  r.ok("search.fanOut skips anime sources for a profile that locks or hides anime", animeHits.length === 0 && hidden.anime.length === 0 && hidden.liveTv.length === 0, JSON.stringify(animeHits.slice(0, 3)));
+  pg.dispose();
+}
+
 // ------------------------------------------------------------------------- kids room
 {
   const profiles = JSON.stringify({ activeId: "k1", profiles: [{ id: "k1", isPrimary: true, kid: { age: 7, curfewMinutes: null, parentPinHash: null } }] });

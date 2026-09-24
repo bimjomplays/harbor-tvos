@@ -194,7 +194,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
     malConnected, malRails: malRails.rails, malState: { loading: malRails.loading, error: malRails.error },
     anilistConnected, anilistRails: anilistRails.rails, anilistState: { loading: anilistRails.loading, error: anilistRails.error },
     anilistTrending: [], anilistTop: [],
-    awards, specRows, addonRows: dedupeAnimeAddonRows(addonRows, s.hideAdultAnime !== false), collections,
+    awards, specRows, addonRows: dedupeAnimeAddonRows(addonRows, s.hideContent?.adult !== false), collections,
   });
   // Row customisation (order / hidden / renamed) as the anime settings store it.
   noteAnimeGroups(groups.map((g) => ({ key: g.key, name: g.name })), profileId);

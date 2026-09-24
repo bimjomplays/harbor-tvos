@@ -76,9 +76,16 @@ function looksAnimeRow(row: AddonRow): boolean {
   return animeIds.length >= Math.ceil(sample.length / 2);
 }
 
+/** views/home.tsx `animeOnlyInAnimeRoom || hideContent.anime`; lib/anime-hide.ts is the latter. */
+function animeKeptOut(settings: Settings): boolean {
+  return settings.animeOnlyInAnimeRoom || settings.hideContent?.anime === true;
+}
+
 function hideAnime<T extends { metas: Meta[] }>(rows: T[], settings: Settings): T[] {
-  if (!settings.animeOnlyInAnimeRoom) return rows;
-  return rows.map((r) => ({ ...r, metas: r.metas.filter((m) => !metaLooksAnime(m)) }));
+  if (!animeKeptOut(settings)) return rows;
+  const out = rows.map((r) => ({ ...r, metas: r.metas.filter((m) => !metaLooksAnime(m)) }));
+  // anime-hide.ts useHideAnimeRows (use-bp-catalog, use-bp-shows): a row left empty goes too.
+  return settings.hideContent?.anime === true ? out.filter((r) => r.metas.length > 0) : out;
 }
 
 function strip(row: HomeRow, shape: RoomRow["shape"] = "poster"): RoomRow {
@@ -181,7 +188,7 @@ export async function catalog(kind: RoomKind, settings: Settings): Promise<RoomB
 
   // useBpCatalogPage: Top 10 from trending, dedup across rows, MIN_ROW_METAS, page customization.
   const trending = built.rows.find((r) => r.key === "trending")?.metas ?? [];
-  const trendingShown = settings.animeOnlyInAnimeRoom ? trending.filter((m) => !metaLooksAnime(m)) : trending;
+  const trendingShown = animeKeptOut(settings) ? trending.filter((m) => !metaLooksAnime(m)) : trending;
   const top = trendingShown.slice(0, 10);
   const ranked = top.length >= 10 ? top : [];
   const seen = new Set<string>(ranked.map((m) => m.id));
@@ -203,7 +210,7 @@ export async function catalog(kind: RoomKind, settings: Settings): Promise<RoomB
   }
   // bp-top10-feed.ts: the page that just built owns the ribbon set (isTop10 for card marks).
   setTop10Metas(ranked.map((m) => ({ id: m.id, name: m.name })));
-  const hero = settings.animeOnlyInAnimeRoom ? built.hero.filter((m) => !metaLooksAnime(m)) : built.hero;
+  const hero = animeKeptOut(settings) ? built.hero.filter((m) => !metaLooksAnime(m)) : built.hero;
   return { rows, hero, failed: false };
 }
 
@@ -247,7 +254,7 @@ export async function continueWatching(authKey: string | null, settings: Setting
   const seen = new Set<string>();
   const merged = [...cloud, ...local, ...external]
     .filter((i) => (i.type as string) !== "other" && !i._id.startsWith("iptv:") && !isCwDismissed(i) && isCwMember(i)
-      && !(settings.animeOnlyInAnimeRoom && isAnimeCwItem(i)))
+      && !(animeKeptOut(settings) && isAnimeCwItem(i)))
     .map((i) => ({ i, k: cwSortKey(i) }))
     .sort((a, b) => b.k - a.k)
     .map((e) => e.i)

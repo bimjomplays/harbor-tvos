@@ -70,6 +70,7 @@ import * as settingsRoomGlue from "./settingsRoom";
 import * as themesGlue from "./themes";
 import { bpIntroPoolLoad, bpIntroPoolSave } from "@/views/big-picture/bp-intro-pool";
 import * as profilesRoomGlue from "./profilesRoom";
+import * as parentalGlue from "./parental";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
 import * as servicesGlue from "./services";
@@ -629,6 +630,15 @@ export const profilesRoom = {
   colors: profilesRoomGlue.colors,
   pickColor: profilesRoomGlue.pickColor,
   purge: profilesRoomGlue.purge,
+};
+
+/** Per-profile gating (lib/parental.tsx, bp-top-bar useBpTabGate, profile-identity-sync hideContent). */
+export const parental = {
+  gate: parentalGlue.gate,
+  hiddenTabsFor: parentalGlue.hiddenTabsFor,
+  lockable: parentalGlue.lockable,
+  lockedTabsValue: parentalGlue.lockedTabsValue,
+  syncIdentity: parentalGlue.syncIdentity,
 };
 
 /** Library room: tabs and one filtered/sorted/grouped feed per tab (use-bp-library). */
