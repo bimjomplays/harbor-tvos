@@ -345,6 +345,8 @@ export type HomeRowsState = {
   rows: Array<{ key: string; name: string; originalName: string; hidden: boolean; numerals: boolean }>;
   lists: Array<{ id: string; name: string; count: number; onHome: boolean }>;
   simkl: { connected: boolean; home: boolean; upNext: boolean; trending: boolean };
+  /** library-panel/home-tab.tsx "Continue Watching": cwAdvanceNext, cwHideCaughtUp, animeCwEnd. */
+  cw: { advanceNext: boolean; hideCaughtUp: boolean; animeCwEnd: "hide" | "timer" };
 };
 
 export function homeRowsState(profileId: string, linked: boolean): HomeRowsState {
@@ -362,6 +364,7 @@ export function homeRowsState(profileId: string, linked: boolean): HomeRowsState
     rows,
     lists,
     simkl: { connected: simklAuthenticated(), home: s.simklHomeRailsEnabled === true, upNext: s.simklUpNextRailEnabled === true, trending: s.simklTrendingRailEnabled === true },
+    cw: { advanceNext: s.cwAdvanceNext !== false, hideCaughtUp: s.cwHideCaughtUp !== false, animeCwEnd: s.animeCwEnd === "timer" ? "timer" : "hide" },
   };
 }
 
@@ -399,5 +402,18 @@ export const homeRowsReset = (profileId: string, linked: boolean): HomeRowsState
 export function homeSimklRail(profileId: string, linked: boolean, which: "home" | "upNext" | "trending", on: boolean): HomeRowsState {
   const field = which === "home" ? "simklHomeRailsEnabled" : which === "upNext" ? "simklUpNextRailEnabled" : "simklTrendingRailEnabled";
   writeSettings(profileId, linked, { [field]: on } as Partial<Settings>);
+  return homeRowsState(profileId, linked);
+}
+
+/** home-tab.tsx Continue Watching group: the advance switch, caught-up removal, and Hide / Timer. */
+export function homeCwSetting(profileId: string, linked: boolean, which: "advanceNext" | "hideCaughtUp" | "animeCwEnd", value: boolean | string): HomeRowsState {
+  const patch: Partial<Settings> = which === "advanceNext"
+    ? { cwAdvanceNext: value === true }
+    : which === "hideCaughtUp"
+      ? { cwHideCaughtUp: value === true }
+      : { animeCwEnd: value === "timer" ? "timer" : "hide" };
+  writeSettings(profileId, linked, patch);
+  // The Anime room's Continue Watching reads the same three settings.
+  window.dispatchEvent(new CustomEvent("harbor:anime-updated"));
   return homeRowsState(profileId, linked);
 }

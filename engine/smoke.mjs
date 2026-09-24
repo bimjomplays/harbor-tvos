@@ -254,6 +254,164 @@ r.ok("benchmark still works", (() => {
   rec.dispose();
 }
 
+// ------------------------ Continue Watching advance (use-cw-advance.ts), fixtures only
+{
+  const now = Date.now();
+  const past = new Date(now - 30 * 864e5).toISOString();
+  const future = new Date(now + 3 * 864e5).toISOString();
+  const recent = new Date(now - 3600e3).toISOString();
+  const eps = (n, extra = []) => [...Array.from({ length: n }, (_, k) => ({ season: 1, episode: k + 1, released: past, name: `Ep ${k + 1}` })), ...extra];
+  const metas = {
+    tt9000001: eps(3), tt9000002: eps(3, [{ season: 1, episode: 4, released: future }]), tt9000003: eps(3), tt9000004: eps(2),
+    tt9000005: eps(3), tt9000007: eps(3), tt9000008: eps(3), tt9000011: eps(3),
+  };
+  const local = (id, s, e, pos) => ({ id, type: "series", name: `Show ${id}`, season: s, episode: e, videoId: `${id}:${s}:${e}`, positionMs: pos, durationMs: 2800000, t: now - 60000 });
+  const cwEngine = (localCw, slowId) => {
+    const eng = loadEngine({ storage: new Map([
+      ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+      ["harbor.manualwatched.v1.default", JSON.stringify(["tt9000007|1|2"])],
+      ["harbor.localcw.v1.default", JSON.stringify(localCw)],
+    ]) });
+    eng.node.host.fetch = async (req) => {
+      const m = req.url.match(/^https:\/\/v3-cinemeta\.strem\.io\/meta\/series\/(tt\d+)\.json$/);
+      if (m && metas[m[1]]) {
+        if (m[1] === slowId) await new Promise((res) => setTimeout(res, 2500));
+        return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ meta: { id: m[1], type: "series", name: m[1], videos: metas[m[1]] } }) };
+      }
+      return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    };
+    return eng;
+  };
+  const rec = cwEngine({ tt9000001: local("tt9000001", 1, 1, 2750000) }, null);
+  const E = rec.engine;
+  const item = (id, s, e, off, dur, flagged = 0) => ({ _id: id, type: "series", name: `Show ${id}`, state: { timeOffset: off, duration: dur, season: s, episode: e, video_id: `${id}:${s}:${e}`, flaggedWatched: flagged, lastWatched: recent }, removed: false, temp: false, _ctime: recent, _mtime: recent });
+  const done = (id, s, e) => item(id, s, e, 2700000, 2800000);
+  const cw = [done("tt9000001", 1, 1), done("tt9000002", 1, 3), item("tt9000003", 1, 2, 600000, 2800000), done("tt9000004", 1, 2), done("tt9000007", 1, 1), done("tt9000008", 1, 9)];
+  const lib = [...cw, item("tt9000005", 1, 1, 0, 2800000, 1)];
+  const byId = (out) => Object.fromEntries(out.items.map((i) => [i._id, i]));
+
+  const a = await r.timed("cwAdvance.advance(fixtures)", () => E.cwAdvance.advance(cw, { library: lib }));
+  const got = byId(a);
+  r.eq("cw advance: a finished episode's card moves to the next aired one as Up Next", got.tt9000001 && [got.tt9000001.state.season, got.tt9000001.state.episode, got.tt9000001.state.video_id, got.tt9000001.state.timeOffset, got.tt9000001.upNext], [1, 2, "tt9000001:1:2", 0, true]);
+  r.eq("cw advance: a manually watched next episode is skipped", got.tt9000007 && got.tt9000007.state.episode, 3);
+  r.ok("cw advance: a caught-up show (next not aired) leaves the row by default", !got.tt9000002 && a.removed.includes("tt9000002"), JSON.stringify(a.removed));
+  r.ok("cw advance: a show with no next episode leaves the row", !got.tt9000004, JSON.stringify(Object.keys(got)));
+  r.ok("cw advance: an entry past its list's last episode (phantom) is dropped", !got.tt9000008, JSON.stringify(Object.keys(got)));
+  r.ok("cw advance: a mid-episode card is untouched", got.tt9000003 && got.tt9000003.state.episode === 2 && got.tt9000003.state.timeOffset === 600000 && !got.tt9000003.upNext, JSON.stringify(got.tt9000003 && got.tt9000003.state));
+  r.ok("cw advance: a recently finished library show resurfaces at its next episode, after the row", a.items[a.items.length - 1]._id === "tt9000005" && a.items[a.items.length - 1].state.episode === 2 && a.items[a.items.length - 1].upNext === true, JSON.stringify(a.items.map((i) => i._id)));
+
+  const timer = await E.cwAdvance.advance(cw, { animeCwEnd: "timer" });
+  const tb = byId(timer).tt9000002;
+  r.ok("cw advance: animeCwEnd timer keeps a caught-up show with the next air date", tb && tb.waitingForAir === true && tb.nextAirDate === future && timer.soonestAir === Date.parse(future), JSON.stringify({ tb: tb && [tb.waitingForAir, tb.nextAirDate], soonest: timer.soonestAir }));
+  const keep = await E.cwAdvance.advance(cw, { hideCaughtUp: false });
+  r.ok("cw advance: cwHideCaughtUp off keeps a caught-up show as it was", byId(keep).tt9000002 && byId(keep).tt9000002.state.episode === 3 && !byId(keep).tt9000002.upNext && !byId(keep).tt9000004, JSON.stringify(Object.keys(byId(keep))));
+  const off = await E.cwAdvance.advance(cw, { enabled: false, library: lib });
+  r.eq("cw advance: cwAdvanceNext off returns the row unchanged", off.items.map((i) => `${i._id}:${i.state.episode}`), cw.map((i) => `${i._id}:${i.state.episode}`));
+
+  // rooms.continueWatchingWithExtras runs the pass over the TV's own resume entries.
+  const home = await r.timed("rooms.continueWatchingWithExtras(advance)", () => E.rooms.continueWatchingWithExtras("default", true, null));
+  const h1 = home.find((i) => i._id === "tt9000001");
+  r.ok("Home Continue Watching shows the next episode with the Up Next extra", h1 && h1.state.episode === 2 && h1._cw.upNext === true, JSON.stringify(h1 && { ep: h1.state.episode, cw: h1._cw }));
+  r.eq("homeRowsState carries the Continue Watching settings (upstream defaults)", E.rooms.homeRowsState("default", true).cw, { advanceNext: true, hideCaughtUp: true, animeCwEnd: "hide" });
+  const st = E.rooms.homeCwSetting("default", true, "advanceNext", false);
+  E.rooms.homeCwSetting("default", true, "animeCwEnd", "timer");
+  r.eq("homeCwSetting writes cwAdvanceNext / animeCwEnd", [st.cw.advanceNext, E.settings.loadForProfile("default", true).cwAdvanceNext, E.settings.loadForProfile("default", true).animeCwEnd], [false, false, "timer"]);
+  const raw = await E.rooms.continueWatchingWithExtras("default", true, null);
+  const r1 = raw.find((i) => i._id === "tt9000001");
+  r.ok("with cwAdvanceNext off Home keeps the finished episode", r1 && r1.state.episode === 1 && r1._cw.upNext === false, JSON.stringify(r1 && r1.state));
+  rec.dispose();
+
+  // A slow episode list: the row comes back raw within the grace, then Home is told to re-read.
+  const slow = cwEngine({ tt9000011: local("tt9000011", 1, 1, 2750000) }, "tt9000011");
+  const events = [];
+  slow.engine.runtime.onEvent((type) => { if (type === "harbor:home-updated") events.push(Date.now()); });
+  const t0 = Date.now();
+  const first = await slow.engine.rooms.continueWatchingWithExtras("default", true, null);
+  const f1 = first.find((i) => i._id === "tt9000011");
+  r.ok("a slow advance pass does not hold the row (it comes back raw after the grace)", f1 && f1.state.episode === 1, JSON.stringify({ ms: Date.now() - t0, ep: f1 && f1.state.episode }));
+  await new Promise((res) => setTimeout(res, 2200));
+  r.ok("its late answer raises harbor:home-updated", events.length >= 1, JSON.stringify(events.length));
+  const second = await slow.engine.rooms.continueWatchingWithExtras("default", true, null);
+  const s1 = second.find((i) => i._id === "tt9000011");
+  r.ok("the re-read has the advanced card", s1 && s1.state.episode === 2 && s1._cw.upNext === true, JSON.stringify(s1 && s1.state));
+  slow.dispose();
+}
+
+// ------------------- Anime Top Picks (lib/use-anime-top-picks.ts, use-bp-anime-hero.ts), fixtures
+{
+  const jikan = (mal_id, title, genres = []) => ({ mal_id, title, title_english: title, type: "TV", year: 2020, score: 8, images: { jpg: { image_url: `https://img.example.invalid/${mal_id}.jpg` } }, genres: genres.map((name) => ({ name })) });
+  const list = (prefix, from, n, genres) => Array.from({ length: n }, (_, k) => jikan(from + k, `${prefix} ${k + 1}`, genres));
+  const hits = [];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (!req.url.startsWith("https://api.jikan.moe/v4/")) return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    hits.push({ url: req.url, at: Date.now() });
+    const u = req.url;
+    if (u.includes("/anime/900/recommendations")) return json({ data: [{ entry: jikan(901, "Rec Pick"), votes: 40 }, { entry: jikan(902, "Seed Show"), votes: 30 }] });
+    if (u.includes("q=Seed")) return json({ data: [{ mal_id: 900 }] });
+    if (u.includes("filter=airing")) return json({ data: [jikan(5, "Hero Show"), jikan(6, "Seed Show"), ...list("Airing", 100, 20)] });
+    if (u.includes("order_by=start_date")) return json({ data: list("Fresh", 200, 6) });
+    if (u.includes("genres=22")) return json({ data: list("Romance", 300, 8, ["Romance"]) });
+    if (u.includes("genres=1&") || u.includes("genres=1")) return json({ data: list("Action", 400, 8, ["Action"]) });
+    return json({ data: [] });
+  };
+  const E = rec.engine;
+  const input = (genres) => ({
+    libItems: [],
+    continueWatching: [{ _id: "kitsu:77", type: "series", name: "Seed Show", state: { timeOffset: 600000, duration: 1400000, season: 1, episode: 3 }, removed: false, temp: false, _ctime: "", _mtime: "" }],
+    heroMetas: [{ id: "mal:5", type: "series", name: "Hero Show" }],
+    favoriteGenres: genres,
+  });
+  const events = [];
+  E.runtime.onEvent((type) => { if (type === "harbor:anime-updated") events.push(type); });
+  r.eq("top picks: nothing cached on a first visit", E.animeRoom.topPicks(input([22]), {}).length, 0);
+  await r.timed("animeRoom.topPicksSettled(fixtures)", () => E.animeRoom.topPicksSettled());
+  const picks = E.animeRoom.topPicks(input([22]), {});
+  const names = picks.map((m) => m.name);
+  r.ok("top picks: a watch-history recommendation leads", names[0] === "Rec Pick", JSON.stringify(names.slice(0, 5)));
+  r.ok("top picks: animeFavoriteGenres genre titles outrank new and airing ones", names.indexOf("Romance 1") > 0 && names.indexOf("Romance 1") < names.indexOf("Fresh 1") && names.indexOf("Fresh 1") < names.findIndex((n) => n.startsWith("Airing")), JSON.stringify(names));
+  r.ok("top picks: the hero and Continue Watching franchises are left out, capped at 24", !names.includes("Hero Show") && !names.includes("Seed Show") && picks.length === 24, JSON.stringify({ n: picks.length }));
+  r.ok("top picks: the favourite genre was asked of Jikan, sfw", hits.some((h) => h.url.includes("genres=22") && h.url.includes("sfw=true")), JSON.stringify(hits.map((h) => h.url).slice(0, 6)));
+  const gaps = hits.slice(1).map((h, k) => h.at - hits[k].at);
+  r.ok("top picks: Jikan requests go through the 400 ms queue", gaps.length >= 3 && Math.min(...gaps) >= 380, JSON.stringify(gaps));
+  r.ok("top picks: an update event fired as picks landed", events.length >= 1, JSON.stringify(events.length));
+  const store = rec.node.storage;
+  r.ok("top picks: picks, recs and the MAL id are cached", JSON.parse(store.get("harbor.anime.toppicks.cache.v2") ?? "[]").length === 24 && "900" in JSON.parse(store.get("harbor.anime.recs_by_mal.v1") ?? "{}") && Object.values(JSON.parse(store.get("harbor.anime.mal_id_by_franchise.v1") ?? "{}")).includes(900), JSON.stringify([...store.keys()].filter((k) => k.startsWith("harbor.anime."))));
+  const before = hits.length;
+  E.animeRoom.topPicks(input([22]), {});
+  await E.animeRoom.topPicksSettled();
+  r.eq("top picks: the same inputs do not rebuild", hits.length, before);
+  E.animeRoom.topPicks(input([22, 1]), {});
+  await E.animeRoom.topPicksSettled();
+  r.ok("top picks: a new favourite genre rebuilds with it", hits.slice(before).some((h) => h.url.includes("genres=1&") || /genres=1(&|$)/.test(h.url)) && !hits.slice(before).some((h) => h.url.includes("recommendations")), JSON.stringify(hits.slice(before).map((h) => h.url)));
+
+  // Settings: the Tune anime picker (favourite genres, origins, hide watched).
+  const tune = E.actions.animeTune("default", true);
+  r.ok("animeTune lists the 16 genres and 3 origins at upstream defaults (CN hidden, watched hidden)", tune.genres.length === 16 && tune.origins.length === 3 && tune.genres.every((g) => !g.on) && tune.origins.find((o) => o.code === "CN").on && tune.hideWatched === true, JSON.stringify(tune));
+  const t1 = E.actions.animeTuneGenre("default", true, 22);
+  const s1 = E.settings.loadForProfile("default", true);
+  r.ok("animeTuneGenre writes animeFavoriteGenres and stamps animePicksDismissedAt", t1.genres.find((g) => g.id === 22).on && s1.animeFavoriteGenres.join(",") === "22" && s1.animePicksDismissedAt > 0, JSON.stringify(s1.animeFavoriteGenres));
+  E.actions.animeTuneGenre("default", true, 22);
+  E.actions.animeTuneOrigin("default", true, "CN");
+  E.actions.animeTuneHideWatched("default", true, false);
+  const s2 = E.settings.loadForProfile("default", true);
+  r.eq("animeTune toggles a genre off again, CN back in, hide-watched off", [s2.animeFavoriteGenres, s2.animeExcludeOrigins, s2.animeHideWatchedPicks], [[], [], false]);
+  rec.dispose();
+
+  // A later session: the cached picks show at once as the room's first row.
+  const again = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.anime.toppicks.cache.v2", store.get("harbor.anime.toppicks.cache.v2")],
+  ]) });
+  again.node.host.fetch = async (req) => ({ status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" });
+  const pg = await again.engine.animeRoom.page("default", true, null);
+  r.ok("animeRoom.page: cached Top Picks for You lead the rows at once", pg.rows[0] && pg.rows[0].key === "anime-top-picks" && pg.rows[0].name === "Top Picks for You" && pg.rows[0].metas.length === 24 && pg.picks.length === 24, JSON.stringify(pg.rows.slice(0, 2).map((x) => [x.key, x.name, x.metas.length])));
+  again.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";

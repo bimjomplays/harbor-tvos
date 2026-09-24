@@ -18,7 +18,7 @@ import { showSpecs } from "@/views/shows/show-specs";
 import { buildMovieHero, HERO_POOL_TARGET, movieSpecs, rotateDaily } from "@/views/movies/movie-specs";
 import type { Settings } from "@/lib/settings/types";
 import { loadEffective } from "@/lib/settings/profile-store";
-import { library, cwSortKey, isCwMember, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
+import { ANIME_CLOUD_ID, library, cwSortKey, isCwMember, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
 import { isCwDismissed } from "@/lib/cw-dismiss";
 import { listLocalCw, type LocalCwEntry } from "@/lib/local-cw";
 import { listExternalCw, refreshExternalCw, setExternalCwSources } from "@/lib/feed/external-cw";
@@ -28,7 +28,13 @@ import { isLibraryItemWatched } from "@/lib/trakt/library-key";
 import { isAuthenticated as traktAuthenticated } from "@/lib/trakt/session";
 import { getWatchedBy } from "@/lib/watched-by";
 import { getAnimeCwId } from "@/lib/anime-cw-ids";
-import { extraRows, homeCustomization, lastHomeUpdate, markPendingLate, noteHomeRows } from "./homeExtras";
+import { extraRows, homeCustomization, lastHomeUpdate, markPendingLate, noteHomeRows, notifyHome } from "./homeExtras";
+import { advanceCw, type CwAdvanceOpts } from "./cwAdvance";
+import { manualWatchedLibraryItems } from "@/lib/manual-watched";
+import { loadSimklStatusMap, loadSimklWatchedMap, type WatchlistStatus } from "@/lib/simkl/list-status";
+import { isAuthenticated as simklAuthenticated } from "@/lib/simkl/session";
+import { loadAnilistWatchedMap } from "@/lib/anilist/watched-map";
+import { isAuthenticated as anilistAuthenticated } from "@/lib/anilist/session";
 
 export type RoomKind = "movies" | "shows";
 export type RoomRow = {
@@ -295,6 +301,11 @@ function localToLibraryItem(e: LocalCwEntry): LibraryItem {
 }
 
 export async function continueWatching(authKey: string | null, settings: Settings, limit = 40): Promise<LibraryItem[]> {
+  return (await continueWatchingPool(authKey, settings, limit)).items;
+}
+
+/** The row plus what it was built from (the cloud library and local resume entries), for the advance pass. */
+async function continueWatchingPool(authKey: string | null, settings: Settings, limit: number): Promise<{ items: LibraryItem[]; cloud: LibraryItem[]; local: LibraryItem[] }> {
   const cloud = authKey ? await library(authKey).catch(() => [] as LibraryItem[]) : [];
   const local = listLocalCw().map(localToLibraryItem);
   // lib/continue-watching: Trakt / Simkl "currently watching" joins the row unless CW is per profile.
@@ -313,7 +324,75 @@ export async function continueWatching(authKey: string | null, settings: Setting
     .sort((a, b) => b.k - a.k)
     .map((e) => e.i)
     .filter((i) => (seen.has(i._id) ? false : (seen.add(i._id), true)));
-  return merged.slice(0, limit);
+  return { items: merged.slice(0, limit), cloud, local };
+}
+
+// ------------------------------------------------------------ Continue Watching advance
+/** Resolves `fallback` when `p` takes longer than `ms` (a tracker that never answers must not hold the row). */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+}
+
+/** home.tsx:371 fetchWatchedKeySet, shared with the card extras and kept ten minutes. */
+async function traktWatchedKeys(): Promise<Set<string>> {
+  if (!traktAuthenticated()) return new Set();
+  if (!traktKeys || Date.now() - traktKeys.at > TRAKT_TTL) {
+    const set = await within(fetchWatchedKeySet(), 5000, new Set<string>());
+    traktKeys = { at: Date.now(), set };
+  }
+  return traktKeys.set;
+}
+
+/**
+ * The watched sources useCwAdvance reads (home.tsx:135-142 / use-bp-anime-watched.ts): Trakt
+ * keys (Home only; the Anime room passes an empty set), Simkl watched + status maps, and the
+ * AniList watched map for the row's anime ids.
+ */
+export async function cwWatchedSources(items: LibraryItem[], withTrakt: boolean): Promise<Pick<CwAdvanceOpts, "traktWatched" | "simklWatched" | "simklStatus" | "anilistWatched">> {
+  const simkl = simklAuthenticated();
+  const animeIds = items.filter((i) => /^(kitsu|mal|anilist):/.test(i._id)).map((i) => i._id);
+  const [traktWatched, simklWatched, simklStatus, anilistWatched] = await Promise.all([
+    withTrakt ? traktWatchedKeys() : Promise.resolve(new Set<string>()),
+    simkl ? within(loadSimklWatchedMap(), 6000, new Map<string, Set<string>>()) : Promise.resolve(new Map<string, Set<string>>()),
+    simkl ? within(loadSimklStatusMap(), 6000, new Map<string, WatchlistStatus>()) : Promise.resolve(new Map<string, WatchlistStatus>()),
+    anilistAuthenticated() && animeIds.length > 0 ? within(loadAnilistWatchedMap(animeIds), 6000, new Map<string, Set<string>>()) : Promise.resolve(new Map<string, Set<string>>()),
+  ]);
+  return { traktWatched, simklWatched, simklStatus, anilistWatched };
+}
+
+/** The settings half of useCwAdvance's arguments. */
+export function cwAdvanceSettings(s: Settings): Pick<CwAdvanceOpts, "tmdbKey" | "enabled" | "episodeHiding" | "animeCwEnd" | "hideCaughtUp"> {
+  return {
+    tmdbKey: s.tmdbKey ?? "",
+    enabled: s.cwAdvanceNext !== false,
+    episodeHiding: s.episodeHiding === true,
+    animeCwEnd: s.animeCwEnd === "timer" ? "timer" : "hide",
+    hideCaughtUp: s.cwHideCaughtUp !== false,
+  };
+}
+
+/**
+ * home.tsx:673-720: Home's resurface pool (the cloud library without anime-cloud rows, local
+ * series resume entries, manual watched marks overriding) and the advance pass itself.
+ */
+async function advanceHomeCw(profileId: string, items: LibraryItem[], cloud: LibraryItem[], local: LibraryItem[], s: Settings): Promise<LibraryItem[]> {
+  const conf = cwAdvanceSettings(s);
+  if (!conf.enabled) return items;
+  let pool = [...cloud.filter((i) => !ANIME_CLOUD_ID.test(i._id)), ...local.filter((i) => i.type === "series")];
+  const manual = manualWatchedLibraryItems();
+  if (manual.length > 0) {
+    const members = new Set(pool.filter(isCwMember).map((i) => i._id));
+    const usable = manual.filter((i) => !members.has(i._id));
+    if (usable.length > 0) {
+      const override = new Set(usable.map((i) => i._id));
+      pool = [...pool.filter((i) => !override.has(i._id)), ...usable];
+    }
+  }
+  const watched = await cwWatchedSources(items, true);
+  return advanceCw(`home:${profileId}`, items, {
+    ...conf, ...watched, library: pool,
+    animeMode: animeKeptOut(s) ? "exclude" : "all",
+  }, notifyHome);
 }
 
 // bp-cw-card-meta: the extras a CW card carries beyond its art and progress.
@@ -329,14 +408,7 @@ function profileName(id: string): string | null {
 }
 
 export async function cwExtras(items: LibraryItem[], activeProfileId: string | null): Promise<CwExtras[]> {
-  let watchedSet = new Set<string>();
-  if (traktAuthenticated()) {
-    if (!traktKeys || Date.now() - traktKeys.at > TRAKT_TTL) {
-      const set = await Promise.race([fetchWatchedKeySet().catch(() => new Set<string>()), new Promise<Set<string>>((r) => setTimeout(() => r(new Set()), 5000))]);
-      traktKeys = { at: Date.now(), set };
-    }
-    watchedSet = traktKeys.set;
-  }
+  const watchedSet = await traktWatchedKeys();
   return Promise.all(items.map(async (i) => {
     const rec = i as unknown as Record<string, unknown>;
     const waiting = rec.waitingForAir === true;
@@ -357,7 +429,10 @@ export async function cwExtras(items: LibraryItem[], activeProfileId: string | n
 
 /** rooms.continueWatchingFor with the card extras attached as `_cw` on each item. */
 export async function continueWatchingWithExtras(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<Array<LibraryItem & { _cw: CwExtras }>> {
-  const items = await continueWatching(authKey, loadEffective(profileId, linked), limit);
+  const s = loadEffective(profileId, linked);
+  const pool = await continueWatchingPool(authKey, s, limit);
+  // settings.cwAdvanceNext / cwHideCaughtUp / animeCwEnd (use-cw-advance.ts).
+  const items = await advanceHomeCw(profileId, pool.items, pool.cloud, pool.local, s).catch(() => pool.items);
   const extras = await cwExtras(items, profileId);
   return items.map((i, n) => ({ ...i, _cw: extras[n] }));
 }

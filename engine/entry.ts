@@ -75,6 +75,8 @@ import * as parentalGlue from "./parental";
 import * as navEditGlue from "./navEdit";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
+import * as cwAdvanceGlue from "./cwAdvance";
+import * as topPicksGlue from "./animeTopPicks";
 import * as servicesGlue from "./services";
 import * as trackersGlue from "./trackers";
 import * as detailGlue from "./detailRoom";
@@ -440,7 +442,32 @@ export const rooms = {
   homeListRowToggle: homeExtrasGlue.homeListRowToggle,
   homeRowsReset: homeExtrasGlue.homeRowsReset,
   homeSimklRail: homeExtrasGlue.homeSimklRail,
+  homeCwSetting: homeExtrasGlue.homeCwSetting,
   resetHomeExtras: homeExtrasGlue.resetExtraGroups,
+};
+
+/**
+ * Continue Watching advance (use-cw-advance.ts). `advance` runs one pass over plain JSON (the
+ * watched sets as arrays / [key, values[]] pairs) for tests; the rooms call the module directly.
+ */
+export const cwAdvance = {
+  async advance(items: import("@/lib/stremio").LibraryItem[], opts: {
+    tmdbKey?: string; enabled?: boolean; library?: import("@/lib/stremio").LibraryItem[]; animeMode?: "all" | "exclude" | "only";
+    traktWatched?: string[]; simklWatched?: Array<[string, string[]]>; anilistWatched?: Array<[string, string[]]>;
+    simklStatus?: Array<[string, import("@/lib/simkl/list-status").WatchlistStatus]>;
+    episodeHiding?: boolean; animeCwEnd?: "hide" | "timer"; hideCaughtUp?: boolean;
+  }) {
+    const st = await cwAdvanceGlue.computeCwAdvance(items, {
+      tmdbKey: opts.tmdbKey ?? "", enabled: opts.enabled !== false, library: opts.library, animeMode: opts.animeMode ?? "all",
+      traktWatched: new Set(opts.traktWatched ?? []),
+      simklWatched: new Map((opts.simklWatched ?? []).map(([k, v]) => [k, new Set(v)] as const)),
+      anilistWatched: new Map((opts.anilistWatched ?? []).map(([k, v]) => [k, new Set(v)] as const)),
+      simklStatus: new Map(opts.simklStatus ?? []),
+      episodeHiding: opts.episodeHiding === true, animeCwEnd: opts.animeCwEnd ?? "hide", hideCaughtUp: opts.hideCaughtUp !== false,
+    });
+    return { items: cwAdvanceGlue.applyCwAdvance(items, st), removed: [...st.removed], soonestAir: st.soonestAir };
+  },
+  reset: cwAdvanceGlue.resetCwAdvance,
 };
 export type { RoomBuild, RoomRow, RoomKind } from "./rooms";
 
@@ -696,6 +723,12 @@ export const animeRoom = {
   loadMore: animeGlue.loadMore,
   refresh: animeGlue.refresh,
   specPage: animeGlue.specPage,
+  /** useBpAnimeTopPicks directly (tests); page() calls it with the room's own inputs. */
+  topPicks: (input: import("./animeTopPicks").TopPicksInput, filterOpts: { excludeOrigins?: string[]; hideWatched?: boolean }) =>
+    topPicksGlue.animeTopPicks(input, { excludeOrigins: filterOpts.excludeOrigins ?? [], hideWatched: filterOpts.hideWatched === true },
+      () => window.dispatchEvent(new CustomEvent("harbor:anime-updated"))),
+  topPicksSettled: topPicksGlue.topPicksSettled,
+  resetTopPicks: topPicksGlue.resetAnimeTopPicks,
 };
 
 /** Streaming services: the Home band tiles, poster mosaics and the per-service page rows. */
@@ -816,6 +849,11 @@ export const actions = {
   animeRowToggleHidden: actionsGlue.animeRowToggleHidden,
   animeRowRename: actionsGlue.animeRowRename,
   animeRowsReset: actionsGlue.animeRowsReset,
+  animeTune: actionsGlue.animeTune,
+  animeTuneGenre: actionsGlue.animeTuneGenre,
+  animeTuneOrigin: actionsGlue.animeTuneOrigin,
+  animeTuneHideWatched: actionsGlue.animeTuneHideWatched,
+  animeTuneClear: actionsGlue.animeTuneClear,
   heroState: actionsGlue.heroState,
   toggleFavorite: actionsGlue.toggleFavorite,
   toggleReminder: actionsGlue.toggleReminder,

@@ -10,9 +10,11 @@ struct HomeRowsPanel: View {
         struct Row: Decodable, Identifiable { var key: String; var name: String; var originalName: String; var hidden: Bool; var numerals: Bool; var id: String { key } }
         struct ListEntry: Decodable, Identifiable { var id: String; var name: String; var count: Int; var onHome: Bool }
         struct Simkl: Decodable { var connected: Bool; var home: Bool; var upNext: Bool; var trending: Bool }
+        struct Cw: Decodable { var advanceNext: Bool; var hideCaughtUp: Bool; var animeCwEnd: String }
         var rows: [Row]
         var lists: [ListEntry]
         var simkl: Simkl
+        var cw: Cw?
     }
     @State private var layout: RowsState?
     @State private var renaming: RowsState.Row?
@@ -41,6 +43,20 @@ struct HomeRowsPanel: View {
                         simklSwitch("Home rails", s.simkl.home, "home")
                         simklSwitch("Up Next rail", s.simkl.upNext, "upNext")
                         simklSwitch("Trending rail", s.simkl.trending, "trending")
+                    }
+                }
+                if let cw = s.cw {
+                    // library-panel/home-tab.tsx "Continue Watching": cwAdvanceNext, cwHideCaughtUp,
+                    // animeCwEnd (use-cw-advance.ts reads all three, on Home and in the Anime room).
+                    Text(T("Continue Watching")).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
+                    cwSwitch("Advance Continue Watching to the next episode", cw.advanceNext, "advanceNext")
+                    cwSwitch("Remove shows once you're caught up", cw.hideCaughtUp, "hideCaughtUp")
+                    HStack(spacing: BP.px(8)) {
+                        Text(T("When the latest episode ends")).font(BP.sans(14)).foregroundStyle(BP.ink).lineLimit(1)
+                        Button(T("Hide")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("hide")]) } }
+                            .buttonStyle(BPActionStyle(primary: cw.animeCwEnd != "timer"))
+                        Button(T("Timer")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("timer")]) } }
+                            .buttonStyle(BPActionStyle(primary: cw.animeCwEnd == "timer"))
                     }
                 }
                 Text(T("Rows")).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
@@ -76,6 +92,11 @@ struct HomeRowsPanel: View {
     private func simklSwitch(_ label: String, _ on: Bool, _ which: String) -> some View {
         let title: String = "\(T(label)): \(T(on ? "On" : "Off"))"
         return Button(title) { Task { await call("homeSimklRail", [.string(which), .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
+    }
+
+    private func cwSwitch(_ label: String, _ on: Bool, _ which: String) -> some View {
+        let title: String = "\(T(label)): \(T(on ? "On" : "Off"))"
+        return Button(title) { Task { await call("homeCwSetting", [.string(which), .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
     }
 
     private func load() async {

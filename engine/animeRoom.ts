@@ -23,6 +23,10 @@ import { readCollections } from "@/lib/collections";
 import { collectionPageIds } from "@/lib/page-collection-rows";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { anilist as anilistGlue, mal as malGlue } from "./trackers";
+import { advanceCw } from "./cwAdvance";
+import { cwAdvanceSettings, cwWatchedSources } from "./rooms";
+import { animeTopPicks } from "./animeTopPicks";
+import { manualWatchedLibraryItems } from "@/lib/manual-watched";
 
 const MAX_ITEMS = 80;
 const CW_CAP = 20;
@@ -149,6 +153,30 @@ function animeCw(cloudList: LibraryItem[], simklList: LibraryItem[], hideSharedC
     .slice(0, CW_CAP);
 }
 
+/** use-bp-anime-cw.ts:206-215 resurfaceLibrary: the cloud library with anime manual marks overriding. */
+function resurfaceLibrary(libItems: LibraryItem[]): LibraryItem[] {
+  const manual = manualWatchedLibraryItems().filter(isAnimeCwItem);
+  if (manual.length === 0) return libItems;
+  const memberIds = new Set(libItems.filter(isCwMember).map((i) => i._id));
+  const usable = manual.filter((i) => !memberIds.has(i._id));
+  if (usable.length === 0) return libItems;
+  const overrideIds = new Set(usable.map((i) => i._id));
+  return [...libItems.filter((i) => !overrideIds.has(i._id)), ...usable];
+}
+
+/** The card extras Swift reads from `_cw` (rooms.cwExtras shape): Up Next and the air countdown. */
+function withCardExtras(items: LibraryItem[]): Array<LibraryItem & { _cw: Record<string, unknown> }> {
+  return items.map((i) => {
+    const rec = i as unknown as Record<string, unknown>;
+    const waiting = rec.waitingForAir === true;
+    return { ...i, _cw: { watched: false, newEpisode: 0, upNext: rec.upNext === true, waitingForAir: waiting,
+      nextAirDate: waiting && typeof rec.nextAirDate === "string" ? rec.nextAirDate : null, watcher: null, external: null } };
+  });
+}
+
+/** The Anime room's CW waits less than Home's: its rows are meant to paint at once. */
+const ANIME_CW_GRACE_MS = 800;
+
 // ------------------------------------------------------------------------------ page
 const seed = Math.floor(Math.random() * 0x7fffffff);
 
@@ -163,11 +191,24 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   const active = (blob.profiles ?? []).find((p) => p.id === (blob.activeId ?? profileId)) ?? null;
   const hideSharedCw = !!s.cwPerProfile && anyProfileSharesStremioWith(active, blob.profiles ?? []);
   const simkl = simklConnected() ? await fetchSimklPlaybackItems().then((list) => list.filter(isAnimeCwItem)).catch(() => [] as LibraryItem[]) : [];
-  const cw = animeCw(await cloudItems(authKey, force), simkl, hideSharedCw);
+  const libItems = await cloudItems(authKey, force);
+  const cwRaw = animeCw(libItems, simkl, hideSharedCw);
+  // use-bp-anime.ts:106-120 useCwAdvance(cwBase.raw, …, "only", no Trakt set, …).
+  const conf = cwAdvanceSettings(s);
+  const cw = conf.enabled
+    ? await advanceCw(`anime:${profileId}`, cwRaw, { ...conf, ...(await cwWatchedSources(cwRaw, false)), library: resurfaceLibrary(libItems), animeMode: "only" }, notify, ANIME_CW_GRACE_MS)
+      .catch(() => cwRaw)
+    : cwRaw;
 
   const hero = buildHeroSelection(rowsByKey, seed, filterOpts, []);
+  // useBpAnimeTopPicks (lib/use-anime-top-picks.ts): watch history, sequels, taste genres and
+  // settings.animeFavoriteGenres. Upstream falls back to the hosted hero list when nothing is
+  // left; the TV has no hosted hero and falls back to the top-airing spec row it used before.
+  const picked = animeTopPicks({ libItems, continueWatching: cwRaw, heroMetas: hero.metas, favoriteGenres: Array.isArray(s.animeFavoriteGenres) ? s.animeFavoriteGenres : [] }, filterOpts, notify);
   const picksRow = rowsByKey[TOP_PICKS_KEY];
-  const topPicks = (picksRow?.metas ?? []).filter((m) => !animeFiltered(m, filterOpts)).map(cleanMeta).slice(0, 20);
+  const topPicks = picked.length > 0
+    ? picked.map(cleanMeta)
+    : (picksRow?.metas ?? []).filter((m) => !animeFiltered(m, filterOpts)).map(cleanMeta).slice(0, 20);
   const specRows = filterSpecRows(rowsByKey, topPicks);
 
   // use-bp-anime auto-fill: a row the dedupe left short pulls its next page, up to a budget.
@@ -201,6 +242,10 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   noteAnimeGroups(groups.map((g) => ({ key: g.key, name: g.name })), profileId);
   const ordered = applyAnimeRowCustomization(groups.map((g) => ({ key: g.key, name: g.name, group: g })), s.animeRows ?? EMPTY_ANIME_ROWS);
   const rows: RoomRow[] = [];
+  // bp-anime.tsx:100-108: "Top Picks for You" sits right after Continue Watching.
+  if (topPicks.length > 0) {
+    rows.push({ key: "anime-top-picks", group: "picks", name: t("Top Picks for You"), metas: topPicks, shape: "poster", loading: false, notice: null, hasMore: false, page: 1 });
+  }
   for (const entry of ordered) {
     for (const r of entry.group.rows as BpAnimeRow[]) {
       if (r.id === "continueWatching") continue;
@@ -214,7 +259,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   // use-bp-anime.ts:238: failure is "every feed answered with nothing", never "every row hidden".
   const fetched = SPECS.reduce((n, sp) => n + (rowsByKey[sp.key]?.metas.length ?? 0), 0) + addonRows.reduce((n, r) => n + r.metas.length, 0);
   return {
-    rows, hero: hero.metas.slice(0, 8), picks: topPicks, cw,
+    rows, hero: hero.metas.slice(0, 8), picks: topPicks, cw: withCardExtras(cw),
     loading: pending > 0, ready, total: SPECS.length,
     failed: ready === SPECS.length && fetched === 0 && cw.length === 0,
   };

@@ -9,6 +9,10 @@ import { ratingTarget, type RatingMediaType } from "@/lib/ratings/types";
 import { applyAnimeRowCustomization, animeMoveRow, animeToggleHidden, EMPTY_ANIME_ROWS, type AnimeRowCustomization } from "@/lib/anime-customization";
 import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import { markSettingsPatched } from "./sync";
+import type { Settings } from "@/lib/settings/types";
+import { GENRE as JIKAN_GENRE } from "@/lib/providers/jikan";
+import { ORIGIN_OPTIONS as TUNE_ORIGINS } from "@/lib/anime-filter";
+import { t as tuneT } from "@/lib/i18n";
 
 // ------------------------------------------------------------------------------- lists
 export type ListSummary = { id: string; name: string; count: number; contains: boolean };
@@ -105,6 +109,82 @@ export function animeRowRename(profileId: string, linked: boolean, key: string, 
 export function animeRowsReset(profileId: string, linked: boolean): AnimeRowState[] {
   write(profileId, linked, EMPTY_ANIME_ROWS);
   return animeRows(profileId, linked);
+}
+
+// ------------------------------------------------------------------------ Tune anime
+// components/anime-genre-picker.tsx AnimeGenrePicker: favourite genres (Jikan ids) steer Top
+// Picks (settings.animeFavoriteGenres), origins and "already watched" hide from the picks.
+// Upstream saves on Done; the TV panel saves each toggle. The option list mirrors
+// ANIME_GENRE_OPTIONS (that module is a React component, so it is not imported).
+const TUNE_GENRES: Array<{ id: number; label: string }> = [
+  { id: JIKAN_GENRE.Action, label: "Action" },
+  { id: JIKAN_GENRE.Adventure, label: "Adventure" },
+  { id: JIKAN_GENRE.Comedy, label: "Comedy" },
+  { id: JIKAN_GENRE.Drama, label: "Drama" },
+  { id: JIKAN_GENRE.Fantasy, label: "Fantasy" },
+  { id: JIKAN_GENRE.SciFi, label: "Sci-Fi" },
+  { id: JIKAN_GENRE.Romance, label: "Romance" },
+  { id: JIKAN_GENRE.SliceOfLife, label: "Slice of Life" },
+  { id: JIKAN_GENRE.Supernatural, label: "Supernatural" },
+  { id: JIKAN_GENRE.Mystery, label: "Mystery" },
+  { id: JIKAN_GENRE.Psychological, label: "Psychological" },
+  { id: JIKAN_GENRE.Horror, label: "Horror" },
+  { id: JIKAN_GENRE.Thriller, label: "Thriller" },
+  { id: JIKAN_GENRE.Mecha, label: "Mecha" },
+  { id: JIKAN_GENRE.Sports, label: "Sports" },
+  { id: JIKAN_GENRE.Music, label: "Music" },
+];
+
+export type AnimeTuneState = {
+  genres: Array<{ id: number; label: string; on: boolean }>;
+  origins: Array<{ code: string; label: string; on: boolean }>;
+  hideWatched: boolean;
+};
+
+export function animeTune(profileId: string, linked: boolean): AnimeTuneState {
+  const s = loadEffective(profileId, linked);
+  const fav = new Set(Array.isArray(s.animeFavoriteGenres) ? s.animeFavoriteGenres : []);
+  const origins = new Set(Array.isArray(s.animeExcludeOrigins) ? s.animeExcludeOrigins : []);
+  return {
+    genres: TUNE_GENRES.map((g) => ({ id: g.id, label: tuneT(g.label), on: fav.has(g.id) })),
+    origins: TUNE_ORIGINS.map((o) => ({ code: o.code, label: tuneT(o.label), on: origins.has(o.code) })),
+    hideWatched: s.animeHideWatchedPicks === true,
+  };
+}
+
+function writeTune(profileId: string, linked: boolean, patch: Partial<Settings>): AnimeTuneState {
+  const s = loadEffective(profileId, linked);
+  // anime.tsx:1145: a save also stamps animePicksDismissedAt.
+  const next = { ...patch, animePicksDismissedAt: Date.now() } as Partial<Settings>;
+  persistEffective({ ...s, ...next }, profileId, linked);
+  const fields = Object.keys(next);
+  markSettingsPatched(fields);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("harbor:settings-updated", { detail: { profileId, fields } }));
+    window.dispatchEvent(new CustomEvent("harbor:anime-updated"));
+  }
+  return animeTune(profileId, linked);
+}
+
+export function animeTuneGenre(profileId: string, linked: boolean, id: number): AnimeTuneState {
+  const cur = loadEffective(profileId, linked).animeFavoriteGenres;
+  const list = Array.isArray(cur) ? cur.filter((g) => typeof g === "number") : [];
+  return writeTune(profileId, linked, { animeFavoriteGenres: list.includes(id) ? list.filter((g) => g !== id) : [...list, id] });
+}
+
+export function animeTuneOrigin(profileId: string, linked: boolean, code: string): AnimeTuneState {
+  const cur = loadEffective(profileId, linked).animeExcludeOrigins;
+  const list = Array.isArray(cur) ? cur : [];
+  return writeTune(profileId, linked, { animeExcludeOrigins: list.includes(code) ? list.filter((c) => c !== code) : [...list, code] });
+}
+
+export function animeTuneHideWatched(profileId: string, linked: boolean, on: boolean): AnimeTuneState {
+  return writeTune(profileId, linked, { animeHideWatchedPicks: on });
+}
+
+/** "Clear all": no favourite genres. */
+export function animeTuneClear(profileId: string, linked: boolean): AnimeTuneState {
+  return writeTune(profileId, linked, { animeFavoriteGenres: [] });
 }
 
 // ------------------------------------------------------------------------ hero actions
