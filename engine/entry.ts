@@ -58,6 +58,7 @@ import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
 import * as subtitleGlue from "./subtitles";
 import * as liveGlue from "./live";
+import * as liveVodGlue from "./liveVod";
 import * as accountGlue from "./account";
 import * as syncGlue from "./sync";
 import * as cardsGlue from "./cards";
@@ -720,6 +721,24 @@ export const live = {
   catchupUrl: liveGlue.catchupUrl,
   epgCandidates: liveGlue.epgCandidates,
   setEpgMatch: liveGlue.setEpgMatch,
+  /** Multiview (lib/multiview/store.ts): the remembered layout and the info banner. */
+  multiviewPrefs: liveGlue.multiviewPrefs,
+  setMultiviewLayout: liveGlue.setMultiviewLayout,
+  dismissMultiviewBanner: liveGlue.dismissMultiviewBanner,
+};
+
+/** Playlist VOD (views/playlist-vod.tsx): an IPTV source's movies and series, paged, with local resume. */
+export const liveVod = {
+  sources: liveVodGlue.sources,
+  setActive: liveVodGlue.setActive,
+  load: liveVodGlue.load,
+  status: liveVodGlue.status,
+  page: liveVodGlue.page,
+  series: liveVodGlue.series,
+  playMovie: liveVodGlue.playMovie,
+  playEpisode: liveVodGlue.playEpisode,
+  startPosition: liveVodGlue.startPosition,
+  saveProgress: liveVodGlue.saveProgress,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */

@@ -22,6 +22,10 @@ struct PlaybackContext {
     var homeServer: HomeServerSession? = nil
     /// use-bridge-load hasExplicitStart: a source switch (or a server's own position) starts here.
     var explicitStartSec: Double? = nil
+    /// A playlist VOD item (lib/iptv/vod.ts isExternalPlaylistId, "vod:…"): use-resume-autosave
+    /// keeps only a local resume spot for these, so saves go to `liveVod` instead of the Stremio
+    /// library / Continue Watching path, and scrobbling and skip segments stay off.
+    var playlistVod = false
 
     /// progress-sync.ts report(): position, or "watched" once, to the home server (writeProgress only).
     func reportHomeServer(positionSec: Double, durationSec: Double, watched: Bool) async {
@@ -43,6 +47,10 @@ struct PlaybackContext {
     struct Saved: Decodable { var watched: Bool; var cloud: String }
 
     @MainActor func startPosition() async -> Double {
+        if playlistVod {
+            let v: Start? = try? await HarborEngine.shared.call("liveVod.startPosition", [meta.id, season, episode])
+            return (v?.ms ?? 0) / 1000
+        }
         let p = profile
         let s: Start? = try? await HarborEngine.shared.call("player.startPosition",
             [meta, season, episode, p.authKey, imdbId ?? (meta.id.hasPrefix("tt") ? meta.id : nil), imdbVerified || meta.id.hasPrefix("tt"), videoId])
@@ -61,6 +69,7 @@ struct PlaybackContext {
         if let season { input["season"] = .number(Double(season)) }
         if let episode { input["episode"] = .number(Double(episode)) }
         if let videoId { input["videoId"] = .string(videoId) }
+        if playlistVod { return try? await HarborEngine.shared.call("liveVod.saveProgress", [AnyJSON.object(input)]) }
         if let a = p.authKey { input["authKey"] = .string(a) }
         return try? await HarborEngine.shared.call("player.saveProgress", [AnyJSON.object(input)])
     }

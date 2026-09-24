@@ -27,6 +27,7 @@ import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
 import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
 import { loadStoredSettings } from "@/lib/settings/load";
 import { gunzipSync } from "fflate";
+import { clearVodCache } from "./liveVod";
 
 export type LiveChannel = {
   id: string;
@@ -125,6 +126,8 @@ export function removePlaylist(id: string): void {
   removePinsForSource(id);
   removeStatsForSource(id);
   removeEpgOverridesForSource(id);
+  // use-vod-sources removePlaylist: clearXtreamVodLibraryCache(id).
+  clearVodCache(id);
 }
 
 // ---------------------------------------------------------------------------- favorites
@@ -605,4 +608,53 @@ export async function homeRow(): Promise<{ playlistId: string | null; cells: Hom
     playlistId: pl.id,
     cells: ranked.map((it) => ({ playlistId: pl.id, channel: toView(it.channel, favs), now: it.current ? view(it.current) : null, next: it.next ? view(it.next) : null, progress: it.progress })),
   };
+}
+
+// ---------------------------------------------------------------------------- Multiview
+// lib/multiview/store.ts: the layout is remembered (harbor.multiview.layout, default "2x2"), the
+// slots are not (the view resets them when it closes). store.ts imports React and bridge.ts
+// Tauri, so the pure parts are reproduced here. The info banner's dismissal is multiview.tsx's
+// harbor.multiview.banner-dismissed. The split positions are desktop drag handles and stay out.
+export type MultiviewLayout = "1" | "2" | "2v" | "3" | "2x2";
+const MV_LAYOUT_KEY = "harbor.multiview.layout";
+const MV_BANNER_KEY = "harbor.multiview.banner-dismissed";
+/** bridge.ts MAX_SLOTS. */
+export const MULTIVIEW_MAX_SLOTS = 4;
+
+function isLayout(v: unknown): v is MultiviewLayout {
+  return v === "1" || v === "2" || v === "2v" || v === "3" || v === "2x2";
+}
+
+/** store.ts layoutSlotCount. */
+export function layoutSlotCount(l: MultiviewLayout): number {
+  if (l === "1") return 1;
+  if (l === "2" || l === "2v") return 2;
+  if (l === "3") return 3;
+  return 4;
+}
+
+export function multiviewPrefs(): { layout: MultiviewLayout; slotCount: number; maxSlots: number; bannerDismissed: boolean } {
+  let layout: MultiviewLayout = "2x2";
+  let dismissed = false;
+  try {
+    const v = localStorage.getItem(MV_LAYOUT_KEY);
+    if (isLayout(v)) layout = v;
+    dismissed = localStorage.getItem(MV_BANNER_KEY) === "1";
+  } catch { /* defaults */ }
+  return { layout, slotCount: layoutSlotCount(layout), maxSlots: MULTIVIEW_MAX_SLOTS, bannerDismissed: dismissed };
+}
+
+/** store.ts setLayout: an unknown value keeps the current layout. */
+export function setMultiviewLayout(layout: string): { layout: MultiviewLayout; slotCount: number } {
+  if (isLayout(layout)) {
+    try { localStorage.setItem(MV_LAYOUT_KEY, layout); } catch { /* ignore */ }
+  }
+  const now = multiviewPrefs().layout;
+  return { layout: now, slotCount: layoutSlotCount(now) };
+}
+
+/** multiview.tsx dismissBanner. */
+export function dismissMultiviewBanner(): boolean {
+  try { localStorage.setItem(MV_BANNER_KEY, "1"); } catch { /* ignore */ }
+  return true;
 }

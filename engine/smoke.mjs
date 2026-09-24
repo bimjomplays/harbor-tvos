@@ -668,6 +668,75 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
     return x.kind === "xtream" && x.xtream && x.xtream.username === "u" && /xmltv\.php/.test(x.epgUrl || "");
   })());
+  {
+    // Stage 8 remainder: Multiview prefs (lib/multiview/store.ts) and Playlist VOD (views/playlist-vod.tsx).
+    const L = rec.engine.live, V = rec.engine.liveVod;
+    r.eq("live.multiviewPrefs defaults to the 2x2 layout, four slots, banner shown", L.multiviewPrefs(), { layout: "2x2", slotCount: 4, maxSlots: 4, bannerDismissed: false });
+    r.eq("live.setMultiviewLayout stores a layout and its slot count", L.setMultiviewLayout("2v"), { layout: "2v", slotCount: 2 });
+    r.eq("live.setMultiviewLayout ignores an unknown layout", L.setMultiviewLayout("9x9"), { layout: "2v", slotCount: 2 });
+    L.dismissMultiviewBanner();
+    r.ok("live.dismissMultiviewBanner is remembered", L.multiviewPrefs().bannerDismissed === true && L.multiviewPrefs().layout === "2v");
+    const m3uv = [
+      "#EXTM3U",
+      '#EXTINF:-1 group-title="News",CNN', "https://example.invalid/cnn.m3u8",
+      '#EXTINF:-1 tvg-type="movie" tvg-logo="https://x/dune.jpg" group-title="Movies",EN - Dune Part Two (2024) 1080p', "http://host.invalid:8080/movie/u/p/11.mkv",
+      '#EXTINF:-1 group-title="Movies",Arrival 2016', "http://host.invalid:8080/movie/u/p/12.mp4",
+      '#EXTINF:-1 group-title="Series",Severance S02E01', "http://host.invalid:8080/series/u/p/21.mkv",
+      '#EXTINF:-1 group-title="Series",Severance S01E02', "http://host.invalid:8080/series/u/p/22.mkv",
+      '#EXTINF:-1 group-title="Series",Severance S01E01', "http://host.invalid:8080/series/u/p/23.mkv",
+    ].join("\n") + "\n";
+    rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3uv });
+    const plv = L.addPlaylist("VOD list", "https://vod.example.invalid/list.m3u");
+    const lv = await L.channels(plv.id);
+    r.eq("the live list still holds only the live channel", lv.channels.map((c) => c.name), ["CNN"]);
+    const srcs = V.sources();
+    r.ok("liveVod.sources lists the playlist and keeps an active one", srcs.sources.some((s) => s.id === plv.id && s.kind === "m3u") && typeof srcs.activeId === "string", JSON.stringify(srcs));
+    V.setActive(plv.id);
+    r.eq("liveVod.setActive remembers the source", V.sources().activeId, plv.id);
+    const st = await V.load(plv.id);
+    r.ok("liveVod.load classifies an M3U: two movies, one series", st.movies === 2 && st.series === 1 && !st.moviesLoading && st.movieError === null, JSON.stringify(st));
+    const mp = V.page(plv.id, "movies", "", 0, 60);
+    r.eq("liveVod.page(movies): cleaned titles, A-Z, years", mp.items.map((m) => [m.title, m.year]), [["Arrival", 2016], ["Dune Part Two", 2024]]);
+    r.eq("liveVod.page filters with the query (normalizeArabic, substring)", V.page(plv.id, "movies", "DUNE", 0, 60).items.map((m) => m.title), ["Dune Part Two"]);
+    const sp = V.page(plv.id, "series", "", 0, 60);
+    r.ok("liveVod.page(series): grouped by show with an episode count", sp.total === 1 && sp.items[0].title === "Severance" && sp.items[0].subtitle === "3 episodes", JSON.stringify(sp));
+    const sd = await V.series(plv.id, sp.items[0].id);
+    r.eq("liveVod.series: seasons and episodes in order", [sd.seasons, sd.episodes.map((e) => [e.season, e.episode])], [[1, 2], [[1, 1], [1, 2], [2, 1]]]);
+    const pm = V.playMovie(plv.id, mp.items[1].id);
+    r.ok("liveVod.playMovie: vod: meta, the file, the year underneath", pm.meta.id.startsWith("vod:") && pm.meta.type === "movie" && pm.url.endsWith("/11.mkv") && pm.subtitle === "2024" && pm.meta.poster === "https://x/dune.jpg", JSON.stringify(pm));
+    const pe = V.playEpisode(plv.id, sd.id, 1, 2);
+    r.ok("liveVod.playEpisode: series meta and the S/E line", pe.meta.id === sd.id && pe.season === 1 && pe.episode === 2 && pe.subtitle === "Severance · S1 · E2", JSON.stringify(pe));
+    r.eq("liveVod.saveProgress keeps a local spot only", V.saveProgress({ meta: pe.meta, season: 1, episode: 2, positionMs: 600000, durationMs: 2400000 }), { watched: false, cloud: "none" });
+    r.eq("liveVod.startPosition reads it back", V.startPosition(pe.meta.id, 1, 2).ms, 600000);
+    r.eq("a watched episode clears its spot", [V.saveProgress({ meta: pe.meta, season: 1, episode: 2, positionMs: 2300000, durationMs: 2400000 }).watched, V.startPosition(pe.meta.id, 1, 2).ms], [true, 0]);
+    r.eq("a VOD id is kept only in the resume store (no Continue Watching, no watched flags)", [...rec.node.storage.entries()].filter(([k, v]) => k !== "harbor.resume" && /vod:series/.test(String(v))).map(([k]) => k), []);
+    // Xtream: the VOD and series APIs, episodes fetched when a series opens (xtream-vod.ts).
+    rec.node.host.fetch = async (req) => {
+      const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+      const action = new URL(req.url).searchParams.get("action");
+      if (action === "get_vod_categories") return json([{ category_id: "1", category_name: "Action" }]);
+      if (action === "get_vod_streams") return json([{ stream_id: 7, name: "Heat (1995)", stream_icon: "https://x/heat.jpg", category_id: "1", container_extension: "mp4" }, { stream_id: 8, name: "Live thing", stream_type: "live" }]);
+      if (action === "get_series_categories") return json([{ category_id: "5", category_name: "Drama" }]);
+      if (action === "get_series") return json([{ series_id: 44, name: "The Wire", cover: "https://x/wire.jpg", category_id: "5" }]);
+      if (action === "get_series_info") return json({ episodes: { "1": [{ id: 901, episode_num: 1, title: "The Target", container_extension: "mkv", info: { duration_secs: 3600, plot: "Pilot." } }, { id: 902, episode_num: 2, title: "The Detail", container_extension: "mkv" }] } });
+      return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    };
+    const xv = L.addStructured("xtream", "XV", "", "", "http://xv.example.invalid:8080", "user", "pass");
+    const xs = await V.load(xv.id);
+    r.ok("liveVod.load (Xtream): one movie (live rows dropped), one series, totals", xs.kind === "xtream" && xs.movies === 1 && xs.series === 1 && xs.movieTotal === 2 && xs.seriesTotal === 1 && typeof xs.fetchedAt === "number", JSON.stringify(xs));
+    const xm = V.page(xv.id, "movies", "", 0, 60).items[0];
+    r.ok("Xtream movie: /movie/<user>/<pass>/<id>.<ext>, category as group", xm.url === "http://xv.example.invalid:8080/movie/user/pass/7.mp4" && xm.group === "Action" && xm.year === 1995, JSON.stringify(xm));
+    const xsr = V.page(xv.id, "series", "", 0, 60).items[0];
+    r.eq("Xtream series card says its category until opened", xsr.subtitle, "Drama");
+    const xd = await V.series(xv.id, xsr.id);
+    r.ok("liveVod.series (Xtream): get_series_info episodes with titles, plot and runtime", xd.episodes.length === 2 && xd.episodes[0].title === "The Target" && xd.episodes[0].plot === "Pilot." && xd.episodes[0].durationSec === 3600 && xd.episodes[1].url === "http://xv.example.invalid:8080/series/user/pass/902.mkv", JSON.stringify(xd.episodes));
+    V.saveProgress({ meta: { id: xd.id }, season: 1, episode: 1, positionMs: 1800000, durationMs: 3600000 });
+    const xd2 = await V.series(xv.id, xsr.id);
+    r.ok("episode progress follows the saved spot (episode-row episodeProgressOf)", Math.abs(xd2.episodes[0].progress - 0.5) < 1e-9 && xd2.episodes[0].leftSec === 1800 && xd2.episodes[1].progress === 0, JSON.stringify(xd2.episodes.map((e) => [e.progress, e.leftSec])));
+    L.removePlaylist(xv.id);
+    r.eq("live.removePlaylist drops the VOD library too", V.page(xv.id, "movies", "", 0, 60).libraryTotal, 0);
+    L.removePlaylist(plv.id);
+  }
   rec.dispose();
 }
 
