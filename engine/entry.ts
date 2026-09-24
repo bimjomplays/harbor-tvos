@@ -67,6 +67,8 @@ import * as anime4kGlue from "./anime4k";
 import * as sportsGlue from "./sports";
 import * as sportsEventGlue from "./sportsEvent";
 import * as settingsRoomGlue from "./settingsRoom";
+import * as themesGlue from "./themes";
+import { bpIntroPoolLoad, bpIntroPoolSave } from "@/views/big-picture/bp-intro-pool";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
@@ -603,6 +605,22 @@ export const settingsRoom = {
   categories: settingsRoomGlue.categories,
   controls: settingsRoomGlue.controls,
   commit: settingsRoomGlue.commit,
+  /** bp-settings-pane.tsx: the right-hand preview's data for every category. */
+  pane: settingsRoomGlue.pane,
+  /** bp-step-language.tsx / Settings → Language: LANGUAGES with flags and the stored choice. */
+  languages: settingsRoomGlue.languages,
+  /** Re-applies the profile's uiLanguage to lib/i18n after a settings reload. */
+  applyUiLanguage: settingsRoomGlue.applyUiLanguage,
+  flagEmoji: settingsRoomGlue.flagEmoji,
+};
+
+/** Stage 9 themes: upstream's preset library resolved to Big Picture colours, fonts, backgrounds. */
+export const themes = {
+  state: themesGlue.state,
+  apply: themesGlue.apply,
+  setFontPair: themesGlue.setFontPair,
+  parseColor: themesGlue.parseCssColor,
+  parseGradient: themesGlue.parseGradientLayers,
 };
 
 /** Profiles: upstream's avatar catalog, brand colours, per-profile storage purge. */
@@ -730,11 +748,25 @@ export const actions = {
   trackerRemove: actionsGlue.trackerRemove,
 };
 
+/**
+ * bp-intro-pool.ts: the poster urls the front-door wall (bp-intro.tsx) drew from last session, so
+ * every boot after the first opens on real art at the first frame. Urls only, capped at 96.
+ */
+export const intro = {
+  poolLoad: bpIntroPoolLoad,
+  poolSave(urls: string[]): number {
+    bpIntroPoolSave(urls);
+    return bpIntroPoolLoad().length;
+  },
+};
+
 /** Onboarding taste step (onboarding/use-bp-taste-titles + bp-step-taste): titles to pick, votes. */
 export const onboarding = {
   tasteTitles: onboardingGlue.tasteTitles,
   vote: onboardingGlue.vote,
   upvoted: onboardingGlue.upvoted,
+  /** use-bp-onboard-facts + bp-done-flourish: counts for the recap and the five posters it deals. */
+  facts: onboardingGlue.facts,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

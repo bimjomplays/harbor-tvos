@@ -1,7 +1,7 @@
 // Big Picture settings (bp-settings-catalog.ts + bp-settings-commit.ts) as data: categories with
 // summaries, controls per category, and one commit function. Swift renders rows generically.
-import { bpSettingsCategories, bpSettingsControls, bpConnectedNames, type BpCatId, type BpControl } from "@/views/big-picture/bp-settings-catalog";
-import { LANGUAGES, setUiLanguage, type UiLanguage } from "@/lib/i18n";
+import { bpSettingsCategories, bpSettingsControls, bpConnectedNames, bpOverscanLabel, bpServiceItems, bpSoundLabel, type BpCatId, type BpControl } from "@/views/big-picture/bp-settings-catalog";
+import { LANGUAGES, getUiLanguage, normalizeLanguage, setUiLanguage, type UiLanguage } from "@/lib/i18n";
 import { serviceBadge } from "@/lib/providers/streaming";
 import type { StreamingService } from "@/lib/settings";
 import type { Settings } from "@/lib/settings/types";
@@ -9,6 +9,20 @@ import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import { currentAuthor } from "@/lib/theme-auth";
 import { declineSportsConsent, getSportsConsentSnapshot, resetSportsConsent } from "@/lib/sports/consent";
 import { markSettingsPatched } from "./sync";
+import { readPlaylists } from "@/lib/iptv/playlists-store";
+
+/**
+ * bp-settings.tsx counts `settings.iptvPlaylists`, but load.ts moves playlists into their own
+ * store (lib/iptv/playlists-store.ts) and drops that field, so upstream's count is always 0 and
+ * the row never says "{count} added". The store is where the playlists are; count them there.
+ */
+function playlistCount(): number {
+  try {
+    return readPlaylists().length;
+  } catch {
+    return 0;
+  }
+}
 
 const t = (key: string, vars?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? `{${k}}`));
 
@@ -41,7 +55,7 @@ export function controls(id: BpCatId, profileId: string, linked: boolean): BpCon
   const out = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined");
   // bp-settings.tsx:193-201: push rows report what is connected / how many playlists were added.
   const connected = bpConnectedNames(facts(s, profileId));
-  const playlists = (s.iptvPlaylists ?? []).length;
+  const playlists = playlistCount();
   return out.map((c) => {
     // Service cells carry their brand tint so the TV can draw a chip without the SVG logo.
     if (c.kind === "multi" && c.id === "service") return { ...c, items: c.items.map((i) => ({ ...i, tint: serviceBadge(i.value as StreamingService).tint })) };
@@ -93,4 +107,99 @@ export function commit(id: string, value: string, profileId: string, linked: boo
     window.dispatchEvent(new CustomEvent("harbor:settings-updated", { detail: { profileId, fields: Object.keys(patch) } }));
   }
   return { ok: true, sportsShown: getSportsConsentSnapshot().status !== "declined" };
+}
+
+// ------------------------------------------------------------------ flags, languages, preview
+/**
+ * components/flag.tsx FLAG: the language names that have a flag, as the country each SVG draws
+ * (flag-eng is the US flag, flag-ara Saudi Arabia). tvOS draws them as emoji flags.
+ */
+const FLAG_COUNTRY: Record<string, string> = {
+  English: "US", Italian: "IT", Russian: "RU", Hindi: "IN", Spanish: "ES", "Spanish (Latin America)": "ES",
+  Korean: "KR", Japanese: "JP", Chinese: "CN", "Chinese (Simplified)": "CN", Portuguese: "PT",
+  "Portuguese (Brazil)": "BR", German: "DE", French: "FR", Turkish: "TR", Arabic: "SA", Czech: "CZ",
+  Danish: "DK", Finnish: "FI", Hebrew: "IL", Hungarian: "HU", Dutch: "NL", Norwegian: "NO", Polish: "PL",
+  Romanian: "RO", Swedish: "SE", Thai: "TH", Ukrainian: "UA", Vietnamese: "VN",
+};
+
+/** flagSrc(language) as a regional-indicator emoji, or null where upstream has no flag either. */
+export function flagEmoji(language: string): string | null {
+  const cc = FLAG_COUNTRY[language];
+  if (!cc) return null;
+  return String.fromCodePoint(...Array.from(cc).map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
+}
+
+// onboarding/steps/bp-step-language.tsx PAIRED: one circle split between two flags.
+const PAIRED: Record<string, string[]> = { Portuguese: ["Portuguese", "Portuguese (Brazil)"] };
+
+/** bp-step-language.tsx rows: LANGUAGES in order with their flags; `current` is the stored choice. */
+export function languages(profileId: string, linked: boolean) {
+  const s = loadEffective(profileId, linked);
+  return {
+    current: normalizeLanguage(s.uiLanguage),
+    languages: LANGUAGES.map((l) => ({
+      code: l.code,
+      label: l.label,
+      nativeLabel: l.nativeLabel,
+      greeting: l.greeting,
+      rtl: l.rtl,
+      flags: (PAIRED[l.label] ?? [l.label]).map(flagEmoji).filter((f): f is string => f !== null),
+    })),
+  };
+}
+
+/**
+ * store.ts reads uiLanguage once at load; a profile switch or a synced settings blob can carry a
+ * different one, so the host re-applies it whenever it reloads settings (lib/settings.tsx does the
+ * same on every settings change).
+ */
+export function applyUiLanguage(profileId: string, linked: boolean): string {
+  const lang = normalizeLanguage(loadEffective(profileId, linked).uiLanguage);
+  if (lang !== getUiLanguage()) setUiLanguage(lang);
+  return lang;
+}
+
+// bp-settings-pane.tsx constants.
+const STILL = "https://image.tmdb.org/t/p/w780/eGX66zonvc4bXg3rM08RUxdYSDx.jpg";
+const SUB_PREVIEW_SCALE = 0.55;
+
+/** bp-settings-pane.tsx BpSettingsPane, as data: what the right-hand preview draws per category. */
+export function pane(profileId: string, linked: boolean) {
+  const s = loadEffective(profileId, linked);
+  const connected = bpConnectedNames(facts(s, profileId));
+  const overscan = s.bigPictureOverscan ?? 0;
+  const language = LANGUAGES.find((l) => l.code === s.uiLanguage) ?? null;
+  const source = s.playbackSourcePreference;
+  return {
+    still: STILL,
+    overscan,
+    overscanLabel: bpOverscanLabel(t, overscan),
+    subtitle: {
+      text: t("This is how a subtitle will look."),
+      px: Math.round(s.subFontSize * SUB_PREVIEW_SCALE),
+      flags: s.preferredSubLangs.map(flagEmoji).filter((f): f is string => f !== null).slice(0, 8),
+    },
+    homeMode: s.homeMode,
+    services: bpServiceItems(s).filter((i) => i.on).slice(0, 18).map((i) => ({ value: i.value, label: i.label, tint: serviceBadge(i.value as StreamingService).tint })),
+    servicesEmpty: t("Turn off what you do not have"),
+    language: language ? { code: language.code, nativeLabel: language.nativeLabel, greeting: language.greeting, rtl: language.rtl } : null,
+    playback: [
+      [t("Player engine"), s.playerEngine === "auto" ? t("Auto") : s.playerEngine],
+      [t("Play button behavior"), t(source === "ask" ? "Ask every time" : source === "local" ? "Local Library" : source === "online" ? "Online streams" : "Home server")],
+      [t("Hardware acceleration"), t(s.mpvHwdec === "auto" ? "Auto" : s.mpvHwdec === "on" ? "On" : "Off")],
+      [t("Skip intros"), t(s.autoSkipIntro ? "On" : "Off")],
+      [t("Auto-play next episode"), t(s.autoPlayNextEpisode ? "On" : "Off")],
+      [t("Instant play"), t(s.instantPlay ? "On" : "Off")],
+    ],
+    setup: [
+      ["TMDB", s.tmdbKey.trim() ? t("On") : t("None")],
+      [t("Live TV playlists"), String(playlistCount())],
+      [t("Setup"), connected.length > 0 ? connected.join(", ") : t("None")],
+    ],
+    interface: [
+      [t("Interface sounds"), bpSoundLabel(t, s.bigPictureSound)],
+      [t("Controller navigation"), t(s.tvNavigation ? "On" : "Off")],
+      [t("Open in Big Picture"), t(s.bigPictureAutoStart ? "On" : "Off")],
+    ],
+  };
 }
