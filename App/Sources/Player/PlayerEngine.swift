@@ -25,6 +25,8 @@ protocol PlayerEngineControlling: AnyObject {
     func setAudioDelay(_ seconds: Double)
     func setMuted(_ muted: Bool)
     func isMuted() -> Bool
+    /// bridge.ts setRate: the playback speed (speed-menu.tsx, settings.defaultPlaybackSpeed).
+    func setRate(_ rate: Double)
     func bufferedSec() -> Double
     func streamFilename() -> String?
     func refreshSubtitleStyle()
