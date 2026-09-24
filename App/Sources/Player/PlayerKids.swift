@@ -389,7 +389,9 @@ struct KidsFullscreenClock: View {
 /// LOADER_BUBBLES, both octopuses and the orange star) under the pulsing title logo, the episode
 /// line and the loader, with Cancel at the bottom. For a torrent the TV's own engine serves
 /// (isLocalEngine) the readout stays, as upstream's does for kids; the large-file P2P warning and
-/// the remote engine's peer line are adult-only (`!kid && …`).
+/// the remote engine's peer line are adult-only (`!kid && …`). Once that torrent finds no peers
+/// (`isLocalEngine && prep.phase === "no-peers"`) the readout and Cancel give way to "No peers
+/// found", the note, and Go back / Try again.
 struct KidsPlayerLoader: View {
     /// `src.episode?.still || meta.background || meta.poster`.
     let backdrop: String?
@@ -403,9 +405,13 @@ struct KidsPlayerLoader: View {
     let isLocalFile: Bool
     var focus: FocusState<PlayerScreen.FocusTarget?>.Binding
     let onCancel: () -> Void
+    /// prep.retry (the poll starts over) plus the player's loader retry (the stream reloads).
+    let onRetry: () -> Void
 
     /// .animate-loader-pulse: opacity .42 → 1 → .42 over 2.4 s.
     @State private var pulse = false
+    /// prep.phase === "no-peers" for the TV engine's torrent.
+    @State private var noPeers = false
 
     var body: some View {
         ZStack {
@@ -439,8 +445,10 @@ struct KidsPlayerLoader: View {
                         .font(BP.sans(12.5, .semibold)).textCase(.uppercase).tracking(BP.px(4))
                         .foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                 }
-                if let torrentURL {
-                    TorrentReadout(url: torrentURL, kid: true)
+                if torrentURL != nil, noPeers {
+                    noPeersBlock
+                } else if let torrentURL {
+                    TorrentReadout(url: torrentURL, kid: true, onNoPeers: { noPeers = true })
                 } else {
                     // HarborLoader size="md" with its caption.
                     VStack(spacing: BP.px(12)) {
@@ -453,24 +461,69 @@ struct KidsPlayerLoader: View {
             }
             .frame(maxWidth: BP.px(1100))
             .padding(.horizontal, BP.gutter)
-            VStack {
-                Spacer()
-                // The loader's Cancel: in the kids pill so the ring reads on the sea plate.
-                Button(action: onCancel) {
-                    HStack(spacing: BP.px(10)) {
-                        Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy))
-                        Text("Cancel").font(KidsTheme.font(18, .heavy))
+            // `!(isLocalEngine && prep.phase === "no-peers")`: the no-peers block carries its own way out.
+            if !noPeers {
+                VStack {
+                    Spacer()
+                    // The loader's Cancel: in the kids pill so the ring reads on the sea plate.
+                    Button(action: onCancel) {
+                        HStack(spacing: BP.px(10)) {
+                            Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy))
+                            Text("Cancel").font(KidsTheme.font(18, .heavy))
+                        }
                     }
+                    .buttonStyle(KidsPillStyle(fill: .white.opacity(0.15), focusedFill: .white.opacity(0.25), ink: .white, height: BP.px(60)))
+                    .focused(focus, equals: .chip("kids-cancel"))
+                    .padding(.bottom, BP.px(56))
                 }
-                .buttonStyle(KidsPillStyle(fill: .white.opacity(0.15), focusedFill: .white.opacity(0.25), ink: .white, height: BP.px(60)))
-                .focused(focus, equals: .chip("kids-cancel"))
-                .padding(.bottom, BP.px(56))
+                .focusSection()
             }
-            .focusSection()
         }
         .ignoresSafeArea()
         .onAppear {
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+        }
+        // The ring follows the way out that is on screen: Go back (the first button, as bp-connecting
+        // seeds its terminal row) while no peers, Cancel again after Try again.
+        .onChange(of: noPeers) { _, dead in
+            let target: PlayerScreen.FocusTarget = .chip(dead ? "kids-goback" : "kids-cancel")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus.wrappedValue = target }
+        }
+        // A new stream is a new torrent (use-p2p-preparing-status restarts on url / infoHash).
+        .onChange(of: torrentURL) { _, _ in noPeers = false }
+    }
+
+    /// cinematic-player-loader.tsx's no-peers block: the stage, the note, then Go back (onCancel)
+    /// and Try again, in the kids pills.
+    private var noPeersBlock: some View {
+        VStack(spacing: BP.px(16)) {
+            Text("No peers found")
+                .font(BP.sans(12.5, .medium)).textCase(.uppercase).tracking(BP.px(2.25))
+                .foregroundStyle(.white.opacity(0.7))
+            Text("Couldn't connect to any peers for this torrent. It may be unreachable on your network (some ISPs and VPNs block torrent traffic).")
+                .font(BP.sans(13.5)).foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center).lineSpacing(4)
+                .frame(maxWidth: BP.px(448)).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: BP.px(10)) {
+                Button(action: onCancel) {
+                    Text("Go back").font(KidsTheme.font(18, .heavy))
+                }
+                .buttonStyle(KidsPillStyle(fill: .white.opacity(0.2), focusedFill: .white.opacity(0.3), ink: .white, height: BP.px(60)))
+                .focused(focus, equals: .chip("kids-goback"))
+                Button {
+                    noPeers = false
+                    onRetry()
+                } label: {
+                    HStack(spacing: BP.px(10)) {
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: BP.px(18), weight: .heavy))
+                        Text("Try again").font(KidsTheme.font(18, .heavy))
+                    }
+                }
+                .buttonStyle(KidsPillStyle(fill: .white.opacity(0.1), focusedFill: .white.opacity(0.25), ink: .white.opacity(0.85), height: BP.px(60)))
+                .focused(focus, equals: .chip("kids-retry"))
+            }
+            .padding(.top, BP.px(8))
+            .focusSection()
         }
     }
 }

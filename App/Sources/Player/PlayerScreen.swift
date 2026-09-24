@@ -741,7 +741,9 @@ struct PlayerScreen: View {
                                 episodeLine: kidsEpisodeLine,
                                 torrentURL: TorrentEngine.streamRef(playURL) != nil ? playURL : nil,
                                 isLocalFile: playURL.isFileURL, focus: $focus,
-                                onCancel: { finish(natural: false) })
+                                onCancel: { finish(natural: false) },
+                                // The connecting card's Try again (player.tsx onLoaderRetry reloads the same URL).
+                                onRetry: { status = MPVPlayerController.Status(); loadingSince = Date(); reloadToken += 1 })
             .onAppear { focusLater(.chip("kids-cancel")) }
             // The ring goes back to the stage once the picture is up (the resume fork and the error
             // card seed their own).

@@ -10,6 +10,9 @@ struct TorrentReadout: View {
     /// cinematic-player-loader.tsx kid branch: white type on the sea plate, and no large-file P2P
     /// warning (`!kid && heavyForP2p`).
     var kid = false
+    /// use-p2p-preparing-status phase "no-peers": called once when the torrent is declared dead,
+    /// so the kid loader can swap in its "Try again" block (cinematic-player-loader.tsx).
+    var onNoPeers: (() -> Void)? = nil
 
     private var ink: Color { kid ? .white : BP.ink }
     private var inkMuted: Color { kid ? .white.opacity(0.7) : BP.inkMuted }
@@ -157,7 +160,7 @@ struct TorrentReadout: View {
                 let readiness = Self.readiness(peers: peers, downloaded: s.downloaded, speed: s.downloadSpeed, streamLen: total)
                 sample = Sample(phase: phase, peers: peers, speed: s.downloadSpeed, downloaded: s.downloaded, total: total, readiness: readiness, elapsedMs: elapsedMs)
                 pct = max(pct, readiness)
-                if failed { return }
+                if failed { onNoPeers?(); return }
             }
             try? await Task.sleep(for: .seconds(1))
         }
