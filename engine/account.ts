@@ -5,6 +5,7 @@
 // reports and never refreshes a token itself: two refreshers racing on one rotating refresh
 // token is how a device signs itself out.
 import {
+  applyAuthResult,
   authToken,
   captureSessionScope,
   currentAuthor,
@@ -16,6 +17,8 @@ import {
 } from "@/lib/theme-auth";
 import { loginIdentity, registerIdentity, fetchMe } from "@/lib/account/identity";
 import { startSessionRefresh } from "@/lib/account/session-refresh-runner";
+import { safeFetch } from "@/lib/safe-fetch";
+import { HARBOR_API_BASE } from "@/lib/config/endpoints";
 
 export type SessionView = {
   user: Author;
@@ -83,6 +86,40 @@ export async function token(): Promise<string | null> {
 /** Ask upstream to rotate the token now (it no-ops unless overdue or a 401 said so). */
 export async function refreshIfDue(): Promise<boolean> {
   return refreshToken();
+}
+
+/**
+ * TV hand-off, Harbor step (big-picture/onboarding/bp-handoff-apply.ts): the phone signed in and
+ * delivered `{ session, handle, refresh }`; put it where theme-auth reads it. Upstream applies a
+ * provisional record with an empty user id and then calls fetchMe, but applyServerUser refuses a
+ * user whose id differs from the record's, so the id never fills in and that step always fails.
+ * Asking /identity/api/me with the delivered token first and applying the real user is what that
+ * code intends. Throws (the phone sees `applyFailed`) when the token does not resolve to a user,
+ * and never keeps a session with no user id, which is upstream's own rule.
+ */
+export async function adopt(token: string, handle: string, refresh: string | null): Promise<SessionView> {
+  let res: Response;
+  try {
+    res = await safeFetch(`${HARBOR_API_BASE}/themes/api/identity/api/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (e) {
+    throw apiError(e);
+  }
+  const d = (await res.json().catch(() => null)) as { user?: { id?: unknown } } | null;
+  if (!res.ok || !d?.user || typeof d.user.id !== "string" || !d.user.id) {
+    throw apiError({ status: res.status, message: "harbor session did not hydrate" });
+  }
+  const user = d.user as Parameters<typeof applyAuthResult>[0]["user"];
+  applyAuthResult({ token, refresh: refresh || null, user });
+  const s = session();
+  if (!s || !s.user.id) {
+    await logoutAuthor().catch(() => {});
+    throw new Error("harbor session did not hydrate");
+  }
+  // The handle the phone read is informational; the server's user record is the truth.
+  void handle;
+  return s;
 }
 
 export async function reloadUser(): Promise<SessionView> {

@@ -234,6 +234,31 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------- TV hand-off: account.adopt (recorded host)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const seen = [];
+  rec.node.host.fetch = async (req) => {
+    seen.push([req.url, JSON.stringify(req.headers || {})]);
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Unauthorized", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/identity/api/me")) {
+      return JSON.stringify(req.headers || {}).includes("tok_phone")
+        ? json({ user: { id: "u_phone", username: "deckhand", handle: "deckhand" } })
+        : json({ error: "unauthorized" }, 401);
+    }
+    return json({ error: "not_found" }, 404);
+  };
+  const adopted = await rec.engine.account.adopt("tok_phone", "deckhand", "ref_phone");
+  r.ok("account.adopt applies the phone's session with the server's user", adopted && adopted.user.id === "u_phone" && adopted.token === "tok_phone" && adopted.hasRefresh === true, JSON.stringify(adopted));
+  r.ok("account.adopt asked /identity/api/me with the delivered bearer", seen.some(([u, h]) => u.endsWith("/themes/api/identity/api/me") && h.includes("Bearer tok_phone")), JSON.stringify(seen));
+  const refused = await rec.engine.account.adopt("tok_bad", "deckhand", null).then(() => "applied", (e) => String(e && e.message));
+  r.ok("account.adopt refuses a token that does not resolve to a user", refused.includes("harbor-api:") && refused.includes("401"), refused);
+  r.ok("a refused adopt leaves the earlier session in place", rec.engine.account.session() && rec.engine.account.session().user.id === "u_phone");
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------- anime4k
 {
   r.eq("anime4k.files lists the 11 shaders", engine.anime4k.files().length, 11);

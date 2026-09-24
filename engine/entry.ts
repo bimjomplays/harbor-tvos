@@ -474,6 +474,7 @@ export const account = {
   token: accountGlue.token,
   refreshIfDue: accountGlue.refreshIfDue,
   reloadUser: accountGlue.reloadUser,
+  adopt: accountGlue.adopt,
   start: accountGlue.start,
   stop: accountGlue.stop,
 };
