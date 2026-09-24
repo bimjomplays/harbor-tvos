@@ -25,6 +25,9 @@ targets:
         buildPhase: resources
       - path: App/Fonts
         buildPhase: resources
+      # The phone hand-off page the TV serves on the LAN (App/Sources/Handoff); never fetched.
+      - path: App/Phone
+        buildPhase: resources
       - path: App/Upstream/avatars
         type: folder
         buildPhase: resources
@@ -52,6 +55,8 @@ targets:
         UIUserInterfaceStyle: Dark
         UIAppFonts: [Switzer-Regular.otf, Switzer-Medium.otf, Switzer-Semibold.otf, Switzer-Bold.otf, Sentient-Regular.otf, Sentient-Medium.otf, Sentient-Bold.otf, Fraunces-Medium.ttf]
         ITSAppUsesNonExemptEncryption: false
+        # Stage 10 phone hand-off: the TV listens on the LAN only while a phone code is on screen.
+        NSLocalNetworkUsageDescription: Harbor opens a small page on your network while a phone code is on screen, so your phone can type and sign in for this TV.
         # lib/deep-link.ts: harbor://detail/<type>/<id>[/<videoId>], stremio://detail/..., stremio://<host>/manifest.json
         CFBundleURLTypes:
           - CFBundleURLName: com.dltnp.harbor.links
@@ -63,7 +68,9 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/rust/harbor-ffi/include
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/rust/out/$(PLATFORM_NAME)
-        OTHER_LDFLAGS: -lharbor_ffi
+        # CoreFoundation: librqbit -> chrono -> iana-time-zone reads the zone through CFTimeZone,
+        # and a staticlib does not carry its #[link] directives into the app link.
+        OTHER_LDFLAGS: -lharbor_ffi -framework CoreFoundation
         MTL_ENABLE_DEBUG_INFO: NO
   HarborUITests:
     type: bundle.ui-testing

@@ -67,6 +67,10 @@ final class BrowseModel: ObservableObject {
 
     deinit { unsubscribe?(); refreshTask?.cancel(); heroTask?.cancel() }
 
+    /// Home itself, not a streaming-service page that reuses the Home room layout: only Home has
+    /// the Live TV row and the band-owned bands (bp-home.tsx).
+    var isHomePage: Bool { room == .home && source.cacheId == nil }
+
     private var cacheKey: String { "bp.room.\(restoreKey)" }
     /// The route key bp-restore remembers positions under (per page and profile).
     var restoreKey: String { "\(source.cacheId ?? room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }

@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<title>Harbor</title>
+<!--
+  The phone side of the Apple TV hand-off, served by the TV itself (App/Sources/Handoff).
+  A self-contained port of upstream's phone pages: src/views/mobile/onboard/* (the /setup flow:
+  TMDB, Stremio and Harbor signed in on the phone, results delivered to the TV) and the typing
+  sheet in src/views/mobile/remote-extras.tsx KeyboardOverlay (the /remote typing surface).
+  Wire contract: src/lib/tv-handoff/handoff-protocol.ts, one frame per POST to /api/remote.
+  Nothing here is fetched from the internet except the sign-in APIs the steps talk to.
+-->
+<style>
+  :root {
+    --canvas: #111213; --surface: #191b1c; --elevated: #252628; --edge: rgba(244,245,247,.12);
+    --ink: #f4f5f7; --muted: #a3a5a6; --subtle: #6f7072; --accent: #f4a25c; --danger: #ef6b6b; --ok: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--canvas); color: var(--ink);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 520px; margin: 0 auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px calc(env(safe-area-inset-bottom, 0px) + 28px); }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+  .brand { font-weight: 700; letter-spacing: .02em; }
+  .pill { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .pill.ok::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 7px; }
+  h1 { font-size: 30px; line-height: 1.12; letter-spacing: -.02em; margin: 0 0 10px; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--edge); border-radius: 16px; padding: 16px; margin: 16px 0; }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+  .hint { font-size: 13px; color: var(--subtle); margin-top: 6px; }
+  input { width: 100%; min-height: 50px; border-radius: 12px; border: 1px solid var(--edge); background: var(--elevated);
+    color: var(--ink); padding: 0 14px; font-size: 17px; outline: none; }
+  input:focus { border-color: var(--accent); }
+  input.mono { font-family: ui-monospace, Menlo, monospace; }
+  input.bad { border-color: var(--danger); }
+  .field + .field { margin-top: 14px; }
+  button, a.btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; border: 0; border-radius: 14px;
+    font-size: 16px; font-weight: 700; cursor: pointer; text-decoration: none; }
+  .primary { background: var(--ink); color: var(--canvas); }
+  .quiet { background: transparent; color: var(--muted); border: 1px solid var(--edge); margin-top: 10px; }
+  button:disabled { opacity: .45; }
+  .actions { margin-top: 20px; }
+  .error { color: var(--danger); font-size: 14.5px; margin: 12px 2px; }
+  .okline { color: var(--ok); font-weight: 600; }
+  .link { display: block; padding: 12px 14px; border-radius: 12px; background: var(--elevated); color: var(--ink); text-decoration: none; margin-bottom: 10px; }
+  .link small { display: block; color: var(--subtle); }
+  ol, ul { margin: 0; padding-left: 20px; color: var(--muted); }
+  li + li { margin-top: 8px; }
+  .tabs { display: flex; gap: 8px; margin: 14px 0; }
+  .tabs button { min-height: 48px; font-weight: 600; background: var(--surface); color: var(--muted); border: 1px solid var(--edge); }
+  .tabs button.on { background: rgba(244,162,92,.14); color: var(--ink); border-color: var(--accent); }
+  .code { font: 700 22px/1.6 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-align: center; word-break: break-all;
+    background: var(--elevated); border: 1px solid var(--edge); border-radius: 12px; padding: 16px; user-select: all; -webkit-user-select: all; }
+  .typing input { min-height: 72px; font-size: 28px; font-weight: 600; background: transparent; border: 0; border-bottom: 2px solid var(--edge); border-radius: 0; padding: 0 2px; }
+  .typing input:focus { border-color: var(--accent); }
+  .steps { font-size: 13px; color: var(--subtle); margin-bottom: 8px; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row + .row { margin-top: 12px; }
+  .tick { width: 22px; height: 22px; border-radius: 50%; background: var(--ok); color: var(--canvas); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+(() => {
+  "use strict";
+
+  // handoff-protocol.ts / handoff-code.ts
+  const MSG = "harborSetup";
+  const PROTO = 1;
+  const PARAM = "setup";
+  const TOKEN_LEN = 12;
+  const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  const STEP_ORDER = ["tmdb", "stremio", "harbor"];
+  // handoff-client.ts: must exceed the TV's 20 s apply timeout.
+  const ACK_TIMEOUT_MS = 26000;
+  // use-setup-link.ts IDLE_HOST_GRACE_MS
+  const IDLE_HOST_GRACE_MS = 20000;
+  const POLL_MS = 2000;
+  const TMDB_API_SETTINGS = "https://www.themoviedb.org/settings/api";
+  const TMDB_SIGNUP = "https://www.themoviedb.org/signup";
+  const STREMIO_API = "https://api.strem.io/api";
+  const HARBOR_IDENTITY = "https://harbor.site/themes/api/identity/api";
+  const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
+
+  function mint(n) {
+    const b = new Uint8Array(n);
+    crypto.getRandomValues(b);
+    let s = "";
+    for (let i = 0; i < n; i += 1) s += ALPHABET[b[i] % ALPHABET.length];
+    return s;
+  }
+
+  function normalizeCode(input) {
+    return String(input || "").toUpperCase().replace(/[^0-9A-Z]/g, "").replace(/O/g, "0").replace(/[IL]/g, "1");
+  }
+
+  function readToken() {
+    try {
+      const raw = new URLSearchParams(location.search).get(PARAM);
+      const code = normalizeCode(raw);
+      return code.length === TOKEN_LEN ? code : null;
+    } catch (e) { return null; }
+  }
+
+  // The TV binds one phone by this id; a reload in the same tab keeps it and re-claims.
+  function clientId() {
+    try {
+      const k = "harbor.handoff.client";
+      let v = sessionStorage.getItem(k);
+      if (!v || !/^[0-9A-Za-z]{8,32}$/.test(v)) { v = mint(16); sessionStorage.setItem(k, v); }
+      return v;
+    } catch (e) { return mint(16); }
+  }
+
+  const S = {
+    token: readToken(),
+    client: clientId(),
+    surface: location.pathname.indexOf("/remote") === 0 ? "typing" : "setup",
+    connection: "connecting",
+    failures: 0,
+    offer: null,
+    entry: null,
+    bound: false,
+    lastReject: null,
+    connectedAt: 0,
+    queue: null,
+    passed: [],
+    delivery: {},
+    reasons: {},
+    recovery: null,
+    saved: false,
+    left: false,
+    typedFinal: null,
+    form: { tmdbKey: "", email: "", password: "", username: "", hpassword: "", mode: "create", typed: null, code: "" },
+    errors: {},
+    busy: {},
+  };
+
+  // ------------------------------------------------------------------ transport
+
+  async function post(cmd, keepalive) {
+    const nonce = mint(8);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ACK_TIMEOUT_MS);
+    try {
+      const res = await fetch("/api/remote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ t: MSG, proto: PROTO, nonce, client: S.client, cmd }),
+        signal: ctrl.signal,
+        keepalive: !!keepalive,
+        cache: "no-store",
+      });
+      const msg = await res.json();
+      if (!msg || msg.t !== MSG) throw new Error("bad reply");
+      S.failures = 0;
+      if (S.connection !== "open") { S.connection = "open"; S.connectedAt = Date.now(); }
+      if (msg.surface === "typing" || msg.surface === "setup") S.surface = msg.surface;
+      S.offer = msg.offer || null;
+      if (msg.entry) S.entry = msg.entry;
+      markDone();
+      const ack = msg.ack;
+      if (!ack || ack.nonce !== nonce) return { ok: false, reason: "noOffer" };
+      return ack.ok ? { ok: true } : { ok: false, reason: ack.reason || "noOffer" };
+    } catch (e) {
+      if (e && e.name === "AbortError") return { ok: false, reason: "timeout" };
+      S.failures += 1;
+      if (S.failures >= 2 || S.connection === "connecting") { S.connection = "closed"; S.bound = false; }
+      return { ok: false, reason: "offline" };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function claim() {
+    const r = await post({ kind: "claim", token: S.token });
+    S.bound = r.ok;
+    if (!r.ok && r.reason !== "offline" && r.reason !== "timeout") S.lastReject = r.reason;
+    if (r.ok) S.lastReject = null;
+    return r;
+  }
+
+  /** One silent re-claim covers the TV having freed the binding (handoff-client.ts deliver). */
+  async function deliver(payload) {
+    let r = await post({ kind: "deliver", token: S.token, payload });
+    if (!r.ok && r.reason === "notBound") {
+      const again = await claim();
+      if (again.ok) r = await post({ kind: "deliver", token: S.token, payload });
+    }
+    return r;
+  }
+
+  function abandon() {
+    if (!S.token) return;
+    post({ kind: "abandon", token: S.token }, true);
+    S.bound = false;
+  }
+
+  // Polling stands in for the socket: each poll re-claims, which keeps the binding alive and
+  // hears about a replaced code as `expired`.
+  let pollTimer = 0;
+  let polling = false;
+  async function poll() {
+    pollTimer = 0;
+    if (!S.token || S.left || document.visibilityState === "hidden") return;
+    if (polling) return;
+    polling = true;
+    await claim();
+    polling = false;
+    render();
+    if (S.lastReject === "expired" || S.lastReject === "lockedOut") return;
+    pollTimer = setTimeout(poll, POLL_MS);
+  }
+  function startPolling() { if (!pollTimer) pollTimer = setTimeout(poll, 0); }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") startPolling();
+  });
+  window.addEventListener("pagehide", () => { if (!S.left) abandon(); });
+
+  // ------------------------------------------------------------------ setup link (use-setup-link.ts)
+
+  function markDone() {
+    const done = (S.offer && S.offer.done) || [];
+    for (const s of done) S.delivery[s] = "confirmed";
+    if (!S.queue && S.offer && Array.isArray(S.offer.pending)) {
+      // Taken once and held: the TV drops a step from `pending` the moment it lands.
+      S.queue = STEP_ORDER.filter((s) => S.offer.pending.indexOf(s) >= 0);
+    }
+  }
+
+  function stateFor(reason) {
+    if (reason === "timeout") return "timeout";
+    if (reason === "offline") return "offline";
+    return "rejected";
+  }
+
+  async function send(step, payload) {
+    S.delivery[step] = "sending";
+    S.reasons[step] = null;
+    render();
+    const r = await deliver(payload);
+    if (r.ok || r.reason === "stepDone") S.delivery[step] = "confirmed";
+    else { S.reasons[step] = r.reason; S.delivery[step] = stateFor(r.reason); }
+    render();
+  }
+
+  function pass(step) { if (S.passed.indexOf(step) < 0) S.passed.push(step); render(); }
+
+  function leave() {
+    abandon();
+    S.left = true;
+    render();
+  }
+
+  // ------------------------------------------------------------------ DOM helpers (textContent only)
+
+  const app = document.getElementById("app");
+
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    if (attrs) {
+      for (const k of Object.keys(attrs)) {
+        const v = attrs[k];
+        if (v == null || v === false) continue;
+        if (k === "class") el.className = v;
+        else if (k.slice(0, 2) === "on") el.addEventListener(k.slice(2), v);
+        else if (k === "value") el.value = v;
+        else el.setAttribute(k, v === true ? "" : String(v));
+      }
+    }
+    for (const kid of kids.flat()) {
+      if (kid == null || kid === false) continue;
+      el.appendChild(typeof kid === "string" ? document.createTextNode(kid) : kid);
+    }
+    return el;
+  }
+
+  function button(label, onclick, cls, disabled) {
+    return h("button", { type: "button", class: cls || "primary", onclick, disabled: !!disabled }, label);
+  }
+
+  function field(opts) {
+    const input = h("input", {
+      id: opts.id, type: opts.type || "text", value: opts.value || "", placeholder: opts.placeholder || null,
+      autocomplete: opts.autocomplete || "off", autocapitalize: "none", autocorrect: "off", spellcheck: "false",
+      inputmode: opts.inputmode || null, enterkeyhint: opts.enterkeyhint || null,
+      class: [opts.mono ? "mono" : "", opts.invalid ? "bad" : ""].join(" ").trim() || null,
+      oninput: (e) => opts.onInput(e.target.value),
+    });
+    return h("div", { class: "field" },
+      h("label", { for: opts.id }, opts.label),
+      input,
+      opts.hint ? h("div", { class: "hint" }, opts.hint) : null);
+  }
+
+  function statusPill() {
+    const on = S.connection === "open";
+    return h("div", { class: "top" },
+      h("span", { class: "brand" }, "Harbor"),
+      h("span", { class: on ? "pill ok" : "pill" }, on ? "Connected to your TV" : S.connection === "closed" ? "Not connected" : "Connecting…"));
+  }
+
+  function screen(title, body, content, actions) {
+    return [statusPill(), h("h1", null, title), body ? h("p", null, body) : null, content || null,
+      actions ? h("div", { class: "actions" }, actions) : null];
+  }
+
+  // setup-ui.tsx SetupDeliveryError
+  function deliveryError(step) {
+    const d = S.delivery[step];
+    const reason = S.reasons[step];
+    if (d === "timeout") return h("p", { class: "error" }, "Your TV did not confirm that. Check it is still on the setup screen.");
+    if (d === "offline") return h("p", { class: "error" }, "Lost the connection to your TV. Reconnecting.");
+    if (d !== "rejected") return null;
+    if (reason === "badPayload") return h("p", { class: "error" }, "Your TV would not accept that value. Check it for stray characters and try again.");
+    if (reason === "expired" || reason === "lockedOut" || reason === "noOffer") return h("p", { class: "error" }, "That code is no longer valid. Look at your TV for a new one.");
+    if (reason === "boundElsewhere") return h("p", { class: "error" }, "Another phone is already setting this TV up.");
+    if (reason === "applyFailed") return h("p", { class: "error" }, "Your TV could not use that. It may have been rejected on the TV's side.");
+    return h("p", { class: "error" }, "Your TV refused that. Try again.");
+  }
+
+  function resetIfStuck(step) {
+    const d = S.delivery[step];
+    if (d && d !== "confirmed" && d !== "sending") { S.delivery[step] = "idle"; S.reasons[step] = null; }
+  }
+
+  // ------------------------------------------------------------------ steps
+
+  function stepLine(step) {
+    const q = S.queue || [];
+    const i = q.indexOf(step);
+    return i >= 0 && q.length > 1 ? h("div", { class: "steps" }, "Step " + (i + 1) + " of " + q.length) : null;
+  }
+
+  // setup-tmdb.tsx
+  function looksLikeV4Token(key) { return key.indexOf("eyJ") === 0 || key.length > 60; }
+
+  async function checkKey(key) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch("https://api.themoviedb.org/3/configuration?api_key=" + encodeURIComponent(key), { signal: ctrl.signal, referrerPolicy: "no-referrer" });
+      return res.ok ? { ok: true } : { ok: false, kind: "rejected" };
+    } catch (e) {
+      return { ok: false, kind: "offline" };
+    } finally { clearTimeout(timer); }
+  }
+
+  function tmdbScreen() {
+    const d = S.delivery.tmdb || "idle";
+    if (d === "confirmed") {
+      return [stepLine("tmdb"), ...screen("TMDB is aboard.", null, h("p", { class: "okline" }, "TMDB is connected. Your TV has it."),
+        [button("Continue", () => pass("tmdb"))])];
+    }
+    const trimmed = S.form.tmdbKey.replace(/\s+/g, "");
+    const submit = async () => {
+      S.errors.tmdb = null;
+      if (!trimmed) return;
+      if (looksLikeV4Token(trimmed)) {
+        S.errors.tmdb = 'That looks like the v4 Read Access Token. Harbor needs the shorter "API Key (v3 auth)" from the same page.';
+        return render(true);
+      }
+      S.busy.tmdb = true; render(true);
+      const r = await checkKey(trimmed);
+      S.busy.tmdb = false;
+      if (r.ok) return send("tmdb", { step: "tmdb", key: trimmed });
+      S.errors.tmdb = r.kind === "rejected"
+        ? 'TMDB did not accept that key. Check you copied the "API Key (v3 auth)" value, not the read access token.'
+        : "Could not reach TMDB. Check your phone's connection and try again.";
+      render(true);
+    };
+    const content = h("form", { onsubmit: (e) => { e.preventDefault(); submit(); } },
+      h("div", { class: "card" },
+        h("a", { class: "link", href: TMDB_API_SETTINGS, target: "_blank", rel: "noreferrer noopener" }, "I already have a TMDB account", h("small", null, "Opens your API settings page")),
+        h("a", { class: "link", href: TMDB_SIGNUP, target: "_blank", rel: "noreferrer noopener" }, "I need to sign up", h("small", null, "Opens the free signup page"))),
+      h("div", { class: "card" }, h("h2", null, "Where to find the key"),
+        h("ol", null,
+          h("li", null, "On themoviedb.org, open Settings."),
+          h("li", null, "Choose API in the left sidebar."),
+          h("li", null, 'Select "Request an API key" and pick Developer.'),
+          h("li", null, 'Copy the value labelled "API Key (v3 auth)".'))),
+      h("div", { class: "card" }, field({
+        id: "tmdb-key", label: "API key", hint: "Long-press the box to paste.", value: S.form.tmdbKey, mono: true,
+        placeholder: "Paste your v3 API key", enterkeyhint: "go", invalid: !!S.errors.tmdb,
+        onInput: (v) => { S.form.tmdbKey = v; S.errors.tmdb = null; resetIfStuck("tmdb"); syncButtons(); },
+      })),
+      S.errors.tmdb ? h("p", { class: "error" }, S.errors.tmdb) : null,
+      deliveryError("tmdb"));
+    return [stepLine("tmdb"), ...screen("Connect TMDB",
+      "Free, about two minutes. It unlocks Trending, In Theaters, Top Rated and every streaming service row.", content,
+      [button(d === "sending" ? "Sending to your TV" : S.busy.tmdb ? "Checking…" : "Connect TMDB", submit, "primary js-go", !trimmed || d === "sending" || S.busy.tmdb),
+       button("Do this later", () => pass("tmdb"), "quiet")])];
+  }
+
+  // setup-stremio.tsx
+  async function stremioLogin(email, password) {
+    const res = await fetch(STREMIO_API + "/login", {
+      method: "POST", headers: { "Content-Type": "application/json" }, referrerPolicy: "no-referrer",
+      body: JSON.stringify({ email, password, facebook: false }),
+    });
+    const text = await res.text();
+    let json;
+    try { json = text ? JSON.parse(text) : {}; } catch (e) { throw new Error("stremio login " + res.status + ": invalid response"); }
+    if (json.error) throw new Error(json.error.message || "Request failed");
+    if (!res.ok || !json.result || !json.result.authKey) throw new Error("stremio login failed (" + res.status + ")");
+    return json.result;
+  }
+
+  function isReachFailure(e) {
+    if (e instanceof TypeError) return true;
+    return /failed to fetch|load failed|networkerror|invalid response|failed \(\d+\)/i.test((e && e.message) || "");
+  }
+
+  function stremioScreen() {
+    const d = S.delivery.stremio || "idle";
+    if (d === "confirmed") {
+      return [stepLine("stremio"), ...screen("Your library is aboard.", null, h("p", { class: "okline" }, "Signed in. Your library is on the TV."),
+        [button("Continue", () => pass("stremio"))])];
+    }
+    const ready = () => S.form.email.trim().length > 2 && S.form.password.length > 0;
+    const submit = async () => {
+      S.errors.stremio = null;
+      if (!ready()) return;
+      S.busy.stremio = true; render(true);
+      try {
+        const res = await stremioLogin(S.form.email.trim(), S.form.password);
+        S.form.password = "";
+        S.busy.stremio = false;
+        return send("stremio", { step: "stremio", authKey: res.authKey });
+      } catch (e) {
+        S.errors.stremio = isReachFailure(e)
+          ? "Could not reach Stremio. Check your phone's connection and try again."
+          : ((e && e.message) || "Stremio did not accept that email and password.");
+      }
+      S.busy.stremio = false;
+      render(true);
+    };
+    const content = h("form", { onsubmit: (e) => { e.preventDefault(); submit(); } },
+      h("div", { class: "card" },
+        field({ id: "st-email", label: "Email", type: "email", inputmode: "email", autocomplete: "email", placeholder: "you@example.com",
+          value: S.form.email, enterkeyhint: "next", invalid: !!S.errors.stremio,
+          onInput: (v) => { S.form.email = v; S.errors.stremio = null; syncButtons(); } }),
+        field({ id: "st-pass", label: "Password", type: "password", autocomplete: "current-password", value: S.form.password,
+          enterkeyhint: "go", invalid: !!S.errors.stremio,
+          onInput: (v) => { S.form.password = v; S.errors.stremio = null; resetIfStuck("stremio"); syncButtons(); } })),
+      h("p", null, "Your password stays on this phone. Only the sign-in token Stremio returns is sent to your TV."),
+      S.errors.stremio ? h("p", { class: "error" }, S.errors.stremio) : null,
+      deliveryError("stremio"));
+    return [stepLine("stremio"), ...screen("Bring in your Stremio library",
+      "Your Continue Watching, your watchlist and your addons, on this TV.", content,
+      [button(d === "sending" ? "Sending to your TV" : S.busy.stremio ? "Signing in…" : "Sign in", submit, "primary js-go", !ready() || d === "sending" || S.busy.stremio),
+       button("Not now", () => pass("stremio"), "quiet")])];
+  }
+
+  // setup-harbor.tsx
+  async function harborAuth(mode, username, password) {
+    const res = await fetch(HARBOR_IDENTITY + (mode === "create" ? "/register" : "/login"), {
+      method: "POST", headers: { "Content-Type": "application/json" }, referrerPolicy: "no-referrer",
+      body: JSON.stringify({ username, password }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(typeof d.error === "string" ? d.error : "Request failed (" + res.status + ").");
+      err.status = res.status;
+      throw err;
+    }
+    return d;
+  }
+
+  function harborSession(d) {
+    if (!d || typeof d.token !== "string" || !d.user) return null;
+    return { session: d.token, handle: d.user.handle || d.user.username, refresh: typeof d.refresh === "string" ? d.refresh : null };
+  }
+
+  function deliverHarbor(s) {
+    return send("harbor", { step: "harbor", session: s.session, handle: s.handle, refresh: s.refresh });
+  }
+
+  function harborScreen() {
+    const d = S.delivery.harbor || "idle";
+    if (d === "confirmed") {
+      return [stepLine("harbor"), ...screen("You are aboard.", null, h("p", { class: "okline" }, "Your Harbor account is signed in on the TV."),
+        [button("Continue", () => pass("harbor"))])];
+    }
+    const f = S.form;
+    const nameOk = USERNAME_RE.test(f.username);
+    const nameBad = f.username.length > 0 && !nameOk;
+    const ready = () => USERNAME_RE.test(f.username) && f.hpassword.length >= 6;
+    const submit = async () => {
+      S.errors.harbor = null;
+      if (!ready()) return;
+      S.busy.harbor = true; render(true);
+      try {
+        const res = await harborAuth(f.mode, f.username, f.hpassword);
+        f.hpassword = "";
+        const s = harborSession(res);
+        S.busy.harbor = false;
+        if (!s) {
+          S.errors.harbor = f.mode === "create"
+            ? "Harbor signed you up but returned no session. Try signing in instead."
+            : "Harbor accepted that but returned no session. Try again.";
+          return render(true);
+        }
+        if (f.mode === "create" && typeof res.recoveryCode === "string") {
+          S.recovery = { code: res.recoveryCode, session: s };
+          S.saved = false;
+          return render(true);
+        }
+        return deliverHarbor(s);
+      } catch (e) {
+        S.errors.harbor = (e instanceof TypeError || typeof (e && e.status) !== "number")
+          ? "Could not reach Harbor. Check your phone's connection and try again."
+          : ((e && e.message) || "That did not work. Check your details.");
+      }
+      S.busy.harbor = false;
+      render(true);
+    };
+    const tab = (m, label) => h("button", { type: "button", class: f.mode === m ? "on" : "", onclick: () => { f.mode = m; S.errors.harbor = null; render(true); } }, label);
+    const content = h("form", { onsubmit: (e) => { e.preventDefault(); submit(); } },
+      h("div", { class: "tabs" }, tab("create", "Create account"), tab("signin", "I have one")),
+      h("div", { class: "card" },
+        field({ id: "hb-user", label: "Username", hint: "3 to 24 characters. Letters, numbers and underscores.", autocomplete: "username",
+          value: f.username, enterkeyhint: "next", invalid: nameBad || !!S.errors.harbor,
+          onInput: (v) => { f.username = v; S.errors.harbor = null; syncButtons(); } }),
+        field({ id: "hb-pass", label: "Password", type: "password", hint: f.mode === "create" ? "At least 6 characters." : null,
+          autocomplete: f.mode === "create" ? "new-password" : "current-password", value: f.hpassword, enterkeyhint: "go", invalid: !!S.errors.harbor,
+          onInput: (v) => { f.hpassword = v; S.errors.harbor = null; resetIfStuck("harbor"); syncButtons(); } })),
+      nameBad ? h("p", { class: "error" }, "Usernames can only use letters, numbers and underscores, 3 to 24 long.") : null,
+      S.errors.harbor ? h("p", { class: "error" }, S.errors.harbor) : null,
+      deliveryError("harbor"));
+    const label = d === "sending" ? "Sending to your TV" : S.busy.harbor ? "Working…" : f.mode === "create" ? "Create account" : "Sign in";
+    return [stepLine("harbor"), ...screen("Your Harbor account",
+      "Syncs your profile, themes, lists and friends. Optional, and you can do it later.", content,
+      [button(label, submit, "primary js-go", !ready() || d === "sending" || S.busy.harbor),
+       button("Skip, I can do this later", () => pass("harbor"), "quiet")])];
+  }
+
+  // setup-recovery.tsx
+  async function copyText(value) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); return true; }
+    } catch (e) { /* fall through */ }
+    try {
+      const el = document.createElement("textarea");
+      el.value = value; el.setAttribute("readonly", ""); el.style.position = "fixed"; el.style.opacity = "0";
+      document.body.appendChild(el); el.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(el);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  function recoveryScreen() {
+    const r = S.recovery;
+    const content = [
+      h("div", { class: "code", "aria-label": "Recovery code" }, r.code),
+      h("div", { class: "actions" }, button(S.copied === "copied" ? "Copied" : "Copy code", async () => {
+        S.copied = (await copyText(r.code)) ? "copied" : "failed"; render(true);
+      }, "quiet")),
+      S.copied === "failed" ? h("p", null, "This browser blocked the copy. Long-press the code above, or write it down.") : null,
+      h("div", { class: "card" }, button(S.saved ? "✓ I have saved my recovery code" : "I have saved my recovery code", () => { S.saved = !S.saved; render(true); }, "quiet"),
+        h("p", { class: "hint" }, S.saved ? "Kept. Your TV gets your account when you continue." : "Nothing on your TV changes until you confirm you have saved this.")),
+    ];
+    return screen("Save your recovery code",
+      "This is the only way back into your account if you forget your password. It is shown once.", content,
+      [button("Continue", () => { const s = r.session; S.recovery = null; deliverHarbor(s); }, "primary", !S.saved)]);
+  }
+
+  const STEP_LABEL = { tmdb: "TMDB connected", stremio: "Stremio library signed in", harbor: "Harbor account signed in" };
+
+  function doneScreen() {
+    const landed = (S.queue || []).filter((s) => S.delivery[s] === "confirmed");
+    return [statusPill(), h("p", null, "You are done."), h("h1", null, "Look at your TV."),
+      landed.length ? h("div", { class: "card" }, landed.map((s) => h("div", { class: "row" }, h("span", { class: "tick" }, "✓"), h("span", null, STEP_LABEL[s])))) : null,
+      h("p", null, "Saved on that device. You can close this page.")];
+  }
+
+  // setup-states.tsx
+  function connectingScreen() {
+    return screen("Reaching your TV", "Waiting for your TV to hand over what it needs. This takes a moment.");
+  }
+  function unreachableScreen() {
+    return screen("This phone cannot reach your TV",
+      "Both devices need to be on the same Wi-Fi network, and some guest networks block devices from seeing each other.",
+      h("div", { class: "card" }, h("h2", null, "What usually fixes it"), h("ul", null,
+        h("li", null, "Turn off mobile data so your phone uses Wi-Fi."),
+        h("li", null, "Join the same network your TV is on, not the guest one."),
+        h("li", null, "If nothing works, everything here can be done on the TV itself."))),
+      [button("Try again", retry), button("Leave setup", leave, "quiet")]);
+  }
+  function idleHostScreen() {
+    return screen("Your TV is not asking for anything",
+      "This page works while your TV is showing its setup screen. Go back to that screen on the TV, then try again.", null,
+      [button("Try again", retry), button("Leave setup", leave, "quiet")]);
+  }
+  function expiredScreen() {
+    return screen("That code has expired", "Look at your TV. It is already showing a new code. Scan that one.", null,
+      [button("Leave setup", leave, "quiet")]);
+  }
+  function elsewhereScreen() {
+    return screen("Another phone is already setting this TV up.", "Finish on that phone, or close this page on it and try again here.", null,
+      [button("Try again", retry)]);
+  }
+  function leftScreen() {
+    return [statusPill(), h("h1", null, "You can close this page."), h("p", null, "Nothing more is sent to your TV from here.")];
+  }
+
+  // Port addition: someone who typed the short address on the TV lands here without the code.
+  function noTokenScreen() {
+    const go = () => {
+      const code = normalizeCode(S.form.code);
+      if (code.length !== TOKEN_LEN) { S.errors.code = "That code is 12 letters and numbers. Check it against your TV."; return render(true); }
+      S.token = code;
+      try { history.replaceState(null, "", location.pathname + "?" + PARAM + "=" + code); } catch (e) { /* cosmetic */ }
+      startPolling();
+      render(true);
+    };
+    return screen("Nothing to set up", "Open this page by scanning the code on your TV's setup screen.",
+      h("form", { onsubmit: (e) => { e.preventDefault(); go(); } },
+        h("div", { class: "card" }, field({ id: "code", label: "Or type the code on your TV", mono: true, value: S.form.code,
+          placeholder: "ABCD EFGH JKMN", enterkeyhint: "go", invalid: !!S.errors.code,
+          onInput: (v) => { S.form.code = v; S.errors.code = null; } })),
+        S.errors.code ? h("p", { class: "error" }, S.errors.code) : null),
+      [button("Continue", go)]);
+  }
+
+  function retry() {
+    S.connection = "connecting";
+    S.failures = 0;
+    S.connectedAt = Date.now();
+    S.lastReject = null;
+    startPolling();
+    render(true);
+  }
+
+  // ------------------------------------------------------------------ typing (remote-extras.tsx KeyboardOverlay)
+
+  let textTimer = 0;
+  let textInFlight = false;
+  let textQueued = null;
+  async function pushText() {
+    if (textInFlight) return;
+    while (textQueued !== null) {
+      const value = textQueued;
+      textQueued = null;
+      textInFlight = true;
+      await post({ kind: "text", token: S.token, action: "setText", value });
+      textInFlight = false;
+    }
+  }
+  function queueText(value) {
+    textQueued = value;
+    if (textTimer) clearTimeout(textTimer);
+    textTimer = setTimeout(() => { textTimer = 0; pushText(); }, 90);
+  }
+
+  function typingScreen() {
+    if (S.typedFinal) {
+      return [statusPill(), h("h1", null, S.typedFinal === "sent" ? "Sent. Look at your TV." : "Closed on your TV."),
+        h("p", null, "You can close this page.")];
+    }
+    const e = S.entry || {};
+    if (S.form.typed === null) S.form.typed = typeof e.value === "string" ? e.value : "";
+    const submit = async () => {
+      if (textTimer) { clearTimeout(textTimer); textTimer = 0; }
+      textQueued = null;
+      const r = await post({ kind: "text", token: S.token, action: "submitText", value: S.form.typed });
+      if (r.ok) { S.typedFinal = "sent"; S.left = true; }
+      render(true);
+    };
+    const done = async () => {
+      if (textTimer) { clearTimeout(textTimer); textTimer = 0; pushText(); }
+      await post({ kind: "text", token: S.token, action: "blurText" });
+      S.typedFinal = "closed"; S.left = true;
+      render(true);
+    };
+    const input = h("input", {
+      id: "typed", type: e.secure ? "password" : "text", value: S.form.typed, autofocus: true,
+      placeholder: e.placeholder || "Type to search…", autocomplete: "off", autocapitalize: "none", autocorrect: "off", spellcheck: "false",
+      enterkeyhint: "search", "aria-label": e.label || "Text",
+      oninput: (ev) => { S.form.typed = ev.target.value; queueText(ev.target.value); },
+      onkeydown: (ev) => { if (ev.key === "Enter") { ev.preventDefault(); submit(); } },
+    });
+    setTimeout(() => { try { input.focus(); } catch (err) { /* ignore */ } }, 40);
+    return [h("div", { class: "top" }, h("span", { class: "pill" + (S.connection === "open" ? " ok" : "") }, "Typing on your TV"),
+      h("button", { type: "button", class: "quiet", style: "width:auto;min-height:40px;margin:0;padding:0 16px", onclick: done }, "Done")),
+      e.label ? h("label", { for: "typed" }, e.label) : null,
+      h("div", { class: "typing" }, input),
+      h("div", { class: "actions" }, button("Send", submit))];
+  }
+
+  // ------------------------------------------------------------------ render
+
+  let lastKey = "";
+
+  // Buttons follow the fields without rebuilding the form (a rebuild would drop the keyboard).
+  function syncButtons() {
+    const go = app.querySelector(".js-go");
+    if (!go) return;
+    const step = currentStep();
+    const f = S.form;
+    let ok = true;
+    if (step === "tmdb") ok = !!f.tmdbKey.replace(/\s+/g, "");
+    if (step === "stremio") ok = f.email.trim().length > 2 && f.password.length > 0;
+    if (step === "harbor") ok = USERNAME_RE.test(f.username) && f.hpassword.length >= 6;
+    go.disabled = !ok || S.delivery[step] === "sending" || !!S.busy[step];
+  }
+
+  function currentStep() {
+    const q = S.queue || [];
+    return q.find((s) => S.passed.indexOf(s) < 0) || null;
+  }
+
+  function view() {
+    if (S.left && !S.typedFinal) return ["left", leftScreen];
+    if (!S.token) return ["notoken", noTokenScreen];
+    const expired = S.lastReject === "expired" || S.lastReject === "lockedOut" || (S.offer && S.offer.state === "expired");
+    if (S.surface === "typing") {
+      if (S.typedFinal) return ["typed-" + S.typedFinal, typingScreen];
+      if (expired) return ["expired", expiredScreen];
+      if (S.connection === "closed") return ["unreachable", unreachableScreen];
+      if (S.lastReject === "boundElsewhere") return ["elsewhere", elsewhereScreen];
+      if (!S.bound) return ["connecting", connectingScreen];
+      return ["typing", typingScreen];
+    }
+    const armed = S.offer !== null;
+    const queue = S.queue || [];
+    const active = currentStep();
+    const finished = queue.length > 0 && active === null;
+    if (S.connection === "closed" && !armed) return ["unreachable", unreachableScreen];
+    if (expired && !finished) return ["expired", expiredScreen];
+    if (!armed) {
+      const idle = S.connection === "open" && Date.now() - S.connectedAt > IDLE_HOST_GRACE_MS;
+      return idle ? ["idle", idleHostScreen] : ["connecting", connectingScreen];
+    }
+    if (S.lastReject === "boundElsewhere" && !S.bound) return ["elsewhere", elsewhereScreen];
+    if (S.recovery) return ["recovery", recoveryScreen];
+    if (finished || queue.length === 0) return ["done", doneScreen];
+    const d = S.delivery[active] || "idle";
+    const key = active + ":" + d + ":" + (S.reasons[active] || "");
+    if (active === "tmdb") return [key, tmdbScreen];
+    if (active === "stremio") return [key, stremioScreen];
+    return [key, harborScreen];
+  }
+
+  function render(force) {
+    const [key, build] = view();
+    if (!force && key === lastKey) { syncButtons(); return; }
+    lastKey = key;
+    const nodes = build().flat().filter(Boolean);
+    app.replaceChildren(...nodes);
+    syncButtons();
+  }
+
+  render(true);
+  if (S.token) startPolling();
+})();
+</script>
+</body>
+</html>

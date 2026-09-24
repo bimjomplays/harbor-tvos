@@ -2,7 +2,7 @@
 name = "harbor-ffi"
 version = "0.1.0"
 edition = "2021"
-description = "C ABI over harbor-core for the tvOS app."
+description = "C ABI over harbor-core and the librqbit torrent engine for the tvOS app."
 
 [lib]
 crate-type = ["staticlib", "rlib"]
@@ -10,9 +10,26 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 harbor-core = { path = "../../reference/harbor/harbor-core" }
 serde_json = "1"
+# Stage 6 torrent streaming: the same engine and pin as upstream src-tauri/Cargo.toml
+# (librqbit =8.1.1, rustls instead of native-tls, so nothing needs OpenSSL on tvOS).
+librqbit = { version = "=8.1.1", default-features = false, features = ["rust-tls"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+futures-util = "0.3"
+url = "2"
+
+# librqbit's SHA-1 comes from aws-lc-rs (C + asm) under `rust-tls`; the vendored wrapper swaps in
+# pure-Rust sha1 so the tvOS targets need no C crypto build. See rust/vendor/librqbit-sha1-wrapper.
+[patch.crates-io]
+librqbit-sha1-wrapper = { path = "../vendor/librqbit-sha1-wrapper" }
 
 [profile.release]
 opt-level = "s"
 lto = true
 codegen-units = 1
-panic = "abort"
+# Unwind, not abort: the torrent engine parses untrusted peer and tracker data on tokio tasks,
+# and tokio turns a panicking task into a JoinError instead of taking the whole app down.
+# Every torrent C entry point also catches unwinds (src/torrent/ffi.rs), so nothing crosses the ABI.
+panic = "unwind"

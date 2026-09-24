@@ -65,6 +65,7 @@ import * as cardsGlue from "./cards";
 import * as simklGlue from "./simkl";
 import * as anime4kGlue from "./anime4k";
 import * as sportsGlue from "./sports";
+import * as sportsEventGlue from "./sportsEvent";
 import * as settingsRoomGlue from "./settingsRoom";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
@@ -85,6 +86,8 @@ import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
 import * as letterboxdGlue from "./letterboxd";
+import * as calendarGlue from "./calendar";
+import * as wrappedGlue from "./wrapped";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -432,6 +435,9 @@ export const discoverRoom = {
   awardsInstalled: discoverBuilders.awardsInstalled,
   awards: discoverBuilders.awards,
   awardDetail: discoverBuilders.awardDetail,
+  animeAwardSources: discoverBuilders.animeAwardSources,
+  animeAward: discoverBuilders.animeAward,
+  animeAwardOpen: discoverBuilders.animeAwardOpen,
   people: discoverBuilders.people,
 };
 export type { DiscoverBuild, DiscoverRail, QueuePeek, GenreTile } from "./discover";
@@ -450,6 +456,7 @@ export const streamsRoom = {
   p2pConsentNeeded: streamGlue.p2pConsentNeeded,
   setP2pAutoConsent: streamGlue.setP2pAutoConsent,
   failureMessage: streamGlue.failureMessage,
+  p2pFileIdx: streamGlue.p2pFileIdx,
 };
 export type { StreamSearch } from "./streams";
 
@@ -457,6 +464,8 @@ export type { StreamSearch } from "./streams";
 export const collectionsRoom = {
   categories: collectionsGlue.categories,
   tmdb: collectionsGlue.tmdb,
+  curatedRow: collectionsGlue.curatedRow,
+  tmdbCard: collectionsGlue.tmdbCard,
   tvdb: collectionsGlue.tvdb,
   tvdbDetail: collectionsGlue.tvdbDetail,
   mine: collectionsGlue.mine,
@@ -500,6 +509,7 @@ export const account = {
   token: accountGlue.token,
   refreshIfDue: accountGlue.refreshIfDue,
   reloadUser: accountGlue.reloadUser,
+  adopt: accountGlue.adopt,
   start: accountGlue.start,
   stop: accountGlue.stop,
 };
@@ -523,6 +533,7 @@ export const sync = {
 /** Card marks for browse tiles (identity chip, watchlist, watched, Top 10 ribbon). */
 export const cards = {
   marks: cardsGlue.marks,
+  heroAwards: cardsGlue.heroAwards,
   setTop10: cardsGlue.setTop10,
   refreshWatchlist: cardsGlue.refreshWatchlist,
 };
@@ -568,6 +579,22 @@ export const sports = {
   watch: sportsGlue.watch,
   toggleAttachedChannel: sportsGlue.toggleAttachedChannel,
   recordChannelWatch: sportsGlue.recordChannelWatch,
+  clearAttachedStream: sportsGlue.clearAttachedStream,
+  officialBroadcasts: sportsGlue.officialBroadcasts,
+  // Event rows, where-to-watch, hero actions, reminders, api-sports key (engine/sportsEvent.ts).
+  eventRows: sportsEventGlue.eventRows,
+  where: sportsEventGlue.where,
+  actions: sportsEventGlue.actions,
+  toggleFollow: sportsEventGlue.toggleFollow,
+  toggleReminder: sportsEventGlue.toggleReminder,
+  reminders: sportsEventGlue.reminders,
+  runReminders: sportsEventGlue.runReminders,
+  startReminders: sportsEventGlue.startReminders,
+  webhooks: sportsEventGlue.webhooks,
+  setWebhooks: sportsEventGlue.setWebhooks,
+  testWebhook: sportsEventGlue.testWebhook,
+  apiSports: sportsEventGlue.apiSports,
+  setApiSportsKey: sportsEventGlue.setApiSportsKey,
 };
 
 /** Big Picture settings catalog: categories, controls per category, commit. */
@@ -657,6 +684,7 @@ export const animeDetail = { load: animeDetailGlue.load };
 /** bp-home "Your addons" band and the addon page: cards, catalogs, paged feeds. */
 export const addonsRoom = {
   cards: addonsRoomGlue.cards,
+  bandPosters: addonsRoomGlue.bandPosters,
   catalogs: addonsRoomGlue.catalogs,
   feed: addonsRoomGlue.feed,
 };
@@ -763,6 +791,29 @@ export const player = {
   decodeWatchedField: playerGlue.decodeWatchedField,
   /** Up-next lead, auto-advance and seek steps for the Big Picture chrome. */
   prefs: playerGlue.prefs,
+};
+
+/** Calendar room (views/calendar.tsx): one month per call, header prefs, the Custom rail, reminders. */
+export const calendar = {
+  month: calendarGlue.month,
+  setPref: calendarGlue.setPref,
+  customRail: calendarGlue.customRail,
+  customToggle: calendarGlue.customToggle,
+  reminders: calendarGlue.reminders,
+  removeReminder: calendarGlue.removeReminder,
+  unseen: calendarGlue.unseen,
+  clearUnseen: calendarGlue.clearUnseen,
+  checkReminders: calendarGlue.checkReminders,
+  startReminders: calendarGlue.startReminders,
+  stopReminders: calendarGlue.stopReminders,
+  remaining: calendarGlue.remaining,
+};
+
+/** Stats / Wrapped (views/wrapped.tsx): the year's stats, then posters/genres/people. */
+export const wrapped = {
+  load: wrappedGlue.load,
+  enrich: wrappedGlue.enrich,
+  enabled: wrappedGlue.enabled,
 };
 
 // ================================================================================== runtime

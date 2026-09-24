@@ -68,7 +68,7 @@ struct PasteTrackerPanel: View {
                         Text("1. Scan the code (or open the link) on your phone and sign in to \(model.label).").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                         Text(url).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(3)
                         Text("2. Copy the code it shows and paste it here (the iPhone keyboard for Apple TV can paste).").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                        BPField(label: "Code from \(model.label)", placeholder: "Paste the code or the whole page address", text: $pasted)
+                        BPField(label: "Code from \(model.label)", placeholder: "Paste the code or the whole page address", text: $pasted, phone: true)
                         HStack(spacing: BP.px(8)) {
                             Button(model.busy ? "Connecting…" : "Connect") { Task { await model.complete(pasted); pasted = "" } }
                                 .buttonStyle(BPActionStyle(primary: true)).disabled(model.busy || pasted.trimmingCharacters(in: .whitespaces).isEmpty)

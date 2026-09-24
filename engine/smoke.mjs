@@ -75,6 +75,94 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }
 
+// ----------------------------------- sports event rows, where, bell, broadcasts, api key (SP-1/4/7/8/11/12/13)
+{
+  const posts = [];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.sports.sources.v1", JSON.stringify({ channels: {}, streams: { "g-att": { url: "https://cdn.example.invalid/att.m3u8", kind: "hls", page: "https://page.example.invalid/x", title: "Attached", poster: "" } } })],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    if (req.method === "POST") posts.push(req);
+    return { status: req.method === "POST" ? 204 : 404, statusText: "", headers: {}, url: req.url, body: "" };
+  };
+  const S = rec.engine.sports;
+  S.accept();
+  const side = (id, name, abbr, score = "0") => ({ id, name, abbr, logo: "", score, winner: false });
+  const p = (id, name, position, starter, extra = {}) => ({ id, name, jersey: String(id).slice(-2), position, starter, goals: 0, yellowCards: 0, redCards: 0, ...extra });
+  const base = (league, extra) => ({ id: "g-" + league, league, state: "in", detail: "Live", home: side("h", "Home Side", "HOM", "2"), away: side("a", "Away Side", "AWY", "1"), startMs: Date.now() - 3600000, ...extra });
+  const det = (game, extra) => ({ ...game, homeRoster: [], awayRoster: [], homeStats: {}, awayStats: {}, allStats: [], events: [], ...extra });
+
+  const nba = base("NBA");
+  const five = (pre) => ["PG", "SG", "SF", "PF", "C"].map((pos, i) => p(`${pre}${i}`, `${pre.toUpperCase()} Player${i}`, pos, true));
+  const nbaRows = await S.eventRows(nba, det(nba, {
+    homeRoster: five("h"), awayRoster: five("a"),
+    allStats: [{ label: "Rebounds", homeValue: "30", awayValue: "10" }],
+    events: [{ id: "e1", time: "Q1 10:00", type: "other", text: "Jump ball won" }, { id: "e2", time: "Q1 9:40", type: "other", text: "Smith makes three point jumper" }],
+  }));
+  r.ok("sports.eventRows: live NBA shows the court, newest play first (a three is loud), stat share", nbaRows.stats && nbaRows.stats.title === "Live now" && nbaRows.stats.situation.kind === "court" && nbaRows.stats.situation.court.home.length === 5 && nbaRows.stats.situation.court.away[0].left === 63 && nbaRows.stats.plays.rows[0].id === "e2" && nbaRows.stats.plays.rows[0].loud === true && nbaRows.stats.plays.rows[0].icon === "three" && nbaRows.stats.team.lines[0].share === 25, JSON.stringify(nbaRows.stats && { t: nbaRows.stats.title, s: nbaRows.stats.situation, p: nbaRows.stats.plays && nbaRows.stats.plays.rows[0], l: nbaRows.stats.team }));
+  r.ok("sports.eventRows: rosters make the Lineups row, starters first", nbaRows.lineups && nbaRows.lineups.title === "Lineups" && nbaRows.lineups.home.starters === 5 && nbaRows.lineups.pitch === null, JSON.stringify(nbaRows.lineups && { t: nbaRows.lineups.title, s: nbaRows.lineups.home && nbaRows.lineups.home.starters }));
+
+  const mlb = base("MLB");
+  const mlbRows = await S.eventRows(mlb, det(mlb, { state: "in", homeRoster: [p("b1", "Babe Batter", "RF", true)], awayRoster: [p("p1", "Pat Pitcher", "P", true)], baseball: { balls: 2, strikes: 1, outs: 2, batterId: "b1", pitcherId: "p1", onSecondId: "b1" } }));
+  const dia = mlbRows.stats && mlbRows.stats.situation && mlbRows.stats.situation.diamond;
+  r.ok("sports.eventRows: live MLB shows the diamond (bases, count, batter, pitcher)", dia && JSON.stringify(dia.bases) === "[false,true,false]" && dia.balls === 2 && dia.outs === 2 && dia.batter === "Babe Batter" && dia.pitcher === "Pat Pitcher" && dia.runners === "Second base: Babe Batter" && mlbRows.stats.situation.caption === "On the diamond", JSON.stringify(mlbRows.stats));
+
+  const nfl = base("NFL");
+  const nflRows = await S.eventRows(nfl, det(nfl, { football: { source: "situation", down: 3, distance: 7, possessionTeamId: "a", yardLine: 50, yardLineText: "AWY 50" } }));
+  const fld = nflRows.stats && nflRows.stats.situation && nflRows.stats.situation.field;
+  r.ok("sports.eventRows: NFL shows the field with the ball marker at midfield", fld && fld.down === 3 && fld.distance === 7 && fld.owner.abbr === "AWY" && fld.marker === 50 && fld.yardLine === "AWY 50", JSON.stringify(nflRows.stats));
+
+  const epl = base("EPL");
+  const xi = (pre) => [p(`${pre}0`, `${pre} Keeper`, "G", true), ...Array.from({ length: 10 }, (_, i) => p(`${pre}${i + 1}`, `${pre} Out${i}`, i < 4 ? "D" : i < 7 ? "M" : "F", true)), p(`${pre}99`, `${pre} Bench`, "F", false)];
+  const eplRows = await S.eventRows(epl, det(epl, {
+    homeRoster: xi("h"), awayRoster: xi("a"), homeFormation: "4-3-3", awayFormation: "4-3-3",
+    playerStats: [{ teamId: "h", name: "Batting", labels: ["A", "B", "C", "D", "E", "F", "G"], descriptions: [], rows: [{ player: p("h1", "Hank One", "D", true), values: ["1", "2", "3", "4", "5", "6", "7"] }] }],
+    events: [{ id: "g1", time: "12'", type: "goal", text: "Goal! h Out8 scores", teamId: "h", participantName: "h Out8" }],
+  }));
+  const pitch = eplRows.lineups && eplRows.lineups.pitch;
+  r.ok("sports.eventRows: soccer lineups draw the pitch (22 spots, formations, bench) and player tables", pitch && pitch.spots.length === 22 && pitch.homeFormation === "4-3-3" && pitch.bench.length === 2 && pitch.spots.every((s) => s.left >= 0 && s.left <= 100) && eplRows.lineups.title === "Lineups and player statistics" && eplRows.lineups.players[0].labels.length === 6 && eplRows.lineups.players[0].trimmed === 1 && eplRows.lineups.players[0].heading === "Home Side · Batting", JSON.stringify(eplRows.lineups && { pitch: pitch && [pitch.spots.length, pitch.homeFormation, pitch.bench], players: eplRows.lineups.players }));
+  r.eq("sports.eventRows: no detail, no rows", await S.eventRows({ ...base("NBA"), id: "none", source: "nowhere" }, null).then((x) => [x.stats, x.lineups]).catch(() => "threw"), [null, null]);
+
+  const ufc = base("UFC", { state: "pre", startMs: Date.now() + 3600000, context: { id: "c", name: "UFC 999", round: "", draw: "", venue: "T-Mobile Arena", major: true } });
+  const wh = await S.where(ufc);
+  r.ok("sports.where: UFC lists Fight Pass (so no guide fallback) and the venue cell", wh && wh.marks.some((m) => m.id === "ufc" && m.note === "Check event availability") && !wh.marks.some((m) => m.url === "https://www.ufc.com/watch") && wh.venue && wh.venue.name === "T-Mobile Arena" && wh.title === "Venue and where to watch" && /does not bypass/.test(wh.note), JSON.stringify(wh));
+  const f1w = await S.where(base("F1", { home: side("", "", ""), away: side("", "", ""), context: { id: "r", name: "Monaco Grand Prix", round: "", draw: "", venue: "", major: true } }));
+  r.ok("sports.where: F1 adds the country broadcaster guide tile", f1w && f1w.marks.some((m) => m.id === "f1" && m.name === "Find your country's F1 broadcaster"), JSON.stringify(f1w && f1w.marks));
+
+  // SP-4: the bell asks for a webhook first, then arms a 15 minute reminder the loop delivers once.
+  const soon = base("NBA", { id: "g-soon", state: "pre", startMs: Date.now() + 60 * 60000 });
+  const a0 = S.actions(soon);
+  r.ok("sports.actions: the bell says Set up reminders without a webhook; both NBA sides can be followed", a0.reminder && a0.reminder.setup === true && a0.reminder.label === "Set up reminders" && a0.follow.length === 2 && a0.follow[0].label === "Follow Away Side", JSON.stringify(a0));
+  r.eq("sports.toggleReminder without a webhook asks for setup", S.toggleReminder(soon).state, "setup");
+  S.setWebhooks("https://discord.example.invalid/api/webhooks/1/x", "");
+  r.eq("sports.setWebhooks keeps the rest of settings.webhooks", [S.webhooks().discordUrl !== "", rec.engine.settings.load("harbor.settings.shared").webhooks.notifyMovies], [true, true]);
+  r.eq("sports.toggleReminder arms a reminder", S.toggleReminder(soon).state, "set");
+  r.eq("sports.actions shows Reminder set", S.actions(soon).reminder.label, "Reminder set");
+  r.eq("sports.runReminders sends nothing before the 15 minute lead", await S.runReminders(), 0);
+  const stored = JSON.parse(rec.run('localStorage.getItem("harbor.sports.reminders.v1")'));
+  stored[0].startMs = Date.now() + 5 * 60000;
+  rec.run(`localStorage.setItem("harbor.sports.reminders.v1", ${JSON.stringify(JSON.stringify(stored))})`);
+  r.eq("sports.runReminders delivers the due Discord webhook once", [await S.runReminders(), await S.runReminders()], [1, 0]);
+  r.ok("the Discord webhook carries upstream's reminder text", posts.length === 1 && /Harbor Sports · NBA/.test(posts[0].body) && /Starts in 5 minutes/.test(posts[0].body), JSON.stringify(posts.map((x) => x.body)));
+  r.eq("sports.testWebhook sends upstream's test message; Telegram without a URL says so", [await S.testWebhook("discord"), /Harbor test message \(Discord\)/.test(posts[1] && posts[1].body), (await S.testWebhook("telegram")).message], [{ ok: true, message: "Sent. Check your channel." }, true, "No URL configured"]);
+  r.eq("sports.toggleReminder clears a set reminder", [S.toggleReminder(soon).state, S.reminders().length], ["cleared", 0]);
+  r.eq("sports.toggleFollow follows a side", [S.toggleFollow(soon, "home"), S.actions(soon).follow[1].label], [true, "Following Home Side"]);
+
+  // SP-7 / SP-13: the watch plan follows bp-sports-watch (attached stream, official broadcasts).
+  const att = await S.watch({ ...base("NBA"), id: "g-att" }, null);
+  r.ok("sports.watch plays an attached stream first", att.plan === "stream" && att.label === "Watch" && att.attachedStream.url === "https://cdn.example.invalid/att.m3u8", JSON.stringify({ plan: att.plan, s: att.attachedStream }));
+  r.eq("sports.clearAttachedStream drops it (a channel pick replaces it)", [S.clearAttachedStream("g-att"), (await S.watch({ ...base("NBA"), id: "g-att" }, null)).plan], [true, "setup"]);
+  const rl = await S.watch(base("RLCS", { home: side("1", "Team One", "ONE"), away: side("2", "Team Two", "TWO") }), null);
+  r.ok("sports.watch: RLCS plans the official broadcast; Twitch opens its Apple TV app", rl.plan === "broadcast" && rl.broadcasts[0].platform === "twitch" && rl.broadcasts[0].app === "twitch://stream/RocketLeague" && rl.broadcasts[0].platformLabel === "Twitch", JSON.stringify({ plan: rl.plan, label: rl.label, b: rl.broadcasts }));
+
+  // SP-12: the api-sports key lives in the secret tier key and is additive.
+  const api0 = S.apiSports();
+  r.ok("sports.apiSports lists the four key leagues with no key saved", api0.saved === false && api0.leagues.length === 4, JSON.stringify(api0));
+  r.eq("sports.setApiSportsKey saves under the secret-store key and clears", [S.setApiSportsKey(" abc123 ").ok, S.apiSports().length, rec.run('localStorage.getItem("harbor.sports.api-sports.v1")'), S.setApiSportsKey("").ok, S.apiSports().saved], [true, 6, "abc123", true, false]);
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------ settings
 const defaults = engine.settings.DEFAULT;
 r.ok("settings.DEFAULT is a populated object", Object.keys(defaults).length > 50, `${Object.keys(defaults).length} keys`);
@@ -234,6 +322,31 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------- TV hand-off: account.adopt (recorded host)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const seen = [];
+  rec.node.host.fetch = async (req) => {
+    seen.push([req.url, JSON.stringify(req.headers || {})]);
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Unauthorized", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/identity/api/me")) {
+      return JSON.stringify(req.headers || {}).includes("tok_phone")
+        ? json({ user: { id: "u_phone", username: "deckhand", handle: "deckhand" } })
+        : json({ error: "unauthorized" }, 401);
+    }
+    return json({ error: "not_found" }, 404);
+  };
+  const adopted = await rec.engine.account.adopt("tok_phone", "deckhand", "ref_phone");
+  r.ok("account.adopt applies the phone's session with the server's user", adopted && adopted.user.id === "u_phone" && adopted.token === "tok_phone" && adopted.hasRefresh === true, JSON.stringify(adopted));
+  r.ok("account.adopt asked /identity/api/me with the delivered bearer", seen.some(([u, h]) => u.endsWith("/themes/api/identity/api/me") && h.includes("Bearer tok_phone")), JSON.stringify(seen));
+  const refused = await rec.engine.account.adopt("tok_bad", "deckhand", null).then(() => "applied", (e) => String(e && e.message));
+  r.ok("account.adopt refuses a token that does not resolve to a user", refused.includes("harbor-api:") && refused.includes("401"), refused);
+  r.ok("a refused adopt leaves the earlier session in place", rec.engine.account.session() && rec.engine.account.session().user.id === "u_phone");
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------- anime4k
 {
   r.eq("anime4k.files lists the 11 shaders", engine.anime4k.files().length, 11);
@@ -297,6 +410,49 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   ], "default", true);
   r.ok("detailRoom.episodeArt: the meta's still leads an episode no provider has, metahub last", art.a[0] === "https://example.invalid/s1e1.jpg" && /episodes\.metahub\.space\/tt0903747\/1\/1\//.test(art.a[art.a.length - 1]), JSON.stringify(art.a));
   r.ok("detailRoom.episodeArt: TVDB proxy before ani.zip before metahub for a gap", /thetvdb/.test(art.b[0]) && art.b[1] === "https://img.anizip.example/2.jpg" && /metahub/.test(art.b[2]) && art.b.length === 3, JSON.stringify(art.b));
+  rec.dispose();
+}
+
+// ------------------------------------------------ P2P handoff to the TV's torrent engine (Stage 6)
+// resolveStream's local-engine attempt has no Tauri here; the outcome carries a P2pPlan instead.
+{
+  const base = "https://torrents.example.invalid";
+  const manifest = { id: "org.example.torrents", version: "1.0.0", name: "Torrents", resources: ["stream"], types: ["movie"], idPrefixes: ["tt"], catalogs: [] };
+  const hash = "0123456789abcdef0123456789abcdef01234567";
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.installed-addons.default", JSON.stringify([{ transportUrl: `${base}/manifest.json`, manifest }])],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === `${base}/manifest.json`) return json(manifest);
+    if (req.url.startsWith(`${base}/stream/movie/tt0111161`)) return json({ streams: [
+      { name: "Torrents\n1080p", title: "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP\n👤 42 💾 2.1 GB", infoHash: hash, fileIdx: 1, sources: [`tracker:udp://tracker.example.invalid:1337/announce`, `dht:${hash}`] },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  const film = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption" };
+  const found = await e.streamsRoom.search("p2p", "default", true, null, film, null);
+  const idx = (found.result?.picker.all ?? []).findIndex((s) => s.infoHash === hash);
+  r.ok("P2P: the addon's torrent reaches the picker", idx >= 0, JSON.stringify(found.result?.picker.all?.map((s) => s.infoHash) ?? found.error));
+  if (idx >= 0) {
+    r.eq("P2P: an uncached torrent with no debrid asks for consent", e.streamsRoom.p2pConsentNeeded("p2p", "default", true, idx, false), true);
+    r.eq("P2P: a kid profile never asks", e.streamsRoom.p2pConsentNeeded("p2p", "default", true, idx, true), false);
+    const out = await e.streamsRoom.resolve("default", true, "p2p", idx, true, true);
+    r.ok("P2P: resolve hands the torrent to the TV engine with a plan", out.ok === false && out.code === "engine-not-ready" && out.p2p?.infoHash === hash && out.p2p.fileIdx === 1 && out.p2p.trackers[0] === "udp://tracker.example.invalid:1337/announce" && out.p2p.magnet === `magnet:?xt=urn:btih:${hash}` && out.p2p.debridFallback === false, JSON.stringify(out));
+    const plain = await e.streamsRoom.resolve("default", true, "p2p", idx, true, false);
+    r.ok("P2P: the no-debrid fallback carries the plan too", plain.ok === false && plain.p2p?.infoHash === hash, JSON.stringify(plain));
+    e.settings.patch({ torrentsDisabled: true });
+    const off = await e.streamsRoom.resolve("default", true, "p2p", idx, true, true);
+    r.ok("P2P: torrentsDisabled leaves no plan and no consent", off.ok === false && off.p2p === undefined && e.streamsRoom.p2pConsentNeeded("p2p", "default", true, idx, false) === false, JSON.stringify(off));
+    e.settings.patch({ torrentsDisabled: false, directTorrentStream: false });
+    const direct = await e.streamsRoom.resolve("default", true, "p2p", idx, true, false);
+    r.ok("P2P: directTorrentStream off leaves no plan", direct.ok === false && direct.p2p === undefined, JSON.stringify(direct));
+    e.settings.patch({ directTorrentStream: true });
+  }
+  const files = [{ idx: 0, name: "sample.mkv", length: 10 }, { idx: 1, name: "Show.S01E02.1080p.mkv", length: 900 }, { idx: 2, name: "Show.S01E03.1080p.mkv", length: 1000 }, { idx: 3, name: "info.nfo", length: 5000 }];
+  r.eq("P2P: p2pFileIdx picks the episode's file, else the largest video", [e.streamsRoom.p2pFileIdx(files, 1, 2), e.streamsRoom.p2pFileIdx(files, null, null), e.streamsRoom.p2pFileIdx([{ idx: 0, name: "a.nfo", length: 3 }], 1, 1)], [1, 2, 0]);
   rec.dispose();
 }
 
@@ -442,6 +598,93 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.libraryRoom.setSort("year", "default", true);
   r.eq("libraryRoom.setSort persists", engine.settings.load().librarySort, "year");
   engine.libraryRoom.setSort("recent", "default", true);
+}
+
+// -------------------------------------------- calendar, reminders, stats (recorded host)
+{
+  const T0 = Date.now();
+  const d = new Date();
+  const y = d.getFullYear(), m = d.getMonth();
+  const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  const mid = iso(new Date(y, m, 15));
+  const thisMonth = `gte=${iso(new Date(y, m, 1))}`;
+  const cal = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.playback-history.v1.default", JSON.stringify({
+      "tt0903747|1:1": { savedAt: T0 - 86400000, title: "Breaking Bad" },
+      "tt0903747|1:2": { savedAt: T0 - 86000000, title: "Breaking Bad" },
+      "tt0111161": { savedAt: T0 - 3600000, title: "The Shawshank Redemption" },
+    })],
+  ]) });
+  cal.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.includes("api.themoviedb.org/3/discover/movie") && req.url.includes("page=1") && req.url.includes(thisMonth)) return json({ results: [
+      { id: 101, title: "Future Film", release_date: mid, poster_path: "/p.jpg", vote_average: 7.2, genre_ids: [28], overview: "A film." },
+    ] });
+    if (req.url.includes("api.themoviedb.org/3/discover/tv") && req.url.includes("page=1") && req.url.includes(thisMonth)) return json({ results: [
+      { id: 202, name: "New Show", first_air_date: mid, poster_path: null, vote_average: 0, genre_ids: [18] },
+    ] });
+    if (req.url.includes("api.themoviedb.org")) return json({ results: [] });
+    if (req.url === "https://v3-cinemeta.strem.io/meta/series/tt9999999.json") return json({ meta: { id: "tt9999999", type: "series", name: "Remind Show", videos: [
+      { season: 1, episode: 1, released: new Date(T0 - 30 * 86400000).toISOString() },
+      { season: 1, episode: 2, released: new Date(T0 + 3600000).toISOString() },
+    ] } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = cal.engine;
+  const signedOut = await E.calendar.month({ profileId: "default", linked: true, authKey: null, year: y, month: m });
+  r.ok("calendar.month: My library signed out asks to sign in, 42 cells, 7 weekdays", signedOut.source === "library" && signedOut.status === "not-signed-in" && signedOut.cells.length === 42 && signedOut.weekdays.length === 7 && signedOut.weekdays[0] === "Sun", JSON.stringify({ s: signedOut.status, c: signedOut.cells.length, w: signedOut.weekdays }));
+  r.eq("calendar.month: switcher hides My Trakt / My Simkl / Simkl premieres while disconnected", signedOut.sources.map((s) => s.id), ["library", "all", "anticipated", "anime", "custom"]);
+  E.calendar.setPref("default", true, { calendarSource: "all", weekStartsMonday: true });
+  const noKey = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+  r.ok("calendar.month: All upcoming without a TMDB key shows the key state; week starts Monday", noKey.status === "no-key" && noKey.weekdays[0] === "Mon" && noKey.watchlistToggle === true, JSON.stringify({ s: noKey.status, w: noKey.weekdays[0] }));
+  E.settings.patch({ tmdbKey: "k" }, E.settings.sourceKeyFor("default", true));
+  const all = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+  const day = all.cells.find((c) => c.iso === mid);
+  r.ok("calendar.month: All upcoming groups TMDB releases on their day with Meta and tag", all.status === "ready" && all.total === 2 && day && day.inMonth && day.items.length === 2 && day.items.some((i) => i.meta.id === "tmdb:movie:101" && i.meta.type === "movie" && i.tag === "Movie" && i.poster.endsWith("/p.jpg")) && day.items.some((i) => i.meta.type === "series" && i.poster === null), JSON.stringify(day));
+  r.eq("calendar.month: filter chips (no Anime on All upcoming) with counts", all.filters.map((f) => `${f.id}:${f.count}`), ["all:2", "movie:1", "tv:1"]);
+  const movies = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m, filter: "movie" });
+  r.ok("calendar.month: the Movies filter narrows the grid", movies.total === 1 && movies.filter === "movie", JSON.stringify({ t: movies.total }));
+  const later = await E.calendar.month({ profileId: "default", linked: true, year: y + 1, month: 0 });
+  r.eq("calendar.month: an empty month carries upstream's empty copy", [later.status, later.emptyHeading], ["empty", "Nothing this month"]);
+  r.ok("calendar.month: month label and 0-based month", later.monthLabel === `January ${y + 1}` && later.month === 0, later.monthLabel);
+
+  E.calendar.setPref("default", true, { calendarSource: "custom" });
+  let rail = E.calendar.customRail("default", true);
+  r.ok("calendar.customRail: no filters yet, three media types on, Trakt watchlist needs Trakt", rail.activeCount === 0 && rail.summary === "No filters yet" && rail.mediaTypes.every((c) => c.selected) && rail.trakt[1].disabled === true && rail.groups.map((g) => g.id).join() === "genres,providers,countries,people", JSON.stringify(rail.summary));
+  rail = E.calendar.customToggle("default", true, "genre:movie:28");
+  rail = E.calendar.customToggle("default", true, "prov:8");
+  rail = E.calendar.customToggle("default", true, "media:anime");
+  r.ok("calendar.customToggle: genre + provider count, media type flips", rail.activeCount === 2 && rail.groups[0].count === 1 && rail.groups[0].chips.find((c) => c.key === "genre:movie:28").selected && rail.mediaTypes[2].selected === false && /1 genre/.test(rail.summary), JSON.stringify(rail.summary));
+  r.ok("calendar.customToggle: the stored genre keeps upstream's shape", JSON.stringify(E.settings.loadForProfile("default", true).customCalendar.genres) === JSON.stringify([{ id: 28, name: "Action", mediaType: "movie" }]), JSON.stringify(E.settings.loadForProfile("default", true).customCalendar.genres));
+  const custom = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+  r.ok("calendar.month: Custom source reports the rail summary", custom.source === "custom" && custom.custom && custom.custom.activeCount === 2, JSON.stringify(custom.custom));
+  rail = E.calendar.customToggle("default", true, "clear");
+  r.eq("calendar.customToggle clear resets the filters", rail.activeCount, 0);
+
+  r.eq("calendar.reminders starts empty", E.calendar.reminders().length, 0);
+  E.actions.toggleReminder({ id: "tt9999999", type: "series", name: "Remind Show" });
+  const rem = E.calendar.reminders();
+  r.ok("calendar.reminders lists the Detail reminder with the manager's summary", rem.length === 1 && rem[0].summary === "Episodes + Seasons · Chime" && rem[0].unseen === false, JSON.stringify(rem));
+  const fired = [];
+  const off = E.runtime.onEvent((type, detail) => { if (type === "harbor:reminder-fired") fired.push(detail); });
+  const first = await E.calendar.checkReminders("default", true, T0 + 1000);
+  r.eq("calendar.checkReminders: the first check only records what already aired", [first, fired.length], [0, 0]);
+  const second = await E.calendar.checkReminders("default", true, T0 + 2 * 3600000);
+  off();
+  r.ok("calendar.checkReminders: a new episode inside the day window fires once", second === 1 && fired.length === 1 && fired[0].text === "Remind Show: S1 E2 is out now", JSON.stringify(fired));
+  const un = E.calendar.unseen();
+  r.ok("calendar.unseen counts it and keeps the message", un.count === 1 && un.fired[0].body === "S1 E2 is out now" && E.calendar.reminders()[0].unseen === true, JSON.stringify(un));
+  const cleared = E.calendar.clearUnseen();
+  r.ok("calendar.clearUnseen hands the messages over once", cleared.length === 1 && E.calendar.unseen().count === 0, JSON.stringify(cleared));
+  r.eq("calendar.removeReminder", E.calendar.removeReminder("tt9999999").length, 0);
+  r.eq("calendar.remaining formats a countdown like use-now", E.calendar.remaining((2 * 1440 + 3 * 60 + 5) * 60000), "2d 3h 5m");
+
+  const stats = await E.wrapped.load();
+  r.ok("wrapped.load aggregates local history (plays, titles, split, heatmap weeks)", stats && stats.source === "local" && stats.totalPlays === 3 && stats.totalTitles === 2 && stats.split.series === 3 && stats.topTitles[0].id === "tt0903747" && stats.topTitles[0].count === 2 && stats.heatWeeks.length === 52 && stats.heatWeeks[0].length === 7, JSON.stringify(stats && { s: stats.source, p: stats.totalPlays, t: stats.totalTitles, split: stats.split }));
+  r.ok("wrapped.load: archetype and highlights come from upstream's rules", stats && stats.archetype.id === "serialist" && stats.archetype.label === "The Series Slayer" && stats.longestBinge.count >= 1 && typeof stats.bingeDate === "string", JSON.stringify(stats && stats.archetype));
+  r.eq("wrapped.enabled follows settings.wrappedButton", E.wrapped.enabled("default", true), true);
+  cal.dispose();
 }
 
 // ---------------------------- collections editing, TVDB lists, Letterboxd, library repair
@@ -740,6 +983,26 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// -------------------------------- Home / Discover / Anime bands (HM-1, HM-4, HM-5, DS-3)
+{
+  r.eq("collectionsRoom.curatedRow is empty without a TMDB key (bp-home showCollections)", await engine.collectionsRoom.curatedRow("default", true, 30), []);
+  r.eq("collectionsRoom.tmdbCard is null without a TMDB key", await engine.collectionsRoom.tmdbCard("default", true, 10, "Star Wars Collection"), null);
+  r.eq("addonsRoom.bandPosters for an unknown base is empty (below the 14-poster mosaic floor)", await engine.addonsRoom.bandPosters("https://nowhere.invalid"), []);
+  const srcs = engine.discoverRoom.animeAwardSources();
+  r.ok("discoverRoom.animeAwardSources: five bundled sources, Crunchyroll first, with winners", srcs.length === 5 && srcs[0].id === "crunchyroll" && srcs[0].name === "Crunchyroll Anime Awards" && srcs.every((x) => typeof x.wins === "number") && srcs[0].wins > 20, JSON.stringify(srcs));
+  const cr = engine.discoverRoom.animeAward("crunchyroll");
+  r.ok("discoverRoom.animeAward: the Grand category first, winners newest first", cr.categories[0].isAOTY && cr.categories[0].winners.every((w, i, a) => i === 0 || a[i - 1].year >= w.year), JSON.stringify(cr.categories[0].winners.slice(0, 3)));
+  r.ok("discoverRoom.animeAward: per-year counts add up to the recorded winners", cr.perYear.reduce((n, y) => n + y.count, 0) === cr.totalWins && cr.years.length === cr.perYear.length && /^\d{4} - \d{4}$/.test(cr.yearSpan), JSON.stringify({ total: cr.totalWins, span: cr.yearSpan }));
+  r.eq("discoverRoom.animeAward falls back to Crunchyroll for an unknown source", engine.discoverRoom.animeAward("nope").id, "crunchyroll");
+  r.ok("discoverRoom.animeAward marks winners that map to an anime id", cr.categories[0].winners.some((w) => w.mapped));
+  const opened = await engine.discoverRoom.animeAwardOpen("Demon Slayer: Kimetsu no Yaiba", 2020, "default", true);
+  r.ok("discoverRoom.animeAwardOpen opens a mapped winner by its kitsu id without TMDB", opened && opened.id === "kitsu:41370" && opened.type === "series", JSON.stringify(opened));
+  r.eq("discoverRoom.animeAwardOpen: an unmapped winner without a TMDB key stays inert", await engine.discoverRoom.animeAwardOpen("Some Unknown Short Film", 2019, "default", true), null);
+  const corner = await engine.cards.heroAwards({ id: "kitsu:41370", type: "series", name: "Demon Slayer: Kimetsu no Yaiba", releaseInfo: "2019" });
+  r.ok("cards.heroAwards: an anime winner reads the bundled anime wins", corner && corner.kind === "anime" && / Winner$/.test(corner.headline) && corner.won && corner.lines.length >= 1, JSON.stringify(corner));
+  r.eq("cards.heroAwards: a title with no awards has no corner", await engine.cards.heroAwards({ id: "tmdb:movie:1", type: "movie", name: "Nothing Won Here", releaseInfo: "2001" }), null);
+}
+
 // ----------------------------------------------- player chrome + subtitle panel (recorded host)
 // bp-player-subtitles / bp-subtitle-find / bp-subtitle-tune: track rows, Find more over a fake
 // Cinemeta + OpenSubtitles v3, presets; player.prefs for the up-next lead and seek steps.
@@ -988,7 +1251,7 @@ if (!OFFLINE) {
   }
   if (anyGame) {
     const w = await r.timed("sports.watch(first game, no Live TV source)", () => engine.sports.watch(anyGame));
-    r.ok("sports.watch plans setup without playlists and lists providers", (w.plan === "setup" || w.plan === "finished") && Array.isArray(w.providers) && typeof w.fixture === "string" && w.channels.length === 0, JSON.stringify({ plan: w.plan, fixture: w.fixture, providers: w.providers.map((p) => p.name) }));
+    r.ok("sports.watch plans setup without playlists and lists providers", ["setup", "finished", "broadcast"].includes(w.plan) && Array.isArray(w.providers) && typeof w.fixture === "string" && w.channels.length === 0, JSON.stringify({ plan: w.plan, fixture: w.fixture, providers: w.providers.map((p) => p.name) }));
   }
   engine.sports.setLeagues(["NBA", "EPL"]);
   r.ok("sports.setLeagues personalizes both stores", engine.sports.catalog().selected.join(",") === "NBA,EPL" && engine.sports.catalog().personalized === true);

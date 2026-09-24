@@ -22,7 +22,7 @@ jobs:
   screens:
     name: Simulator build and screenshots
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 60  # first librqbit build for two tvOS targets is slow; cached after
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,7 +94,7 @@ jobs:
     name: Archive and upload to TestFlight
     if: github.event_name == 'workflow_dispatch' && inputs.testflight && github.actor == github.repository_owner
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:

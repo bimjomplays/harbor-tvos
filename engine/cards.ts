@@ -145,3 +145,65 @@ export async function refreshWatchlist(authKey: string | null): Promise<number> 
   setWatchlistAggregate(ids);
   return ids.length;
 }
+
+// ------------------------------------------------------------------ hero awards corner
+// components/meta-awards-corner.tsx as bp-spotlight mounts it (MetaAwardsCorner, the "full" tier:
+// the TV hero is wider than 820 CSS px). Anime ids (kitsu:/mal:) read the bundled anime award
+// wins ("{source} Winner", the top win's "Anime of the Year" / category line, "+N more awards");
+// everything else merges live Wikidata awards (IMDb ids only, 8 s cap) with the bundled history,
+// ranks with awardSummary + pickHeroAwards and prints "{Headline} Winner|Nominee" over the first
+// two "{n} Oscars" / "{n} Oscar nominations" lines. The laurel only wraps a win.
+import { findAnyAwardWins, awardSourceMeta } from "@/lib/anime-awards";
+import { fetchAwards, pickHeroAwards } from "@/lib/providers/wikidata";
+
+export type HeroAwardsCorner = { kind: "anime" | "classic"; headline: string; lines: string[]; won: boolean; mark: string; tint: string };
+
+const CORNER_HEADLINE: Record<string, string> = {
+  oscar: "Academy Award", emmy: "Primetime Emmy", bafta: "BAFTA", golden_globe: "Golden Globe", sag: "SAG Award",
+  cannes: "Cannes", venice: "Venice", berlin: "Berlin", critics_choice: "Critics' Choice",
+};
+const CORNER_NOUN: Record<string, string> = {
+  oscar: "Oscar", emmy: "Emmy", bafta: "BAFTA", golden_globe: "Golden Globe", sag: "SAG Award", cannes: "Cannes Award",
+  venice: "Venice Award", berlin: "Berlin Award", critics_choice: "Critics' Choice Award",
+};
+// components/icons/award-logo.tsx laurelColorFor.
+const LAUREL: Record<string, string> = {
+  oscar: "#D4AF37", emmy: "#D4AF37", golden_globe: "#D4AF37", bafta: "#CA9200", bafta_tv: "#CA9200", annie: "#E0A93E",
+  spirit: "#3E8ED0", saturn: "#9AA5B1", cesar: "#C9A227", goya: "#8C6A3F", blue_dragon: "#3E7BD0", baeksang: "#C9A227",
+  bifa: "#B8B8B8", critics_choice: "#CE8819", sag: "#B08D57", cannes: "#DAA520", venice: "#DAA520", berlin: "#BFBFBF",
+};
+function cornerNoun(type: string, n: number): string {
+  const base = CORNER_NOUN[type] ?? "Award";
+  if (n === 1 || base.endsWith("s")) return base;
+  return `${base}s`;
+}
+
+export async function heroAwards(meta: CardMeta, imdbId?: string | null): Promise<HeroAwardsCorner | null> {
+  const year = parseAwardYear(meta.releaseInfo);
+  if (meta.id.startsWith("kitsu:") || meta.id.startsWith("mal:")) {
+    const wins = findAnyAwardWins(meta.name ?? "", year);
+    if (wins.length === 0) return null;
+    const top = wins[0];
+    const src = awardSourceMeta(top.source);
+    const subline = top.isAOTY ? `${top.year} Anime of the Year` : `${top.year} ${top.categoryName.replace(/^Best\s+/i, "Best ")}`;
+    const others = wins.length - 1;
+    const lines = [subline];
+    if (others > 0) lines.push(`+${others} more award${others === 1 ? "" : "s"}`);
+    return { kind: "anime", headline: `${src.name} Winner`, lines, won: true, mark: src.shortName, tint: "" };
+  }
+  const id = imdbId ?? (meta.id.startsWith("tt") ? meta.id.split(":")[0] : null);
+  const live = id
+    ? await Promise.race([fetchAwards(id, meta.type === "series").catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 8000))])
+    : null;
+  const summary = pickHeroAwards(awardSummary(mergeBundledAwards(live, meta.name, year)));
+  if (summary.length === 0) return null;
+  const top = summary[0];
+  const won = top.wins > 0;
+  const lines: string[] = [];
+  for (const item of summary) {
+    if (item.wins > 0) lines.push(`${item.wins} ${cornerNoun(item.type, item.wins)}`);
+    else if (item.nominations > 0) lines.push(`${item.nominations} ${cornerNoun(item.type, item.nominations)} ${item.nominations === 1 ? "nomination" : "nominations"}`);
+  }
+  return { kind: "classic", headline: `${CORNER_HEADLINE[top.type] ?? "Award"} ${won ? "Winner" : "Nominee"}`, lines: lines.slice(0, 2), won,
+    mark: CORNER_NOUN[top.type] ?? NOUN[top.type] ?? "Award", tint: LAUREL[top.type] ?? "#D4AF37" };
+}

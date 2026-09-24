@@ -118,8 +118,13 @@ final class AmbientPool: ObservableObject {
 /// slowly (alternating directions) under a radial mask.
 struct BPMosaicView: View {
     let posters: [String]
+    /// bp-mosaic `variant="stage"`: the band mosaic behind Home's services/addons bands (wider,
+    /// denser mask; the caller paints it at 32 %). The default is the "ambient" variant.
+    var stage = false
     private static let columns = 6, perColumn = 4
     @State private var phase = false
+    /// bp-decor-motion: the columns hold still under Reduce Motion.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { g in
@@ -141,9 +146,12 @@ struct BPMosaicView: View {
             .rotationEffect(.degrees(-14))
             .scaleEffect(1.55)
             .position(x: g.size.width / 2, y: g.size.height / 2)
-            .mask(RadialGradient(colors: [.black, .black.opacity(0.55), .clear], center: .init(x: 0.5, y: 0.4), startRadius: 0, endRadius: g.size.width * 0.75))
+            .mask(stage
+                  ? RadialGradient(stops: [.init(color: .black, location: 0), .init(color: .black.opacity(0.72), location: 0.58), .init(color: .clear, location: 0.92)],
+                                   center: .init(x: 0.5, y: 0.45), startRadius: 0, endRadius: g.size.width * 0.8)
+                  : RadialGradient(colors: [.black, .black.opacity(0.55), .clear], center: .init(x: 0.5, y: 0.4), startRadius: 0, endRadius: g.size.width * 0.75))
         }
         .allowsHitTesting(false)
-        .onAppear { phase = true }
+        .onAppear { if !reduceMotion { phase = true } }
     }
 }
