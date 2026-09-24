@@ -1258,7 +1258,8 @@ struct PlayerScreen: View {
     /// chrome; the TV opens it on pause and keeps it clear of every prompt, panel and the Together
     /// room. Kids get it too (upstream does not gate it), when their profile turned it on.
     private var xrayMeta: Meta? {
-        guard SettingsBridge.shared.slice.xrayEnabled ?? false, snap.paused, chrome || xrayOpen, let meta = context?.meta,
+        // Not for kid profiles: X-Ray opens person pages with unfiltered filmographies (review 34; upstream doesn't gate it).
+        guard SettingsBridge.shared.slice.xrayEnabled ?? false, !isKid, snap.paused, chrome || xrayOpen, let meta = context?.meta,
               panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !kidsLoading,
               status.state != "error" else { return nil }
         return meta

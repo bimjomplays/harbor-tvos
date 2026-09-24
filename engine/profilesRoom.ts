@@ -7,6 +7,8 @@ const PROFILE_KEY_PREFIXES = [
   "harbor.auth.", "harbor.theme-session.", "harbor.localcw.v1.", "harbor.favorites.v1.", "harbor.charfavorites.v1.",
   "harbor.mangafav.v1.", "harbor.mangaread.v1.", "harbor.manga.match.mal.v1.", "harbor.manga.match.anilist.v1.",
   "harbor.localwatchlist.v1.", "harbor.settings.", "harbor.trakt.session.v1.", "harbor.tvsettings.v1.",
+  // The TV's AI search keys (Keychain) die with the profile too (review 34).
+  "harbor.ai-search.keys.v1.",
 ];
 
 export function avatars(): Array<{ group: string; transparent: boolean; items: Array<{ id: string; name: string; path: string }> }> {

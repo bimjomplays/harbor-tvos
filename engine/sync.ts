@@ -49,6 +49,7 @@ const PROFILE_KEY_PREFIXES = [
   "harbor.settings.",
   "harbor.trakt.session.v1.",
   "harbor.tvsettings.v1.",
+  "harbor.ai-search.keys.v1.",   // the TV's Keychain AI keys (review 34)
 ];
 
 type Blob = { activeId?: string | null; profiles?: Array<Record<string, unknown>> };

@@ -67,7 +67,9 @@ final class PlayerXRayModel: ObservableObject {
         let got: Payload? = try? await HarborEngine.shared.call("xray.load", [meta, p?.id ?? "default", p?.linked ?? true])
         if let got {
             payload = got
-            Self.last = (meta.id, got)
+            // Only a full answer is kept: a failed TMDB lookup or a missing key must be asked again
+            // (the engine caches its own successes for ten minutes) (review 34).
+            if got.hasDetails && !got.needsTmdbKey { Self.last = (meta.id, got) }
         }
     }
 }

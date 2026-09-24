@@ -49,7 +49,7 @@ struct SearchView: View {
         .fullScreenCover(isPresented: $phoneOpen) {
             // search-overlay.tsx: Enter in AI mode asks the model straight away.
             PhoneTypingSheet(label: "Search", placeholder: "Search Harbor", text: $model.query,
-                             onSubmit: { if ai.aiMode { ai.runNow() } }, onClose: { phoneOpen = false })
+                             onSubmit: { ai.queryChanged(model.query); if ai.aiMode { ai.runNow() } }, onClose: { phoneOpen = false })
         }
         .onChange(of: detail?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: person?.id) { _, id in if id != nil { model.commitRecent() } }

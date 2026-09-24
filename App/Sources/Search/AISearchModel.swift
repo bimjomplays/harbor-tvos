@@ -68,6 +68,8 @@ final class AISearchModel: ObservableObject {
         let p = profile
         state = try? await HarborEngine.shared.call("aiSearch.state", [p.id, p.linked])
         if state?.anyKey != true { aiMode = false }
+        // No key, no OpenRouter catalog fetch (review 34).
+        guard state?.anyKey == true else { return }
         if let m: Models = try? await HarborEngine.shared.call("aiSearch.models", [p.id, p.linked]) { menu = m.menu }
     }
 

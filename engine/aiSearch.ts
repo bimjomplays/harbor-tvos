@@ -30,7 +30,7 @@ import { fetchGroqCatalog, fetchOpenRouterCatalog, pruneToCatalog } from "@/lib/
 import { enrichWithContent } from "@/lib/jina-search";
 import { releaseText } from "@/lib/release-info";
 import { t } from "@/lib/i18n";
-import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
+import { MIRROR_KEY, SHARED_KEY, loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
 import type { Meta } from "@/lib/cinemeta";
 import { markSettingsPatched } from "./sync";
@@ -90,6 +90,18 @@ function load(profileId: string, linked: boolean): { s: Settings; keys: Keys } {
     writeKeys(merged, profileId, linked);
     s = { ...s, aiSearchKey: "", aiGroqKey: "", jinaKey: "" };
     persistEffective(s, profileId, linked);
+    // An unlinked profile can read these from the shared blob (and forkToProfile copies it on):
+    // no settings blob keeps a key once it is in the Keychain (review 34).
+    for (const k of [SHARED_KEY, MIRROR_KEY]) {
+      try {
+        const raw = localStorage.getItem(k);
+        if (!raw) continue;
+        const o = JSON.parse(raw) as Record<string, unknown>;
+        if (o && (o.aiSearchKey || o.aiGroqKey || o.jinaKey)) {
+          localStorage.setItem(k, JSON.stringify({ ...o, aiSearchKey: "", aiGroqKey: "", jinaKey: "" }));
+        }
+      } catch { /* not JSON: leave it */ }
+    }
     return { s, keys: merged };
   }
   return { s, keys };
