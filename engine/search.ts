@@ -18,6 +18,7 @@ import { HYDRATE_LANES } from "@/views/big-picture/bp-collection-steps";
 import { bpMapLimit } from "@/views/big-picture/use-bp-collections";
 import type { Meta } from "@/lib/cinemeta";
 import { playlists } from "./live";
+import { hiddenTabsFor } from "./parental";
 import { searchManga } from "@/lib/manga/api";
 import type { MangaSummary } from "@/lib/manga/model";
 
@@ -125,13 +126,16 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
   const empty: SearchResults = { query: trimmed, topMatch: null, people: [], movies: [], series: [], liveTv: [], anime: [], manga: [], characters: [], addonGroups: [], addons: [], intent: null };
   if (!trimmed) return { ...empty, requestId, addonQueries: [], collections: [] };
   const hide = settings.hideContent;
-  const animeAllowed = !hide.anime;
+  // search-context.tsx: anime needs the tab unlocked-by-profile AND not hidden; Live TV needs
+  // its tab not locked. `hiddenTabs` is the profile's lockedTabs whether or not a PIN is set.
+  const hiddenTabs = hiddenTabsFor(profileId);
+  const animeAllowed = !hiddenTabs.anime && !hide.anime;
   // search-context: manga is asked for only when the reader is switched on and not hidden, and
   // the franchise (character) search runs when either anime or manga is allowed.
   const mangaAllowed = settings.mangaEnabled === true && !hide.manga;
   const franchiseAllowed = animeAllowed || mangaAllowed;
   const lists = playlists();
-  const liveTv = lists.length > 0 ? searchLiveTvChannels(trimmed, lists) : [];
+  const liveTv = !hiddenTabs.liveTv && lists.length > 0 ? searchLiveTvChannels(trimmed, lists) : [];
   const normalized = normalizeSearchQuery(trimmed);
   const key = settings.tmdbKey?.trim() ?? "";
   const addonsP = ensureAddons(authKey);

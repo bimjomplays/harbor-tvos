@@ -9,6 +9,10 @@ struct MPVPlayerView: UIViewControllerRepresentable {
     var preferredSubs: [String] = []
     /// Muted guide preview (see MPVPlayerController.preview).
     var preview = false
+    /// A Multiview tile (see MPVPlayerController.tile): never touches the display mode.
+    var tile = false
+    /// Muted but still decoding audio; changing it later mutes/unmutes the running player.
+    var muted = false
     let onStatus: (MPVPlayerController.Status) -> Void
     var onEnded: (() -> Void)? = nil
     var onReady: ((MPVPlayerController) -> Void)? = nil
@@ -20,6 +24,8 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         c.startAtSeconds = startAt
         c.isLive = isLive
         c.preview = preview
+        c.tile = tile
+        c.muted = muted
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
         c.onStatus = onStatus
@@ -28,5 +34,11 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         return c
     }
 
-    func updateUIViewController(_ c: MPVPlayerController, context: Context) {}
+    func updateUIViewController(_ c: MPVPlayerController, context: Context) {
+        // Multiview audio focus moves between tiles without reloading the stream.
+        if c.muted != muted {
+            c.muted = muted
+            c.setMuted(muted)
+        }
+    }
 }

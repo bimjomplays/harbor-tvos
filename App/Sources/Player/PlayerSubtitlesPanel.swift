@@ -5,11 +5,14 @@ import SwiftUI
 /// best-match order come from the engine (`subtitles.trackView`), which runs upstream's own
 /// track-label / classification / best-match code.
 struct PlayerSubtitlesPanel: View {
-    let controller: MPVPlayerController?
+    let controller: (any PlayerEngineControlling)?
     let context: PlaybackContext?
     let title: String
     @Binding var subDelay: Double
     let onClose: () -> Void
+    /// The AVPlayer engine shows the file's own subtitle options only: no sideloaded (Find more),
+    /// shifted (Sync), restyled (Look) or second subtitle.
+    private var mpvExtras: Bool { controller?.supportsMpvExtras ?? true }
 
     enum Lane: Hashable { case tracks, find, sync, style }
 
@@ -79,9 +82,11 @@ struct PlayerSubtitlesPanel: View {
 
                 HStack(spacing: BP.px(8)) {
                     laneChip(.tracks, "Tracks", "captions.bubble")
-                    laneChip(.find, "Find more", "magnifyingglass")
-                    laneChip(.sync, "Sync", "timer")
-                    laneChip(.style, "Look", "slider.horizontal.3")
+                    if mpvExtras {
+                        laneChip(.find, "Find more", "magnifyingglass")
+                        laneChip(.sync, "Sync", "timer")
+                        laneChip(.style, "Look", "slider.horizontal.3")
+                    }
                     Spacer(minLength: 0)
                     Button { onClose() } label: { Label("Close", systemImage: "xmark") }
                         .buttonStyle(PlayerChipStyle())
@@ -246,6 +251,9 @@ struct PlayerSubtitlesPanel: View {
         if visible.isEmpty {
             note("No tracks match these filters. Try toggling HI/SDH or Forced.")
         }
+        if !mpvExtras {
+            note("AVPlayer shows the file's own subtitles. Online subtitles, sync, style and a second track need the mpv engine.")
+        }
     }
 
     private func trackLine(_ t: MPVPlayerController.Track) -> some View {
@@ -257,13 +265,15 @@ struct PlayerSubtitlesPanel: View {
             }
             .buttonStyle(PlayerLineStyle(on: t.selected))
             .focused($focus, equals: "line-\(t.id)")
-            // setSecondarySub: a second track under the first, or off again.
-            Button {
-                controller?.setSecondarySub(t.secondary ? nil : t)
-                refreshSoon()
-            } label: { Label("2nd", systemImage: "character.bubble") }
-                .buttonStyle(PlayerChipStyle(on: t.secondary))
-                .focused($focus, equals: "second-\(t.id)")
+            // setSecondarySub: a second track under the first, or off again (mpv only).
+            if mpvExtras {
+                Button {
+                    controller?.setSecondarySub(t.secondary ? nil : t)
+                    refreshSoon()
+                } label: { Label("2nd", systemImage: "character.bubble") }
+                    .buttonStyle(PlayerChipStyle(on: t.secondary))
+                    .focused($focus, equals: "second-\(t.id)")
+            }
         }
     }
 

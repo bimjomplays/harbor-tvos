@@ -56,6 +56,14 @@ final class AppModel: ObservableObject {
             guard let self, id == nil, self.stage == .shell else { return }
             self.stage = .whoIsWatching
         }.store(in: &bag)
+        // Settings (and so the theme and display language) can be per profile: a switch re-reads them.
+        profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { id in
+            guard id != nil, !Fixtures.active else { return }
+            Task { @MainActor in
+                await SettingsBridge.shared.load()
+                await ThemeStore.shared.load()
+            }
+        }.store(in: &bag)
     }
 
     private static let onboardingKey = "harbor.onboarding.bp"
@@ -69,6 +77,8 @@ final class AppModel: ObservableObject {
         Fixtures.installIfRequested(into: self)
         if !Fixtures.active {
             await SettingsBridge.shared.load()
+            // Stage 9: the profile's theme is painted from the first Big Picture frame.
+            await ThemeStore.shared.load()
             profiles.attachEngine()
             await account.attachEngine()
             if account.isSignedIn { await refreshRoster() }

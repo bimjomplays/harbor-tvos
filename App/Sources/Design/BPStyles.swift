@@ -44,11 +44,15 @@ struct BPTileStyle: ButtonStyle {
 struct BPActionStyle: ButtonStyle {
     var primary = false
     @Environment(\.isEnabled) private var enabled
+    /// Theme button styles (index.css html[data-theme-button]): crunch sets .bg-ink bold with
+    /// 0.02em tracking; glossy lays a top shine over .bg-ink. Flat (the default) adds nothing.
+    private var style: String { BPThemeState.current.buttonStyle }
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader { focused in
             configuration.label
                 .opacity(enabled ? 1 : 0.45)
-                .font(BP.sans(15, .semibold))
+                .font(BP.sans(15, primary && style == "crunch" ? .bold : .semibold))
+                .tracking(primary && style == "crunch" ? BP.px(15) * 0.02 : 0)
                 .foregroundStyle(primary ? BP.canvas : BP.ink)
                 .padding(.horizontal, BP.px(18))
                 .frame(minHeight: BP.tabItem)
@@ -56,6 +60,14 @@ struct BPActionStyle: ButtonStyle {
                     RoundedRectangle(cornerRadius: BP.rSM, style: .continuous)
                         .fill(primary ? (focused ? BP.ink : BP.ink.opacity(0.9)) : (focused ? BP.on : BP.panel2))
                 )
+                .overlay {
+                    if primary && style == "glossy" {
+                        RoundedRectangle(cornerRadius: BP.rSM, style: .continuous)
+                            .fill(LinearGradient(stops: [.init(color: BP.ink.opacity(0.22), location: 0), .init(color: BP.ink.opacity(0), location: 0.55)],
+                                                 startPoint: .top, endPoint: .bottom))
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
                 .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: BP.rSM, lift: 1.02))
         }
@@ -154,4 +166,25 @@ struct BPNote: View {
     let text: String
     var tone: Color = BP.inkMuted
     var body: some View { Text(text).font(BP.sans(14)).foregroundStyle(tone).fixedSize(horizontal: false, vertical: true) }
+}
+
+/// index.css html[data-theme-card="glass"] on a surface panel: an ink sheen from the top and an
+/// inset highlight on the top edge, painted behind the content (apply it before the panel fill).
+/// Every other card style leaves the panel as drawn.
+struct BPThemeCardFace: ViewModifier {
+    var radius: CGFloat
+    @ViewBuilder func body(content: Content) -> some View {
+        if BPThemeState.current.cardStyle == "glass" {
+            content.background {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(LinearGradient(colors: [BP.ink.opacity(0.05), BP.ink.opacity(0)], startPoint: .top, endPoint: .bottom))
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(BP.ink.opacity(0.14)).frame(height: 1).padding(.horizontal, radius)
+                    }
+                    .allowsHitTesting(false)
+            }
+        } else {
+            content
+        }
+    }
 }

@@ -70,14 +70,6 @@ final class SettingsBridge: ObservableObject {
     /// Manga is on and not hidden: its tab shows and the manga hooks run.
     var mangaOn: Bool { (slice.mangaEnabled ?? false) && !(slice.hideContent?.manga ?? false) }
 
-    /// The top bar's tabs (bp-top-bar useBpTabGate): Sports hides once declined, Manga shows only
-    /// while the reader is switched on.
-    func tabShown(_ room: Room) -> Bool {
-        if room == .sports { return !sportsDeclined }
-        if room == .manga { return mangaOn }
-        return true
-    }
-
     /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).
     @Published var sportsDeclined = false
 
@@ -107,6 +99,9 @@ final class SettingsBridge: ObservableObject {
             slice = s
             loaded = true
         }
+        // lib/i18n follows the profile's uiLanguage (store.ts only reads it once, at load).
+        let p = ProfilesStore.shared.active
+        let _: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [p?.id ?? "default", p?.linked ?? true])
     }
 
     func patch(_ change: [String: AnyJSON]) async throws {

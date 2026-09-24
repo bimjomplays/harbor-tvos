@@ -174,3 +174,78 @@ export function decodeWatchedField(field: string | null | undefined, videos: Met
   }
   return keys;
 }
+
+/** What the picker knows about the stream the player is about to open (streams/types.ts fields). */
+export type EngineHints = {
+  url: string;
+  isLive?: boolean;
+  /** behaviorHints.notWebReady: a plain <video> (here AVPlayer) should not be handed it. */
+  notWebReady?: boolean | null;
+  /** streams/types.ts Container ("mkv" | "mp4" | …) parsed from the release name. */
+  container?: string | null;
+  /** streams/types.ts HdrFormat ("HDR10" | "HDR10+" | "DV" | "DV+HDR10" | "HLG"). */
+  hdrFormat?: string | null;
+  filename?: string | null;
+  /** use-player-bridge.ts autoFallbackTried: the native engine already failed on this stream. */
+  fallbackTried?: boolean;
+};
+
+export type EngineChoice = {
+  /** "native" is AVPlayer, the TV's stand-in for upstream's html5 engine. */
+  engine: "mpv" | "native";
+  /** settings.playerEngine as stored (upstream's values, so a synced profile means the same). */
+  want: "auto" | "mpv" | "html5";
+  reason: "fallback" | "setting" | "live-hls" | "hls" | "dolby-vision" | "default";
+};
+
+/** html5/bridge.ts load(): upstream's own HLS test for a source URL. */
+export function isHlsUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  const bare = lower.split("?")[0];
+  return bare.endsWith(".m3u8") || lower.includes("m3u8") || lower.includes("/playlist/");
+}
+
+/** Containers AVPlayer opens as a file (it has no Matroska, AVI or WebM demuxer). */
+const AVPLAYER_FILE = new Set(["mp4", "m4v", "mov"]);
+
+function extensionOf(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const bare = s.toLowerCase().split(/[?#]/)[0];
+  const m = /\.([a-z0-9]{2,4})$/.exec(bare);
+  return m ? m[1] : null;
+}
+
+/**
+ * The engine a stream plays on. Upstream (use-player-bridge.ts chosenEngine + player-utils.ts
+ * pickBridge): a live, web-ready source goes to html5; after an html5 decode/codec/no-audio
+ * failure the retry goes to mpv; "html5" and "mpv" are honoured; "auto" picks mpv wherever libmpv
+ * exists (the desktop app, which is what the TV is) or the stream is not web-ready.
+ *
+ * TV mapping (PLAN decision 4): AVPlayer stands in for html5, and Auto hands it the sources it
+ * plays better than mpv on Apple TV: web-ready HLS, live or not (AVPlayer cannot open raw
+ * MPEG-TS, so what upstream's mpegts.js path plays live stays on mpv), and web-ready Dolby Vision
+ * in an MP4-family file (real DV output; mpv only tone-maps it). Everything else stays on mpv.
+ * An explicit "mpv" keeps live HLS on mpv too: upstream overrides the setting for live because
+ * its desktop mpv window is the weaker live player, which is not true on the TV.
+ */
+export function pickEngine(want: string | null | undefined, hints: EngineHints): EngineChoice {
+  const w: EngineChoice["want"] = want === "mpv" || want === "html5" ? want : "auto";
+  if (hints.fallbackTried) return { engine: "mpv", want: w, reason: "fallback" };
+  if (w === "html5") return { engine: "native", want: w, reason: "setting" };
+  if (w === "mpv") return { engine: "mpv", want: w, reason: "setting" };
+  const webReady = hints.notWebReady !== true;
+  const hls = isHlsUrl(hints.url ?? "") || hints.container === "m3u8";
+  if (webReady && hls) return { engine: "native", want: w, reason: hints.isLive ? "live-hls" : "hls" };
+  const dv = hints.hdrFormat ? hints.hdrFormat.startsWith("DV") : /\b(dv|dovi|dolby[ ._-]?vision)\b/i.test(hints.filename ?? "");
+  const ext = hints.container?.toLowerCase() || extensionOf(hints.filename) || extensionOf(hints.url);
+  if (webReady && !hints.isLive && dv && ext != null && AVPLAYER_FILE.has(ext)) {
+    return { engine: "native", want: w, reason: "dolby-vision" };
+  }
+  return { engine: "mpv", want: w, reason: "default" };
+}
+
+/** Swift's entry: the profile's playerEngine setting applied to one stream. */
+export function engineFor(profileId: string, linked: boolean, hints: EngineHints): EngineChoice {
+  const s = loadEffective(profileId, linked);
+  return pickEngine(s.playerEngine, hints);
+}

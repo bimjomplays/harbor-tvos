@@ -154,7 +154,7 @@ final class MangaReaderModel: ObservableObject {
         let to = min(total, from + (double ? 4 : 3))
         guard from < to else { return }
         let next = Array(pages[from..<to])
-        let width = paged ? (double ? 960 : 1920) * 1.0 : longWidth
+        let width: CGFloat = paged ? (double ? 960 : 1920) : longWidth
         Task.detached(priority: .utility) { await MangaPageCache.shared.prefetch(next, maxWidth: min(2400, width * 1.5)) }
     }
 
