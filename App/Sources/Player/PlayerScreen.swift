@@ -44,6 +44,8 @@ struct PlayerScreen: View {
     @State private var prevChannels: [LiveModel.Channel] = []
     /// KidsStreamSwitcher onPick: the stream picked in place of the one opened (nil = the one opened).
     @State private var switched: SwitchedStream?
+    /// A quality switch made while paused starts the new stream paused (bp-ten-foot startPaused: !playing, review 29).
+    @State private var pausedAfterSwitch = false
     /// Whether the stream was swapped in place (the kid switcher, a quality change): TrackMemory keys by the original release otherwise.
     var switchedInPlace: Bool { switched != nil }
     struct SwitchedStream { var url: URL; var headers: [String: String] }
@@ -186,7 +188,7 @@ struct PlayerScreen: View {
                                      controller = c
                                      pipActive = false
                                      applyRate(c)
-                                     if resumePending != nil { c.setPaused(true) }
+                                     if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                                  },
                                  onPictureInPicture: { on in if engine == .native { pipChanged(on) } })
                     .ignoresSafeArea()
@@ -197,7 +199,7 @@ struct PlayerScreen: View {
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               trackMemory: trackMemory,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
-                              onReady: { controller = $0; pipActive = false; applyRate($0); if resumePending != nil { $0.setPaused(true) } })
+                              onReady: { controller = $0; pipActive = false; applyRate($0); if resumePending != nil || pausedAfterSwitch { $0.setPaused(true); pausedAfterSwitch = false } })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else {
@@ -989,7 +991,7 @@ struct PlayerScreen: View {
         case .homeServerQuality:
             if let h = context?.homeServer {
                 HomeServerQualityPanel(session: h, positionSec: snap.position, playing: !snap.paused,
-                                       onSwitched: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
+                                       onSwitched: { next, headers in pausedAfterSwitch = snap.paused; switchStream(to: next, headers: headers) }, onClose: { closePanel() })
             }
         case .kidsSources:
             if let context {

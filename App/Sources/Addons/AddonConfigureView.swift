@@ -26,6 +26,9 @@ struct AddonConfigureView: View {
 
     @State private var pasted = ""
     @State private var phase: Phase = .idle
+    /// Cleared when this screen goes: the success card's late auto-close must not close a newer one (review 30).
+    private final class Shown { var on = true }
+    @State private var shown = Shown()
     @State private var error: String?
     @State private var phoneOpen = false
     @FocusState private var primaryFocused: Bool
@@ -38,6 +41,7 @@ struct AddonConfigureView: View {
     var body: some View {
         ZStack {
             BPAmbientBackground()
+                .onDisappear { shown.on = false }
             BP.void_.opacity(0.7).ignoresSafeArea()
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(26)) {
@@ -214,7 +218,10 @@ struct AddonConfigureView: View {
         phase = .done(replaced: r.replaced ?? false, name: name, logo: r.logo ?? m.logo)
         await model.installedFromLink(id: r.id ?? "", name: name, logo: r.logo, toast: r.toast ?? T("Installed"))
         // installer-viewport.tsx: the success card closes itself after two seconds.
+        let screen = shown   // held before the wait: @State read after the view is gone isn't reliable
         try? await Task.sleep(nanoseconds: 2_000_000_000)
+        // Only if this success card is still what's showing (Done may have closed it already) (review 30).
+        guard screen.on else { return }
         onClose()
     }
 }
