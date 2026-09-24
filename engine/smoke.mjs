@@ -912,6 +912,55 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.settingsRoom.commit("skipIntro", "on", "default", true); engine.settingsRoom.commit("service", "netflix", "default", true); engine.settingsRoom.commit("subLang", "French", "default", true);
 }
 
+// ------------------------------------------ themes, language picker, settings preview, done facts
+{
+  const near = (a, hex) => [16, 8, 0].every((sh, i) => Math.abs(Math.round(a[i] * 255) - ((hex >> sh) & 0xff)) <= 1) && a[3] === 1;
+  const st = engine.themes.state("default", true);
+  r.eq("themes.state: upstream's library, built-in then featured", st.presets.map((p) => p.id), ["cool-grey", "nord", "stremio", "tokyo-night", "dracula", "forest", "noir", "velvet", "crunch", "kawaii", "aurora", "minui"]);
+  r.eq("themes.state: default is Harbor default in Sentient + Switzer", [st.active, st.fontPair, st.faces.display, st.faces.sans, st.light], ["cool-grey", "sentient-switzer", "sentient", "switzer", false]);
+  const shipped = { canvas: 0x111213, surface: 0x191b1c, elevated: 0x252628, raised: 0x323335, ink: 0xf4f5f7, inkMuted: 0xa3a5a6, inkSubtle: 0x626365, accent: 0xf4a25c, danger: 0xc53637, void: 0x0d0e0f, panel: 0x161819, panel2: 0x222325, on: 0x404142 };
+  r.ok("themes.state: default palette matches Theme.swift's shipped tokens", Object.entries(shipped).every(([k, hex]) => near(st.palette[k], hex)), JSON.stringify(st.palette));
+  r.eq("themes.parseColor: #rrggbbaa and rgba()", [engine.themes.parseColor("#88c0d02e")[3].toFixed(2), engine.themes.parseColor("rgba(255,255,255,0.9)")[3]], ["0.18", 0.9]);
+  r.ok("themes.parseColor: oklch", near(engine.themes.parseColor("oklch(0.18 0.004 260)"), 0x111213));
+  const aurora = engine.themes.parseGradient("radial-gradient(ellipse 90% 70% at 20% 0%, #2e7fd6 0%, #14397f 30%, #0a1c4e 60%, #050d28 100%), radial-gradient(ellipse 70% 60% at 80% 100%, #5e36b8 0%, transparent 60%)");
+  r.eq("themes.parseGradient: two radial layers, top first", aurora.map((l) => [l.kind, l.rx, l.ry, l.cx, l.cy, l.stops.length]), [["radial", 0.9, 0.7, 0.2, 0, 4], ["radial", 0.7, 0.6, 0.8, 1, 2]]);
+  r.eq("themes.parseGradient: data: or url images give no layers", engine.themes.parseGradient("url(x.png)"), []);
+  const stremio = engine.themes.apply("stremio", "default", true);
+  r.eq("themes.apply(stremio): preset font, gradient backdrop", [stremio.active, stremio.fontPair, stremio.faces.sans, stremio.background.layers[0].kind, stremio.background.layers[0].angle, stremio.cardStyle], ["stremio", "plus-jakarta", "system", "linear", 41, "stremio"]);
+  r.eq("themes.apply writes settings.theme", engine.settings.load().theme.preset, "stremio");
+  r.eq("themes.apply ignores an unknown id", engine.themes.apply("not-a-theme", "default", true).active, "stremio");
+  r.eq("themes.apply(minui) is a light theme", [engine.themes.apply("minui", "default", true).light, engine.themes.state("default", true).bokeh], [true, false]);
+  r.eq("themes.apply(aurora) carries bokeh", engine.themes.apply("aurora", "default", true).bokeh, true);
+  r.eq("themes.setFontPair: picked pair kept, preset without one uses it", (engine.themes.apply("nord", "default", true), engine.themes.setFontPair("fraunces-inter", "default", true).fontPair), "fraunces-inter");
+  engine.themes.setFontPair("sentient-switzer", "default", true);
+  r.eq("themes.apply back to the default", engine.themes.apply("cool-grey", "default", true).active, "cool-grey");
+  const langs = engine.settingsRoom.languages("default", true);
+  r.eq("settingsRoom.languages: upstream's 16 in order, English first", [langs.languages.length, langs.languages[0].code, langs.languages[0].flags, langs.current], [16, "en", ["\u{1F1FA}\u{1F1F8}"], "en"]);
+  r.eq("settingsRoom.languages: Indonesian has no flag (upstream shows its code)", langs.languages.find((l) => l.code === "id").flags, []);
+  r.eq("settingsRoom.flagEmoji(Portuguese (Brazil))", engine.settingsRoom.flagEmoji("Portuguese (Brazil)"), "\u{1F1E7}\u{1F1F7}");
+  engine.settingsRoom.commit("uiLanguage", "fr", "default", true);
+  r.eq("commit uiLanguage fr reaches settings, i18n and the pane", [engine.settingsRoom.languages("default", true).current, engine.settingsRoom.applyUiLanguage("default", true), engine.settingsRoom.pane("default", true).language.greeting], ["fr", "fr", "Bonjour"]);
+  engine.settingsRoom.commit("uiLanguage", "en", "default", true);
+  const pane = engine.settingsRoom.pane("default", true);
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 3, "Off"]);
+  r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
+  const setupKey = engine.settings.sourceKeyFor("default", true);
+  const before = engine.settingsRoom.pane("default", true).setup[1][1];
+  engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, setupKey);
+  const smokeList = engine.live.addPlaylist("Smoke setup", "https://example.invalid/setup.m3u", null);
+  const after = String(Number(before) + 1);
+  const setupRows = engine.settingsRoom.controls("setup", "default", true);
+  r.eq("ST-1: setup push rows report what is connected and how many playlists", setupRows.filter((c) => c.kind === "push").map((c) => c.detail), ["Connected: TMDB", `${after} added`]);
+  r.eq("settingsRoom.pane(setup) lines follow", engine.settingsRoom.pane("default", true).setup, [["TMDB", "On"], ["Live TV playlists", after], ["Setup", "TMDB"]]);
+  engine.live.removePlaylist(smokeList.id);
+  engine.settings.patch({ tmdbKey: "" }, setupKey);
+  const f = engine.onboarding.facts("default", true);
+  r.eq("onboarding.facts: counts and the stock fan with no picks", [typeof f.servicesOn, f.art.length, f.art[0].startsWith("https://image.tmdb.org/t/p/w342/")], ["number", 5, true]);
+  r.eq("intro.poolSave refuses fewer than 16 urls", [engine.intro.poolSave(["https://x/1.jpg"]), engine.intro.poolLoad()], [0, []]);
+  const urls = Array.from({ length: 120 }, (_, i) => `https://x/${i}.jpg`);
+  r.eq("intro.poolSave keeps 96, poolLoad reads them back", [engine.intro.poolSave(urls), engine.intro.poolLoad()[95]], [96, "https://x/95.jpg"]);
+}
+
 // ------------------------------------------------------------- live EPG (recorded host)
 {
   const now = Date.now();

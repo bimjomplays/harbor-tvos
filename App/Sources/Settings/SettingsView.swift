@@ -21,6 +21,8 @@ struct SettingsView: View {
                 Text("Settings").font(BP.display(36)).foregroundStyle(BP.ink)
                 BPSettingsView(openConnect: { sheet = .connect })
                     .padding(.bottom, BP.px(10))
+                // Stage 9: settings-sidebar.tsx "LOOK & FEEL" → Appearance (theme-panel.tsx).
+                section("Appearance") { AppearancePanel() }
                 section("Harbor account") {
                     if let s = account.session {
                         row("Signed in as \(s.user.username)", detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")
@@ -189,6 +191,7 @@ struct SettingsView: View {
         }
         .padding(BP.px(22))
         .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(BPThemeCardFace(radius: BP.rMD))
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
         // The whole panel is a focus target, so Down from the Settings cog (far right) lands

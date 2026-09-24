@@ -90,6 +90,9 @@ final class SettingsBridge: ObservableObject {
             slice = s
             loaded = true
         }
+        // lib/i18n follows the profile's uiLanguage (store.ts only reads it once, at load).
+        let p = ProfilesStore.shared.active
+        let _: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [p?.id ?? "default", p?.linked ?? true])
     }
 
     func patch(_ change: [String: AnyJSON]) async throws {
