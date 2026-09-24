@@ -350,6 +350,12 @@ final class NativePlayerController: UIViewController {
 
     func setMuted(_ muted: Bool) { player.isMuted = muted }
     func isMuted() -> Bool { player.isMuted }
+    /// html5 bridge setRate (playbackRate): play() resumes at defaultRate, so both follow it.
+    func setRate(_ rate: Double) {
+        let r = Float(rate)
+        player.defaultRate = r
+        if player.rate != 0 { player.rate = r }
+    }
 
     /// The end of the loaded range the playhead is in (mpv demuxer-cache-time's meaning).
     func bufferedSec() -> Double {

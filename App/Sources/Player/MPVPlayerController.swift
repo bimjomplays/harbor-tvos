@@ -278,6 +278,8 @@ final class MPVPlayerController: UIViewController {
 
     /// bp-player-sources BpAudioLane "Sync Offset": mpv audio-delay in seconds.
     func setAudioDelay(_ seconds: Double) { command("set", ["audio-delay", String(format: "%.2f", seconds)]) }
+    /// mpv.ts setRate: `speed` (pitch-corrected by mpv's default audio-pitch-correction).
+    func setRate(_ rate: Double) { command("set", ["speed", String(format: "%.2f", rate)]) }
 
     /// bp-player-rail mute chip: mpv's `mute` property.
     func setMuted(_ muted: Bool) {
