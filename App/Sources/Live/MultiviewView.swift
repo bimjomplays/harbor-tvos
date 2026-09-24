@@ -154,7 +154,7 @@ struct MultiviewView: View {
         .onAppear { PlaybackState.shared.active = true }
         // No reset here: presenting the full player can report a disappear while Multiview stays
         // underneath; the grid is cleared by leave() and goes with this view otherwise.
-        .onDisappear { PlaybackState.shared.active = false }
+        .onDisappear { if fullScreen == nil { PlaybackState.shared.active = false } }
         .fullScreenCover(item: $fullScreen, onDismiss: { PlaybackState.shared.active = true }) { ch in
             PlayerScreen(title: ch.name, subtitle: live.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!,
                          headers: ch.headers ?? [:], isLive: true, liveGuide: live, liveChannel: ch) { _ in fullScreen = nil }
