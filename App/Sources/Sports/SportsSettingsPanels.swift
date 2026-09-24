@@ -19,7 +19,7 @@ struct SportsWebhooksPanel: View {
             BPNote(text: "Connect Discord or Telegram and Harbor alerts you when something you follow is about to drop. Sports reminders are sent from this Apple TV while Harbor is open.")
             BPField(label: "Discord webhook URL", placeholder: "https://discord.com/api/webhooks/…", text: $discord, keyboard: .URL)
             HStack(spacing: BP.px(12)) {
-                BPField(label: "Telegram bot · Bot token", placeholder: "123456:ABC…", text: $token)
+                BPField(label: "Telegram bot · Bot token", placeholder: "123456:ABC…", text: $token, phone: true)
                 BPField(label: "Chat ID", placeholder: "123456789", text: $chatId)
             }
             HStack(spacing: BP.px(10)) {

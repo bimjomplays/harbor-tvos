@@ -5,15 +5,6 @@ import SwiftUI
 /// tables), Standings, Addon sources and Where to watch (venue + provider tiles).
 @MainActor
 final class SportsEventModel: ObservableObject {
-    struct Player: Decodable, Identifiable { var id: String; var name: String; var jersey: String; var position: String; var starter: Bool }
-    struct StatRow: Decodable, Identifiable { var label: String; var homeValue: String; var awayValue: String; var id: String { label } }
-    struct Event: Decodable, Identifiable { var id: String; var time: String; var type: String; var text: String; var teamId: String? }
-    struct Detail: Decodable {
-        var homeRoster: [Player]?; var awayRoster: [Player]?
-        var allStats: [StatRow]?; var events: [Event]?
-        var homeFormation: String?; var awayFormation: String?
-    }
-
     struct WatchOption: Decodable, Identifiable { var channelId: String; var name: String; var logo: String?; var url: String; var headers: [String: String]?; var tier: String; var attached: Bool; var label: String; var copy: String; var reasons: [String]; var score: Double; var id: String { channelId } }
     struct Provider: Decodable, Identifiable { var name: String; var url: String; var logo: String; var id: String { name } }
     /// bp-sports-broadcast-source: an official Twitch / YouTube / Kick broadcast (`app` is the provider's URL scheme).
@@ -31,7 +22,6 @@ final class SportsEventModel: ObservableObject {
     struct Actions: Decodable { var reminder: Reminder?; var follow: [Follow]; var opendota: String? }
     struct ReminderOutcome: Decodable { var state: String }
 
-    @Published private(set) var detail: Detail?
     @Published private(set) var rows: SportsEventRows?
     @Published private(set) var loading = false
     @Published private(set) var note: String?
@@ -93,10 +83,10 @@ final class SportsEventModel: ObservableObject {
 
     func load(_ game: SportsModel.Game) async {
         loading = true; defer { loading = false }
+        // Only whether a summary exists matters here; the rows come shaped from `sports.eventRows`.
         do {
-            let d: Detail? = try await HarborEngine.shared.call("sports.detail", [game.wire])
-            detail = d
-            if d == nil { note = "No detail feed for this provider yet. Scores and the schedule above are live." } else { note = nil }
+            let d = try await HarborEngine.shared.callJSON("sports.detail", [game.wire])
+            note = d.isNull ? "No detail feed for this provider yet. Scores and the schedule above are live." : nil
         } catch { note = "Detail unavailable: \(error.localizedDescription)" }
         await loadRows(game)
     }
