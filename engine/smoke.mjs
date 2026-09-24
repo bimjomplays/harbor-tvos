@@ -973,6 +973,85 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// ------------------------------------------- manga: Suwayomi server, reader, progress (Stage 13)
+{
+  const base = "https://manga.example.invalid";
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push({ url: req.url, method: req.method ?? "GET", auth: (req.headers ?? {}).authorization ?? (req.headers ?? {}).Authorization ?? null });
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const u = new URL(req.url);
+    if (u.origin !== base) return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    const p = u.pathname;
+    if (p === "/api/v1/source/list") return json([{ id: "101", name: "Example Source", lang: "en" }, { id: "102", name: "Autre", lang: "fr" }]);
+    if (p === "/api/v1/source/101/popular/1") return json({ mangaList: [{ id: 5, title: "Test Manga" }, { id: 6, title: "Second" }], hasNextPage: false });
+    if (p === "/api/v1/source/102/popular/1") return json({ mangaList: [], hasNextPage: false });
+    if (p === "/api/v1/source/101/search") return json({ mangaList: [{ id: 5, title: "Test Manga" }], hasNextPage: false });
+    if (p === "/api/v1/source/102/search") return json({ mangaList: [], hasNextPage: false });
+    if (p === "/api/v1/manga/5/full") return json({ id: 5, title: "Test Manga", description: "A test.", status: "ONGOING", author: "Someone" });
+    if (p === "/api/v1/manga/5/chapters") return json([
+      { index: 2, chapterNumber: 2, name: "Two", pageCount: 2, scanlator: "G" },
+      { index: 1, chapterNumber: 1, name: "One", pageCount: 3, scanlator: "G", lastPageRead: 2, read: false },
+    ]);
+    if (p === "/api/v1/manga/5/chapter/1") return json({ pageCount: 3 });
+    if (p === "/api/v1/manga/5/library") return json({});
+    // provider.search with no source picked searches the server's library (as upstream does).
+    if (p === "/api/v1/library") return json([{ id: 5, title: "Test Manga", sourceId: "101" }]);
+    return json({});
+  };
+  const me = rec.engine.manga;
+  r.eq("manga.state starts with no source", [me.state().hasSource, me.state().sources.length], [false, 0]);
+  r.eq("manga.addServer rejects a non-http address", me.addServer("", "ftp://nope", null, null).ok, false);
+  const added = me.addServer("Home", `${base}/api/v1`, "reader", "secret");
+  const st = me.state();
+  r.ok("manga.addServer links and activates a Suwayomi source (suffix stripped, no credentials in the UI)", added.ok && st.hasSource && st.sources.length === 1 && st.sources[0].kind === "suwayomi" && st.activeId === st.sources[0].id && st.servers[0].host === "manga.example.invalid" && st.servers[0].hasAuth && !JSON.stringify(st.sources).includes("secret"), JSON.stringify(st));
+  r.ok("manga.state hands the image loader the server's Basic auth", st.auth.length === 1 && st.auth[0].base === base && st.auth[0].header.startsWith("Basic "), JSON.stringify(st.auth));
+  const test = await me.testServer(base, "reader", "secret");
+  r.eq("manga.testServer counts the server's sources", [test.ok, test.sources], [true, 2]);
+  const pop = await me.popular(0, null);
+  r.ok("manga.popular merges the server's sources, covers on the server", pop.length === 2 && pop.every((m) => m.cover.startsWith(`${base}/api/v1/manga/`)) && pop.some((m) => m.id === "101~5"), JSON.stringify(pop));
+  r.ok("Suwayomi requests carry the Basic auth", hits.filter((h) => h.url.startsWith(base)).every((h) => h.auth === st.auth[0].header));
+  const tagsList = await me.tags();
+  r.ok("manga.tags lists the server's sources (non-English tagged)", tagsList.length === 2 && tagsList[1].name === "Autre (FR)", JSON.stringify(tagsList));
+  const found = await me.search("test", 0, "101");
+  r.eq("manga.search in one source", found.map((m) => m.id), ["101~5"]);
+  const d = await me.detail("101~5");
+  r.ok("manga.detail: summary, chapters sorted ascending, English by default, extension name", d.detail?.title === "Test Manga" && d.chapters.map((c) => c.chapter).join() === "1,2" && d.defaultLang === "en" && d.extName === "Example Source", JSON.stringify({ ...d, chapters: d.chapters.length }));
+  const pages = await me.pages(d.chapters[0].id);
+  r.ok("manga.pages: one URL per page, each with the server's auth header", pages.length === 3 && pages[2].url === `${base}/api/v1/manga/5/chapter/1/page/2` && pages.every((pg) => pg.headers?.authorization === st.auth[0].header), JSON.stringify(pages));
+  const order = me.readerOrder(d.chapters, 0);
+  r.eq("manga.readerOrder walks one copy per chapter, ascending", order.order, [0, 1]);
+  const mm = { id: "101~5", title: "Test Manga", cover: d.detail.cover };
+  r.eq("manga.startPage: the server's lastPageRead when nothing local", me.startPage("default", mm, d.chapters[0], null), 2);
+  r.ok("manga.recordPage saves Continue Reading", me.recordPage("default", mm, d.chapters[0], 3, 3, null) && me.progress("default")[0].page === 3 && me.progress("default")[0].chapterLabel === "Chapter 1");
+  me.markComplete("default", mm, d.chapters, 0, 1, 3);
+  const prog = me.progress("default");
+  r.ok("manga.markComplete marks the chapter read and queues the next as up next", prog[0].upNext === true && prog[0].chapterId === d.chapters[1].id && me.readChapters("default", mm.id).includes(d.chapters[0].id), JSON.stringify(prog));
+  r.eq("manga.matchChapter finds the saved chapter", me.matchChapter(prog[0], d.chapters), 1);
+  const res = await me.resume(prog[0]);
+  r.ok("manga.resume opens the reader on the saved chapter", res && res.index === 1 && res.chapters.length === 2 && res.manga.title === "Test Manga", JSON.stringify(res));
+  me.closeReader();
+  await new Promise((ok) => setTimeout(ok, 50));
+  r.ok("closeReader flushes reading progress to the server", hits.some((h) => h.url.includes("/api/v1/manga/5/chapter/") && h.method !== "GET"), JSON.stringify(hits.slice(-3)));
+  r.eq("manga.toggleFavorite adds then removes", [me.toggleFavorite("default", { id: mm.id, title: mm.title }), me.favorites("default").length, me.toggleFavorite("default", { id: mm.id }), me.favorites("default").length], [true, 1, false, 0]);
+  const pf = me.savePrefs({ mode: "paged", zoom: 9 });
+  r.ok("manga.savePrefs keeps upstream's defaults and clamps the zoom", pf.mode === "paged" && pf.zoom === 3 && pf.rtl === true && me.prefs().mode === "paged", JSON.stringify(pf));
+  r.eq("manga.openByTitle finds the title in the active source", await me.openByTitle("Test Manga", "default"), "101~5");
+  r.eq("manga.resolveTitle opens a franchise manga through every extension (search-manga-resolve)", await me.resolveTitle("Test Manga"), "101~5");
+  r.eq("manga.firstByTitle: bp-hero-manga's first source hit", await me.firstByTitle("Test Manga"), "101~5");
+  const off = await rec.engine.search.fanOut("test", "default", true, null);
+  r.eq("search.fanOut asks for no manga while the reader is off", off.manga.length, 0);
+  rec.engine.settings.saveForProfile({ ...rec.engine.settings.loadForProfile("default", true), mangaEnabled: true }, "default", true);
+  const on = await rec.engine.search.fanOut("test", "default", true, null);
+  r.eq("search.fanOut returns manga results once the reader is on (SR-9)", on.manga.map((m) => m.id), ["101~5"]);
+  me.removeServer(st.servers[0].id);
+  r.eq("manga.removeServer drops its source", me.state().hasSource, false);
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());

@@ -76,6 +76,8 @@ struct ShellView: View {
             CollectionsView()
         case .sports:
             SportsView()
+        case .manga:
+            MangaView()
         default: RoomPlaceholderView(room: app.room)
         }
     }
@@ -102,7 +104,7 @@ struct ShellView: View {
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
         guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
-        let order = Room.tabs.filter { !(settings.sportsDeclined && $0 == .sports) }
+        let order = Room.tabs.filter { settings.tabShown($0) }
         guard !order.isEmpty else { return }
         let from = order.firstIndex(of: app.room) ?? 0
         let next = ((from + delta) % order.count + order.count) % order.count
@@ -190,7 +192,7 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
-            ForEach(Room.tabs.filter { !(settings.sportsDeclined && $0 == .sports) }) { r in
+            ForEach(Room.tabs.filter { settings.tabShown($0) }) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)

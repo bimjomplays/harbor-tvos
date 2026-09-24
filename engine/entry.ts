@@ -87,6 +87,7 @@ import * as collectionsGlue from "./collections";
 import * as letterboxdGlue from "./letterboxd";
 import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
+import * as mangaGlue from "./manga";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -795,6 +796,48 @@ export const wrapped = {
   load: wrappedGlue.load,
   enrich: wrappedGlue.enrich,
   enabled: wrappedGlue.enabled,
+};
+
+// ==================================================================================== manga
+/**
+ * Stage 13 manga (views/manga.tsx, manga-detail, manga-reader): Suwayomi servers as sources,
+ * browse/search, detail with chapters, pages with their auth headers, reading progress,
+ * favourites and reader prefs. Plugin, Mangayomi and HTML sources need a Worker / IndexedDB /
+ * DOMParser and are not offered on tvOS.
+ */
+export const manga = {
+  state: mangaGlue.state,
+  addServer: mangaGlue.addServer,
+  testServer: mangaGlue.testServer,
+  removeServer: mangaGlue.removeServer,
+  setActive: mangaGlue.setActive,
+  popular: mangaGlue.popular,
+  search: mangaGlue.search,
+  searchEverywhere: mangaGlue.searchEverywhere,
+  tags: mangaGlue.tags,
+  detail: mangaGlue.detail,
+  progressFor: mangaGlue.progressFor,
+  matchChapter: mangaGlue.matchChapter,
+  resume: mangaGlue.resume,
+  openByTitle: mangaGlue.openByTitle,
+  resolveTitle: mangaGlue.resolveTitle,
+  firstByTitle: mangaGlue.firstByTitle,
+  animeSource: mangaGlue.animeSource,
+  pages: mangaGlue.pages,
+  readerOrder: mangaGlue.readerOrder,
+  startPage: mangaGlue.startPage,
+  recordPage: mangaGlue.recordPage,
+  markComplete: mangaGlue.markComplete,
+  closeReader: mangaGlue.closeReader,
+  chapterLabel: mangaGlue.chapterLabel,
+  prefs: mangaGlue.prefs,
+  savePrefs: mangaGlue.savePrefs,
+  progress: mangaGlue.progress,
+  removeProgress: mangaGlue.removeProgress,
+  readChapters: mangaGlue.readChapters,
+  favorites: mangaGlue.favorites,
+  isFavorite: mangaGlue.isFavorite,
+  toggleFavorite: mangaGlue.toggleFavorite,
 };
 
 // ================================================================================== runtime

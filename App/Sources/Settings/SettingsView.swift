@@ -75,6 +75,12 @@ struct SettingsView: View {
                 }
                 section("Anime4K") { Anime4KPanel() }
                 section("Anime rows") { AnimeRowsPanel() }
+                // settings.mangaEnabled (views/manga.tsx EnableGate): the Manga tab, Search's manga
+                // results and the anime hero's "Read the Manga" all wait for it.
+                section("Manga") {
+                    row("Read manga in Harbor", detail: "Reads from a Suwayomi server you run. Adds the Manga tab, manga results in Search and “Read the Manga” on anime pages.")
+                    onOff("Manga", settings.slice.mangaEnabled ?? false, key: "mangaEnabled")
+                }
                 // settings/webhooks-panel.tsx (sports reminders) and sports-api-setting.tsx.
                 section("Where alerts go") { SportsWebhooksPanel() }
                 section("Sports metadata") { SportsApiKeyPanel() }
