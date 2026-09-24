@@ -17,6 +17,9 @@ import UIKit
 /// - Scrobbles: music/engine.rs counts the seconds actually heard and, when a track that passed
 ///   should_scrobble ends (EndFile or natural EOF), calls scrobble_track (Navidrome + Last.fm).
 /// - Track radio: radio.ts armTrackRadio keeps a started radio topped up near its end.
+/// - Spotify: commands/playback.rs music_play_track sends a Spotify track to the librespot session
+///   (SpotifyPlayback) instead of the stream engine, stopping whichever engine is not playing.
+///   Position, pause and end come from its events; the queue, scrobbles and Now Playing stay here.
 @MainActor
 final class MusicPlayer: ObservableObject {
     static let shared = MusicPlayer()
@@ -39,6 +42,13 @@ final class MusicPlayer: ObservableObject {
     @Published private(set) var libraryVersion = 0
 
     private let player = AVQueuePlayer()
+    /// music/mod.rs ACTIVE_STREAM / ACTIVE_SPOTIFY: which engine the current entry plays on.
+    private enum Engine { case none, stream, spotify }
+    private var engine: Engine = .none
+    private let spotify = SpotifyPlayback.shared
+    /// The Spotify entry playing (its queue index); nil while nothing is bound to its events.
+    private var spotifyEntry: (track: MusicTrack, index: Int)?
+    private var spotifyClock: Timer?
     /// player.ts playRequest: a newer play() makes every older async step a no-op.
     private var request = 0
     /// Items in the AVQueuePlayer and the queue entry each one plays.
@@ -171,15 +181,29 @@ final class MusicPlayer: ObservableObject {
 
     func toggle() {
         switch phase {
-        case .playing: player.pause()
-        case .paused: activateSession(); player.play()
+        case .playing:
+            if engine == .spotify { spotify.setPaused(true); phase = .paused } else { player.pause() }
+        case .paused:
+            if engine == .spotify {
+                // After the queue ran out the Spotify track has ended: play the entry again.
+                guard spotifyEntry != nil else { if index >= 0 { failed = []; start(at: index) }; return }
+                spotify.setPaused(false)
+                phase = .playing
+            } else {
+                activateSession()
+                player.play()
+            }
         case .error: if index >= 0 { failed = []; start(at: index) }
         default: break
         }
         refreshPhase()
+        refreshNowPlaying()
     }
 
-    func pause() { if phase == .playing { player.pause(); refreshPhase() } }
+    func pause() {
+        guard phase == .playing else { return }
+        if engine == .spotify { spotify.setPaused(true); phase = .paused; refreshNowPlaying() } else { player.pause(); refreshPhase() }
+    }
 
     /// player.ts nextMusic
     func next(auto: Bool = false) {
@@ -191,6 +215,7 @@ final class MusicPlayer: ObservableObject {
             start(at: index + 1)
         } else {
             player.pause()
+            if engine == .spotify { spotify.setPaused(true) }
             if auto { position = duration }
             phase = .paused
             refreshNowPlaying()
@@ -206,7 +231,13 @@ final class MusicPlayer: ObservableObject {
 
     func seek(to seconds: Double) {
         let target = max(0, duration > 0 ? min(seconds, duration) : seconds)
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        if engine == .spotify {
+            spotify.seek(to: target)
+            // A seek is a jump, not listening (engine.rs listened_increment).
+            lastTick = target
+        } else {
+            player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
         position = target
         refreshNowPlaying()
     }
@@ -236,6 +267,8 @@ final class MusicPlayer: ObservableObject {
         request += 1
         player.pause()
         clearItems()
+        releaseSpotify()
+        engine = .none
         current = nil
         queue = []
         index = -1
@@ -269,6 +302,10 @@ final class MusicPlayer: ObservableObject {
         phase = .resolving
         player.pause()
         clearItems()
+        // A Spotify track being skipped is silenced at once; after its natural end this is a
+        // no-op and the next Spotify track follows its tail (control.rs / player.rs gapless).
+        if engine == .spotify { spotify.setPaused(true) }
+        spotifyEntry = nil
         installCommands()
         refreshNowPlaying()
         Task { await self.load(entry, at: i, ticket: ticket) }
@@ -276,6 +313,8 @@ final class MusicPlayer: ObservableObject {
 
     private func load(_ entry: MusicTrack, at i: Int, ticket: Int) async {
         do {
+            // mod.rs initialize: a saved Spotify sign-in is restored before a Spotify entry plays.
+            if entry.connectorId == "spotify" { await spotify.restoreIfNeeded() }
             let prepared = try await prepare(entry, excluding: failed)
             guard ticket == request else { return }
             let track = prepared.track
@@ -284,6 +323,14 @@ final class MusicPlayer: ObservableObject {
             if queue.indices.contains(i) { queue[i] = track }
             current = track
             if track.seconds > 0 { duration = track.seconds }
+            if Self.isSpotify(prepared) {
+                // The session can be gone by now: the entry then tries its other sources.
+                do { try playSpotify(prepared, at: i) } catch { recover(track, at: i, error.localizedDescription) }
+                return
+            }
+            // music_play_track: the stream engine takes over from Spotify.
+            if engine == .spotify { releaseSpotify() }
+            engine = .stream
             guard let item = makeItem(prepared) else { throw MusicPlaybackError.message("music.error.playback") }
             items[ObjectIdentifier(item)] = (track, i)
             watch(item)
@@ -318,7 +365,7 @@ final class MusicPlayer: ObservableObject {
     }
 
     private func makeItem(_ prepared: MusicPrepared) -> AVPlayerItem? {
-        guard let url = URL(string: prepared.stream.url) else { return nil }
+        guard !Self.isSpotify(prepared), let url = URL(string: prepared.stream.url) else { return nil }
         var options: [String: Any] = [:]
         if let headers = prepared.stream.httpHeaders, !headers.isEmpty { options["AVURLAssetHTTPHeaderFieldsKey"] = headers }
         let item = AVPlayerItem(asset: AVURLAsset(url: url, options: options))
@@ -367,18 +414,24 @@ final class MusicPlayer: ObservableObject {
             player.remove(item)
             return
         }
-        failed.append(entry.track.queueKey)
+        recover(entry.track, at: entry.index, message)
+    }
+
+    /// player.ts recoverPlayback for the entry now playing, whichever engine failed it.
+    private func recover(_ track: MusicTrack, at index: Int, _ message: String?) {
+        failed.append(track.queueKey)
         guard failed.count < 3 else { fail(message ?? "music.error.playback"); return }
         // Retry the original queue entry with every failed source excluded.
-        let original = queue.indices.contains(entry.index) ? queue[entry.index] : entry.track
+        let original = queue.indices.contains(index) ? queue[index] : track
         let origin = original.collectionOrigin
         let retry = origin.map { o in MusicTrack(id: o.id, title: original.title, artist: original.artist, album: original.album, artwork: original.artwork, durationSeconds: original.durationSeconds, durationLabel: original.durationLabel, connectorId: o.connectorId) } ?? original
-        if queue.indices.contains(entry.index) { queue[entry.index] = retry }
+        if queue.indices.contains(index) { queue[index] = retry }
         request += 1
         let ticket = request
         phase = .resolving
         clearItems()
-        Task { await self.load(retry, at: entry.index, ticket: ticket) }
+        spotifyEntry = nil
+        Task { await self.load(retry, at: index, ticket: ticket) }
     }
 
     private func fail(_ message: String) {
@@ -421,7 +474,7 @@ final class MusicPlayer: ObservableObject {
 
     /// Resolve the next entry late in the current one and queue it behind (gapless).
     private func preloadNextIfDue() {
-        guard phase == .playing, preloading == nil, duration > 0, duration - position < 30 else { return }
+        guard engine == .stream, phase == .playing, preloading == nil, duration > 0, duration - position < 30 else { return }
         let n = index + 1
         let attempt = "\(request):\(n)"
         guard queue.indices.contains(n), preloadAttempt != attempt, !items.values.contains(where: { $0.index == n }) else { return }
@@ -432,7 +485,8 @@ final class MusicPlayer: ObservableObject {
         Task {
             defer { if self.preloading == n { self.preloading = nil } }
             let prepared = try? await self.prepare(entry, excluding: [])
-            guard ticket == self.request, let prepared, let current = self.player.currentItem, self.queue.indices.contains(n),
+            // A Spotify entry cannot join the AVQueuePlayer; it starts through librespot when reached.
+            guard ticket == self.request, let prepared, !Self.isSpotify(prepared), let current = self.player.currentItem, self.queue.indices.contains(n),
                   self.queue[n].queueKey == entry.queueKey, let item = self.makeItem(prepared) else { return }
             guard self.player.canInsert(item, after: current) else { return }
             self.queue[n] = prepared.track
@@ -455,22 +509,26 @@ final class MusicPlayer: ObservableObject {
     private func tick() {
         guard current != nil, let item = player.currentItem else { return }
         let t = player.currentTime().seconds
-        if t.isFinite {
-            position = max(0, t)
-            // engine.rs listened_increment: forward steps of at most 2 s count as heard.
-            if let previous = lastTick, scrobbleTrack != nil {
-                let delta = t - previous
-                if delta > 0, delta <= 2 { listened += delta }
-            }
-            lastTick = t
-        }
+        if t.isFinite { heard(at: t) }
         let d = item.duration.seconds
         if d.isFinite, d > 0 { duration = d }
         preloadNextIfDue()
     }
 
+    /// The position moved to `t`. engine.rs listened_increment: forward steps of at most 2 s
+    /// count as heard.
+    private func heard(at t: Double) {
+        position = max(0, t)
+        if let previous = lastTick, scrobbleTrack != nil {
+            let delta = t - previous
+            if delta > 0, delta <= 2 { listened += delta }
+        }
+        lastTick = t
+    }
+
     private func refreshPhase() {
-        guard current != nil, phase != .resolving, phase != .error else { return }
+        // Spotify's phase comes from its own events (spotifyTick).
+        guard engine != .spotify, current != nil, phase != .resolving, phase != .error else { return }
         switch player.timeControlStatus {
         case .playing, .waitingToPlayAtSpecifiedRate: phase = .playing
         case .paused: phase = .paused
@@ -480,7 +538,7 @@ final class MusicPlayer: ObservableObject {
     }
 
     private func pauseForVideo() {
-        if phase == .playing { player.pause(); refreshPhase() }
+        if phase == .playing { pause() }
     }
 
     private func addRecent(_ track: MusicTrack) {
@@ -494,6 +552,90 @@ final class MusicPlayer: ObservableObject {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
+    }
+
+    // MARK: - Spotify (music/spotify through SpotifyPlayback)
+
+    /// engine/music.ts prepare() hands back the Spotify URI with this marker instead of a URL.
+    private static func isSpotify(_ prepared: MusicPrepared) -> Bool {
+        prepared.stream.mimeType == SpotifyPlayback.streamMime || (prepared.track.connectorId == "spotify" && prepared.stream.url.hasPrefix("spotify:"))
+    }
+
+    /// music_play_track for a Spotify track: the stream engine stops, librespot loads the URI.
+    private func playSpotify(_ prepared: MusicPrepared, at i: Int) throws {
+        player.pause()
+        clearItems()
+        do {
+            try spotify.play(uri: prepared.stream.url)
+        } catch let failure as SpotifyPlayback.Failure {
+            throw MusicPlaybackError.message(failure.message)
+        }
+        engine = .spotify
+        spotifyEntry = (prepared.track, i)
+        startSpotifyClock()
+        phase = .playing
+        lastSource = prepared.track.connectorId
+        beginScrobble(prepared.track)
+        addRecent(prepared.track)
+        refreshNowPlaying()
+        extendRadioIfDue()
+    }
+
+    /// Stops the librespot player and its event clock (another engine takes over, or close).
+    private func releaseSpotify() {
+        guard engine == .spotify else { return }
+        spotify.stop()
+        spotifyEntry = nil
+        spotifyClock?.invalidate()
+        spotifyClock = nil
+    }
+
+    private func startSpotifyClock() {
+        guard spotifyClock == nil else { return }
+        // Upstream's player emits time-pos every 250 ms (position_update_interval).
+        let timer = Timer(timeInterval: 0.25, repeats: true) { @Sendable [weak self] _ in
+            Task { @MainActor in self?.spotifyTick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        spotifyClock = timer
+    }
+
+    /// player.rs spawn_events on this side: time-pos, pause, end-file (eof), player-failure.
+    private func spotifyTick() {
+        let batch = spotify.drainEvents()
+        guard engine == .spotify, let entry = spotifyEntry else { return }
+        for event in batch.events {
+            switch event.event {
+            case "playing":
+                if let p = event.position { heard(at: p) }
+                phase = .playing
+                refreshNowPlaying()
+            case "paused":
+                if let p = event.position { heard(at: p) }
+                if phase == .playing { phase = .paused }
+                refreshNowPlaying()
+            case "position":
+                if let p = event.position { heard(at: p) }
+            case "end":
+                // engine.rs natural EOF: the finished entry scrobbles now, then the queue advances.
+                spotifyEntry = nil
+                if scrobbleTrack?.queueKey == entry.track.queueKey { finishScrobble() }
+                next(auto: true)
+                return
+            case "failure":
+                spotifyEntry = nil
+                recover(entry.track, at: entry.index, event.reason ?? "Spotify track is unavailable")
+                return
+            default:
+                break
+            }
+        }
+        if !batch.connected {
+            // Spotify dropped the session: this entry tries its other sources, the session comes back.
+            spotifyEntry = nil
+            spotify.sessionLost()
+            recover(entry.track, at: entry.index, "Spotify session connection failed: the session closed")
+        }
     }
 
     // MARK: - scrobbles (music/engine.rs + commands/accounts.rs scrobble_track)

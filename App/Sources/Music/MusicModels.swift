@@ -111,8 +111,10 @@ struct MusicConnectionRow: Decodable, Identifiable {
     var status: String
     var health: String
     var detail: String?
-    /// The signed-in account (Navidrome user, Last.fm user), as upstream's MusicConnection.account.
+    /// The signed-in account (Navidrome user, Last.fm user, Spotify user), as upstream's MusicConnection.account.
     var account: String?
+    /// MusicConnection.error (Spotify's recorded sign-in or session failure).
+    var error: String?
     var gated: Bool
     var enabled: Bool
     var capabilities: [String]
@@ -122,6 +124,12 @@ struct MusicConsentState: Decodable { var accepted: Bool; var soundcloud: Bool }
 
 /// engine/music.ts subsonicConnect: the account and server the pairing was made with.
 struct MusicSubsonicConnected: Decodable { var account: String; var detail: String }
+
+/// engine/musicSpotify.ts setup (spotify-setup.tsx: the saved client id and the redirect URI).
+struct MusicSpotifySetup: Decodable { var clientId: String; var redirectUri: String; var dashboardUrl: String; var hint: String }
+
+/// engine/musicSpotify.ts begin: the authorize URL the phone opens.
+struct MusicSpotifyAuthStart: Decodable { var authorizeUrl: String; var redirectUri: String }
 
 /// engine/musicScrobble.ts lastfmStatus (lastfm.rs status + the saved credentials).
 struct MusicLastFmStatus: Decodable {

@@ -1,4 +1,5 @@
-//! C ABI over harbor-core and the librqbit torrent engine (`torrent`, Stage 6). Every function
+//! C ABI over harbor-core, the librqbit torrent engine (`torrent`, Stage 6) and the librespot
+//! Spotify player (`spotify`, Stage 12, the default `spotify` feature). Every function
 //! that returns a `*mut c_char` hands ownership to the caller, who must release it with
 //! `harbor_string_free`.
 use std::ffi::{c_char, CStr, CString};
@@ -6,6 +7,8 @@ use std::ffi::{c_char, CStr, CString};
 use harbor_core::{parser, scoring, trust, ParsedStream, ScoreOptions, ScoredStream, Stream, TrustOptions};
 
 pub mod torrent;
+#[cfg(feature = "spotify")]
+pub mod spotify;
 
 fn to_c(s: String) -> *mut c_char {
     CString::new(s).unwrap_or_default().into_raw()
