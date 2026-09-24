@@ -46,8 +46,12 @@ struct ShellView: View {
         }
         .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
+        // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
+        .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
         // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
         .overlay(alignment: .top) { ReminderToastHost() }
+        // Watch Together invites, summons and chat while browsing (Together/TogetherOverlays.swift).
+        .overlay { TogetherToastHost() }
         .overlay(alignment: .top) {
             if let n = app.deepLinkNote {
                 Text(n).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))
@@ -214,6 +218,8 @@ struct TopBarView: View {
                 .buttonStyle(BPTabStyleWide())
                 .accessibilityIdentifier("profile-chip")
             }
+            // Stage 10 account area: profile, notifications, activity, groups, Watch together.
+            AccountMenuButton().environmentObject(app)
             Button { app.room = .settings } label: { Image(systemName: Room.settings.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .accessibilityIdentifier("tab-settings")

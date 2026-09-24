@@ -24,6 +24,7 @@ import { createLocalStorage } from "./storage.js";
 import { installTimers } from "./timers.js";
 import { fetchShim, HeadersShim, RequestShim, ResponseShim } from "./fetch.js";
 import { createDom } from "./dom.js";
+import { installWebSocket, WS_HOST_FUNCTIONS } from "./websocket.js";
 
 const g = globalThis;
 const define = (name, value) => {
@@ -110,6 +111,9 @@ define("Request", RequestShim);
 define("Response", ResponseShim);
 define("fetch", fetchShim);
 
+// --- WebSocket (optional host functions; see websocket.js) ------------------------------------
+const sockets = installWebSocket(g);
+
 // --- structuredClone ------------------------------------------------------------------------
 define("structuredClone", (value) => {
   // JSON round-trip: enough for the plain data (metas, settings, catalogs) this bundle
@@ -147,4 +151,7 @@ export const shims = {
   timers,
   hostFunctions: HOST_FUNCTIONS,
   missingHostFunctions,
+  sockets,
+  /** Optional host functions this host lacks (WebSocket); boot does not require them. */
+  missingOptionalHostFunctions: () => WS_HOST_FUNCTIONS.filter((n) => !hostHas(n)),
 };

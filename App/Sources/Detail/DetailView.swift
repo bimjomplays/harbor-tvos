@@ -104,7 +104,14 @@ struct DetailView: View {
 
     /// Quick panel / Discovery Queue "Play now": open the picker as soon as the page knows what to play.
     var autoPlay = false
-    init(meta: Meta, autoPlay: Bool = false) { _model = StateObject(wrappedValue: DetailModel(meta: meta)); self.autoPlay = autoPlay }
+    /// Watch Together (together-invite-toast.tsx openPicker(meta, invite.episode, {autoPlay: !guestPick})):
+    /// the episode the room is playing, and whether guests pick their own source.
+    var roomEpisode: AnyJSON? = nil
+    var roomPick = false
+    init(meta: Meta, autoPlay: Bool = false, roomEpisode: AnyJSON? = nil, roomPick: Bool = false) {
+        _model = StateObject(wrappedValue: DetailModel(meta: meta)); self.autoPlay = autoPlay
+        self.roomEpisode = roomEpisode; self.roomPick = roomPick
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -127,8 +134,10 @@ struct DetailView: View {
         .task {
             await model.load()
             if autoPlay, picker == nil {
-                pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true
-                if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
+                pickerAuto = roomPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
+                if let re = roomEpisode, let s = re["season"]?.number, let e = re["episode"]?.number {
+                    picker = (model.meta, model.episodes.first(where: { $0.season == Int(s) && $0.episode == Int(e) })?.playEpisode ?? re)
+                } else if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
             }
         }
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {

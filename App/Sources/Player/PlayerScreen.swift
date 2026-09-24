@@ -93,6 +93,9 @@ struct PlayerScreen: View {
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     @State private var scrobbleState: String?   // last action sent to Trakt
     @State private var lastScrobblePaused = false
+    /// Watch Together (Together/TogetherPlayback.swift): room sync, lobby and the Room panel.
+    @StateObject private var together = TogetherPlayback()
+    @State private var roomOpen = false
     private static let hideAfter: Double = 4.6   // use-bp-player-chrome.ts
 
     var body: some View {
@@ -108,6 +111,8 @@ struct PlayerScreen: View {
             } else {
                 BP.void_.ignoresSafeArea()
             }
+            // Watch Together: roster, lobby, room chat lines, drawings/cursors (view-only, no focus).
+            TogetherPlayerLayer(playback: together)
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
@@ -162,6 +167,7 @@ struct PlayerScreen: View {
         .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url) }
         .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
+        .fullScreenCover(isPresented: $roomOpen, onDismiss: { focus = .surface; wake() }) { TogetherView(inPlayer: true) }
         .task {
             // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
             // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.
@@ -203,6 +209,7 @@ struct PlayerScreen: View {
             }
             Task { await saveTick(flush: false) }
             scrobbleTick()
+            together.tick(controller: controller, context: isLive ? nil : context, url: url)
             if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
         }
         .animation(.easeOut(duration: 0.32), value: chrome)
@@ -403,6 +410,8 @@ struct PlayerScreen: View {
                 chip("Audio", "waveform") { open(.audio) }
                 if !isLive { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
+                // Watch Together: the room panel (chat, people) over the playing video.
+                if together.inSession { chip("Room", "person.2.fill") { roomOpen = true } }
                 // bp-player-rail: the mute toggle ("Muted" / "Sound on").
                 chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
                     controller?.setMuted(!muted)
@@ -476,8 +485,10 @@ struct PlayerScreen: View {
             try? await Task.sleep(for: .milliseconds(420))
             if Task.isCancelled { return }
             if let target = pendingSeek {
-                controller?.seek(to: target)
-                snap.position = target
+                if !together.interceptSeek(to: target, controller: controller) {
+                    controller?.seek(to: target)
+                    snap.position = target
+                }
             }
             pendingSeek = nil
             seekRun = 0
@@ -494,6 +505,7 @@ struct PlayerScreen: View {
     private func seekBy(_ delta: Double) {
         let target = snap.position + delta
         let clamped = snap.duration > 0 ? min(snap.duration - 1, max(0, target)) : max(0, target)
+        if together.interceptSeek(to: clamped, controller: controller) { return }
         controller?.seek(to: clamped)
         snap.position = clamped
     }
@@ -635,6 +647,8 @@ struct PlayerScreen: View {
     // MARK: behaviour
 
     private func togglePause() {
+        // In a Watch Together room the lobby, or the host, may own the press (use-playback-controls).
+        if together.interceptToggle(controller) { wake(); return }
         controller?.togglePause()
         if let c = controller { snap = c.snapshot() }
         wake()
@@ -818,6 +832,7 @@ struct PlayerScreen: View {
         // "Play now" and the file's own end can both land in the last second; close once.
         guard !finishing else { return }
         finishing = true
+        together.closing()
         if scrobbleState != nil {
             let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0
             sendScrobble(progress >= 90 ? "stop" : "pause")

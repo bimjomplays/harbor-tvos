@@ -973,6 +973,165 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// ------------------------------- Stage 10: social + Watch Together (recorded host, mock relay)
+// A fake harbor.site answers upstream's social client; a fake relay answers the WebSocket
+// shim through the optional wsOpen/wsSend/wsClose host functions. Proves the TV reads the
+// same endpoints desktop Harbor does, and that upstream's TogetherClient runs on the shim.
+{
+  const session = JSON.stringify({ token: "tok_social", refresh: "ref_social", refreshedAt: Date.now(), user: { id: "u_social", username: "skipper", handle: "skipper" } });
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.theme-session.default", session],
+  ]) });
+  const S = rec.engine.social;
+  const T = rec.engine.together;
+  const calls = [];
+  const SUMMARY = (handle, extra = {}) => ({ handle, alias: handle === "skipper" ? "Skipper" : "Mate", verified: false, featured: false, level: 3, xp: 10, xpToNext: 90, online: true, memberSince: "2025-01-01T00:00:00Z", isOwner: handle === "skipper", counts: { watched: 12, moviesWatched: 4, episodesWatched: 30, friends: 2, badges: 1, hoursWatched: 0, minutesWatched: 3000 }, featuredLists: [{ id: "l1", name: "Cozy", items: [{ id: "tt1", name: "One", poster: "https://img.example.invalid/1.jpg", type: "movie" }], likeCount: 2, liked: false }], ...extra });
+  rec.node.host.fetch = async (req) => {
+    const u = new URL(req.url);
+    calls.push([req.method || "GET", u.pathname + u.search, req.body || null]);
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Error", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const p = u.pathname;
+    if (p === "/themes/api/social/u/skipper") return json(SUMMARY("skipper"));
+    if (p === "/themes/api/social/u/mate") return json(SUMMARY("mate", { private: true, friendStatus: "incoming", friendEdgeId: "e9" }));
+    if (p === "/themes/api/social/u/ghost") return json({ error: "not_found" }, 404);
+    if (p === "/themes/api/social/u/skipper/friends") return json([{ handle: "mate", alias: "Mate", online: true }]);
+    if (p === "/themes/api/social/u/skipper/badges") return json([{ id: "og", name: "OG", description: "Early", tier: "gold" }]);
+    if (p === "/themes/api/social/u/skipper/activity") return json([{ id: "a1", kind: "rated", title: "One", rating: 9, at: "2026-01-01T00:00:00Z", metaId: "tt1" }]);
+    if (p.startsWith("/themes/api/social/u/mate/")) return json([]);
+    if (p === "/themes/api/me/notifications") return json({ notifications: [{ id: "t1", type: "downloads", themeName: "Nightfall", count: 100, read: true, createdAt: "2026-01-01T00:00:00Z" }], unread: 0 });
+    if (p === "/themes/api/social/me/notifications") return json({ notifications: [
+      { id: "n1", type: "group-added", read: false, createdAt: "2026-02-01T00:00:00Z", entityType: "group", entityId: "g1", title: "" },
+      { id: "n2", type: "friend-request", read: false, createdAt: "2026-02-02T00:00:00Z", entityType: "friendEdge", entityId: "e1" },
+      { id: "n3", type: "badge-received", read: false, createdAt: "2026-02-03T00:00:00Z", body: "og", data: { name: "og" } },
+    ], unread: 3 });
+    if (p === "/themes/api/social/friends/pending") return json({ pending: [{ edgeId: "e1", from: { handle: "mate", alias: "Mate" }, createdAt: "2026-02-02T00:00:00Z" }] });
+    if (p === "/themes/api/social/friends/request") return json({ edge: { id: "e2", status: "pending" } });
+    if (p === "/themes/api/social/me/feed") return json({ items: [{ id: "f1", kind: "watched", title: "Frieren", at: "2026-02-01T00:00:00Z", metaId: "kitsu:46474", actor: { handle: "mate", alias: "Mate" } }], nextCursor: "c2", friendCount: 3, sharingCount: 1 });
+    if (p === "/themes/api/social/groups/mine") return json({ groups: [{ id: "g1", name: "Crew", visibility: "invite", tags: [], ownerId: "u_social", memberCount: 2, createdAt: "", isOwner: true, isMember: true }] });
+    if (p === "/themes/api/social/groups/invites") return json([]);
+    if (p === "/themes/api/social/groups/discover") return json({ groups: [{ id: "g1", name: "Crew", visibility: "invite", tags: [], ownerId: "u_social", memberCount: 2, createdAt: "", isOwner: true, isMember: true }, { id: "g2", name: "Anime Club", visibility: "public", tags: ["anime"], ownerId: "x", memberCount: 40, createdAt: "", isOwner: false, isMember: false }], topTags: ["anime"], total: 2 });
+    if (p === "/themes/api/social/groups/g2/join") return json({ id: "g2", name: "Anime Club", visibility: "public", tags: ["anime"], ownerId: "x", memberCount: 41, createdAt: "", isOwner: false, isMember: true, members: [], myRole: "member" });
+    if (p === "/themes/api/social/groups/g2/posts") return json({ posts: [
+      { id: "p1", groupId: "g2", body: "plain", pinned: false, createdAt: "2026-02-02T00:00:00Z", likeCount: 0, liked: false, canDelete: false, canPin: false },
+      { id: "p2", groupId: "g2", body: "[b]Welcome[/b] aboard & hi", pinned: true, createdAt: "2026-02-01T00:00:00Z", likeCount: 3, liked: true, canDelete: false, canPin: false },
+    ], canPost: true });
+    return json({ error: "not_found" }, 404);
+  };
+
+  // ---- social
+  r.ok("social.me reads the signed-in author", S.me().signedIn === true && S.me().handle === "skipper", JSON.stringify(S.me()));
+  const own = await S.profile(null);
+  r.ok("social.profile(null) opens the member's own profile with friends, badges, activity", own.state === "ready" && own.summary.isOwner && own.friends.length === 1 && own.badges[0].iconUrl.endsWith("/badges/og.webp") && own.activity[0].rating === 9, JSON.stringify(own).slice(0, 300));
+  r.eq("social.profile hero stats follow STAT_ORDER minus the default-hidden friends/badges", own.stats.map((s) => s.key), ["watchTime", "episodes", "movies", "read"]);
+  r.eq("social.profile watch time pill (3000 min = 2 days 2 hours)", own.stats[0].value, "M 00 D 02 H 02");
+  const locked = await S.profile("mate");
+  r.ok("a private profile shows only the hero (no friends/badges/activity requests)", locked.state === "ready" && locked.locked === true && locked.friends.length === 0 && !calls.some(([, path]) => path.startsWith("/themes/api/social/u/mate/")) && locked.summary.friendStatus === "incoming" && locked.summary.friendEdgeId === "e9", JSON.stringify(locked).slice(0, 200));
+  r.eq("social.profile of a missing handle is empty", (await S.profile("ghost")).state, "empty");
+  const nc = await S.notifications();
+  r.ok("social.notifications merges theme + social, hides friend requests, lists them as pending", nc.authed && nc.items.length === 3 && !nc.items.some((n) => n.kind === "friend-request") && nc.pending.length === 1 && nc.pending[0].edgeId === "e1", JSON.stringify(nc).slice(0, 300));
+  r.ok("notification titles and targets follow notification-rows/center", nc.items[0].title === "You earned the Og badge" && nc.items[0].target.open === "profile" && nc.items[1].title === "Group invite" && nc.items[1].target.open === "group" && nc.items[1].target.id === "g1" && nc.items[2].title === "Downloads milestone", JSON.stringify(nc.items.map((n) => [n.title, n.target])));
+  r.eq("social.notifications badge = unread + pending", nc.badge, 3);
+  await S.notificationsDismiss(["s:n1"], false);
+  r.ok("a dismissed notification stays hidden (harbor.nc.dismissed.v1)", !(await S.notifications()).items.some((n) => n.id === "s:n1") && rec.node.storage.has("harbor.nc.dismissed.v1"));
+  const fr = await S.friendRequest("Mate");
+  const frCall = calls.find(([m, path]) => m === "POST" && path === "/themes/api/social/friends/request");
+  r.ok("social.friendRequest posts upstream's body (lower-cased handle)", fr.friendStatus === "outgoing" && frCall && JSON.parse(frCall[2]).handle === "mate", JSON.stringify(frCall));
+  const fd = await S.feed(null);
+  r.ok("social.feed maps friends' items (anime ids open as series) and the cursor", fd.items[0].type === "series" && fd.items[0].actor.handle === "mate" && fd.nextCursor === "c2" && fd.sharingCount === 1, JSON.stringify(fd));
+  const gs = await S.groups(null, null, null);
+  r.ok("social.groups lists mine first and leaves them out of discover", gs.mine.length === 1 && gs.groups.length === 1 && gs.groups[0].id === "g2" && gs.topTags[0] === "anime" && gs.phase === "ready", JSON.stringify(gs));
+  const gj = await S.groupJoin("g2");
+  r.ok("social.groupJoin returns the group with member perms", gj.isMember && gj.role === "member" && gj.can.post === true && gj.can.kick === false, JSON.stringify(gj));
+  const gp = await S.groupPosts("g2", null);
+  r.ok("social.groupPosts: pinned first, BBCode shown as text", gp.posts[0].id === "p2" && gp.posts[0].text === "Welcome aboard & hi" && gp.canPost, JSON.stringify(gp.posts.map((p) => [p.id, p.text])));
+  const bad = await S.comment("skipper", "see https://spam.example").then(() => "posted", (e) => e.message);
+  r.eq("social.comment refuses a link like comment-compose (text-safety)", bad, "Links are not allowed in comments.");
+  r.eq("social.parseListLink: harbor:// deep link", S.parseListLink("harbor://list/skipper/l1"), { handle: "skipper", listId: "l1" });
+  r.eq("social.parseListLink: share URL", S.parseListLink("https://harbor.site/list/Skipper/l1?x=1"), { handle: "Skipper", listId: "l1" });
+  r.eq("social.parseListLink: typed handle/id", S.parseListLink("@skipper/l1"), { handle: "skipper", listId: "l1" });
+  r.eq("social.parseListLink: junk", S.parseListLink("https://evil.example/list/a/b"), null);
+  const sl = await S.sharedList("skipper", "l1");
+  r.ok("social.sharedList finds the list among the maker's featured lists", sl.state === "ready" && sl.list.items.length === 1 && sl.owner.alias === "Skipper" && sl.list.likeCount === 2, JSON.stringify(sl));
+  r.eq("social.sharedList of an unknown list is missing", (await S.sharedList("skipper", "nope")).state, "missing");
+  r.ok("social writes only what the viewer asked for (friend request, group join)", calls.filter(([m]) => m !== "GET").every(([, path]) => path === "/themes/api/social/friends/request" || path === "/themes/api/social/groups/g2/join"), JSON.stringify(calls.filter(([m]) => m !== "GET")));
+
+  // ---- Watch Together over the WebSocket shim
+  const opened = [];
+  const frames = [];
+  const closed = [];
+  const events = [];
+  rec.engine.runtime.onEvent((type, detail) => { if (type.startsWith("harbor:together")) events.push([type, detail]); });
+  rec.node.host.wsOpen = (url, id) => opened.push([url, id]);
+  rec.node.host.wsSend = (id, text) => frames.push([id, JSON.parse(text)]);
+  rec.node.host.wsClose = (id) => closed.push(id);
+  const wsEvent = rec.run("__harbor_ws_event");
+  const sent = (t) => frames.filter(([, f]) => f.t === t).map(([, f]) => f);
+  const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+  r.eq("runtime reports the WebSocket host functions as present", rec.engine.runtime.missingOptionalHostFunctions(), []);
+  const id = { profileId: "default", linked: true, avatar: "/avatars/local.png", color: "#60a5fa" };
+  r.eq("together.configure without a relay is disabled", T.configure(id).enabled, false);
+  const v0 = T.setRelay(id, "wss://relay.example.invalid");
+  r.ok("together.setRelay writes togetherRelayUrl and enables the room", v0.enabled && rec.engine.settings.loadForProfile("default", true).togetherRelayUrl === "wss://relay.example.invalid", JSON.stringify(v0).slice(0, 200));
+  const code = T.start();
+  r.ok("together.start opens <relay>/r/<CODE> with a 6-letter room code", /^[A-Z2-9]{6}$/.test(code) && opened.length === 1 && opened[0][0] === `wss://relay.example.invalid/r/${code}`, JSON.stringify(opened));
+  const sock = opened[0][1];
+  wsEvent(sock, "open", null);
+  const hello = sent("hello")[0];
+  r.ok("on open the client pings, then says hello (bundled avatar art is not shared; harborColor wins)", sent("ping").length === 1 && hello && hello.room === code && typeof hello.clientId === "string" && hello.avatar === null && hello.color === (rec.engine.settings.loadForProfile("default", true).harborColor || "#60a5fa"), JSON.stringify(frames));
+  const me = hello.clientId;
+  const hostState = { mediaId: "tt0111161", mediaTitle: "The Shawshank Redemption", episode: null, posterUrl: null, positionSeconds: 120, playing: true, updatedAt: Date.now(), updatedBy: "host1", hostClientId: "host1", source: { resolution: "1080p", infoHash: "0123456789abcdef0123456789abcdef01234567" } };
+  wsEvent(sock, "message", JSON.stringify({ t: "joined", room: code, participants: [{ id: "host1", name: "Ana", joinedAt: 1, ready: true }, { id: me, name: hello.name, joinedAt: 2, ready: false }], state: hostState, hostClientId: "host1", started: true, srvAt: Date.now(), relayVersion: 11 }));
+  await wait(220);
+  const v1 = T.view();
+  r.ok("joined: in a room of two as a guest, host's source derived", v1.state === "joined" && v1.inRoom && !v1.isHost && v1.participants[0].name === "Ana" && v1.participants[0].host && v1.hostSource && v1.hostSource.descriptor.resolution === "1080p", JSON.stringify(v1).slice(0, 400));
+  r.ok("joined with media playing turns into an invite (client.ts joined → invite)", v1.incomingInvite && v1.incomingInvite.invite.mediaId === "tt0111161" && v1.incomingInvite.name === "Ana" && T.wasInvitedTo("tt0111161||"), JSON.stringify(v1.incomingInvite));
+  r.ok("incoming state reaches the host as harbor:together-sync at once", events.some(([t, d]) => t === "harbor:together-sync" && d.kind === "state" && d.state.mediaId === "tt0111161"), JSON.stringify(events.map(([t, d]) => [t, d && d.kind])));
+  r.ok("the view reaches the host as a throttled harbor:together event", events.some(([t, d]) => t === "harbor:together" && d && d.state === "joined"));
+  wsEvent(sock, "message", JSON.stringify({ t: "chat", from: "host1", name: "Ana", text: "popcorn ready?", at: Date.now() }));
+  wsEvent(sock, "message", JSON.stringify({ t: "cmd", from: "host1", command: { action: "pause" } }));
+  wsEvent(sock, "message", JSON.stringify({ t: "draw", from: "host1", name: "Ana", strokeId: "s1", phase: "start", x: 0.2, y: 0.3, color: "#f00", path: "player:tt0111161" }));
+  wsEvent(sock, "message", JSON.stringify({ t: "draw", from: "host1", name: "Ana", strokeId: "s1", phase: "point", x: 0.25, y: 0.35, path: "player:tt0111161" }));
+  wsEvent(sock, "message", JSON.stringify({ t: "cursor", from: "host1", name: "Ana", x: 0.5, y: 0.5, visible: true, path: "player:tt0111161" }));
+  wsEvent(sock, "message", JSON.stringify({ t: "presence", from: "host1", activeAt: Date.now(), location: { kind: "player", meta: { id: "tt0111161", type: "movie", name: "The Shawshank Redemption" } } }));
+  await wait(220);
+  const v2 = T.view();
+  r.ok("chat, strokes, cursors and presence land in the view", v2.chat.length === 1 && v2.chat[0].text === "popcorn ready?" && v2.strokes.length === 1 && v2.strokes[0].points.length === 2 && v2.cursors.length === 1 && v2.participants[0].locationLabel === "Watching The Shawshank Redemption", JSON.stringify({ chat: v2.chat, strokes: v2.strokes, cursors: v2.cursors, loc: v2.participants[0].locationLabel }));
+  r.ok("a room command reaches the host as harbor:together-sync", events.some(([t, d]) => t === "harbor:together-sync" && d.kind === "command" && d.command.action === "pause" && d.from === "host1"));
+  T.sendChat("  hi all  ");
+  T.sendCommand({ action: "seek", positionSeconds: 10 });
+  T.sendCommand({ action: "seek", positionSeconds: 20 });
+  T.sendCommand({ action: "seek", positionSeconds: 30 });
+  r.ok("chat is trimmed; the first seek goes out at once", sent("chat")[0].text === "hi all" && sent("cmd").length === 1 && sent("cmd")[0].command.positionSeconds === 10, JSON.stringify(sent("cmd")));
+  await wait(320);
+  r.ok("rapid seeks coalesce to the last position (seek-coalesce 250 ms)", sent("cmd").length === 2 && sent("cmd")[1].command.positionSeconds === 30 && sent("cmd")[1].command.seq > sent("cmd")[0].command.seq, JSON.stringify(sent("cmd")));
+  const role = T.playerOpened({ id: "tt0111161", type: "movie", name: "The Shawshank Redemption" }, null, { resolution: "1080p", infoHash: "0123456789ABCDEF0123456789abcdef01234567", size: 2e9 }, 8520);
+  r.ok("a guest opening the invited title does not claim host; the source descriptor is built", role.invited === false && sent("claim-host").length === 0 && role.source.resolution === "1080p" && role.source.infoHash === "0123456789abcdef0123456789abcdef01234567" && role.source.durationSec === 8520, JSON.stringify(role));
+  T.dismiss("invite");
+  r.eq("together.dismiss clears the invite", T.view().incomingInvite, null);
+  r.eq("together.parseJoin: a bare code", T.parseJoin("abc-d23"), { relay: null, room: "ABCD23" });
+  r.eq("together.parseJoin: an invite link carries its relay", T.parseJoin("https://pub.harbor.site/?harbor-relay=wss%3A%2F%2Fother.example.invalid&harbor-room=zzzz22"), { relay: "wss://other.example.invalid", room: "ZZZZ22" });
+  r.eq("together.parseJoin: junk", T.parseJoin("https://example.invalid/nothing"), null);
+  const joined = T.join(id, "https://pub.harbor.site/?harbor-relay=wss%3A%2F%2Fother.example.invalid&harbor-room=zzzz22");
+  r.ok("joining from a link switches the relay setting and opens the new room", joined.ok && closed.includes(sock) && opened.length === 2 && opened[1][0] === "wss://other.example.invalid/r/ZZZZ22" && rec.engine.settings.loadForProfile("default", true).togetherRelayUrl === "wss://other.example.invalid", JSON.stringify({ joined: joined.ok, opened, closed }));
+  const sock2 = opened[1][1];
+  wsEvent(sock2, "open", null);
+  const me2 = sent("hello").slice(-1)[0].clientId;
+  wsEvent(sock2, "message", JSON.stringify({ t: "joined", room: "ZZZZ22", participants: [{ id: me2, name: "x", joinedAt: 1, ready: false }, { id: "friend", name: "Bo", joinedAt: 2, ready: false }], state: null, hostClientId: null, started: false, srvAt: Date.now(), relayVersion: 3 }));
+  const hosted = T.playerOpened({ id: "tt0068646", type: "movie", name: "The Godfather", poster: "https://img.example.invalid/g.jpg" }, null, null, 0);
+  const inv = sent("invite").slice(-1)[0];
+  r.ok("with no host, the TV playing a title claims host and invites the room (use-room-invite)", hosted.invited && sent("claim-host").slice(-1)[0].fresh === true && inv && inv.invite.mediaId === "tt0068646" && inv.invite.proto === 2 && inv.invite.mediaType === "movie", JSON.stringify(inv));
+  await wait(220);
+  r.ok("a self-hosted relay below v11 is reported outdated; the invite link names the room", T.view().relayOutdated === true && typeof T.view().inviteUrl === "string" && T.view().inviteUrl.includes("harbor-room=ZZZZ22"), JSON.stringify({ o: T.view().relayOutdated, u: T.view().inviteUrl }));
+  T.publishState({ mediaId: "tt0068646", mediaTitle: "The Godfather", episode: null, posterUrl: null, positionSeconds: 5, playing: true });
+  const st = sent("state").slice(-1)[0];
+  r.ok("together.publishState stamps updatedBy with this client", st && st.state.updatedBy === me2 && st.state.positionSeconds === 5 && st.state.hostClientId === null, JSON.stringify(st));
+  const left = T.leave();
+  r.ok("together.leave says leave and drops the room", sent("leave").some((f) => f.room === code) && sent("leave").slice(-1)[0].room === "ZZZZ22" && left.state === "disconnected" && left.room === null && left.chat.length === 0, JSON.stringify({ leave: sent("leave"), state: left.state }));
+  T.reset();
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());

@@ -122,6 +122,14 @@ final class HarborEngine {
 
     private static let logRingCapacity = 200
 
+    // WebSockets (engine/shims/websocket.js; Watch Together's relay). Created on the engine
+    // queue by the first wsOpen; its events hop back onto the queue before reaching JS.
+    private lazy var sockets = EngineSockets { [weak self] id, kind, data in
+        guard let self else { return }
+        let payload: Any = data.map { $0 as Any } ?? NSNull()
+        self.queue.async { self.invokeGlobal("__harbor_ws_event", arguments: [Double(id), kind, payload]) }
+    }
+
     init() throws {
         guard let url = Bundle.main.url(forResource: "harbor-engine", withExtension: "js") else {
             throw EngineError.bundleMissing
@@ -284,6 +292,20 @@ final class HarborEngine {
             self.cancelTimer(id)
         }
 
+        // ---- WebSocket (optional; engine/shims/websocket.js) -----------------------------
+        let wsOpenBlock: @convention(block) (String, Double) -> Void = { [weak self] url, rawId in
+            guard let self, let id = HarborEngine.asInt(rawId) else { return }
+            self.sockets.open(url: url, id: id)
+        }
+        let wsSendBlock: @convention(block) (Double, String) -> Void = { [weak self] rawId, text in
+            guard let self, let id = HarborEngine.asInt(rawId) else { return }
+            self.sockets.send(id: id, text: text)
+        }
+        let wsCloseBlock: @convention(block) (Double, Double, String) -> Void = { [weak self] rawId, rawCode, reason in
+            guard let self, let id = HarborEngine.asInt(rawId) else { return }
+            self.sockets.close(id: id, code: HarborEngine.asInt(rawCode) ?? 1000, reason: reason)
+        }
+
         host.setObject(fetchBlock, forKeyedSubscript: "fetch" as NSString)
         host.setObject(abortBlock, forKeyedSubscript: "abort" as NSString)
         host.setObject(snapshotBlock, forKeyedSubscript: "storageSnapshot" as NSString)
@@ -297,6 +319,9 @@ final class HarborEngine {
         host.setObject(logBlock, forKeyedSubscript: "log" as NSString)
         host.setObject(setTimeoutBlock, forKeyedSubscript: "setTimeout" as NSString)
         host.setObject(clearTimeoutBlock, forKeyedSubscript: "clearTimeout" as NSString)
+        host.setObject(wsOpenBlock, forKeyedSubscript: "wsOpen" as NSString)
+        host.setObject(wsSendBlock, forKeyedSubscript: "wsSend" as NSString)
+        host.setObject(wsCloseBlock, forKeyedSubscript: "wsClose" as NSString)
 
         context.setObject(host, forKeyedSubscript: "__harbor_host" as NSString)
     }
