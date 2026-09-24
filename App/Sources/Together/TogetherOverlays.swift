@@ -45,8 +45,7 @@ struct TogetherToastHost: View {
     /// player, the account menu): it could not present the title, and the invite must survive.
     private var covered: Bool {
         guard !inRoomScreen else { return opening != nil }
-        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
-        guard let root = (windows.first(where: \.isKeyWindow) ?? windows.first)?.rootViewController else { return false }
+        guard let root = HarborOverlayWindow.mainWindow?.rootViewController else { return false }
         return root.presentedViewController != nil
     }
 

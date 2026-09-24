@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UIKit
 import ObjectiveC
 
@@ -41,10 +42,41 @@ final class PlaybackState: ObservableObject {
     @Published var active = false
 }
 
+/// Live previews (the guide portal, Home's Live hero) stop streaming whenever anything is over
+/// them that they cannot see from their own state: the real player or Multiview, any presented
+/// cover (the account menu, a Together invite's page, a deep link), the screensaver or the
+/// curfew lock, or the app leaving the screen. Covers are not observable, so the main window is
+/// polled twice a second.
+@MainActor
+final class PreviewGate: ObservableObject {
+    static let shared = PreviewGate()
+    @Published private(set) var blocked = false
+    private var bag = Set<AnyCancellable>()
+
+    private init() {
+        // @Published fires before the value lands: read it on the next main-queue turn.
+        PlaybackState.shared.$active.sink { [weak self] _ in Task { @MainActor in self?.refresh() } }.store(in: &bag)
+        ScreensaverModel.shared.$active.sink { [weak self] _ in Task { @MainActor in self?.refresh() } }.store(in: &bag)
+        CurfewState.shared.$locked.sink { [weak self] _ in Task { @MainActor in self?.refresh() } }.store(in: &bag)
+        Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &bag)
+    }
+
+    func refresh() {
+        // Off screen too: the `audio` background mode (music) keeps the app, and mpv, running.
+        let b = PlaybackState.shared.active || ScreensaverModel.shared.active || CurfewState.shared.locked
+            || !HarborOverlayWindow.noCoverPresented || UIApplication.shared.applicationState != .active
+        if b != blocked { blocked = b }
+    }
+}
+
 /// use-bp-screensaver + bp-screensaver: after `screensaverDelayMin` idle minutes, rotating hero art
 /// with the title and "#N in {list} today"; the first press wakes it and is swallowed.
 @MainActor
 final class ScreensaverModel: ObservableObject {
+    /// One per app: RootView drives it, and live previews read `active` to stop streaming under it.
+    static let shared = ScreensaverModel()
     struct Item: Equatable { var bg: String; var title: String; var sub: String }
     @Published private(set) var active = false
     @Published private(set) var items: [Item] = []
@@ -139,5 +171,68 @@ struct ScreensaverView: View {
         .animation(.easeInOut(duration: 0.9), value: model.at)
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focused = true } }
         .ignoresSafeArea()
+    }
+}
+
+/// A window above the app's own. The curfew lock and the screensaver live here rather than in
+/// RootView's ZStack, because a fullScreenCover (a detail page, a kids page, the account menu)
+/// sits above everything in the main window and would hide them.
+final class HarborOverlayWindow: UIWindow {
+    /// The app's own window (never this overlay): key-window lookups for covers and display
+    /// criteria go through it, so the lock or the saver being key never confuses them.
+    static var mainWindow: UIWindow? {
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).filter { !($0 is HarborOverlayWindow) }
+        return windows.first(where: \.isKeyWindow) ?? windows.first
+    }
+
+    /// Nothing is presented over the main window's root (no fullScreenCover or sheet is up).
+    static var noCoverPresented: Bool {
+        guard let root = mainWindow?.rootViewController else { return false }
+        return root.presentedViewController == nil
+    }
+}
+
+/// Shows and hides the overlay window; RootView (syncOverlay) follows the lock and the saver.
+@MainActor
+final class ShellOverlay {
+    static let shared = ShellOverlay()
+    private var window: HarborOverlayWindow?
+
+    func show<Content: View>(_ content: Content) {
+        guard window == nil else { return }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = HarborOverlayWindow.mainWindow?.windowScene ?? scenes.first else { return }
+        let w = HarborOverlayWindow(windowScene: scene)
+        w.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.normal.rawValue + 1)
+        w.backgroundColor = .clear
+        let host = UIHostingController(rootView: content)
+        host.view.backgroundColor = .clear
+        w.rootViewController = host
+        window = w
+        // Key, so the remote's presses and the focus go to the lock / saver, never to what is under it.
+        w.makeKeyAndVisible()
+    }
+
+    func hide() {
+        guard let w = window else { return }
+        window = nil
+        w.isHidden = true
+        w.rootViewController = nil
+        HarborOverlayWindow.mainWindow?.makeKey()
+    }
+}
+
+/// What the overlay window shows: the curfew lock (topmost, curfew-guard.tsx) or the screensaver.
+struct ShellOverlayView: View {
+    @ObservedObject var saver: ScreensaverModel
+    @ObservedObject var curfew: CurfewState
+
+    var body: some View {
+        ZStack {
+            if curfew.locked { CurfewLockView(state: curfew).transition(.opacity) }
+            else if saver.active { ScreensaverView(model: saver).transition(.opacity) }
+        }
+        .animation(.easeInOut(duration: 0.3), value: curfew.locked)
     }
 }

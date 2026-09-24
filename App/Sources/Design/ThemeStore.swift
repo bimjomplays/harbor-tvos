@@ -59,9 +59,19 @@ final class ThemeStore: ObservableObject {
     /// Set while onboarding runs: a theme pulled in by the Harbor sign-in waits until the wizard
     /// is done, because repainting rebuilds the tree and would restart it at the first step.
     var holding = false {
-        didSet { if !holding, let p = pending { pending = nil; adopt(p) } }
+        didSet { releasePending() }
     }
+    /// Set while a film, channel or Multiview plays (RootView follows PlaybackState): a theme a
+    /// profile-sync pull brings mid-playback waits, because the rebuild would tear the player down.
+    var holdingForPlayback = false {
+        didSet { releasePending() }
+    }
+    private var held: Bool { holding || holdingForPlayback }
     private var pending: Snapshot?
+
+    private func releasePending() {
+        if !held, let p = pending { pending = nil; adopt(p) }
+    }
 
     private var profile: (id: String, linked: Bool) {
         let p = ProfilesStore.shared.active
@@ -93,7 +103,7 @@ final class ThemeStore: ObservableObject {
     }
 
     private func adopt(_ s: Snapshot) {
-        if holding { pending = s; return }
+        if held { pending = s; return }
         let old = state
         state = s
         let looksSame = old.map {

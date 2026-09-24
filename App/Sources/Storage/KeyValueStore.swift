@@ -23,10 +23,14 @@ final class KeyValueStore {
                                                    "harbor.manga.suwayomi.active.v1", "harbor.manga.activesource.v2", "harbor.manga.configured.v1",
                                                    "harbor.media-server.connections.v1", "harbor.media-server.mappings.v1", "harbor.media-server.summaries.v1",
                                                    // Stage 13 eBooks (lib/ebook/sources, library, reader-state): sources, shelf, favourites, reader prefs.
-                                                   "harbor.ebook.sources.v1", "harbor.ebook.library.v1", "harbor.ebook.favorites.v1", "harbor.ebook.read-later.v1", "harbor.ebook.reader.v1"]
+                                                   "harbor.ebook.sources.v1", "harbor.ebook.library.v1", "harbor.ebook.favorites.v1", "harbor.ebook.read-later.v1", "harbor.ebook.reader.v1",
+                                                   // engine/music.ts LIKED_KEY: the viewer's liked songs (stored without source credentials).
+                                                   "harbor.music.liked.v1"]
     private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap", "harbor.settings.", "harbor.installed-addons.", "harbor.tvsettings.v1.",
                                           "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1.",
-                                          "harbor.ebook.progress.v1.", "harbor.ebook.resume.v1.", "harbor.ebook.bookmarks.v1."]
+                                          "harbor.ebook.progress.v1.", "harbor.ebook.resume.v1.", "harbor.ebook.bookmarks.v1.",
+                                          // engine/manga.ts FAV_PREFIX (lib/manga-favorites.tsx): manga favourites per profile.
+                                          "harbor.mangafav.v1."]
     /// Every key the engine may own: upstream uses both `harbor.` and `harbor-` spellings.
     static func isEngineKey(_ key: String) -> Bool { key.hasPrefix("harbor.") || key.hasPrefix("harbor-") }
 
@@ -56,7 +60,16 @@ final class KeyValueStore {
         switch Self.tier(for: key) {
         case .secret: try SecretStore.set(value, for: key)
         case .durable:
-            do { try Prefs.set(value, for: key) } catch { try CacheStore.shared.set(value, for: key) }
+            // One live copy per key: a Caches copy left from before the key was durable (or from an
+            // oversize fallback) is dropped, and an oversize value never leaves a stale Prefs copy
+            // that `get` would prefer.
+            do {
+                try Prefs.set(value, for: key)
+                if CacheStore.shared.exists(key) { CacheStore.shared.remove(key) }
+            } catch {
+                Prefs.remove(key)
+                try CacheStore.shared.set(value, for: key)
+            }
         case .cache: try CacheStore.shared.set(value, for: key)
         }
     }

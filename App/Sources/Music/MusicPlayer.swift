@@ -287,10 +287,16 @@ final class MusicPlayer: ObservableObject {
             guard let item = makeItem(prepared) else { throw MusicPlaybackError.message("music.error.playback") }
             items[ObjectIdentifier(item)] = (track, i)
             watch(item)
-            activateSession()
             player.insert(item, after: nil)
-            player.play()
-            phase = .playing
+            if PlaybackState.shared.active {
+                // A film or channel took the TV while this resolved (pauseForVideo only sees a
+                // track that is already playing): queue it paused instead of sounding over it.
+                phase = .paused
+            } else {
+                activateSession()
+                player.play()
+                phase = .playing
+            }
             lastSource = track.connectorId
             beginScrobble(track)
             addRecent(track)

@@ -11,6 +11,7 @@ import { createMediaServerPlayerSrc } from "@/lib/media-server/playback";
 import { mediaServerRequest } from "@/lib/media-server/transport";
 import { getSecret, setSecret } from "@/lib/secret-store";
 import { activeProfileId } from "@/lib/active-profile-id";
+import { scrubLibrary as scrubMusicLibrary } from "./music";
 import type { MediaServerConnection, MediaServerProvider, MediaServerQuality, MediaServerProgress } from "@/lib/media-server/types";
 
 const PLEX_ORIGIN = "https://plex.tv";
@@ -117,6 +118,8 @@ export function plexAdd(pinId: number, serverId: string): MediaServerConnection 
 export function remove(id: string): void {
   removeMediaServerConnection(id);
   void removeMediaServerItems(id);
+  // Liked / recent music keeps Plex art without its token; a list from an older build is rewritten.
+  scrubMusicLibrary();
 }
 
 export function update(id: string, patch: Partial<Pick<MediaServerConnection, "enabled" | "readProgress" | "writeProgress" | "includeContinueWatching" | "preferredQuality" | "refreshInterval" | "enabledLibraryIds">>): void {

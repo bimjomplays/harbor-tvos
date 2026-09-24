@@ -273,12 +273,13 @@ function attachClient(url: string) {
   offClient = null;
   client = null;
   relayUrl = url;
-  if (!url) {
-    snapshot = EMPTY;
-    onSnapshot();
-    changed();
-    return;
-  }
+  // The old client's leave() lands after its listener is gone, so its "disconnected" never
+  // arrives: reset here, which also stops the sweep / presence timers and the summon expiry.
+  snapshot = EMPTY;
+  onSnapshot();
+  armSummonTimer();
+  changed();
+  if (!url) return;
   ensureIdentity();
   const c = new TogetherClient(url, clientId, displayName, selfAvatar, selfColor);
   client = c;

@@ -10,6 +10,9 @@ struct TogetherView: View {
     /// Opened from the player's Room chip: no invite toasts and no "Now watching" (return-to-video.tsx
     /// canReturn is false on the player), so a room event can never stack a second player.
     var inPlayer = false
+    /// The player draws this view over the picture instead of presenting it (a cover would take
+    /// the player off screen), so Back and the Back buttons call this rather than `dismiss`.
+    var onClose: (() -> Void)? = nil
     @ObservedObject private var room = TogetherModel.shared
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
@@ -42,13 +45,20 @@ struct TogetherView: View {
                 }
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(56))
             }
+            .disabled(inPlayer && typing != nil)
             if !inPlayer { TogetherToastHost(inRoomScreen: true) }
+            // In the player the phone-typing sheet is drawn in place too, never as a cover.
+            if inPlayer, let t = typing { typingSheet(t).transition(.opacity) }
         }
         .ignoresSafeArea()
-        .onExitCommand { dismiss() }
+        .onExitCommand { close() }
         .task { await room.attach() }
-        .fullScreenCover(item: $typing) { t in typingSheet(t) }
+        .fullScreenCover(item: Binding(get: { inPlayer ? nil : typing }, set: { typing = $0 })) { t in typingSheet(t) }
         .fullScreenCover(item: $opening) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
     }
 
     // MARK: states
@@ -69,7 +79,7 @@ struct TogetherView: View {
                     .buttonStyle(BPActionStyle(primary: true)).focused($focus, equals: "public")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                 Button { draft = ""; typing = .relay } label: { Label("Your relay URL", systemImage: "link") }.buttonStyle(BPActionStyle())
-                Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
+                Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
         }
@@ -93,7 +103,7 @@ struct TogetherView: View {
                 }
                 .buttonStyle(BPActionStyle(primary: true)).disabled(room.view.state == "connecting").focused($focus, equals: "start")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
-                Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
+                Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
             HStack(alignment: .bottom, spacing: BP.px(10)) {
@@ -163,7 +173,7 @@ struct TogetherView: View {
                 }
                 Button { draft = room.view.displayName; typing = .name } label: { Label(T("Your name") + ": " + v.displayName, systemImage: "pencil") }.buttonStyle(BPActionStyle())
                 Button { Task { await room.leave() } } label: { Label("Leave room", systemImage: "rectangle.portrait.and.arrow.right") }.buttonStyle(BPActionStyle())
-                Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
+                Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
         }

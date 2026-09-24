@@ -56,6 +56,12 @@ struct ShellView: View {
         .onChange(of: app.room) { _, _ in leaveHiddenRoom() }
         .onChange(of: parental.gate) { _, _ in leaveHiddenRoom() }
         .onChange(of: ebookOn) { _, _ in leaveHiddenRoom() }
+        // Hiding the tab the viewer is on (tab editing, or a profile-sync pull), switching manga
+        // off or declining Sports leaves it for Home. Only these changes do: a hidden tab reached
+        // afterwards from Settings, Search or a deep link still opens (see Room.shellTabs).
+        .onChange(of: settings.navLayout) { _, _ in leaveHiddenTab() }
+        .onChange(of: settings.mangaOn) { _, _ in leaveHiddenTab() }
+        .onChange(of: settings.sportsDeclined) { _, _ in leaveHiddenTab() }
         .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
@@ -106,6 +112,14 @@ struct ShellView: View {
         if parental.hides(app.room) || (app.room == .ebook && !ebookOn) { app.room = .home }
     }
 
+    /// The current room is a top-bar tab that just left the strip: back to Home.
+    private func leaveHiddenTab() {
+        leaveHiddenRoom()
+        guard app.room != .home, Room.tabs.contains(app.room) else { return }
+        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)
+        if !order.contains(app.room) { app.room = .home }
+    }
+
     private var backToHome: (() -> Void)? {
         if app.room == .home { return nil }
         return { app.room = .home }
@@ -130,19 +144,20 @@ struct ShellView: View {
         guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
         let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)
         guard !order.isEmpty else { return }
-        let from = order.firstIndex(of: app.room) ?? 0
-        let next = ((from + delta) % order.count + order.count) % order.count
+        // A room off the strip (Settings, or a hidden tab opened from Search) steps onto its ends.
+        let next: Room
+        if let from = order.firstIndex(of: app.room) {
+            next = order[((from + delta) % order.count + order.count) % order.count]
+        } else {
+            next = delta > 0 ? order[0] : order[order.count - 1]
+        }
         ActivityMonitor.shared.touch()
         BPSound.shared.pageTurn(next: delta > 0)
-        app.room = order[next]
+        app.room = next
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { ShellFocus.shared.requestDefault() }
     }
 
-    private static var noCoverPresented: Bool {
-        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
-        guard let root = (windows.first(where: \.isKeyWindow) ?? windows.first)?.rootViewController else { return false }
-        return root.presentedViewController == nil
-    }
+    private static var noCoverPresented: Bool { HarborOverlayWindow.noCoverPresented }
 }
 
 /// bp-hint-bar.tsx BpAction and its three glyph maps. Hardware key names are not translated.

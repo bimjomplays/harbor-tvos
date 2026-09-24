@@ -202,6 +202,10 @@ struct LiveHeroPreview: View {
     private static var failed = Set<String>()
 
     /// The dwell is held as the channel id, not a flag, so a new channel never mounts undwelled.
+    /// Anything over Home the caller cannot see (a cover, the saver, the lock, playback).
+    @ObservedObject private var gate = PreviewGate.shared
+    private var stopped: Bool { suspended || gate.blocked }
+
     @State private var armedId = ""
     @State private var playing = false
     @State private var failures = 0
@@ -209,7 +213,7 @@ struct LiveHeroPreview: View {
     private var mountVideo: Bool {
         _ = failures
         guard let c = channel else { return false }
-        return armedId == c.id && !c.url.isEmpty && !Self.failed.contains(c.id) && !suspended && !UIAccessibility.isReduceMotionEnabled
+        return armedId == c.id && !c.url.isEmpty && !Self.failed.contains(c.id) && !stopped && !UIAccessibility.isReduceMotionEnabled
     }
 
     var body: some View {
@@ -252,7 +256,8 @@ struct LiveHeroPreview: View {
             try? await Task.sleep(for: Self.dwell)
             if !Task.isCancelled { armedId = id }
         }
-        .onChange(of: suspended) { _, on in if on { playing = false } }
+        // Suspending unmounts the player (MPVPlayerView's dismantle stops mpv); it fades in afresh.
+        .onChange(of: stopped) { _, on in if on { playing = false } }
     }
 }
 

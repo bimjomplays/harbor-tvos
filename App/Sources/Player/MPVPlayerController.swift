@@ -46,6 +46,7 @@ final class MPVPlayerController: UIViewController {
     private let queue = DispatchQueue(label: "mpv", qos: .userInitiated)
     private var status = Status()
     private var timer: Timer?
+    private var tornDown = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -65,9 +66,15 @@ final class MPVPlayerController: UIViewController {
         layer.frame = view.bounds
     }
 
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
+    // Teardown is tied to the view truly leaving (MPVPlayerView.dismantleUIViewController, or
+    // deinit), not to viewDidDisappear: a fullScreenCover over the player (the Watch Together
+    // room, an invite) makes the view disappear without the player going away.
+
+    /// Stop playback for good: the owner (MPVPlayerView's dismantle) is done with this player.
+    /// Safe to call more than once; deinit calls it too.
+    func stop() {
         timer?.invalidate()
+        timer = nil
         teardown()
     }
 
@@ -79,6 +86,9 @@ final class MPVPlayerController: UIViewController {
     /// Detach the wakeup callback and destroy on the event queue, so a pending readEvents
     /// never touches a handle mid-destroy.
     private func teardown() {
+        // Once only: a second reset from a late deinit could clear the criteria the next player set.
+        guard !tornDown else { return }
+        tornDown = true
         // A preview or tile never set criteria; resetting here could clear the real player's.
         if ownsDisplay { resetDisplayCriteria() }
         let handle = mpv
@@ -451,7 +461,7 @@ final class MPVPlayerController: UIViewController {
         guard status == noErr, let desc else { push("display: format description failed (\(status))"); return }
         let criteria = AVDisplayCriteria(refreshRate: Float(fps), formatDescription: desc)
         DispatchQueue.main.async {
-            guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
+            guard let window = HarborOverlayWindow.mainWindow else { return }
             window.avDisplayManager.preferredDisplayCriteria = criteria
         }
         push("display: \(fps) fps \(gamma) \(primaries)")
@@ -459,7 +469,7 @@ final class MPVPlayerController: UIViewController {
 
     private func resetDisplayCriteria() {
         DispatchQueue.main.async {
-            guard let window = UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first else { return }
+            guard let window = HarborOverlayWindow.mainWindow else { return }
             window.avDisplayManager.preferredDisplayCriteria = nil
         }
     }
