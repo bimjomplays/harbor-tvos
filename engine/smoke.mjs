@@ -325,6 +325,49 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------------ P2P handoff to the TV's torrent engine (Stage 6)
+// resolveStream's local-engine attempt has no Tauri here; the outcome carries a P2pPlan instead.
+{
+  const base = "https://torrents.example.invalid";
+  const manifest = { id: "org.example.torrents", version: "1.0.0", name: "Torrents", resources: ["stream"], types: ["movie"], idPrefixes: ["tt"], catalogs: [] };
+  const hash = "0123456789abcdef0123456789abcdef01234567";
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.installed-addons.default", JSON.stringify([{ transportUrl: `${base}/manifest.json`, manifest }])],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === `${base}/manifest.json`) return json(manifest);
+    if (req.url.startsWith(`${base}/stream/movie/tt0111161`)) return json({ streams: [
+      { name: "Torrents\n1080p", title: "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP\n👤 42 💾 2.1 GB", infoHash: hash, fileIdx: 1, sources: [`tracker:udp://tracker.example.invalid:1337/announce`, `dht:${hash}`] },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  const film = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption" };
+  const found = await e.streamsRoom.search("p2p", "default", true, null, film, null);
+  const idx = (found.result?.picker.all ?? []).findIndex((s) => s.infoHash === hash);
+  r.ok("P2P: the addon's torrent reaches the picker", idx >= 0, JSON.stringify(found.result?.picker.all?.map((s) => s.infoHash) ?? found.error));
+  if (idx >= 0) {
+    r.eq("P2P: an uncached torrent with no debrid asks for consent", e.streamsRoom.p2pConsentNeeded("p2p", "default", true, idx, false), true);
+    r.eq("P2P: a kid profile never asks", e.streamsRoom.p2pConsentNeeded("p2p", "default", true, idx, true), false);
+    const out = await e.streamsRoom.resolve("default", true, "p2p", idx, true, true);
+    r.ok("P2P: resolve hands the torrent to the TV engine with a plan", out.ok === false && out.code === "engine-not-ready" && out.p2p?.infoHash === hash && out.p2p.fileIdx === 1 && out.p2p.trackers[0] === "udp://tracker.example.invalid:1337/announce" && out.p2p.magnet === `magnet:?xt=urn:btih:${hash}` && out.p2p.debridFallback === false, JSON.stringify(out));
+    const plain = await e.streamsRoom.resolve("default", true, "p2p", idx, true, false);
+    r.ok("P2P: the no-debrid fallback carries the plan too", plain.ok === false && plain.p2p?.infoHash === hash, JSON.stringify(plain));
+    e.settings.patch({ torrentsDisabled: true });
+    const off = await e.streamsRoom.resolve("default", true, "p2p", idx, true, true);
+    r.ok("P2P: torrentsDisabled leaves no plan and no consent", off.ok === false && off.p2p === undefined && e.streamsRoom.p2pConsentNeeded("p2p", "default", true, idx, false) === false, JSON.stringify(off));
+    e.settings.patch({ torrentsDisabled: false, directTorrentStream: false });
+    const direct = await e.streamsRoom.resolve("default", true, "p2p", idx, true, false);
+    r.ok("P2P: directTorrentStream off leaves no plan", direct.ok === false && direct.p2p === undefined, JSON.stringify(direct));
+    e.settings.patch({ directTorrentStream: true });
+  }
+  const files = [{ idx: 0, name: "sample.mkv", length: 10 }, { idx: 1, name: "Show.S01E02.1080p.mkv", length: 900 }, { idx: 2, name: "Show.S01E03.1080p.mkv", length: 1000 }, { idx: 3, name: "info.nfo", length: 5000 }];
+  r.eq("P2P: p2pFileIdx picks the episode's file, else the largest video", [e.streamsRoom.p2pFileIdx(files, 1, 2), e.streamsRoom.p2pFileIdx(files, null, null), e.streamsRoom.p2pFileIdx([{ idx: 0, name: "a.nfo", length: 3 }], 1, 1)], [1, 2, 0]);
+  rec.dispose();
+}
+
 // ----------------------------------------------------------------------- home servers
 {
   r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);

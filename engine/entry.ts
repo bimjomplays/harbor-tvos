@@ -449,6 +449,7 @@ export const streamsRoom = {
   p2pConsentNeeded: streamGlue.p2pConsentNeeded,
   setP2pAutoConsent: streamGlue.setP2pAutoConsent,
   failureMessage: streamGlue.failureMessage,
+  p2pFileIdx: streamGlue.p2pFileIdx,
 };
 export type { StreamSearch } from "./streams";
 

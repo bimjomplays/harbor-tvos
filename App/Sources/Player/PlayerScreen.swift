@@ -157,8 +157,10 @@ struct PlayerScreen: View {
             else if chrome { chrome = false }
             else { requestClose() }
         }
-        .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true }
-        .onDisappear { PlaybackState.shared.active = false }
+        // use-player-media: a torrent served by the TV's engine belongs to this player while it is
+        // open, and is removed once it closes (TorrentEngine; a no-op for every other URL).
+        .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url) }
+        .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         .task {
             // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
@@ -609,7 +611,12 @@ struct PlayerScreen: View {
         return VStack(alignment: .leading, spacing: BP.px(10)) {
             Spacer()
             HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Connecting…").font(BP.display(28)).foregroundStyle(BP.ink) }
-            Text(elapsed >= 22 ? "Still looking. Some sources take a while to answer." : "The player is opening the stream. \(elapsed) s").font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+            if TorrentEngine.streamRef(url) != nil {
+                // bp-connecting with a torrent: bp-p2p-status's stage, readiness and peers/speed.
+                TorrentReadout(url: url)
+            } else {
+                Text(elapsed >= 22 ? "Still looking. Some sources take a while to answer." : "The player is opening the stream. \(elapsed) s").font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+            }
             if elapsed >= 8 {
                 HStack(spacing: BP.px(10)) {
                     chip("Go back", "chevron.left") { finish(natural: false) }

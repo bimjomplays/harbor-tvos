@@ -255,6 +255,13 @@ struct PlayPickerView: View {
 
     @ViewBuilder private var statusLine: some View {
         autoBanner
+        if model.p2pStarting {
+            // A torrent is fetching its metadata in the TV's engine (bp-p2p-status "Looking for peers…").
+            HStack(spacing: BP.px(8)) {
+                ProgressView().tint(BP.accent)
+                Text("Looking for peers…").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+            }
+        }
         switch model.phase {
         case .searching:
             HStack(spacing: BP.px(8)) {
