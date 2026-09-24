@@ -7,7 +7,16 @@ struct PlayPickerView: View {
     let onPlay: (ScoredStream?, StreamsModel.Resolved) -> Void
     /// use-bp-stream-play autoPlay: fire the best candidate once the pipeline settles (instantPlay).
     var autoPlay = false
+    /// bp-streams.tsx applyPreference: this list opened from Play (not Sources or Switch source), so
+    /// settings.playbackSourcePreference applies: only "online" fires on its own, and a home-server
+    /// preference opens on the Media servers list and plays the preferred server's copy.
+    var applyPreference = false
     @StateObject private var model = StreamsModel()
+    /// bp-stream-chips BpSourceKind, the kinds the TV has: "all" or "media-server" (no Local Library,
+    /// and no streamMode chip, so "online" is never picked on its own).
+    @State private var sourceKind = "all"
+    /// bp-streams preferredSourceFired: the preference acts once per opening.
+    @State private var preferenceFired = false
     @State private var autoState: AutoState = .off
     @State private var autoTried = 0
     @State private var startedAt = Date()
@@ -70,20 +79,23 @@ struct PlayPickerView: View {
         }
         .ignoresSafeArea()
         .task {
-            if autoPlay { autoState = .waiting; startedAt = Date() }
+            // bp-streams: sourceKind starts on the preferred kind when the preference applies.
+            if applyPreference, SettingsBridge.shared.slice.playbackSourcePreference == "home-server" { sourceKind = "media-server" }
+            if autoEnabled { autoState = .waiting; startedAt = Date() }
             await model.search(meta: meta, episode: episode)
             await autoTick(done: true)
         }
         .task {
             // use-auto-fire: settle windows (1.5 s after the first result, 4 s when no cached exact episode,
             // 10 s cap) so a fast addon does not beat a better one by a few hundred milliseconds.
-            guard autoPlay else { return }
+            guard autoEnabled else { return }
             while !Task.isCancelled, autoState == .waiting {
                 try? await Task.sleep(for: .milliseconds(400))
                 await autoTick(done: false)
             }
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
+        .onChange(of: model.copiesLoaded) { _, loaded in if loaded { Task { await applySourcePreference() } } }
         // bp-streams: BpNoSourcesDialog when there is no addon, no debrid and no home-server copy.
         .onChange(of: model.phase) { _, phase in
             // It outranks "tried N sources" (bp-streams shows that one only when !noSources).
@@ -159,12 +171,37 @@ struct PlayPickerView: View {
     private var showAutoStep: Bool {
         switch autoState {
         case .waiting, .firing: return true
-        case .off: return autoPlay
+        case .off: return autoEnabled
         case .cancelled, .exhausted: return false
         }
     }
 
     private var autoFiring: Bool { if case .firing = autoState { return true }; return false }
+
+    /// bp-detail.tsx play(): `auto = playbackSourcePreference === "online" && instantPlay`. The caller
+    /// passes instantPlay as `autoPlay`; a Play press under another preference never fires online.
+    private var autoEnabled: Bool {
+        autoPlay && (!applyPreference || (SettingsBridge.shared.slice.playbackSourcePreference ?? "online") == "online")
+    }
+
+    /// bp-streams.tsx's applyPreference effect, once the home-server copies are in (the engine
+    /// ports decidePlaybackSource: engine/homeServers.ts preferredSource).
+    private func applySourcePreference() async {
+        guard applyPreference, !preferenceFired else { return }
+        preferenceFired = true
+        struct Decision: Decodable { var action: String; var copyKey: String? }
+        let p = ProfilesStore.shared.active
+        let copies: [[String: String]] = model.copies.map { ["key": $0.key, "connectionId": $0.connectionId] }
+        guard let d: Decision = try? await HarborEngine.shared.call("homeServers.preferredSource", [p?.id ?? "default", p?.linked ?? true, copies]) else { return }
+        switch d.action {
+        case "show-all": sourceKind = "all"
+        case "show-media-server": sourceKind = "media-server"
+        case "play":
+            guard let copy = model.copies.first(where: { $0.key == d.copyKey }), resolving == nil, alive else { return }
+            await pick(copy: copy)
+        default: break
+        }
+    }
 
     /// use-bp-stream-play cancelAuto: the resolve in flight stops counting (its result is dropped by
     /// autoTick) and auto is off for good; the list is the picker again.
@@ -341,7 +378,7 @@ struct PlayPickerView: View {
 
     private func facetOptions(_ f: Facet) -> [(String, Int)] {
         var counts: [String: Int] = [:]
-        for s in model.streams where matchesFacets(s, except: f.key) && (!cachedOnly || s.isCached) {
+        for s in pool where matchesFacets(s, except: f.key) && (!cachedOnly || s.isCached) {
             if let v = f.valueOf(s) { counts[v, default: 0] += 1 }
         }
         return f.order.compactMap { k in counts[k].map { (k, $0) } }
@@ -349,9 +386,35 @@ struct PlayPickerView: View {
 
     private var filtered: Bool { quality != "All" || cachedOnly || addonFilter != nil || !facet.isEmpty }
 
+    /// bp-stream-filters `base`: the active saved filter narrows the pool the chips and the list
+    /// work on; when nothing passes it, every stream stays and the banner says so (filterFellBack).
+    private var filterPool: (streams: [ScoredStream], fellBack: Bool) {
+        guard let id = model.activeFilterId, !model.streams.isEmpty else { return (model.streams, false) }
+        let matched = model.streams.filter { $0.tvFilters?.contains(id) ?? true }
+        return matched.isEmpty ? (model.streams, true) : (matched, false)
+    }
+    private var pool: [ScoredStream] { filterPool.streams }
+
+    /// bp-streams showOnline / showHomeServers for the TV's two kinds.
+    private var showOnline: Bool { sourceKind == "all" }
+
+    /// bp-stream-chips filter chip: the active filter's name (or "Filter" when it has none), else "Filters".
+    private var filterChipLabel: String {
+        guard let id = model.activeFilterId, let f = model.savedFilters.first(where: { $0.id == id }) else { return T("Filters") }
+        return f.name.isEmpty ? T("Filter") : f.name
+    }
+
+    /// The filter menu (No filter, then each saved filter) as one chip that steps through it.
+    private func nextFilter() {
+        let ids: [String?] = [nil] + model.savedFilters.map { Optional($0.id) }
+        let i = ids.firstIndex { $0 == model.activeFilterId } ?? 0
+        let next = ids[(i + 1) % ids.count]
+        Task { await model.setActiveFilter(next) }
+    }
+
     private var visible: [ScoredStream] {
         let wanted = Self.qualities.first { $0.0 == quality }?.1 ?? []
-        let filtered = model.streams.filter { s in
+        let filtered = pool.filter { s in
             (wanted.isEmpty || wanted.contains(s.resolution ?? "")) &&
             (!cachedOnly || s.isCached) &&
             (addonFilter == nil || s.addonName == addonFilter) &&
@@ -383,19 +446,19 @@ struct PlayPickerView: View {
         return out
     }
 
-    private var addons: [String] { Array(Set(model.streams.map(\.addonName))).sorted() }
+    private var addons: [String] { Array(Set(pool.map(\.addonName))).sorted() }
 
     private var chips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: BP.px(8)) {
                 ForEach(Self.qualities, id: \.0) { q in
-                    let n = q.1.isEmpty ? model.streams.count : model.streams.filter { q.1.contains($0.resolution ?? "") }.count
+                    let n = q.1.isEmpty ? pool.count : pool.filter { q.1.contains($0.resolution ?? "") }.count
                     if n > 0 || q.0 == "All" {
                         // A String, not a literal: "%@ %lld" is a catalog entry some languages re-order (review 20).
                         Button(T(q.0) + " \(n)") { quality = q.0 }.buttonStyle(BPActionStyle(primary: quality == q.0))
                     }
                 }
-                if model.streams.contains(where: \.isCached) {
+                if pool.contains(where: \.isCached) {
                     Button("Cached") { cachedOnly.toggle() }.buttonStyle(BPActionStyle(primary: cachedOnly))
                 }
                 if addons.count > 1 {
@@ -418,6 +481,18 @@ struct PlayPickerView: View {
                         }.buttonStyle(BPActionStyle(primary: facet[f.key] != nil))
                     }
                 }
+                // bp-stream-chips source-kind chip: every source, or only the home-server copies.
+                if !model.copies.isEmpty || sourceKind != "all" {
+                    Button(T(sourceKind == "media-server" ? "Media servers" : "All sources")) {
+                        sourceKind = sourceKind == "media-server" ? "all" : "media-server"
+                    }.buttonStyle(BPActionStyle(primary: sourceKind != "all"))
+                }
+                // bp-stream-chips filter chip: the saved stream filters (Settings → Stream filters on
+                // the desktop), No filter first.
+                if !model.savedFilters.isEmpty {
+                    Button { nextFilter() } label: { Label(filterChipLabel, systemImage: "line.3.horizontal.decrease") }
+                        .buttonStyle(BPActionStyle(primary: model.activeFilterId != nil))
+                }
                 Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(24))
                 Button(sortByAddon ? "Sort: addon order" : "Sort: Harbor") { sortByAddon.toggle() }.buttonStyle(BPActionStyle())
                 if filtered {
@@ -433,15 +508,23 @@ struct PlayPickerView: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             chips
+            // bp-streams: the saved filter matched nothing, so the whole list is back.
+            if filterPool.fellBack, model.activeFilterId != nil {
+                BPNote(text: "No sources match your filter. Showing all sources.")
+            }
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(10)) {
                     if !model.copies.isEmpty {
                         Text("On your home servers").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted)
                         ForEach(model.copies) { c in copyRow(c) }
-                        if !model.streams.isEmpty { Text("Addons").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted).padding(.top, BP.px(6)) }
+                        if showOnline, !model.streams.isEmpty { Text("Addons").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted).padding(.top, BP.px(6)) }
                     }
-                    ForEach(visible) { s in row(s, highlight: s.id == model.primary?.id) }
-                    if !model.streams.isEmpty && visible.isEmpty { BPNote(text: "Nothing matches these filters.") }
+                    if showOnline {
+                        ForEach(visible) { s in row(s, highlight: s.id == model.primary?.id) }
+                        if !model.streams.isEmpty && visible.isEmpty { BPNote(text: "Nothing matches these filters.") }
+                    } else if model.copies.isEmpty {
+                        BPNote(text: model.copiesLoaded ? "No sources match these filters" : "Looking for sources")
+                    }
                     Color.clear.frame(height: BP.px(60))
                 }
                 .padding(.vertical, BP.px(6))
@@ -471,17 +554,31 @@ struct PlayPickerView: View {
                     Text(s.addonName).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
                     if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
                 }
-                Text(s.parsedTitle ?? s.title ?? s.name ?? "Stream").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                let headline = s.parsedTitle ?? s.title ?? s.name ?? "Stream"
+                Text(headline).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                // bp-stream-row.tsx: the addon's whole description (fullStreamDescription), else the
+                // one-line summary; both with the pictographs dropped (engine stampPickerRows).
+                if let text = s.tvRow, SettingsBridge.shared.slice.fullStreamDescription ?? true, !text.description.isEmpty {
+                    Text(verbatim: text.description).font(BP.sans(12, .medium)).foregroundStyle(BP.inkMuted).lineLimit(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let text = s.tvRow, !text.detail.isEmpty {
+                    Text(verbatim: text.detail).font(BP.sans(12, .medium)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                } else {
+                    HStack(spacing: BP.px(10)) {
+                        if let g = s.releaseGroup { Text(g) }
+                        if let sz = s.sizeText { Text(sz) }
+                        if let seeds = s.seeders, seeds > 0 { Text("\(Int(seeds)) seeders") }
+                        if let langs = s.audioLanguages, !langs.isEmpty { Text(langs.prefix(3).joined(separator: ", ")) }
+                    }
+                    .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+                }
+                // settings.pickerShowFilename: the torrent's filename in mono, unless it is the headline.
+                if SettingsBridge.shared.slice.pickerShowFilename ?? false, let name = s.tvRow?.filename, !name.isEmpty, name != headline, name != s.tvRow?.headline {
+                    Text(verbatim: name).font(.system(size: BP.px(11), design: .monospaced)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                }
                 if failedIds.contains(s.id) {
                     Text("Unavailable, try another.").font(BP.sans(12, .bold)).foregroundStyle(BP.ink)
                 }
-                HStack(spacing: BP.px(10)) {
-                    if let g = s.releaseGroup { Text(g) }
-                    if let sz = s.sizeText { Text(sz) }
-                    if let seeds = s.seeders, seeds > 0 { Text("\(Int(seeds)) seeders") }
-                    if let langs = s.audioLanguages, !langs.isEmpty { Text(langs.prefix(3).joined(separator: ", ")) }
-                }
-                .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
             .padding(BP.px(12))
             .frame(maxWidth: .infinity, alignment: .leading)

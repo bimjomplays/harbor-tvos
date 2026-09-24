@@ -893,6 +893,11 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
     r.ok("P2P: directTorrentStream off leaves no plan", direct.ok === false && direct.p2p === undefined, JSON.stringify(direct));
     e.settings.patch({ directTorrentStream: true });
   }
+  e.settings.patch({ customStreamFilters: [{ id: "hd", name: "1080p", resolution: ["1080p"] }, { id: "uhd", name: "4K", resolution: ["4K"] }, { id: "seeded", name: "Seeded", minSeeders: 100 }] });
+  const stamped = (await e.streamsRoom.search("rows", "default", true, null, film, null)).result?.picker.all.find((s) => s.infoHash === hash);
+  r.ok("streamsRoom.search stamps each row's text (pictographs gone, first title line as filename)", stamped?.tvRow?.filename === "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP" && stamped.tvRow.description.split("\n")[1] === "42 2.1 GB" && stamped.tvRow.detail.includes("42 2.1 GB"), JSON.stringify(stamped?.tvRow));
+  r.eq("streamsRoom.search stamps the saved filters each stream passes", stamped?.tvFilters, ["hd"]);
+  e.settings.patch({ customStreamFilters: [] });
   const files = [{ idx: 0, name: "sample.mkv", length: 10 }, { idx: 1, name: "Show.S01E02.1080p.mkv", length: 900 }, { idx: 2, name: "Show.S01E03.1080p.mkv", length: 1000 }, { idx: 3, name: "info.nfo", length: 5000 }];
   r.eq("P2P: p2pFileIdx picks the episode's file, else the largest video", [e.streamsRoom.p2pFileIdx(files, 1, 2), e.streamsRoom.p2pFileIdx(files, null, null), e.streamsRoom.p2pFileIdx([{ idx: 0, name: "a.nfo", length: 3 }], 1, 1)], [1, 2, 0]);
   rec.dispose();
@@ -901,8 +906,40 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
 // ----------------------------------------------------------------------- home servers
 {
   r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);
+  // bp-stream-row.tsx: plainLine / detailLine / torrentFilename for the TV's rows.
+  const rowText = engine.streamsRoom.pickerRowText({ name: "", title: "\u{1F525} Line one\n\u{1F464} 12  \u{1F4BE}\nLine one", addonId: "x", addonName: "X", audio: { codec: "Other", channels: 2 }, codec: "Other", size: null, seeders: null, hdrFormat: null, audioLanguages: [], behaviorHints: { filename: "Movie.2020.mkv" } }, "Movie", null);
+  r.eq("streamsRoom.pickerRowText: glyphs dropped, lines deduped, filename from behaviorHints", rowText, { headline: "Movie.2020.mkv", detail: "Line one · 12", description: "Line one\n12\nLine one", filename: "Movie.2020.mkv" });
+  // bp-stream-filters.ts customStreamFilters / activeStreamFilterId.
+  r.eq("streamsRoom.streamFilters: none saved", engine.streamsRoom.streamFilters("default", true), { filters: [], activeId: null });
+  engine.settings.patch({ customStreamFilters: [{ id: "f4k", name: " 4K only ", resolution: ["4K"] }, { id: "fany", name: "Anything" }], activeStreamFilterId: "gone" });
+  r.eq("streamsRoom.streamFilters: saved filters, a dangling active id reads as none", engine.streamsRoom.streamFilters("default", true), { filters: [{ id: "f4k", name: "4K only", empty: false }, { id: "fany", name: "Anything", empty: true }], activeId: null });
+  r.eq("streamsRoom.setActiveStreamFilter: an unknown id clears it", engine.streamsRoom.setActiveStreamFilter("default", true, "bogus"), null);
+  r.eq("streamsRoom.setActiveStreamFilter: a saved id sticks", [engine.streamsRoom.setActiveStreamFilter("default", true, "f4k"), engine.settings.load().activeStreamFilterId, engine.streamsRoom.streamFilters("default", true).activeId], ["f4k", "f4k", "f4k"]);
+  engine.settings.patch({ customStreamFilters: [], activeStreamFilterId: null });
   r.eq("homeServers.copies without connections", await engine.homeServers.copies({ id: "tt0111161", type: "movie", name: "x" }, "tt0111161"), []);
   r.eq("homeServers.titles empty", await engine.homeServers.titles(), []);
+  // bp-streams.tsx applyPreference + playback-policy.ts decidePlaybackSource.
+  const pref = (copies) => engine.homeServers.preferredSource("default", true, copies);
+  const one = [{ key: "k1", connectionId: "c1" }], two = [{ key: "k1", connectionId: "c1" }, { key: "k2", connectionId: "c2" }];
+  r.eq("homeServers.preferredSource: online preference leaves the list alone", pref(two), { action: "none" });
+  const commitPref = (id, v) => engine.settingsRoom.commit(id, v, "default", true);
+  commitPref("playbackSource", "local");
+  r.eq("settingsRoom.commit playbackSource sticks across loads (migration flags kept)", [engine.settings.loadForProfile("default", true).playbackSourcePreference, engine.settings.loadForProfile("default", true).playbackSourcePreference], ["local", "local"]);
+  r.eq("homeServers.preferredSource: local with no Local Library shows everything", pref(two), { action: "show-all" });
+  commitPref("playbackSource", "home-server"); commitPref("preferredMediaServer", "");
+  r.eq("homeServers.preferredSource: home server, no preferred server → the Media servers list", pref(one), { action: "show-media-server" });
+  r.eq("homeServers.preferredSource: home server, no copy of this title → every source", pref([]), { action: "show-all" });
+  commitPref("preferredMediaServer", "c2");
+  r.eq("homeServers.preferredSource: the preferred server's one copy plays", pref(two), { action: "play", copyKey: "k2" });
+  r.eq("homeServers.preferredSource: two copies on the preferred server → ask", pref([...two, { key: "k3", connectionId: "c2" }]), { action: "none" });
+  r.eq("homeServers.preferredSource: the preferred server has no copy → ask", pref(one), { action: "none" });
+  commitPref("playbackSource", "ask");
+  r.eq("homeServers.preferredSource: ask never plays by itself", pref(two), { action: "none" });
+  commitPref("playbackSource", "online"); commitPref("preferredMediaServer", "");
+  const qo = engine.homeServers.qualityOptions("nope", "x");
+  r.ok("homeServers.qualityOptions: MEDIA_SERVER_QUALITIES, Original when nothing plays", qo.current === "original" && qo.options.length === 7 && qo.options[0].id === "original" && qo.options[0].label === "Original" && qo.options[4].id === "720p-4", JSON.stringify(qo));
+  const sq = await engine.homeServers.switchQuality("nope", "x", null, "720p-4", 1000, true, null).then(() => "ok", (e) => e.message);
+  r.eq("homeServers.switchQuality: a copy that is gone says so", sq, "This home-server copy is no longer available.");
   r.eq("streamsRoom.autoCandidates with an unknown token", engine.streamsRoom.autoCandidates("nope", "default", true, { id: "tt1", type: "movie", name: "x" }, null, null, false, null), []);
   r.eq("streamsRoom.rememberPlayback with an unknown token", engine.streamsRoom.rememberPlayback("nope", "default", true, { id: "tt1", type: "movie", name: "x" }, 0, null, null, null), false);
   const lid = engine.actions.newList("Smoke list");
@@ -1395,6 +1432,16 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("commit sportsTab off declines consent", engine.settingsRoom.commit("sportsTab", "off", "default", true).sportsShown, false);
   r.eq("commit sportsTab on resets consent", engine.settingsRoom.commit("sportsTab", "on", "default", true).sportsShown, true);
   engine.settingsRoom.commit("skipIntro", "on", "default", true); engine.settingsRoom.commit("service", "netflix", "default", true); engine.settingsRoom.commit("subLang", "French", "default", true);
+  // Desktop-only rows stay off the TV; Hardware acceleration offers what tvOS can do.
+  const ids = (cat) => engine.settingsRoom.controls(cat, "default", true).map((c) => c.id);
+  r.ok("settingsRoom.controls: no Controller navigation / Open in Big Picture / Hide watched on the TV", !ids("interface").includes("controller") && !ids("interface").includes("autoStart") && ids("interface").includes("sound") && !ids("home").includes("hideWatched") && ids("home").includes("homeMode"), JSON.stringify([ids("interface"), ids("home")]));
+  const hw = () => engine.settingsRoom.controls("playback", "default", true).find((c) => c.id === "hwdec");
+  r.eq("settingsRoom.controls(hwdec): Auto and Off only", hw().options.map((o) => o.value), ["auto", "off"]);
+  engine.settingsRoom.commit("hwdec", "on", "default", true);
+  r.eq("settingsRoom: a synced hwdec \"on\" reads as Auto (VideoToolbox either way)", [hw().value, engine.settingsRoom.pane("default", true).playback.find((l) => l[0] === "Hardware acceleration")[1]], ["auto", "Auto"]);
+  engine.settingsRoom.commit("hwdec", "off", "default", true);
+  r.eq("settingsRoom: hwdec Off commits and reads back", [hw().value, engine.settings.load().mpvHwdec], ["off", "off"]);
+  engine.settingsRoom.commit("hwdec", "auto", "default", true);
 }
 
 // ------------------------------------------ themes, language picker, settings preview, done facts
@@ -1430,7 +1477,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("installUiCatalog registers a host-fed catalog and t() follows it", [engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.installUiCatalog("fr", JSON.stringify({ "This is how a subtitle will look.": "Voici un sous-titre." })), engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.pane("default", true).subtitle.text], [false, true, true, "Voici un sous-titre."]);
   engine.settingsRoom.commit("uiLanguage", "en", "default", true);
   const pane =engine.settingsRoom.pane("default", true);
-  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 3, "Off"]);
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 1, "Off"]);
   r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
   const setupKey = engine.settings.sourceKeyFor("default", true);
   const before = engine.settingsRoom.pane("default", true).setup[1][1];

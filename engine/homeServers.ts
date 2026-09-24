@@ -7,12 +7,17 @@ import { discoverAndAuthenticate } from "@/lib/media-server/discovery";
 import { synchronizeMediaServer, subscribeMediaServerSyncProgress, mediaServerAdapter } from "@/lib/media-server/sync";
 import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries } from "@/lib/media-server/index-store";
 import { matchingServerItems, serverPlayableCopies, groupMediaServerTitles } from "@/lib/media-server/selectors";
-import { createMediaServerPlayerSrc } from "@/lib/media-server/playback";
+import { createMediaServerPlayerSrc, switchMediaServerQuality } from "@/lib/media-server/playback";
+import { decidePlaybackSource } from "@/lib/media-server/playback-policy";
+import { MEDIA_SERVER_QUALITIES, connectionQuality } from "@/lib/media-server/quality";
+import { loadEffective } from "@/lib/settings/profile-store";
+import { t } from "@/lib/i18n";
+import type { PlayerSrc } from "@/lib/view";
 import { mediaServerRequest } from "@/lib/media-server/transport";
 import { getSecret, setSecret } from "@/lib/secret-store";
 import { activeProfileId } from "@/lib/active-profile-id";
 import { scrubLibrary as scrubMusicLibrary } from "./music";
-import type { MediaServerConnection, MediaServerProvider, MediaServerQuality, MediaServerProgress } from "@/lib/media-server/types";
+import type { MediaServerConnection, MediaServerProvider, MediaServerQuality, MediaServerProgress, PlayableCopy } from "@/lib/media-server/types";
 
 const PLEX_ORIGIN = "https://plex.tv";
 const DEVICE_KEY = "harbor.plex-auth.device.v1";
@@ -196,6 +201,10 @@ export async function reportProgress(connectionId: string, itemId: string, posit
 
 /** progress-sync.ts session teardown: tells a transcoding server the session ended. */
 export async function stopPlayback(connectionId: string, itemId: string, playbackSessionId: string, positionMs: number): Promise<void> {
+  // A quality switch replaced the session the player was opened with (and already stopped that one).
+  const held = playing.get(sessionKey(connectionId, itemId));
+  playing.delete(sessionKey(connectionId, itemId));
+  if (held?.playbackSessionId) playbackSessionId = held.playbackSessionId;
   const connection = mediaServerConnections().find((c) => c.id === connectionId);
   if (!connection) return;
   const item = (await mediaServerItems(connectionId)).find((i) => i.id === itemId);
@@ -245,6 +254,7 @@ export async function play(meta: Meta, connectionId: string, itemId: string, ver
   const item = (await mediaServerItems(connectionId)).find((i) => i.id === itemId);
   if (!item) throw new Error("This home-server copy is no longer indexed.");
   const src = await createMediaServerPlayerSrc({ meta, connection, item, versionId, startPositionMs });
+  if (src.homeServer) playing.set(sessionKey(connectionId, item.id), { versionId: src.homeServer.versionId, quality: src.homeServer.quality, playbackSessionId: src.homeServer.playbackSessionId ?? null });
   return {
     url: src.url, headers: src.headers ?? null, subtitle: src.subtitle ?? null,
     subtitles: (src.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang ?? null })),
@@ -256,4 +266,65 @@ export async function play(meta: Meta, connectionId: string, itemId: string, ver
 export function hasToken(id: string): boolean {
   const c = mediaServerConnections().find((x) => x.id === id);
   return !!c && !!mediaServerToken(c);
+}
+
+// ------------------------------------------------------------------ Play button preference
+/**
+ * bp-streams.tsx's applyPreference effect for the Play button, once the home-server copies are
+ * in: what the source list does about settings.playbackSourcePreference. The TV has no Local
+ * Library, so localFiles is always empty here.
+ *   show-all          switch the list to every source (a "local" preference with no local files)
+ *   show-media-server switch the list to the home-server copies (no preferred server: ask)
+ *   play              start this copy now (decidePlaybackSource picked one)
+ *   none              leave the list as it is
+ * One TV deviation: a home-server preference with no copy of this title shows every source,
+ * where upstream leaves an empty "Media servers" list up.
+ */
+export function preferredSource(profileId: string, linked: boolean, copies: Array<{ key: string; connectionId: string }>): { action: "none" | "show-all" | "show-media-server" | "play"; copyKey?: string } {
+  const s = loadEffective(profileId, linked);
+  const preference = s.playbackSourcePreference;
+  const localCount = 0;
+  if (preference === "local" && localCount === 0) return { action: "show-all" };
+  if (preference === "home-server" && copies.length === 0) return { action: "show-all" };
+  if (preference === "home-server" && s.preferredMediaServerId == null) return { action: "show-media-server" };
+  const decision = decidePlaybackSource(s, localCount, copies as unknown as PlayableCopy[]);
+  if (decision.kind === "home-server") return { action: "play", copyKey: decision.copy.key };
+  return { action: "none" };
+}
+
+// ------------------------------------------------------------------ in-player quality switch
+type Playing = { versionId: string; quality: MediaServerQuality; playbackSessionId: string | null };
+/** The session each home-server playback is on now (PlayerSrc.homeServer), by connection + item. */
+const playing = new Map<string, Playing>();
+const sessionKey = (connectionId: string, itemId: string) => `${connectionId}\n${itemId}`;
+
+/** bp-ten-foot.tsx HomeServerQualityPanel: MEDIA_SERVER_QUALITIES and the one playing now. */
+export function qualityOptions(connectionId: string, itemId: string): { current: MediaServerQuality; options: Array<{ id: MediaServerQuality; label: string }> } {
+  const connection = mediaServerConnections().find((c) => c.id === connectionId);
+  const current = playing.get(sessionKey(connectionId, itemId))?.quality ?? (connection ? connectionQuality(connection) : "original");
+  return { current, options: MEDIA_SERVER_QUALITIES.map((q) => ({ id: q.id, label: t(q.label) })) };
+}
+
+/**
+ * lib/media-server/playback.ts switchMediaServerQuality for the TV player: the same item at
+ * another quality from `positionMs`, the connection's preferredQuality updated and the old
+ * transcode session stopped. The player swaps to the returned URL in place.
+ */
+export async function switchQuality(connectionId: string, itemId: string, versionId: string | null, quality: MediaServerQuality, positionMs: number, isPlaying: boolean, playbackSessionId: string | null) {
+  const key = sessionKey(connectionId, itemId);
+  const held = playing.get(key);
+  const src = {
+    meta: { id: "", type: "movie", name: "" }, url: "", title: "",
+    homeServer: {
+      connectionId, itemId, versionId: held?.versionId ?? versionId ?? "", quality: held?.quality ?? "original",
+      playbackSessionId: held?.playbackSessionId ?? playbackSessionId ?? undefined,
+    },
+  } as unknown as PlayerSrc;
+  const next = await switchMediaServerQuality({ src, quality, positionMs: Math.max(0, Math.round(positionMs)), playing: isPlaying });
+  const hs = next.homeServer!;
+  playing.set(key, { versionId: hs.versionId, quality: hs.quality, playbackSessionId: hs.playbackSessionId ?? null });
+  return {
+    url: next.url, headers: next.headers ?? null, quality: hs.quality, subtitle: next.subtitle ?? null,
+    subtitles: (next.subtitles ?? []).map((sub) => ({ url: sub.url, lang: sub.lang ?? null })),
+  };
 }

@@ -467,6 +467,9 @@ export const streamsRoom = {
   setP2pAutoConsent: streamGlue.setP2pAutoConsent,
   failureMessage: streamGlue.failureMessage,
   p2pFileIdx: streamGlue.p2pFileIdx,
+  streamFilters: streamGlue.streamFilters,
+  setActiveStreamFilter: streamGlue.setActiveStreamFilter,
+  pickerRowText: streamGlue.pickerRowText,
 };
 export type { StreamSearch } from "./streams";
 
@@ -724,6 +727,9 @@ export const homeServers = {
   startRunner: homeGlue.startRunner,
   reportProgress: homeGlue.reportProgress,
   stopPlayback: homeGlue.stopPlayback,
+  preferredSource: homeGlue.preferredSource,
+  qualityOptions: homeGlue.qualityOptions,
+  switchQuality: homeGlue.switchQuality,
 };
 
 /** Kids mode (views/kids.tsx, kids-franchise-rail, grid kidsHero, kids-detail.tsx): the kid profile's surface. */

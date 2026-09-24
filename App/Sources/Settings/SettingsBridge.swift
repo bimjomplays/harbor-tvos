@@ -72,6 +72,18 @@ final class SettingsBridge: ObservableObject {
         /// settings/defaults.ts mangaEnabled (off): the manga reader, its tab, Search's manga row
         /// and the anime hero's "Read the Manga" entry all wait for it (views/manga.tsx EnableGate).
         var mangaEnabled: Bool? = false
+        /// bp-detail.tsx / bp-streams.tsx: what the Play button does ("online" | "home-server" |
+        /// "local" | "ask"); anything but "online" turns instant play off and lets the home-server
+        /// copy lead (engine/homeServers.ts preferredSource decides).
+        var playbackSourcePreference: String? = "online"
+        /// mpv-tuning.ts mpvHwdec ("auto" | "on" | "off"), mapped to mpv's hwdec in MPVPlayerController.
+        var mpvHwdec: String? = "auto"
+        /// poster.tsx posterQuality ("balanced" | "high" | "max"): how large a poster card's art is asked for.
+        var posterQuality: String? = "high"
+        /// bp-stream-row.tsx: the torrent's filename under the headline (off by default) and the
+        /// addon's whole description in place of the one-line summary (on by default).
+        var pickerShowFilename: Bool? = false
+        var fullStreamDescription: Bool? = true
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates

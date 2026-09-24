@@ -101,6 +101,15 @@ final class MPVPlayerController: UIViewController {
         queue.async { mpv_terminate_destroy(handle) }
     }
 
+    /// settings.mpvHwdec as mpv's hwdec (lib/player/mpv-tuning.ts: "on" → hwdec=yes, "off" → hwdec=no,
+    /// "auto" → the platform's pick). tvOS has one hardware decoder, VideoToolbox, so "auto" and "on"
+    /// both mean videotoolbox and "off" decodes in software. A preview or a Multiview tile keeps
+    /// VideoToolbox: four software decodes at once would starve the box.
+    static func hwdec(_ setting: String?, ownsDisplay: Bool) -> String {
+        guard ownsDisplay, setting == "off" else { return "videotoolbox" }
+        return "no"
+    }
+
     private func setupMpv() {
         guard let handle = mpv_create() else { push("mpv_create failed"); return }
         mpv = handle
@@ -110,7 +119,7 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "vo", "gpu-next"))
         check(mpv_set_option_string(handle, "gpu-api", "vulkan"))
         check(mpv_set_option_string(handle, "gpu-context", "moltenvk"))
-        check(mpv_set_option_string(handle, "hwdec", "videotoolbox"))
+        check(mpv_set_option_string(handle, "hwdec", Self.hwdec(SettingsBridge.shared.slice.mpvHwdec, ownsDisplay: ownsDisplay)))
         check(mpv_set_option_string(handle, "target-colorspace-hint", ownsDisplay ? "yes" : "no")) // HDR passthrough (never for a preview or tile)
         // Upstream's pre-init set (src-tauri/src/mpv.rs:349-416, docs/player-spec.md §2.1).
         check(mpv_set_option_string(handle, "title", "Harbor"))

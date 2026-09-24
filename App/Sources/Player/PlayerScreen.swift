@@ -112,7 +112,7 @@ struct PlayerScreen: View {
         var seekForwardStepSec: Double = 10
     }
 
-    enum Panel { case audio, subtitles, anime4k, channels, kidsSources }
+    enum Panel { case audio, subtitles, anime4k, channels, kidsSources, homeServerQuality }
     struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
@@ -495,6 +495,8 @@ struct PlayerScreen: View {
                 }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
+                // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
+                if !isLive, context?.homeServer != nil { chip("Quality", "speedometer", id: "hsquality") { open(.homeServerQuality) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
                 if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
                 // use-player-hotkeys playerPrevChannel: back to the last channel watched.
@@ -695,6 +697,11 @@ struct PlayerScreen: View {
         case .channels:
             if let liveGuide {
                 LivePlayerGuidePanel(model: liveGuide, current: currentChannel, onPick: { tune($0) }, onClose: { closePanel() })
+            }
+        case .homeServerQuality:
+            if let h = context?.homeServer {
+                HomeServerQualityPanel(session: h, positionSec: snap.position, playing: !snap.paused,
+                                       onSwitched: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
             }
         case .kidsSources:
             if let context {
