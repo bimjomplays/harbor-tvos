@@ -286,8 +286,9 @@ struct DetailView: View {
             Text(heroActions.first(where: { $0.key == heroFocus })?.label ?? " ")
                 .font(BP.sans(12.5, .semibold)).tracking(0.5).foregroundStyle(BP.inkSubtle)
                 .frame(height: BP.px(16), alignment: .leading)
-            // bp-hero-manga: "Read the Manga" on an anime, only while the manga reader is on.
-            if model.isAnimeId, SettingsBridge.shared.mangaOn { MangaHeroEntry(meta: model.meta) }
+            // bp-hero-manga: "Read the Manga" on an anime while the manga reader is on, and "Read
+            // the eBook" for a light novel while the eBook tab is on (MangaHeroEntry picks which).
+            if model.isAnimeId, SettingsBridge.shared.mangaOn || UserDefaults.standard.bool(forKey: EBookGate.key) { MangaHeroEntry(meta: model.meta) }
             if let tag = model.extras?.tagline, !tag.isEmpty {
                 Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(620), alignment: .leading)
             }

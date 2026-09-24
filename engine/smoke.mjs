@@ -686,7 +686,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   pg.node.host.fetch = async (req) => { urls.push(req.url); return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" }; };
   const P = pg.engine.parental;
   const g1 = P.gate("p1", false, false);
-  r.ok("parental.gate: PIN + locked tabs hide the Big Picture tabs that carry the key (live TV has none)", g1.locked && g1.hasPin && g1.anyLocked && JSON.stringify(g1.hiddenRooms) === JSON.stringify(["anime", "manga", "movies"]) && g1.hiddenTabs.liveTv === true && !("bogus" in g1.hiddenTabs), JSON.stringify(g1));
+  r.ok("parental.gate: PIN + locked tabs hide the Big Picture tabs that carry the key (live TV has none)", g1.locked && g1.hasPin && g1.anyLocked && JSON.stringify(g1.hiddenRooms) === JSON.stringify(["anime", "manga", "ebook", "movies"]) && g1.hiddenTabs.liveTv === true && !("bogus" in g1.hiddenTabs), JSON.stringify(g1));
   const g1u = P.gate("p1", false, true);
   r.ok("parental.gate: a session unlock shows every tab", !g1u.locked && g1u.hiddenRooms.length === 0, JSON.stringify(g1u));
   const g2 = P.gate("p2", true, false);
@@ -1541,6 +1541,86 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("search.fanOut returns manga results once the reader is on (SR-9)", on.manga.map((m) => m.id), ["101~5"]);
   me.removeServer(st.servers[0].id);
   r.eq("manga.removeServer drops its source", me.state().hasSource, false);
+  rec.dispose();
+}
+
+// ------------------------------------------ ebooks: Gutendex source, reading position (Stage 13)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const raw = (id, title, author, subjects) => ({
+    id, title, authors: [{ name: author }], subjects, bookshelves: [], download_count: 100 - id,
+    formats: { "application/epub+zip": `https://www.gutenberg.org/ebooks/${id}.epub3.images`, "image/jpeg": `https://www.gutenberg.org/cache/epub/${id}/cover.jpg` },
+  });
+  const pride = raw(1342, "Pride and Prejudice", "Austen, Jane", ["Love stories", "England -- Fiction"]);
+  const emma = raw(158, "Emma", "Austen, Jane", ["Love stories", "Humorous stories"]);
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const u = new URL(req.url);
+    if (u.origin !== "https://gutendex.com") return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    if (u.pathname === "/books/1342") return json(pride);
+    if (u.pathname === "/books/158") return json(emma);
+    if (u.pathname === "/books" && u.searchParams.get("search")) {
+      const q = u.searchParams.get("search").toLowerCase();
+      // Gutendex matches every word against titles and author names.
+      return json({ results: [pride, emma].filter((b) => q.split(/\s+/).every((w) => `${b.title} ${b.authors[0].name}`.toLowerCase().includes(w))) });
+    }
+    if (u.pathname === "/books") return json({ results: u.searchParams.get("page") === "1" ? [pride, emma] : [] });
+    return json({});
+  };
+  const eb = rec.engine.ebook;
+  const s0 = await eb.state();
+  r.eq("ebook.state starts with no source (views/ebook.tsx shows EBookSetup)", [s0.providers.length, s0.hasGutendex], [0, false]);
+  const s1 = await eb.addGutendex();
+  r.ok("ebook.addGutendex adds Project Gutenberg as the one readable source", s1.hasGutendex && s1.providers.length === 1 && s1.providers[0].name === "Project Gutenberg" && s1.sources[0].kind === "gutendex" && s1.sources[0].readable, JSON.stringify(s1));
+  const pid = s1.providers[0].id;
+  const p1 = await eb.page(null, pid, null, null, null);
+  const route = `source:${encodeURIComponent(pid)}:1342`;
+  r.ok("ebook.page: Gutendex popular page, authors as 'First Last', a cursor and a metadata token", p1.items.length === 2 && p1.items.some((b) => b.id === route && b.authors[0] === "Jane Austen" && b.cover?.endsWith("/cover.jpg")) && p1.cursor[pid] === 2 && p1.hasMore && p1.fresh === 2 && p1.token > 0, JSON.stringify(p1).slice(0, 400));
+  const en = await eb.enriched(p1.token);
+  r.ok("ebook.enriched returns the page after the metadata pass (and only once)", Array.isArray(en) && en.length === 2 && (await eb.enriched(p1.token)) === null, JSON.stringify(en).slice(0, 200));
+  const folded = eb.merge(p1.items, [{ ...p1.items[0], description: "Enriched." }], true);
+  r.ok("ebook.merge replaces a book by id (updateSourceItems replace) and keeps the rest", folded.length === 2 && folded.find((b) => b.id === p1.items[0].id).description === "Enriched.", JSON.stringify(folded).slice(0, 200));
+  const p2 = await eb.page(null, pid, p1.cursor, null, p1.items);
+  // gutendexPage(offset) is offset/32 + 1, so a short catalog answers page 1 again: nothing new,
+  // which the room counts toward loadMore's stale-page streak.
+  r.eq("ebook.page past a short catalog: no new books", [p2.fresh, p2.items.length], [0, 2]);
+  const sr = await eb.page("pride", pid, null, null, null);
+  r.eq("ebook.page with a query searches the source", sr.items.map((b) => b.title), ["Pride and Prejudice"]);
+  const d = await eb.detail(route);
+  r.ok("ebook.detail of a source route: the provider's book, subjects as the description", d?.title === "Pride and Prejudice" && d.description.includes("Love stories") && d.providerName === "Project Gutenberg", JSON.stringify(d).slice(0, 300));
+  const opts = await eb.resolveSources(d, p1.items);
+  r.ok("ebook.resolveSources keeps the route among the book's readable copies", opts.some((b) => b.id === route), JSON.stringify(opts.map((b) => b.id)));
+  const more = await eb.moreByAuthor(d);
+  r.ok("ebook.moreByAuthor finds the author's other books in the source", more.some((b) => b.title === "Emma") && !more.some((b) => b.id === route), JSON.stringify(more.map((b) => b.title)));
+  const rec2 = await eb.recommended(d);
+  r.ok("ebook.recommended: same-genre picks, never the book itself", !rec2.failed && rec2.items.every((b) => b.id !== route), JSON.stringify(rec2).slice(0, 200));
+  r.eq("ebook.epub: the Gutendex EPUB behind a route", await eb.epub(route), { bookId: "1342", url: "https://www.gutenberg.org/ebooks/1342.epub3.images" });
+  r.eq("ebook.epub: nothing for a route the TV cannot read", await eb.epub("source:plugin%3Ax:1"), null);
+  const chs = eb.chapters("1342", [{ path: "OEBPS/ch1.xhtml#c1", title: "Chapter I" }, { path: "OEBPS/ch2.xhtml#", title: "Chapter II" }]);
+  r.eq("ebook.chapters: gutendexProvider ids ([bookId, path] as JSON) and positions", chs.map((c) => [c.id, c.position]), [['["1342","OEBPS/ch1.xhtml#c1"]', 0], ['["1342","OEBPS/ch2.xhtml#"]', 1]]);
+  r.eq("ebook.cleanSourceText cuts leaked CSS and drops text with no letters", [eb.cleanSourceText("It is a truth.\n\n.x { color: red; }"), eb.cleanSourceText(" ... ")], ["It is a truth.", ""]);
+  const text = "It is a truth universally acknowledged.\n\nHowever little known\nthe feelings.\n\nMy dear Mr. Bennet.";
+  const o1 = eb.openChapter("default", route, chs[0], text);
+  r.ok("ebook.openChapter: paragraphs (single newlines joined), line 0, a text identity; the resume points at the chapter", o1.paragraphs.length === 3 && o1.paragraphs[1] === "However little known the feelings." && o1.line === 0 && /^\d+:\d+$/.test(o1.identity) && eb.resume("default", route)?.chapterId === chs[0].id, JSON.stringify(o1));
+  const saved = eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity);
+  r.ok("ebook.savePosition: harbor-reader's chapter and book progress", saved.chapterProgress === 50 && saved.bookProgress === 25 && saved.textIdentity === o1.identity && eb.openChapter("default", route, chs[0], text).line === 1, JSON.stringify(saved));
+  r.eq("ebook.statuses: a started book is partial", eb.statuses("default", [route, "source:x:2"]), { [route]: "partial" });
+  eb.savePosition("default", route, chs[1], 2, 3, 1, 2, o1.identity);
+  r.eq("ebook.statuses: the last chapter at its end is read", eb.statuses("default", [route])[route], "read");
+  r.ok("ebook.toggleShelf / toggleFavorite / flags", eb.toggleShelf(d) === true && eb.toggleFavorite(d) === true && eb.flags(route).shelf && eb.flags(route).favorite && eb.library().shelf.length === 1);
+  const cont = eb.continueList("default", []);
+  r.ok("ebook.continueList: shelved books with a resume, newest first", cont.length === 1 && cont[0].ebook.id === route && cont[0].resume.chapterId === chs[1].id, JSON.stringify(cont).slice(0, 200));
+  r.eq("ebook.toggleShelf removes again", [eb.toggleShelf(d), eb.library().shelf.length], [false, 0]);
+  const pf = eb.savePrefs({ fontSize: 24, background: "light" });
+  r.ok("ebook.savePrefs merges into upstream's reader prefs", pf.fontSize === 24 && pf.background === "light" && pf.lineHeight === 1.85 && pf.narrationVoice === "en-US-AvaNeural" && eb.prefs().fontSize === 24, JSON.stringify(pf));
+  const bms = eb.addBookmark("default", route, chs[0], 1, o1.paragraphs[1]);
+  r.ok("ebook.addBookmark then removeBookmark", bms.length === 1 && bms[0].line === 1 && bms[0].preview === o1.paragraphs[1] && eb.removeBookmark("default", route, bms[0].id).length === 0, JSON.stringify(bms));
+  const s2 = await eb.removeSource(pid);
+  r.eq("ebook.removeSource drops Project Gutenberg", [s2.providers.length, s2.hasGutendex], [0, false]);
   rec.dispose();
 }
 

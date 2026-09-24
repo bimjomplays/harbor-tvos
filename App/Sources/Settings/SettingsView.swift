@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var tmdbTestNote: String?
 
     @EnvironmentObject private var settings: SettingsBridge
+    /// The eBook tab (EBook/EBookModels.swift EBookGate): a choice for this TV.
+    @AppStorage(EBookGate.key) private var ebookOn = false
     enum Sheet: Identifiable { case harbor, stremio, pin, removePin, spikes, tmdb, addons, subLangs, newProfile, editProfile, connect; var id: Int { hashValue } }
 
 
@@ -82,6 +84,13 @@ struct SettingsView: View {
                 section("Manga") {
                     row("Read manga in Harbor", detail: "Reads from a Suwayomi server you run. Adds the Manga tab, manga results in Search and “Read the Manga” on anime pages.")
                     onOff("Manga", settings.slice.mangaEnabled ?? false, key: "mangaEnabled")
+                }
+                // views/ebook.tsx: the desktop sidebar always lists eBooks; the TV keeps the tab
+                // hidden until it is turned on here (Stage 13).
+                section("eBooks") {
+                    row("Read eBooks in Harbor", detail: "Adds the eBook tab. Apple TV reads Project Gutenberg's public-domain library, with read aloud.")
+                    let title: String = "\(T("eBook")): \(T(ebookOn ? "On" : "Off"))"
+                    Button(title) { ebookOn.toggle() }.buttonStyle(BPActionStyle(primary: ebookOn))
                 }
                 // settings/webhooks-panel.tsx (sports reminders) and sports-api-setting.tsx.
                 section("Where alerts go") { SportsWebhooksPanel() }

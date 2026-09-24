@@ -94,6 +94,7 @@ import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
 import * as musicGlue from "./music";
 import * as mangaGlue from "./manga";
+import * as ebookGlue from "./ebook";
 import * as socialGlue from "./social";
 import * as togetherGlue from "./together";
 
@@ -921,6 +922,44 @@ export const manga = {
   favorites: mangaGlue.favorites,
   isFavorite: mangaGlue.isFavorite,
   toggleFavorite: mangaGlue.toggleFavorite,
+};
+
+// ==================================================================================== ebook
+/**
+ * Stage 13 eBooks (views/ebook.tsx, ebook-sources-panel, harbor-reader): upstream's Gutendex
+ * source, catalog pages with their metadata pass, detail and source resolution, the shelf and
+ * favourites, reading position, bookmarks and reader prefs. The EPUB is parsed natively by the
+ * app; local folders, HTML sources and extensions need Tauri / DOMParser / Worker (docs/ebook-spec.md).
+ */
+export const ebook = {
+  state: ebookGlue.state,
+  addGutendex: ebookGlue.addGutendex,
+  removeSource: ebookGlue.removeSource,
+  merge: ebookGlue.merge,
+  page: ebookGlue.page,
+  enriched: ebookGlue.enriched,
+  detail: ebookGlue.detail,
+  resolveSources: ebookGlue.resolveSources,
+  moreByAuthor: ebookGlue.moreByAuthor,
+  recommended: ebookGlue.recommended,
+  anilistEBookId: ebookGlue.anilistEBookId,
+  epub: ebookGlue.epub,
+  chapters: ebookGlue.chapters,
+  cleanSourceText: ebookGlue.cleanSourceText,
+  openChapter: ebookGlue.openChapter,
+  savePosition: ebookGlue.savePosition,
+  resume: ebookGlue.resume,
+  statuses: ebookGlue.statuses,
+  continueList: ebookGlue.continueList,
+  library: ebookGlue.library,
+  flags: ebookGlue.flags,
+  toggleShelf: ebookGlue.toggleShelf,
+  toggleFavorite: ebookGlue.toggleFavorite,
+  prefs: ebookGlue.prefs,
+  savePrefs: ebookGlue.savePrefs,
+  bookmarks: ebookGlue.bookmarks,
+  addBookmark: ebookGlue.addBookmark,
+  removeBookmark: ebookGlue.removeBookmark,
 };
 
 // ================================================================================== social
