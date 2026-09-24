@@ -65,7 +65,15 @@ struct MusicSpotifyLibraryView: View {
         // harbor:spotify-library-changed, or a new sign-in: the cached pages are dropped.
         .onChange(of: spotify.libraryVersion) { _, _ in reset() }
         .onChange(of: spotify.connected) { _, _ in reset() }
-        .fullScreenCover(isPresented: $setupOpen) { MusicSpotifyView() }
+        // A re-sign-in for permission keeps `connected` true throughout, so onChange never sees it:
+        // closing the setup sheet drops the cached pages and re-reads the account (review 25).
+        .fullScreenCover(isPresented: $setupOpen, onDismiss: {
+            reset()
+            Task {
+                let status: SpotifyPlayback.Status? = try? await HarborEngine.shared.call("music.spotifyStatus")
+                account = status?.username
+            }
+        }) { MusicSpotifyView() }
         .fullScreenCover(item: $webLink) { link in MusicSpotifyWebLinkView(link: link) }
         .musicSpotifyDestinationHost()
     }
@@ -271,7 +279,9 @@ struct MusicSpotifyLibraryView: View {
             if append, let previous = pages[key] {
                 var merged = next
                 merged.tracks = previous.tracks + next.tracks
-                merged.playlists = previous.playlists + next.playlists
+                // The list can shift between pages; ForEach needs each id once.
+                let seen = Set(previous.playlists.map(\.id))
+                merged.playlists = previous.playlists + next.playlists.filter { !seen.contains($0.id) }
                 merged.skipped = previous.skipped + next.skipped
                 pages[key] = merged
             } else {
@@ -415,7 +425,9 @@ struct MusicSpotifyDestinationView: View {
         .onExitCommand { dismiss() }
         .task { if spotify.connected, track.spotifyTrackUri != nil { await load() } }
         .onChange(of: spotify.connected) { _, now in if now, track.spotifyTrackUri != nil { Task { await load() } } }
-        .fullScreenCover(isPresented: $setupOpen) { MusicSpotifyView() }
+        .fullScreenCover(isPresented: $setupOpen, onDismiss: {
+            if spotify.connected, track.spotifyTrackUri != nil { Task { await load() } }
+        }) { MusicSpotifyView() }
     }
 
     @ViewBuilder private var content: some View {
@@ -424,7 +436,9 @@ struct MusicSpotifyDestinationView: View {
         } else if track.spotifyTrackUri == nil {
             BPNote(text: text("music.spotifyLibrary.spotifyTrackOnly"))
         } else {
-            if let error { BPNote(text: text(error), tone: BP.danger) }
+            if let error, error != "music.spotifyLibrary.permission", error != "music.spotifyLibrary.reconnectNeeded" {
+                BPNote(text: text(error), tone: BP.danger)
+            }
             if page?.canCreate == false || error == "music.spotifyLibrary.permission" || error == "music.spotifyLibrary.reconnectNeeded" {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
                     BPNote(text: text("music.spotifyLibrary.permission"))
@@ -497,7 +511,8 @@ struct MusicSpotifyDestinationView: View {
             let next: MusicSpotifyLibraryPage = try await HarborEngine.shared.call("music.spotifyLibraryPage", ["playlists", offset, String?.none])
             guard run == generation else { return }
             if offset > 0, var merged = page {
-                merged.playlists += next.playlists
+                let seen = Set(merged.playlists.map(\.id))
+                merged.playlists += next.playlists.filter { !seen.contains($0.id) }
                 merged.nextOffset = next.nextOffset
                 merged.total = next.total
                 merged.canCreate = next.canCreate
@@ -549,6 +564,8 @@ struct MusicSpotifyDestinationView: View {
             if var current = page {
                 current.playlists.insert(created, at: 0)
                 current.total = current.total.map { $0 + 1 }
+                // Spotify's list moved down by one: the next page starts one later.
+                current.nextOffset = current.nextOffset.map { $0 + 1 }
                 page = current
             }
             spotify.libraryChanged()
