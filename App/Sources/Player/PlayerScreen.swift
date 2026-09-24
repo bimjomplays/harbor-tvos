@@ -327,8 +327,13 @@ struct PlayerScreen: View {
             if let x = context?.explicitStartSec, x > 0 { sec = x }
             else if let h = context?.homeServer, h.resumeSec > 0 { sec = h.resumeSec }
             if sec <= 5 { sec = 0 }
-            // use-track-autoload.ts: a title starts at settings.defaultPlaybackSpeed (live has no speed).
-            if !isLive, let r = slice.defaultPlaybackSpeed, r.isFinite, r > 0 { rate = r }
+            // use-track-autoload.ts prefsAppliedRef: a title starts at the show's remembered rate
+            // (player-prefs), else settings.defaultPlaybackSpeed (live has no speed).
+            if !isLive {
+                let rp = ProfilesStore.shared.active
+                let remembered: Double? = try? await HarborEngine.shared.call("player.startRate", [rp?.id ?? "default", rp?.linked ?? true, trackMemory] as [any Encodable])
+                if let r = remembered ?? slice.defaultPlaybackSpeed, r.isFinite, r > 0 { rate = r }
+            }
             if sec > 30, slice.resumePrompt ?? false, !isLive {
                 resumePending = sec
                 startAt = 0
@@ -1279,10 +1284,11 @@ struct PlayerScreen: View {
         if abs(rate - 1) > 0.001 { c.setRate(rate) }
     }
 
-    /// speed-menu.tsx onRate.
+    /// speed-menu.tsx onRate; shell-layer.tsx remembers it for the show (writePlayerPrefs rate).
     private func setRate(_ value: Double) {
         rate = value
         controller?.setRate(value)
+        if let m = trackMemory { TrackPlanner.send("player.rememberRate", [m, value]) }
     }
 
     /// speed-menu.tsx trigger face: the sleep countdown while a timer is armed, else a changed rate.

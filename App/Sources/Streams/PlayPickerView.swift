@@ -17,6 +17,8 @@ struct PlayPickerView: View {
     @State private var sourceKind = "all"
     /// bp-streams preferredSourceFired: the preference acts once per opening.
     @State private var preferenceFired = false
+    /// The viewer picked a row by hand (the preference no longer auto-plays over it).
+    @State private var handPicked = false
     @State private var autoState: AutoState = .off
     @State private var autoTried = 0
     @State private var startedAt = Date()
@@ -210,7 +212,8 @@ struct PlayPickerView: View {
         case "show-all": sourceKind = "all"
         case "show-media-server": sourceKind = "media-server"
         case "play":
-            guard let copy = model.copies.first(where: { $0.key == d.copyKey }), resolving == nil, alive else { return }
+            // The engine can wait up to 5 s on the server health probe: a pick by hand in the meantime wins.
+            guard let copy = model.copies.first(where: { $0.key == d.copyKey }), resolving == nil, alive, !handPicked else { return }
             await pick(copy: copy)
         default: break
         }
@@ -565,7 +568,7 @@ struct PlayPickerView: View {
     }
 
     private func row(_ s: ScoredStream, highlight: Bool) -> some View {
-        Button { Task { await pick(s) } } label: {
+        Button { handPicked = true; Task { await pick(s) } } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(badges(s), id: \.self) { b in
@@ -624,7 +627,7 @@ struct PlayPickerView: View {
 
     /// A copy on a Plex/Jellyfin/Emby server (bp-streams home-server rows): direct play or transcode through the server.
     private func copyRow(_ c: StreamsModel.HomeCopy) -> some View {
-        Button { Task { await pick(copy: c) } } label: {
+        Button { handPicked = true; Task { await pick(copy: c) } } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
                     ForEach([c.resolution, c.quality].compactMap { $0 }.filter { !$0.isEmpty && $0 != "unknown" }, id: \.self) { b in

@@ -27,6 +27,8 @@ import { advanceCw } from "./cwAdvance";
 import { cwAdvanceSettings, cwWatchedSources } from "./rooms";
 import { animeTopPicks } from "./animeTopPicks";
 import { manualWatchedLibraryItems } from "@/lib/manual-watched";
+import { simklWatchedForId, statusForId, type WatchlistStatus } from "@/lib/simkl/list-status";
+import { isAuthenticated as anilistConnectedNow } from "@/lib/anilist/session";
 
 const MAX_ITEMS = 80;
 const CW_CAP = 20;
@@ -174,6 +176,34 @@ function withCardExtras(items: LibraryItem[]): Array<LibraryItem & { _cw: Record
   });
 }
 
+// ------------------------------------------------------------------- watched filter
+const ANIME_WATCH_ID = /^(kitsu|mal|anilist):/;
+/** use-bp-anime.ts lateRef: hero and picks ids seen so far (capped; ids never leave). */
+const lateAnimeIds = new Set<string>();
+const LATE_IDS_CAP = 400;
+
+function noteLateAnimeIds(metas: Meta[]): boolean {
+  let grew = false;
+  for (const m of metas) {
+    if (lateAnimeIds.size >= LATE_IDS_CAP) break;
+    if (!ANIME_WATCH_ID.test(m.id) || lateAnimeIds.has(m.id)) continue;
+    lateAnimeIds.add(m.id);
+    grew = true;
+  }
+  return grew;
+}
+
+/** use-bp-anime-watched.ts isAnimeWatched: Simkl completed or any Simkl / AniList watched episode. */
+export function animeWatchedFrom(sources: { simklWatched?: Map<string, Set<string>>; simklStatus?: Map<string, WatchlistStatus>; anilistWatched?: Map<string, Set<string>> }): (id: string) => boolean {
+  const simklWatched = sources.simklWatched ?? new Map<string, Set<string>>();
+  const simklStatus = sources.simklStatus ?? new Map<string, WatchlistStatus>();
+  const anilistWatched = sources.anilistWatched ?? new Map<string, Set<string>>();
+  return (id: string) =>
+    statusForId(simklStatus, id) === "completed" ||
+    simklWatchedForId(simklWatched, id).size > 0 ||
+    (anilistWatched.get(id)?.size ?? 0) > 0;
+}
+
 /** The Anime room's CW waits less than Home's: its rows are meant to paint at once. */
 const ANIME_CW_GRACE_MS = 800;
 
@@ -186,7 +216,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   const s = loadEffective(profileId, linked);
   if (force) refresh(); else ensureStarted();
   ensureAddons(authKey, profileId);
-  const filterOpts: AnimeFilterOpts = { excludeOrigins: s.animeExcludeOrigins ?? [], hideWatched: !!s.animeHideWatchedPicks, isWatched: undefined };
+  const hideWatched = !!s.animeHideWatchedPicks;
   const blob = profilesBlob();
   const active = (blob.profiles ?? []).find((p) => p.id === (blob.activeId ?? profileId)) ?? null;
   const hideSharedCw = !!s.cwPerProfile && anyProfileSharesStremioWith(active, blob.profiles ?? []);
@@ -195,8 +225,15 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   const cwRaw = animeCw(libItems, simkl, hideSharedCw);
   // use-bp-anime.ts:106-120 useCwAdvance(cwBase.raw, …, "only", no Trakt set, …).
   const conf = cwAdvanceSettings(s);
+  // use-bp-anime.ts useBpAnimeWatched(watchedIds): the Simkl / AniList maps the CW advance reads
+  // also feed the "Hide anime I've already watched" filter; watchedIds is CW plus the hero and
+  // picks ids of earlier passes (review 32: the filter read local flags only).
+  const sources = conf.enabled || hideWatched
+    ? await cwWatchedSources(cwRaw, false, hideWatched ? [...lateAnimeIds] : []).catch(() => null)
+    : null;
+  const filterOpts: AnimeFilterOpts = { excludeOrigins: s.animeExcludeOrigins ?? [], hideWatched, isWatched: sources ? animeWatchedFrom(sources) : undefined };
   const cw = conf.enabled
-    ? await advanceCw(`anime:${profileId}`, cwRaw, { ...conf, ...(await cwWatchedSources(cwRaw, false)), library: resurfaceLibrary(libItems), animeMode: "only" }, notify, ANIME_CW_GRACE_MS)
+    ? await advanceCw(`anime:${profileId}`, cwRaw, { ...conf, ...(sources ?? (await cwWatchedSources(cwRaw, false))), library: resurfaceLibrary(libItems), animeMode: "only" }, notify, ANIME_CW_GRACE_MS)
       .catch(() => cwRaw)
     : cwRaw;
 
@@ -210,6 +247,9 @@ export async function page(profileId: string, linked: boolean, authKey: string |
     ? picked.map(cleanMeta)
     : (picksRow?.metas ?? []).filter((m) => !animeFiltered(m, filterOpts)).map(cleanMeta).slice(0, 20);
   const specRows = filterSpecRows(rowsByKey, topPicks);
+  // use-bp-anime.ts lateIds: hero and picks ids join watchedIds for the next pass (AniList only
+  // answers for ids it was asked about), and that pass re-reads when the list grew.
+  if (hideWatched && noteLateAnimeIds([...hero.metas, ...picked]) && anilistConnectedNow()) setTimeout(notify, 0);
 
   // use-bp-anime auto-fill: a row the dedupe left short pulls its next page, up to a budget.
   if (filled.size < AUTO_FILL_BUDGET) {

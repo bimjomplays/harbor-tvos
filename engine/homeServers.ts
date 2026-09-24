@@ -9,6 +9,7 @@ import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries } fr
 import { matchingServerItems, serverPlayableCopies, groupMediaServerTitles } from "@/lib/media-server/selectors";
 import { createMediaServerPlayerSrc, switchMediaServerQuality } from "@/lib/media-server/playback";
 import { decidePlaybackSource } from "@/lib/media-server/playback-policy";
+import { getMediaServerHealthSnapshot, markMediaServerInactive, probeMediaServerHealth, type MediaServerHealth } from "@/lib/media-server/health";
 import { MEDIA_SERVER_QUALITIES, connectionQuality } from "@/lib/media-server/quality";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { t } from "@/lib/i18n";
@@ -271,6 +272,31 @@ export function hasToken(id: string): boolean {
 }
 
 // ------------------------------------------------------------------ Play button preference
+/** How long the Play button waits for a server's health probe before treating it as offline. */
+const HEALTH_WAIT_MS = 5000;
+/** use-media-server-health.ts re-probes every 30 s; a fresher answer is reused as is. */
+const HEALTH_FRESH_MS = 30_000;
+const probedAt = new Map<string, number>();
+
+/** lib/media-server/health.ts over the connections these copies live on: id → checking / active / inactive. */
+async function copyServerHealth(ids: string[]): Promise<Record<string, MediaServerHealth>> {
+  const conns = mediaServerConnections().filter((c) => ids.includes(c.id));
+  const snapshot = getMediaServerHealthSnapshot();
+  const now = Date.now();
+  await Promise.all(conns.map((c) => {
+    const known = snapshot[c.id];
+    if (known && known !== "checking" && now - (probedAt.get(c.id) ?? 0) < HEALTH_FRESH_MS) return Promise.resolve(known);
+    probedAt.set(c.id, now);
+    return Promise.race([probeMediaServerHealth(c), new Promise<void>((r) => setTimeout(r, HEALTH_WAIT_MS))]);
+  }));
+  return getMediaServerHealthSnapshot();
+}
+
+/** Test hook: health.ts markMediaServerInactive (the settings panel's "server went away"). */
+export function markInactive(connectionId: string): void {
+  markMediaServerInactive(connectionId);
+}
+
 /**
  * bp-streams.tsx's applyPreference effect for the Play button, once the home-server copies are
  * in: what the source list does about settings.playbackSourcePreference. The TV has no Local
@@ -281,15 +307,23 @@ export function hasToken(id: string): boolean {
  *   none              leave the list as it is
  * One TV deviation: a home-server preference with no copy of this title shows every source,
  * where upstream leaves an empty "Media servers" list up.
+ * bp-streams.tsx waits for homeServerHealthReady and decides over availableHomeServerCopies (only
+ * copies whose server answered, lib/media-server/health.ts): a server known offline, or one that
+ * doesn't answer within HEALTH_WAIT_MS, never auto-plays (review 29).
  */
-export function preferredSource(profileId: string, linked: boolean, copies: Array<{ key: string; connectionId: string }>): { action: "none" | "show-all" | "show-media-server" | "play"; copyKey?: string } {
+export async function preferredSource(profileId: string, linked: boolean, copies: Array<{ key: string; connectionId: string }>): Promise<{ action: "none" | "show-all" | "show-media-server" | "play"; copyKey?: string }> {
   const s = loadEffective(profileId, linked);
   const preference = s.playbackSourcePreference;
   const localCount = 0;
   if (preference === "local" && localCount === 0) return { action: "show-all" };
   if (preference === "home-server" && copies.length === 0) return { action: "show-all" };
   if (preference === "home-server" && s.preferredMediaServerId == null) return { action: "show-media-server" };
-  const decision = decidePlaybackSource(s, localCount, copies as unknown as PlayableCopy[]);
+  // Only the preferred server's copies can auto-play (decidePlaybackSource), so only it is probed.
+  const preferred = s.preferredMediaServerId;
+  const health = preference === "home-server" && preferred && copies.some((c) => c.connectionId === preferred) ? await copyServerHealth([preferred]) : {};
+  // A copy on a connection this device doesn't know (never probed) is left to the chooser's own check.
+  const available = copies.filter((c) => health[c.connectionId] === undefined || health[c.connectionId] === "active");
+  const decision = decidePlaybackSource(s, localCount, available as unknown as PlayableCopy[]);
   if (decision.kind === "home-server") return { action: "play", copyKey: decision.copy.key };
   return { action: "none" };
 }
