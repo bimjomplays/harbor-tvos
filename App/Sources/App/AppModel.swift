@@ -63,10 +63,15 @@ final class AppModel: ObservableObject {
             guard let self, id == nil, self.stage == .shell else { return }
             self.stage = .whoIsWatching
         }.store(in: &bag)
-        // Watch Together's relay lives in each profile's settings (togetherRelayUrl).
+        // Settings (and so the theme and display language) can be per profile: a switch re-reads them.
         profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { id in
             guard id != nil, !Fixtures.active else { return }
-            Task { await TogetherModel.shared.attach() }
+            Task { @MainActor in
+                await SettingsBridge.shared.load()
+                await ThemeStore.shared.load()
+                // Watch Together's relay lives in each profile's settings too (togetherRelayUrl).
+                await TogetherModel.shared.attach()
+            }
         }.store(in: &bag)
     }
 
@@ -81,6 +86,8 @@ final class AppModel: ObservableObject {
         Fixtures.installIfRequested(into: self)
         if !Fixtures.active {
             await SettingsBridge.shared.load()
+            // Stage 9: the profile's theme is painted from the first Big Picture frame.
+            await ThemeStore.shared.load()
             profiles.attachEngine()
             await account.attachEngine()
             if account.isSignedIn { await refreshRoster() }
@@ -142,7 +149,7 @@ final class AppModel: ObservableObject {
 }
 
 enum Room: String, CaseIterable, Identifiable {
-    case home, discover, anime, shows, movies, live, sports, search, calendar, library, collections, settings
+    case home, discover, anime, manga, shows, movies, live, sports, search, calendar, library, collections, settings
     var id: String { rawValue }
 
     var label: String {
@@ -150,6 +157,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .home: return "Home"
         case .discover: return "Discover"
         case .anime: return "Anime"
+        case .manga: return "Manga"
         case .shows: return "Shows"
         case .movies: return "Movies"
         case .live: return "Live TV"
@@ -166,6 +174,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .home: return "house.fill"
         case .discover: return "safari.fill"
         case .anime: return "sparkles"
+        case .manga: return "book.fill"
         case .shows: return "tv"
         case .movies: return "film"
         case .live: return "antenna.radiowaves.left.and.right"
@@ -185,6 +194,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .anime: return 7
         case .live: return 8
         case .sports: return 11
+        case .manga: return 13
         case .settings: return 1
         }
     }

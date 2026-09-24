@@ -19,7 +19,7 @@ final class SearchModel: ObservableObject {
         struct LiveTvHit: Decodable, Identifiable { var channelId: String; var name: String; var logo: String?; var url: String; var group: String?; var playlistId: String; var playlistName: String; var id: String { channelId } }
         struct AddonGroup: Decodable, Identifiable { var id: String; var name: String; var logo: String?; var metas: [Meta]; var state: String? }
         struct CharacterRef: Decodable { var anilistId: Int; var malId: Int?; var type: String; var name: String; var poster: String?; var background: String?; var year: String?; var overview: String?; var score: Double? }
-        struct Character: Decodable, Identifiable { var id: Int; var name: String; var image: String?; var anime: [CharacterRef] }
+        struct Character: Decodable, Identifiable { var id: Int; var name: String; var image: String?; var anime: [CharacterRef]; var manga: [CharacterRef]? }
         struct AddonHit: Decodable, Identifiable { var id: String; var name: String; var logo: String?; var transportUrl: String?; var blurb: String?; var installed: Bool }
         /// tvdb-collections TvdbCollectionHit (use-collection-hits).
         struct CollectionHit: Decodable, Identifiable { var id: Int; var name: String; var image: String?; var overview: String? }
@@ -33,6 +33,8 @@ final class SearchModel: ObservableObject {
         var addonGroups: [AddonGroup]?
         var addonQueries: [AddonGroup]?
         var characters: [Character]?
+        /// search-context manga (SR-9): the active manga source's hits, only while the reader is on.
+        var manga: [MangaSummary]?
         var addons: [AddonHit]?
         var collections: [CollectionHit]?
         var requestId: Int?
@@ -51,11 +53,10 @@ final class SearchModel: ObservableObject {
 
     // MARK: kind chips (use-bp-search.ts BpSearchFilter, GROUP_ORDER, GROUP_LABEL)
 
-    /// use-bp-search BpSearchFilter minus "top" (never a chip) and "manga": the TV has no manga
-    /// source (settings.mangaEnabled is off and Big Picture hands manga to the desktop reader),
-    /// so that group can never count anything and its chip would never be drawn.
+    /// use-bp-search BpSearchFilter minus "top" (never a chip), in GROUP_ORDER. "manga" only ever
+    /// counts while settings.mangaEnabled is on (the engine asks no manga source otherwise).
     enum Filter: String, CaseIterable, Identifiable {
-        case all, movie, series, people, anime, livetv, collections, characters, addons
+        case all, movie, series, people, anime, manga, livetv, collections, characters, addons
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -64,6 +65,7 @@ final class SearchModel: ObservableObject {
             case .series: return "Series"
             case .people: return "People"
             case .anime: return "Anime"
+            case .manga: return "Manga"
             case .livetv: return "Live TV"
             case .collections: return "Collections"
             case .characters: return "Franchise"
@@ -84,6 +86,7 @@ final class SearchModel: ObservableObject {
         if key == "movies" { return .movie }
         if key == "series" { return .series }
         if key == "anime" { return .anime }
+        if key == "manga" { return .manga }
         if key.hasPrefix("character:") { return .characters }
         return .addons
     }
@@ -113,7 +116,7 @@ final class SearchModel: ObservableObject {
         if keep(.collections) { n += collections.count }
         if keep(.addons) { n += addonHits.count }
         for row in rows where keep(Self.group(ofRow: row.key)) {
-            if row.key == "anime" { n += row.metas.count; continue }
+            if row.key == "anime" || row.key == "manga" { n += row.metas.count; continue }
             for m in row.metas where seen.insert(m.id).inserted { n += 1 }
         }
         return n
@@ -249,9 +252,15 @@ final class SearchModel: ObservableObject {
                 let metas = anime.map { Meta(id: $0.kitsuId.map { "kitsu:\($0)" } ?? "mal:\($0.malId ?? 0)", type: "anime", name: $0.name, poster: $0.poster, background: $0.background, logo: nil, description: $0.overview, releaseInfo: $0.year, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
                 out.append(BrowseRow(key: "anime", title: "Anime", metas: metas))
             }
+            // use-bp-search slot "manga" (bp-search-rows BpMangaCell): after Anime, before Live TV.
+            if let manga = results.manga, !manga.isEmpty {
+                // Covers sit on the viewer's own server: its image auth must be known first.
+                if MangaStore.shared.state == nil { await MangaStore.shared.refresh() }
+                out.append(BrowseRow(key: "manga", title: "Manga", metas: manga.map(\.meta)))
+            }
             // use-bp-search: one franchise row per character hit (AniList), its titles as anime metas.
-            for c in results.characters ?? [] where !c.anime.isEmpty {
-                let metas = c.anime.map { r in Meta(id: "anilist:\(r.anilistId)", type: r.type == "manga" ? "manga" : "anime", name: r.name, poster: r.poster, background: r.background ?? r.poster, logo: nil, description: r.overview, releaseInfo: r.year, releaseDate: nil, inTheaters: nil, imdbRating: (r.score ?? 0) > 0 ? String(format: "%.1f", r.score ?? 0) : nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
+            for c in results.characters ?? [] where !(c.anime + (c.manga ?? [])).isEmpty {
+                let metas = (c.anime + (c.manga ?? [])).map { r in Meta(id: "anilist:\(r.anilistId)", type: r.type == "manga" ? "manga" : "anime", name: r.name, poster: r.poster, background: r.background ?? r.poster, logo: nil, description: r.overview, releaseInfo: r.year, releaseDate: nil, inTheaters: nil, imdbRating: (r.score ?? 0) > 0 ? String(format: "%.1f", r.score ?? 0) : nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil) }
                 out.append(BrowseRow(key: "character:\(c.id)", title: c.name, metas: metas))
             }
             // bp-search-rows: one row per addon that answered ("From <addon>"), after the catalogs.
@@ -263,7 +272,7 @@ final class SearchModel: ObservableObject {
             collections = results.collections ?? []
             rows = out
             channels = results.liveTv ?? []
-            await CardMarksStore.shared.refresh(out.flatMap(\.metas))
+            await CardMarksStore.shared.refresh(out.filter { $0.key != "manga" }.flatMap(\.metas))
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done

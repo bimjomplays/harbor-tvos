@@ -10,7 +10,7 @@ final class KeyValueStore {
 
     /// Keychain-only keys: the app's own sessions plus upstream's secret-store prefixes
     /// (docs/engine-report.md §4; `secretStore.isSecretKey` is the authoritative list).
-    private static let secretPrefixes = ["harbor.auth.", "harbor.theme-session", "harbor.debrid.", "harbor.keys.",
+    private static let secretPrefixes = ["harbor.manga.suwayomi.servers.v1", "harbor.auth.", "harbor.theme-session", "harbor.debrid.", "harbor.keys.",
                                          "harbor.trakt.session.v1", "harbor.simkl.session.v1", "harbor.mal.session.v1", "harbor.anilist.session.v1",
                                          "harbor.lastfm.v1", "harbor.media-server.token.v1", "harbor.plex-auth.device.v1", "harbor.sports.api-sports.v1"]
     /// Small, user-authored state that must survive a cache purge: profiles, settings blobs
@@ -20,6 +20,7 @@ final class KeyValueStore {
                                                    "harbor.iptv.favorites.v2", "harbor.iptv.pins.v1", "harbor.iptv.epgmap.v1", "harbor.iptv.groupPrefs.v1", "harbor.iptv.countryPrefs.v1", "harbor.iptv.stats.v1",
                                                    "harbor.installed-addons", "harbor.onboarding.bp", "harbor.customlists.v1",
                                                    "harbor.reminders.v1", "harbor.reminders.unseen.v1", "harbor.moviewatched.v1",
+                                                   "harbor.manga.suwayomi.active.v1", "harbor.manga.activesource.v2", "harbor.manga.configured.v1",
                                                    "harbor.media-server.connections.v1", "harbor.media-server.mappings.v1", "harbor.media-server.summaries.v1"]
     private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap", "harbor.settings.", "harbor.installed-addons.", "harbor.tvsettings.v1.",
                                           "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1."]

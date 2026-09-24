@@ -21,8 +21,11 @@ final class ProfilesStore: ObservableObject {
         /// Settings shared with the primary profile (upstream `settingsLinked`, default true).
         var settingsLinked: Bool? = nil
         var linked: Bool { settingsLinked ?? true }
-        /// Upstream fields this app does not edit yet; carried so a re-save never drops them.
+        /// Upstream `ContentFilters | null`; copied into the effective settings by the engine
+        /// (engine/parental.ts syncIdentity), carried so a re-save never drops it.
         var hideContent: AnyJSON? = nil
+        /// Upstream `HiddenTabs | null` (lib/lockable-tabs.ts), edited in ProfileEditorView and
+        /// read by ParentalGate; `null` when no tab is locked, exactly as desktop writes it.
         var lockedTabs: AnyJSON? = nil
         var shareStremioWith: String? = nil
         /// The profile a fresh TV makes before sign-in. Roster adoption drops it instead of
@@ -40,6 +43,12 @@ final class ProfilesStore: ObservableObject {
 
     @Published private(set) var profiles: [Profile]
     @Published private(set) var activeId: String?
+    /// lib/profiles.tsx sessionUnlockedIds: profiles whose PIN was entered this app session.
+    /// Never persisted; a cold launch that restores the active profile starts locked.
+    @Published private(set) var sessionUnlockedIds: Set<String> = []
+    /// lib/parental.tsx sessionUnlockedFor: an unlock (PIN entered or changed) that holds only
+    /// until the active profile changes.
+    @Published private(set) var parentalUnlockedFor: String?
 
     private static let profilesKey = "harbor.profiles.v1"
     private static let activeKey = "harbor.active-profile"
@@ -139,7 +148,10 @@ final class ProfilesStore: ObservableObject {
         persist()
     }
 
-    func select(_ id: String) {
+    /// `unlocked`: the caller just verified this profile's PIN (profiles.tsx selectProfile opts).
+    func select(_ id: String, unlocked: Bool = false) {
+        if unlocked { sessionUnlockedIds.insert(id) }
+        if id != activeId { parentalUnlockedFor = nil }
         activeId = id
         persist()
         HarborEngine.loaded?.emitEvent("harbor:active-profile-changed", detail: .object(["id": .string(id)]))
@@ -147,12 +159,40 @@ final class ProfilesStore: ObservableObject {
 
     func deselect() {
         activeId = nil
+        parentalUnlockedFor = nil
         persist()
     }
 
     func setPin(_ pin: String?, for id: String) {
         guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
         profiles[i].passwordHash = pin.map(Self.hashPin)
+        // parental.tsx setPin / clearPin: whoever just set or removed the PIN stays unlocked.
+        if id == activeId { parentalUnlockedFor = id }
+        persist()
+    }
+
+    /// profiles.tsx selectProfile(id, { unlocked: true }) without the switch: the PIN was typed
+    /// seconds ago (editor-view.tsx create flow), so the profile opens unlocked this session.
+    func markSessionUnlocked(_ id: String) {
+        sessionUnlockedIds.insert(id)
+    }
+
+    /// parental.tsx unlock(pin) after a verified PIN: holds until the active profile changes.
+    func unlockParental(_ id: String) {
+        guard id == activeId else { return }
+        parentalUnlockedFor = id
+    }
+
+    /// Whether this session may see the profile's locked tabs (parental.tsx `locked`, inverted).
+    func sessionUnlocked(_ id: String) -> Bool {
+        sessionUnlockedIds.contains(id) || parentalUnlockedFor == id
+    }
+
+    /// editor-view.tsx TabsView onSave -> updateProfile(id, { lockedTabs }). `value` is the
+    /// engine's `parental.lockedTabsValue` (a full HiddenTabs object, or null when none).
+    func setLockedTabs(_ value: AnyJSON?, for id: String) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        if case .object? = value { profiles[i].lockedTabs = value } else { profiles[i].lockedTabs = nil }
         persist()
     }
 
@@ -180,7 +220,7 @@ final class ProfilesStore: ObservableObject {
 
     func reset() {
         for p in profiles { SecretStore.remove("harbor.auth.\(p.id)") }
-        profiles = []; activeId = nil
+        profiles = []; activeId = nil; sessionUnlockedIds = []; parentalUnlockedFor = nil
         KeyValueStore.shared.remove(Self.profilesKey); Prefs.remove(Self.activeKey); KeyValueStore.shared.remove(Self.idMapKey)
         HarborEngine.loaded?.syncStorage(key: Self.profilesKey, value: nil)
         HarborEngine.loaded?.syncStorage(key: Self.idMapKey, value: nil)

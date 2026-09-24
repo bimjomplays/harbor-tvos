@@ -100,6 +100,8 @@ struct DetailView: View {
         var context: PlaybackContext
         var upNext: String?
         var episode: AnyJSON?
+        /// What the Auto engine rule reads (engine/player.ts pickEngine).
+        var hints: PlayerStreamHints? = nil
     }
 
     /// Quick panel / Discovery Queue "Play now": open the picker as soon as the page knows what to play.
@@ -163,7 +165,9 @@ struct DetailView: View {
                             let n = model.episodes[idx + 1]
                             if n.season > 0 { upNext = "S\(n.season) E\(n.episode) · \(n.title)" }
                         }
-                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep)
+                        let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
+                                                      hdrFormat: stream?.hdrFormat, filename: link.filename)
+                        playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints)
                     }
                 }
             }
@@ -185,7 +189,7 @@ struct DetailView: View {
         }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
-            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
+            PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext, streamHints: t.hints,
                          onChooseAnother: { pickerAuto = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
                          onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
                          onPreviousEpisode: previousEpisodeAction(t.context)) { natural in
@@ -282,6 +286,8 @@ struct DetailView: View {
             Text(heroActions.first(where: { $0.key == heroFocus })?.label ?? " ")
                 .font(BP.sans(12.5, .semibold)).tracking(0.5).foregroundStyle(BP.inkSubtle)
                 .frame(height: BP.px(16), alignment: .leading)
+            // bp-hero-manga: "Read the Manga" on an anime, only while the manga reader is on.
+            if model.isAnimeId, SettingsBridge.shared.mangaOn { MangaHeroEntry(meta: model.meta) }
             if let tag = model.extras?.tagline, !tag.isEmpty {
                 Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(620), alignment: .leading)
             }

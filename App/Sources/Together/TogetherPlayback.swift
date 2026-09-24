@@ -30,7 +30,7 @@ final class TogetherPlayback: ObservableObject {
     @Published private(set) var inSession = false
 
     private let room = TogetherModel.shared
-    private weak var controller: MPVPlayerController?
+    private weak var controller: (any PlayerEngineControlling)?
     private var context: PlaybackContext?
     private var url: URL?
     private var bag = Set<AnyCancellable>()
@@ -81,7 +81,7 @@ final class TogetherPlayback: ObservableObject {
 
     // MARK: PlayerScreen hooks
 
-    func tick(controller c: MPVPlayerController?, context ctx: PlaybackContext?, url u: URL) {
+    func tick(controller c: (any PlayerEngineControlling)?, context ctx: PlaybackContext?, url u: URL) {
         // The player's "Room" chip follows this (published at most once a second, not per room event).
         let session = room.view.inSession
         if session != inSession { inSession = session }
@@ -141,7 +141,7 @@ final class TogetherPlayback: ObservableObject {
     }
 
     /// use-playback-controls playPauseToggle. Returns true when the room took the press.
-    func interceptToggle(_ c: MPVPlayerController?) -> Bool {
+    func interceptToggle(_ c: (any PlayerEngineControlling)?) -> Bool {
         guard inRoom else { return false }
         if isHost, !hasStarted { startHost(c); return true }
         if !isHost, !hasStarted {
@@ -159,7 +159,7 @@ final class TogetherPlayback: ObservableObject {
     }
 
     /// use-playback-controls seekStep / seekTo. Returns true when the room took the seek.
-    func interceptSeek(to target: Double, controller c: MPVPlayerController?) -> Bool {
+    func interceptSeek(to target: Double, controller c: (any PlayerEngineControlling)?) -> Bool {
         guard inRoom else { return false }
         if !canControl { return true }
         if !isHost {
@@ -186,14 +186,14 @@ final class TogetherPlayback: ObservableObject {
 
     // MARK: lobby (use-lobby-gate.ts)
 
-    private func startHost(_ c: MPVPlayerController?) {
+    private func startHost(_ c: (any PlayerEngineControlling)?) {
         hasStarted = true
         room.call("startRoom")
         room.call("suppressOutgoingFor", [.number(0)])
         c?.setPaused(false)
     }
 
-    private func playWithoutSync(_ c: MPVPlayerController?) {
+    private func playWithoutSync(_ c: (any PlayerEngineControlling)?) {
         initialSyncDone = true
         hasStarted = true
         c?.setPaused(false)
@@ -201,7 +201,7 @@ final class TogetherPlayback: ObservableObject {
 
     // MARK: sync
 
-    private func bind(_ c: MPVPlayerController, _ ctx: PlaybackContext, _ u: URL) {
+    private func bind(_ c: any PlayerEngineControlling, _ ctx: PlaybackContext, _ u: URL) {
         bound = true
         controller = c
         context = ctx
@@ -220,7 +220,7 @@ final class TogetherPlayback: ObservableObject {
     }
 
     /// use-host-source.ts / source-descriptor.ts: what the host is playing, so guests can match it.
-    private func askSource(_ c: MPVPlayerController, duration: Double) {
+    private func askSource(_ c: any PlayerEngineControlling, duration: Double) {
         sourceAsked = true
         var ref: [String: AnyJSON] = [:]
         if let name = c.streamFilename(), !name.isEmpty { ref["title"] = .string(name) }

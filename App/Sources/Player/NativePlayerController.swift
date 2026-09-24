@@ -1,0 +1,445 @@
+import UIKit
+import SwiftUI
+import AVFoundation
+import AVKit
+import CoreMedia
+
+/// The second engine (PLAN decision 4): AVPlayer, the TV's stand-in for upstream's html5 engine
+/// (src/lib/player/html5/bridge.ts). It sits under Harbor's own chrome like mpv does: an
+/// AVPlayerViewController with its transport hidden, kept only because it applies the stream's
+/// display criteria (Match Content: frame rate, HDR10 / Dolby Vision) by itself.
+/// Reports through the same Status shape as MPVPlayerController so PlayerScreen reads one thing.
+final class NativePlayerController: UIViewController {
+    var onStatus: ((MPVPlayerController.Status) -> Void)?
+    var url: URL?
+    /// Request headers (debrid links, addon proxyHeaders), sent through AVURLAsset.
+    var headers: [String: String] = [:]
+    var onEnded: (() -> Void)?
+    /// use-player-bridge.ts autoFallback: a decode/codec failure, or audio that cannot be decoded
+    /// (html5 bridge probeAudio → snap.noAudio). "codec" | "noAudio"; PlayerScreen may retry on mpv.
+    var onUnsupported: ((String) -> Void)?
+    var isLive = false
+    var preferredAudio: [String] = []
+    var preferredSubs: [String] = []
+    /// Where playback should start, applied once the item is ready.
+    var startAtSeconds: Double = 0
+
+    private let player = AVPlayer()
+    private let host = AVPlayerViewController()
+    private var status = MPVPlayerController.Status()
+    private var observations: [NSKeyValueObservation] = []
+    private var notes: [NSObjectProtocol] = []
+    private var timer: Timer?
+    private var wantsPlay = true
+    private var readyHandled = false
+    private var unsupportedSent = false
+    private var tornDown = false
+    private var audioGroup: AVMediaSelectionGroup?
+    private var legibleGroup: AVMediaSelectionGroup?
+    private var codecName = ""
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        // Harbor's chrome is drawn over this; the system transport and gestures stay off.
+        host.player = player
+        host.showsPlaybackControls = false
+        host.appliesPreferredDisplayCriteriaAutomatically = true
+        host.allowsPictureInPicturePlayback = false
+        host.view.backgroundColor = .black
+        host.view.isUserInteractionEnabled = false
+        addChild(host)
+        host.view.frame = view.bounds
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(host.view)
+        host.didMove(toParent: self)
+        // Harbor, not the system, picks the audio and subtitle options (mpv.rs:991-1007: sid=no).
+        player.appliesMediaSelectionCriteriaAutomatically = false
+        if let url { load(url) }
+        // The main run loop fires it, as MPVPlayerController's poll timer.
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.poll() }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        teardown()
+    }
+
+    private func teardown() {
+        guard !tornDown else { return }
+        tornDown = true
+        timer?.invalidate()
+        timer = nil
+        observations.forEach { $0.invalidate() }
+        observations = []
+        notes.forEach { NotificationCenter.default.removeObserver($0) }
+        notes = []
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        onStatus = nil
+        onEnded = nil
+        onUnsupported = nil
+        // The player owned the display mode while it was up (as MPVPlayerController does).
+        if let window = view.window ?? UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first {
+            window.avDisplayManager.preferredDisplayCriteria = nil
+        }
+    }
+
+    func load(_ url: URL) {
+        readyHandled = false
+        unsupportedSent = false
+        audioGroup = nil
+        legibleGroup = nil
+        observations.forEach { $0.invalidate() }
+        observations = []
+        notes.forEach { NotificationCenter.default.removeObserver($0) }
+        notes = []
+        // The same request identity mpv sends (MPVPlayerController's user-agent default), so a
+        // provider that admits one engine admits the other.
+        var options: [String: Any] = [:]
+        let ua = headers.first { $0.key.lowercased() == "user-agent" }?.value ?? "VLC/3.0.20 LibVLC/3.0.20"
+        options["AVURLAssetHTTPUserAgentKey"] = ua
+        let rest = headers.filter { $0.key.lowercased() != "user-agent" }
+        if !rest.isEmpty { options["AVURLAssetHTTPHeaderFieldsKey"] = rest }
+        let asset = AVURLAsset(url: url, options: options)
+        let item = AVPlayerItem(asset: asset)
+        // KVO and notification blocks may arrive off the main thread; everything hops back to it.
+        observations.append(item.observe(\.status, options: [.new]) { [weak self] _, _ in
+            guard let self else { return }
+            Task { @MainActor in self.itemStatusChanged() }
+        })
+        observations.append(player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+            guard let self else { return }
+            Task { @MainActor in self.refreshState() }
+        })
+        let center = NotificationCenter.default
+        notes.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.didEnd() }
+        })
+        notes.append(center.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self] note in
+            guard let self else { return }
+            let err = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError
+            Task { @MainActor in self.fail(err) }
+        })
+        player.replaceCurrentItem(with: item)
+        status.state = "loading"
+        status.error = nil
+        push("AVPlayer: \(isHls(url) ? "HLS" : url.pathExtension.lowercased())")
+        // With no start to seek to, playback starts as soon as there is enough buffered.
+        if startAtSeconds <= 1, wantsPlay { player.play() }
+        report()
+    }
+
+    private func isHls(_ url: URL) -> Bool {
+        let lower = url.absoluteString.lowercased()
+        return lower.contains("m3u8") || lower.contains("/playlist/")
+    }
+
+    private func itemStatusChanged() {
+        guard let item = player.currentItem else { return }
+        switch item.status {
+        case .readyToPlay:
+            guard !readyHandled else { return }
+            readyHandled = true
+            push("ready")
+            if startAtSeconds > 1 {
+                let target = CMTime(seconds: startAtSeconds, preferredTimescale: 600)
+                startAtSeconds = 0
+                player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        if self.wantsPlay, !self.tornDown { self.player.play() }
+                    }
+                }
+            } else if wantsPlay {
+                player.play()
+            }
+            Task { await self.loadMediaInfo(item) }
+            refreshState()
+        case .failed:
+            fail(item.error.map { $0 as NSError })
+        default:
+            break
+        }
+    }
+
+    /// html5 error-map.ts: decode / unsupported source are what an mpv retry can fix; a network
+    /// failure would fail on mpv too.
+    private func fail(_ error: NSError?) {
+        guard !tornDown else { return }
+        let why = error?.localizedFailureReason ?? error?.localizedDescription ?? "Playback failed."
+        push("error: \(error?.domain ?? "?") \(error?.code ?? 0) \(why)")
+        let network = error?.domain == NSURLErrorDomain
+            || (error?.userInfo[NSUnderlyingErrorKey] as? NSError)?.domain == NSURLErrorDomain
+        if !network, !unsupportedSent {
+            unsupportedSent = true
+            onUnsupported?("codec")
+        }
+        status.state = "error"
+        status.error = why
+        report()
+    }
+
+    private func didEnd() {
+        guard !tornDown else { return }
+        status.state = "ended"
+        report()
+        onEnded?()
+    }
+
+    /// Tracks, codec name and the no-audio probe once the asset is open.
+    private func loadMediaInfo(_ item: AVPlayerItem) async {
+        let asset = item.asset
+        audioGroup = try? await asset.loadMediaSelectionGroup(for: .audible)
+        legibleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
+        guard !tornDown, player.currentItem === item else { return }
+        applyTrackPreferences()
+        if let video = try? await asset.loadTracks(withMediaType: .video).first,
+           let desc = try? await video.load(.formatDescriptions).first {
+            codecName = Self.codecName(CMFormatDescriptionGetMediaSubType(desc))
+        } else if let url, isHls(url) {
+            codecName = "hls"
+        }
+        // html5 bridge probeAudio: the file has audio but none of it can be decoded (DTS, TrueHD…).
+        // HLS assets expose no tracks here, so they are never flagged.
+        if let audio = try? await asset.loadTracks(withMediaType: .audio), !audio.isEmpty {
+            var playable = false
+            for t in audio {
+                let ok = (try? await t.load(.isPlayable)) ?? false
+                if ok { playable = true; break }
+            }
+            if !playable, !unsupportedSent, !tornDown {
+                unsupportedSent = true
+                push("no playable audio track")
+                onUnsupported?("noAudio")
+            }
+        }
+        report()
+    }
+
+    private static func codecName(_ type: FourCharCode) -> String {
+        switch type {
+        case kCMVideoCodecType_HEVC, 0x68657631 /* hev1 */: return "hevc"
+        case kCMVideoCodecType_H264: return "h264"
+        case kCMVideoCodecType_AV1: return "av1"
+        case 0x64766831 /* dvh1 */, 0x64766865 /* dvhe */: return "dolby vision"
+        case 0x64766131 /* dva1 */, 0x64766176 /* dvav */: return "dolby vision"
+        default:
+            let chars = [24, 16, 8, 0].map { Character(UnicodeScalar(UInt8((type >> $0) & 0xFF))) }
+            return String(chars).trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    // MARK: transport
+
+    func togglePause() { setPaused(wantsPlay) }
+
+    func setPaused(_ paused: Bool) {
+        wantsPlay = !paused
+        if paused { player.pause() } else { player.play() }
+        refreshState()
+    }
+
+    func seek(_ seconds: Double) { seek(to: player.currentTime().seconds + seconds) }
+
+    func seek(to seconds: Double) {
+        guard seconds.isFinite else { return }
+        player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func snapshot() -> (position: Double, duration: Double, paused: Bool) {
+        let pos = player.currentTime().seconds
+        let dur = player.currentItem?.duration.seconds ?? 0
+        return (pos.isFinite ? max(0, pos) : 0, dur.isFinite ? max(0, dur) : 0, !wantsPlay)
+    }
+
+    func setMuted(_ muted: Bool) { player.isMuted = muted }
+    func isMuted() -> Bool { player.isMuted }
+
+    /// The end of the loaded range the playhead is in (mpv demuxer-cache-time's meaning).
+    func bufferedSec() -> Double {
+        guard let item = player.currentItem else { return 0 }
+        let now = player.currentTime()
+        for value in item.loadedTimeRanges {
+            let r = value.timeRangeValue
+            if r.containsTime(now) || CMTimeCompare(r.start, now) > 0 && (r.start.seconds - now.seconds) < 1 {
+                let end = r.end.seconds
+                return end.isFinite ? end : 0
+            }
+        }
+        return 0
+    }
+
+    func streamFilename() -> String? {
+        guard let url else { return nil }
+        let last = url.lastPathComponent
+        return last.isEmpty ? nil : last
+    }
+
+    func videoWidth() -> Int { Int(player.currentItem?.presentationSize.width ?? 0) }
+
+    // MARK: tracks (AVMediaSelectionGroup)
+
+    func tracks() -> [MPVPlayerController.Track] {
+        guard let item = player.currentItem else { return [] }
+        var out: [MPVPlayerController.Track] = []
+        if let g = audioGroup {
+            let on = item.currentMediaSelection.selectedMediaOption(in: g)
+            for (i, o) in g.options.enumerated() { out.append(track(o, id: i + 1, type: "audio", selected: o == on, group: g)) }
+        }
+        if let g = legibleGroup {
+            let on = item.currentMediaSelection.selectedMediaOption(in: g)
+            for (i, o) in g.options.enumerated() { out.append(track(o, id: i + 1, type: "sub", selected: o == on, group: g)) }
+        }
+        return out
+    }
+
+    private func track(_ o: AVMediaSelectionOption, id: Int, type: String, selected: Bool, group: AVMediaSelectionGroup) -> MPVPlayerController.Track {
+        let lang = o.extendedLanguageTag ?? o.locale?.identifier
+        var t = MPVPlayerController.Track(id: id, type: type, lang: lang, title: o.displayName, codec: nil, selected: selected)
+        t.forced = o.hasMediaCharacteristic(.containsOnlyForcedSubtitles)
+        t.hearingImpaired = o.hasMediaCharacteristic(.transcribesSpokenDialogForAccessibility)
+            && o.hasMediaCharacteristic(.describesMusicAndSoundForAccessibility)
+        t.isDefault = group.defaultOption == o
+        return t
+    }
+
+    func select(track: MPVPlayerController.Track?, type: String) {
+        guard let item = player.currentItem, let g = type == "sub" ? legibleGroup : audioGroup else { return }
+        guard let track else {
+            if g.allowsEmptySelection { item.select(nil, in: g) }
+            return
+        }
+        let i = track.id - 1
+        guard g.options.indices.contains(i) else { return }
+        item.select(g.options[i], in: g)
+    }
+
+    /// The same language matching as MPVPlayerController.applyTrackPreferences: the first audio
+    /// option in a preferred language; subtitles stay off unless one matches a preferred language.
+    private func applyTrackPreferences() {
+        guard let item = player.currentItem else { return }
+        func rank(_ o: AVMediaSelectionOption, _ names: [String]) -> Int? {
+            guard let tag = o.extendedLanguageTag ?? o.locale?.identifier else { return nil }
+            let code = String(tag.lowercased().split(separator: "-").first ?? "")
+            let english = Locale(identifier: "en").localizedString(forLanguageCode: code)?.lowercased()
+            for (i, name) in names.enumerated() {
+                let n = name.lowercased()
+                if english == n || code == n || tag.lowercased() == n { return i }
+                if let first = n.split(separator: " ").first, english == String(first) { return i }
+            }
+            return nil
+        }
+        if let g = audioGroup, !preferredAudio.isEmpty,
+           let best = g.options.compactMap({ o in rank(o, preferredAudio).map { ($0, o) } }).min(by: { $0.0 < $1.0 }) {
+            item.select(best.1, in: g)
+            push("audio: \(best.1.displayName)")
+        }
+        if let g = legibleGroup {
+            if let best = g.options.filter({ !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) })
+                .compactMap({ o in rank(o, preferredSubs).map { ($0, o) } }).min(by: { $0.0 < $1.0 }) {
+                item.select(best.1, in: g)
+                push("subs: \(best.1.displayName)")
+            } else if g.allowsEmptySelection {
+                item.select(nil, in: g)
+            }
+        }
+    }
+
+    // MARK: what the native engine cannot do (html5 bridge: setAudioDelay() {}, setAnime4kShaders() {})
+
+    func setSecondarySub(_ track: MPVPlayerController.Track?) {}
+    func setAudioDelay(_ seconds: Double) {}
+    func refreshSubtitleStyle() {}
+    func setSubDelay(_ seconds: Double) {}
+    func setShaders(_ paths: [String]) {}
+    func addSubtitle(file: URL, title: String, lang: String) {}
+
+    // MARK: status
+
+    private func refreshState() {
+        guard !tornDown, let item = player.currentItem else { return }
+        if status.state == "error" { return }
+        guard item.status == .readyToPlay else { return }
+        if status.state == "ended", player.timeControlStatus != .playing { return }
+        switch player.timeControlStatus {
+        case .playing: status.state = "playing"
+        case .waitingToPlayAtSpecifiedRate:
+            // Still opening until the first frame has been shown.
+            status.state = player.currentTime().seconds > 0 || status.state != "loading" ? "buffering/paused" : "loading"
+        default: status.state = "buffering/paused"
+        }
+        report()
+    }
+
+    private func poll() {
+        guard !tornDown else { return }
+        if let item = player.currentItem {
+            let size = item.presentationSize
+            if size.width > 0 {
+                status.videoParams = "\(Int(size.width)) \(Int(size.height)) \(codecName.isEmpty ? "avplayer" : codecName)"
+            }
+            status.hwdec = "avplayer"
+            let pos = player.currentTime().seconds
+            let dur = item.duration.seconds
+            status.fps = "\(pos.isFinite ? String(format: "%.1f", pos) : "0")s / \(dur.isFinite ? String(format: "%.0f", dur) : "?")s"
+            if let log = item.accessLog()?.events.last {
+                status.dropped = "dropped \(log.numberOfDroppedVideoFrames) · stalls \(log.numberOfStalls)"
+            }
+        }
+        refreshState()
+        report()
+    }
+
+    private func push(_ line: String) {
+        status.log.append(line)
+        if status.log.count > 8 { status.log.removeFirst() }
+    }
+
+    /// Delivered on the next main-queue turn, never inside a SwiftUI update (as MPVPlayerController).
+    private func report() {
+        guard !tornDown else { return }
+        let s = status
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.tornDown else { return }
+            self.onStatus?(s)
+        }
+    }
+}
+
+extension NativePlayerController: PlayerEngineControlling {
+    var engineKind: PlayerEngineKind { .native }
+}
+
+/// PlayerScreen's native surface, the counterpart of MPVPlayerView.
+struct NativePlayerView: UIViewControllerRepresentable {
+    let url: URL
+    var headers: [String: String] = [:]
+    var startAt: Double = 0
+    var isLive: Bool = false
+    var preferredAudio: [String] = []
+    var preferredSubs: [String] = []
+    let onStatus: (MPVPlayerController.Status) -> Void
+    var onEnded: (() -> Void)? = nil
+    var onUnsupported: ((String) -> Void)? = nil
+    var onReady: ((NativePlayerController) -> Void)? = nil
+
+    func makeUIViewController(context: Context) -> NativePlayerController {
+        let c = NativePlayerController()
+        c.url = url
+        c.headers = headers
+        c.startAtSeconds = startAt
+        c.isLive = isLive
+        c.preferredAudio = preferredAudio
+        c.preferredSubs = preferredSubs
+        c.onStatus = onStatus
+        c.onEnded = onEnded
+        c.onUnsupported = onUnsupported
+        DispatchQueue.main.async { onReady?(c) }
+        return c
+    }
+
+    func updateUIViewController(_ c: NativePlayerController, context: Context) {}
+}

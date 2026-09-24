@@ -1,35 +1,48 @@
 import SwiftUI
 
-/// Onboarding wizard (src/views/big-picture/onboarding). Stage 1 ships the steps that exist yet:
-/// language, Stremio, Harbor account, done. TMDB, layout, services, subtitles and taste join
-/// with their features. Unlike upstream, the Harbor step types on the TV: the password goes
-/// straight to harbor.site over TLS, never across the LAN, so upstream's objection does not apply.
+/// Onboarding wizard (src/views/big-picture/onboarding), in bp-onboard-steps.ts order: language,
+/// phone, TMDB, Stremio, Harbor, layout, services, subtitles, taste, done. The copy column carries
+/// each step's aside (the TMDB and Stremio showcases, the layout and subtitle previews, the done
+/// flourish) under the headline, where bp-onboarding-frame.tsx mounts [data-bp-onboard-aside].
+/// Unlike upstream, the Harbor step types on the TV: the password goes straight to harbor.site
+/// over TLS, never across the LAN, so upstream's objection does not apply.
 struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var account: AccountStore
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
 
-    enum Step: Int, CaseIterable { case language, phone, tmdb, streaming, taste, stremio, harbor, layout, subtitles, done }
+    enum Step: Int, CaseIterable { case language, phone, tmdb, stremio, harbor, layout, streaming, subtitles, taste, done }
     @State private var step: Step = .language
     @State private var stremioName: String?
     /// bp-handoff-context.tsx: the host lives above the steps, not inside the phone screen, so the
     /// code on screen survives Back and Continue and a delivery that lands after the TV moved on to
     /// the Stremio screen still counts. Listening only from the phone step through the Harbor step.
     @StateObject private var handoff = TvHandoff(mode: .setup(HandoffStep.allCases))
+    /// advanceBpOnboardRing: once a step's answer is given the ring moves to its primary button.
+    @FocusState private var ring: String?
+    @State private var facts: OnboardFacts?
 
     var body: some View {
         VStack(spacing: 0) {
             ProgressBar(fraction: Double(step.rawValue + 1) / Double(Step.allCases.count))
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(28))
             HStack(alignment: .top, spacing: BP.px(60)) {
-                copy.frame(width: BP.px(380), alignment: .leading)
+                VStack(alignment: .leading, spacing: 0) {
+                    copy
+                    Spacer(minLength: BP.px(16))
+                    aside
+                }
+                .frame(width: BP.px(380), alignment: .leading)
+                .frame(maxHeight: .infinity, alignment: .top)
                 content.frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, BP.gutter).padding(.top, BP.px(40))
-            Spacer()
+            .padding(.horizontal, BP.gutter).padding(.top, BP.px(40)).padding(.bottom, BP.hintHeight)
         }
-        .onChange(of: step) { _, s in syncHandoff(s) }
+        .onChange(of: step) { _, s in
+            syncHandoff(s)
+            if s == .done { Task { await loadFacts() } }
+        }
         .onChange(of: handoff.done) { _, d in
             if d.contains(.stremio), stremioName == nil, let s = PendingStremio.session { stremioName = s.user.fullname ?? s.user.email }
         }
@@ -55,30 +68,50 @@ struct OnboardingView: View {
             Text(headline).font(BP.display(36)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
             Text(body).font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }
+        .id(step)
+        .transition(.opacity)
     }
 
+    /// bp-onboard-steps.ts BP_ONBOARD_STEPS copy.
     private var text: (String, String, String) {
         switch step {
         case .language: ("Language", "Choose your language", "Harbor speaks this everywhere. You can change it later in Settings.")
         case .phone: ("Your phone", "Finish setup on your phone", "The next three screens need typing. Scan this and your phone does it for you.")
         case .tmdb: ("Artwork and rows", "Connect TMDB", "Free, two minutes. Unlocks Trending, In Theaters, Top Rated and every service rail.")
-        case .streaming: ("Your services", "Which services do you have?", "Their rows show on Home and Discover. Turn off the ones you don't use.")
-        case .taste: ("Your taste", "Pick up to five you love", "Discover learns from these. Nothing is shared.")
         case .stremio: ("Your library", "Bring in your library", "Your Continue Watching, your watchlist and your addons.")
-        case .harbor: ("Harbor account", "Sign in to Harbor", "Sync your profile, themes, lists and friends. You can do this any time.")
+        case .harbor: ("Harbor account", "Create a Harbor account", "Sync your profile, themes, lists and friends. You can do this any time.")
         case .layout: ("Home", "How should the home screen read?", "Harbor leads with one big title. Classic leads with rows.")
+        case .streaming: ("Your services", "Turn off what you do not have", "All of them start on. Take off the ones you do not pay for.")
         case .subtitles: ("Subtitles", "Which subtitle languages, in order?", "First match wins. Most people need only one.")
+        case .taste: ("Taste", "What do you like?", "Pick up to five. It shapes what Harbor surfaces first.")
         case .done: ("Ready", "You are set up", "Saved on this device. Another Harbor install starts fresh.")
         }
+    }
+
+    /// The step's showcase or preview (BpOnboardAside), bottom of the copy column; bp-rise in.
+    @ViewBuilder private var aside: some View {
+        Group {
+            switch step {
+            case .tmdb: OnboardTmdbShowcase()
+            case .stremio: OnboardStremioShowcase()
+            case .layout: OnboardLayoutPreview(mode: settings.slice.homeMode)
+            case .subtitles: OnboardSubtitlePreview(languages: settings.slice.preferredSubLangs)
+            case .done:
+                // Dealt once the viewer's own picks are known, so the deal plays on real art.
+                if let f = facts { OnboardDoneFlourish(art: f.art) }
+            default: EmptyView()
+            }
+        }
+        .id(step)
+        .transition(.opacity.combined(with: .offset(y: BP.px(14))))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder private var content: some View {
         switch step {
         case .language:
-            VStack(alignment: .leading, spacing: BP.px(10)) {
-                Button("English") { advance() }.buttonStyle(BPActionStyle(primary: true))
-                BPNote(text: "More languages arrive with Stage 9.")
-            }
+            OnboardLanguageStep(ring: $ring) { advance() }
         case .phone:
             PhoneSetupStep(handoff: handoff,
                            tmdbConnected: !settings.slice.tmdbKey.isEmpty,
@@ -87,19 +120,22 @@ struct OnboardingView: View {
                            advance: { advance() })
         case .tmdb:
             TmdbKeyForm(done: { advance() }, skip: { advance() })
-        case .streaming:
-            StreamingServicesStep(hasKey: !settings.slice.tmdbKey.isEmpty) { advance() }
-        case .taste:
-            TasteStep { advance() }
         case .stremio:
             StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
         case .harbor:
             HarborSignInForm { advance() } skip: { advance() }
         case .layout:
-            HStack(spacing: BP.px(16)) {
-                layoutCard("Harbor", "A hero up top, then Top 10, Trending, In Theaters and your service rows.", mode: "harbor")
-                layoutCard("Classic", "Continue Watching first, then your addon catalogs in install order.", mode: "classic")
+            VStack(alignment: .leading, spacing: BP.px(16)) {
+                HStack(spacing: BP.px(16)) {
+                    layoutCard("Harbor", "A hero up top, then Top 10, Trending, In Theaters and your service rows.", mode: "harbor")
+                    layoutCard("Classic", "Continue Watching first, then your addon catalogs in install order.", mode: "classic")
+                }
+                Button("Continue") { advance() }
+                    .buttonStyle(BPActionStyle(primary: true))
+                    .focused($ring, equals: "primary")
             }
+        case .streaming:
+            StreamingServicesStep(hasKey: !settings.slice.tmdbKey.isEmpty) { advance() }
         case .subtitles:
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 SubtitleLanguageGrid()
@@ -109,12 +145,22 @@ struct OnboardingView: View {
                 }
                 BPNote(text: "In order: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
             }
+        case .taste:
+            TasteStep { advance() }
         case .done:
+            // bp-step-done.tsx: the recap lines, then Start watching.
             VStack(alignment: .leading, spacing: BP.px(16)) {
                 RecapRow(ok: !settings.slice.tmdbKey.isEmpty, text: settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta. Add a TMDB key in Settings whenever you want." : "TMDB connected")
+                if let f = facts {
+                    RecapRow(ok: f.servicesOn > 0, text: "\(f.servicesOn) streaming services on")
+                }
                 RecapRow(ok: stremioName != nil, text: stremioName.map { "Signed in as \($0)" } ?? "Not signed in to Stremio. Your library stays local.")
                 RecapRow(ok: account.isSignedIn, text: account.session.map { "Harbor account linked as \($0.user.username)" } ?? "No Harbor account yet")
-                RecapRow(ok: true, text: "Subtitles: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
+                RecapRow(ok: !settings.slice.preferredSubLangs.isEmpty,
+                         text: settings.slice.preferredSubLangs.isEmpty ? "No subtitle languages set" : "Subtitles: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
+                if let f = facts, f.tastePicks > 0 {
+                    RecapRow(ok: true, text: "\(f.tastePicks) titles you like")
+                }
                 Button("Start watching") { app.finishOnboarding() }
                     .buttonStyle(BPActionStyle(primary: true))
                     .accessibilityIdentifier("onboarding-start")
@@ -123,10 +169,19 @@ struct OnboardingView: View {
         }
     }
 
-    /// bp-step-layout.tsx: two choice cards, applied instantly, auto-advance.
+    private func loadFacts() async {
+        let p = ProfilesStore.shared.active
+        facts = try? await HarborEngine.shared.call("onboarding.facts", [p?.id ?? "default", p?.linked ?? true])
+    }
+
+    /// bp-step-layout.tsx: two choice cards, applied instantly; the ring then moves to Continue
+    /// (advanceBpOnboardRing), so the preview beside the copy shows what was picked.
     private func layoutCard(_ title: String, _ blurb: String, mode: String) -> some View {
         Button {
-            Task { try? await settings.patch(["homeMode": .string(mode)]); advance() }
+            Task {
+                try? await settings.patch(["homeMode": .string(mode)])
+                ring = "primary"
+            }
         } label: {
             VStack(alignment: .leading, spacing: BP.px(8)) {
                 Text(title).font(BP.display(22)).foregroundStyle(BP.ink)
@@ -135,7 +190,7 @@ struct OnboardingView: View {
             }
             .padding(BP.px(20))
             .frame(width: BP.px(280), height: BP.px(160), alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2))
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(settings.slice.homeMode == mode ? BP.glass : BP.panel2))
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
     }
@@ -155,6 +210,14 @@ struct OnboardingView: View {
         default: return nil
         }
     }
+}
+
+/// use-bp-onboard-facts.ts (the counts) plus bp-done-flourish's five posters (engine onboarding.facts).
+struct OnboardFacts: Decodable {
+    var servicesOn: Int
+    var subLangs: [String]
+    var tastePicks: Int
+    var art: [String]
 }
 
 struct ProgressBar: View {

@@ -97,7 +97,7 @@ struct PlayerChipRow<Content: View>: View {
 /// bp-player-sources.tsx BpPlayerAudio: the file's audio tracks, then one bottom lane with Back,
 /// the sync offset readout, ±0.1 / ±0.5 s steps and Reset (mpv audio-delay).
 struct PlayerAudioPanel: View {
-    let controller: MPVPlayerController?
+    let controller: (any PlayerEngineControlling)?
     let title: String
     @Binding var audioDelay: Double
     let onClose: () -> Void
@@ -105,6 +105,8 @@ struct PlayerAudioPanel: View {
     @State private var tracks: [MPVPlayerController.Track] = []
     @FocusState private var focus: String?
     private static let delaySteps: [Double] = [-0.5, -0.1, 0.1, 0.5]
+    /// bp-player-sources.tsx BpAudioLane `locked = engine === "html5"`: AVPlayer has no audio delay.
+    private var locked: Bool { controller?.engineKind == .native }
 
     var body: some View {
         ZStack {
@@ -157,18 +159,23 @@ struct PlayerAudioPanel: View {
                 .focused($focus, equals: "back")
             Text("Sync Offset").font(BP.sans(12.5, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.inkSubtle)
                 .padding(.leading, BP.px(6))
+                .opacity(locked ? 0.45 : 1)
             Text(String(format: "%@%.2fs", audioDelay > 0 ? "+" : "", audioDelay))
                 .font(.system(size: BP.px(16), weight: .bold, design: .monospaced))
                 .foregroundStyle(audioDelay != 0 ? BP.ink : BP.inkSubtle)
+                .opacity(locked ? 0.45 : 1)
+            // BpAudioLane: html5 cannot offset audio, so the cells are disabled and focus steps over them.
             ForEach(Self.delaySteps, id: \.self) { step in
                 Button(String(format: "%@%gs", step > 0 ? "+" : "", step)) { setDelay(audioDelay + step) }
                     .buttonStyle(BPActionStyle())
                     .focused($focus, equals: "step\(step)")
+                    .disabled(locked)
             }
             if audioDelay != 0 {
                 Button { setDelay(0) } label: { Label("Reset", systemImage: "arrow.counterclockwise") }
                     .buttonStyle(BPActionStyle())
                     .focused($focus, equals: "reset")
+                    .disabled(locked)
             }
             Spacer(minLength: 0)
         }

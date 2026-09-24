@@ -27,7 +27,10 @@ actor ImageLoader {
         if let hit = memory.object(forKey: key) { return hit }
         if let task = inflight[url.absoluteString] { return await task.value }
         let task = Task<UIImage?, Never> {
-            guard let (data, resp) = try? await session.data(from: url),
+            // Manga covers live on the viewer's own Suwayomi server, which may ask for Basic auth.
+            var request = URLRequest(url: url)
+            if let auth = ImageAuth.shared.header(for: url.absoluteString) { request.setValue(auth, forHTTPHeaderField: "Authorization") }
+            guard let (data, resp) = try? await session.data(for: request),
                   (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
                   let img = UIImage(data: data) else { return nil }
             return img

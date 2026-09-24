@@ -59,7 +59,16 @@ final class SettingsBridge: ObservableObject {
         /// bp-tv-app.tsx's SFX volume (0-100); played by BPSound.
         var bigPictureSound: String? = "cinematic"
         var sfxVolume: Double? = 50
+        /// settings/defaults.ts mangaEnabled (off): the manga reader, its tab, Search's manga row
+        /// and the anime hero's "Read the Manga" entry all wait for it (views/manga.tsx EnableGate).
+        var mangaEnabled: Bool? = false
+        /// settings.hideContent: only the manga flag is read here (nav-items hideKey "manga").
+        var hideContent: HideContent? = nil
+        struct HideContent: Codable, Equatable { var manga: Bool? }
     }
+
+    /// Manga is on and not hidden: its tab shows and the manga hooks run.
+    var mangaOn: Bool { (slice.mangaEnabled ?? false) && !(slice.hideContent?.manga ?? false) }
 
     /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).
     @Published var sportsDeclined = false
@@ -90,6 +99,9 @@ final class SettingsBridge: ObservableObject {
             slice = s
             loaded = true
         }
+        // lib/i18n follows the profile's uiLanguage (store.ts only reads it once, at load).
+        let p = ProfilesStore.shared.active
+        let _: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [p?.id ?? "default", p?.linked ?? true])
     }
 
     func patch(_ change: [String: AnyJSON]) async throws {
