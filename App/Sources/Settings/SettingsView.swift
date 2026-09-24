@@ -214,7 +214,10 @@ struct SettingsView: View {
     }
 
     private func onOff(_ label: String, _ on: Bool, key: String) -> some View {
-        Button("\(T(label)): \(T(on ? "On" : "Off"))") { Task { try? await settings.patch([key: .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
+        // A String value, not a literal: an interpolated literal would become the LocalizedStringKey
+        // "%@: %@" and borrow an unrelated catalog entry (review 20).
+        let title: String = "\(T(label)): \(T(on ? "On" : "Off"))"
+        return Button(title) { Task { try? await settings.patch([key: .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
     }
 
     private func row(_ title: String, detail: String) -> some View {
