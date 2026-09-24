@@ -104,6 +104,8 @@ struct BPSettingsView: View {
         return s.depth
     }
     @FocusState private var focus: String?
+    /// Setup → AI search (engine settingsRoom TvControl, pane "ai"): the key and model panel.
+    @State private var aiOpen = false
 
     var body: some View {
         HStack(alignment: .top, spacing: BP.px(23)) {
@@ -127,6 +129,9 @@ struct BPSettingsView: View {
         .focusSection()
         .task { await model.load() }
         .onDisappear { BPSound.shared.audition = nil }
+        .fullScreenCover(isPresented: $aiOpen, onDismiss: { Task { await model.load() } }) {
+            AISearchPanel(onClose: { aiOpen = false })
+        }
     }
 
     private func goBack() {
@@ -226,12 +231,13 @@ struct BPSettingsView: View {
             }
         case "push":
             Button {
-                if c.pane == "live" { app.room = .live } else { openConnect() }
+                if c.pane == "live" { app.room = .live } else if c.pane == "ai" { aiOpen = true } else { openConnect() }
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(c.label).font(BP.sans(15, .semibold))
-                        Text(c.detail ?? "").font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                        // T(): the TV's own detail lines (tools/locales-tvos.json) never reach the engine's catalog.
+                        Text(T(c.detail ?? "")).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                     }
                     Spacer()
                     Image(systemName: "chevron.right")

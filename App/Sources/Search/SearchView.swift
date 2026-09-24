@@ -3,6 +3,10 @@ import SwiftUI
 /// Search room: keyboard on the left, query + results on the right.
 struct SearchView: View {
     @StateObject private var model = SearchModel()
+    /// search-overlay.tsx AI mode + ai-search-section.tsx (engine/aiSearch.ts).
+    @StateObject private var ai = AISearchModel()
+    /// ai-result-list.tsx openMeta(meta, { episodeHint }).
+    @State private var aiOpen: AIOpen?
     @EnvironmentObject private var app: AppModel
     @State private var spotlight: Meta?
     @State private var detail: Meta?
@@ -18,11 +22,15 @@ struct SearchView: View {
                     BPKeyboardView(onChar: { model.query += $0 },
                                    onBackspace: { if !model.query.isEmpty { model.query.removeLast() } },
                                    onClear: { model.query = "" })
-                    // bp-phone-typing.tsx: on search, Options (here Play/Pause) opens it too.
-                    Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
-                        .buttonStyle(BPActionStyle())
-                        .accessibilityIdentifier("search-phone")
-                    statusLine
+                    HStack(spacing: BP.px(10)) {
+                        // bp-phone-typing.tsx: on search, Options (here Play/Pause) opens it too.
+                        Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
+                            .buttonStyle(BPActionStyle())
+                            .accessibilityIdentifier("search-phone")
+                        if ai.available { aiButton }
+                    }
+                    .focusSection()
+                    if !ai.aiMode { statusLine }
                 }
                 .padding(.leading, BP.gutter)
                 .padding(.top, BP.barHeight + BP.px(20))
@@ -35,10 +43,13 @@ struct SearchView: View {
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
         }
         .task { await model.loadSuggestions() }
+        .task { await ai.load() }
+        .onChange(of: model.query) { _, q in ai.queryChanged(q) }
         .onPlayPauseCommand { phoneOpen.toggle() }
         .fullScreenCover(isPresented: $phoneOpen) {
+            // search-overlay.tsx: Enter in AI mode asks the model straight away.
             PhoneTypingSheet(label: "Search", placeholder: "Search Harbor", text: $model.query,
-                             onClose: { phoneOpen = false })
+                             onSubmit: { if ai.aiMode { ai.runNow() } }, onClose: { phoneOpen = false })
         }
         .onChange(of: detail?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: person?.id) { _, id in if id != nil { model.commitRecent() } }
@@ -46,6 +57,8 @@ struct SearchView: View {
         .onChange(of: collection?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: addonPage?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: mangaOpen?.id) { _, id in if id != nil { model.commitRecent() } }
+        .onChange(of: aiOpen?.id) { _, id in if id != nil { model.commitRecent() } }
+        .fullScreenCover(item: $aiOpen) { o in DetailView(meta: o.meta, episodeHint: o.hint) }
         .fullScreenCover(item: $mangaOpen) { o in MangaDetailView(mangaId: o.id) }
         .fullScreenCover(item: $collection) { hit in SearchCollectionView(hit: hit) { collection = nil } }
         .fullScreenCover(item: $addonPage) { t in AddonPageView(base: t.base, name: t.name, logo: t.logo) }
@@ -58,14 +71,46 @@ struct SearchView: View {
 
     private var queryLine: some View {
         HStack(spacing: BP.px(8)) {
-            Image(systemName: "magnifyingglass").foregroundStyle(BP.inkMuted)
-            Text(model.query.isEmpty ? T("Search Harbor") : model.query)
-                .font(BP.sans(22, .semibold)).foregroundStyle(model.query.isEmpty ? BP.inkSubtle : BP.ink).lineLimit(1)
+            Image(systemName: "magnifyingglass").foregroundStyle(ai.aiMode ? BP.accent : BP.inkMuted)
+            if ai.aiMode && model.query.isEmpty {
+                // search-overlay.tsx AiExampleHint: a sample request in place of the placeholder, every 6 s.
+                TimelineView(.periodic(from: .now, by: 6)) { ctx in
+                    let examples = AISearchModel.examples
+                    Text(T(examples[Int(ctx.date.timeIntervalSince1970 / 6) % examples.count]))
+                        .font(BP.sans(22, .semibold)).foregroundStyle(BP.accent.opacity(0.8)).lineLimit(1)
+                }
+            } else {
+                Text(model.query.isEmpty ? T("Search Harbor") : model.query)
+                    .font(BP.sans(22, .semibold)).foregroundStyle(model.query.isEmpty ? BP.inkSubtle : BP.ink).lineLimit(1)
+            }
             Rectangle().fill(BP.ink).frame(width: 2, height: BP.px(26)).opacity(0.8)
             Spacer()
         }
         .frame(height: BP.px(44))
         .accessibilityIdentifier("search-query")
+    }
+
+    /// ai-mode-button.tsx: Select toggles AI mode; holding it (the TV's long press, upstream's
+    /// hold or right-click) opens the model menu, and picking a model turns AI mode on.
+    private var aiButton: some View {
+        Button { ai.aiMode.toggle() } label: {
+            Label(T("AI search"), systemImage: "sparkles")
+        }
+        .buttonStyle(BPActionStyle(primary: ai.aiMode))
+        .accessibilityIdentifier("search-ai")
+        .contextMenu {
+            Section(T("AI model")) {
+                ForEach(ai.menu) { m in
+                    Button { Task { await ai.selectModel(m.id) } } label: {
+                        if m.id == ai.state?.model {
+                            Label(m.label, systemImage: "checkmark")
+                        } else {
+                            Text(verbatim: m.free ? "\(m.label) · \(m.provider == "groq" ? T("Free tier") : T("Free"))" : m.label)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @State private var channel: SearchModel.Results.LiveTvHit?
@@ -244,74 +289,98 @@ struct SearchView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                 Color.clear.frame(height: BP.barHeight + BP.px(20))
-                if model.status == .idle {
-                    // bp-search idle: recent queries as chips, then a "Suggested" row from the hero feed.
-                    if !model.recent.isEmpty {
-                        VStack(alignment: .leading, spacing: BP.px(10)) {
-                            Text("Recent").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: BP.px(8)) {
-                                    ForEach(model.recent, id: \.self) { q in Button(q) { model.query = q }.buttonStyle(BPActionStyle()) }
-                                    Button { model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
-                                }
-                                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
-                            }
-                            .scrollClipDisabled()
-                        }
-                        .focusSection()
+                // search-overlay.tsx: in AI mode the AI section replaces the regular results.
+                if ai.aiMode && !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    AISearchSection(ai: ai, query: model.query.trimmingCharacters(in: .whitespaces)) { r in
+                        aiOpen = AIOpen(meta: r.meta, season: r.season, episode: r.episode)
                     }
-                    if !model.suggestions.isEmpty {
-                        BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
-                    }
+                    .padding(.horizontal, BP.gutter)
+                } else {
+                    regularResults
                 }
-                if model.status != .idle { chipStrip }
-                if model.filterStale {
-                    // bp-search-empty filterStale
-                    BPNote(text: "Nothing in this filter. Choose All to see everything that answered.").padding(.horizontal, BP.gutter)
-                }
-                if model.filter == .all, let top = spotlight ?? model.topMatch {
-                    TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
-                }
-                if model.shows(.people) && !model.people.isEmpty {
-                    VStack(alignment: .leading, spacing: BP.px(10)) {
-                        Text("People").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: BP.trackGap) {
-                                ForEach(model.people) { person in
-                                    Button { if person.tmdbId != nil { self.person = person } } label: {
-                                        VStack(spacing: BP.px(8)) {
-                                            RemoteImage(url: person.profile).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
-                                            Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                            if let k = person.knownFor, !k.isEmpty { Text(k).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
-                                        }
-                                        .frame(width: BP.px(130))
-                                    }
-                                    .buttonStyle(BPTileStyle(radius: BP.px(55)))
-                                }
-                            }
-                            .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
-                        }
-                        .scrollClipDisabled()
-                    }
-                    .focusSection()
-                }
-                // use-bp-search slot order: Movies, Series, Anime, Manga, Live TV, Collections, Franchise,
-                // one row per addon, then "Addons you could install".
-                ForEach(coreRows) { row in
-                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
-                }
-                if model.shows(.livetv) && !model.channels.isEmpty { channelRow }
-                if model.shows(.collections) && !model.collections.isEmpty { collectionRow }
-                ForEach(laterRows) { row in
-                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
-                }
-                if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
                 Color.clear.frame(height: BP.hintHeight + BP.px(40))
             }
         }
         .frame(maxWidth: .infinity)
         .focusSection()
     }
+
+    @ViewBuilder private var regularResults: some View {
+        if model.status == .idle {
+            // bp-search idle: recent queries as chips, then a "Suggested" row from the hero feed.
+            if !model.recent.isEmpty {
+                VStack(alignment: .leading, spacing: BP.px(10)) {
+                    Text("Recent").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: BP.px(8)) {
+                            ForEach(model.recent, id: \.self) { q in Button(q) { model.query = q }.buttonStyle(BPActionStyle()) }
+                            Button { model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
+                        }
+                        .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
+                    }
+                    .scrollClipDisabled()
+                }
+                .focusSection()
+            }
+            if !model.suggestions.isEmpty {
+                BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+            }
+        }
+        if model.status != .idle { chipStrip }
+        if model.filterStale {
+            // bp-search-empty filterStale
+            BPNote(text: "Nothing in this filter. Choose All to see everything that answered.").padding(.horizontal, BP.gutter)
+        }
+        if model.filter == .all, let top = spotlight ?? model.topMatch {
+            TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
+        }
+        if model.shows(.people) && !model.people.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(10)) {
+                Text("People").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: BP.trackGap) {
+                        ForEach(model.people) { person in
+                            Button { if person.tmdbId != nil { self.person = person } } label: {
+                                VStack(spacing: BP.px(8)) {
+                                    RemoteImage(url: person.profile).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
+                                    Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                    if let k = person.knownFor, !k.isEmpty { Text(k).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                                }
+                                .frame(width: BP.px(130))
+                            }
+                            .buttonStyle(BPTileStyle(radius: BP.px(55)))
+                        }
+                    }
+                    .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+                }
+                .scrollClipDisabled()
+            }
+            .focusSection()
+        }
+        // use-bp-search slot order: Movies, Series, Anime, Manga, Live TV, Collections, Franchise,
+        // one row per addon, then "Addons you could install".
+        ForEach(coreRows) { row in
+            BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
+        }
+        if model.shows(.livetv) && !model.channels.isEmpty { channelRow }
+        if model.shows(.collections) && !model.collections.isEmpty { collectionRow }
+        ForEach(laterRows) { row in
+            BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
+        }
+        if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
+    }
+}
+
+/// An AI pick opened on its detail page; an episode pick carries its season and episode.
+struct AIOpen: Identifiable {
+    var meta: Meta
+    var season: Int?
+    var episode: Int?
+    var hint: (season: Int, episode: Int)? {
+        guard let season, let episode else { return nil }
+        return (season, episode)
+    }
+    var id: String { "\(meta.id):\(season ?? 0):\(episode ?? 0)" }
 }
 
 

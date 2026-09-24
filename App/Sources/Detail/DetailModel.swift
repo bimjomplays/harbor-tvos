@@ -208,6 +208,8 @@ final class DetailModel: ObservableObject {
     private var animeSeasonPicked: String?
     /// use-bp-anime-detail episodeHint: the season the viewer arrived for (a Watch Together room episode).
     var episodeHintSeason: Int?
+    /// views/detail.tsx lastPlay: an episodeHint (an AI search episode pick) comes before any resume point.
+    var episodeHint: (season: Int, episode: Int)?
 
     private func animeEpisode(_ e: AnimeDetail.Ep, showSeason: Bool) -> Episode {
         let released = e.airdate.flatMap { ISO8601DateFormatter.dateOnly.date(from: $0) }
@@ -502,12 +504,17 @@ final class DetailModel: ObservableObject {
 
     /// The episode Play should start with: the resume target, else the first of the current season.
     var playTarget: Episode? {
+        if let h = episodeHint, let ep = episodes.first(where: { $0.season == h.season && $0.episode == h.episode }) { return ep }
         if let r = resume, let s = r.season, let e = r.episode, let ep = episodes.first(where: { $0.season == s && $0.episode == e }) { return ep }
         return seasonEpisodes.first
     }
 
     var playLabel: String {
-        if let r = resume {
+        // A hinted episode other than the resume point plays from its start ("Play S E").
+        let hintElsewhere = episodeHint.map { h in
+            episodes.contains { $0.season == h.season && $0.episode == h.episode } && (resume?.season != h.season || resume?.episode != h.episode)
+        } ?? false
+        if let r = resume, !hintElsewhere {
             if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }
             if r.positionMs > 60_000 { return T("Resume") }
         }

@@ -12,6 +12,7 @@ import { currentAuthor } from "@/lib/theme-auth";
 import { declineSportsConsent, getSportsConsentSnapshot, resetSportsConsent } from "@/lib/sports/consent";
 import { markSettingsPatched } from "./sync";
 import { readPlaylists } from "@/lib/iptv/playlists-store";
+import { state as aiSearchState } from "./aiSearch";
 
 /**
  * bp-settings.tsx counts `settings.iptvPlaylists`, but load.ts moves playlists into their own
@@ -72,10 +73,30 @@ export function tvHwdec(value: string | undefined): "auto" | "off" {
   return value === "off" ? "off" : "auto";
 }
 
-export function controls(id: BpCatId, profileId: string, linked: boolean): BpControl[] {
+/**
+ * The TV's own push row: upstream edits AI search on the desktop settings page
+ * (views/settings/library-panel/ai-tab.tsx → ai-search-section.tsx), which Big Picture has no row
+ * for. The TV has no other settings page, so Setup carries it beside the accounts and playlists
+ * rows, and the key is typed on the phone.
+ */
+export type TvControl = BpControl | { kind: "push"; id: "aiSearch"; label: string; detail: string; pane: "ai" };
+
+/** The AI search row's second line: the provider and model in use, or how to start. */
+function aiSearchDetail(profileId: string, linked: boolean): string {
+  const ai = aiSearchState(profileId, linked);
+  if (!ai.hasKey) return t("Add an OpenRouter or Groq key from your phone");
+  return `${ai.tab === "groq" ? "Groq" : "OpenRouter"} · ${ai.label || ai.model}`;
+}
+
+export function controls(id: BpCatId, profileId: string, linked: boolean): TvControl[] {
   const s = loadEffective(profileId, linked);
-  const out = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined")
+  const upstreamRows: TvControl[] = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined")
     .filter((c) => !TV_HIDDEN_CONTROLS.has(c.id));
+  // Setup: AI search right after the Live TV playlists row.
+  const live = upstreamRows.findIndex((c) => c.kind === "push" && c.pane === "live");
+  const out: TvControl[] = id === "setup"
+    ? [...upstreamRows.slice(0, live + 1), { kind: "push", id: "aiSearch", label: t("AI search"), detail: aiSearchDetail(profileId, linked), pane: "ai" }, ...upstreamRows.slice(live + 1)]
+    : upstreamRows;
   // bp-settings.tsx:193-201: push rows report what is connected / how many playlists were added.
   const connected = bpConnectedNames(facts(s, profileId));
   const playlists = playlistCount();
@@ -241,6 +262,7 @@ export function pane(profileId: string, linked: boolean) {
     setup: [
       ["TMDB", s.tmdbKey.trim() ? t("On") : t("None")],
       [t("Live TV playlists"), String(playlistCount())],
+      [t("AI search"), aiSearchState(profileId, linked).hasKey ? aiSearchDetail(profileId, linked) : t("None")],
       [t("Setup"), connected.length > 0 ? connected.join(", ") : t("None")],
     ],
     interface: [

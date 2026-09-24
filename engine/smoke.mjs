@@ -1963,7 +1963,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("installUiCatalog registers a host-fed catalog and t() follows it", [engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.installUiCatalog("fr", JSON.stringify({ "This is how a subtitle will look.": "Voici un sous-titre." })), engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.pane("default", true).subtitle.text], [false, true, true, "Voici un sous-titre."]);
   engine.settingsRoom.commit("uiLanguage", "en", "default", true);
   const pane =engine.settingsRoom.pane("default", true);
-  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 1, "Off"]);
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 4, 1, "Off"]);
   r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
   const setupKey = engine.settings.sourceKeyFor("default", true);
   const before = engine.settingsRoom.pane("default", true).setup[1][1];
@@ -1971,8 +1971,8 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const smokeList = engine.live.addPlaylist("Smoke setup", "https://example.invalid/setup.m3u", null);
   const after = String(Number(before) + 1);
   const setupRows = engine.settingsRoom.controls("setup", "default", true);
-  r.eq("ST-1: setup push rows report what is connected and how many playlists", setupRows.filter((c) => c.kind === "push").map((c) => c.detail), ["Connected: TMDB", `${after} added`]);
-  r.eq("settingsRoom.pane(setup) lines follow", engine.settingsRoom.pane("default", true).setup, [["TMDB", "On"], ["Live TV playlists", after], ["Setup", "TMDB"]]);
+  r.eq("ST-1: setup push rows report what is connected and how many playlists", setupRows.filter((c) => c.kind === "push").map((c) => c.detail), ["Connected: TMDB", `${after} added`, "Add an OpenRouter or Groq key from your phone"]);
+  r.eq("settingsRoom.pane(setup) lines follow", engine.settingsRoom.pane("default", true).setup, [["TMDB", "On"], ["Live TV playlists", after], ["AI search", "None"], ["Setup", "TMDB"]]);
   engine.live.removePlaylist(smokeList.id);
   engine.settings.patch({ tmdbKey: "" }, setupKey);
   const f = engine.onboarding.facts("default", true);
@@ -2752,6 +2752,104 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("addonsManager.ageGate is deterministic for a seed (pickThree)", am.ageGate("en", 12345).questions.map((q) => q.q), gate.questions.map((q) => q.q));
   const ar = am.ageGate("ar", 777);
   r.ok("addonsManager.ageGate uses the Arabic bank for Arabic", ar.bankSize === arCount && arCount >= 10 && /[\u0600-\u06FF]/.test(ar.questions[0].q), JSON.stringify({ bank: ar.bankSize, arCount, q: ar.questions[0].q }));
+  rec.dispose();
+}
+
+// ------------------------------------------ AI search (lib/ai-search.ts, mocked provider, no network)
+{
+  const store = new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]);
+  const rec = loadEngine({ storage: store });
+  const ai = rec.engine.aiSearch;
+  const calls = [];
+  let reply = null;
+  const hdr = (req, name) => { const h = req.headers ?? {}; const k = Object.keys(h).find((x) => x.toLowerCase() === name); return k ? h[k] : undefined; };
+  rec.node.host.fetch = async (req) => {
+    calls.push(req);
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Error", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
+    if (req.url === "https://openrouter.ai/api/v1/chat/completions" || req.url === "https://api.groq.com/openai/v1/chat/completions") return reply(req);
+    if (req.url === "https://openrouter.ai/api/v1/models") return json({ data: [{ id: "google/gemma-4-26b-a4b-it:free" }, { id: "anthropic/claude-haiku-4.5" }] });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/movie/top/search=Heat")) return json({ metas: [{ id: "tt0113277", type: "movie", name: "Heat", releaseInfo: "1995", imdbRating: "8.3", poster: "https://img.example.invalid/heat.jpg" }, { id: "tt9999999", type: "movie", name: "Heat Wave", releaseInfo: "2022" }] });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/series/top/search=South%20Park")) return json({ metas: [{ id: "tt0121955", type: "series", name: "South Park", releaseInfo: "1997-" }] });
+    if (req.url === "https://v3-cinemeta.strem.io/meta/series/tt0121955.json") return json({ meta: { id: "tt0121955", type: "series", name: "South Park", videos: [{ id: "tt0121955:13:5", season: 13, episode: 5, name: "Fishsticks" }] } });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/")) return json({ metas: [] });
+    return { status: 500, statusText: "Error", headers: {}, url: req.url, body: "" };
+  };
+  const picks = '```json\n[{"title":"Heat","year":1995,"type":"movie"},{"title":"South Park","type":"series","season":13,"episode":5,"episodeTitle":"The Kanye one"},{"title":"heat"},{"title":"Nothing Like This Exists"}]\n```';
+  const ok = (content) => () => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: "", body: JSON.stringify({ choices: [{ message: { content } }] }) });
+
+  const s0 = ai.state("default", true);
+  r.ok("aiSearch.state: no key, OpenRouter tab, upstream's default model", !s0.anyKey && !s0.hasKey && s0.tab === "openrouter" && s0.model === "google/gemma-4-26b-a4b-it:free", JSON.stringify(s0));
+  const nokey = await ai.run("the movie where a hitman spares a kid", "default", true);
+  r.ok("aiSearch.run without a key asks for the OpenRouter key (ai-search-section copy)", nokey.status === "nokey" && nokey.message === "Add your OpenRouter API key in Settings, AI search to use this model." && calls.length === 0, JSON.stringify(nokey));
+
+  const saved = ai.saveKey("openrouter", "  test-openrouter-key-abcd1234  ", "default", true);
+  const stored = JSON.parse(store.get("harbor.ai-search.keys.v1.shared") ?? "{}");
+  r.ok("aiSearch.saveKey keeps the trimmed key under the Keychain prefix, never in the settings blob", stored.openrouter === "test-openrouter-key-abcd1234" && !/test-openrouter-key/.test(store.get("harbor.settings.shared") ?? "") && saved.hasKey && saved.anyKey && saved.saved.openrouter === "••••1234", JSON.stringify({ stored, saved }));
+  r.ok("aiSearch.keysPrefix is a KeyValueStore secret prefix (Keychain tier)", (await import("node:fs")).readFileSync(new URL("../App/Sources/Storage/KeyValueStore.swift", import.meta.url), "utf8").includes(`"${ai.keysPrefix}"`));
+
+  reply = ok(picks);
+  const done = await ai.run("heat and the south park kanye episode", "default", true);
+  const post = calls.find((c) => c.url === "https://openrouter.ai/api/v1/chat/completions");
+  const body = JSON.parse(post?.body ?? "{}");
+  r.ok("aiSearch.run posts upstream's request to OpenRouter (key, model, Harbor title, system prompt, query)", post?.method === "POST" && hdr(post, "authorization") === "Bearer test-openrouter-key-abcd1234" && hdr(post, "x-title") === "Harbor" && body.model === "google/gemma-4-26b-a4b-it:free" && body.temperature === 0.4 && body.messages?.[0]?.role === "system" && /discovery engine/.test(body.messages[0].content) && body.messages?.[1]?.content === "heat and the south park kanye episode", JSON.stringify({ method: post?.method, headers: post?.headers, body }));
+  r.ok("aiSearch.run parses the fenced JSON, drops the duplicate and the unmatched title, resolves Cinemeta metas", done.status === "done" && done.results.length === 2 && done.results[0].meta.id === "tt0113277" && done.results[0].meta.imdbRating === "8.3" && done.results[0].season === undefined, JSON.stringify(done));
+  r.ok("aiSearch.run keeps the episode pick with Cinemeta's own episode title", done.results[1]?.meta.id === "tt0121955" && done.results[1].season === 13 && done.results[1].episode === 5 && done.results[1].episodeTitle === "Fishsticks", JSON.stringify(done.results[1]));
+
+  reply = () => ({ status: 401, statusText: "Unauthorized", headers: {}, url: "", body: "No auth credentials found" });
+  const denied = await ai.run("anything at all", "default", true);
+  r.ok("aiSearch.run: a 401 is upstream's rejected-key message plus the provider's detail", denied.status === "error" && denied.message === "Your API key was rejected. Check it in Settings, AI search." && denied.detail === "No auth credentials found", JSON.stringify(denied));
+  reply = () => ({ status: 200, statusText: "OK", headers: {}, url: "", body: JSON.stringify({ error: { code: 429, message: "slow down" } }) });
+  const limited = await ai.run("anything at all", "default", true);
+  r.ok("aiSearch.run: an error body with code 429 reads as rate-limited", limited.status === "error" && /rate-limited/.test(limited.message) && limited.detail === "slow down", JSON.stringify(limited));
+  reply = () => ({ status: 503, statusText: "Unavailable", headers: {}, url: "", body: "" });
+  r.eq("aiSearch.run: another status is \"AI search failed ({status}).\"", (await ai.run("anything at all", "default", true)).message, "AI search failed (503).");
+  reply = ok("I cannot help with that.");
+  const empty = await ai.run("anything at all", "default", true);
+  r.ok("aiSearch.run: prose without a JSON array is an empty result", empty.status === "done" && empty.results.length === 0, JSON.stringify(empty));
+  reply = ok("   ");
+  r.ok("aiSearch.run: a blank reply is upstream's nothing-usable error", /nothing usable/.test((await ai.run("anything at all", "default", true)).message ?? ""));
+
+  const mdl = ai.setModel("anthropic/claude-haiku-4.5", null, "default", true);
+  r.ok("aiSearch.setModel (model menu) keeps the model's own provider tab and labels it", mdl.tab === "openrouter" && mdl.model === "anthropic/claude-haiku-4.5" && mdl.label === "Claude Haiku 4.5" && mdl.providerName === "Anthropic", JSON.stringify(mdl));
+  const list = await ai.models("default", true);
+  r.ok("aiSearch.models prunes OpenRouter's list to the live catalog; no Groq models without a Groq key", list.openrouter.map((m) => m.id).join() === "google/gemma-4-26b-a4b-it:free,anthropic/claude-haiku-4.5" && list.menu.every((m) => m.provider !== "groq") && list.defaults.openrouter === "google/gemma-4-26b-a4b-it:free", JSON.stringify(list));
+
+  const groq = await ai.setProvider("groq", "default", true);
+  r.ok("aiSearch.setProvider(groq) switches to Groq's first model and has no Groq key yet", groq.tab === "groq" && groq.model === "llama-3.3-70b-versatile" && !groq.hasKey && groq.anyKey, JSON.stringify(groq));
+  r.eq("aiSearch.run on Groq without its key asks for the Groq key", (await ai.run("anything at all", "default", true)).message, "Add your Groq API key in Settings, AI search to use this model.");
+  ai.saveKey("groq", "test-groq-key-5678", "default", true);
+  calls.length = 0;
+  reply = ok('[{"title":"Heat","type":"movie"}]');
+  const g = await ai.run("a heist movie", "default", true);
+  const gpost = calls.find((c) => c.url === "https://api.groq.com/openai/v1/chat/completions");
+  r.ok("aiSearch.run on Groq posts to Groq with the Groq key and no OpenRouter headers", g.status === "done" && g.results.length === 1 && hdr(gpost, "authorization") === "Bearer test-groq-key-5678" && hdr(gpost, "x-title") === undefined && JSON.parse(gpost.body).model === "llama-3.3-70b-versatile", JSON.stringify({ g, headers: gpost?.headers }));
+  const back = await ai.setProvider("openrouter", "default", true);
+  r.eq("aiSearch.setProvider(openrouter) goes back to upstream's default model", [back.tab, back.model], ["openrouter", "google/gemma-4-26b-a4b-it:free"]);
+
+  ai.setWebSearch(true, "default", true);
+  calls.length = 0;
+  reply = ok('[{"title":"Heat","type":"movie"}]');
+  const web = await ai.run("a heist movie", "default", true);
+  r.ok("aiSearch.run with live web context asks Jina Reader first and still answers when it fails", web.status === "done" && web.results.length === 1 && calls.some((c) => c.url.startsWith("https://r.jina.ai/")), JSON.stringify(calls.map((c) => c.url)));
+
+  // A settings blob that still carries a key (a restored backup) hands it to the Keychain once.
+  const blob = JSON.parse(store.get("harbor.settings.shared") ?? "{}");
+  store.set("harbor.settings.shared", JSON.stringify({ ...blob, aiSearchKey: "test-key-from-backup-9999", jinaKey: "jina_abc" }));
+  const legacy = loadEngine({ storage: store });
+  const moved = legacy.engine.aiSearch.state("default", true);
+  const keys = JSON.parse(store.get("harbor.ai-search.keys.v1.shared") ?? "{}");
+  r.ok("aiSearch: a key left in the settings blob moves to the Keychain entry and leaves the blob", keys.openrouter === "test-openrouter-key-abcd1234" && keys.jina === "jina_abc" && moved.saved.jina === "••••" && !/test-key-from-backup|jina_abc/.test(store.get("harbor.settings.shared") ?? ""), JSON.stringify({ keys, blob: store.get("harbor.settings.shared")?.slice(0, 80) }));
+  legacy.dispose();
+
+  const setup = rec.engine.settingsRoom.controls("setup", "default", true);
+  const liveAt = setup.findIndex((c) => c.pane === "live");
+  const row = setup[liveAt + 1];
+  r.ok("settingsRoom.controls(setup) has the AI search push row after Live TV playlists", row?.id === "aiSearch" && row.kind === "push" && row.pane === "ai" && row.label === "AI search" && row.detail === "OpenRouter · Gemma 4 26B", JSON.stringify(row));
+  const other = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const fresh = other.engine.settingsRoom.controls("setup", "default", true).find((c) => c.id === "aiSearch");
+  r.eq("settingsRoom AI search row without a key says how to start", fresh?.detail, "Add an OpenRouter or Groq key from your phone");
+  r.ok("settingsRoom.pane setup lists AI search", other.engine.settingsRoom.pane("default", true).setup.some((l) => l[0] === "AI search" && l[1] === "None"));
+  other.dispose();
   rec.dispose();
 }
 

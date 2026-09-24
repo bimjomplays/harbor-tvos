@@ -118,9 +118,12 @@ struct DetailView: View {
     /// the episode the room is playing, and whether guests pick their own source.
     var roomEpisode: AnyJSON? = nil
     var roomPick = false
-    init(meta: Meta, autoPlay: Bool = false, roomEpisode: AnyJSON? = nil, roomPick: Bool = false) {
+    /// views/detail.tsx episodeHint (an AI search episode pick, ai-result-list.tsx): the page opens
+    /// on that season and Play starts that episode.
+    var episodeHint: (season: Int, episode: Int)? = nil
+    init(meta: Meta, autoPlay: Bool = false, roomEpisode: AnyJSON? = nil, roomPick: Bool = false, episodeHint: (season: Int, episode: Int)? = nil) {
         _model = StateObject(wrappedValue: DetailModel(meta: meta)); self.autoPlay = autoPlay
-        self.roomEpisode = roomEpisode; self.roomPick = roomPick
+        self.roomEpisode = roomEpisode; self.roomPick = roomPick; self.episodeHint = episodeHint
     }
 
     var body: some View {
@@ -142,8 +145,10 @@ struct DetailView: View {
         }
         .ignoresSafeArea()
         .task {
-            model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) }
+            model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) } ?? episodeHint?.season
+            model.episodeHint = episodeHint
             await model.load()
+            if let h = episodeHint, model.seasons.contains(h.season) { model.season = h.season }
             if autoPlay, picker == nil {
                 pickerAuto = roomPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
                 pickerPref = !roomPick

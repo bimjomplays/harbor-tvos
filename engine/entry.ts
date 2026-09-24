@@ -83,6 +83,7 @@ import * as detailGlue from "./detailRoom";
 import * as personGlue from "./personRoom";
 import * as homeGlue from "./homeServers";
 import * as searchGlue from "./search";
+import * as aiSearchGlue from "./aiSearch";
 import * as onboardingGlue from "./onboarding";
 import * as actionsGlue from "./actions";
 import * as episodeWatchedGlue from "./episodeWatched";
@@ -345,6 +346,22 @@ export const search = {
   mergeMetas,
   detectIntent,
   normalizeQuery: normalizeSearchQuery,
+};
+
+/**
+ * AI search (lib/ai-search.ts, use-ai-suggest.ts, views/settings/ai-search-section.tsx): the
+ * viewer's own OpenRouter / Groq key (Keychain, aiSearch.AI_KEYS_PREFIX), provider and model,
+ * then a natural-language query resolved to Cinemeta titles and episodes.
+ */
+export const aiSearch = {
+  state: aiSearchGlue.state,
+  models: aiSearchGlue.models,
+  saveKey: aiSearchGlue.saveKey,
+  setProvider: aiSearchGlue.setProvider,
+  setModel: aiSearchGlue.setModel,
+  setWebSearch: aiSearchGlue.setWebSearch,
+  run: aiSearchGlue.run,
+  keysPrefix: aiSearchGlue.AI_KEYS_PREFIX,
 };
 
 // ==================================================================================== feed

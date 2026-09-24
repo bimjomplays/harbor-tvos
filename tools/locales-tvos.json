@@ -1191,5 +1191,27 @@
     "ko": "해당 자막을 불러오지 못했습니다: {error}", "pl": "Nie udało się wczytać tych napisów: {error}", "pt": "Não foi possível carregar essa legenda: {error}",
     "ru": "Не удалось загрузить эти субтитры: {error}", "tr": "Bu altyazı yüklenemedi: {error}", "vi": "Không thể tải phụ đề đó: {error}",
     "zh": "无法加载该字幕：{error}"
+  },
+
+  "_ai": "AI search (engine/aiSearch.ts, Settings → Setup → AI search, Search screen AI mode).",
+  "Add an OpenRouter or Groq key from your phone": {
+    "ar": "أضف مفتاح OpenRouter أو Groq من هاتفك", "de": "Füge einen OpenRouter- oder Groq-Schlüssel über dein Handy hinzu",
+    "es": "Añade una clave de OpenRouter o Groq desde tu teléfono", "fr": "Ajoutez une clé OpenRouter ou Groq depuis votre téléphone",
+    "hi": "अपने फ़ोन से OpenRouter या Groq की कुंजी जोड़ें", "id": "Tambahkan kunci OpenRouter atau Groq dari ponsel Anda",
+    "it": "Aggiungi una chiave OpenRouter o Groq dal telefono", "ja": "スマートフォンから OpenRouter または Groq のキーを追加",
+    "ko": "휴대폰에서 OpenRouter 또는 Groq 키를 추가하세요", "pl": "Dodaj klucz OpenRouter lub Groq z telefonu",
+    "pt": "Adicione uma chave do OpenRouter ou do Groq pelo celular", "ru": "Добавьте ключ OpenRouter или Groq с телефона",
+    "tr": "Telefonunuzdan bir OpenRouter veya Groq anahtarı ekleyin", "vi": "Thêm khóa OpenRouter hoặc Groq từ điện thoại của bạn",
+    "zh": "用手机添加 OpenRouter 或 Groq 密钥"
+  },
+  "Hold Select on AI search to choose a model": {
+    "ar": "اضغط مطولًا على زر الاختيار فوق «البحث بالذكاء الاصطناعي» لاختيار نموذج", "de": "Halte Auswahl auf „KI-Suche“ gedrückt, um ein Modell zu wählen",
+    "es": "Mantén pulsado Seleccionar en «Búsqueda con IA» para elegir un modelo", "fr": "Maintenez Sélectionner sur « Recherche IA » pour choisir un modèle",
+    "hi": "मॉडल चुनने के लिए AI खोज पर Select दबाकर रखें", "id": "Tahan Pilih pada Pencarian AI untuk memilih model",
+    "it": "Tieni premuto Seleziona su Ricerca IA per scegliere un modello", "ja": "AI 検索で決定ボタンを長押しするとモデルを選べます",
+    "ko": "AI 검색에서 선택 버튼을 길게 눌러 모델을 고르세요", "pl": "Przytrzymaj Wybierz na Wyszukiwaniu AI, aby wybrać model",
+    "pt": "Mantenha Selecionar pressionado em Busca com IA para escolher um modelo", "ru": "Удерживайте «Выбрать» на кнопке «ИИ-поиск», чтобы выбрать модель",
+    "tr": "Model seçmek için Yapay zekâ aramasında Seç düğmesini basılı tutun", "vi": "Nhấn giữ Chọn trên Tìm kiếm AI để chọn mô hình",
+    "zh": "在 AI 搜索上长按选择键即可选择模型"
   }
 }
