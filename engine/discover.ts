@@ -24,7 +24,8 @@ const MIN_RAIL = 10;
 export type DiscoverRail = { key: string; name: string; kicker?: string; metas: Meta[] };
 export type QueuePeek = { status: "loading" | "nokey" | "unreachable" | "empty" | "ready"; total: number; posters: string[]; backdrop: string | null };
 export type GenreTile = { genre: string; from: string; to: string; ink: string };
-export type DiscoverBuild = { rails: DiscoverRail[]; queue: QueuePeek; genres: GenreTile[] };
+/** voyagePool: discover.tsx voyageBannerPool, the Voyages banner shows once it has three. */
+export type DiscoverBuild = { rails: DiscoverRail[]; queue: QueuePeek; genres: GenreTile[]; voyagePool: Meta[] };
 
 // use-bp-discover.ts:210-231
 function claimRail(batch: Meta[], seen: Set<string>): Meta[] {
@@ -109,10 +110,24 @@ export async function genreArt(settings: Settings, genre: string): Promise<Meta[
   return metas.filter((m) => m.background).slice(0, 3);
 }
 
+// discover.tsx surprisePool → voyageBannerPool: every rail title with a poster, once, whose
+// backdrop is not just the poster again (the TV's Discover has no featured / critics' pick to
+// leave out; the rails already honour animeOnlyInAnimeRoom). voyage-banner.tsx keeps eight.
+export function voyagePool(list: DiscoverRail[]): Meta[] {
+  const seen = new Set<string>();
+  const out: Meta[] = [];
+  for (const m of list.flatMap((r) => r.metas)) {
+    if (!m.poster || seen.has(m.id)) continue;
+    seen.add(m.id);
+    if (m.background && m.background !== m.poster && m.name) out.push(m);
+  }
+  return out.slice(0, 8);
+}
+
 export async function buildFor(profileId: string, linked: boolean): Promise<DiscoverBuild> {
   const settings = loadEffective(profileId, linked);
   const [r, q] = await Promise.all([rails(settings), queuePeek(settings)]);
-  return { rails: r, queue: q, genres: genres() };
+  return { rails: r, queue: q, genres: genres(), voyagePool: voyagePool(r) };
 }
 
 export function queueFor(profileId: string, linked: boolean, limit = 40): Promise<Meta[]> {

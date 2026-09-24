@@ -507,6 +507,116 @@ r.ok("benchmark still works", (() => {
   again.dispose();
 }
 
+// ---------------------------- Harbor Voyages (lib/voyage/*, components/voyage/*), fixtures only
+{
+  const CM = "https://v3-cinemeta.strem.io";
+  const hits = [];
+  const vy = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    // A film already watched never enters a voyage (store.ts buildExclude).
+    ["harbor.moviewatched.v1.default", JSON.stringify(["tt9000002"])],
+  ]) });
+  const film = (id, genre, extra = {}) => ({ id, type: "movie", name: `Film ${id}`, poster: `https://img.example.invalid/${id}.jpg`, background: `https://img.example.invalid/${id}-bg.jpg`, genres: genre ? [genre] : ["Drama"], runtime: "2h", releaseInfo: "2001", ...extra });
+  const top = (genre, from, n) => Array.from({ length: n }, (_, k) => film(`tt${from + k}`, genre));
+  let catalogDown = false;
+  vy.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const miss = { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    const u = req.url;
+    hits.push(u);
+    if (u.startsWith(`${CM}/meta/movie/`)) return catalogDown ? miss : json({ meta: film(u.split("/").pop().replace(".json", ""), "Crime") });
+    if (u.startsWith(`${CM}/catalog/movie/top/genre=Crime.json`)) return catalogDown ? miss : json({ metas: [...top("Crime", 9000001, 10), film("tt9000099", "Comedy"), { id: "tt9000098", type: "movie", name: "No poster" }] });
+    if (u.startsWith(`${CM}/catalog/movie/top.json`)) return json({ metas: top("Drama", 9100001, 12) });
+    if (u.startsWith("https://api.themoviedb.org/3/find/")) {
+      const n = Number(u.match(/find\/tt(\d+)/)[1]);
+      return json({ movie_results: [{ id: n }], tv_results: [] });
+    }
+    const credits = { cast: [{ id: 1, name: "Lead Actor", profile_path: "/lead.jpg", order: 0 }, { id: 2, name: "Second Actor", profile_path: null, order: 1 }], crew: [{ id: 3, name: "The Director", job: "Director", department: "Directing" }] };
+    if (/\/3\/movie\/\d+\/credits/.test(u)) return json(credits);
+    if (/\/3\/movie\/\d+\?/.test(u)) {
+      const recs = Array.from({ length: 4 }, (_, k) => ({ id: 700 + k, title: `Rec ${k}`, poster_path: `/rec${k}.jpg`, backdrop_path: `/recbg${k}.jpg`, release_date: "2010-01-01" }));
+      return json({ id: 1, title: "x", credits, recommendations: { results: recs }, similar: { results: [] } });
+    }
+    return miss;
+  };
+  const E = vy.engine;
+  E.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, E.settings.sourceKeyFor("default", true));
+  const V = E.voyageRoom;
+  const stored = () => JSON.parse(vy.node.storage.get("harbor.voyage.v1") ?? "null");
+
+  const themes = V.themes();
+  r.ok("voyage: the six upstream themes with their palette", themes.length === 6 && themes[0].id === "heist" && themes[0].genre === "Crime" && themes[0].from.startsWith("oklch(") && themes.find((t) => t.id === "uncharted").genre === null, JSON.stringify(themes.map((t) => [t.id, t.genre])));
+  r.eq("voyage: no voyage and no streak on a first visit", V.state(), { active: null, streak: 0 });
+
+  const started = await r.timed("voyageRoom.start(heist, 3, fixtures)", () => V.start("default", true, "heist", 3));
+  const a0 = started.state.active;
+  r.ok("voyage.start charts a building voyage with three headings and a streak of one", started.ok && a0.phase === "building" && a0.targetLength === 3 && a0.headings.length === 3 && a0.slots.length === 3 && a0.picked === 0 && started.state.streak === 1, JSON.stringify({ ok: started.ok, phase: a0 && a0.phase, h: a0 && a0.headings.length }));
+  const pool = stored().active.pool.map((m) => m.id);
+  r.ok("voyage.start pool: curated seeds and the genre's top titles, watched and posterless ones left out", pool.includes("tt0240772") && pool.includes("tt9000001") && !pool.includes("tt9000002") && !pool.includes("tt9000098") && pool.length <= 40, JSON.stringify(pool.slice(0, 8)));
+  r.ok("voyage.start: headings come from the pool and the voyage persists under harbor.voyage.v1", a0.headings.every((m) => pool.includes(m.id)) && stored().active.headingIds.length === 3 && stored().streak === 1);
+
+  const first = a0.headings[0].id;
+  const s1 = V.choose("default", true, first);
+  r.ok("voyage.choose adds the pick to the route and offers three new headings", s1.active.picked === 1 && s1.active.slots[0].meta.id === first && s1.active.headings.length === 3 && !s1.active.headings.some((m) => m.id === first), JSON.stringify(s1.active.headings.map((m) => m.id)));
+  const s1b = await V.settle("default", true, first);
+  r.ok("voyage.settle: TMDB titles off the genre never join a genre theme's pool", s1b.active.picked === 1 && !stored().active.pool.some((m) => m.id.startsWith("tmdb:")), JSON.stringify(stored().active.enrichedPicks));
+  const u1 = V.undo("default", true);
+  r.ok("voyage.undo drops the last pick", u1.active.picked === 0 && u1.active.slots.every((s) => s.meta === null));
+  const before = new Set(u1.active.headings.map((m) => m.id));
+  const rr = V.reroll("default", true);
+  r.ok("voyage.reroll shows three others", rr.active.headings.length === 3 && rr.active.headings.every((m) => !before.has(m.id)), JSON.stringify([...before, "|", ...rr.active.headings.map((m) => m.id)]));
+
+  let s = rr;
+  for (let i = 0; i < 3; i++) s = V.choose("default", true, s.active.headings[0].id);
+  r.ok("voyage: a full route is ready, with no headings left", s.active.ready && !s.active.stuck && s.active.headings.length === 0 && s.active.picked === 3 && s.active.current === 3, JSON.stringify({ ready: s.active.ready, picked: s.active.picked }));
+  const route = stored().active.routeIds;
+  const launched = V.launch();
+  r.ok("voyage.launch sails and hands back the first film", launched.first.id === route[0] && launched.state.active.phase === "sailing" && launched.state.active.next.id === route[0] && launched.state.active.nextPosition === 1);
+
+  // progress.ts: 90 % of the runtime counts as watched; a started film is next before an untouched one.
+  vy.run(`localStorage.setItem("harbor.resume", ${JSON.stringify(JSON.stringify({ [route[0]]: { ms: 6900000, t: 1, pct: 0.96 }, [route[2]]: { ms: 1200000, t: 2, pct: 0.2 } }))})`);
+  const sp = V.state().active;
+  r.ok("voyage.state: the watched film is done and the started one is up next", sp.slots[0].done && sp.watched === 1 && sp.next.id === route[2] && sp.nextPosition === 3 && Math.abs(sp.slots[2].progress - 0.2) < 1e-9 && sp.current === 1, JSON.stringify(sp.slots.map((x) => [x.done, x.progress, x.current])));
+  vy.run(`localStorage.setItem("harbor.resume", ${JSON.stringify(JSON.stringify(Object.fromEntries(route.map((id) => [id, { ms: 7000000, t: 1, pct: 0.99 }]))))})`);
+  const done = V.state().active;
+  r.ok("voyage.state: every film watched completes the voyage", done.next === null && done.watched === 3 && done.current === -1, JSON.stringify({ next: done.next, watched: done.watched }));
+  r.eq("voyage.end clears the voyage and keeps the streak", V.end(), { active: null, streak: 1 });
+
+  // store.ts mergeRelated: a theme without a genre takes the pick's TMDB recommendations in.
+  const wild = await V.start("default", true, "uncharted", 5);
+  const pick = wild.state.active.headings[0].id;
+  V.choose("default", true, pick);
+  const settled = await r.timed("voyageRoom.settle(uncharted pick, fixtures)", () => V.settle("default", true, pick));
+  const st = stored().active;
+  r.ok("voyage.settle: the pick's recommendations join the pool and are voted up", st.pool.some((m) => m.id === "tmdb:movie:700") && st.recVotes["tmdb:movie:700"] === 1 && st.enrichedPicks.includes(pick) && settled.active.headings.length === 3, JSON.stringify({ n: st.pool.length, votes: st.recVotes, enriched: st.enrichedPicks }));
+  r.ok("voyage.settle: voted recommendations lead the next headings", settled.active.headings.filter((m) => m.id.startsWith("tmdb:movie:7")).length >= 2, JSON.stringify(settled.active.headings.map((m) => m.id)));
+  r.ok("voyage: the banner strip reads the active pool's backdrops", settled.active.bannerItems.length === 8 && settled.active.bannerItems.every((m) => m.background && m.background !== m.poster));
+  V.end();
+
+  catalogDown = true;
+  const failed = await V.start("default", true, "edge", 5);
+  r.ok("voyage.start: a pool under four titles does not chart", failed.ok === false && failed.state.active === null, JSON.stringify(failed));
+  catalogDown = false;
+
+  const cr = await r.timed("voyageRoom.credits(fixtures)", () => V.credits("default", true, "tt9000001", "movie"));
+  r.ok("voyage.credits: the director and cast faces for the focused heading", cr && cr.director === "The Director" && cr.cast[0].name === "Lead Actor" && cr.cast[0].profile === "https://image.tmdb.org/t/p/w185/lead.jpg" && cr.cast[1].profile === null, JSON.stringify(cr));
+  r.eq("voyage.credits: nothing for a non-IMDb id", await V.credits("default", true, "tmdb:movie:700", "movie"), null);
+  const rails = [{ key: "a", name: "A", metas: [film("tt11"), { ...film("tt12"), poster: undefined }, { ...film("tt13"), background: film("tt13").poster }] }, { key: "b", name: "B", metas: [film("tt11"), ...top("Drama", 20, 9)] }];
+  const vp = E.discoverRoom.voyagePool(rails).map((m) => m.id);
+  r.ok("discoverRoom.voyagePool: each rail title once, with a poster and its own backdrop, eight at most", vp.length === 8 && vp[0] === "tt11" && !vp.includes("tt12") && !vp.includes("tt13") && new Set(vp).size === 8, JSON.stringify(vp));
+  r.eq("voyage.bannerItems: backdrops that are not the poster, eight at most", V.bannerItems([film("tt1"), { ...film("tt2"), background: "https://img.example.invalid/tt2.jpg", poster: "https://img.example.invalid/tt2.jpg" }, { ...film("tt3"), background: undefined }]).map((m) => m.id), ["tt1"]);
+
+  // store.ts adopt(): a pre-phase voyage with a route reads as sailing, all of it played.
+  const legacy = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.voyage.v1", JSON.stringify({ active: { id: "v-1", themeId: "heist", themeLabel: "The Heist Line", tagline: "t", accent: "oklch(0.72 0.13 45)", createdAt: 1, targetLength: 5, pool: [film("tt1"), film("tt2")], routeIds: ["tt1", "tt2"], headingIds: [], seen: [] }, streak: 4, lastSail: "2000-1-1" })],
+  ]) });
+  const la = legacy.engine.voyageRoom.state();
+  r.ok("voyage.state adopts a stored voyage from before phases", la.streak === 4 && la.active.phase === "sailing" && la.active.targetLength === 2 && la.active.played === 2 && la.active.slots.length === 2, JSON.stringify(la.active && { phase: la.active.phase, len: la.active.targetLength }));
+  legacy.dispose();
+  vy.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";
@@ -2843,6 +2953,7 @@ if (!OFFLINE) {
   const disc = await r.timed("discoverRoom.buildFor(no key)", () => engine.discoverRoom.buildFor("p_smoke", true));
   r.ok("discoverRoom rails come back without a TMDB key", disc && disc.rails.length >= 3, JSON.stringify(disc && { rails: disc.rails.map((x) => x.name), queue: disc.queue.status, genres: disc.genres.length }));
   r.ok("discoverRoom genres carry palette", disc && disc.genres.length === 18 && disc.genres[0].from.startsWith("oklch"));
+  r.ok("discoverRoom.buildFor carries the Voyages banner pool (backdrops that are not the poster)", disc && Array.isArray(disc.voyagePool) && disc.voyagePool.length <= 8 && disc.voyagePool.every((m) => m.background && m.background !== m.poster), JSON.stringify(disc && disc.voyagePool.length));
   const events = [];
   const off = engine.runtime.onEvent((type, detail) => { if (type === "harbor-tvos:streams") events.push(detail); });
   const shaw = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", releaseInfo: "1994" };

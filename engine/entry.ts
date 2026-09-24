@@ -105,6 +105,7 @@ import * as mangaGlue from "./manga";
 import * as ebookGlue from "./ebook";
 import * as socialGlue from "./social";
 import * as togetherGlue from "./together";
+import * as voyageGlue from "./voyage";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -494,8 +495,28 @@ export const discoverRoom = {
   animeAward: discoverBuilders.animeAward,
   animeAwardOpen: discoverBuilders.animeAwardOpen,
   people: discoverBuilders.people,
+  voyagePool: discoverBuilders.voyagePool,
 };
 export type { DiscoverBuild, DiscoverRail, QueuePeek, GenreTile } from "./discover";
+
+/**
+ * Harbor Voyages (lib/voyage/store.ts, components/voyage/*): upstream's store runs in the engine
+ * (pool, headings, TMDB enrichment, streak, "harbor.voyage.v1"); these return its state as JSON.
+ */
+export const voyageRoom = {
+  state: voyageGlue.state,
+  themes: voyageGlue.themes,
+  start: voyageGlue.start,
+  choose: voyageGlue.choose,
+  settle: voyageGlue.settle,
+  undo: voyageGlue.undo,
+  reroll: voyageGlue.reroll,
+  launch: voyageGlue.launch,
+  end: voyageGlue.end,
+  credits: voyageGlue.credits,
+  bannerItems: voyageGlue.bannerItems,
+};
+export type { VoyageSnapshot, VoyageView, VoyageSlot, VoyageThemeTile, VoyageCredits } from "./voyage";
 
 /** Streams for a title: imdb resolution, addon gathering, the ranked pipeline, debrid resolve. */
 export const streamsRoom = {

@@ -9,6 +9,7 @@ struct DiscoverView: View {
     @State private var animeAward: DiscoverModel.AnimeAwardTile?
     @State private var genrePage: BrowseRow?
     @State private var queueOpen = false
+    @State private var voyageOpen = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -45,6 +46,10 @@ struct DiscoverView: View {
                             Task { await model.loadGenreArt() }
                         }
                     }
+                    // discover.tsx: the Voyages banner follows the browse tiles, once its pool holds three.
+                    if let pool = model.build?.voyagePool, pool.count >= 3 {
+                        VoyageBannerView(snapshot: model.voyage, pool: pool) { voyageOpen = true }
+                    }
                 }
             }
         }
@@ -54,6 +59,7 @@ struct DiscoverView: View {
         .fullScreenCover(item: $animeAward) { a in AnimeAwardView(sources: model.animeAwards, initial: a.id) }
         .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
         .fullScreenCover(isPresented: $queueOpen) { QueueDeckView() }
+        .fullScreenCover(isPresented: $voyageOpen, onDismiss: { Task { await model.loadVoyage() } }) { VoyageView() }
     }
 
     private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
