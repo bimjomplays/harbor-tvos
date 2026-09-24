@@ -51,6 +51,22 @@ final class SettingsBridge: ObservableObject {
         var resumePlayback: Bool? = true
         var resumePrompt: Bool? = false
         var playerConfirmLeave: Bool? = true
+        // Skip pill (skip-pill-container.tsx; settings/defaults.ts:310-315): auto-skip per kind, the
+        // pill itself, and the seconds before it hides (0 = stays; load.ts migrates unset to 14).
+        var autoSkipIntro: Bool? = false
+        var autoSkipRecap: Bool? = false
+        var autoSkipOutro: Bool? = false
+        var autoSkipAd: Bool? = false
+        var showSkipButton: Bool? = true
+        var skipButtonHideSec: Double? = 0
+        /// use-still-watching.ts: ask "Still watching?" after this many auto-advanced episodes.
+        var stillWatching: Bool? = false
+        var stillWatchingAfter: Double? = 3
+        /// speed-menu.tsx / use-track-autoload.ts: the rate a title starts at, and the viewer's own
+        /// speed and sleep presets (numbers, kept as Double so an odd value never fails the decode).
+        var defaultPlaybackSpeed: Double? = 1
+        var customPlaybackSpeeds: [Double]? = []
+        var customSleepMinutes: [Double]? = []
         // fullscreen-clock.tsx (settings/defaults.ts fullscreenClock*): the corner clock TransportKids
         // shows. Read only; a missing key decodes as nil, so readers fall back to these defaults.
         var fullscreenClockEnabled: Bool? = false
@@ -74,6 +90,18 @@ final class SettingsBridge: ObservableObject {
         /// settings/defaults.ts mangaEnabled (off): the manga reader, its tab, Search's manga row
         /// and the anime hero's "Read the Manga" entry all wait for it (views/manga.tsx EnableGate).
         var mangaEnabled: Bool? = false
+        /// bp-detail.tsx / bp-streams.tsx: what the Play button does ("online" | "home-server" |
+        /// "local" | "ask"); anything but "online" turns instant play off and lets the home-server
+        /// copy lead (engine/homeServers.ts preferredSource decides).
+        var playbackSourcePreference: String? = "online"
+        /// mpv-tuning.ts mpvHwdec ("auto" | "on" | "off"), mapped to mpv's hwdec in MPVPlayerController.
+        var mpvHwdec: String? = "auto"
+        /// poster.tsx posterQuality ("balanced" | "high" | "max"): how large a poster card's art is asked for.
+        var posterQuality: String? = "high"
+        /// bp-stream-row.tsx: the torrent's filename under the headline (off by default) and the
+        /// addon's whole description in place of the one-line summary (on by default).
+        var pickerShowFilename: Bool? = false
+        var fullStreamDescription: Bool? = true
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates

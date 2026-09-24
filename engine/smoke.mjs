@@ -75,6 +75,185 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }
 
+// ------------------------------------ episode watched state, marks, spoiler masks (audit 4 + 6)
+{
+  const zlib = await import("node:zlib");
+  const id = "tt7000001";
+  const vids = Array.from({ length: 8 }, (_, i) => ({ id: `${id}:1:${i + 1}`, season: 1, episode: i + 1, released: `2020-01-${String(i + 1).padStart(2, "0")}T00:00:00Z` }));
+  vids.push({ id: `${id}:2:1`, season: 2, episode: 1, released: "2099-01-01T00:00:00Z" });
+  const meta = { id, type: "series", name: "Smoke Show", videos: vids };
+  const refs = vids.map((v) => ({ season: v.season, episode: v.episode, released: v.released }));
+  const bits = new Uint8Array(2); bits[0] |= 1 << 0; bits[0] |= 1 << 1; bits[0] |= 1 << 4; // S1E1, S1E2, S1E5
+  const libField = `${id}:1:5:5:${zlib.deflateSync(Buffer.from(bits)).toString("base64")}`;
+  let libItem = { _id: id, type: "series", name: "Smoke Show", state: { watched: libField, timeOffset: 0, duration: 0 }, removed: false, temp: false, _ctime: "2024-01-01T00:00:00.000Z", _mtime: "2024-01-01T00:00:00.000Z" };
+  const puts = [];
+  const ew = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.resume", JSON.stringify({ [`${id}|s1e7`]: { ms: 120000, t: 1 } })],
+  ]) });
+  ew.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/api/datastoreGet")) return json({ result: libItem ? [libItem] : [] });
+    if (req.url.endsWith("/api/datastorePut")) { const b = JSON.parse(req.body); puts.push(b.changes[0]); libItem = b.changes[0]; return json({ result: { success: true } }); }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = ew.engine;
+  const st = () => E.episodeWatched.state(id, refs, 1, "default", true);
+  const sorted = (a) => [...a].sort();
+
+  const enc = E.player.encodeWatchedField(["1:1", "1:4", "1:8"], vids);
+  r.eq("player.encodeWatchedField round-trips through decodeWatchedField", E.player.decodeWatchedField(enc, vids), ["1:1", "1:4", "1:8"]);
+  r.ok("player.encodeWatchedField anchors on the last watched video", typeof enc === "string" && enc.startsWith(`${id}:1:8:8:`), enc);
+
+  r.eq("episodeWatched.state is empty before any source", st().watched, []);
+  await E.episodeWatched.load("AUTH", meta, id);
+  r.eq("episodeWatched.load adopts the Stremio library bitfield as remote marks", sorted(st().watched), ["1:1", "1:2", "1:5"]);
+  r.eq("episodeWatched.state: an unwatched episode with a resume entry reads started", st().started, ["1:7"]);
+  r.eq("episodeWatched.state: no masks and both detail toggles on by default", [Object.keys(st().masks).length, st().showEpisodeRating, st().showEpisodeDescription], [0, true, true]);
+
+  E.episodeWatched.mark("AUTH", meta, id, { season: 1, episode: 2 }, "episode", false, refs, "default", true);
+  r.eq("episodeWatched.mark unwatched drops a library-sourced mark at once", sorted(st().watched), ["1:1", "1:5"]);
+  await E.episodeWatched.settle();
+  const pushed = puts.at(-1);
+  r.ok("episodeWatched.mark pushes the merged bitfield into the library entry", pushed && pushed._id === id && pushed.name === "Smoke Show" && JSON.stringify(E.player.decodeWatchedField(pushed.state.watched, vids)) === JSON.stringify(["1:1", "1:5"]), JSON.stringify(pushed && pushed.state));
+  // A later pull of the same (older than the unmark) library write must not bring it back.
+  E.episodeWatched.reconcileLibraryWatched({ ...libItem, state: { watched: libField }, _mtime: "2024-01-01T00:00:00.000Z" }, meta);
+  r.eq("a library write older than the unmark does not re-add it", sorted(st().watched), ["1:1", "1:5"]);
+
+  E.episodeWatched.mark("AUTH", meta, id, { season: 1, episode: 3 }, "upTo", true, refs, "default", true);
+  r.eq("episodeWatched.mark upTo marks every aired episode up to here", sorted(st().watched), ["1:1", "1:2", "1:3", "1:5"]);
+  await E.episodeWatched.settle();
+  r.eq("episodeWatched.mark upTo reaches the library bitfield", E.player.decodeWatchedField(puts.at(-1).state.watched, vids), ["1:1", "1:2", "1:3", "1:5"]);
+  E.episodeWatched.mark(null, meta, id, { season: 1, episode: 7 }, "episode", true, refs, "default", true);
+  r.eq("episodeWatched.mark watched adds one episode", st().watched.includes("1:7") && !st().started.includes("1:7"), true);
+  E.episodeWatched.mark(null, meta, id, { season: 2, episode: 1 }, "season", true, refs, "default", true);
+  r.eq("episodeWatched.mark season watched skips unaired episodes", E.episodeWatched.state(id, refs, 2, "default", true).watched.includes("2:1"), false);
+  E.episodeWatched.mark(null, meta, id, { season: 1, episode: 1 }, "season", false, refs, "default", true);
+  r.eq("episodeWatched.mark season unwatched clears the season", st().watched, []);
+  E.episodeWatched.mark(null, meta, id, { season: 1, episode: 2 }, "upTo", true, refs, "default", true);
+
+  // lib/spoilers.ts spoilerMaskFor: watched and next-up (spoilerSkipNext) cards stay clear.
+  const base = E.settings.loadForProfile("default", true);
+  E.settings.saveForProfile({ ...base, hideSpoilers: true, spoilerHideDescriptions: false, showEpisodeRating: false }, "default", true);
+  const masked = st();
+  r.eq("spoilers: watched episodes and the next-up are clear, later ones masked", sorted(Object.keys(masked.masks)), ["1:4", "1:5", "1:6", "1:7", "1:8"]);
+  r.eq("spoilers: the mask follows the per-part toggles", masked.masks["1:4"], { thumb: true, title: true, desc: false });
+  r.eq("showEpisodeRating off reaches the strip", masked.showEpisodeRating, false);
+  E.settings.saveForProfile({ ...base, hideSpoilers: true, spoilerSkipNext: false }, "default", true);
+  r.ok("spoilers: spoilerSkipNext off masks the next-up card too", "1:3" in st().masks);
+  r.eq("episodeWatched.upNextMask masks an unwatched next episode", E.episodeWatched.upNextMask("default", true, false), { thumb: true, title: true, desc: true });
+  r.eq("episodeWatched.upNextMask leaves a watched next episode clear", E.episodeWatched.upNextMask("default", true, true), { thumb: false, title: false, desc: false });
+  E.settings.saveForProfile({ ...base, hideSpoilers: true, spoilerSkipNext: true }, "default", true);
+  r.eq("episodeWatched.upNextMask: spoilerSkipNext keeps the up-next clear", E.episodeWatched.upNextMask("default", true, false), { thumb: false, title: false, desc: false });
+  E.settings.saveForProfile({ ...base, hideSpoilers: false }, "default", true);
+  r.eq("spoilers: hideSpoilers off clears every mask", Object.keys(st().masks).length, 0);
+  await E.episodeWatched.settle();
+  ew.dispose();
+}
+
+// --------------------------------------- Home extra rows (use-bp-extra-rows.ts), fixtures only
+{
+  const pinBase = "https://pinned.example.invalid";
+  const fixtureMetas = (prefix, n) => Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, type: "movie", name: `${prefix} ${i}`, poster: `https://img.example.invalid/${prefix}${i}.jpg` }));
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.customlists.v1", JSON.stringify([
+      { id: "L1", name: "Date night", createdAt: 1, updatedAt: 1, items: [{ id: "tt0000101", type: "movie", name: "One", addedAt: 1 }, { id: "tt0000102", type: "series", name: "Two", addedAt: 2 }] },
+      { id: "L2", name: "Empty list", createdAt: 1, updatedAt: 1, items: [] },
+    ])],
+    ["harbor.collections.v1", JSON.stringify([
+      { id: "C1", name: "Heists", createdAt: 1, updatedAt: 1, items: [{ id: "tt0000201", type: "movie", name: "Heat" }] },
+      { id: "C2", name: "Nothing yet", createdAt: 1, updatedAt: 2, items: [] },
+    ])],
+    ["harbor.pagecollrows.v1", JSON.stringify({ home: ["C2", "C1"], movies: [], shows: [], anime: [] })],
+    ["harbor.pinnedcatalogs.v1", JSON.stringify([
+      { id: "pin1", source: "catalog", name: "Pinned Picks", params: { base: pinBase, type: "movie", id: "picks" } },
+      { id: "pin2", source: "mal", name: "MAL watching", params: { railKey: "watching" } },
+    ])],
+    ["harbor.favorites.v1.default", JSON.stringify([{ id: "tt0000301", type: "movie", name: "Older fave", addedAt: 1 }, { id: "tt0000302", type: "series", name: "Newer fave", addedAt: 9 }])],
+    ["harbor.localwatchlist.v1.default", JSON.stringify(["tt0000401"])],
+  ]) });
+  let pinDelay = 0;
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.startsWith(`${pinBase}/catalog/movie/picks`)) {
+      if (pinDelay) await new Promise((r) => setTimeout(r, pinDelay));
+      return json({ metas: fixtureMetas(req.url.includes("skip=") ? "pinB" : "pinA", 20) });
+    }
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/")) return json({ metas: fixtureMetas(`cm${hits.length}-`, 12) });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = rec.engine;
+  const events = [];
+  E.runtime.onEvent((type) => { if (type === "harbor:home-updated") events.push(type); });
+  const base = E.settings.loadForProfile("default", true);
+  const s = { ...base, hideContent: { ...base.hideContent, anime: true }, homeRows: { ...base.homeRows, listRows: ["L1", "L2", "L-missing"] } };
+  E.settings.saveForProfile(s, "default", true);
+
+  const plan = (over, env) => E.rooms.homeExtraPlan({ ...s, ...over }, { uiLang: "en", trakt: false, simkl: false, letterboxd: false, ...env });
+  r.eq("home extras: hideContent.anime turns the anime rows off", plan({}, {}).anime, false);
+  r.eq("home extras: anime rows run by default", plan({ hideContent: { ...s.hideContent, anime: false } }, {}).anime, true);
+  r.eq("home extras: classic mode drops anime / Arabic / Russian rows", (() => { const p = plan({ homeMode: "classic", tmdbKey: "k", hideContent: { ...s.hideContent, anime: false } }, { uiLang: "ar" }); return [p.anime, p.arabic, p.russian]; })(), [false, false, false]);
+  r.eq("home extras: Arabic rows need the ar UI language and a TMDB key", [plan({ tmdbKey: "k" }, { uiLang: "ar" }).arabic, plan({ tmdbKey: "" }, { uiLang: "ar" }).arabic, plan({ tmdbKey: "k" }, { uiLang: "ru" }).russian], [true, false, true]);
+  r.eq("home extras: Trakt rails follow the connection", [plan({}, { trakt: true }).trakt, plan({}, {}).trakt], [true, false]);
+  r.eq("home extras: Simkl rails need simklHomeRailsEnabled", [plan({ simklHomeRailsEnabled: false }, { simkl: true }).simkl, plan({ simklHomeRailsEnabled: true }, { simkl: true }).simkl, plan({ simklHomeRailsEnabled: true }, {}).simkl], [false, true, false]);
+
+  const built = await r.timed("rooms.homeFor(extra rows, fixtures)", () => E.rooms.homeFor("default", true, null));
+  const keys = built ? built.rows.map((x) => x.key) : [];
+  const extraKeys = new Set(["list-L1", "collection-C1", "pinned:pin1", "harbor-favorites", "harbor-watchlist"]);
+  const catalogKeys = keys.filter((k) => !extraKeys.has(k));
+  r.ok("home extras: list, collection and pinned rows lead, Favorites and My Watchlist follow the catalog rows",
+    keys[0] === "list-L1" && keys[1] === "collection-C1" && keys[2] === "pinned:pin1" && catalogKeys.length > 0 &&
+    keys.indexOf(catalogKeys[catalogKeys.length - 1]) < keys.indexOf("harbor-favorites") && keys[keys.length - 1] === "harbor-watchlist" && keys[keys.length - 2] === "harbor-favorites",
+    JSON.stringify(keys));
+  r.ok("home extras: empty list / collection, a missing list and an unconnected MAL pin make no row", !keys.some((k) => k === "list-L2" || k === "list-L-missing" || k === "collection-C2" || k === "pinned:pin2"), JSON.stringify(keys));
+  const row = (k) => built && built.rows.find((x) => x.key === k);
+  r.eq("home extras: Favorites are newest first", row("harbor-favorites") && row("harbor-favorites").metas.map((m) => m.id), ["tt0000302", "tt0000301"]);
+  r.eq("home extras: a bare-id watchlist entry becomes a movie tile", row("harbor-watchlist") && row("harbor-watchlist").metas.map((m) => [m.id, m.type]), [["tt0000401", "movie"]]);
+  r.eq("home extras: list rows keep the list's items and name", row("list-L1") && [row("list-L1").name, row("list-L1").metas.map((m) => m.type)], ["Date night", ["movie", "series"]]);
+  r.ok("home extras: the pinned catalog row is capped at 30 and pages through its addon", row("pinned:pin1") && row("pinned:pin1").metas.length === 20 && row("pinned:pin1").hasMore === true, JSON.stringify(row("pinned:pin1") && row("pinned:pin1").metas.length));
+  const more = await E.rooms.page("home", "pinned:pin1", 2);
+  r.ok("home extras: rooms.page pages a pinned row", Array.isArray(more) && more.length > 0 && more[0].id.startsWith("pinB"), JSON.stringify(more && more.slice(0, 2)));
+  r.ok("home extras: anime rows were never asked for with anime hidden", !hits.some((u) => /jikan/i.test(u)), JSON.stringify(hits.filter((u) => /jikan/i.test(u)).slice(0, 2)));
+
+  // Settings → Home rows over lib/home-customization.
+  const st = E.rooms.homeRowsState("default", true);
+  r.ok("homeRowsState lists every built row and the custom lists", st.rows.length === keys.length && st.rows[0].key === "list-L1" && st.lists.length === 2 && st.lists.find((l) => l.id === "L1").onHome && st.simkl.connected === false, JSON.stringify({ n: st.rows.length, lists: st.lists }));
+  events.length = 0;
+  E.rooms.homeRowToggleHidden("default", true, "harbor-watchlist");
+  E.rooms.homeRowRename("default", true, "list-L1", "Tonight");
+  const fi0 = st.rows.findIndex((x) => x.key === "harbor-favorites");
+  let after = E.rooms.homeRowMove("default", true, "harbor-favorites", -1);
+  r.ok("homeRowMove swaps with the row above", after.rows[fi0 - 1].key === "harbor-favorites" && after.rows[fi0].key === st.rows[fi0 - 1].key, JSON.stringify(after.rows.map((x) => x.key)));
+  E.rooms.homeListRowToggle("default", true, "L2");
+  const offL2 = E.settings.loadForProfile("default", true).homeRows.listRows;
+  after = E.rooms.homeListRowToggle("default", true, "L2");
+  r.eq("homeListRowToggle removes, then re-adds a list in homeRows.listRows", [offL2, E.settings.loadForProfile("default", true).homeRows.listRows, after.lists.find((l) => l.id === "L2").onHome], [["L1", "L-missing"], ["L1", "L-missing", "L2"], true]);
+  await new Promise((res) => setTimeout(res, 400));
+  r.ok("row edits raise harbor:home-updated", events.length >= 1, JSON.stringify(events));
+  const edited = await E.rooms.homeFor("default", true, null);
+  const ek = edited.rows.map((x) => x.key);
+  r.ok("a hidden row leaves Home, a renamed row shows its new name", !ek.includes("harbor-watchlist") && edited.rows[0].name === "Tonight", JSON.stringify(edited.rows.slice(0, 2).map((x) => x.name)));
+  r.ok("homeRowsState keeps the hidden row listed", E.rooms.homeRowsState("default", true).rows.some((x) => x.key === "harbor-watchlist" && x.hidden), "");
+  E.rooms.homeRowsReset("default", true);
+  r.eq("homeRowsReset clears homeRows", (() => { const h = E.settings.loadForProfile("default", true).homeRows; return [h.hidden, h.order, h.listRows]; })(), [[], [], []]);
+
+  // A slow async row lands after the grace: Home is told to re-read.
+  E.rooms.resetHomeExtras();
+  E.settings.saveForProfile({ ...E.settings.loadForProfile("default", true), homeRows: { ...s.homeRows, listRows: [] } }, "default", true);
+  pinDelay = 2500;
+  events.length = 0;
+  const early = await E.rooms.homeFor("default", true, null);
+  r.ok("a slow pinned row is not waited for past the grace", !early.rows.some((x) => x.key === "pinned:pin1"), JSON.stringify(early.rows.map((x) => x.key).slice(0, 4)));
+  await new Promise((res) => setTimeout(res, 2000));
+  r.ok("its arrival raises harbor:home-updated", events.length >= 1, JSON.stringify(events));
+  const late = await E.rooms.homeFor("default", true, null);
+  r.ok("the next read has it in its upstream slot", late.rows[1] && late.rows[1].key === "pinned:pin1", JSON.stringify(late.rows.map((x) => x.key).slice(0, 4)));
+  rec.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";
@@ -893,6 +1072,11 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
     r.ok("P2P: directTorrentStream off leaves no plan", direct.ok === false && direct.p2p === undefined, JSON.stringify(direct));
     e.settings.patch({ directTorrentStream: true });
   }
+  e.settings.patch({ customStreamFilters: [{ id: "hd", name: "1080p", resolution: ["1080p"] }, { id: "uhd", name: "4K", resolution: ["4K"] }, { id: "seeded", name: "Seeded", minSeeders: 100 }] });
+  const stamped = (await e.streamsRoom.search("rows", "default", true, null, film, null)).result?.picker.all.find((s) => s.infoHash === hash);
+  r.ok("streamsRoom.search stamps each row's text (pictographs gone, first title line as filename)", stamped?.tvRow?.filename === "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP" && stamped.tvRow.description.split("\n")[1] === "42 2.1 GB" && stamped.tvRow.detail.includes("42 2.1 GB"), JSON.stringify(stamped?.tvRow));
+  r.eq("streamsRoom.search stamps the saved filters each stream passes", stamped?.tvFilters, ["hd"]);
+  e.settings.patch({ customStreamFilters: [] });
   const files = [{ idx: 0, name: "sample.mkv", length: 10 }, { idx: 1, name: "Show.S01E02.1080p.mkv", length: 900 }, { idx: 2, name: "Show.S01E03.1080p.mkv", length: 1000 }, { idx: 3, name: "info.nfo", length: 5000 }];
   r.eq("P2P: p2pFileIdx picks the episode's file, else the largest video", [e.streamsRoom.p2pFileIdx(files, 1, 2), e.streamsRoom.p2pFileIdx(files, null, null), e.streamsRoom.p2pFileIdx([{ idx: 0, name: "a.nfo", length: 3 }], 1, 1)], [1, 2, 0]);
   rec.dispose();
@@ -901,8 +1085,40 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
 // ----------------------------------------------------------------------- home servers
 {
   r.eq("homeServers.connections empty", await engine.homeServers.connections(), []);
+  // bp-stream-row.tsx: plainLine / detailLine / torrentFilename for the TV's rows.
+  const rowText = engine.streamsRoom.pickerRowText({ name: "", title: "\u{1F525} Line one\n\u{1F464} 12  \u{1F4BE}\nLine one", addonId: "x", addonName: "X", audio: { codec: "Other", channels: 2 }, codec: "Other", size: null, seeders: null, hdrFormat: null, audioLanguages: [], behaviorHints: { filename: "Movie.2020.mkv" } }, "Movie", null);
+  r.eq("streamsRoom.pickerRowText: glyphs dropped, lines deduped, filename from behaviorHints", rowText, { headline: "Movie.2020.mkv", detail: "Line one · 12", description: "Line one\n12\nLine one", filename: "Movie.2020.mkv" });
+  // bp-stream-filters.ts customStreamFilters / activeStreamFilterId.
+  r.eq("streamsRoom.streamFilters: none saved", engine.streamsRoom.streamFilters("default", true), { filters: [], activeId: null });
+  engine.settings.patch({ customStreamFilters: [{ id: "f4k", name: " 4K only ", resolution: ["4K"] }, { id: "fany", name: "Anything" }], activeStreamFilterId: "gone" });
+  r.eq("streamsRoom.streamFilters: saved filters, a dangling active id reads as none", engine.streamsRoom.streamFilters("default", true), { filters: [{ id: "f4k", name: "4K only", empty: false }, { id: "fany", name: "Anything", empty: true }], activeId: null });
+  r.eq("streamsRoom.setActiveStreamFilter: an unknown id clears it", engine.streamsRoom.setActiveStreamFilter("default", true, "bogus"), null);
+  r.eq("streamsRoom.setActiveStreamFilter: a saved id sticks", [engine.streamsRoom.setActiveStreamFilter("default", true, "f4k"), engine.settings.load().activeStreamFilterId, engine.streamsRoom.streamFilters("default", true).activeId], ["f4k", "f4k", "f4k"]);
+  engine.settings.patch({ customStreamFilters: [], activeStreamFilterId: null });
   r.eq("homeServers.copies without connections", await engine.homeServers.copies({ id: "tt0111161", type: "movie", name: "x" }, "tt0111161"), []);
   r.eq("homeServers.titles empty", await engine.homeServers.titles(), []);
+  // bp-streams.tsx applyPreference + playback-policy.ts decidePlaybackSource.
+  const pref = (copies) => engine.homeServers.preferredSource("default", true, copies);
+  const one = [{ key: "k1", connectionId: "c1" }], two = [{ key: "k1", connectionId: "c1" }, { key: "k2", connectionId: "c2" }];
+  r.eq("homeServers.preferredSource: online preference leaves the list alone", pref(two), { action: "none" });
+  const commitPref = (id, v) => engine.settingsRoom.commit(id, v, "default", true);
+  commitPref("playbackSource", "local");
+  r.eq("settingsRoom.commit playbackSource sticks across loads (migration flags kept)", [engine.settings.loadForProfile("default", true).playbackSourcePreference, engine.settings.loadForProfile("default", true).playbackSourcePreference], ["local", "local"]);
+  r.eq("homeServers.preferredSource: local with no Local Library shows everything", pref(two), { action: "show-all" });
+  commitPref("playbackSource", "home-server"); commitPref("preferredMediaServer", "");
+  r.eq("homeServers.preferredSource: home server, no preferred server → the Media servers list", pref(one), { action: "show-media-server" });
+  r.eq("homeServers.preferredSource: home server, no copy of this title → every source", pref([]), { action: "show-all" });
+  commitPref("preferredMediaServer", "c2");
+  r.eq("homeServers.preferredSource: the preferred server's one copy plays", pref(two), { action: "play", copyKey: "k2" });
+  r.eq("homeServers.preferredSource: two copies on the preferred server → ask", pref([...two, { key: "k3", connectionId: "c2" }]), { action: "none" });
+  r.eq("homeServers.preferredSource: the preferred server has no copy → ask", pref(one), { action: "none" });
+  commitPref("playbackSource", "ask");
+  r.eq("homeServers.preferredSource: ask never plays by itself", pref(two), { action: "none" });
+  commitPref("playbackSource", "online"); commitPref("preferredMediaServer", "");
+  const qo = engine.homeServers.qualityOptions("nope", "x");
+  r.ok("homeServers.qualityOptions: MEDIA_SERVER_QUALITIES, Original when nothing plays", qo.current === "original" && qo.options.length === 7 && qo.options[0].id === "original" && qo.options[0].label === "Original" && qo.options[4].id === "720p-4", JSON.stringify(qo));
+  const sq = await engine.homeServers.switchQuality("nope", "x", null, "720p-4", 1000, true, null).then(() => "ok", (e) => e.message);
+  r.eq("homeServers.switchQuality: a copy that is gone says so", sq, "This home-server copy is no longer available.");
   r.eq("streamsRoom.autoCandidates with an unknown token", engine.streamsRoom.autoCandidates("nope", "default", true, { id: "tt1", type: "movie", name: "x" }, null, null, false, null), []);
   r.eq("streamsRoom.rememberPlayback with an unknown token", engine.streamsRoom.rememberPlayback("nope", "default", true, { id: "tt1", type: "movie", name: "x" }, 0, null, null, null), false);
   const lid = engine.actions.newList("Smoke list");
@@ -1395,6 +1611,16 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("commit sportsTab off declines consent", engine.settingsRoom.commit("sportsTab", "off", "default", true).sportsShown, false);
   r.eq("commit sportsTab on resets consent", engine.settingsRoom.commit("sportsTab", "on", "default", true).sportsShown, true);
   engine.settingsRoom.commit("skipIntro", "on", "default", true); engine.settingsRoom.commit("service", "netflix", "default", true); engine.settingsRoom.commit("subLang", "French", "default", true);
+  // Desktop-only rows stay off the TV; Hardware acceleration offers what tvOS can do.
+  const ids = (cat) => engine.settingsRoom.controls(cat, "default", true).map((c) => c.id);
+  r.ok("settingsRoom.controls: no Controller navigation / Open in Big Picture / Hide watched on the TV", !ids("interface").includes("controller") && !ids("interface").includes("autoStart") && ids("interface").includes("sound") && !ids("home").includes("hideWatched") && ids("home").includes("homeMode"), JSON.stringify([ids("interface"), ids("home")]));
+  const hw = () => engine.settingsRoom.controls("playback", "default", true).find((c) => c.id === "hwdec");
+  r.eq("settingsRoom.controls(hwdec): Auto and Off only", hw().options.map((o) => o.value), ["auto", "off"]);
+  engine.settingsRoom.commit("hwdec", "on", "default", true);
+  r.eq("settingsRoom: a synced hwdec \"on\" reads as Auto (VideoToolbox either way)", [hw().value, engine.settingsRoom.pane("default", true).playback.find((l) => l[0] === "Hardware acceleration")[1]], ["auto", "Auto"]);
+  engine.settingsRoom.commit("hwdec", "off", "default", true);
+  r.eq("settingsRoom: hwdec Off commits and reads back", [hw().value, engine.settings.load().mpvHwdec], ["off", "off"]);
+  engine.settingsRoom.commit("hwdec", "auto", "default", true);
 }
 
 // ------------------------------------------ themes, language picker, settings preview, done facts
@@ -1430,7 +1656,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("installUiCatalog registers a host-fed catalog and t() follows it", [engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.installUiCatalog("fr", JSON.stringify({ "This is how a subtitle will look.": "Voici un sous-titre." })), engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.pane("default", true).subtitle.text], [false, true, true, "Voici un sous-titre."]);
   engine.settingsRoom.commit("uiLanguage", "en", "default", true);
   const pane =engine.settingsRoom.pane("default", true);
-  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 3, "Off"]);
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 1, "Off"]);
   r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
   const setupKey = engine.settings.sourceKeyFor("default", true);
   const before = engine.settingsRoom.pane("default", true).setup[1][1];
@@ -1682,6 +1908,51 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     pe("auto", { url: "https://cdn.example.invalid/master.m3u8", fallbackTried: true }),
     e.player.engineFor("default", true, { url: "https://cdn.example.invalid/a.mkv" }).want,
   ], ["native", "mpv", "mpv", "auto"]);
+  // Per-show track memory + track rules (use-track-autoload.ts, lib/player-prefs.ts, subtitle-memory.ts).
+  {
+    const D = e.settings.DEFAULT;
+    const A = (id, lang, title, extra = {}) => ({ id, type: "audio", lang, title, ...extra });
+    const S = (id, lang, title, extra = {}) => ({ id, type: "sub", lang, title, ...extra });
+    const commentary = [A(1, "eng", "Director's Commentary", { selected: true, default: true }), A(2, "eng", "Main"), A(3, "jpn", null)];
+    const p1 = e.player.trackPlan("default", true, null, commentary);
+    r.eq("player.trackPlan: trackBlockWords (default commentary) skips the commentary track", [p1.audioId, D.trackBlockWords], ["2", ["commentary"]]);
+    r.eq("player.planTracks: an empty block list keeps the default commentary track", e.player.planTracks({ ...D, trackBlockWords: [] }, null, commentary).audioId, null);
+    const subs = [A(1, "eng", null, { selected: true }), S(1, "eng", "English"), S(2, "eng", "English Forced", { forced: true }), S(3, "spa", "Spanish")];
+    const p2 = e.player.planTracks(D, null, subs);
+    r.eq("player.planTracks: picks the preferred-language full subtitle, never the forced one", [p2.sub, p2.subId, p2.subDelaySec], ["select", "1", 0]);
+    r.eq("player.planTracks: subtitlesOffByDefault turns subtitles off", e.player.planTracks({ ...D, subtitlesOffByDefault: true }, null, subs).sub, "off");
+    const forced = e.player.planTracks({ ...D, forcedSubsWhenNativeAudio: true }, null, subs);
+    r.eq("player.planTracks: forcedSubsWhenNativeAudio picks the forced track under native audio", [forced.sub, forced.subId], ["select", "2"]);
+    const foreignAudio = e.player.planTracks({ ...D, forcedSubsWhenNativeAudio: true, preferredAudioLangs: ["Japanese"] }, null, [A(1, "jpn", null), ...subs.slice(1)]);
+    r.eq("player.planTracks: forcedSubsWhenNativeAudio keeps full subtitles under foreign audio", foreignAudio.subId, "1");
+    r.eq("player.planTracks: secondarySubLang auto-picks the second subtitle", e.player.planTracks({ ...D, secondarySubLang: "Spanish" }, null, subs).secondaryId, "3");
+    // Memory round trip: episode 1's picks carry to episode 2 of the same show.
+    const ep1 = { metaId: "tt7000001", season: 1, episode: 1, genres: ["Drama"] };
+    const ep2 = { ...ep1, episode: 2 };
+    r.ok("player.remember*: audio language, subtitle language and delay are saved", e.player.rememberAudio(ep1, A(3, "jpn", null)) &&
+      e.player.rememberSubtitle(ep1, S(3, "spa", "Spanish")) && e.player.rememberSubDelay(ep1, 1.5), "");
+    const mem = e.player.trackMemory(ep2);
+    r.eq("player.trackMemory: per-show prefs are keyed by the series id", [mem.prefs.audioLang, mem.prefs.subLang, mem.prefs.subsOff, mem.prefs.subDelaySec, mem.subtitle], ["jpn", "spa", false, 1.5, null]);
+    r.ok("player prefs persist under upstream's key", JSON.parse(rec.node.storage.get("harbor.player.prefs.v1") ?? "{}").tt7000001?.audioLang === "jpn", "");
+    const next = e.player.trackPlan("default", true, ep2, [A(1, "eng", null, { selected: true }), A(2, "jpn", null), S(1, "eng", "English"), S(2, "spa", "Spanish")]);
+    r.eq("player.trackPlan: the next episode gets the show's audio, subtitle language and delay", [next.audioId, next.sub, next.subId, next.subDelaySec], ["2", "select", "2", 1.5]);
+    e.player.rememberSubtitle(ep2, null);
+    r.eq("player.trackPlan: subtitles turned off stay off for the show", e.player.trackPlan("default", true, { ...ep1, episode: 3 }, subs).sub, "off");
+    // Per-episode subtitle memory: the exact embedded track comes back on a revisit.
+    const movie = { metaId: "tt7000002" };
+    const movieSubs = [S(1, "eng", "English"), S(4, "eng", "English SDH", { hearingImpaired: true })];
+    e.player.rememberSubtitle(movie, movieSubs[1]);
+    const back = e.player.trackPlan("default", true, movie, movieSubs);
+    r.eq("player.trackPlan: a revisit restores the exact remembered track", [back.sub, back.subId], ["select", "4"]);
+    // An added subtitle remembers its download URL, and comes back as a restore on the next visit.
+    const film = { metaId: "tt7000003", filename: "Film.2020.1080p.WEB-DL.x264-GRP.mkv" };
+    e.player.noteSubtitleSource("/caches/subs/os_1.srt", "https://subs.example.invalid/os_1.srt");
+    e.player.rememberSubtitle(film, S(1001, "en", "Film.2020.1080p", { external: true, externalFilename: "os_1.srt" }));
+    const again = e.player.trackPlan("default", true, film, [S(1, "fre", "French")]);
+    r.eq("player.trackPlan: a remembered added subtitle is fetched again (same release)", again.restore && again.restore.source, "https://subs.example.invalid/os_1.srt");
+    const otherRelease = e.player.trackPlan("default", true, { ...film, filename: "Film.2020.2160p.BluRay.x265-OTHER.mkv" }, [S(1, "fre", "French")]);
+    r.eq("player.trackPlan: another release does not restore it (subtitle-memory streamKey)", otherRelease.restore, null);
+  }
   r.ok("settingsRoom: the html5 engine option reads AVPlayer on the TV", e.settingsRoom.controls("playback", "default", true).some((c) => c.id === "engine" && c.options.some((o) => o.value === "html5" && o.label === "AVPlayer") && c.options.some((o) => o.value === "auto")), "");
   r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
   const tv = e.subtitles.trackView("default", true, [

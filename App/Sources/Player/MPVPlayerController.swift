@@ -28,6 +28,14 @@ final class MPVPlayerController: UIViewController {
     /// Preferred audio / subtitle languages (upstream `preferredAudioLangs` / `preferredSubLangs`, names like "English").
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// lib/player-prefs.ts / subtitle-memory.ts key for this playback (PlayerScreen); nil for
+    /// previews, tiles and channels, which remember nothing.
+    var trackMemory: TrackMemory?
+    /// Bumped by every audio / subtitle selection (the viewer's or the plan's): a track plan or a
+    /// remembered-subtitle restore that lands after the viewer already chose leaves that choice
+    /// alone (use-track-autoload's userPicked / subRestoreAddRef, review 26).
+    private(set) var audioPicks = 0
+    private(set) var subPicks = 0
     /// bp-guide-portal's MultiPlayer (muted, cover): a muted mini preview. It never touches the
     /// display mode or HDR, decodes no audio and keeps a small live cache.
     var preview = false
@@ -101,6 +109,15 @@ final class MPVPlayerController: UIViewController {
         queue.async { mpv_terminate_destroy(handle) }
     }
 
+    /// settings.mpvHwdec as mpv's hwdec (lib/player/mpv-tuning.ts: "on" → hwdec=yes, "off" → hwdec=no,
+    /// "auto" → the platform's pick). tvOS has one hardware decoder, VideoToolbox, so "auto" and "on"
+    /// both mean videotoolbox and "off" decodes in software. A preview or a Multiview tile keeps
+    /// VideoToolbox: four software decodes at once would starve the box.
+    static func hwdec(_ setting: String?, ownsDisplay: Bool) -> String {
+        guard ownsDisplay, setting == "off" else { return "videotoolbox" }
+        return "no"
+    }
+
     private func setupMpv() {
         guard let handle = mpv_create() else { push("mpv_create failed"); return }
         mpv = handle
@@ -110,7 +127,7 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "vo", "gpu-next"))
         check(mpv_set_option_string(handle, "gpu-api", "vulkan"))
         check(mpv_set_option_string(handle, "gpu-context", "moltenvk"))
-        check(mpv_set_option_string(handle, "hwdec", "videotoolbox"))
+        check(mpv_set_option_string(handle, "hwdec", Self.hwdec(SettingsBridge.shared.slice.mpvHwdec, ownsDisplay: ownsDisplay)))
         check(mpv_set_option_string(handle, "target-colorspace-hint", ownsDisplay ? "yes" : "no")) // HDR passthrough (never for a preview or tile)
         // Upstream's pre-init set (src-tauri/src/mpv.rs:349-416, docs/player-spec.md §2.1).
         check(mpv_set_option_string(handle, "title", "Harbor"))
@@ -237,7 +254,7 @@ final class MPVPlayerController: UIViewController {
         var channels: String?
         var label: String {
             let base = [title, lang.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
-            return base.isEmpty ? "\(type == "sub" ? "Subtitle" : "Audio") \(id)" : base
+            return base.isEmpty ? "\(T(type == "sub" ? "Subtitle" : "Audio")) \(id)" : base
         }
     }
 
@@ -273,11 +290,14 @@ final class MPVPlayerController: UIViewController {
     /// bp-player-subtitles "2nd" (lib/player/secondary-sub.ts): mpv's secondary-sid, or off.
     func setSecondarySub(_ track: Track?) {
         guard let mpv else { return }
+        subPicks += 1
         check(mpv_set_property_string(mpv, "secondary-sid", track.map { String($0.id) } ?? "no"))
     }
 
     /// bp-player-sources BpAudioLane "Sync Offset": mpv audio-delay in seconds.
     func setAudioDelay(_ seconds: Double) { command("set", ["audio-delay", String(format: "%.2f", seconds)]) }
+    /// mpv.ts setRate: `speed` (pitch-corrected by mpv's default audio-pitch-correction).
+    func setRate(_ rate: Double) { command("set", ["speed", String(format: "%.2f", rate)]) }
 
     /// bp-player-rail mute chip: mpv's `mute` property.
     func setMuted(_ muted: Bool) {
@@ -301,6 +321,7 @@ final class MPVPlayerController: UIViewController {
 
     func select(track: Track?, type: String) {
         guard let mpv else { return }
+        if type == "sub" { subPicks += 1 } else { audioPicks += 1 }
         let prop = type == "sub" ? "sid" : "aid"
         mpv_set_property_string(mpv, prop, track.map { String($0.id) } ?? "no")
     }
@@ -309,6 +330,7 @@ final class MPVPlayerController: UIViewController {
     /// Replace the post-processing shader chain (`glsl-shaders`, colon-separated like mpv.rs).
     /// bp-subtitle-tune "Manual offset": mpv sub-delay in seconds (+ late, − early).
     func setSubDelay(_ seconds: Double) { command("set", ["sub-delay", String(format: "%.2f", seconds)]) }
+    func currentSubDelay() -> Double { Double(string("sub-delay") ?? "") ?? 0 }
     /// bp-subtitle-tune "Size": sub-scale multiplier.
     func setSubScale(_ scale: Double) { command("set", ["sub-scale", String(format: "%.2f", min(max(scale, 0.4), 4))]) }
 
@@ -329,6 +351,7 @@ final class MPVPlayerController: UIViewController {
     }
 
     func addSubtitle(file: URL, title: String, lang: String) {
+        subPicks += 1
         command("sub-add", [file.path, "select", title, lang])
     }
 
@@ -365,9 +388,54 @@ final class MPVPlayerController: UIViewController {
         set("sub-pos", String(Int(min(max(100 - (s.subMarginY ?? 12), 0), 100))))
     }
 
-    /// Pick the first audio track matching the preferred languages (in order); subtitles stay
-    /// off unless an embedded track matches a preferred language (upstream keeps `sid=no` until
-    /// its own choice; mpv.rs:991-1007, player-spec §2.9).
+    /// use-track-autoload.ts's track choice, made by the engine (player.trackPlan): the preferred
+    /// languages, the show's remembered audio / subtitle language and delay (lib/player-prefs.ts),
+    /// this episode's remembered subtitle (subtitle-memory.ts), trackBlockWords, subtitlesOffByDefault,
+    /// preferEmbeddedSubs, forcedSubsWhenNativeAudio and secondarySubLang. Subtitle slots start
+    /// empty (`sid=no`, mpv.rs:991-1007), so a plan with no subtitle choice leaves them off.
+    private func applyTrackPlan() {
+        guard !preview, mpv != nil else { return }
+        let list = tracks()
+        let memory = trackMemory
+        let picks = (audioPicks, subPicks)
+        Task { [weak self] in
+            let plan = await TrackPlanner.plan(memory: memory, tracks: list)
+            guard let self, !self.tornDown, self.mpv != nil else { return }
+            // What the viewer picked while the plan was on its way stays (review 26).
+            let userAudio = self.audioPicks != picks.0, userSub = self.subPicks != picks.1
+            guard let plan else { if !userAudio && !userSub { self.applyTrackPreferences() }; return }
+            self.apply(plan, to: list, audio: !userAudio, subs: !userSub)
+        }
+    }
+
+    private func apply(_ plan: TrackPlan, to list: [Track], audio: Bool, subs: Bool) {
+        func find(_ id: String?, _ type: String) -> Track? {
+            guard let id else { return nil }
+            return list.first { $0.type == type && String($0.id) == id }
+        }
+        if audio, let a = find(plan.audioId, "audio") { select(track: a, type: "audio") }
+        plan.notes.forEach { push($0) }
+        guard subs else { return }
+        if plan.sub == "off" {
+            select(track: nil, type: "sub")
+        } else if plan.sub == "select", let s = find(plan.subId, "sub") {
+            select(track: s, type: "sub")
+        }
+        // Multiview tiles and kid profiles get no automatic second subtitle (the kid toggle can't clear it).
+        if !tile, ProfilesStore.shared.active?.kid == nil, let s = find(plan.secondaryId, "sub") { setSecondarySub(s) }
+        if plan.subDelaySec != 0 { setSubDelay(plan.subDelaySec) }
+        if let r = plan.restore {
+            let settled = subPicks
+            Task { [weak self] in
+                guard let self, !self.tornDown else { return }
+                if await TrackPlanner.restore(r, into: self, stillWanted: { self.subPicks == settled }) { self.push("subs: remembered subtitle added") }
+            }
+        }
+    }
+
+    /// Fallback when the engine does not answer: the first audio track matching the preferred
+    /// languages (in order); subtitles stay off unless an embedded track matches a preferred
+    /// language (player-spec §2.9).
     /// ISO 639-2/B and /T codes ffmpeg tags tracks with → 639-1 (upstream subsync/audio_tracks.rs LANG_ALIAS).
     private static let langAlias: [String: String] = [
         "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es", "ita": "it", "por": "pt",
@@ -514,7 +582,7 @@ final class MPVPlayerController: UIViewController {
                 case MPV_EVENT_FILE_LOADED:
                     self.push("file loaded")
                     if self.startAtSeconds > 1 { self.seek(to: self.startAtSeconds); self.startAtSeconds = 0 }
-                    self.applyTrackPreferences()
+                    DispatchQueue.main.async { self.applyTrackPlan() }
                 case MPV_EVENT_END_FILE:
                     if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
                         if ef.pointee.error < 0 {

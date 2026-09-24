@@ -21,6 +21,13 @@ final class NativePlayerController: UIViewController {
     var isLive = false
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// lib/player-prefs.ts / subtitle-memory.ts key for this playback (PlayerScreen); nil remembers nothing.
+    var trackMemory: TrackMemory?
+    /// Bumped by every audio / subtitle selection (the viewer's or the plan's): a track plan or a
+    /// remembered-subtitle restore that lands after the viewer already chose leaves that choice
+    /// alone (use-track-autoload's userPicked / subRestoreAddRef, review 26).
+    private(set) var audioPicks = 0
+    private(set) var subPicks = 0
     /// Where playback should start, applied once the item is ready.
     var startAtSeconds: Double = 0
 
@@ -285,7 +292,7 @@ final class NativePlayerController: UIViewController {
         audioGroup = try? await asset.loadMediaSelectionGroup(for: .audible)
         legibleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
         guard !tornDown, player.currentItem === item else { return }
-        applyTrackPreferences()
+        await applyTrackPlan(item)
         if let video = try? await asset.loadTracks(withMediaType: .video).first,
            let desc = try? await video.load(.formatDescriptions).first {
             codecName = Self.codecName(CMFormatDescriptionGetMediaSubType(desc))
@@ -350,6 +357,12 @@ final class NativePlayerController: UIViewController {
 
     func setMuted(_ muted: Bool) { player.isMuted = muted }
     func isMuted() -> Bool { player.isMuted }
+    /// html5 bridge setRate (playbackRate): play() resumes at defaultRate, so both follow it.
+    func setRate(_ rate: Double) {
+        let r = Float(rate)
+        player.defaultRate = r
+        if player.rate != 0 { player.rate = r }
+    }
 
     /// The end of the loaded range the playhead is in (mpv demuxer-cache-time's meaning).
     func bufferedSec() -> Double {
@@ -419,6 +432,7 @@ final class NativePlayerController: UIViewController {
     }
 
     func select(track: MPVPlayerController.Track?, type: String) {
+        if type == "sub" { subPicks += 1 } else { audioPicks += 1 }
         if type == "sub" {
             // setSubtitleTrack(id): a sideloaded track draws from its parsed cues, the file's own from
             // the legible output; the overlay draws both.
@@ -439,8 +453,50 @@ final class NativePlayerController: UIViewController {
         item.select(target, in: g)
     }
 
-    /// The same language matching as MPVPlayerController.applyTrackPreferences: the first audio
-    /// option in a preferred language; subtitles stay off unless one matches a preferred language.
+    /// use-track-autoload.ts's track choice, made by the engine (player.trackPlan) as on mpv: the
+    /// preferred languages, the show's remembered audio / subtitle language and delay, this
+    /// episode's remembered subtitle, and the track rules (trackBlockWords, subtitlesOffByDefault,
+    /// preferEmbeddedSubs, forcedSubsWhenNativeAudio, secondarySubLang). With no subtitle choice
+    /// the file's own subtitles are turned off, like mpv's empty `sid` slot.
+    private func applyTrackPlan(_ item: AVPlayerItem) async {
+        let list = tracks()
+        let picks = (audioPicks, subPicks)
+        let planned = await TrackPlanner.plan(memory: trackMemory, tracks: list)
+        guard !tornDown, player.currentItem === item else { return }
+        // What the viewer picked while the plan was on its way stays (review 26).
+        let userAudio = audioPicks != picks.0, userSub = subPicks != picks.1
+        guard let plan = planned else {
+            if !userAudio && !userSub { applyTrackPreferences() }
+            return
+        }
+        func find(_ id: String?, _ type: String) -> MPVPlayerController.Track? {
+            guard let id else { return nil }
+            return list.first { $0.type == type && String($0.id) == id }
+        }
+        if !userAudio, let a = find(plan.audioId, "audio") { select(track: a, type: "audio") }
+        plan.notes.forEach { push($0) }
+        guard !userSub else { return }
+        if plan.sub == "select", let s = find(plan.subId, "sub") {
+            select(track: s, type: "sub")
+        } else if plan.sub == "off" || activeExternal == nil {
+            select(track: nil, type: "sub")
+        }
+        // setSecondarySub keeps to the sideloaded tracks by itself; kid profiles get none (the kid toggle can't clear it).
+        if ProfilesStore.shared.active?.kid == nil, let s = find(plan.secondaryId, "sub") { setSecondarySub(s) }
+        if plan.subDelaySec != 0 { setSubDelay(plan.subDelaySec) }
+        if let r = plan.restore {
+            let settled = subPicks
+            Task { [weak self] in
+                guard let self, !self.tornDown else { return }
+                if await TrackPlanner.restore(r, into: self, stillWanted: { self.subPicks == settled }) { self.push("subs: remembered subtitle added") }
+            }
+        }
+    }
+
+    func currentSubDelay() -> Double { subDelaySec }
+
+    /// Fallback when the engine does not answer (the same language matching as mpv's fallback):
+    /// the first audio option in a preferred language; subtitles stay off unless one matches.
     private func applyTrackPreferences() {
         guard let item = player.currentItem else { return }
         func rank(_ o: AVMediaSelectionOption, _ names: [String]) -> Int? {
@@ -477,6 +533,7 @@ final class NativePlayerController: UIViewController {
     /// Its cues arrive from the engine a moment later; a file with none is dropped again (ensureLoaded
     /// → loaded false, and the selection settles back to nothing).
     func addSubtitle(file: URL, title: String, lang: String) {
+        subPicks += 1
         let id = nextExternalId
         nextExternalId += 1
         let format = file.pathExtension.lowercased()
@@ -514,6 +571,7 @@ final class NativePlayerController: UIViewController {
 
     /// setSecondarySubtitleTrack: only the engine's own (sideloaded) tracks can be drawn second.
     func setSecondarySub(_ track: MPVPlayerController.Track?) {
+        subPicks += 1
         if let track {
             guard track.id >= Self.externalSubBase, externalSubs.contains(where: { $0.id == track.id }) else { return }
             secondaryExternal = track.id
@@ -831,6 +889,8 @@ struct NativePlayerView: UIViewControllerRepresentable {
     var isLive: Bool = false
     var preferredAudio: [String] = []
     var preferredSubs: [String] = []
+    /// Per-show track memory key (TrackMemory.swift); nil remembers nothing.
+    var trackMemory: TrackMemory? = nil
     let onStatus: (MPVPlayerController.Status) -> Void
     var onEnded: (() -> Void)? = nil
     var onUnsupported: ((String) -> Void)? = nil
@@ -846,6 +906,7 @@ struct NativePlayerView: UIViewControllerRepresentable {
         c.isLive = isLive
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
+        c.trackMemory = trackMemory
         c.onStatus = onStatus
         c.onEnded = onEnded
         c.onUnsupported = onUnsupported

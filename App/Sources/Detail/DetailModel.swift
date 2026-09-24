@@ -13,12 +13,14 @@ final class DetailModel: ObservableObject {
         var thumbnail: String?
         var released: Date?
         var playEpisode: AnyJSON
+        /// anime franchise entries (KitsuEpisode.sourceMetaId): the id this card's watched marks live under.
+        var watchMetaId: String? = nil
     }
 
     @Published private(set) var meta: Meta
     @Published private(set) var episodes: [Episode] = []
     @Published private(set) var seasons: [Int] = []
-    @Published var season: Int = 1 { didSet { if season != oldValue { Task { await loadEpisodeFacts(); await loadEpisodeArt() } } } }
+    @Published var season: Int = 1 { didSet { if season != oldValue { Task { await loadWatchedState(); await loadEpisodeFacts(); await loadEpisodeArt() } } } }
     @Published private(set) var loading = false
     /// use-bp-episode-facts: per-episode rating (IMDb over TMDB) and runtime, keyed "season:episode".
     @Published private(set) var episodeFacts: [String: EpisodeFact] = [:]
@@ -136,8 +138,17 @@ final class DetailModel: ObservableObject {
     @Published private(set) var inWatchlist = false
     @Published private(set) var watchlistBusy = false
     @Published private(set) var canWatchlist = false
-    /// "season:episode" keys the Stremio library marks watched.
+    /// use-bp-episode-strip watchedOf: "season:episode" keys that read watched (Harbor's manual marks,
+    /// the Stremio library bitfield, Trakt/Simkl history; a manual unmark wins). engine/episodeWatched.ts.
     @Published private(set) var watched: Set<String> = []
+    /// episode-watched-menu `started`: unwatched episodes of this season with a local resume entry.
+    @Published private(set) var started: Set<String> = []
+    /// lib/spoilers.ts spoilerMaskFor per card of this season (absent = nothing hidden).
+    struct SpoilerMask: Decodable, Equatable { var thumb: Bool; var title: Bool; var desc: Bool }
+    @Published private(set) var spoilerMasks: [String: SpoilerMask] = [:]
+    /// bp-episode-card.tsx: settings.showEpisodeRating / showEpisodeDescription.
+    @Published private(set) var showEpisodeRating = true
+    @Published private(set) var showEpisodeDescription = true
     /// TMDB extras (detail-spec §1.2 step 3): nil without a key or for anime ids.
     @Published private(set) var extras: Extras?
     /// bp-anime-characters: AniList characters for an anime id (empty otherwise).
@@ -155,7 +166,7 @@ final class DetailModel: ObservableObject {
     struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String? }
     private struct AnimeDetail: Decodable {
         struct D: Decodable { var name: String?; var overview: String?; var backdrop: String?; var poster: String?; var year: String?; var genres: [String] }
-        struct Ep: Decodable { var id: Int; var season: Int; var number: Int; var title: String; var synopsis: String; var thumbnail: String?; var airdate: String?; var length: Int?; var filler: Bool; var playEpisode: AnyJSON }
+        struct Ep: Decodable { var id: Int; var season: Int; var number: Int; var title: String; var synopsis: String; var thumbnail: String?; var airdate: String?; var length: Int?; var filler: Bool; var playEpisode: AnyJSON; var sourceMetaId: String? }
         var canonicalId: String; var imdbId: String?; var detail: D; var episodes: [Ep]; var showSeason: Bool; var characters: [AnimeCharacter]
     }
     var isAnimeId: Bool { ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) } }
@@ -217,7 +228,8 @@ final class DetailModel: ObservableObject {
                 let iso = ISO8601DateFormatter.dateOnly
                 episodes = a.episodes.map { e in
                     Episode(id: "\(meta.id):\(e.season):\(e.number)", season: e.season, episode: e.number, title: e.title.isEmpty ? "Episode \(e.number)" : e.title,
-                            overview: e.synopsis.isEmpty ? nil : e.synopsis, thumbnail: e.thumbnail, released: e.airdate.flatMap { iso.date(from: $0) }, playEpisode: e.playEpisode)
+                            overview: e.synopsis.isEmpty ? nil : e.synopsis, thumbnail: e.thumbnail, released: e.airdate.flatMap { iso.date(from: $0) }, playEpisode: e.playEpisode,
+                            watchMetaId: e.sourceMetaId)
                 }
                 seasons = Array(Set(episodes.map(\.season))).sorted()
                 if let first = seasons.first, !seasons.contains(season) { season = first }
@@ -230,9 +242,11 @@ final class DetailModel: ObservableObject {
         if !isAnimeId { buildEpisodes() }
         await loadResume()
         await loadHero()
-        if isSeries, let authKey {
-            let keys: [String] = (try? await HarborEngine.shared.call("player.watchedEpisodes", [authKey, meta])) ?? []
-            watched = Set(keys)
+        if isSeries {
+            // Local marks at once; the library pull and Trakt/Simkl history land after.
+            await loadWatchedState()
+            let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.load", [authKey, meta, imdbId])
+            await loadWatchedState()
         }
         await loadEpisodeArt()
         await loadExtras()
@@ -259,6 +273,59 @@ final class DetailModel: ObservableObject {
     }
 
     func isWatched(_ ep: Episode) -> Bool { watched.contains("\(ep.season):\(ep.episode)") }
+    func isStarted(_ ep: Episode) -> Bool { started.contains("\(ep.season):\(ep.episode)") }
+    func spoilerMask(for ep: Episode) -> SpoilerMask? { spoilerMasks["\(ep.season):\(ep.episode)"] }
+
+    // MARK: episode watched marks (episode-watched-menu.tsx, use-mark-season.ts)
+
+    private struct EpisodeRef: Encodable { var season: Int; var episode: Int; var metaId: String?; var released: String? }
+    private var episodeRefs: [EpisodeRef] {
+        let iso = ISO8601DateFormatter()
+        return episodes.map { EpisodeRef(season: $0.season, episode: $0.episode, metaId: $0.watchMetaId, released: $0.released.map { iso.string(from: $0) }) }
+    }
+
+    /// engine/episodeWatched.ts state: the whole title's refs, this season's started keys and masks.
+    func loadWatchedState() async {
+        guard isSeries, !episodes.isEmpty else { return }
+        struct WatchedState: Decodable {
+            var watched: [String]; var started: [String]; var masks: [String: SpoilerMask]
+            var showEpisodeRating: Bool; var showEpisodeDescription: Bool
+        }
+        let p = ProfilesStore.shared.active
+        guard let s: WatchedState = try? await HarborEngine.shared.call("episodeWatched.state", [meta.id, episodeRefs, season, p?.id ?? "default", p?.linked ?? true]) else { return }
+        watched = Set(s.watched)
+        started = Set(s.started)
+        spoilerMasks = s.masks
+        showEpisodeRating = s.showEpisodeRating
+        showEpisodeDescription = s.showEpisodeDescription
+    }
+
+    enum WatchedMark: String { case episode, upTo, season }
+
+    /// episode-grid-controls OptionsMenu allWatched: every aired episode of this season reads watched.
+    var seasonAllWatched: Bool {
+        let now = Date()
+        let aired = seasonEpisodes.filter { ($0.released ?? .distantPast) <= now }
+        return !aired.isEmpty && aired.allSatisfy { isWatched($0) }
+    }
+
+    /// The manual store is written before the engine answers; Simkl, AniList/MAL and the Stremio
+    /// library follow in the background (engine/episodeWatched.ts mark).
+    func markWatched(_ ep: Episode, _ scope: WatchedMark, watched on: Bool) async {
+        let p = ProfilesStore.shared.active
+        let target = EpisodeRef(season: ep.season, episode: ep.episode, metaId: ep.watchMetaId, released: nil)
+        let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.mark", [authKey, meta, imdbId, target, scope.rawValue, on, episodeRefs, p?.id ?? "default", p?.linked ?? true])
+        await loadWatchedState()
+    }
+
+    /// views/player.tsx nextEpMask (watched = the next episode's mark, isNextUp): bp-up-next.tsx
+    /// shows the episode label alone when the title is masked. The TV card draws no still.
+    func upNextText(_ n: Episode) async -> String {
+        let p = ProfilesStore.shared.active
+        let mask: SpoilerMask? = try? await HarborEngine.shared.call("episodeWatched.upNextMask", [p?.id ?? "default", p?.linked ?? true, isWatched(n)])
+        let label = "S\(n.season) E\(n.episode)"
+        return mask?.title == true ? label : "\(label) · \(n.title)"
+    }
 
     private var authKey: String? {
         ProfilesStore.shared.active.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }

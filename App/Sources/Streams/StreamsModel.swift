@@ -28,6 +28,11 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     var nativeIdx: Int?
     var url: String?
     var infoHash: String?
+    /// engine/streams.ts stampPickerRows: bp-stream-row.tsx's detail line, full description and filename.
+    struct RowText: Decodable, Equatable { var headline: String; var detail: String; var description: String; var filename: String }
+    var tvRow: RowText?
+    /// The ids of the saved stream filters (settings.customStreamFilters) this stream passes.
+    var tvFilters: [String]?
     var index: Int = 0   // position in picker.all, set after decoding
 
     var id: String { "\(index)-\(addonId)-\(url ?? infoHash ?? parsedTitle ?? "")" }
@@ -39,7 +44,9 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash
+        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters
+        // stampAddonOrder's fields: the "addon order" sort ranks by these, so they must decode.
+        case addonUrl, nativeIdx
     }
 }
 
@@ -84,6 +91,12 @@ final class StreamsModel: ObservableObject {
     @Published private(set) var rememberedIndex: Int?
     /// Home-server copies of this title (use-bp-streams homeServerCopies), loaded beside the addon search.
     @Published private(set) var copies: [HomeCopy] = []
+    /// The copies lookup has answered (bp-streams waits for homeServersLoaded before its preference).
+    @Published private(set) var copiesLoaded = false
+    /// bp-stream-filters customFilters / activeFilterId: the saved filters synced from the desktop.
+    struct SavedFilter: Decodable, Identifiable, Equatable { var id: String; var name: String; var empty: Bool }
+    @Published private(set) var savedFilters: [SavedFilter] = []
+    @Published private(set) var activeFilterId: String?
     /// A picked torrent is being added to the TV's engine (metadata, up to a minute).
     @Published private(set) var p2pStarting = false
     struct HomeCopy: Decodable, Identifiable { var key: String; var label: String; var sourceLabel: String; var connectionId: String; var itemId: String; var versionId: String; var quality: String?; var sizeBytes: Double?; var resolution: String?; var progressMs: Double; var id: String { key } }
@@ -112,10 +125,16 @@ final class StreamsModel: ObservableObject {
         subscribeOnce()
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
+        struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String? }
+        if let f: Filters = try? await HarborEngine.shared.call("streamsRoom.streamFilters", [p?.id ?? "default", p?.linked ?? true]) {
+            savedFilters = f.filters
+            activeFilterId = f.activeId
+        }
         Task { [weak self] in
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
             let list: [HomeCopy] = (try? await HarborEngine.shared.call("homeServers.copies", [meta, meta.id.hasPrefix("tt") ? meta.id : nil as String?, season, ep])) ?? []
             self?.copies = list
+            self?.copiesLoaded = true
         }
         do {
             let r: SearchResult = try await HarborEngine.shared.call("streamsRoom.search",
@@ -133,6 +152,18 @@ final class StreamsModel: ObservableObject {
             phase = .done
         } catch {
             phase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// bp-stream-filters setActiveFilterId: update({ activeStreamFilterId }), so it sticks for next time.
+    func setActiveFilter(_ id: String?) async {
+        activeFilterId = id
+        let p = ProfilesStore.shared.active
+        do {
+            let saved: String? = try await HarborEngine.shared.call("streamsRoom.setActiveStreamFilter", [p?.id ?? "default", p?.linked ?? true, id])
+            activeFilterId = saved
+        } catch {
+            // The pick still narrows this list; it just was not saved.
         }
     }
 

@@ -116,11 +116,14 @@ final class MusicPlayer: ObservableObject {
             Task { @MainActor in self.itemEnded(item) }
         })
         // A film or channel starting takes the TV's audio: the music pauses (player.ts stopCastOwner).
+        // Now Playing belongs to the video player meanwhile (VideoNowPlaying); when it closes the
+        // music's own track goes back up (media-session.ts clearMediaControls).
         PlaybackState.shared.$active
             .removeDuplicates()
             .sink { [weak self] video in
-                guard video else { return }
-                Task { @MainActor in self?.pauseForVideo() }
+                Task { @MainActor in
+                    if video { self?.pauseForVideo() } else { self?.refreshNowPlaying() }
+                }
             }
             .store(in: &bag)
         Task { await reloadLibrary() }
@@ -281,7 +284,8 @@ final class MusicPlayer: ObservableObject {
         error = nil
         phase = .idle
         Task { let _: AnyJSON? = try? await HarborEngine.shared.callJSON("music.stopped") }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        // A playing video owns Now Playing (VideoNowPlaying); only clear what is the music's.
+        if !PlaybackState.shared.active { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil }
         // The session stays active: mpv, AVPlayer and the UI sounds (BPSound) share it and never
         // reactivate it themselves (review 19).
     }
@@ -783,7 +787,9 @@ final class MusicPlayer: ObservableObject {
     }
 
     private func refreshNowPlaying() {
-        guard let t = current else { return }
+        // While a film or channel plays, VideoNowPlaying holds Now Playing; the sink above writes
+        // the music back once it closes.
+        guard let t = current, !PlaybackState.shared.active else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: t.title,
             MPMediaItemPropertyArtist: t.artist,

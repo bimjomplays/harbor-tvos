@@ -37,6 +37,8 @@ struct PlayerScreen: View {
     @State private var prevChannels: [LiveModel.Channel] = []
     /// KidsStreamSwitcher onPick: the stream picked in place of the one opened (nil = the one opened).
     @State private var switched: SwitchedStream?
+    /// Whether the stream was swapped in place (the kid switcher, a quality change): TrackMemory keys by the original release otherwise.
+    var switchedInPlace: Bool { switched != nil }
     struct SwitchedStream { var url: URL; var headers: [String: String] }
     /// TransportKids' subtitle toggle reads the subtitle tracks (refreshed while its chrome is up).
     @State private var kidSubs: [MPVPlayerController.Track] = []
@@ -84,7 +86,26 @@ struct PlayerScreen: View {
     @State private var panel: Panel?
     @State private var segments: [SkipSegment] = []
     @State private var segmentsLoadedFor: Double = 0
-    @State private var skippedIds: Set<String> = []
+    /// skip-pill-container.tsx autoSkippedRef: the segment already auto-skipped (never twice, even
+    /// when the viewer seeks back into it).
+    @State private var autoSkippedId: String?
+    /// The segment the last tick saw playing: auto-skip waits for a second tick inside it, so a
+    /// position read before a resume seek lands never skips the viewer away from their spot.
+    @State private var autoSkipSeen: String?
+    /// skip-pill-container.tsx autoHiddenKey / dismissedKeys / prevSkipKeyRef: the pill hidden after
+    /// skipButtonHideSec, or by its ✕, for the segment it belongs to.
+    @State private var skipAutoHiddenKey: String?
+    @State private var skipDismissedKeys: Set<String> = []
+    @State private var prevSkipKey: String?
+    @State private var skipHideTask: Task<Void, Never>?
+    /// use-still-watching.ts prompt: the auto-advance waits on "Still watching?".
+    @State private var stillPrompt = false
+    /// speed-menu.tsx rate (bridge setRate); a title starts at settings.defaultPlaybackSpeed.
+    @State private var rate: Double = 1
+    /// use-sleep-timer.ts: the app-wide sleep timer, on the Speed & sleep control's face.
+    @ObservedObject private var sleepTimer = SleepTimer.shared
+    /// lib/media-session.ts: this player's claim on Now Playing and the remote commands.
+    @State private var nowPlayingId = UUID()
 
     struct SkipSegment: Decodable, Identifiable {
         var kind: String       // "intro" | "outro" | "recap" | "ad" | ...
@@ -112,7 +133,7 @@ struct PlayerScreen: View {
         var seekForwardStepSec: Double = 10
     }
 
-    enum Panel { case audio, subtitles, anime4k, channels, kidsSources }
+    enum Panel { case audio, subtitles, anime4k, channels, kidsSources, homeServerQuality, speed }
     struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
@@ -134,6 +155,7 @@ struct PlayerScreen: View {
                 NativePlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                                  preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                                  preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                                 trackMemory: trackMemory,
                                  onStatus: { s in if engine == .native { status = s } },
                                  onEnded: { if engine == .native { endedNaturally() } },
                                  onUnsupported: { nativeUnsupported($0) },
@@ -141,6 +163,7 @@ struct PlayerScreen: View {
                                      guard engine == .native else { return }
                                      controller = c
                                      pipActive = false
+                                     applyRate(c)
                                      if resumePending != nil { c.setPaused(true) }
                                  },
                                  onPictureInPicture: { on in if engine == .native { pipChanged(on) } })
@@ -150,8 +173,9 @@ struct PlayerScreen: View {
                 MPVPlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                              trackMemory: trackMemory,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
-                              onReady: { controller = $0; pipActive = false; if resumePending != nil { $0.setPaused(true) } })
+                              onReady: { controller = $0; pipActive = false; applyRate($0); if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else {
@@ -162,19 +186,19 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading)
+                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading || stillPrompt)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
                     case .left: if isLive { controller?.seek(-10); wake() } else { nudgeSeek(ahead: false) }
                     case .right: if isLive { controller?.seek(10); wake() } else { nudgeSeek(ahead: true) }
-                    case .up where showUpNextCard: focus = .chip("upnext-keep")
-                    case .up where activeSegment != nil: focus = .chip("skip")
+                    case .up where showUpNextCard: StillWatching.reset(); focus = .chip("upnext-keep")
+                    case .up where activeSkip != nil: StillWatching.reset(); focus = .chip("skip")
                     default: wake()
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, !stillPrompt, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport
                 // (`kid && !pipMode`; TransportKids has no PiP control, so a kid never leaves for PiP).
                 Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
@@ -191,12 +215,18 @@ struct PlayerScreen: View {
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
             }
-            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive {
+            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt {
                 if showUpNextCard, let upNext {
                     upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let seg = activeSegment {
+                } else if let seg = activeSkip {
                     skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
                 }
+            }
+            // player.tsx StillWatchingPrompt: over everything but the Together room and PiP.
+            if stillPrompt, !roomOpen, !pipActive {
+                StillWatchingPrompt(show: context?.meta.name ?? title, nextLabel: stillWatchingNextLabel, focus: $focus,
+                                    onContinue: { continueWatching() }, onExit: { stopWatching() })
+                    .transition(.opacity)
             }
             if let panel {
                 panelView(panel).transition(panel == .anime4k ? AnyTransition.move(edge: .trailing).combined(with: .opacity) : AnyTransition.opacity)
@@ -217,9 +247,12 @@ struct PlayerScreen: View {
             }
             if pipActive { pipPlacard.transition(.opacity) }
         }
-        .onPlayPauseCommand { togglePause() }
+        // media-session.ts mediaKeyGate: a press that also reaches us as a remote command toggles once.
+        .onPlayPauseCommand { if VideoNowPlaying.shared.mediaKeyGate() { togglePause() } }
         .onExitCommand {
+            StillWatching.reset()
             if pipActive { controller?.stopPictureInPicture() }                 // back to the full picture first
+            else if stillPrompt { stopWatching() }                              // still-watching-prompt: Escape is Stop
             else if roomOpen { roomOpen = false; focus = .surface; wake() }   // the inline Watch Together room closes first (review 22)
             else if resumePending != nil { acknowledgeResume(true) }     // Back takes the default action (bp-resume-prompt)
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
@@ -227,14 +260,26 @@ struct PlayerScreen: View {
             else if kidsLoading { finish(natural: false) }                   // the kid loader's Cancel (onCancel closes, no leave dialog)
             else if noAudioWarning, engine == .native { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
             else if showUpNextCard { cancelAutoNext() }                     // bp-up-next: Back is "Keep watching"
-            else if focus == .chip("skip") { focus = .surface }
+            else if focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
             else if chrome { chrome = false }
             else { requestClose() }
         }
         // use-player-media: a torrent served by the TV's engine belongs to this player while it is
         // open, and is removed once it closes (TorrentEngine; a no-op for every other URL).
-        .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url) }
-        .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: switched?.url ?? url) }
+        .onAppear {
+            focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url)
+            SleepTimer.shared.playerOpened(url: url)
+            // use-sleep-timer.ts registerSleepFireHandler: a minutes timer running out pauses this player.
+            SleepTimer.shared.register(nowPlayingId) { sleepFired() }
+            beginNowPlaying()
+        }
+        .onDisappear {
+            SleepTimer.shared.unregister(nowPlayingId)
+            skipHideTask?.cancel()
+            // media-session.ts clearMediaControls before PlaybackState lets the music take Now Playing back.
+            VideoNowPlaying.shared.end(nowPlayingId)
+            PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: switched?.url ?? url)
+        }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         // The app now declares background audio for music; a film or channel still stops
         // when the viewer leaves the app (mpv would otherwise keep sounding), unless it is
@@ -253,6 +298,8 @@ struct PlayerScreen: View {
             if let x = context?.explicitStartSec, x > 0 { sec = x }
             else if let h = context?.homeServer, h.resumeSec > 0 { sec = h.resumeSec }
             if sec <= 5 { sec = 0 }
+            // use-track-autoload.ts: a title starts at settings.defaultPlaybackSpeed (live has no speed).
+            if !isLive, let r = slice.defaultPlaybackSpeed, r.isFinite, r > 0 { rate = r }
             if sec > 30, slice.resumePrompt ?? false, !isLive {
                 resumePending = sec
                 startAt = 0
@@ -264,6 +311,7 @@ struct PlayerScreen: View {
             do {
                 let loaded: PlayerPrefs = try await HarborEngine.shared.call("player.prefs", [profile?.id ?? "default", profile?.linked ?? true])
                 prefs = loaded
+                beginNowPlaying()   // the remote's skip intervals follow the seek steps
             } catch {}
         }
         .onReceive(tick) { _ in
@@ -290,15 +338,95 @@ struct PlayerScreen: View {
             scrobbleTick()
             together.tick(controller: controller, context: isLive ? nil : context, url: url)
             if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
+            skipTick()
+            nowPlayingTick()
         }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
         .animation(.easeOut(duration: 0.32), value: roomOpen)
     }
 
-    /// The segment the playhead is inside (skip-intro/index.ts activeSegment), unless already skipped.
-    private var activeSegment: SkipSegment? {
-        segments.first { $0.startSec <= snap.position && snap.position < $0.endSec - 1 && !skippedIds.contains($0.id) }
+    // MARK: skip pill (skip-pill-container.tsx, bp-skip-pill.tsx)
+
+    /// skip-intro/index.ts activeSegment: the segment the playhead is inside (realActiveSkip).
+    private var realActiveSkip: SkipSegment? {
+        segments.first { snap.position >= $0.startSec && snap.position < $0.endSec - 0.75 }
+    }
+
+    /// player.tsx hasNextEpisodeNow: there is an episode after this one ("Keep watching" aside).
+    private var hasNextEpisodeNow: Bool { upNext != nil && !isLive }
+
+    /// skip-pill-container syntheticOutro: inside the up-next lead, a title with no real outro gets
+    /// one that runs to the end.
+    private var syntheticOutro: SkipSegment? {
+        guard realActiveSkip == nil, hasNextEpisodeNow, snap.duration > 0, leadSec > 0 else { return nil }
+        let remaining = snap.duration - snap.position
+        guard remaining <= leadSec, remaining >= 0.5, !segments.contains(where: { isOutro($0) }) else { return nil }
+        return SkipSegment(kind: "outro", startSec: max(0, snap.duration - leadSec), endSec: snap.duration, source: "chapters")
+    }
+
+    /// skip-pill-container buttonKey: the real segment the pill is showing, when showSkipButton is on.
+    private var skipButtonKey: String? {
+        guard let seg = realActiveSkip, SettingsBridge.shared.slice.showSkipButton ?? true else { return nil }
+        return "\(seg.kind):\(Int(seg.startSec.rounded())):\(Int(seg.endSec.rounded()))"
+    }
+
+    /// skip-pill-container displaySkip: the real segment, unless showSkipButton is off or its pill
+    /// was hidden (skipButtonHideSec ran out, or the viewer pressed its ✕).
+    private var displaySkip: SkipSegment? {
+        guard let key = skipButtonKey, key != skipAutoHiddenKey, !skipDismissedKeys.contains(key) else { return nil }
+        return realActiveSkip
+    }
+
+    /// skip-pill-container activeSkip: what the pill (or the up-next card) is about.
+    private var activeSkip: SkipSegment? { displaySkip ?? syntheticOutro }
+
+    /// player.tsx allowAutoSkip = !roomGuest: in a Watch Together room only the host auto-skips.
+    private var allowAutoSkip: Bool { !(together.inRoom && !together.isHost) }
+
+    /// skip-pill-container.tsx effects on the 1 s tick: auto-skip (autoSkipIntro / Recap / Outro / Ad,
+    /// once per segment), then the pill's skipButtonHideSec timer, keyed to the segment it shows.
+    private func skipTick() {
+        let s = SettingsBridge.shared.slice
+        let playingIn = status.state == "playing" && resumePending == nil ? realActiveSkip : nil
+        if allowAutoSkip, let seg = playingIn, autoSkippedId != seg.id, autoSkipSeen == seg.id {
+            let want = (seg.kind == "intro" && (s.autoSkipIntro ?? false))
+                || (seg.kind == "recap" && (s.autoSkipRecap ?? false))
+                || (isOutro(seg) && (s.autoSkipOutro ?? false))
+                || (seg.kind == "ad" && (s.autoSkipAd ?? false))
+            if want {
+                autoSkippedId = seg.id
+                skipTo(seg.endSec)
+            }
+        }
+        autoSkipSeen = playingIn?.id
+        let key = skipButtonKey
+        if key != prevSkipKey {
+            // prevSkipKeyRef: the segment we left gets its pill back if the viewer returns to it.
+            if let previous = prevSkipKey {
+                if skipAutoHiddenKey == previous { skipAutoHiddenKey = nil }
+                skipDismissedKeys.remove(previous)
+            }
+            prevSkipKey = key
+            skipHideTask?.cancel()
+            let hideSec = s.skipButtonHideSec ?? 0
+            if let key, hideSec > 0 {
+                skipHideTask = Task {
+                    try? await Task.sleep(for: .seconds(hideSec))
+                    if !Task.isCancelled { skipAutoHiddenKey = key }
+                }
+            }
+        }
+        // A pill that went away takes the ring back to the stage.
+        if activeSkip == nil, focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
+    }
+
+    /// player-overlay-layers onSkip = seekTo: through the Watch Together room when in one.
+    private func skipTo(_ sec: Double) {
+        let target = snap.duration > 0 ? min(sec, snap.duration) : sec
+        if together.interceptSeek(to: target, controller: controller) { return }
+        controller?.seek(to: target)
+        snap.position = target
     }
 
     /// AniSkip / SkipDB / TheIntroDB / IntroDB App / chapters through the engine (lib/skip-intro).
@@ -311,20 +439,31 @@ struct PlayerScreen: View {
                      "imdbSeason": .number(Double(s)), "imdbEpisode": .number(Double(context.episode ?? 1))])
         } ?? .null
         let segs: [SkipSegment] = (try? await HarborEngine.shared.call("skip.segments", [p?.id ?? "default", p?.linked ?? true, context.meta, ep, snap.duration])) ?? []
+        // skip-pill-container: new segments start over (auto-skip memory, hidden pills).
+        if segs.map(\.id) != segments.map(\.id) {
+            autoSkippedId = nil
+            skipAutoHiddenKey = nil
+            skipDismissedKeys = []
+            prevSkipKey = nil
+            skipHideTask?.cancel()
+        }
         segments = segs
     }
 
+    /// bp-skip-pill isOutroNext: an outro with an episode after it reads "Next Episode" and plays it.
+    private func isOutroNext(_ seg: SkipSegment) -> Bool { isOutro(seg) && hasNextEp && leadSec > 0 }
+
     private func skipPill(_ seg: SkipSegment) -> some View {
-        // bp-skip-pill: an outro with an episode after it reads "Next Episode" and plays it.
-        let outroNext = isOutro(seg) && hasNextEp && leadSec > 0
+        let outroNext = isOutroNext(seg)
+        // bp-skip-pill onDismiss: a real segment's pill carries a ✕ ("Hide this Skip button").
+        let dismissKey = displaySkip != nil && !outroNext ? skipButtonKey : nil
         return VStack {
             Spacer()
-            HStack {
+            HStack(spacing: BP.px(10)) {
                 Spacer()
                 Button {
                     if outroNext { playNext(); return }
-                    skippedIds.insert(seg.id)
-                    controller?.seek(to: seg.endSec)
+                    skipTo(seg.endSec)
                     wake()
                 } label: {
                     HStack(spacing: BP.px(8)) {
@@ -338,7 +477,24 @@ struct PlayerScreen: View {
                 }
                 .buttonStyle(.plain)
                 .focused($focus, equals: .chip("skip"))
+                if let dismissKey {
+                    Button {
+                        skipDismissedKeys.insert(dismissKey)
+                        focus = .surface
+                        wake()
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: BP.px(14), weight: .bold))
+                            .foregroundStyle(BP.inkSubtle)
+                            .padding(BP.px(12))
+                            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.void_.opacity(0.92)))
+                            .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .focused($focus, equals: .chip("skip-dismiss"))
+                    .accessibilityLabel(Text(T("Hide this Skip button")))
+                }
             }
+            .focusSection()
             .padding(.bottom, chrome ? BP.px(300) : BP.px(40)).padding(.trailing, BP.gutter)
         }
         .ignoresSafeArea()
@@ -359,16 +515,15 @@ struct PlayerScreen: View {
     }
     private func isOutro(_ seg: SkipSegment) -> Bool { seg.kind == "outro" || seg.kind == "credits" }
 
-    /// The card shows inside the lead: over a real outro segment, or as the synthetic outro when the
-    /// title has none (skip-pill-container syntheticOutro).
+    /// bp-skip-pill asUpNext: the pill turns into the up-next card inside the lead, over a real
+    /// outro or the synthetic one. A real outro whose pill is hidden (or showSkipButton off) shows neither.
     private var showUpNextCard: Bool {
-        guard hasNextEp, leadSec > 0, snap.duration > 0, remainingSec > 0, remainingSec <= leadSec else { return false }
-        if let seg = activeSegment { return isOutro(seg) }
-        return remainingSec >= 0.5 && !segments.contains { isOutro($0) }
+        guard let seg = activeSkip, isOutroNext(seg) else { return false }
+        return remainingSec > 0 && remainingSec <= leadSec
     }
 
     /// use-episode-navigation goToEpisode: the caller opens the next episode's picker with instant play.
-    private func playNext() { finish(natural: false, advance: true) }
+    private func playNext() { StillWatching.reset(); finish(natural: false, advance: true) }
 
     private func cancelAutoNext() {
         autoNextCancelled = true
@@ -379,8 +534,42 @@ struct PlayerScreen: View {
     /// use-auto-next-episode.ts: at a natural end the next episode follows unless the viewer chose
     /// "Keep watching", autoPlayNextEpisode is off, or the file is a stub (under 150 s).
     private func endedNaturally() {
-        let advance = upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
+        guard !stillPrompt else { return }
+        // use-sleep-timer.ts: "End of episode" (or the last of "End of next episode") stops here.
+        let sleepStops = SleepTimer.shared.episodeEnded()
+        let advance = !sleepStops && upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
+        // player.tsx autoAdvance → use-still-watching gateAdvance: enough episodes in a row with no
+        // press asks "Still watching?" instead of moving on.
+        let s = SettingsBridge.shared.slice
+        if advance, StillWatching.gate(enabled: s.stillWatching ?? false, threshold: Int((s.stillWatchingAfter ?? 3).rounded())) {
+            stillPrompt = true
+            hideTask?.cancel()
+            chrome = false
+            if panel != nil { panel = nil }
+            focusLater(.chip("still-continue"))
+            return
+        }
         finish(natural: true, advance: advance)
+    }
+
+    /// still-watching-prompt "S{season} E{episode}" of the episode that would play next.
+    private var stillWatchingNextLabel: String? {
+        guard context?.season != nil, let upNext else { return nil }
+        return upNext.components(separatedBy: " · ").first
+    }
+
+    /// use-still-watching continueWatching: the count starts over and the next episode plays.
+    private func continueWatching() {
+        StillWatching.reset()
+        stillPrompt = false
+        finish(natural: true, advance: true)
+    }
+
+    /// use-still-watching stopWatching: the count starts over and the player closes.
+    private func stopWatching() {
+        StillWatching.reset()
+        stillPrompt = false
+        finish(natural: true, advance: false)
     }
 
     /// bp-up-next.tsx BpUpNext: the next episode, a countdown ring, "Play now" and "Keep watching".
@@ -459,7 +648,7 @@ struct PlayerScreen: View {
                     if let s = shownSubtitle { Text(s).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
                 }
                 Spacer()
-                Text(status.state == "loading" ? "Loading…" : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
+                Text(status.state == "loading" ? T("Loading…") : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
                     .font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle)
             }
             if !isLive {
@@ -488,6 +677,9 @@ struct PlayerScreen: View {
                 chip("Back", "chevron.left") { requestClose() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
+                // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
+                chip(speedChipLabel, sleepTimer.isActive ? "clock" : "speedometer", id: "speed",
+                     active: sleepTimer.isActive || (!isLive && abs(rate - 1) > 0.01)) { open(.speed) }
                 // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
                 // mpv cannot, so the control is not there on that engine.
                 if controller?.supportsPictureInPicture == true {
@@ -495,6 +687,8 @@ struct PlayerScreen: View {
                 }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
+                // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
+                if !isLive, context?.homeServer != nil { chip("Quality", "speedometer", id: "hsquality") { open(.homeServerQuality) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
                 if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
                 // use-player-hotkeys playerPrevChannel: back to the last channel watched.
@@ -664,14 +858,14 @@ struct PlayerScreen: View {
                 ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                     Button { setAnime4k(o.0) } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack { Text(o.1).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark") } }
-                            Text(o.2).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                            HStack { Text(T(o.1)).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark") } }
+                            Text(T(o.2)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BPActionStyle(primary: current == o.0))
                     .focused($focus, equals: .track(-10 - i))
                 }
-                if let a = anime4k, a.active { BPNote(text: "Running mode \(a.mode ?? "") (\(a.tier == "fast" ? "fast" : "HQ")). Stutter? Switch the tier to Fast in Settings.") }
+                if let a = anime4k, a.active { BPNote(text: T("Running mode %@ (%@). Stutter? Switch the tier to Fast in Settings.", a.mode ?? "", a.tier == "fast" ? T("Fast") : "HQ")) }
                 if let n = anime4kNote { BPNote(text: n, tone: BP.danger) }
                 if !Anime4KStore.shared.installed { BPNote(text: "The shaders download on first use (about 3 MB).") }
             }
@@ -696,11 +890,18 @@ struct PlayerScreen: View {
             if let liveGuide {
                 LivePlayerGuidePanel(model: liveGuide, current: currentChannel, onPick: { tune($0) }, onClose: { closePanel() })
             }
+        case .homeServerQuality:
+            if let h = context?.homeServer {
+                HomeServerQualityPanel(session: h, positionSec: snap.position, playing: !snap.paused,
+                                       onSwitched: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
+            }
         case .kidsSources:
             if let context {
                 KidsStreamSwitcher(meta: context.meta, episode: kidsEpisode(context), currentURL: playURL,
                                    onPicked: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
             }
+        case .speed:
+            PlayerSpeedPanel(rate: rate, isLive: isLive, onRate: { setRate($0) }, onClose: { closePanel() })
         }
     }
 
@@ -731,7 +932,7 @@ struct PlayerScreen: View {
     /// switched video, a retry or a new source starts it again), never over the resume fork, an
     /// error, a live channel (its own card) or the Together room.
     private var kidsLoading: Bool {
-        guard isKid, !isLive, !roomOpen, !pipActive, resumePending == nil else { return false }
+        guard isKid, !isLive, !roomOpen, !pipActive, resumePending == nil, !stillPrompt else { return false }
         return status.state == "idle" || status.state == "loading"
     }
 
@@ -779,8 +980,8 @@ struct PlayerScreen: View {
     private func toggleKidSubtitles() {
         guard let c = controller else { return }
         let subs = c.tracks().filter { $0.type == "sub" }
-        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub") }
-        else if let first = subs.first { c.select(track: first, type: "sub") }
+        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub"); c.rememberSubtitle(nil) }
+        else if let first = subs.first { c.select(track: first, type: "sub"); c.rememberSubtitle(first) }
         kidSubs = c.tracks().filter { $0.type == "sub" }
     }
 
@@ -913,7 +1114,7 @@ struct PlayerScreen: View {
                 // bp-connecting with a torrent: bp-p2p-status's stage, readiness and peers/speed.
                 TorrentReadout(url: playURL)
             } else {
-                Text(elapsed >= 22 ? "Still looking. Some sources take a while to answer." : "The player is opening the stream. \(elapsed) s").font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+                Text(elapsed >= 22 ? T("Still looking. Some sources take a while to answer.") : T("The player is opening the stream. %lld s", elapsed)).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
             }
             if elapsed >= 8 {
                 HStack(spacing: BP.px(10)) {
@@ -941,8 +1142,64 @@ struct PlayerScreen: View {
     }
 
     private func wake() {
+        // use-still-watching.ts: any press in the player starts the episode count over.
+        StillWatching.reset()
         chrome = true
         scheduleHide()
+    }
+
+    // MARK: speed, sleep timer, Now Playing (speed-menu.tsx, use-sleep-timer.ts, lib/media-session.ts)
+
+    /// bridge setRate for a new engine: the rate this player is at (defaultPlaybackSpeed to start).
+    private func applyRate(_ c: any PlayerEngineControlling) {
+        if abs(rate - 1) > 0.001 { c.setRate(rate) }
+    }
+
+    /// speed-menu.tsx onRate.
+    private func setRate(_ value: Double) {
+        rate = value
+        controller?.setRate(value)
+    }
+
+    /// speed-menu.tsx trigger face: the sleep countdown while a timer is armed, else a changed rate.
+    private var speedChipLabel: String {
+        if let face = sleepTimer.faceLabel { return face }
+        if !isLive, abs(rate - 1) > 0.01 { return PlayerSpeedPanel.rateLabel(rate) }
+        return isLive ? "Sleep timer" : "Speed & sleep"
+    }
+
+    /// use-sleep-timer.ts fire handler (bridge.pause()); the chrome comes up so the pause shows.
+    private func sleepFired() {
+        controller?.setPaused(true)
+        if let c = controller { snap = c.snapshot() }
+        chrome = true
+        scheduleHide()
+    }
+
+    /// media-session.ts / use-keyboard-shortcuts.ts media keys: what the system's commands do here.
+    private func beginNowPlaying() {
+        var previous: (() -> Void)? = nil
+        if !isLive, let go = onPreviousEpisode { previous = { finish(natural: false); go() } }
+        var next: (() -> Void)? = nil
+        if hasNextEpisodeNow { next = { playNext() } }
+        let actions = VideoNowPlaying.Actions(
+            isPlaying: { controller.map { !$0.snapshot().paused } ?? false },
+            toggle: { togglePause() },
+            seekStep: { delta in if isLive { controller?.seek(delta) } else { seekBy(delta) } },
+            seekTo: { sec in if !isLive { seekBy(sec - snap.position) } },
+            next: next,
+            previous: previous)
+        VideoNowPlaying.shared.begin(nowPlayingId, actions: actions, seekBack: prefs.seekBackStepSec, seekForward: prefs.seekForwardStepSec)
+    }
+
+    /// player.tsx updateMediaControls: title, "S1 E2 · name", art (backdrop, else poster; a
+    /// channel's logo), duration, position and whether it is playing.
+    private func nowPlayingTick() {
+        let playing = status.state == "playing" && (isLive || snap.position > 0.3)
+        let meta = context?.meta
+        let art = isLive ? currentChannel?.logo : (meta?.background ?? meta?.poster)
+        VideoNowPlaying.shared.update(nowPlayingId, playing: playing, title: shownTitle, subtitle: shownSubtitle, artURL: art,
+                                      durationSec: snap.duration, positionSec: snap.position, rate: rate, isLive: isLive)
     }
 
     private func scheduleHide() {
@@ -1249,6 +1506,7 @@ struct PlayerScreen: View {
                 await saveTick(flush: true)
             }
             if let context, context.homeServer != nil, let c = controller { await context.stopHomeServerSession(positionSec: c.snapshot().position) }
+            SleepTimer.shared.playerClosed(advancing: advance ?? natural)
             onClose(advance ?? natural)
             // The watched check on the tiles reads the flags this session just wrote.
             await CardMarksStore.shared.remark()

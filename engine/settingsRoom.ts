@@ -55,15 +55,34 @@ export function categories(profileId: string, linked: boolean) {
   };
 }
 
+/**
+ * Rows the TV leaves out. "controller" (tvNavigation) and "autoStart" (bigPictureAutoStart) are
+ * the desktop's way into Big Picture, which the TV always is; "hideWatched"
+ * (hideWatchedInCatalogs) is read only by the desktop's views/home.tsx, never by Big Picture.
+ */
+export const TV_HIDDEN_CONTROLS = new Set(["controller", "autoStart", "hideWatched"]);
+
+/**
+ * "Hardware acceleration" on the TV: mpv-tuning.ts turns "on" into hwdec=yes and "off" into
+ * hwdec=no, and "auto" leaves the platform's choice. On tvOS the only hardware decoder is
+ * VideoToolbox, so "on" and "auto" decode the same way (MPVPlayerController maps both to
+ * videotoolbox): the row offers Auto and Off, and a synced "on" reads as Auto.
+ */
+export function tvHwdec(value: string | undefined): "auto" | "off" {
+  return value === "off" ? "off" : "auto";
+}
+
 export function controls(id: BpCatId, profileId: string, linked: boolean): BpControl[] {
   const s = loadEffective(profileId, linked);
-  const out = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined");
+  const out = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined")
+    .filter((c) => !TV_HIDDEN_CONTROLS.has(c.id));
   // bp-settings.tsx:193-201: push rows report what is connected / how many playlists were added.
   const connected = bpConnectedNames(facts(s, profileId));
   const playlists = playlistCount();
   return out.map((c) => {
     // Service cells carry their brand tint so the TV can draw a chip without the SVG logo.
     // "Player engine": upstream's "html5" value selects the TV's AVPlayer engine (player.ts pickEngine).
+    if (c.kind === "options" && c.id === "hwdec") return { ...c, value: tvHwdec(s.mpvHwdec), options: c.options.filter((o) => o.value !== "on") };
     if (c.kind === "options" && c.id === "engine") return { ...c, options: c.options.map((o) => (o.value === "html5" ? { ...o, label: NATIVE_ENGINE_LABEL } : o)) };
     if (c.kind === "multi" && c.id === "service") return { ...c, items: c.items.map((i) => ({ ...i, tint: serviceBadge(i.value as StreamingService).tint })) };
     if (c.kind === "push" && c.pane === "connect" && connected.length > 0) return { ...c, detail: t("Connected: {list}", { list: connected.join(", ") }) };
@@ -71,6 +90,8 @@ export function controls(id: BpCatId, profileId: string, linked: boolean): BpCon
     return c;
   });
 }
+
+const PLAYBACK_SOURCE_MIGRATED = { _playbackSourcePreferenceV1: true, _playbackSourcePreferenceV2: true };
 
 /** bp-settings-commit.ts, without React: writes the settings blob and marks synced sections. */
 export function commit(id: string, value: string, profileId: string, linked: boolean): { ok: boolean; sportsShown: boolean } {
@@ -109,7 +130,10 @@ export function commit(id: string, value: string, profileId: string, linked: boo
     default: return { ok: false, sportsShown: getSportsConsentSnapshot().status !== "declined" };
   }
   if (Object.keys(patch).length > 0) {
-    persistEffective({ ...s, ...patch }, profileId, linked);
+    // load.ts re-runs its playbackSourcePreference migration (back to "online") on any blob saved
+    // without its two flags, which is what a store that began from DEFAULT writes: they ride along.
+    const migrated = "playbackSourcePreference" in patch || "preferredMediaServerId" in patch ? PLAYBACK_SOURCE_MIGRATED : {};
+    persistEffective({ ...s, ...patch, ...migrated } as Settings, profileId, linked);
     markSettingsPatched(Object.keys(patch));
     window.dispatchEvent(new CustomEvent("harbor:settings-updated", { detail: { profileId, fields: Object.keys(patch) } }));
   }
@@ -209,7 +233,7 @@ export function pane(profileId: string, linked: boolean) {
     playback: [
       [t("Player engine"), s.playerEngine === "auto" ? t("Auto") : s.playerEngine],
       [t("Play button behavior"), t(source === "ask" ? "Ask every time" : source === "local" ? "Local Library" : source === "online" ? "Online streams" : "Home server")],
-      [t("Hardware acceleration"), t(s.mpvHwdec === "auto" ? "Auto" : s.mpvHwdec === "on" ? "On" : "Off")],
+      [t("Hardware acceleration"), t(tvHwdec(s.mpvHwdec) === "auto" ? "Auto" : "Off")],
       [t("Skip intros"), t(s.autoSkipIntro ? "On" : "Off")],
       [t("Auto-play next episode"), t(s.autoPlayNextEpisode ? "On" : "Off")],
       [t("Instant play"), t(s.instantPlay ? "On" : "Off")],
@@ -220,9 +244,9 @@ export function pane(profileId: string, linked: boolean) {
       [t("Setup"), connected.length > 0 ? connected.join(", ") : t("None")],
     ],
     interface: [
+      // bp-settings-pane.tsx also lists Controller navigation and Open in Big Picture, the two
+      // desktop-only rows the TV leaves out (TV_HIDDEN_CONTROLS).
       [t("Interface sounds"), bpSoundLabel(t, s.bigPictureSound)],
-      [t("Controller navigation"), t(s.tvNavigation ? "On" : "Off")],
-      [t("Open in Big Picture"), t(s.bigPictureAutoStart ? "On" : "Off")],
     ],
   };
 }

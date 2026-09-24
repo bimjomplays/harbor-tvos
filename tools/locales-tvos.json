@@ -886,5 +886,310 @@
     "tr": "Bir eklentiyi almak için üzerinde Seç'e basın, Yukarı ve Aşağı ile taşıyın, bırakmak için yeniden Seç'e basın.",
     "vi": "Nhấn Chọn trên một tiện ích để nhấc lên, di chuyển bằng Lên và Xuống, rồi nhấn Chọn lần nữa để thả.",
     "zh": "在插件上按选择键拿起它，用上下键移动，再按一次选择键放下。"
+  },
+
+  "_coverage4": "Translation coverage 4: Music copy whose MusicCopy key upstream's catalogs lack (looked up by its English through T()), the room's own copy, and the player.",
+  "Top result": {
+    "ar": "أفضل نتيجة", "de": "Top-Ergebnis", "es": "Mejor resultado", "fr": "Meilleur résultat", "hi": "शीर्ष परिणाम", "id": "Hasil teratas",
+    "it": "Risultato principale", "ja": "トップの結果", "ko": "최상위 결과", "pl": "Najlepszy wynik", "pt": "Melhor resultado", "ru": "Лучший результат",
+    "tr": "En iyi sonuç", "vi": "Kết quả hàng đầu", "zh": "最佳结果"
+  },
+  "Radio": {
+    "ar": "راديو", "de": "Radio", "es": "Radio", "fr": "Radio", "hi": "रेडियो", "id": "Radio", "it": "Radio", "ja": "ラジオ", "ko": "라디오", "pl": "Radio",
+    "pt": "Rádio", "ru": "Радио", "tr": "Radyo", "vi": "Radio", "zh": "电台"
+  },
+  "Start radio": {
+    "ar": "بدء الراديو", "de": "Radio starten", "es": "Iniciar radio", "fr": "Lancer la radio", "hi": "रेडियो शुरू करें", "id": "Mulai radio",
+    "it": "Avvia radio", "ja": "ラジオを開始", "ko": "라디오 시작", "pl": "Uruchom radio", "pt": "Iniciar rádio", "ru": "Запустить радио", "tr": "Radyoyu başlat",
+    "vi": "Bắt đầu radio", "zh": "开始电台"
+  },
+  "Finding a source for this": {
+    "ar": "جارٍ البحث عن مصدر لهذا المقطع", "de": "Quelle dafür wird gesucht", "es": "Buscando una fuente para esto",
+    "fr": "Recherche d’une source pour ce titre", "hi": "इसके लिए स्रोत खोजा जा रहा है", "id": "Mencari sumber untuk ini",
+    "it": "Ricerca di una fonte per questo brano", "ja": "再生元を探しています", "ko": "재생할 소스를 찾는 중", "pl": "Szukanie źródła dla tego utworu",
+    "pt": "Procurando uma fonte para isto", "ru": "Ищем источник для этого трека", "tr": "Bunun için kaynak aranıyor",
+    "vi": "Đang tìm nguồn phát cho bài này", "zh": "正在为此查找音源"
+  },
+  "Everything Harbor can play music from": {
+    "ar": "كل ما يمكن لـ Harbor تشغيل الموسيقى منه", "de": "Alles, woraus Harbor Musik abspielen kann",
+    "es": "Todo desde donde Harbor puede reproducir música", "fr": "Tout ce depuis quoi Harbor peut lire de la musique",
+    "hi": "वे सभी जगहें जहाँ से Harbor संगीत चला सकता है", "id": "Semua tempat Harbor dapat memutar musik",
+    "it": "Tutto ciò da cui Harbor può riprodurre musica", "ja": "Harborが音楽を再生できるすべてのソース", "ko": "Harbor가 음악을 재생할 수 있는 모든 곳",
+    "pl": "Wszystko, z czego Harbor może odtwarzać muzykę", "pt": "Tudo de onde o Harbor pode tocar música",
+    "ru": "Всё, откуда Harbor может воспроизводить музыку", "tr": "Harbor'ın müzik çalabildiği tüm kaynaklar", "vi": "Mọi nơi Harbor có thể phát nhạc",
+    "zh": "Harbor 可以播放音乐的所有来源"
+  },
+  "Point Harbor at a folder, Plex, Jellyfin, Navidrome or Subsonic and this shelf fills with albums you already own.": {
+    "ar": "وجّه Harbor إلى مجلد أو Plex أو Jellyfin أو Navidrome أو Subsonic، وسيمتلئ هذا الرف بالألبومات التي تملكها بالفعل.",
+    "de": "Verweise Harbor auf einen Ordner, Plex, Jellyfin, Navidrome oder Subsonic, und dieses Regal füllt sich mit Alben, die du bereits besitzt.",
+    "es": "Dirige Harbor a una carpeta, Plex, Jellyfin, Navidrome o Subsonic y este estante se llenará con los álbumes que ya tienes.",
+    "fr": "Indiquez à Harbor un dossier, Plex, Jellyfin, Navidrome ou Subsonic, et cette étagère se remplira des albums que vous possédez déjà.",
+    "hi": "Harbor को किसी फ़ोल्डर, Plex, Jellyfin, Navidrome या Subsonic से जोड़ें, और यह शेल्फ़ आपके पहले से मौजूद एल्बमों से भर जाएगी।",
+    "id": "Arahkan Harbor ke folder, Plex, Jellyfin, Navidrome, atau Subsonic, dan rak ini akan terisi album yang sudah Anda miliki.",
+    "it": "Indica a Harbor una cartella, Plex, Jellyfin, Navidrome o Subsonic e questo scaffale si riempirà degli album che possiedi già.",
+    "ja": "Harborにフォルダ、Plex、Jellyfin、Navidrome、Subsonicのいずれかを指定すると、この棚にお持ちのアルバムが並びます。",
+    "ko": "Harbor에 폴더, Plex, Jellyfin, Navidrome 또는 Subsonic을 지정하면 이 선반이 이미 가지고 있는 앨범으로 채워집니다.",
+    "pl": "Wskaż Harborowi folder, Plex, Jellyfin, Navidrome lub Subsonic, a ta półka wypełni się albumami, które już masz.",
+    "pt": "Aponte o Harbor para uma pasta, Plex, Jellyfin, Navidrome ou Subsonic e esta estante se enche com os álbuns que você já tem.",
+    "ru": "Укажите Harbor папку, Plex, Jellyfin, Navidrome или Subsonic — и эта полка заполнится альбомами, которые у вас уже есть.",
+    "tr": "Harbor'ı bir klasöre ya da Plex, Jellyfin, Navidrome veya Subsonic sunucusuna yönlendirin; bu raf sahip olduğunuz albümlerle dolar.",
+    "vi": "Trỏ Harbor tới một thư mục, Plex, Jellyfin, Navidrome hoặc Subsonic và kệ này sẽ đầy những album bạn đã có.",
+    "zh": "将 Harbor 指向一个文件夹、Plex、Jellyfin、Navidrome 或 Subsonic，这一栏就会显示你已拥有的专辑。"
+  },
+  "Connected as {account}": {
+    "ar": "متصل باسم {account}", "de": "Verbunden als {account}", "es": "Conectado como {account}", "fr": "Connecté en tant que {account}",
+    "hi": "{account} के रूप में कनेक्टेड", "id": "Terhubung sebagai {account}", "it": "Collegato come {account}", "ja": "{account}として接続済み",
+    "ko": "{account}(으)로 연결됨", "pl": "Połączono jako {account}", "pt": "Conectado como {account}", "ru": "Подключено как {account}",
+    "tr": "{account} olarak bağlandı", "vi": "Đã kết nối với tên {account}", "zh": "已以 {account} 的身份连接"
+  },
+  "Connect {name}": {
+    "ar": "ربط {name}", "de": "{name} verbinden", "es": "Conectar {name}", "fr": "Connecter {name}", "hi": "{name} से कनेक्ट करें", "id": "Hubungkan {name}",
+    "it": "Collega {name}", "ja": "{name}に接続", "ko": "{name} 연결", "pl": "Połącz z {name}", "pt": "Conectar {name}", "ru": "Подключить {name}",
+    "tr": "{name} bağla", "vi": "Kết nối {name}", "zh": "连接 {name}"
+  },
+  "Could not connect. {error}": {
+    "ar": "تعذّر الاتصال. {error}", "de": "Verbindung fehlgeschlagen. {error}", "es": "No se pudo conectar. {error}", "fr": "Connexion impossible. {error}",
+    "hi": "कनेक्ट नहीं हो सका। {error}", "id": "Tidak dapat terhubung. {error}", "it": "Impossibile connettersi. {error}", "ja": "接続できませんでした。{error}",
+    "ko": "연결할 수 없습니다. {error}", "pl": "Nie udało się połączyć. {error}", "pt": "Não foi possível conectar. {error}",
+    "ru": "Не удалось подключиться. {error}", "tr": "Bağlanılamadı. {error}", "vi": "Không thể kết nối. {error}", "zh": "无法连接。{error}"
+  },
+  "Sign in to {name} under Settings › Home servers; its music library appears here.": {
+    "ar": "سجّل الدخول إلى {name} من الإعدادات › الخوادم المنزلية، وستظهر مكتبة الموسيقى الخاصة به هنا.",
+    "de": "Melde dich unter Einstellungen › Heimserver bei {name} an; die Musikbibliothek erscheint dann hier.",
+    "es": "Inicia sesión en {name} en Configuración › Servidores domésticos; su biblioteca de música aparecerá aquí.",
+    "fr": "Connectez-vous à {name} dans Paramètres › Serveurs personnels ; sa bibliothèque musicale apparaîtra ici.",
+    "hi": "सेटिंग्स › होम सर्वर में {name} में साइन इन करें; उसकी संगीत लाइब्रेरी यहाँ दिखेगी।",
+    "id": "Masuk ke {name} di Pengaturan › Server rumah; perpustakaan musiknya akan muncul di sini.",
+    "it": "Accedi a {name} in Impostazioni › Server domestici; la sua libreria musicale apparirà qui.",
+    "ja": "設定 › ホームサーバーで{name}にサインインすると、その音楽ライブラリがここに表示されます。", "ko": "설정 › 홈 서버에서 {name}에 로그인하면 해당 음악 보관함이 여기에 표시됩니다.",
+    "pl": "Zaloguj się do {name} w Ustawienia › Serwery domowe; jego biblioteka muzyczna pojawi się tutaj.",
+    "pt": "Entre no {name} em Configurações › Servidores domésticos; a biblioteca de música dele aparece aqui.",
+    "ru": "Войдите в {name} в разделе Настройки › Домашние серверы — его музыкальная библиотека появится здесь.",
+    "tr": "Ayarlar › Ev sunucuları bölümünden {name} hesabına giriş yapın; müzik kitaplığı burada görünür.",
+    "vi": "Đăng nhập {name} trong Cài đặt › Máy chủ gia đình; thư viện nhạc của máy chủ sẽ hiện ở đây.", "zh": "在“设置 › 家庭服务器”中登录 {name}，其音乐库就会显示在这里。"
+  },
+  "Charts, new releases and search from Deezer, ListenBrainz and Apple’s public catalog. Songs play from a connected source.": {
+    "ar": "قوائم الأكثر استماعًا والإصدارات الجديدة والبحث من Deezer وListenBrainz وكتالوج Apple العام. تُشغَّل الأغاني من مصدر متصل.",
+    "de": "Charts, Neuerscheinungen und Suche aus Deezer, ListenBrainz und Apples öffentlichem Katalog. Songs werden über eine verbundene Quelle abgespielt.",
+    "es": "Listas de éxitos, novedades y búsqueda de Deezer, ListenBrainz y el catálogo público de Apple. Las canciones se reproducen desde una fuente conectada.",
+    "fr": "Classements, nouveautés et recherche depuis Deezer, ListenBrainz et le catalogue public d’Apple. Les morceaux sont lus depuis une source connectée.",
+    "hi": "Deezer, ListenBrainz और Apple के सार्वजनिक कैटलॉग से चार्ट, नई रिलीज़ और खोज। गाने किसी कनेक्ट किए गए स्रोत से चलते हैं।",
+    "id": "Tangga lagu, rilisan baru, dan pencarian dari Deezer, ListenBrainz, dan katalog publik Apple. Lagu diputar dari sumber yang terhubung.",
+    "it": "Classifiche, nuove uscite e ricerca da Deezer, ListenBrainz e dal catalogo pubblico di Apple. I brani vengono riprodotti da una fonte collegata.",
+    "ja": "Deezer、ListenBrainz、Appleの公開カタログからのチャート、新作、検索。曲は接続済みのソースから再生されます。",
+    "ko": "Deezer, ListenBrainz, Apple 공개 카탈로그의 차트, 신규 발매, 검색. 노래는 연결된 소스에서 재생됩니다.",
+    "pl": "Listy przebojów, nowości i wyszukiwanie z Deezer, ListenBrainz i publicznego katalogu Apple. Utwory są odtwarzane z połączonego źródła.",
+    "pt": "Paradas, lançamentos e busca do Deezer, ListenBrainz e do catálogo público da Apple. As músicas tocam a partir de uma fonte conectada.",
+    "ru": "Чарты, новинки и поиск из Deezer, ListenBrainz и публичного каталога Apple. Песни воспроизводятся из подключённого источника.",
+    "tr": "Deezer, ListenBrainz ve Apple'ın herkese açık kataloğundan listeler, yeni çıkanlar ve arama. Şarkılar bağlı bir kaynaktan çalınır.",
+    "vi": "Bảng xếp hạng, bản phát hành mới và tìm kiếm từ Deezer, ListenBrainz và danh mục công khai của Apple. Bài hát được phát từ một nguồn đã kết nối.",
+    "zh": "来自 Deezer、ListenBrainz 和 Apple 公共目录的排行榜、新发行和搜索。歌曲从已连接的音源播放。"
+  },
+  "I have read this": {
+    "ar": "لقد قرأت هذا", "de": "Ich habe das gelesen", "es": "Lo he leído", "fr": "J’ai lu ce texte", "hi": "मैंने इसे पढ़ लिया है",
+    "id": "Saya sudah membaca ini", "it": "Ho letto", "ja": "読みました", "ko": "모두 읽었습니다", "pl": "Przeczytano", "pt": "Li este texto", "ru": "Прочитано",
+    "tr": "Okudum", "vi": "Tôi đã đọc", "zh": "我已阅读"
+  },
+  "Scan the code with your phone to open the approval page.": {
+    "ar": "امسح الرمز بهاتفك لفتح صفحة الموافقة.", "de": "Scanne den Code mit dem Smartphone, um die Bestätigungsseite zu öffnen.",
+    "es": "Escanea el código con tu teléfono para abrir la página de aprobación.",
+    "fr": "Scannez le code avec votre téléphone pour ouvrir la page d’approbation.", "hi": "स्वीकृति पेज खोलने के लिए अपने फ़ोन से कोड स्कैन करें।",
+    "id": "Pindai kode dengan ponsel Anda untuk membuka halaman persetujuan.",
+    "it": "Scansiona il codice con il telefono per aprire la pagina di approvazione.", "ja": "スマートフォンでコードをスキャンして承認ページを開いてください。",
+    "ko": "휴대폰으로 코드를 스캔해 승인 페이지를 여세요.", "pl": "Zeskanuj kod telefonem, aby otworzyć stronę zatwierdzania.",
+    "pt": "Leia o código com o celular para abrir a página de aprovação.", "ru": "Отсканируйте код телефоном, чтобы открыть страницу подтверждения.",
+    "tr": "Onay sayfasını açmak için kodu telefonunuzla tarayın.", "vi": "Quét mã bằng điện thoại để mở trang phê duyệt.", "zh": "用手机扫码打开授权页面。"
+  },
+  "Scan the code to open it on your phone.": {
+    "ar": "امسح الرمز لفتحه على هاتفك.", "de": "Scanne den Code, um es auf dem Smartphone zu öffnen.",
+    "es": "Escanea el código para abrirlo en tu teléfono.", "fr": "Scannez le code pour l’ouvrir sur votre téléphone.",
+    "hi": "इसे अपने फ़ोन पर खोलने के लिए कोड स्कैन करें।", "id": "Pindai kode untuk membukanya di ponsel Anda.",
+    "it": "Scansiona il codice per aprirlo sul telefono.", "ja": "コードをスキャンしてスマートフォンで開いてください。", "ko": "코드를 스캔해 휴대폰에서 여세요.",
+    "pl": "Zeskanuj kod, aby otworzyć to na telefonie.", "pt": "Leia o código para abrir no celular.", "ru": "Отсканируйте код, чтобы открыть на телефоне.",
+    "tr": "Telefonunuzda açmak için kodu tarayın.", "vi": "Quét mã để mở trên điện thoại.", "zh": "扫码即可在手机上打开。"
+  },
+  "Scan the code with your phone and sign in with your Spotify Premium account.": {
+    "ar": "امسح الرمز بهاتفك وسجّل الدخول بحساب Spotify Premium.",
+    "de": "Scanne den Code mit dem Smartphone und melde dich mit deinem Spotify-Premium-Konto an.",
+    "es": "Escanea el código con tu teléfono e inicia sesión con tu cuenta de Spotify Premium.",
+    "fr": "Scannez le code avec votre téléphone et connectez-vous avec votre compte Spotify Premium.",
+    "hi": "अपने फ़ोन से कोड स्कैन करें और अपने Spotify Premium खाते से साइन इन करें।",
+    "id": "Pindai kode dengan ponsel Anda dan masuk dengan akun Spotify Premium Anda.",
+    "it": "Scansiona il codice con il telefono e accedi con il tuo account Spotify Premium.", "ja": "スマートフォンでコードをスキャンし、Spotify Premiumアカウントでサインインしてください。",
+    "ko": "휴대폰으로 코드를 스캔하고 Spotify Premium 계정으로 로그인하세요.", "pl": "Zeskanuj kod telefonem i zaloguj się na konto Spotify Premium.",
+    "pt": "Leia o código com o celular e entre com sua conta Spotify Premium.", "ru": "Отсканируйте код телефоном и войдите с аккаунтом Spotify Premium.",
+    "tr": "Kodu telefonunuzla tarayın ve Spotify Premium hesabınızla giriş yapın.",
+    "vi": "Quét mã bằng điện thoại và đăng nhập bằng tài khoản Spotify Premium của bạn.", "zh": "用手机扫码，并使用你的 Spotify Premium 账号登录。"
+  },
+  "Spotify then sends your phone to an address starting with {uri} that does not open. Copy that whole address and paste it below.": {
+    "ar": "بعد ذلك يوجّه Spotify هاتفك إلى عنوان يبدأ بـ {uri} لا يُفتح. انسخ هذا العنوان كاملًا والصقه أدناه.",
+    "de": "Spotify leitet dein Smartphone danach zu einer Adresse weiter, die mit {uri} beginnt und sich nicht öffnet. Kopiere die ganze Adresse und füge sie unten ein.",
+    "es": "Después, Spotify lleva tu teléfono a una dirección que empieza por {uri} y que no se abre. Copia esa dirección completa y pégala abajo.",
+    "fr": "Spotify redirige ensuite votre téléphone vers une adresse commençant par {uri} qui ne s’ouvre pas. Copiez cette adresse en entier et collez-la ci-dessous.",
+    "hi": "इसके बाद Spotify आपके फ़ोन को {uri} से शुरू होने वाले एक पते पर भेजता है जो नहीं खुलता। वह पूरा पता कॉपी करें और नीचे पेस्ट करें।",
+    "id": "Lalu Spotify mengarahkan ponsel Anda ke alamat yang diawali {uri} yang tidak bisa dibuka. Salin seluruh alamat itu dan tempel di bawah.",
+    "it": "Spotify porta poi il telefono a un indirizzo che inizia con {uri} e che non si apre. Copia l'intero indirizzo e incollalo qui sotto.",
+    "ja": "その後、Spotifyはスマートフォンを{uri}で始まるアドレスに移動させますが、このページは開きません。そのアドレス全体をコピーして下に貼り付けてください。",
+    "ko": "그러면 Spotify가 휴대폰을 {uri}(으)로 시작하는 주소로 보내는데, 이 주소는 열리지 않습니다. 그 주소 전체를 복사해 아래에 붙여 넣으세요.",
+    "pl": "Następnie Spotify przekieruje telefon na adres zaczynający się od {uri}, który się nie otworzy. Skopiuj cały ten adres i wklej go poniżej.",
+    "pt": "Depois, o Spotify leva o celular para um endereço que começa com {uri} e não abre. Copie esse endereço inteiro e cole abaixo.",
+    "ru": "Затем Spotify перенаправит телефон на адрес, начинающийся с {uri}, который не откроется. Скопируйте этот адрес целиком и вставьте ниже.",
+    "tr": "Ardından Spotify telefonunuzu {uri} ile başlayan ve açılmayan bir adrese yönlendirir. Bu adresin tamamını kopyalayıp aşağıya yapıştırın.",
+    "vi": "Sau đó Spotify sẽ chuyển điện thoại tới một địa chỉ bắt đầu bằng {uri} nhưng không mở được. Hãy sao chép toàn bộ địa chỉ đó và dán vào bên dưới.",
+    "zh": "随后 Spotify 会将手机跳转到一个以 {uri} 开头、无法打开的地址。复制完整地址并粘贴到下方。"
+  },
+  "Address your phone ended on": {
+    "ar": "العنوان الذي انتهى إليه هاتفك", "de": "Adresse, bei der dein Smartphone gelandet ist", "es": "Dirección a la que llegó tu teléfono",
+    "fr": "Adresse sur laquelle votre téléphone s’est arrêté", "hi": "वह पता जिस पर आपका फ़ोन पहुँचा", "id": "Alamat terakhir di ponsel Anda",
+    "it": "Indirizzo su cui è arrivato il telefono", "ja": "スマートフォンが最後に開いたアドレス", "ko": "휴대폰이 마지막으로 도착한 주소", "pl": "Adres, na którym zatrzymał się telefon",
+    "pt": "Endereço em que o celular parou", "ru": "Адрес, на котором остановился телефон", "tr": "Telefonunuzun son açtığı adres",
+    "vi": "Địa chỉ cuối cùng trên điện thoại", "zh": "手机最终停留的地址"
+  },
+  "Anime4K · Mode {mode}": {
+    "ar": "Anime4K · الوضع {mode}", "de": "Anime4K · Modus {mode}", "es": "Anime4K · Modo {mode}", "fr": "Anime4K · Mode {mode}",
+    "hi": "Anime4K · मोड {mode}", "id": "Anime4K · Mode {mode}", "it": "Anime4K · Modalità {mode}", "ja": "Anime4K · モード{mode}", "ko": "Anime4K · 모드 {mode}",
+    "pl": "Anime4K · Tryb {mode}", "pt": "Anime4K · Modo {mode}", "ru": "Anime4K · Режим {mode}", "tr": "Anime4K · Mod {mode}",
+    "vi": "Anime4K · Chế độ {mode}", "zh": "Anime4K · 模式 {mode}"
+  },
+  "Anime4K auto": {
+    "ar": "Anime4K تلقائي", "de": "Anime4K automatisch", "es": "Anime4K automático", "fr": "Anime4K automatique", "hi": "Anime4K ऑटो",
+    "id": "Anime4K otomatis", "it": "Anime4K automatico", "ja": "Anime4K 自動", "ko": "Anime4K 자동", "pl": "Anime4K automatycznie", "pt": "Anime4K automático",
+    "ru": "Anime4K авто", "tr": "Anime4K otomatik", "vi": "Anime4K tự động", "zh": "Anime4K 自动"
+  },
+  "Anime4K shaders are not downloaded yet.": {
+    "ar": "لم يتم تنزيل مظللات Anime4K بعد.", "de": "Die Anime4K-Shader sind noch nicht heruntergeladen.",
+    "es": "Los shaders de Anime4K aún no se han descargado.", "fr": "Les nuanceurs Anime4K ne sont pas encore téléchargés.",
+    "hi": "Anime4K शेडर अभी डाउनलोड नहीं हुए हैं।", "id": "Shader Anime4K belum diunduh.", "it": "Gli shader Anime4K non sono ancora stati scaricati.",
+    "ja": "Anime4Kシェーダーはまだダウンロードされていません。", "ko": "Anime4K 셰이더가 아직 다운로드되지 않았습니다.", "pl": "Shadery Anime4K nie zostały jeszcze pobrane.",
+    "pt": "Os shaders do Anime4K ainda não foram baixados.", "ru": "Шейдеры Anime4K ещё не загружены.",
+    "tr": "Anime4K gölgelendiricileri henüz indirilmedi.", "vi": "Bộ đổ bóng Anime4K chưa được tải xuống.", "zh": "Anime4K 着色器尚未下载。"
+  },
+  "Shaders ready.": {
+    "ar": "المظللات جاهزة.", "de": "Shader bereit.", "es": "Shaders listos.", "fr": "Nuanceurs prêts.", "hi": "शेडर तैयार हैं।", "id": "Shader siap.",
+    "it": "Shader pronti.", "ja": "シェーダーの準備ができました。", "ko": "셰이더가 준비되었습니다.", "pl": "Shadery gotowe.", "pt": "Shaders prontos.", "ru": "Шейдеры готовы.",
+    "tr": "Gölgelendiriciler hazır.", "vi": "Bộ đổ bóng đã sẵn sàng.", "zh": "着色器已就绪。"
+  },
+  "Some shaders are still missing.": {
+    "ar": "لا تزال بعض المظللات مفقودة.", "de": "Einige Shader fehlen noch.", "es": "Todavía faltan algunos shaders.",
+    "fr": "Certains nuanceurs manquent encore.", "hi": "कुछ शेडर अभी भी नहीं हैं।", "id": "Beberapa shader masih belum ada.",
+    "it": "Mancano ancora alcuni shader.", "ja": "一部のシェーダーがまだありません。", "ko": "일부 셰이더가 아직 없습니다.", "pl": "Nadal brakuje niektórych shaderów.",
+    "pt": "Ainda faltam alguns shaders.", "ru": "Некоторых шейдеров всё ещё не хватает.", "tr": "Bazı gölgelendiriciler hâlâ eksik.",
+    "vi": "Vẫn còn thiếu một số bộ đổ bóng.", "zh": "仍缺少部分着色器。"
+  },
+  "Follows the Anime4K setting: anime only, or every title.": {
+    "ar": "يتبع إعداد Anime4K: الأنمي فقط، أو كل العناوين.", "de": "Folgt der Anime4K-Einstellung: nur Anime oder alle Titel.",
+    "es": "Sigue el ajuste de Anime4K: solo anime o todos los títulos.", "fr": "Suit le réglage Anime4K : anime uniquement, ou tous les titres.",
+    "hi": "Anime4K सेटिंग के अनुसार: सिर्फ़ एनिमे, या हर टाइटल।", "id": "Mengikuti pengaturan Anime4K: hanya anime, atau semua judul.",
+    "it": "Segue l'impostazione Anime4K: solo anime o tutti i titoli.", "ja": "Anime4Kの設定に従います（アニメのみ、またはすべての作品）。",
+    "ko": "Anime4K 설정을 따릅니다: 애니메이션만 또는 모든 작품.", "pl": "Zgodnie z ustawieniem Anime4K: tylko anime albo wszystkie tytuły.",
+    "pt": "Segue a configuração do Anime4K: só anime ou todos os títulos.", "ru": "Следует настройке Anime4K: только аниме или все тайтлы.",
+    "tr": "Anime4K ayarını izler: yalnızca anime veya tüm yapımlar.", "vi": "Theo cài đặt Anime4K: chỉ anime hoặc mọi nội dung.",
+    "zh": "遵循 Anime4K 设置：仅动漫，或所有作品。"
+  },
+  "No shaders for this title.": {
+    "ar": "بلا مظللات لهذا العنوان.", "de": "Keine Shader für diesen Titel.", "es": "Sin shaders para este título.", "fr": "Aucun nuanceur pour ce titre.",
+    "hi": "इस टाइटल के लिए कोई शेडर नहीं।", "id": "Tanpa shader untuk judul ini.", "it": "Nessuno shader per questo titolo.", "ja": "この作品ではシェーダーを使いません。",
+    "ko": "이 작품에는 셰이더를 사용하지 않습니다.", "pl": "Bez shaderów dla tego tytułu.", "pt": "Sem shaders para este título.", "ru": "Без шейдеров для этого тайтла.",
+    "tr": "Bu yapım için gölgelendirici yok.", "vi": "Không dùng bộ đổ bóng cho nội dung này.", "zh": "此作品不使用着色器。"
+  },
+  "Fast": {
+    "ar": "سريع", "de": "Schnell", "es": "Rápido", "fr": "Rapide", "hi": "तेज़", "id": "Cepat", "it": "Veloce", "ja": "高速", "ko": "빠름", "pl": "Szybki",
+    "pt": "Rápido", "ru": "Быстрый", "tr": "Hızlı", "vi": "Nhanh", "zh": "快速"
+  },
+  "Running mode {mode} ({tier}). Stutter? Switch the tier to Fast in Settings.": {
+    "ar": "يعمل الوضع {mode} ({tier}). هل يتقطّع التشغيل؟ غيّر المستوى إلى «سريع» في الإعدادات.",
+    "de": "Modus {mode} läuft ({tier}). Ruckelt es? Stelle die Stufe in den Einstellungen auf „Schnell“.",
+    "es": "Modo {mode} en ejecución ({tier}). ¿Tirones? Cambia el nivel a «Rápido» en Configuración.",
+    "fr": "Mode {mode} actif ({tier}). Des saccades ? Passez le niveau sur « Rapide » dans les paramètres.",
+    "hi": "मोड {mode} चल रहा है ({tier})। रुक-रुककर चल रहा है? सेटिंग्स में स्तर को “तेज़” पर करें।",
+    "id": "Mode {mode} berjalan ({tier}). Tersendat? Ubah tingkat ke Cepat di Pengaturan.",
+    "it": "Modalità {mode} attiva ({tier}). Scatti? Imposta il livello su Veloce nelle Impostazioni.",
+    "ja": "モード{mode}で実行中（{tier}）。カクつく場合は、設定で品質を「高速」に切り替えてください。", "ko": "모드 {mode} 실행 중({tier}). 끊김이 있나요? 설정에서 단계를 '빠름'으로 바꾸세요.",
+    "pl": "Działa tryb {mode} ({tier}). Przycina? Zmień poziom na „Szybki” w Ustawieniach.",
+    "pt": "Modo {mode} em execução ({tier}). Travando? Mude o nível para Rápido nas Configurações.",
+    "ru": "Работает режим {mode} ({tier}). Подтормаживает? Переключите уровень на «Быстрый» в настройках.",
+    "tr": "Mod {mode} çalışıyor ({tier}). Takılma mı var? Ayarlar'da düzeyi Hızlı yapın.",
+    "vi": "Đang chạy chế độ {mode} ({tier}). Bị giật? Hãy chuyển mức sang Nhanh trong Cài đặt.", "zh": "正在运行模式 {mode}（{tier}）。卡顿？请在设置中将档位切换为“快速”。"
+  },
+  "The shaders download on first use (about 3 MB).": {
+    "ar": "تُنزَّل المظللات عند أول استخدام (نحو 3 ميغابايت).", "de": "Die Shader werden bei der ersten Verwendung heruntergeladen (etwa 3 MB).",
+    "es": "Los shaders se descargan la primera vez que se usan (unos 3 MB).",
+    "fr": "Les nuanceurs sont téléchargés à la première utilisation (environ 3 Mo).", "hi": "शेडर पहली बार इस्तेमाल पर डाउनलोड होते हैं (लगभग 3 MB)।",
+    "id": "Shader diunduh saat pertama kali digunakan (sekitar 3 MB).", "it": "Gli shader vengono scaricati al primo utilizzo (circa 3 MB).",
+    "ja": "シェーダーは初回使用時にダウンロードされます（約3 MB）。", "ko": "셰이더는 처음 사용할 때 다운로드됩니다(약 3MB).", "pl": "Shadery pobierają się przy pierwszym użyciu (ok. 3 MB).",
+    "pt": "Os shaders são baixados no primeiro uso (cerca de 3 MB).", "ru": "Шейдеры загружаются при первом использовании (около 3 МБ).",
+    "tr": "Gölgelendiriciler ilk kullanımda indirilir (yaklaşık 3 MB).", "vi": "Bộ đổ bóng được tải xuống ở lần dùng đầu tiên (khoảng 3 MB).",
+    "zh": "着色器会在首次使用时下载（约 3 MB）。"
+  },
+  "Still looking. Some sources take a while to answer.": {
+    "ar": "ما زال البحث جاريًا. بعض المصادر تستغرق وقتًا للرد.", "de": "Suche läuft noch. Manche Quellen brauchen eine Weile, bis sie antworten.",
+    "es": "Seguimos buscando. Algunas fuentes tardan un poco en responder.",
+    "fr": "Recherche toujours en cours. Certaines sources mettent du temps à répondre.", "hi": "अभी भी खोज जारी है। कुछ स्रोत जवाब देने में समय लेते हैं।",
+    "id": "Masih mencari. Beberapa sumber perlu waktu untuk merespons.", "it": "La ricerca continua. Alcune fonti impiegano un po' a rispondere.",
+    "ja": "引き続き検索中です。応答に時間がかかるソースもあります。", "ko": "아직 찾는 중입니다. 일부 소스는 응답하는 데 시간이 걸립니다.", "pl": "Wciąż szukamy. Niektóre źródła odpowiadają z opóźnieniem.",
+    "pt": "Ainda procurando. Algumas fontes demoram a responder.", "ru": "Ещё ищем. Некоторые источники отвечают не сразу.",
+    "tr": "Arama sürüyor. Bazı kaynakların yanıt vermesi biraz sürer.", "vi": "Vẫn đang tìm. Một số nguồn cần thời gian để phản hồi.",
+    "zh": "还在查找。有些来源需要一段时间才会响应。"
+  },
+  "The player is opening the stream. {seconds} s": {
+    "ar": "يفتح المشغّل البث. {seconds} ث", "de": "Der Player öffnet den Stream. {seconds} s",
+    "es": "El reproductor está abriendo la transmisión. {seconds} s", "fr": "Le lecteur ouvre le flux. {seconds} s",
+    "hi": "प्लेयर स्ट्रीम खोल रहा है। {seconds} से.", "id": "Pemutar sedang membuka stream. {seconds} dtk",
+    "it": "Il player sta aprendo lo stream. {seconds} s", "ja": "プレーヤーがストリームを開いています。{seconds}秒", "ko": "플레이어가 스트림을 여는 중입니다. {seconds}초",
+    "pl": "Odtwarzacz otwiera strumień. {seconds} s", "pt": "O player está abrindo o stream. {seconds} s", "ru": "Плеер открывает поток. {seconds} с",
+    "tr": "Oynatıcı yayını açıyor. {seconds} sn", "vi": "Trình phát đang mở luồng. {seconds} giây", "zh": "播放器正在打开视频流。{seconds} 秒"
+  },
+  "No audio: this stream's audio format (likely Dolby or DTS) is not supported by the AVPlayer engine.": {
+    "ar": "لا يوجد صوت: صيغة صوت هذا البث (غالبًا Dolby أو DTS) غير مدعومة في محرك AVPlayer.",
+    "de": "Kein Ton: Das Audioformat dieses Streams (wahrscheinlich Dolby oder DTS) wird von der AVPlayer-Engine nicht unterstützt.",
+    "es": "No hay audio: el formato de audio de esta fuente (probablemente Dolby o DTS) no es compatible con el motor AVPlayer.",
+    "fr": "Pas de son : le format audio de ce flux (probablement Dolby ou DTS) n’est pas pris en charge par le moteur AVPlayer.",
+    "hi": "ऑडियो नहीं: इस स्ट्रीम का ऑडियो फ़ॉर्मैट (संभवतः Dolby या DTS) AVPlayer इंजन द्वारा समर्थित नहीं है।",
+    "id": "Tidak ada audio: format audio stream ini (kemungkinan Dolby atau DTS) tidak didukung oleh mesin AVPlayer.",
+    "it": "Audio assente: il formato audio di questo stream, probabilmente Dolby o DTS, non è supportato dal motore AVPlayer.",
+    "ja": "音声が再生されません。このストリームの音声形式（DolbyまたはDTSの可能性があります）はAVPlayerエンジンでサポートされていません。",
+    "ko": "오디오 없음: 이 스트림의 오디오 형식(대개 Dolby 또는 DTS)은 AVPlayer 엔진에서 지원되지 않습니다.",
+    "pl": "Brak dźwięku: format audio tego strumienia (prawdopodobnie Dolby lub DTS) nie jest obsługiwany przez silnik AVPlayer.",
+    "pt": "Sem áudio: o formato de áudio deste stream (provavelmente Dolby ou DTS) não é suportado pelo mecanismo AVPlayer.",
+    "ru": "Нет звука: формат аудио этого потока (вероятно, Dolby или DTS) не поддерживается движком AVPlayer.",
+    "tr": "Ses yok: Bu yayının ses biçimi (muhtemelen Dolby veya DTS) AVPlayer motoru tarafından desteklenmiyor.",
+    "vi": "Không có âm thanh: định dạng âm thanh của luồng này (có thể là Dolby hoặc DTS) không được công cụ AVPlayer hỗ trợ.",
+    "zh": "无音频：AVPlayer 引擎不支持此视频流的音频格式（可能是 Dolby 或 DTS）。"
+  },
+  "Add to Multiview": {
+    "ar": "إضافة إلى العرض المتعدد", "de": "Zur Mehrfachansicht hinzufügen", "es": "Añadir a Vista múltiple", "fr": "Ajouter à Multivue",
+    "hi": "मल्टीव्यू में जोड़ें", "id": "Tambahkan ke Multitampilan", "it": "Aggiungi a Vista multipla", "ja": "マルチビューに追加", "ko": "멀티뷰에 추가",
+    "pl": "Dodaj do widoku wielu kanałów", "pt": "Adicionar à Multivisualização", "ru": "Добавить на мультиэкран", "tr": "Çoklu görünüme ekle",
+    "vi": "Thêm vào Xem nhiều màn hình", "zh": "添加到多画面"
+  },
+  "Room": {
+    "ar": "الغرفة", "de": "Raum", "es": "Sala", "fr": "Salon", "hi": "रूम", "id": "Ruang", "it": "Stanza", "ja": "ルーム", "ko": "방", "pl": "Pokój",
+    "pt": "Sala", "ru": "Комната", "tr": "Oda", "vi": "Phòng", "zh": "房间"
+  },
+  "LIVE": {
+    "ar": "مباشر", "de": "LIVE", "es": "EN VIVO", "fr": "DIRECT", "hi": "लाइव", "id": "LANGSUNG", "it": "IN DIRETTA", "ja": "ライブ", "ko": "라이브",
+    "pl": "NA ŻYWO", "pt": "AO VIVO", "ru": "В ЭФИРЕ", "tr": "CANLI", "vi": "TRỰC TIẾP", "zh": "直播"
+  },
+  "On the AVPlayer engine, a second subtitle has to be one added from Find more.": {
+    "ar": "في محرك AVPlayer، يجب أن تكون الترجمة الثانية واحدة مضافة من «اعثر على المزيد».",
+    "de": "Mit der AVPlayer-Engine muss ein zweiter Untertitel über „Mehr finden“ hinzugefügt worden sein.",
+    "es": "Con el motor AVPlayer, el segundo subtítulo tiene que ser uno añadido desde «Buscar más».",
+    "fr": "Avec le moteur AVPlayer, le second sous-titre doit être un sous-titre ajouté depuis « En trouver plus ».",
+    "hi": "AVPlayer इंजन पर दूसरा सबटाइटल वही हो सकता है जिसे “और खोजें” से जोड़ा गया हो।",
+    "id": "Di mesin AVPlayer, subtitle kedua harus yang ditambahkan dari Cari lainnya.",
+    "it": "Con il motore AVPlayer, il secondo sottotitolo deve essere uno aggiunto da Trova altro.", "ja": "AVPlayerエンジンでは、2つ目の字幕は「さらに探す」から追加したものに限られます。",
+    "ko": "AVPlayer 엔진에서는 '더 찾아보기'에서 추가한 자막만 두 번째 자막으로 쓸 수 있습니다.", "pl": "W silniku AVPlayer drugie napisy muszą pochodzić z sekcji „Znajdź więcej”.",
+    "pt": "No mecanismo AVPlayer, a segunda legenda precisa ser uma adicionada em Encontrar mais.",
+    "ru": "В движке AVPlayer вторыми субтитрами могут быть только добавленные через «Найти ещё».",
+    "tr": "AVPlayer motorunda ikinci altyazı, Daha fazlasını bul bölümünden eklenmiş olmalıdır.",
+    "vi": "Với công cụ AVPlayer, phụ đề thứ hai phải là phụ đề được thêm từ Tìm thêm.", "zh": "使用 AVPlayer 引擎时，第二字幕必须是通过“查找更多”添加的字幕。"
+  },
+  "Couldn't load that subtitle: {error}": {
+    "ar": "تعذّر تحميل تلك الترجمة: {error}", "de": "Dieser Untertitel konnte nicht geladen werden: {error}",
+    "es": "No se pudo cargar ese subtítulo: {error}", "fr": "Impossible de charger ce sous-titre : {error}", "hi": "वह सबटाइटल लोड नहीं हो सका: {error}",
+    "id": "Tidak dapat memuat subtitle itu: {error}", "it": "Impossibile caricare il sottotitolo: {error}", "ja": "その字幕を読み込めませんでした: {error}",
+    "ko": "해당 자막을 불러오지 못했습니다: {error}", "pl": "Nie udało się wczytać tych napisów: {error}", "pt": "Não foi possível carregar essa legenda: {error}",
+    "ru": "Не удалось загрузить эти субтитры: {error}", "tr": "Bu altyazı yüklenemedi: {error}", "vi": "Không thể tải phụ đề đó: {error}",
+    "zh": "无法加载该字幕：{error}"
   }
 }

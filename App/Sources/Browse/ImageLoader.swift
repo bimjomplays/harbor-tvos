@@ -43,6 +43,55 @@ actor ImageLoader {
     }
 }
 
+/// lib/img-size.ts for poster cards (components/poster.tsx): a TMDB image is asked for at the
+/// smallest tier that covers the card at the screen's scale (capped at 2, as poster.tsx caps
+/// devicePixelRatio) times qualityMultiplier(settings.posterQuality); "max" keeps the URL as the
+/// catalog gave it. Google and Deezer artwork sizes are rewritten the same way (upgradeArtworkUrl).
+enum PosterSizing {
+    private static let tmdbTiers = [92, 154, 185, 300, 342, 500, 780, 1280]
+
+    /// img-size.ts qualityMultiplier: max → 0 (no resizing), high → 1.5, balanced → 1.
+    static func multiplier(_ quality: String?) -> Double {
+        switch quality ?? "high" {
+        case "max": return 0
+        case "high": return 1.5
+        default: return 1
+        }
+    }
+
+    static func sized(_ url: String?, width: CGFloat, scale: CGFloat, quality: String?) -> String? {
+        guard let url, !url.isEmpty else { return url }
+        let mult = multiplier(quality)
+        guard mult > 0, width > 0 else { return url }
+        let target = Int((Double(width) * Double(min(2, max(1, scale))) * mult).rounded(.up))
+        return sizeImageUrl(url, target)
+    }
+
+    /// img-size.ts sizeImageUrl.
+    static func sizeImageUrl(_ url: String, _ targetPx: Int) -> String {
+        guard targetPx > 0 else { return url }
+        let seg = tmdbTiers.first { $0 >= targetPx }.map { "w\($0)" } ?? "original"
+        if let r = url.range(of: #"/t/p/(w\d+|original)/"#, options: .regularExpression) {
+            let sized = url.replacingCharacters(in: r, with: "/t/p/\(seg)/")
+            if sized != url { return sized }
+        }
+        return upgradeArtworkUrl(url, targetPx)
+    }
+
+    /// img-size.ts upgradeArtworkUrl: Google (=wN-hN, up to 1200) and Deezer (/NxN-, up to 1000) art.
+    static func upgradeArtworkUrl(_ url: String, _ targetPx: Int) -> String {
+        if let r = url.range(of: #"=w\d+-h\d+"#, options: .regularExpression) {
+            let size = min(1200, max(targetPx, 1))
+            return url.replacingCharacters(in: r, with: "=w\(size)-h\(size)")
+        }
+        if url.contains("dzcdn.net"), let r = url.range(of: #"/\d+x\d+-"#, options: .regularExpression) {
+            let size = min(1000, max(targetPx, 1))
+            return url.replacingCharacters(in: r, with: "/\(size)x\(size)-")
+        }
+        return url
+    }
+}
+
 /// Art with upstream's loading plate; fades in when the bytes arrive.
 struct RemoteImage: View {
     let url: String?

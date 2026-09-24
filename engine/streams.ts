@@ -18,7 +18,8 @@ import { runPipeline, type PipelineResult } from "@/lib/streams/pipeline";
 import { resolveStream, type ResolveResult } from "@/lib/streams/resolve";
 import type { ScoredStream } from "@/lib/streams/types";
 import type { PlayEpisode } from "@/lib/view";
-import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure } from "@/views/play-picker/picker-utils";
+import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure, displayTitle, torrentFilename, streamSummaryParts, contributorLabel } from "@/views/play-picker/picker-utils";
+import { isFilterEmpty, matchesCustomFilter } from "@/lib/streams/custom-filters";
 import { isVideoFile, trackersFromSources, type TorrentFile } from "@/lib/torrent/stremio-stream";
 import { magnetFromHash } from "@/lib/debrid/types";
 import { matchEpisodeFileIndex, type EpisodeHint } from "@/lib/streams/episode-file";
@@ -146,6 +147,7 @@ export async function search(
       (partial) => {
         if (ac.signal.aborted || partial.picker.all.length === 0) return;
         stampAddonOrder(partial.picker.all, partial.raw.addon);
+        stampPickerRows(partial.picker.all, settings, meta, episode);
         lastResults.set(token, partial);
         shims.events.emit("harbor-tvos:streams", { token, phase: "partial", picker: partial.picker, rejected: partial.rejected.length, debridErrors: partial.debridErrors ?? [] });
       },
@@ -155,6 +157,7 @@ export async function search(
       },
     );
     stampAddonOrder(result.picker.all, result.raw.addon);
+    stampPickerRows(result.picker.all, settings, meta, episode);
     lastResults.set(token, result);
     const seasonLock = !!settings.seasonSourceLock && (meta.type === "series" || /^(kitsu|mal|anilist|anidb):/.test(meta.id));
     return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock };
@@ -162,6 +165,87 @@ export async function search(
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {
     if (searches.get(token) === ac) searches.delete(token);
+  }
+}
+
+// ------------------------------------------------------------------ picker rows and saved filters
+// bp-stream-row.tsx: AIOStreams-style descriptions prefix each line with a pictograph; the row
+// drops the glyph and keeps the sentence. Built at runtime so an engine without Unicode property
+// escapes still loads (it then keeps the glyphs).
+const PICTOGRAPH: RegExp | null = (() => {
+  try {
+    return new RegExp("\\p{Extended_Pictographic}|\\p{Regional_Indicator}|[\\u{1F3FB}-\\u{1F3FF}]|\\u{FE0F}|\\u{200D}|\\u{20E3}", "gu");
+  } catch {
+    return null;
+  }
+})();
+
+/** bp-stream-row.tsx plainLine. */
+export function plainLine(text: string): string {
+  return (PICTOGRAPH ? text.replace(PICTOGRAPH, "") : text).replace(/\s{2,}/g, " ").trim();
+}
+
+/** bp-stream-row.tsx detailLine: the summary parts, then each description line not seen yet. */
+export function detailLine(description: string, summary: string[], headline: string): string {
+  const seen = new Set([headline]);
+  const parts = [...summary];
+  for (const raw of description.split("\n")) {
+    const line = plainLine(raw);
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    parts.push(line);
+  }
+  return parts.join(" · ");
+}
+
+/** What BpStreamRow prints under the headline: the one-line detail, the full description
+ * (settings.fullStreamDescription) and the torrent filename (settings.pickerShowFilename). */
+export type PickerRowText = { headline: string; detail: string; description: string; filename: string };
+
+export function pickerRowText(stream: ScoredStream, showName: string, episode: PlayEpisode | null): PickerRowText {
+  const addonName = contributorLabel(stream) || stream.addonId;
+  const headline = plainLine(displayTitle(stream, showName, episode ?? undefined) || addonName);
+  const rawDescription = stream.title?.trim() || stream.description?.trim() || "";
+  const description = rawDescription.split("\n").map(plainLine).filter(Boolean).join("\n");
+  return { headline, detail: detailLine(rawDescription, streamSummaryParts(stream), headline), description, filename: torrentFilename(stream) };
+}
+
+/** settings.customStreamFilters as the picker's filter menu lists them (bp-stream-chips filterMenuOptions). */
+export type SavedStreamFilter = { id: string; name: string; empty: boolean };
+
+/**
+ * bp-stream-filters.ts customFilters / activeFilterId: the saved filters (synced from the desktop's
+ * Stream filters panel) and the active one. `activeId` is null unless it names a saved filter.
+ */
+export function streamFilters(profileId: string, linked: boolean): { filters: SavedStreamFilter[]; activeId: string | null } {
+  const s = loadEffective(profileId, linked);
+  const list = Array.isArray(s.customStreamFilters) ? s.customStreamFilters : [];
+  const filters = list.map((f) => ({ id: f.id, name: (f.name ?? "").trim(), empty: isFilterEmpty(f) }));
+  const activeId = filters.some((f) => f.id === s.activeStreamFilterId) ? s.activeStreamFilterId : null;
+  return { filters, activeId };
+}
+
+/** bp-stream-filters setActiveFilterId: update({ activeStreamFilterId: id }). */
+export function setActiveStreamFilter(profileId: string, linked: boolean, id: string | null): string | null {
+  const s = loadEffective(profileId, linked);
+  const next = id != null && (s.customStreamFilters ?? []).some((f) => f.id === id) ? id : null;
+  persistEffective({ ...s, activeStreamFilterId: next }, profileId, linked);
+  markSettingsPatched(["activeStreamFilterId"]);
+  return next;
+}
+
+/**
+ * Stamps what the TV's picker rows need onto every stream it will receive: `tvRow`
+ * (pickerRowText) and `tvFilters`, the ids of the saved filters the stream passes
+ * (matchesCustomFilter; an empty filter passes everything, as bp-stream-filters ignores it).
+ * The picker narrows by the active id with upstream's fallback when nothing passes.
+ */
+export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: Meta, episode: PlayEpisode | null): void {
+  const filters = Array.isArray(settings.customStreamFilters) ? settings.customStreamFilters : [];
+  for (const s of all) {
+    const out = s as ScoredStream & { tvRow?: PickerRowText; tvFilters?: string[] };
+    out.tvRow = pickerRowText(s, meta.name, episode);
+    out.tvFilters = filters.filter((f) => isFilterEmpty(f) || matchesCustomFilter(s, f)).map((f) => f.id);
   }
 }
 

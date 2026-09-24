@@ -7,6 +7,8 @@ struct BPTileView: View {
     var rank: Int? = nil
     var focused = false
     @ObservedObject private var marks = CardMarksStore.shared
+    /// poster.tsx sizes the art to the card at devicePixelRatio (PosterSizing).
+    @Environment(\.displayScale) private var displayScale
 
     static let posterWidth = BP.px(177)
     static let wideWidth = BP.px(230)
@@ -109,7 +111,9 @@ struct BPTileView: View {
 
     private func art(url: String?, size: CGSize, plateText: Bool = true) -> some View {
         ZStack(alignment: .topLeading) {
-            RemoteImage(url: url)
+            // components/poster.tsx: the art is asked for at the card's size × posterQuality.
+            RemoteImage(url: PosterSizing.sized(url, width: max(size.width, size.height * 2 / 3), scale: displayScale,
+                                                quality: SettingsBridge.shared.slice.posterQuality))
             if url == nil && plateText {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))
