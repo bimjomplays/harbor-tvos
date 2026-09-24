@@ -94,10 +94,26 @@ shows), audio through AVAudioEngine on HDMI/AirPlay routes, background playback,
 end-of-track hand-off, the session surviving sleep/network changes (the TV signs in again from the
 saved credentials once), and Spotify's limits on an app in development mode (only the users added under Users Management).
 
-**Not ported:** the Spotify library page and playlist writes (`library.rs`, `music-spotify-library.tsx`),
-Spotify Connect (spirc: the TV is not offered as a cast target), the paged artist catalog beyond the
-first ten albums, volume (the TV's own volume applies; the soft mixer stays at full), the source
-picker's "Premium · 320 kbps" label.
+**Batch 4 (library and writes).** `library.rs` + `music-spotify-library.tsx` + `music-spotify-destination.tsx`:
+Music › Spotify library (shown while Spotify is connected) lists Spotify playlists or Liked songs, 50 a
+page with Load more, upstream's pagination checks (the `next` link must stay on the same endpoint and
+move forward, at most offset 100 000), local files / unavailable tracks / episodes skipped and counted,
+owned or collaborative playlists opened in place (others show open.spotify.com as a QR code), a new
+private playlist, and upstream's permission / reconnect notices (the scopes are the 13 upstream asks
+for; a sign-in from before the modify scopes were granted gets "Reconnect for permission"). Hold Select
+on a Spotify track anywhere in the room for **Add to playlist** (the Spotify destination: only playlists
+this account may change are enabled; the write needs Spotify's snapshot id). Artist albums page ten at
+a time through `artist_catalog.rs`'s artist-bound cursor (a Load more tile ends the shelf). The Spotify
+output stops after a pause or when the queue ends, and MusicPlayer's 250 ms event clock stops while
+nothing plays (both start again on resume or the next track).
+
+**Not ported:** upstream's "Import to Harbor" (the TV has no Harbor playlists yet), liking on Spotify
+(upstream's Save is Harbor's own liked list; it writes nothing to `/me/tracks`), saved albums and
+followed artists as library views (upstream's library page has neither; saved albums are already a
+home row, and followed artists would need `user-follow-read`, which upstream does not request),
+Spotify Connect (spirc: the TV is not offered as a cast target), volume (the TV's own volume applies;
+the soft mixer stays at full), and the "Premium · 320 kbps" label (`music.source.spotifyQuality` is in
+upstream's catalog but no upstream view renders it).
 
 ## What the TV room does
 
@@ -150,5 +166,5 @@ picker's "Premium · 320 kbps" label.
   per-source picker (music-source-picker.tsx) for choosing which match plays.
 - Library sync of liked tracks / playlists and upstream's playlists (library.rs), Plex timeline
   scrobbles, MusicBrainz credits on the track page (recording-profile.ts is already bundled).
-- Spotify: the library page and playlist writes (library.rs), paged artist albums, Spotify
-  Connect; EQ through an AVAudioEngine graph (the Spotify output is already an AVAudioEngine).
+- Spotify: Connect, Import to Harbor (with Harbor playlists); EQ through an AVAudioEngine graph
+  (the Spotify output is already an AVAudioEngine).

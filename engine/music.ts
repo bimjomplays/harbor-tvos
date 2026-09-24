@@ -46,6 +46,14 @@ const COPY_KEYS = [
   "music.spotifySetup.accountHint", "music.spotifySetup.authorize", "music.spotifySetup.saved", "music.spotifySetup.savedHint",
   "music.spotifySetup.missingSaved", "music.spotifySetup.rejected", "music.recovery.premium", "music.recovery.setup", "music.recovery.spotifySetup",
   "music.source.spotifyQuality",
+  // Spotify library page and playlist writes (music-spotify-library.tsx, music-spotify-destination.tsx)
+  "music.spotifyLibrary.title", "music.spotifyLibrary.body", "music.spotifyLibrary.connect", "music.spotifyLibrary.liked", "music.spotifyLibrary.playlists",
+  "music.spotifyLibrary.back", "music.spotifyLibrary.loaded", "music.spotifyLibrary.empty", "music.spotifyLibrary.error", "music.spotifyLibrary.permission",
+  "music.spotifyLibrary.reconnect", "music.spotifyLibrary.reconnectNeeded", "music.spotifyLibrary.restricted", "music.spotifyLibrary.rateLimit",
+  "music.spotifyLibrary.unconfirmed", "music.spotifyLibrary.open", "music.spotifyLibrary.create", "music.spotifyLibrary.private", "music.spotifyLibrary.created",
+  "music.spotifyLibrary.createThenAdd", "music.spotifyLibrary.spotifyTrackOnly", "music.spotifyLibrary.readOnly", "music.spotifyLibrary.refresh",
+  "music.spotifyLibrary.skipped", "music.spotifyLibrary.noImportable",
+  "music.library.loadMore", "music.playlist.none", "music.playlist.namePlaceholder", "music.playlist.nameLabel", "music.card.addToPlaylist",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */
@@ -135,7 +143,7 @@ export type MusicCard = {
   track: MusicTrack | null;
   item: MusicCatalogItem;
 };
-export type MusicBand = { key: string; title: string; subtitle: string; layout: string; source: string; numbered: boolean; cards: MusicCard[]; notice: string | null };
+export type MusicBand = { key: string; title: string; subtitle: string; layout: string; source: string; numbered: boolean; cards: MusicCard[]; notice: string | null; more?: string | null };
 
 function trackItem(track: MusicTrack): MusicCatalogItem {
   return { kind: "track", ...track };
@@ -293,7 +301,8 @@ export async function open(item: MusicCatalogItem): Promise<MusicPage> {
       }
       const [tracks, rows] = await Promise.allSettled([owner.artistTop(artist), owner.artistRows(artist)]);
       if (tracks.status === "rejected" && rows.status === "rejected") throw tracks.reason;
-      const bands = (rows.status === "fulfilled" ? rows.value : []).map((r) => band(r.id, r));
+      // views/music.tsx loadMoreArtistReleases: a shelf with a cursor loads more (artistMore).
+      const bands = (rows.status === "fulfilled" ? rows.value : []).map((r) => band(r.id, r, { more: (r as spotify.MusicCatalogRowWithMore).nextCursor ?? null }));
       return { kind: "artist", title: artist.name, subtitle: artist.subtitle ?? "", artwork: artist.artwork ?? "", circle: true, tracks: tracks.status === "fulfilled" ? tracks.value : [], bands };
     }
     case "playlist": {
@@ -457,6 +466,40 @@ export function spotifyFailed(error: string) {
 export function spotifyDisconnect() {
   homeCache = null;
   return spotify.forget();
+}
+
+// ------------------------------------------------------------- Spotify library + writes
+// lib/music/spotify-library.ts over library.rs. Failures come back as upstream's message keys
+// (spotifyLibraryErrorKey), so the room can tell a missing permission from anything else.
+async function libraryCall<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (cause) {
+    throw new Error(spotify.libraryErrorKey(cause));
+  }
+}
+/** loadSpotifyLibraryPage */
+export function spotifyLibraryPage(kind: spotify.SpotifyLibraryKind, offset: number | null, playlistId: string | null) {
+  return libraryCall(() => spotify.libraryPage(kind, offset, playlistId));
+}
+/** createSpotifyPlaylist */
+export function spotifyCreatePlaylist(name: string) {
+  return libraryCall(() => spotify.createPlaylist(name));
+}
+/** addTrackToSpotifyPlaylist: the track's Spotify URI (spotifyTrackUri), else upstream's refusal. */
+export function spotifyAddToPlaylist(playlistId: string, track: MusicTrack): Promise<boolean> {
+  return libraryCall(async () => {
+    const uri = spotify.spotifyTrackUri(track);
+    if (!uri) throw new Error("Only Spotify tracks can be added to a Spotify playlist");
+    await spotify.addToPlaylist(playlistId, uri);
+    return true;
+  });
+}
+/** views/music.tsx loadMoreArtistReleases (artistCatalog(item, "albums", cursor)): the next albums. */
+export async function artistMore(item: MusicCatalogItem, cursor: string): Promise<{ cards: MusicCard[]; more: string | null }> {
+  if (item.kind !== "artist" || item.connectorId !== spotify.CONNECTOR) throw new Error("Only Spotify artists page their albums");
+  const page = await spotify.artistAlbums(item, cursor);
+  return { cards: page.items.map(card), more: page.nextCursor === cursor ? null : page.nextCursor };
 }
 
 // ------------------------------------------------------------------ sources + consent

@@ -12,6 +12,9 @@ struct MusicPageView: View {
     @State private var data: MusicPageData?
     @State private var error: String?
     @State private var child: MusicPageTarget?
+    /// views/music.tsx releasesLoadingMore / releasesMoreError
+    @State private var loadingMore = false
+    @State private var moreError: String?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -36,10 +39,12 @@ struct MusicPageView: View {
                         .padding(.horizontal, BP.gutter)
                         .focusSection()
                         ForEach(data.bands) { band in
-                            MusicBandView(band: band) { card, band in
+                            MusicBandView(band: band, onCard: { card, band in
                                 if let t = card.track { player.play(t, queue: band.cards.compactMap(\.track)) } else { child = MusicPageTarget(card: card) }
-                            }
+                            }, onMore: moreAction(band))
                         }
+                        if loadingMore { ProgressView().padding(.horizontal, BP.gutter) }
+                        if let moreError { BPNote(text: moreError, tone: BP.danger).padding(.horizontal, BP.gutter) }
                     }
                     Color.clear.frame(height: BP.px(80))
                 }
@@ -50,6 +55,7 @@ struct MusicPageView: View {
         .onPlayPauseCommand { player.toggle() }
         .task { await load() }
         .fullScreenCover(item: $child) { t in MusicPageView(target: t) }
+        .musicSpotifyDestinationHost()
     }
 
     private var header: some View {
@@ -94,6 +100,32 @@ struct MusicPageView: View {
         case "playlist": return copy("music.search.playlists", "Playlists").dropLastS
         case "station": return copy("music.row.stationBadge", "Radio")
         default: return ""
+        }
+    }
+
+    private func moreAction(_ band: MusicBand) -> (() -> Void)? {
+        guard band.more != nil else { return nil }
+        return { Task { await loadMore(band) } }
+    }
+
+    /// views/music.tsx loadMoreArtistReleases: the next page of the artist's albums joins the
+    /// shelf (items it already has are skipped); the cursor ends when Spotify has no more.
+    private func loadMore(_ band: MusicBand) async {
+        guard let cursor = band.more, !loadingMore else { return }
+        loadingMore = true
+        moreError = nil
+        defer { loadingMore = false }
+        do {
+            let page: MusicArtistMore = try await HarborEngine.shared.call("music.artistMore", [target.card.item, cursor])
+            guard var current = data, let i = current.bands.firstIndex(where: { $0.key == band.key }) else { return }
+            let known = Set(current.bands[i].cards.map(\.key))
+            current.bands[i].cards.append(contentsOf: page.cards.filter { !known.contains($0.key) })
+            current.bands[i].more = page.more == cursor ? nil : page.more
+            data = current
+        } catch EngineError.js(let message) {
+            moreError = MusicPlayer.cleanJSError(message)
+        } catch {
+            moreError = copy("music.error.load", "Music could not load.")
         }
     }
 
@@ -190,6 +222,7 @@ struct MusicSearchView: View {
         }
         .onExitCommand { dismiss() }
         .fullScreenCover(item: $page) { t in MusicPageView(target: t) }
+        .musicSpotifyDestinationHost()
         .fullScreenCover(isPresented: $phoneOpen) {
             PhoneTypingSheet(label: copy("music.searchLabel", "Search music"), placeholder: copy("music.searchPlaceholder", "Search songs, albums, artists"),
                              text: $model.query, onClose: { phoneOpen = false })
