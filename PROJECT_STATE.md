@@ -88,7 +88,7 @@ Docs: browse-spec, big-picture-design, harbor-protocol, engine-report, detail-sp
 
 ## Next (pick up here — updated 2026-09-24 ~01:00 UTC, session on branch `claude/determined-hopper-smvu37`)
 **Where things stand**
-- All of 09-24's work (sports who panel → translation pass, see Status) is on the branch `claude/determined-hopper-smvu37`, not on `main`. `Build` only runs by itself on `main`, so each batch was built with a manual `workflow_dispatch` on the branch. **Run 151 (d9aa09e) is green: everything through player batch 2, music batch 2 and translation coverage 2 compiles and the UI tests pass.**
+- All of 09-24's work (sports who panel → translation pass, see Status) is on the branch `claude/determined-hopper-smvu37`, not on `main`. `Build` only runs by itself on `main`, so each batch was built with a manual `workflow_dispatch` on the branch. **Run 153 (da22a6b) is green: everything through the ebooks batch and the upstream re-sync to beta-branch f289f8f3 compiles and the UI tests pass.** (Run 152 failed on two ebook compile errors: NSLayoutManager temporary attributes are macOS-only, and a mutating call on a temporary; fixed in da22a6b.)
 - **Owner action needed:** merge the branch into `main` (or open a PR), then run `Build` with `testflight=true` from GitHub Actions (only the repository owner can). Nothing from 09-24 is on TestFlight yet.
 - No subagent in flight; upstream is re-synced to beta-branch f289f8f3.
 **Then**
