@@ -52,7 +52,7 @@ struct KidsFranchiseView: View {
                 Text(f.name)
                     .font(KidsTheme.font(80, .heavy)).foregroundStyle(.white).lineLimit(2).minimumScaleFactor(0.6)
                     .shadow(color: .black.opacity(0.7), radius: 18, y: 4)
-                Text("\(count) \(count == 1 ? "title" : "titles")")
+                Text(T(count == 1 ? "%lld title" : "%lld titles", count))
                     .font(KidsTheme.font(18, .heavy)).foregroundStyle(.white.opacity(0.95))
                     .shadow(color: .black.opacity(0.65), radius: 10, y: 2)
             }

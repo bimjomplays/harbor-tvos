@@ -173,7 +173,7 @@ struct MangaDetailView: View {
         if let y = model.detail?.year { out.append(String(Int(y))) }
         if let s = model.detail?.statusLabel { out.append(s) }
         let n = model.chapters.count
-        out.append(n == 1 ? "1 chapter" : "\(n) chapters")
+        out.append(n == 1 ? T("%lld chapter", n) : T("%lld chapters", n))
         return out
     }
 
@@ -267,7 +267,7 @@ struct MangaDetailView: View {
                     HStack(spacing: BP.px(8)) {
                         if model.langs.count > 1 {
                             ForEach(model.langs) { l in
-                                Button("\(MangaLanguage.name(l.code)) (\(l.count))") { model.selectedLang = l.code }
+                                Button(MangaLanguage.name(l.code) + " (\(l.count))") { model.selectedLang = l.code }
                                     .buttonStyle(BPActionStyle(primary: model.selectedLang == l.code))
                             }
                             Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(26))
@@ -287,7 +287,7 @@ struct MangaDetailView: View {
                 .focusSection()
             }
             if model.langFiltered.isEmpty {
-                BPNote(text: model.pending ? "Loading chapters..." : "No chapters available in \(MangaLanguage.name(model.selectedLang)) from this source.")
+                BPNote(text: model.pending ? "Loading chapters..." : T("No chapters available in %@ from this source.", MangaLanguage.name(model.selectedLang)))
             } else {
                 let ordered = model.ordered
                 let ascending = model.ascending
@@ -321,7 +321,7 @@ struct MangaDetailView: View {
                         Label("Read", systemImage: "checkmark").font(BP.sans(11, .semibold)).foregroundStyle(BP.inkSubtle)
                     }
                 }
-                Text(c.title?.isEmpty == false ? c.title! : (c.chapter.map { "Chapter \($0)" } ?? "Oneshot"))
+                Text(c.title?.isEmpty == false ? c.title! : (c.chapter.map { T("Chapter %@", $0) } ?? T("Oneshot")))
                     .font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 if current, let p = model.progress, p.upNext != true, p.totalPages > 0 {
                     HStack(spacing: BP.px(8)) {

@@ -86,7 +86,7 @@ struct SportsPersonalizeView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
                     Text(step == 0 ? "Choose your sports" : step == 1 ? "Pick your leagues" : "Follow your teams").font(BP.display(32)).foregroundStyle(BP.ink)
-                    Text("Make it yours \(step + 1)/3").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.accent)
+                    Text(T("Make it yours") + " \(step + 1)/3").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.accent)
                     if let c = catalog {
                         if step == 0 { groupGrid(c) } else if step == 1 { leagueGrid(c) } else { teamsStep }
                         HStack(spacing: BP.px(10)) {

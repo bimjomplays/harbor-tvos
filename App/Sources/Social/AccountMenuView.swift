@@ -166,8 +166,8 @@ struct AccountMenuView: View {
 
     private var togetherNote: String? {
         let v = together.view
-        if v.inSession, let room = v.room { return "Room \(room) · \(v.participants.count) watching" }
-        if v.state == "connecting" { return "Connecting…" }
+        if v.inSession, let room = v.room { return T("Room code") + " " + room + " · " + T("%lld watching", v.participants.count) }
+        if v.state == "connecting" { return T("Connecting…") }
         return nil
     }
 
@@ -190,7 +190,7 @@ struct AccountMenuView: View {
             HStack(spacing: BP.px(12)) {
                 Image(systemName: icon).frame(width: BP.px(24))
                 VStack(alignment: .leading, spacing: BP.px(2)) {
-                    Text(label)
+                    Text(T(label))
                     if let note { Text(note).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                 }
                 Spacer()

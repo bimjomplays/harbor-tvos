@@ -44,12 +44,12 @@ struct MangaChapter: Codable, Identifiable, Hashable {
 
     /// manga-reader chapterLabel.
     var label: String {
-        if let c = chapter, !c.isEmpty { return "Chapter \(c)" }
-        return (title?.isEmpty == false ? title : nil) ?? "Oneshot"
+        if let c = chapter, !c.isEmpty { return T("Chapter %@", c) }
+        return (title?.isEmpty == false ? title : nil) ?? T("Oneshot")
     }
 
     /// chapter-list row heading: "Ch. 12" or "Oneshot".
-    var shortLabel: String { chapter.map { "Ch. \($0)" } ?? "Oneshot" }
+    var shortLabel: String { chapter.map { T("Ch. %@", $0) } ?? T("Oneshot") }
 
     /// chapter-list displayGroup: the scanlator without an aggregate "My Server ·" prefix.
     var displayGroup: String {
@@ -62,13 +62,13 @@ struct MangaChapter: Codable, Identifiable, Hashable {
     var relativeDate: String? {
         guard let s = publishAt, let then = MangaChapter.iso.date(from: s) ?? MangaChapter.isoPlain.date(from: s) else { return nil }
         let secs = Int(Date().timeIntervalSince(then).rounded())
-        if secs < 60 { return "just now" }
+        if secs < 60 { return T("just now") }
         let mins = Int((Double(secs) / 60).rounded())
-        if mins < 60 { return "\(mins)m ago" }
+        if mins < 60 { return T("%lldm ago", mins) }
         let hours = Int((Double(mins) / 60).rounded())
-        if hours < 24 { return "\(hours)h ago" }
+        if hours < 24 { return T("%lldh ago", hours) }
         let days = Int((Double(hours) / 24).rounded())
-        if days < 7 { return "\(days)d ago" }
+        if days < 7 { return T("%lldd ago", days) }
         return then.formatted(date: .abbreviated, time: .omitted)
     }
 
@@ -121,13 +121,13 @@ struct MangaProgressEntry: Codable, Identifiable, Hashable {
 
     /// manga-detail resumeLabel: "Resume Ch. 12 · p4" / "Resume reading".
     var resumeLabel: String {
-        (chapterNumber.map { "Resume Ch. \($0)" } ?? "Resume reading") + (page > 1 ? " · p\(Int(page))" : "")
+        (chapterNumber.map { T("Resume Ch. %@", $0) } ?? T("Resume reading")) + (page > 1 ? " · p\(Int(page))" : "")
     }
 
     /// manga-continue card line: the chapter, and the page while mid-way.
     var cardLine: String {
-        let ch = chapterLabel.isEmpty ? (chapterNumber.map { "Chapter \($0)" } ?? "") : chapterLabel
-        if upNext == true { return "Up next · \(ch)" }
+        let ch = chapterLabel.isEmpty ? (chapterNumber.map { T("Chapter %@", $0) } ?? "") : chapterLabel
+        if upNext == true { return T("Up next") + " · " + ch }
         return totalPages > 0 ? "\(ch) · \(Int(page))/\(Int(totalPages))" : ch
     }
 

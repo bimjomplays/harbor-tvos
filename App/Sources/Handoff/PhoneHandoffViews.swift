@@ -156,7 +156,7 @@ struct PhoneTypingSheet: View {
                         HandoffPanel(handoff: handoff, side: BP.px(236))
                     }
                     VStack(alignment: .leading, spacing: BP.px(8)) {
-                        Text(purpose).font(BP.sans(17)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+                        Text(T(purpose)).font(BP.sans(17)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
                         Text("Same Wi-Fi as this TV").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkSubtle).textCase(.uppercase).tracking(1.5)
                     }
                     if handoff.phase != .waiting {
@@ -164,8 +164,8 @@ struct PhoneTypingSheet: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: BP.px(6)) {
-                    Text(label).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
-                    Text(text.isEmpty ? placeholder : (secure ? String(repeating: "•", count: text.count) : text))
+                    Text(T(label)).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
+                    Text(text.isEmpty ? T(placeholder) : (secure ? String(repeating: "•", count: text.count) : text))
                         .font(BP.sans(19, .semibold)).foregroundStyle(text.isEmpty ? BP.inkSubtle : BP.ink).lineLimit(2)
                         .padding(.horizontal, BP.px(14)).frame(maxWidth: .infinity, minHeight: BP.px(50), alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
@@ -181,7 +181,7 @@ struct PhoneTypingSheet: View {
         .onAppear {
             let binding = $text
             let isSecure = secure
-            handoff.entry = TvHandoff.Entry(label: label, placeholder: placeholder, secure: isSecure, value: { binding.wrappedValue })
+            handoff.entry = TvHandoff.Entry(label: T(label), placeholder: T(placeholder), secure: isSecure, value: { binding.wrappedValue })
             let submit = onSubmit, close = onClose
             handoff.onText = { action in
                 switch action {

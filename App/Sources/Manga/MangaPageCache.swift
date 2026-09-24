@@ -135,7 +135,7 @@ struct MangaPageImage: View {
             } else if failed {
                 VStack(spacing: BP.px(6)) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: BP.px(20)))
-                    Text("This page would not load").font(BP.sans(13, .semibold))
+                    Text("Page failed to load").font(BP.sans(13, .semibold))
                 }
                 .foregroundStyle(BP.inkSubtle)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

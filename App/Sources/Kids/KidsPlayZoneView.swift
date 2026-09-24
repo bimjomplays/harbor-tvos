@@ -87,7 +87,7 @@ struct KidsPlayZoneView: View {
             }
             .buttonStyle(KidsPillStyle(height: BP.px(56)))
             VStack(alignment: .leading, spacing: BP.px(2)) {
-                Text(activity?.name ?? "Play Zone")
+                Text(activity?.name ?? T("Play Zone"))
                     .font(KidsTheme.font(34, .medium)).foregroundStyle(.white)
                     .shadow(color: Color(hex: 0x001428).opacity(0.5), radius: 14, y: 2)
                 if activity == nil {

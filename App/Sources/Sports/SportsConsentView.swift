@@ -15,28 +15,33 @@ struct SportsConsentView: View {
     ]
     private let details = [
         "Official links and videos remain subject to the originating service's availability, regional restrictions and terms. Names and logos identify third parties and do not imply endorsement or affiliation.",
-        "Market data is optional and off by default. It is informational and does not enable trading in Harbor.",
+        "Market data is optional and off by default. It is informational and does not enable trading in Harbor. Reminders send event details to Discord or Telegram only when you configure a destination and request a reminder.",
         "ElfHosted provides separately hosted services. Its policies apply to those services; they do not grant rights to third-party broadcasts, metadata or artwork.",
     ]
-    private let links = ["ESPN service terms: disneytermsofuse.com/english", "TheSportsDB terms: thesportsdb.com/docs_terms_of_use.php", "YouTube terms: youtube.com/t/terms", "ElfHosted terms: docs.elfhosted.com/legal/terms-of-service", "ElfHosted privacy policy: docs.elfhosted.com/legal/privacy-policy"]
+    // usage-notice.ts SPORTS_POLICY_LINKS: label, address.
+    private let links: [(String, String)] = [
+        ("ESPN service terms", "disneytermsofuse.com/english"), ("TheSportsDB terms", "thesportsdb.com/docs_terms_of_use.php"),
+        ("YouTube terms", "youtube.com/t/terms"), ("ElfHosted service terms", "docs.elfhosted.com/legal/terms-of-service"),
+        ("ElfHosted privacy policy", "docs.elfhosted.com/legal/privacy-policy"),
+    ]
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 Text("Before you open Sports").font(BP.display(32)).foregroundStyle(BP.ink)
-                Text(summary).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+                Text(T(summary)).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
                 ForEach(sections, id: \.0) { s in
                     VStack(alignment: .leading, spacing: BP.px(4)) {
-                        Text(s.0).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
-                        Text(s.1).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                        Text(T(s.0)).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
+                        Text(T(s.1)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                     }
                 }
-                ForEach(details, id: \.self) { Text($0).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
-                ForEach(links, id: \.self) { Text($0).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+                ForEach(details, id: \.self) { Text(T($0)).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+                ForEach(links, id: \.0) { l in Text(T(l.0) + ": " + l.1).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
                 Button {
                     acknowledged.toggle()
                 } label: {
-                    Label("I understand Sports shows third-party information and does not provide or verify access to broadcasts.", systemImage: acknowledged ? "checkmark.square.fill" : "square")
+                    Label("I understand this notice and agree to use Sports only with sources and content I have permission to access.", systemImage: acknowledged ? "checkmark.square.fill" : "square")
                         .font(BP.sans(14, .semibold))
                 }
                 .buttonStyle(BPActionStyle(primary: acknowledged))

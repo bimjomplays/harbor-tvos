@@ -56,19 +56,19 @@ final class LibraryRepairModel: ObservableObject {
 
     /// LibraryRepairRow statusLine.
     var line: String {
-        if let f = failure { return "Failed: \(f)" }
+        if let f = failure { return T("Failed: %@", f) }
         if let r = outcome {
-            if r.total == 0 { return "Library is empty. Nothing to repair." }
-            return "\(r.repaired) fixed, \(r.alreadyClean) already clean" + (r.unrepairable > 0 ? ", \(r.unrepairable) unrepairable" : "") + "."
+            if r.total == 0 { return T("Library is empty. Nothing to repair.") }
+            return T("%lld fixed, %lld already clean", r.repaired, r.alreadyClean) + (r.unrepairable > 0 ? T(", %lld unrepairable", r.unrepairable) : "") + "."
         }
         guard let s = step else {
             return "Rewrites every library item to match Stremio's exact schema. Run once if your Stremio app started crashing after Harbor synced playback."
         }
         switch s.phase {
-        case "fetching": return s.total.map { "Fetching \($0) items…" } ?? "Fetching library index…"
-        case "normalizing": return s.needsRepair.map { "\($0) items need repair." } ?? "Checking \(s.total ?? 0) items…"
-        case "pushing": return "Pushing \(s.pushed ?? 0) of \(s.needsRepair ?? 0)…"
-        default: return "Done."
+        case "fetching": return s.total.map { T("Fetching %lld items…", $0) } ?? T("Fetching library index…")
+        case "normalizing": return s.needsRepair.map { T("%lld items need repair.", $0) } ?? T("Checking %lld items…", s.total ?? 0)
+        case "pushing": return T("Pushing %lld of %lld…", s.pushed ?? 0, s.needsRepair ?? 0)
+        default: return T("Done.")
         }
     }
 
@@ -105,15 +105,15 @@ final class LibraryRepairModel: ObservableObject {
     var showRemove: Bool { animePhase == "scanned" && !found.isEmpty }
 
     var animeLine: String {
-        if let f = animeFailure { return "Failed: \(f)" }
+        if let f = animeFailure { return T("Failed: %@", f) }
         switch animePhase {
         case "scanning": return "Scanning your library…"
         case "scanned":
             if found.isEmpty { return "No issues found. Your anime library looks clean." }
             let names = found.prefix(4).map(\.name).joined(separator: ", ") + (found.count > 4 ? "…" : "")
-            return "Found \(found.count): \(names). These are saved under the wrong id, which breaks Continue Watching and Trakt marking."
+            return T("Found %lld: %@. These are saved under the wrong id, which breaks Continue Watching and Trakt marking.", found.count, names)
         case "removing": return "Removing…"
-        case "done": return "Removed \(removed). Rewatch and they re-add correctly."
+        case "done": return T("Removed %lld. Rewatch and they re-add correctly.", removed)
         default: return "Finds anime saved under a movie or series id (which breaks Continue Watching and Trakt) and removes just those so they re-add correctly."
         }
     }
@@ -122,7 +122,7 @@ final class LibraryRepairModel: ObservableObject {
         switch animePhase {
         case "scanning": return "Scanning…"
         case "removing": return "Removing…"
-        case "scanned" where !found.isEmpty: return "Remove \(found.count)"
+        case "scanned" where !found.isEmpty: return T("Remove %lld", found.count)
         case "done", "error", "scanned": return "Scan again"
         default: return "Scan for corruption"
         }
@@ -149,7 +149,7 @@ struct LibraryRepairPanel: View {
                             await model.run()
                             onRepaired()
                         }
-                    } label: { Label(model.cta, systemImage: "wrench.and.screwdriver") }
+                    } label: { Label(T(model.cta), systemImage: "wrench.and.screwdriver") }
                     .buttonStyle(BPActionStyle(primary: model.outcome == nil))
                     .disabled(model.busy)
                 }
@@ -168,7 +168,7 @@ struct LibraryRepairPanel: View {
                             await model.animeAction()
                             if removing { onRepaired() }
                         }
-                    } label: { Label(model.animeCta, systemImage: "wrench.and.screwdriver") }
+                    } label: { Label(T(model.animeCta), systemImage: "wrench.and.screwdriver") }
                     .buttonStyle(BPActionStyle(primary: model.showRemove))
                     .disabled(model.animeBusy)
                 }
@@ -182,8 +182,8 @@ struct LibraryRepairPanel: View {
 
     private func row(_ label: String, _ sub: String, tone: Color) -> some View {
         VStack(alignment: .leading, spacing: BP.px(4)) {
-            Text(label).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
-            Text(sub).font(BP.sans(13)).foregroundStyle(tone).fixedSize(horizontal: false, vertical: true)
+            Text(T(label)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
+            Text(T(sub)).font(BP.sans(13)).foregroundStyle(tone).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

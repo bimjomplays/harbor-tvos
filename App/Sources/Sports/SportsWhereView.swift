@@ -95,7 +95,7 @@ struct SportsLinkView: View {
             HStack(alignment: .center, spacing: BP.px(48)) {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     Text(link.title).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(2)
-                    Text(link.message).font(BP.sans(15)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+                    Text(T(link.message)).font(BP.sans(15)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: BP.px(10)) {
                         if link.app != nil || link.universal {
                             Button { open() } label: { Label("Open in app", systemImage: "arrow.up.forward.app") }.buttonStyle(BPActionStyle(primary: true))

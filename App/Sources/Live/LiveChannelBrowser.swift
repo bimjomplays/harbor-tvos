@@ -62,7 +62,7 @@ struct LiveChannelBrowser: View {
                                 ForEach(shown) { ch in row(ch).id(ch.id) }
                                 if shown.count < all.count {
                                     // channel-picker.tsx: the cap note under the list.
-                                    BPNote(text: "Showing \(shown.count) of \(all.count). Refine the search to see more.")
+                                    BPNote(text: T("Showing %lld of %lld. Refine the search to see more.", shown.count, all.count))
                                         .padding(.top, BP.px(8))
                                 }
                             }
@@ -106,8 +106,8 @@ struct LiveChannelBrowser: View {
     private var rail: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.px(6)) {
-                railItem(key: Self.favKey, label: "Favorites", count: favoriteCount, star: true)
-                railItem(key: nil, label: "All channels", count: channels.count, star: false)
+                railItem(key: Self.favKey, label: T("Favorites"), count: favoriteCount, star: true)
+                railItem(key: nil, label: T("All channels"), count: channels.count, star: false)
                 ForEach(groups, id: \.self) { g in
                     railItem(key: g, label: g, count: nil, star: false)
                 }
@@ -156,7 +156,7 @@ struct LiveChannelBrowser: View {
                 .frame(width: BP.px(240), alignment: .leading)
                 HStack(spacing: BP.px(8)) {
                     Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
-                    Text(nn?.now?.title ?? (nn?.known == true ? "Nothing scheduled" : "Live"))
+                    Text(nn?.now?.title ?? T(nn?.known == true ? "No program info" : "Live"))
                         .font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     if let p = nn?.now { Text(LiveChannelRow.range(p)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 }
@@ -193,9 +193,9 @@ struct LivePlayerGuidePanel: View {
     private var searchPlaceholder: String {
         if group == LiveChannelBrowser.favKey {
             let n = model.channels.filter(\.favorite).count
-            return n == 1 ? "Search 1 favorite" : "Search \(n) favorites"
+            return n == 1 ? T("Search %lld favorite", n) : T("Search %lld favorites", n)
         }
-        return "Search \(model.channels.count) channels"
+        return T("Search %lld channels", model.channels.count)
     }
 
     var body: some View {
@@ -274,7 +274,7 @@ struct LiveSearchField: View {
     var body: some View {
         HStack(spacing: BP.px(10)) {
             Image(systemName: "magnifyingglass").foregroundStyle(BP.inkSubtle)
-            TextField(placeholder, text: $text)
+            TextField(T(placeholder), text: $text)
                 .font(BP.sans(17))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

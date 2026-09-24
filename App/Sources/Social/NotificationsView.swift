@@ -12,7 +12,7 @@ struct NotificationsView: View {
     @State private var busy: String?
 
     var body: some View {
-        SocialPage(eyebrow: "Account", title: "Notifications") {
+        SocialPage(eyebrow: "Account", title: T("Notifications")) {
             HStack(spacing: BP.px(10)) {
                 Button { Task { await center.markAllRead() } } label: { Label("Mark all read", systemImage: "checkmark.circle") }
                     .buttonStyle(BPActionStyle()).disabled((center.notifications?.unread ?? 0) == 0)
@@ -26,7 +26,7 @@ struct NotificationsView: View {
                     ForEach(n.pending) { p in requestRow(p) }
                 }
                 if n.items.isEmpty && n.pending.isEmpty {
-                    SocialEmpty(title: "You're all caught up", message: "Friend requests, comments, badges and group news land here.")
+                    SocialEmpty(title: "You are all caught up.", message: "Friend requests, comments, badges and group news land here.")
                 }
                 ForEach(n.items) { item in
                     SocialRow(title: item.title, subtitle: item.body, trailing: Social.ago(ms: item.createdAt), unread: !item.read) {
@@ -55,7 +55,7 @@ struct NotificationsView: View {
                     SocialAvatar(url: p.avatarUrl, name: p.alias, size: BP.px(44))
                     VStack(alignment: .leading, spacing: BP.px(2)) {
                         Text(p.alias).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
-                        Text("@\(p.handle) wants to be friends").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                        Text("@" + p.handle + " " + T("wants to connect")).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                     }
                     Spacer()
                 }

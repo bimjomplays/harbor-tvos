@@ -49,7 +49,7 @@ struct CalendarView: View {
     private var header: some View {
         HStack(alignment: .bottom, spacing: BP.px(8)) {
             VStack(alignment: .leading, spacing: BP.px(4)) {
-                Text("RELEASES").font(BP.sans(9, .bold)).tracking(3).foregroundStyle(BP.inkSubtle)
+                Text("Releases").textCase(.uppercase).font(BP.sans(9, .bold)).tracking(3).foregroundStyle(BP.inkSubtle)
                 Text("Calendar").font(BP.display(32, .medium)).foregroundStyle(BP.ink)
             }
             Spacer(minLength: BP.px(12))
@@ -99,7 +99,7 @@ struct CalendarView: View {
     // been covered by playback); opening the calendar lists them once, as it clears the badge.
     private var firedBanner: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
-            Text("REMINDERS").font(BP.sans(9, .bold)).tracking(2.5).foregroundStyle(BP.inkSubtle)
+            Text("Reminders").textCase(.uppercase).font(BP.sans(9, .bold)).tracking(2.5).foregroundStyle(BP.inkSubtle)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(fired) { f in

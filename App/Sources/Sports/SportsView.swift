@@ -87,7 +87,7 @@ struct SportsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(SportsModel.Mode.allCases, id: \.rawValue) { m in
-                        Button(m.label) { model.setMode(m) }.buttonStyle(BPActionStyle(primary: model.mode == m))
+                        Button(T(m.label)) { model.setMode(m) }.buttonStyle(BPActionStyle(primary: model.mode == m))
                     }
                     Divider().frame(height: BP.px(24)).overlay(BP.edge2)
                     Button("Make it yours") { personalize = true }.buttonStyle(BPActionStyle())
@@ -113,8 +113,8 @@ struct SportsView: View {
 
     private var statusLine: String {
         guard let s = model.page?.status else { return "" }
-        if s.busy { return "Updating schedules…" }
-        if s.at > 0 { return "Updated \(Date(timeIntervalSince1970: s.at / 1000).formatted(date: .omitted, time: .shortened))" }
+        if s.busy { return T("Updating schedules…") }
+        if s.at > 0 { return T("Updated %@", Date(timeIntervalSince1970: s.at / 1000).formatted(date: .omitted, time: .shortened)) }
         return ""
     }
 
@@ -157,8 +157,15 @@ struct SportsView: View {
     // bp-sports-empty.tsx copy matrix.
     private func emptyState(_ p: SportsModel.Page) -> some View {
         let pitch = !p.status.busy && !p.personalized
-        let title = p.status.busy ? "Loading your sports…" : pitch ? "Less searching. More of your sport." : (model.mode == .live ? "Nothing live right now" : model.mode == .schedule ? "Nothing scheduled" : model.mode == .hot ? "Nothing hot yet" : "Nothing here yet")
-        let body = p.status.busy ? "Schedules and scores are on their way." : pitch ? "Pick your sports, leagues and teams. Harbor keeps what matters up top." : "Try another day, another sport, or refresh."
+        let live = model.mode == .live
+        let title = p.status.busy ? (live ? "Checking live scores…" : "Your sports are on their way")
+            : pitch ? "Less searching. More of your sport."
+            : live ? "No live matches right now" : model.mode == .schedule ? "No events on this day" : model.mode == .hot ? "No highlights right now" : "No events available for this selection"
+        let body = p.status.busy ? (live ? "Live scores refresh automatically." : "Browse sports or set up your favorites while schedules arrive.")
+            : pitch ? "Pick your sports, leagues and teams. We will bring them to the front."
+            : live ? "Live scores refresh automatically." : model.mode == .schedule ? "Pick another day."
+            : model.mode == .hot ? "Browse sports or set up your favorites while schedules arrive."
+            : "Try another sport or date. Saved schedules will appear here when a feed is unavailable."
         return VStack(alignment: .leading, spacing: BP.px(10)) {
             Text(T(title)).font(BP.display(24)).foregroundStyle(BP.ink)
             Text(T(body)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
@@ -187,7 +194,7 @@ struct SportsHeroView: View {
                     HStack(spacing: BP.px(8)) {
                         RemoteImage(url: game.leagueLogo.isEmpty ? nil : game.leagueLogo, contentMode: .fit).frame(width: BP.px(22), height: BP.px(22))
                         Text(game.leagueLabel).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
-                        if game.live { Text("LIVE").font(BP.sans(11, .bold)).foregroundStyle(BP.live) }
+                        if game.live { Text("Live").textCase(.uppercase).font(BP.sans(11, .bold)).foregroundStyle(BP.live) }
                     }
                     if game.single || game.faceOff {
                         Text(game.headline).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(2)
@@ -229,7 +236,7 @@ struct SportsHeroView: View {
     private var metaLine: String {
         var parts = [game.leagueLabel]
         if !game.quiet.isEmpty, game.quiet != game.startLabel { parts.append(game.quiet) }
-        parts.append(game.live ? (game.detail.isEmpty ? "Live" : game.detail) : game.startLabel)
+        parts.append(game.live ? (game.detail.isEmpty ? T("Live") : game.detail) : game.startLabel)
         return parts.joined(separator: " · ")
     }
 

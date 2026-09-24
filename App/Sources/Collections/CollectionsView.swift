@@ -238,7 +238,7 @@ struct CollectionsView: View {
                                 .accessibilityIdentifier("collection-\(c.key)")
                         }
                         if model.showAllTvdb {
-                            Button { model.set(source: "tvdb") } label: { CollectionMoreCard(label: "See every TVDB list") }
+                            Button { model.set(source: "tvdb") } label: { CollectionMoreCard(label: T("See every TVDB list")) }
                                 .buttonStyle(BPTileStyle())
                         }
                     }
@@ -251,7 +251,7 @@ struct CollectionsView: View {
                         }
                         .frame(maxWidth: .infinity)
                     } else if model.done {
-                        Text(model.endMessage).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).frame(maxWidth: .infinity)
+                        Text(T(model.endMessage)).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).frame(maxWidth: .infinity)
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }
@@ -277,7 +277,7 @@ struct CollectionsView: View {
     private var sourceRow: some View {
         HStack(spacing: BP.px(8)) {
             ForEach(Self.sources, id: \.0) { key, label in
-                Button(label) { model.set(source: key) }.buttonStyle(BPActionStyle(primary: model.source == key))
+                Button(T(label)) { model.set(source: key) }.buttonStyle(BPActionStyle(primary: model.source == key))
             }
             if model.source == "all" || model.source == "mine" {
                 // community-hub.tsx: "New collection", with the "{n} / {max}" count beside it.
@@ -316,13 +316,13 @@ struct CollectionCardView: View {
         var bits: [String] = []
         if let b = card.byline, !b.isEmpty { bits.append(b) }
         if card.source == "mine" || card.source == "community" {
-            if let n = card.count { bits.append("\(n) items") }
+            if let n = card.count { bits.append(T("%lld items", n)) }
         } else if let n = card.count {
-            bits.append("\(n) films")
+            bits.append(T("%lld films", n))
         } else if card.source == "tvdb" {
-            bits.append("TVDB list")
+            bits.append(T("TVDB list"))
         } else {
-            bits.append("Collection")
+            bits.append(T("Collection"))
         }
         return bits.joined(separator: "  ·  ")
     }

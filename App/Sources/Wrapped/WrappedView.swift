@@ -70,7 +70,7 @@ struct WrappedView: View {
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Button { dismiss() } label: {
-                        Label("MY LIBRARY", systemImage: "arrow.left").font(BP.sans(10, .bold)).tracking(2.5)
+                        Label("My library", systemImage: "arrow.left").textCase(.uppercase).font(BP.sans(10, .bold)).tracking(2.5)
                     }
                     .buttonStyle(BPActionStyle())
                     .focused($focus, equals: "back")
@@ -182,7 +182,7 @@ struct WrappedView: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(text.uppercased()).font(BP.sans(10, .semibold)).tracking(2.5).foregroundStyle(BP.inkSubtle).padding(.bottom, BP.px(12))
+        Text(T(text).uppercased()).font(BP.sans(10, .semibold)).tracking(2.5).foregroundStyle(BP.inkSubtle).padding(.bottom, BP.px(12))
     }
 
     // HeroCard
@@ -204,7 +204,7 @@ struct WrappedView: View {
     private func stat(_ value: String, _ unit: String, big: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: BP.px(4)) {
             Text(value).font(BP.display(big ? 64 : 40, .medium)).foregroundStyle(BP.ink).lineLimit(1).minimumScaleFactor(0.5)
-            Text(unit).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+            Text(T(unit)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
         }
     }
 
@@ -215,7 +215,7 @@ struct WrappedView: View {
             if !s.archetype.label.isEmpty { highlight("sparkles", s.archetype.label, s.archetype.blurb) }
             if s.longestBinge.count > 1 {
                 let date = s.bingeDate ?? s.longestBinge.date
-                highlight("flame", "Longest binge", "\(s.longestBinge.count) in a day · \(date)")
+                highlight("flame", "Longest binge", T("%lld in a day", s.longestBinge.count) + " · " + date)
             }
             if let first = s.firstPlay { highlight("calendar.badge.clock", "Where it started", first.title) }
         }
@@ -227,7 +227,7 @@ struct WrappedView: View {
                 .frame(width: BP.px(36), height: BP.px(36))
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.canvas.opacity(0.6)))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                Text(T(title)).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
                 Text(body).font(BP.sans(12.5)).foregroundStyle(BP.inkMuted).lineLimit(2)
             }
         }
@@ -247,7 +247,7 @@ struct WrappedView: View {
             ForEach(rows) { r in
                 HStack(spacing: BP.px(12)) {
                     Image(systemName: r.icon).foregroundStyle(BP.inkMuted).frame(width: BP.px(22))
-                    Text(r.label).font(BP.sans(13.5)).foregroundStyle(BP.inkMuted).frame(width: BP.px(70), alignment: .leading)
+                    Text(T(r.label)).font(BP.sans(13.5)).foregroundStyle(BP.inkMuted).frame(width: BP.px(70), alignment: .leading)
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(BP.canvas.opacity(0.7))

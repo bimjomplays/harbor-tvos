@@ -179,7 +179,7 @@ struct KidsRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text(row.title)
+            Text(T(row.title))
                 .font(KidsTheme.font(19 * 1.28, .bold)).foregroundStyle(KidsTheme.deep)
                 .padding(.horizontal, BP.gutter)
             ScrollView(.horizontal, showsIndicators: false) {

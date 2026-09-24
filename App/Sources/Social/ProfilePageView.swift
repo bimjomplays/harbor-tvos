@@ -46,7 +46,7 @@ struct ProfilePageView: View {
         .fullScreenCover(item: $other) { h in ProfilePageView(handle: h.handle) }
         .fullScreenCover(item: $list) { r in SharedListView(ref: r) }
         .fullScreenCover(isPresented: $composing) {
-            PhoneTypingSheet(label: "Comment", placeholder: "Say something nice", text: $draft,
+            PhoneTypingSheet(label: "Comments", placeholder: "Leave a comment. No links.", text: $draft,
                              purpose: "Scan this with your phone camera, then write your comment on your phone.",
                              onSubmit: { Task { await postComment() } }, onClose: { composing = false })
         }
@@ -66,7 +66,7 @@ struct ProfilePageView: View {
             hero(s, stats: p.stats ?? [])
             if p.locked == true {
                 // profile-states.tsx locked copy.
-                SocialEmpty(title: "\(s.alias) keeps this private", message: "This member has hidden their showcase, activity and friends from public view.")
+                SocialEmpty(title: T("%@ keeps this private", s.alias), message: "This member has hidden their showcase, activity and friends from public view.")
             } else {
                 if let w = s.watching, let title = w.title { watchingCard(w, title: title) }
                 if let about = s.description, !about.isEmpty { section("About") { Text(about).font(BP.sans(15)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true) } }
@@ -80,7 +80,7 @@ struct ProfilePageView: View {
             // profile-states.tsx: "No such captain" / "Could not load this profile".
             let state = page?.state ?? "error"
             if state == "empty" {
-                SocialEmpty(title: "No such captain", message: "We could not find anyone at @\(page?.handle ?? handle ?? ""). The handle may have changed or the profile was removed.", action: ("Back", { dismiss() }))
+                SocialEmpty(title: "No such captain", message: T("We could not find anyone at @%@. The handle may have changed or the profile was removed.", page?.handle ?? handle ?? ""), action: ("Back", { dismiss() }))
             } else if state == "signed-out" || state == "no-handle" {
                 SocialEmpty(title: "Sign in to Harbor", message: state == "no-handle" ? "Claim a handle on desktop Harbor or harbor.site to get a public profile." : "Your Harbor account's profile shows here once this TV is signed in (Settings → Account).", action: ("Back", { dismiss() }))
             } else {
@@ -149,7 +149,7 @@ struct ProfilePageView: View {
             .buttonStyle(BPActionStyle(primary: true)).disabled(friendBusy || s.friendEdgeId == nil)
         case "outgoing":
             Button { Task { await friendAct("social.friendRemove", arg: s.handle) } } label: {
-                Label(friendBusy ? "Canceling..." : "Requested · Cancel request", systemImage: "clock")
+                Label(friendBusy ? "Canceling..." : "Cancel request", systemImage: "clock")
             }
             .buttonStyle(BPActionStyle()).disabled(friendBusy)
         default:
@@ -178,7 +178,7 @@ struct ProfilePageView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ body: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text(title).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
+            Text(T(title)).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
             body()
         }
     }
@@ -188,7 +188,7 @@ struct ProfilePageView: View {
         HStack(spacing: BP.px(14)) {
             if let p = w.posterUrl { RemoteImage(url: p).frame(width: BP.px(54), height: BP.px(80)).clipShape(RoundedRectangle(cornerRadius: BP.rXS)) }
             VStack(alignment: .leading, spacing: BP.px(3)) {
-                Text(w.kind == "party" ? "WATCHING TOGETHER" : (w.paused == true ? "PAUSED" : "WATCHING NOW")).font(BP.sans(11, .bold)).tracking(2).foregroundStyle(BP.live)
+                Text(T(w.kind == "party" ? "Watch party" : (w.paused == true ? "Paused" : "Now playing"))).textCase(.uppercase).font(BP.sans(11, .bold)).tracking(2).foregroundStyle(BP.live)
                 Text(title).font(BP.sans(18, .semibold)).foregroundStyle(BP.ink)
                 if let sub = w.sub { Text(sub).font(BP.sans(13)).foregroundStyle(BP.inkMuted) }
             }
@@ -210,7 +210,7 @@ struct ProfilePageView: View {
                                     }
                                 }
                                 Text(l.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                Text("\(l.count) \(l.count == 1 ? "title" : "titles")").font(BP.sans(12)).foregroundStyle(BP.inkMuted)
+                                Text(T(l.count == 1 ? "%lld title" : "%lld titles", l.count)).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
                             }
                             .padding(BP.px(12)).frame(width: BP.px(260), alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel.opacity(0.85)))
@@ -311,12 +311,12 @@ struct ProfilePageView: View {
         section("Comments") {
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 if SocialCenter.shared.me.signedIn {
-                    Button { draft = ""; composing = true } label: { Label("Write a comment", systemImage: "iphone") }
+                    Button { draft = ""; composing = true } label: { Label("Write a comment...", systemImage: "iphone") }
                         .buttonStyle(BPActionStyle())
                 }
                 if let c = comments {
                     if c.comments.isEmpty {
-                        Text("No comments yet.").font(BP.sans(14)).foregroundStyle(BP.inkSubtle)
+                        Text("No comments yet. Be the first to say hello.").font(BP.sans(14)).foregroundStyle(BP.inkSubtle)
                     }
                     ForEach(c.comments) { cm in
                         SocialRow(title: cm.authorAlias, subtitle: cm.body, trailing: "\(Social.ago(iso: cm.at))\(cm.likeCount > 0 ? " · ♥ \(Int(cm.likeCount))" : "")", unread: cm.liked) {

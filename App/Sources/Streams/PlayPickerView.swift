@@ -368,7 +368,8 @@ struct PlayPickerView: View {
                 ForEach(Self.qualities, id: \.0) { q in
                     let n = q.1.isEmpty ? model.streams.count : model.streams.filter { q.1.contains($0.resolution ?? "") }.count
                     if n > 0 || q.0 == "All" {
-                        Button("\(q.0) \(n)") { quality = q.0 }.buttonStyle(BPActionStyle(primary: quality == q.0))
+                        // A String, not a literal: "%@ %lld" is a catalog entry some languages re-order (review 20).
+                        Button(T(q.0) + " \(n)") { quality = q.0 }.buttonStyle(BPActionStyle(primary: quality == q.0))
                     }
                 }
                 if model.streams.contains(where: \.isCached) {

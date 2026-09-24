@@ -43,7 +43,7 @@ struct EpgMatchView: View {
 
     private var placeholder: String {
         guard let total = list?.total else { return "Search EPG channels" }
-        return "Search \(total.formatted()) EPG channels"
+        return T("Search %@ EPG channels", total.formatted())
     }
 
     private var results: some View {

@@ -31,7 +31,7 @@ final class LetterboxdModel: ObservableObject {
         do {
             let r: Connect = try await HarborEngine.shared.call("letterboxd.connect", [p.id, p.linked, username])
             noteOk = r.ok
-            note = r.ok ? "Connected. \(r.catalogs) catalogs are available." : (r.message ?? "Could not reach Stremboxd. Check your connection.")
+            note = r.ok ? T("Connected. %lld catalogs are available.", r.catalogs) : (r.message ?? "Could not reach Stremboxd. Check your connection.")
         } catch {
             noteOk = false
             note = "Could not reach Stremboxd. Check your connection."

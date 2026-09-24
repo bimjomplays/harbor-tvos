@@ -13,8 +13,8 @@ struct GroupsView: View {
     @State private var searching = false
 
     var body: some View {
-        SocialPage(eyebrow: "Community", title: "Groups",
-                   subtitle: "Find people who watch what you watch. Join a group to share lists, post, and watch together.") {
+        SocialPage(eyebrow: "Community", title: T("Groups"),
+                   subtitle: T("Find people who watch what you watch. Join a group to share lists, post, and watch together.")) {
             HStack(spacing: BP.px(10)) {
                 Button { searching = true } label: {
                     Label(query.isEmpty ? "Search groups by name or tag" : "“\(query)”", systemImage: "magnifyingglass")
@@ -28,7 +28,7 @@ struct GroupsView: View {
             if let tags = data?.topTags, !tags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
-                        chip("All", active: tag == nil) { tag = nil; Task { await load() } }
+                        chip(T("All"), active: tag == nil) { tag = nil; Task { await load() } }
                         ForEach(tags, id: \.self) { t in
                             chip(t, active: tag == t) { tag = (t == tag ? nil : t); Task { await load() } }
                         }
@@ -40,9 +40,9 @@ struct GroupsView: View {
                 if !d.invites.isEmpty { section("Invites", d.invites) }
                 if !d.mine.isEmpty { section("Your groups", d.mine) }
                 if d.phase == "error" {
-                    SocialEmpty(title: "Could not load groups", message: "Check your connection and try again.", action: ("Try again", { Task { await load() } }))
+                    SocialEmpty(title: "Could not load groups.", message: "Check your connection and try again.", action: ("Try again", { Task { await load() } }))
                 } else if d.groups.isEmpty {
-                    SocialEmpty(title: query.isEmpty ? "No groups yet" : "No groups match “\(query)”", message: "Groups are made on desktop Harbor or harbor.site.")
+                    SocialEmpty(title: query.isEmpty ? "No public groups yet" : T("No groups match “%@”", query), message: "Groups are made on desktop Harbor or harbor.site.")
                 } else {
                     section(!query.isEmpty || tag != nil ? "Results" : (d.mine.isEmpty ? "Public groups" : "Discover more"), d.groups, count: d.total)
                     if d.nextCursor != nil {
@@ -70,7 +70,7 @@ struct GroupsView: View {
     private func section(_ title: String, _ groups: [Social.GroupCard], count: Int? = nil) -> some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             HStack(alignment: .lastTextBaseline, spacing: BP.px(8)) {
-                Text(title).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
+                Text(T(title)).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
                 if let count, count > 0 { Text("\(count)").font(BP.sans(14)).foregroundStyle(BP.inkSubtle) }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(16)), count: 3), alignment: .leading, spacing: BP.px(16)) {
@@ -134,17 +134,17 @@ struct GroupPageView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        SocialPage(eyebrow: "Group", title: group?.name ?? (phase == "error" ? "Group unavailable" : "Loading…"),
-                   subtitle: group.map { "\($0.memberCount) \($0.memberCount == 1 ? "member" : "members")\($0.visibility == "invite" ? " · Invite only" : " · Public")" }) {
+        SocialPage(eyebrow: "Group", title: group?.name ?? T(phase == "error" ? "Group unavailable" : "Loading…"),
+                   subtitle: group.map { "\($0.memberCount) " + T($0.memberCount == 1 ? "member" : "members") + " · " + T($0.visibility == "invite" ? "Invite only" : "Public group") }) {
             if phase == "error" {
-                SocialEmpty(title: "Could not open this group", message: error ?? "It may be invite only, or it no longer exists.", action: ("Try again", { Task { await load() } }))
+                SocialEmpty(title: "This group could not be loaded.", message: error ?? "It may be invite only, or it no longer exists.", action: ("Try again", { Task { await load() } }))
             } else if let g = group {
                 actions(g)
                 if let error { BPNote(text: error, tone: BP.danger) }
                 HStack(spacing: BP.px(8)) {
-                    tabButton("posts", "Posts")
-                    tabButton("members", "Members (\(g.memberCount))")
-                    tabButton("about", "About")
+                    tabButton("posts", T("Posts"))
+                    tabButton("members", T("Members") + " (\(g.memberCount))")
+                    tabButton("about", T("About"))
                 }
                 .focusSection()
                 switch tab {
@@ -159,7 +159,7 @@ struct GroupPageView: View {
         .task { await load() }
         .fullScreenCover(item: $profile) { h in ProfilePageView(handle: h.handle) }
         .fullScreenCover(isPresented: $composing) {
-            PhoneTypingSheet(label: "Post", placeholder: "Share something with the group", text: $draft,
+            PhoneTypingSheet(label: "Post", placeholder: group.map { T("Share something with %@", $0.name) } ?? "Share something with the group", text: $draft,
                              purpose: "Scan this with your phone camera, then write your post on your phone.",
                              onSubmit: { Task { await post() } }, onClose: { composing = false })
         }
@@ -174,7 +174,7 @@ struct GroupPageView: View {
             Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
             if g.isPending {
                 // group-invite-banner.tsx
-                Button("Accept invite") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)
+                Button("Accept") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)
                 Button("Decline") { Task { await respond(false) } }.buttonStyle(BPActionStyle()).disabled(busy)
             } else if g.isMember || g.isOwner {
                 if g.can.post { Button { draft = ""; composing = true } label: { Label("Write a post", systemImage: "iphone") }.buttonStyle(BPActionStyle()) }
@@ -193,10 +193,10 @@ struct GroupPageView: View {
     @ViewBuilder private func postsView(_ g: Social.Group) -> some View {
         if let p = posts {
             if p.posts.isEmpty {
-                SocialEmpty(title: "No posts yet", message: p.canPost ? "Be the first to post." : "Members' posts show here.")
+                SocialEmpty(title: "Nothing posted yet", message: p.canPost ? "Share what you're watching, drop a recommendation, or announce a watch night." : "Members' posts show here.")
             }
             ForEach(p.posts) { post in
-                SocialRow(title: post.author?.alias ?? "Member",
+                SocialRow(title: post.author?.alias ?? T("Someone"),
                           subtitle: post.text,
                           trailing: "\(post.pinned ? "Pinned · " : "")\(Social.ago(iso: post.createdAt))\(post.likeCount > 0 ? " · ♥ \(Int(post.likeCount))" : "")",
                           unread: post.liked) {
@@ -227,7 +227,7 @@ struct GroupPageView: View {
 
     private func about(_ g: Social.Group) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text(g.description?.isEmpty == false ? g.description! : "No description yet.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
+            Text(g.description?.isEmpty == false ? g.description! : T("This group has not written a description yet.")).font(BP.sans(16)).foregroundStyle(BP.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if !g.tags.isEmpty { Text(g.tags.map { "#\($0)" }.joined(separator: "  ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkSubtle) }
             if let role = g.role { Text("Your role: \(role.capitalized)").font(BP.sans(13)).foregroundStyle(BP.inkSubtle) }

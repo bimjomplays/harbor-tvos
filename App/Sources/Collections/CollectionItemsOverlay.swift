@@ -78,7 +78,7 @@ struct CollectionItemsOverlay: View {
     // bp-collection-items: eyebrow (byline or "My collection"), name, "{count} items", manga note;
     // bp-collection-detail: "Collection", name, "{count} films", overview.
     @ViewBuilder private var header: some View {
-        Text(isDetail ? "Collection" : (card.byline ?? "My collection"))
+        Text(isDetail ? T("Collection") : (card.byline ?? T("My collection")))
             .font(BP.sans(12, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
         Text(card.name).font(BP.display(32)).foregroundStyle(BP.ink)
         if let line = countLine { Text(line).font(BP.sans(14)).foregroundStyle(BP.inkMuted) }
@@ -92,8 +92,8 @@ struct CollectionItemsOverlay: View {
 
     private var countLine: String? {
         switch card.source {
-        case "mine", "community": return "\(card.items.count + (card.hidden ?? 0)) items"
-        case "tmdb": return card.items.isEmpty ? nil : "\(card.items.count) films"
+        case "mine", "community": return T("%lld items", card.items.count + (card.hidden ?? 0))
+        case "tmdb": return card.items.isEmpty ? nil : T("%lld films", card.items.count)
         default: return nil
         }
     }

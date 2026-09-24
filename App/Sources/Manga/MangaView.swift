@@ -174,7 +174,7 @@ struct MangaView: View {
     private var noSource: some View {
         VStack(alignment: .leading, spacing: BP.px(16)) {
             Text("Add a manga source").font(BP.display(36)).foregroundStyle(BP.ink)
-            BPNote(text: "Harbor does not host any manga or any sources. Connect a self-hosted server you run.")
+            BPNote(text: "Harbor does not host any manga or any sources. Connect your own server or open a folder you already have, and mix as many as you like.")
                 .frame(maxWidth: BP.px(620), alignment: .leading)
             BPNote(text: MangaSourcesView.tvNote, tone: BP.inkSubtle).frame(maxWidth: BP.px(620), alignment: .leading)
             Button("Set up a source") { sourcesOpen = true }
@@ -198,14 +198,14 @@ struct MangaView: View {
                     sourceBar
                     if !store.progress.isEmpty { continueRow }
                     if !model.popular.isEmpty {
-                        BPRowView(row: BrowseRow(key: "manga-popular", title: "Popular Manga", metas: model.popular.map(\.meta)),
+                        BPRowView(row: BrowseRow(key: "manga-popular", title: T("Popular Manga"), metas: model.popular.map(\.meta)),
                                   onFocus: { m in spotlight = model.popular.first { $0.id == m.id } },
                                   onSelect: { open = MangaOpen(id: $0.id) })
                     } else if model.popularFailed {
-                        BPNote(text: "Your source did not answer. Check that the server is running.").padding(.horizontal, BP.gutter)
+                        BPNote(text: "Could not load results").padding(.horizontal, BP.gutter)
                     }
                     if !store.favorites.isEmpty {
-                        BPRowView(row: BrowseRow(key: "manga-favorites", title: "Library",
+                        BPRowView(row: BrowseRow(key: "manga-favorites", title: T("Library"),
                                                  metas: store.favorites.map { Meta(id: $0.id, type: "manga", name: $0.title, poster: $0.cover) }),
                                   onFocus: { _ in }, onSelect: { open = MangaOpen(id: $0.id) })
                     }
@@ -286,7 +286,7 @@ struct MangaView: View {
                         Button { resume(e) } label: { continueCard(e) }
                             .buttonStyle(BPTileStyle())
                             .contextMenu {
-                                Button("Remove from Continue Reading", role: .destructive) { Task { await store.removeProgress(e.id) } }
+                                Button("Remove from continue reading", role: .destructive) { Task { await store.removeProgress(e.id) } }
                             }
                     }
                 }
@@ -338,7 +338,7 @@ struct MangaView: View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             Text("Browse manga").font(BP.sans(22, .bold)).foregroundStyle(BP.ink)
             HStack(alignment: .bottom, spacing: BP.px(12)) {
-                BPField(label: "Search manga", placeholder: "Title", text: $model.query, phone: true)
+                BPField(label: "Search", placeholder: "Search manga...", text: $model.query, phone: true)
                     .frame(width: BP.px(420))
                 if !model.query.isEmpty {
                     Button("Clear") { model.query = "" }.buttonStyle(BPActionStyle())
@@ -362,10 +362,10 @@ struct MangaView: View {
             case .loading:
                 ProgressView().tint(BP.inkMuted).padding(.vertical, BP.px(30))
             case .error:
-                BPNote(text: "This source did not answer. Try another source, or try again later.")
+                BPNote(text: "Could not load results")
                 Button("Try again") { model.reloadBrowse() }.buttonStyle(BPActionStyle())
             case .ready where model.items.isEmpty:
-                BPNote(text: model.query.isEmpty ? "Nothing to show from this source yet." : "No manga matches “\(model.query)”.")
+                BPNote(text: model.query.isEmpty ? "Nothing to show here yet." : T("Nothing found for \"%@\"", model.query))
             case .ready:
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: BPTileView.posterWidth, maximum: BPTileView.posterWidth), spacing: BP.trackGap)],
                           alignment: .leading, spacing: BP.px(18)) {
@@ -410,7 +410,8 @@ struct MangaSourcesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: BP.px(22)) {
                     Text("Manga sources").font(BP.display(34)).foregroundStyle(BP.ink)
-                    BPNote(text: "Harbor does not host any manga or any sources. " + Self.tvNote).frame(maxWidth: BP.px(760), alignment: .leading)
+                    BPNote(text: T("Harbor does not host any manga or any sources. Connect your own server or open a folder you already have, and mix as many as you like.") + " " + Self.tvNote)
+                        .frame(maxWidth: BP.px(760), alignment: .leading)
                     if let s = store.state, !s.servers.isEmpty { serverList(s) }
                     form
                     Button("Done", action: onClose).buttonStyle(BPActionStyle())
@@ -426,7 +427,7 @@ struct MangaSourcesView: View {
 
     private func serverList(_ s: MangaState) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Your servers").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text("Servers").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             ForEach(s.servers) { server in
                 // The source a server feeds carries its host (credentials never reach the UI).
                 let source = s.sources.first { $0.kind == "suwayomi" && $0.host == server.host }
@@ -439,7 +440,7 @@ struct MangaSourcesView: View {
                     Spacer()
                     if let source {
                         if s.activeId == source.id {
-                            Text("In use").font(BP.sans(13, .semibold)).foregroundStyle(BP.live)
+                            Text("Active").font(BP.sans(13, .semibold)).foregroundStyle(BP.live)
                         } else {
                             Button("Use this server") { Task { await store.setActive(source.id) } }.buttonStyle(BPActionStyle())
                         }
@@ -451,7 +452,7 @@ struct MangaSourcesView: View {
                 .focusSection()
             }
             if s.sources.contains(where: { $0.id == "all" }) {
-                Button(s.activeId == "all" ? "Reading from all servers" : "Read from all servers") { Task { await store.setActive("all") } }
+                Button("All servers") { Task { await store.setActive("all") } }
                     .buttonStyle(BPActionStyle(primary: s.activeId == "all"))
             }
         }
@@ -464,8 +465,8 @@ struct MangaSourcesView: View {
             BPField(label: "Server address", placeholder: "http://192.168.1.20:4567", text: $address, keyboard: .URL)
             BPField(label: "Name (optional)", placeholder: "My Server", text: $name)
             HStack(spacing: BP.px(12)) {
-                BPField(label: "Username (optional)", placeholder: "", text: $username)
-                BPField(label: "Password (optional)", placeholder: "", text: $password, secure: true)
+                BPField(label: "Username", placeholder: "", text: $username)
+                BPField(label: "Password", placeholder: "", text: $password, secure: true)
             }
             HStack(spacing: BP.px(10)) {
                 Button(busy ? "Checking…" : "Test connection") { Task { await test() } }
@@ -484,9 +485,9 @@ struct MangaSourcesView: View {
         let r = await store.testServer(url: address.trimmingCharacters(in: .whitespaces), username: username, password: password)
         busy = false
         if r.ok {
-            note = (text: "Connected. \(r.sources) source\(r.sources == 1 ? "" : "s") on this server.", ok: true)
+            note = (text: T("Connected") + " · " + (r.sources == 1 ? T("%lld source", r.sources) : T("%lld sources", r.sources)), ok: true)
         } else {
-            note = (text: "Couldn't reach the server. Check the address, and that Suwayomi is running and reachable from this TV.", ok: false)
+            note = (text: "Could not reach this server", ok: false)
         }
     }
 

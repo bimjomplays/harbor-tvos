@@ -77,12 +77,12 @@ struct LiveRowView: View {
                 Spacer(minLength: 0)
                 if c.channel.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(9))).foregroundStyle(BP.ink) }
             }
-            Text(c.now?.title ?? (c.next == nil ? "Live" : "Nothing on right now")).font(BP.sans(13, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+            Text(c.now?.title ?? T(c.next == nil ? "Live" : "No program info")).font(BP.sans(13, .bold)).foregroundStyle(BP.ink).lineLimit(1)
             if let p = c.progress {
                 ZStack(alignment: .leading) { Capsule().fill(BP.edge2); Capsule().fill(BP.live).frame(width: (BP.px(250) - BP.px(24)) * min(1, max(0, p))) }
                     .frame(height: BP.px(3))
             }
-            if let n = c.next { Text("Next: \(n.title)").font(BP.sans(10.5)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+            if let n = c.next { Text(T("Next:") + " " + n.title).font(BP.sans(10.5)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
         }
         .padding(BP.px(12))
         .frame(width: BP.px(250), height: BP.px(110), alignment: .topLeading)

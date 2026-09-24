@@ -17,7 +17,7 @@ struct CalendarDayView: View {
             BP.void_.opacity(0.8).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: BP.px(3)) {
-                    Text("RELEASES").font(BP.sans(9, .bold)).tracking(2.5).foregroundStyle(BP.inkSubtle)
+                    Text("Releases").textCase(.uppercase).font(BP.sans(9, .bold)).tracking(2.5).foregroundStyle(BP.inkSubtle)
                     Text(cell.items.first?.dateLong ?? cell.iso).font(BP.display(20, .medium)).foregroundStyle(BP.ink)
                     Text(cell.items.count == 1 ? "\(cell.items.count) title" : "\(cell.items.count) titles")
                         .font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
@@ -98,7 +98,7 @@ struct RemindersManagerView: View {
         ZStack(alignment: .trailing) {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(10)) {
-                Text("REMINDERS").font(BP.sans(10, .semibold)).tracking(1.5).foregroundStyle(BP.inkSubtle)
+                Text("Reminders").textCase(.uppercase).font(BP.sans(10, .semibold)).tracking(1.5).foregroundStyle(BP.inkSubtle)
                 if loaded && rows.isEmpty {
                     BPNote(text: "No reminders yet. Use the clock on a show's page to get told about new episodes and seasons.")
                 }
@@ -194,7 +194,7 @@ struct CalendarConfigRailView: View {
                         }
                         Spacer()
                         // result-pill.tsx
-                        Text(resultCount == 1 ? "1 result" : "\(resultCount) results")
+                        Text(resultCount == 1 ? "1 result" : T("%lld results", resultCount))
                             .font(BP.sans(11.5, .semibold)).foregroundStyle(BP.ink)
                             .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
                             .background(Capsule().fill(BP.glass))

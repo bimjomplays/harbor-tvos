@@ -187,11 +187,11 @@ struct MultiviewView: View {
                 Button { model.setLayout(l.id) } label: {
                     HStack(spacing: BP.px(6)) {
                         Image(systemName: l.id == "2x2" ? "square.grid.2x2" : l.id == "2v" ? "rectangle.split.1x2" : "square")
-                        Text(l.id == "2v" ? l.title : l.id)
+                        Text(l.id == "2v" ? T(l.title) : l.id)
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: model.layout == l.id))
-                .accessibilityLabel(l.title)
+                .accessibilityLabel(T(l.title))
                 .focused($focus, equals: .band(l.id))
             }
             Button { model.reset() } label: { Label("Clear all", systemImage: "stop.circle") }
@@ -352,7 +352,7 @@ struct MultiviewCell: View {
                 }
                 .buttonStyle(MultiviewTileStyle(radius: 0))
                 .focused(focus, equals: .cell(slot))
-                .accessibilityLabel(audio ? "\(ch.shownName), sound on" : ch.shownName)
+                .accessibilityLabel(audio ? ch.shownName + ", sound on" : ch.shownName)
             }
             .clipped()
         }
@@ -513,7 +513,7 @@ struct MultiviewPicker: View {
 
     private var placeholder: String {
         if loading && channels.isEmpty { return "Loading channels…" }
-        return channels.count == 1 ? "Search 1 channel" : "Search \(channels.count) channels"
+        return channels.count == 1 ? T("Search %lld channel", 1) : T("Search %lld channels", channels.count)
     }
 
     /// Now/next is only known for the Live room's source.
@@ -541,10 +541,10 @@ struct MultiviewPicker: View {
                 // PlaylistDropdown: All playlists, then each source with its channel count.
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
-                        scopeChip(id: Self.allPlaylists, label: "All playlists", sub: nil)
+                        scopeChip(id: Self.allPlaylists, label: T("All playlists"), sub: nil)
                         ForEach(live.playlists) { pl in
                             let n = pl.id == currentId ? live.channels.count : model.otherChannels[pl.id]?.count
-                            scopeChip(id: pl.id, label: pl.name, sub: n.map { $0 == 1 ? "1 channel" : "\($0) channels" } ?? (model.loadingOther.contains(pl.id) ? "Loading…" : nil))
+                            scopeChip(id: pl.id, label: pl.name, sub: n.map { $0 == 1 ? T("%lld channel", 1) : T("%lld channels", $0) } ?? (model.loadingOther.contains(pl.id) ? T("Loading…") : nil))
                         }
                     }
                     .padding(.vertical, BP.px(4))
