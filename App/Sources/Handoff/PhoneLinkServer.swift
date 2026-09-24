@@ -41,6 +41,8 @@ final class PhoneLinkServer: @unchecked Sendable {
     private static let maxHeader = 8 * 1024
     private static let maxBody = 16 * 1024
     private static let maxConnections = 16
+    /// Per device: one noisy host on the Wi-Fi cannot hold every slot and lock the phone out (review 16).
+    private static let maxPerHost = 4
     private static let readDeadline: TimeInterval = 10
     /// Covers the TV's own 20 s apply timeout plus the reply.
     private static let lifeDeadline: TimeInterval = 40
@@ -121,11 +123,14 @@ final class PhoneLinkServer: @unchecked Sendable {
         var buffer = Data()
         var parsed = false
         var finished = false
-        init(_ nw: NWConnection) { self.nw = nw }
+        let host: String
+        init(_ nw: NWConnection) { self.nw = nw; self.host = PhoneLinkServer.hostKey(nw.endpoint) }
     }
 
     private func accept(_ nw: NWConnection) {
-        guard !stopped, connections.count < Self.maxConnections, Self.isLocal(nw.endpoint) else {
+        let host = Self.hostKey(nw.endpoint)
+        guard !stopped, connections.count < Self.maxConnections, Self.isLocal(nw.endpoint),
+              connections.values.filter({ $0.host == host }).count < Self.maxPerHost else {
             nw.cancel()
             return
         }
@@ -260,6 +265,12 @@ final class PhoneLinkServer: @unchecked Sendable {
     }
 
     // MARK: local-network check (acceptLocalOnly is the first line; this is the second)
+
+    /// The peer address without its port ("" when the endpoint is not host:port).
+    static func hostKey(_ endpoint: NWEndpoint) -> String {
+        guard case .hostPort(let host, _) = endpoint else { return "" }
+        return "\(host)"
+    }
 
     static func isLocal(_ endpoint: NWEndpoint) -> Bool {
         guard case .hostPort(let host, _) = endpoint else { return false }

@@ -263,11 +263,12 @@ final class TvHandoff: ObservableObject {
                                      surface: surface, entry: entryJSON(for: client))
     }
 
-    /// The field's label always; its current value only to the bound phone, and never a secret.
+    /// The field only to the bound phone (an unpaired device learns nothing about the screen),
+    /// and never a secret's value (review 16).
     private func entryJSON(for client: String?) -> [String: Any]? {
-        guard mode == .typing, let entry else { return nil }
+        guard mode == .typing, let entry, let client, session?.bound == client else { return nil }
         var o: [String: Any] = ["label": entry.label, "placeholder": entry.placeholder, "secure": entry.secure]
-        if let client, session?.bound == client, !entry.secure { o["value"] = entry.value() }
+        if !entry.secure { o["value"] = entry.value() }
         return o
     }
 
