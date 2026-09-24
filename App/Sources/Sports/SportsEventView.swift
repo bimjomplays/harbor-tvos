@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// bp-sports-event.tsx, ESPN branch: hero (league, pills, sides, score, facts), then team
-/// statistics, play-by-play events, lineups and the official watch note.
+/// bp-sports-event.tsx: hero (league, pills, sides, score, facts, actions), then the Stats row
+/// (live situation diagram, play by play, team statistics), Lineups (pitch, rosters, player
+/// tables), Standings, Addon sources and Where to watch (venue + provider tiles).
 @MainActor
 final class SportsEventModel: ObservableObject {
     struct Player: Decodable, Identifiable { var id: String; var name: String; var jersey: String; var position: String; var starter: Bool }
@@ -15,14 +16,28 @@ final class SportsEventModel: ObservableObject {
 
     struct WatchOption: Decodable, Identifiable { var channelId: String; var name: String; var logo: String?; var url: String; var headers: [String: String]?; var tier: String; var attached: Bool; var label: String; var copy: String; var reasons: [String]; var score: Double; var id: String { channelId } }
     struct Provider: Decodable, Identifiable { var name: String; var url: String; var logo: String; var id: String { name } }
-    struct Broadcast: Decodable, Identifiable { var title: String; var competition: String; var channel: String; var source: String; var id: String { channel } }
-    struct Watch: Decodable { var plan: String; var fixture: String; var channels: [WatchOption]; var providers: [Provider]; var broadcasts: [Broadcast]; var sources: Int; var scanned: Int }
+    /// bp-sports-broadcast-source: an official Twitch / YouTube / Kick broadcast (`app` is the provider's URL scheme).
+    struct Broadcast: Decodable, Identifiable { var title: String; var url: String; var platform: String; var platformLabel: String; var app: String?; var id: String { url } }
+    /// source-store AttachedStream (attached on desktop; the TV plays and clears it).
+    struct AttachedStream: Decodable { var url: String; var title: String; var page: String; var kind: String; var headers: [String: String]?; var poster: String }
+    struct Watch: Decodable {
+        var plan: String; var label: String?; var fixture: String; var channels: [WatchOption]; var providers: [Provider]; var broadcasts: [Broadcast]
+        var onAir: Bool?; var attachedStream: AttachedStream?; var sources: Int; var scanned: Int
+    }
+
+    // use-bp-sports-event useBpSportsEventActions (engine `sports.actions`).
+    struct Reminder: Decodable { var active: Bool; var setup: Bool; var label: String }
+    struct Follow: Decodable, Identifiable { var key: String; var name: String; var logo: String; var on: Bool; var label: String; var id: String { key } }
+    struct Actions: Decodable { var reminder: Reminder?; var follow: [Follow]; var opendota: String? }
+    struct ReminderOutcome: Decodable { var state: String }
 
     @Published private(set) var detail: Detail?
+    @Published private(set) var rows: SportsEventRows?
     @Published private(set) var loading = false
     @Published private(set) var note: String?
     @Published private(set) var watch: Watch?
     @Published private(set) var watching = false
+    @Published private(set) var actions: Actions?
     struct WhoSides: Decodable { var home: Bool; var away: Bool }
     @Published private(set) var whoSides = WhoSides(home: false, away: false)
 
@@ -31,7 +46,7 @@ final class SportsEventModel: ObservableObject {
         if let w: WhoSides = try? await HarborEngine.shared.call("sports.whoSides", [game.wire]) { whoSides = w }
     }
 
-    /// bp-sports-watch.tsx: resolve what Watch can do (channel / addons / picker / setup / finished).
+    /// bp-sports-watch.tsx: resolve what Watch can do (stream / broadcast / channel / addons / picker / setup / finished).
     /// The addon summary joins once `loadAddons` lands; neither waits on the other.
     func resolveWatch(_ game: SportsModel.Game) async {
         watchSeq += 1
@@ -65,8 +80,15 @@ final class SportsEventModel: ObservableObject {
         await resolveWatch(game)
     }
 
-    func recordPlay(_ option: WatchOption) {
-        Task { _ = try? await HarborEngine.shared.callJSON("sports.recordChannelWatch", [.string(option.channelId)]) }
+    /// bp-sports-watch pick: a chosen channel replaces the game's attached stream, then plays.
+    func recordPlay(_ option: WatchOption, game: SportsModel.Game) {
+        Task {
+            _ = try? await HarborEngine.shared.callJSON("sports.recordChannelWatch", [.string(option.channelId)])
+            if watch?.attachedStream != nil {
+                _ = try? await HarborEngine.shared.callJSON("sports.clearAttachedStream", [.string(game.id)])
+                await resolveWatch(game)
+            }
+        }
     }
 
     func load(_ game: SportsModel.Game) async {
@@ -74,8 +96,30 @@ final class SportsEventModel: ObservableObject {
         do {
             let d: Detail? = try await HarborEngine.shared.call("sports.detail", [game.wire])
             detail = d
-            if d == nil { note = "No detail feed for this provider yet. Scores and the schedule above are live." }
+            if d == nil { note = "No detail feed for this provider yet. Scores and the schedule above are live." } else { note = nil }
         } catch { note = "Detail unavailable: \(error.localizedDescription)" }
+        await loadRows(game)
+    }
+
+    /// Stats + Lineups rows from the (25 s cached) summary.
+    func loadRows(_ game: SportsModel.Game) async {
+        if let r: SportsEventRows = try? await HarborEngine.shared.call("sports.eventRows", [game.wire]) { rows = r }
+    }
+
+    func loadActions(_ game: SportsModel.Game) async {
+        actions = try? await HarborEngine.shared.call("sports.actions", [game.wire])
+    }
+
+    /// The bell: "setup" means no webhook is configured yet (the caller opens the webhook fields).
+    func toggleReminder(_ game: SportsModel.Game) async -> String {
+        let r: ReminderOutcome? = try? await HarborEngine.shared.call("sports.toggleReminder", [game.wire])
+        await loadActions(game)
+        return r?.state ?? "error"
+    }
+
+    func toggleFollow(_ game: SportsModel.Game, _ key: String) async {
+        _ = try? await HarborEngine.shared.callJSON("sports.toggleFollow", [game.wire, .string(key)])
+        await loadActions(game)
     }
 }
 
@@ -91,6 +135,9 @@ struct SportsEventView: View {
     struct AddonOpen: Identifiable { let row: SportsEventModel.AddonRow?; var id: String { row?.key ?? "listings" } }
     @State private var addonPanel: AddonOpen?
     @State private var addonPlaying: SportsAddonPanelView.Play?
+    @State private var broadcastsOpen = false
+    @State private var link: SportsLink?
+    @State private var webhookSetup = false
 
     var body: some View {
         ZStack {
@@ -99,17 +146,13 @@ struct SportsEventView: View {
                 VStack(alignment: .leading, spacing: BP.px(20)) {
                     hero
                     watchSection
+                    if let s = model.rows?.stats { SportsStatsRowView(stats: s) }
+                    if let l = model.rows?.lineups { SportsLineupsRowView(lineups: l) }
+                    if model.rows == nil && model.loading { ProgressView().tint(BP.inkMuted) }
+                    StandingsSection(league: game.league).padding(.top, BP.px(10))
                     addonRow
-                    if let d = model.detail {
-                        if let stats = d.allStats, !stats.isEmpty { statsRow(stats, title: game.live ? "Live now" : "Key statistics") }
-                        if let ev = d.events, !ev.isEmpty { eventsRow(ev) }
-                        if (d.homeRoster?.isEmpty == false) || (d.awayRoster?.isEmpty == false) { lineups(d) }
-                    } else if model.loading {
-                        ProgressView().tint(BP.inkMuted)
-                    }
+                    SportsWhereRowView(game: game)
                     if let n = model.note { BPNote(text: n) }
-                    Text("Availability and subscriptions are set by each provider. Harbor does not bypass access restrictions.")
-                        .font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
                     Button("Go back") { dismiss() }.buttonStyle(BPActionStyle())
                 }
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(40)).padding(.bottom, BP.hintHeight + BP.px(40))
@@ -117,8 +160,18 @@ struct SportsEventView: View {
         }
         .task { await model.load(game) }
         .task { await model.loadWhoSides(game) }
+        .task { await model.loadActions(game) }
         .task { await model.loadAddons(game) }
         .task { if game.state != "post" { await model.resolveWatch(game) } }
+        .task {
+            // use-match-detail: a game in progress refreshes its summary every 30 s.
+            guard game.state == "in" else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { return }
+                await model.loadRows(game)
+            }
+        }
         .onExitCommand { if picker { picker = false } else { dismiss() } }
         .fullScreenCover(item: $playing) { opt in
             PlayerScreen(title: opt.name, subtitle: model.watch?.fixture ?? game.leagueLabel, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in playing = nil }
@@ -134,91 +187,177 @@ struct SportsEventView: View {
         .fullScreenCover(item: $addonPlaying) { p in
             PlayerScreen(title: p.title, subtitle: p.subtitle, url: p.url, headers: p.headers, isLive: p.isLive) { _ in addonPlaying = nil }
         }
+        .fullScreenCover(isPresented: $broadcastsOpen) {
+            SportsBroadcastsView(
+                fixture: model.watch?.fixture ?? game.headline,
+                broadcasts: model.watch?.broadcasts ?? [],
+                onAir: model.watch?.onAir ?? false,
+                channels: broadcastChannelsAction,
+                addons: broadcastAddonsAction,
+                onClose: { broadcastsOpen = false })
+        }
+        .fullScreenCover(item: $link) { l in SportsLinkView(link: l) { link = nil } }
+        .fullScreenCover(isPresented: $webhookSetup) {
+            ZStack {
+                BP.void_.opacity(0.94).ignoresSafeArea()
+                VStack(alignment: .leading, spacing: BP.px(16)) {
+                    Text("Set up reminders").font(BP.display(30)).foregroundStyle(BP.ink)
+                    SportsWebhooksPanel(onDone: {
+                        webhookSetup = false
+                        Task { await model.loadActions(game) }
+                    })
+                }
+                .frame(maxWidth: BP.px(1100), alignment: .leading)
+                .padding(BP.gutter)
+            }
+            .onExitCommand { webhookSetup = false; Task { await model.loadActions(game) } }
+        }
     }
 
-    // bp-sports-watch.tsx press → play the exact match, or open the picker, or point at Live TV.
+    // bp-sports-watch.tsx press, per plan, plus the hero's secondary actions.
     @ViewBuilder private var watchSection: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
-            if game.state == "post" {
-                EmptyView()
-            } else if let w = model.watch {
-                HStack(spacing: BP.px(10)) {
-                    switch w.plan {
-                    case "channel":
-                        Button("Watch on \(w.channels[0].name)") { play(w.channels[0]) }.buttonStyle(BPActionStyle(primary: true))
-                        if w.channels.count > 1 { Button("Other channels") { picker.toggle() }.buttonStyle(BPActionStyle()) }
-                    case "picker":
-                        Button(w.channels.isEmpty ? "Search your channels" : "Watch · \(w.channels.count) channel\(w.channels.count == 1 ? "" : "s") found") { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
-                    case "addons":
-                        Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle(primary: true))
-                    case "setup":
-                        Text("Add a Live TV source to watch matches here.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
-                    default:
-                        EmptyView()
+            HStack(spacing: BP.px(10)) {
+                if game.state != "post", let w = model.watch {
+                    primary(w)
+                    // bp-sports-event heroActions: "Choose a channel" when there is more than one pick.
+                    if (w.plan == "stream" || w.plan == "broadcast") && !w.channels.isEmpty {
+                        Button("Choose a channel") { picker.toggle() }.buttonStyle(BPActionStyle())
                     }
-                }
-                if picker || (w.plan == "picker" && w.channels.isEmpty) {
-                    VStack(alignment: .leading, spacing: BP.px(6)) {
-                        ForEach(w.channels) { opt in
-                            HStack(spacing: BP.px(8)) {
-                                Button { play(opt) } label: {
-                                    HStack(spacing: BP.px(10)) {
-                                        RemoteImage(url: opt.logo, contentMode: .fit).frame(width: BP.px(48), height: BP.px(28))
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(opt.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                            Text(opt.copy + (opt.reasons.isEmpty ? "" : " · " + opt.reasons.prefix(2).joined(separator: ", "))).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Text(opt.tier.capitalized).font(BP.sans(11, .bold)).foregroundStyle(opt.tier == "exact" ? BP.live : BP.inkSubtle)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .buttonStyle(BPActionStyle())
-                                Button(opt.attached ? "Unpin" : "Pin for \(game.leagueLabel)") { Task { await model.togglePin(game, opt) } }.buttonStyle(BPActionStyle(primary: opt.attached))
-                            }
-                        }
-                        if w.channels.isEmpty { Text("No channel in your \(w.sources) source\(w.sources == 1 ? "" : "s") looks like this fixture (\(w.scanned) sports channels scanned).").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
-                        // bp-sports-picker onAddons: offered whenever an addon has any listing.
-                        if (model.addons?.available ?? 0) > 0 { Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle()) }
+                    if w.plan == "channel" && w.channels.count > 1 { Button("Other channels") { picker.toggle() }.buttonStyle(BPActionStyle()) }
+                    if w.plan != "addons" && (model.addons?.available ?? 0) > 0 {
+                        Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle())
                     }
-                    .frame(maxWidth: BP.px(900), alignment: .leading)
+                } else if game.state != "post" && model.watching {
+                    ProgressView().tint(BP.inkMuted)
+                    Text("Checking your channels…").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
                 }
-                if !w.providers.isEmpty || !w.broadcasts.isEmpty {
-                    // bp-sports-event-rows where-to-watch: provider tiles with their marks, then official broadcasts.
-                    VStack(alignment: .leading, spacing: BP.px(6)) {
-                        Text("Where to watch").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: BP.px(8)) {
-                                ForEach(Array(w.providers.enumerated()), id: \.offset) { _, p in
-                                    HStack(spacing: BP.px(6)) {
-                                        if !p.logo.isEmpty { RemoteImage(url: p.logo, contentMode: .fit).frame(width: BP.px(22), height: BP.px(22)) }
-                                        Text(p.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink)
-                                    }
-                                    .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(6))
-                                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
-                                }
-                                ForEach(Array(w.broadcasts.enumerated()), id: \.offset) { _, b in
-                                    Text("\(b.title) · \(b.source.capitalized) \(b.channel)").font(BP.sans(12)).foregroundStyle(BP.inkMuted)
-                                        .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(6))
-                                        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
-                                }
-                            }
-                        }
-                        .scrollClipDisabled()
-                        Text("Official apps and broadcasts open on your other devices; Harbor lists them here.").font(BP.sans(10.5)).foregroundStyle(BP.inkSubtle)
-                    }
-                }
-            } else if model.watching {
-                HStack(spacing: BP.px(8)) { ProgressView().tint(BP.inkMuted); Text("Checking your channels…").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+                heroActions
+            }
+            if game.state != "post", let w = model.watch {
+                if w.plan == "setup" { Text("Add a Live TV source to watch matches here.").font(BP.sans(13)).foregroundStyle(BP.inkMuted) }
+                if picker || (w.plan == "picker" && w.channels.isEmpty) { channelPicker(w) }
             }
         }
         .focusSection()
-        StandingsSection(league: game.league).padding(.top, BP.px(10))
+    }
+
+    @ViewBuilder private func primary(_ w: SportsEventModel.Watch) -> some View {
+        switch w.plan {
+        case "stream":
+            Button(w.label ?? "Watch") { playAttached(w) }.buttonStyle(BPActionStyle(primary: true))
+        case "broadcast":
+            Button(w.label ?? "Where to watch") {
+                // setAuto(pickCount > 1 ? null : shows[0]): a single broadcast opens straight away.
+                if w.broadcasts.count == 1 && w.channels.isEmpty, let b = w.broadcasts.first { link = broadcastLink(b) } else { broadcastsOpen = true }
+            }
+            .buttonStyle(BPActionStyle(primary: true))
+        case "channel":
+            if let first = w.channels.first { Button("\(w.label ?? "Watch") · \(first.name)") { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
+        case "picker":
+            Button(w.channels.isEmpty ? "Search your channels" : "Watch · \(w.channels.count) channel\(w.channels.count == 1 ? "" : "s") found") { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
+        case "addons":
+            Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle(primary: true))
+        default:
+            EmptyView()
+        }
+    }
+
+    // useBpSportsEventActions: the reminder bell, follow toggles, OpenDota's match page.
+    @ViewBuilder private var heroActions: some View {
+        if let a = model.actions {
+            if let r = a.reminder {
+                Button {
+                    Task {
+                        if await model.toggleReminder(game) == "setup" { webhookSetup = true }
+                    }
+                } label: { Label(r.label, systemImage: r.active ? "bell.and.waves.left.and.right.fill" : "bell") }
+                .buttonStyle(BPActionStyle(primary: r.active))
+            }
+            ForEach(a.follow) { f in
+                Button { Task { await model.toggleFollow(game, f.key) } } label: { Label(f.label, systemImage: f.on ? "heart.fill" : "heart") }
+                    .buttonStyle(BPActionStyle(primary: f.on))
+            }
+            if let url = a.opendota {
+                Button { link = SportsLink(title: "View match statistics", url: url) } label: { Label("View match statistics", systemImage: "arrow.up.right.square") }
+                    .buttonStyle(BPActionStyle())
+            }
+        }
+    }
+
+    // bp-sports-broadcast-picker: official broadcasts first, then channel matches with their tier copy.
+    @ViewBuilder private func channelPicker(_ w: SportsEventModel.Watch) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(6)) {
+            ForEach(w.broadcasts) { b in
+                Button { link = broadcastLink(b) } label: {
+                    HStack(spacing: BP.px(10)) {
+                        Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(BP.inkMuted).frame(width: BP.px(48))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(b.title).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                            Text(b.platformLabel).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(BPActionStyle())
+            }
+            ForEach(w.channels) { opt in
+                HStack(spacing: BP.px(8)) {
+                    Button { play(opt) } label: {
+                        HStack(spacing: BP.px(10)) {
+                            RemoteImage(url: opt.logo, contentMode: .fit).frame(width: BP.px(48), height: BP.px(28))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(opt.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                Text(opt.copy + (opt.reasons.isEmpty ? "" : " · " + opt.reasons.prefix(2).joined(separator: ", "))).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                            }
+                            Spacer()
+                            Text(opt.tier.capitalized).font(BP.sans(11, .bold)).foregroundStyle(opt.tier == "exact" ? BP.live : BP.inkSubtle)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(BPActionStyle())
+                    Button(opt.attached ? "Unpin" : "Pin for \(game.leagueLabel)") { Task { await model.togglePin(game, opt) } }.buttonStyle(BPActionStyle(primary: opt.attached))
+                }
+            }
+            if w.channels.isEmpty {
+                Text(w.sources == 0 ? "No playlists yet. Add one in Live TV and Harbor will match its channels to fixtures."
+                     : "None of your channels match this fixture. Search your channels and pin the one that carries it. (\(w.scanned) sports channels scanned)")
+                    .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+            }
+            // bp-sports-picker onAddons: offered whenever an addon has any listing.
+            if (model.addons?.available ?? 0) > 0 { Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle()) }
+        }
+        .frame(maxWidth: BP.px(900), alignment: .leading)
+    }
+
+    // bp-sports-broadcast-picker action chips: "Search your channels" (Live TV sources exist) and "Addon sources".
+    private var broadcastChannelsAction: (() -> Void)? {
+        guard (model.watch?.sources ?? 0) > 0 else { return nil }
+        return { broadcastsOpen = false; picker = true }
+    }
+    private var broadcastAddonsAction: (() -> Void)? {
+        guard (model.addons?.available ?? 0) > 0 else { return nil }
+        return {
+            broadcastsOpen = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { addonPanel = AddonOpen(row: nil) }
+        }
+    }
+
+    private func broadcastLink(_ b: SportsEventModel.Broadcast) -> SportsLink {
+        SportsLink(title: b.title, url: b.url, app: b.app, message: "Official broadcast. It plays in the \(b.platformLabel) app, or scan to watch on your phone.")
     }
 
     private func play(_ opt: SportsEventModel.WatchOption) {
-        model.recordPlay(opt)
+        model.recordPlay(opt, game: game)
         playing = opt
+    }
+
+    // useBpSportsPlayStream: the attached stream plays live unless it is a file; subtitle is the page host.
+    private func playAttached(_ w: SportsEventModel.Watch) {
+        guard let s = w.attachedStream, let url = URL(string: s.url) else { return }
+        let host = URL(string: s.page)?.host
+        addonPlaying = SportsAddonPanelView.Play(url: url, headers: s.headers ?? [:], title: w.fixture, subtitle: host, isLive: s.kind != "file")
     }
 
     private var hero: some View {
@@ -301,63 +440,5 @@ struct SportsEventView: View {
         } else {
             content
         }
-    }
-
-    private func statsRow(_ stats: [SportsEventModel.StatRow], title: String) -> some View {
-        VStack(alignment: .leading, spacing: BP.px(8)) {
-            Text(title).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
-            ForEach(stats.prefix(12)) { row in
-                let a = Double(row.awayValue.replacingOccurrences(of: "%", with: "")) ?? 0
-                let h = Double(row.homeValue.replacingOccurrences(of: "%", with: "")) ?? 0
-                let total = max(a + h, 1)
-                HStack(spacing: BP.px(10)) {
-                    Text(row.awayValue).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).frame(width: BP.px(60), alignment: .trailing).monospacedDigit()
-                    GeometryReader { geo in
-                        HStack(spacing: 2) {
-                            Capsule().fill(BP.ink.opacity(0.7)).frame(width: geo.size.width * CGFloat(a / total))
-                            Capsule().fill(BP.edge2)
-                        }
-                    }
-                    .frame(width: BP.px(300), height: BP.px(6))
-                    Text(row.homeValue).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).frame(width: BP.px(60), alignment: .leading).monospacedDigit()
-                    Text(row.label).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
-                }
-            }
-        }
-    }
-
-    private func eventsRow(_ events: [SportsEventModel.Event]) -> some View {
-        VStack(alignment: .leading, spacing: BP.px(6)) {
-            Text("Play by play").font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
-            ForEach(events.suffix(10).reversed()) { e in
-                HStack(spacing: BP.px(8)) {
-                    Text(e.time).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).frame(width: BP.px(48), alignment: .trailing)
-                    Image(systemName: e.type == "goal" ? "soccerball" : e.type == "yellow_card" ? "rectangle.portrait.fill" : e.type == "red_card" ? "rectangle.portrait.fill" : e.type == "substitution" ? "arrow.left.arrow.right" : "circle.fill")
-                        .font(.system(size: BP.px(10))).foregroundStyle(e.type == "yellow_card" ? .yellow : e.type == "red_card" ? BP.danger : BP.inkMuted)
-                    Text(e.text).font(BP.sans(13)).foregroundStyle(BP.ink).lineLimit(1)
-                }
-            }
-        }
-    }
-
-    private func lineups(_ d: SportsEventModel.Detail) -> some View {
-        HStack(alignment: .top, spacing: BP.px(30)) {
-            roster(game.away.name, d.awayRoster ?? [], d.awayFormation)
-            roster(game.home.name, d.homeRoster ?? [], d.homeFormation)
-        }
-    }
-
-    private func roster(_ title: String, _ players: [SportsEventModel.Player], _ formation: String?) -> some View {
-        VStack(alignment: .leading, spacing: BP.px(4)) {
-            Text(formation.map { "\(title) · \($0)" } ?? title).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
-            ForEach(players.filter(\.starter).prefix(11)) { p in
-                HStack(spacing: BP.px(6)) {
-                    Text(p.jersey).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(24), alignment: .trailing)
-                    Text(p.name).font(BP.sans(13)).foregroundStyle(BP.ink).lineLimit(1)
-                    Text(p.position).font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
-                }
-            }
-        }
-        .frame(width: BP.px(420), alignment: .leading)
     }
 }
