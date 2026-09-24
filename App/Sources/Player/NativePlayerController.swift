@@ -92,9 +92,8 @@ final class NativePlayerController: UIViewController {
         // Harbor's chrome is drawn over this; the system transport and gestures stay off.
         host.player = player
         host.showsPlaybackControls = false
-        // VideoNowPlaying owns Now Playing and the remote commands; AVKit writing its own (untitled)
-        // info and handling play/pause too would toggle twice (review 28).
-        host.updatesNowPlayingInfoCenter = false
+        // (AVPlayerViewController.updatesNowPlayingInfoCenter is unavailable on tvOS: VideoNowPlaying's
+        // 350 ms gate is what keeps AVKit's own play/pause handling from toggling twice; device check.)
         host.appliesPreferredDisplayCriteriaAutomatically = true
         // PiP goes through NativePlayerController's own AVPictureInPictureController (below): the
         // hidden transport has no PiP button, and AVPlayerViewController has no call to start one.
