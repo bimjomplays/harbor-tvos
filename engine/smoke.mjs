@@ -784,6 +784,26 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// -------------------------------- Home / Discover / Anime bands (HM-1, HM-4, HM-5, DS-3)
+{
+  r.eq("collectionsRoom.curatedRow is empty without a TMDB key (bp-home showCollections)", await engine.collectionsRoom.curatedRow("default", true, 30), []);
+  r.eq("collectionsRoom.tmdbCard is null without a TMDB key", await engine.collectionsRoom.tmdbCard("default", true, 10, "Star Wars Collection"), null);
+  r.eq("addonsRoom.bandPosters for an unknown base is empty (below the 14-poster mosaic floor)", await engine.addonsRoom.bandPosters("https://nowhere.invalid"), []);
+  const srcs = engine.discoverRoom.animeAwardSources();
+  r.ok("discoverRoom.animeAwardSources: five bundled sources, Crunchyroll first, with winners", srcs.length === 5 && srcs[0].id === "crunchyroll" && srcs[0].name === "Crunchyroll Anime Awards" && srcs.every((x) => typeof x.wins === "number") && srcs[0].wins > 20, JSON.stringify(srcs));
+  const cr = engine.discoverRoom.animeAward("crunchyroll");
+  r.ok("discoverRoom.animeAward: the Grand category first, winners newest first", cr.categories[0].isAOTY && cr.categories[0].winners.every((w, i, a) => i === 0 || a[i - 1].year >= w.year), JSON.stringify(cr.categories[0].winners.slice(0, 3)));
+  r.ok("discoverRoom.animeAward: per-year counts add up to the recorded winners", cr.perYear.reduce((n, y) => n + y.count, 0) === cr.totalWins && cr.years.length === cr.perYear.length && /^\d{4} - \d{4}$/.test(cr.yearSpan), JSON.stringify({ total: cr.totalWins, span: cr.yearSpan }));
+  r.eq("discoverRoom.animeAward falls back to Crunchyroll for an unknown source", engine.discoverRoom.animeAward("nope").id, "crunchyroll");
+  r.ok("discoverRoom.animeAward marks winners that map to an anime id", cr.categories[0].winners.some((w) => w.mapped));
+  const opened = await engine.discoverRoom.animeAwardOpen("Demon Slayer: Kimetsu no Yaiba", 2020, "default", true);
+  r.ok("discoverRoom.animeAwardOpen opens a mapped winner by its kitsu id without TMDB", opened && opened.id === "kitsu:41370" && opened.type === "series", JSON.stringify(opened));
+  r.eq("discoverRoom.animeAwardOpen: an unmapped winner without a TMDB key stays inert", await engine.discoverRoom.animeAwardOpen("Some Unknown Short Film", 2019, "default", true), null);
+  const corner = await engine.cards.heroAwards({ id: "kitsu:41370", type: "series", name: "Demon Slayer: Kimetsu no Yaiba", releaseInfo: "2019" });
+  r.ok("cards.heroAwards: an anime winner reads the bundled anime wins", corner && corner.kind === "anime" && / Winner$/.test(corner.headline) && corner.won && corner.lines.length >= 1, JSON.stringify(corner));
+  r.eq("cards.heroAwards: a title with no awards has no corner", await engine.cards.heroAwards({ id: "tmdb:movie:1", type: "movie", name: "Nothing Won Here", releaseInfo: "2001" }), null);
+}
+
 // ----------------------------------------------- player chrome + subtitle panel (recorded host)
 // bp-player-subtitles / bp-subtitle-find / bp-subtitle-tune: track rows, Find more over a fake
 // Cinemeta + OpenSubtitles v3, presets; player.prefs for the up-next lead and seek steps.

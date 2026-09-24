@@ -13,7 +13,8 @@ import {
 import { COLLECTION_CATEGORIES, COLLECTIONS_CATALOG } from "@/lib/collections-catalog";
 import { searchTvdbCollectionsOrNull, fetchTvdbCollection, fetchTvdbEntity, entityToMeta } from "@/lib/providers/tvdb-collections";
 import { searchAll, searchCinemeta } from "@/lib/search";
-import { BP_COLLECTIONS_ALL, bpCatalogFor, bpMapLimit, resolveBpCollection } from "@/views/big-picture/use-bp-collections";
+import { BP_COLLECTIONS_ALL, bpCatalogFor, bpMapLimit, bpStripCollectionSuffix, resolveBpCollection } from "@/views/big-picture/use-bp-collections";
+import { tmdbCollection, type TmdbCollection } from "@/lib/providers/tmdb/tmdb-collection";
 import { loadEffective } from "@/lib/settings/profile-store";
 
 export type CollectionCard = {
@@ -97,6 +98,49 @@ export async function tmdb(profileId: string, linked: boolean, category: string,
       count: items.length, byline: slice[i].cats[0] ?? "TMDB", description: tc.overview || null, items, hidden: 0 });
   });
   return { cards, done: page * TMDB_PAGE >= catalog.length };
+}
+
+// ------------------------------------------------------------- Home "Collections" row
+// bp-collections-row.tsx over use-bp-collection-feed.ts useBpCuratedRow: the first `limit` (30)
+// franchises of the curated catalog, resolved HYDRATE_LANES (4) wide and kept in catalog order;
+// one that neither loads by id nor heals by name is dropped (tmdbEntry: stripped name, the
+// backdrop only, "{count} films"). bp-home mounts the row only with a TMDB key and when the
+// synced layout does not hide "collections" (use-bp-row-layout useBpPinnedRows). Upstream fills
+// it lazily as it scrolls into view; a TV build waits at most CURATED_BUDGET_MS and returns what
+// resolved (the resolver memoizes hits, so the next Home build is instant).
+const CURATED_BUDGET_MS = 8000;
+
+function tmdbHomeCard(tc: TmdbCollection, name: string, image: string | null): CollectionCard {
+  const items: CollectionItem[] = tc.parts.map((m) => ({ id: m.id, type: m.type, name: m.name, poster: m.poster } as CollectionItem));
+  return { key: `tmdb:${tc.id}`, source: "tmdb", ref: String(tc.id), name, image, count: tc.parts.length, byline: null,
+    description: tc.overview || null, items, hidden: 0 };
+}
+
+export async function curatedRow(profileId: string, linked: boolean, limit = 30): Promise<CollectionCard[]> {
+  const s = loadEffective(profileId, linked);
+  const key = s.tmdbKey;
+  if (!key) return [];
+  // useBpPinnedRows: a malformed synced `hidden` degrades to "show every band".
+  const raw = (s as { homeRows?: { hidden?: unknown } }).homeRows?.hidden;
+  if (Array.isArray(raw) && raw.includes("collections")) return [];
+  const slice = COLLECTIONS_CATALOG.slice(0, limit);
+  const found = new Array<CollectionCard | null>(slice.length).fill(null);
+  const work = bpMapLimit(slice.map((c, i) => ({ c, i })), 4, async ({ c, i }) => {
+    const hit = await resolveBpCollection(key, c.id, c.name).catch(() => null);
+    if (hit) found[i] = tmdbHomeCard(hit, bpStripCollectionSuffix(hit.name || c.name), hit.backdrop ?? null);
+  }).catch(() => {});
+  await Promise.race([work, new Promise((r) => setTimeout(r, CURATED_BUDGET_MS))]);
+  return found.filter((e): e is CollectionCard => e !== null);
+}
+
+/** bp-collection-detail for a Home collection card: the TMDB collection by id (memoized upstream). */
+export async function tmdbCard(profileId: string, linked: boolean, id: number | string, name: string): Promise<CollectionCard | null> {
+  const key = loadEffective(profileId, linked).tmdbKey;
+  const n = Number(id);
+  if (!key || !Number.isFinite(n) || n <= 0) return null;
+  const tc = await tmdbCollection(key, n).catch(() => null);
+  if (!tc) return null;
+  return tmdbHomeCard(tc, bpStripCollectionSuffix(tc.name || name), tc.backdrop ?? tc.poster ?? null);
 }
 
 // ------------------------------------------------------------------------ TVDB lists

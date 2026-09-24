@@ -57,11 +57,37 @@ struct EngineBrowseSource: BrowseSource {
         return BrowseRow(key: "addons", title: "Your addons", metas: metas, shape: .brand)
     }
 
+    /// bp-home "Collections" (bp-collections-row.tsx): TMDB's curated franchises as 16:9 cards; the
+    /// engine returns nothing without a TMDB key or when the synced layout hides "collections".
+    private func collectionsRow(_ profileId: String, _ linked: Bool) async -> BrowseRow? {
+        let cards: [CollectionsModel.Card] = (try? await HarborEngine.shared.call("collectionsRoom.curatedRow", [profileId, linked, 30])) ?? []
+        guard !cards.isEmpty else { return nil }
+        let metas = cards.map { c in
+            // bp-collection-card metaLine for a TMDB entry: "{count} films", else "Collection".
+            Meta(id: "collection:tmdb:\(c.ref)", type: "collection", name: c.name, poster: nil, background: c.image, logo: nil,
+                 description: c.count.map { "\($0) films" } ?? "Collection", releaseInfo: nil, releaseDate: nil, inTheaters: nil,
+                 imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: true, providerBadge: nil, videos: nil)
+        }
+        return BrowseRow(key: "collections", title: "Collections", metas: metas, shape: .collection)
+    }
+
+    /// bp-home.tsx: `head` (the first SERVICES_SLOT = 2 catalog rows), then the Collections row,
+    /// then the tail, so the row lands just before the third catalog row (or last).
+    private static func insertCollections(_ row: BrowseRow?, into rows: inout [BrowseRow], build: RoomBuild) {
+        // Never the only row: the hero pool reads the first catalog row.
+        guard let row, !build.rows.isEmpty else { return }
+        let third: String? = build.rows.count > 2 ? build.rows[2].key : nil
+        let at = third.flatMap { key in rows.firstIndex(where: { $0.key == key }) }
+        rows.insert(row, at: at ?? rows.count)
+    }
+
     func rows(for room: Room) async throws -> [BrowseRow] {
         let p = await profile
         let build: RoomBuild
         switch room {
         case .home:
+            // bp-collections-row: resolved alongside the catalogs so it never delays them much.
+            async let curated = collectionsRow(p.id, p.linked)
             build = try await HarborEngine.shared.call("rooms.homeFor", [p.id, p.linked, p.authKey])
             // bp-home.tsx: "Your streaming" brand tiles sit after the first two catalog rows
             // (SERVICES_SLOT = 2); upstream also slots CW, addon, live and collection bands
@@ -76,11 +102,13 @@ struct EngineBrowseSource: BrowseSource {
                 var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
                 rows.insert(BrowseRow(key: "services", title: "Your streaming", metas: metas, shape: .brand), at: min(2, rows.count))
                 if let addons = await addonsBand(p.authKey) { rows.insert(addons, at: min(3, rows.count)) }
+                Self.insertCollections(await curated, into: &rows, build: build)
                 if build.failed && rows.isEmpty { throw BrowseError.empty }
                 return rows
             }
             var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
             if let addons = await addonsBand(p.authKey) { rows.insert(addons, at: min(2, rows.count)) }
+            Self.insertCollections(await curated, into: &rows, build: build)
             if build.failed && rows.isEmpty { throw BrowseError.empty }
             return rows
         case .movies, .shows:

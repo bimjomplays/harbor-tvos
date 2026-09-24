@@ -120,7 +120,8 @@ struct AnimeHeroActionsView: View {
                 }
             }
             HStack(spacing: BP.px(10)) {
-                Button { onPlay(meta) } label: { Label(resume != nil ? "Resume" : "Start Watching", systemImage: "play.fill") }.buttonStyle(BPActionStyle(primary: true))
+                // bp-anime-hero-actions: RotateCcw for Resume, the filled Play for Start Watching.
+                Button { onPlay(meta) } label: { Label(resume != nil ? "Resume" : "Start Watching", systemImage: resume != nil ? "arrow.counterclockwise" : "play.fill") }.buttonStyle(BPActionStyle(primary: true))
                 Button { onInfo(meta) } label: { Label("More Info", systemImage: "info.circle") }.buttonStyle(BPActionStyle())
             }
         }

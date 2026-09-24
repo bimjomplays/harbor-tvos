@@ -16,6 +16,8 @@ struct BPTileView: View {
     static var rankSize: CGSize { CGSize(width: (posterWidth / 0.6).rounded(), height: (posterWidth * 1.5 * 0.9).rounded()) }
     /// bp-service-row.tsx: clamp(150px, 12.4vw, 244px) wide, 1.2:1.
     static var brandSize: CGSize { CGSize(width: BP.px(238), height: (BP.px(238) / 1.2).rounded()) }
+    /// bp-collections-row.tsx CELL_WIDTH clamp(230px, 19vw, 340px) at the 1140 canvas, 16:9.
+    static var collectionSize: CGSize { CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded()) }
 
     var body: some View {
         switch shape {
@@ -23,6 +25,7 @@ struct BPTileView: View {
         case .wide: wide
         case .rank: rankCell
         case .brand: brandTile
+        case .collection: collectionCard
         }
     }
 
@@ -81,6 +84,27 @@ struct BPTileView: View {
             }
         }
         .frame(width: Self.brandSize.width, height: Self.brandSize.height)
+    }
+
+    /// bp-collection-card.tsx BpCollectionCard: the backdrop at 85 % on the panel under the bottom
+    /// scrim, the meta line ("{count} films", uppercase) over the name (two lines). The line rides
+    /// in `description` (EngineBrowseSource builds these tiles).
+    private var collectionCard: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel)
+            if let bg = meta.background, !bg.isEmpty { RemoteImage(url: bg).opacity(0.85) }
+            LinearGradient(stops: [.init(color: BP.void_.opacity(0.92), location: 0), .init(color: BP.void_.opacity(0.44), location: 0.54),
+                                   .init(color: .clear, location: 1)], startPoint: .bottom, endPoint: .top)
+            VStack(alignment: .leading, spacing: BP.px(4)) {
+                Text(meta.description ?? "Collection")
+                    .font(BP.sans(12, .bold)).textCase(.uppercase).tracking(BP.px(1.2)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                Text(meta.name).font(BP.sans(12.5, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.leading)
+            }
+            .padding(BP.px(10))
+        }
+        .frame(width: Self.collectionSize.width, height: Self.collectionSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
     }
 
     private func art(url: String?, size: CGSize, plateText: Bool = true) -> some View {

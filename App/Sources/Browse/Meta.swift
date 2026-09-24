@@ -44,7 +44,8 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
     }
 }
 
-enum TileShape: String, Codable { case poster, wide, rank, brand }
+/// `collection`: bp-collection-card's 16:9 plate (Home "Collections" row).
+enum TileShape: String, Codable { case poster, wide, rank, brand, collection }
 
 /// One horizontal row in a room.
 struct BrowseRow: Identifiable, Equatable, Codable {

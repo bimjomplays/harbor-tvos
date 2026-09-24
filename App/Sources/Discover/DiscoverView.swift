@@ -6,6 +6,7 @@ struct DiscoverView: View {
     @StateObject private var model = DiscoverModel()
     @State private var detail: Meta?
     @State private var awardDetail: DiscoverModel.Awards.Summary?
+    @State private var animeAward: DiscoverModel.AnimeAwardTile?
     @State private var genrePage: BrowseRow?
     @State private var queueOpen = false
 
@@ -33,7 +34,8 @@ struct DiscoverView: View {
                     }
                     if let aw = model.awards, !aw.summaries.isEmpty {
                         section("Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : "\(aw.overview.bodies) awards, \(aw.overview.wins) winners, \(aw.overview.span), all offline") {
-                            AwardsBandView(summaries: aw.summaries) { awardDetail = $0 }
+                            AwardsBandView(summaries: aw.summaries, anime: model.animeAwards,
+                                           onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 })
                         }
                     }
                     section("Discover", "Genres", "18 shelves, one press into any of them") {
@@ -49,6 +51,7 @@ struct DiscoverView: View {
         .task { await model.load() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $awardDetail) { a in AwardDetailView(summary: a) }
+        .fullScreenCover(item: $animeAward) { a in AnimeAwardView(sources: model.animeAwards, initial: a.id) }
         .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
         .fullScreenCover(isPresented: $queueOpen) { QueueDeckView() }
     }
@@ -197,29 +200,53 @@ struct GenresBandView: View {
 }
 
 
-/// bp-awards-band: one tile per award body on its tint, with wins and years.
+/// bp-award-tiles.tsx BpAwardsBand: one tile per award body on its tint, with wins and years; past
+/// a divider one BpAnimeAwardTile per bundled anime award source ("{n} winners"); last the
+/// "Open the Oscars" lead tile.
 struct AwardsBandView: View {
     let summaries: [DiscoverModel.Awards.Summary]
+    var anime: [DiscoverModel.AnimeAwardTile] = []
     let onOpen: (DiscoverModel.Awards.Summary) -> Void
+    var onOpenAnime: (DiscoverModel.AnimeAwardTile) -> Void = { _ in }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: BP.px(9)) {
-                ForEach(summaries) { a in
-                    Button { onOpen(a) } label: {
-                        VStack(alignment: .leading, spacing: BP.px(6)) {
-                            Text(a.shorthand).font(BP.display(22)).foregroundStyle(BP.ink)
-                            Text(a.title).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink.opacity(0.85)).lineLimit(2)
+                awardTiles
+                if !anime.isEmpty {
+                    // BpChipDivider between the classic bodies and the anime sources.
+                    Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(60)).padding(.horizontal, BP.px(6))
+                    ForEach(anime) { a in
+                        Button { onOpenAnime(a) } label: {
+                            VStack(alignment: .leading, spacing: BP.px(4)) {
+                                Image(systemName: "trophy.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent)
+                                Spacer(minLength: 0)
+                                Text(a.name).font(BP.display(14)).foregroundStyle(BP.ink).lineLimit(2)
+                                Text("\(a.wins) winners").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.5)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                            }
+                            .padding(BP.px(14))
+                            .frame(width: BP.px(178), height: BP.px(120), alignment: .topLeading)
+                            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+                            .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+                        }
+                        .buttonStyle(BPTileStyle(radius: BP.rMD))
+                        .accessibilityIdentifier("anime-award-\(a.id)")
+                    }
+                }
+                // BpLeadTile "Open the Oscars" (action "Awards"): the Oscars award page.
+                if let oscars = summaries.first(where: { $0.type == "oscar" }) ?? summaries.first {
+                    Button { onOpen(oscars) } label: {
+                        VStack(alignment: .leading, spacing: BP.px(4)) {
+                            Text("Awards").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.5)).foregroundStyle(BP.inkSubtle)
                             Spacer(minLength: 0)
-                            Text("\(a.wins) winners · \(a.span)").font(BP.sans(11)).foregroundStyle(BP.ink.opacity(0.7))
+                            Text("Open the Oscars").font(BP.display(17)).foregroundStyle(BP.ink).lineLimit(2)
                         }
                         .padding(BP.px(14))
                         .frame(width: BP.px(178), height: BP.px(120), alignment: .topLeading)
-                        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(oklch: a.tint) ?? Color(css: a.tint) ?? BP.panel2))
-                        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .top, endPoint: .bottom)))
+                        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(oklch: oscars.tint) ?? Color(css: oscars.tint) ?? BP.panel2).opacity(0.55))
+                        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge2, lineWidth: 1))
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rMD))
-                    .accessibilityIdentifier("award-\(a.type)")
                 }
             }
             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
@@ -227,16 +254,37 @@ struct AwardsBandView: View {
         .scrollClipDisabled()
         .focusSection()
     }
+
+    private var awardTiles: some View {
+        ForEach(summaries) { a in
+            Button { onOpen(a) } label: {
+                VStack(alignment: .leading, spacing: BP.px(6)) {
+                    Text(a.shorthand).font(BP.display(22)).foregroundStyle(BP.ink)
+                    Text(a.title).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink.opacity(0.85)).lineLimit(2)
+                    Spacer(minLength: 0)
+                    Text("\(a.wins) winners · \(a.span)").font(BP.sans(11)).foregroundStyle(BP.ink.opacity(0.7))
+                }
+                .padding(BP.px(14))
+                .frame(width: BP.px(178), height: BP.px(120), alignment: .topLeading)
+                .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(oklch: a.tint) ?? Color(css: a.tint) ?? BP.panel2))
+                .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .top, endPoint: .bottom)))
+            }
+            .buttonStyle(BPTileStyle(radius: BP.rMD))
+            .accessibilityIdentifier("award-\(a.type)")
+        }
+    }
 }
 
 /// bp-people-band: portrait circles with rank and name.
 struct PeopleBandView: View {
     let people: [DiscoverModel.Person]
+    /// bp-people-band: Select opens the person page (pushBigPicture kind "person").
+    @State private var person: DiscoverModel.Person?
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: BP.trackGap) {
                 ForEach(people) { p in
-                    Button {} label: {
+                    Button { person = p } label: {
                         VStack(spacing: BP.px(8)) {
                             ZStack(alignment: .bottomLeading) {
                                 RemoteImage(url: p.portrait).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
@@ -254,6 +302,7 @@ struct PeopleBandView: View {
         }
         .scrollClipDisabled()
         .focusSection()
+        .fullScreenCover(item: $person) { p in PersonView(personId: p.id, name: p.name) }
     }
 }
 

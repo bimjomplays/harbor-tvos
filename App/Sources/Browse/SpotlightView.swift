@@ -10,12 +10,21 @@ struct SpotlightView: View {
     var pips: HeroPips? = nil
     /// bp-ambient `drift`: the slow Ken Burns on the title art (off on the anime page, `still`).
     var drift = true
+    /// MetaAwardsCorner: BpSpotlight mounts it on Home, Movies, Shows and service pages only.
+    var awardsCorner = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             backdrop
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 Spacer(minLength: 0)
+                // bp-spotlight data-bp-hero-mark: the provider badge's mark above the title
+                // (clamp(19px,3.2vh,29px) tall at 85 %, 18 px above the logo or name).
+                if let mark = meta?.providerBadge?.logo, !mark.isEmpty {
+                    BandMark(url: mark, height: BP.px(20.5), maxWidth: BP.px(200))
+                        .opacity(0.85)
+                        .padding(.bottom, BP.px(8))
+                }
                 if let logo = meta?.logo, !logo.isEmpty {
                     RemoteImage(url: logo, contentMode: .fit)
                         .frame(maxWidth: BP.px(300), maxHeight: BP.px(90), alignment: .leading)
@@ -43,6 +52,14 @@ struct SpotlightView: View {
             .padding(.bottom, BP.px(27))
             .frame(height: boxHeight, alignment: .bottomLeading)
             .animation(.easeOut(duration: 0.26), value: meta?.id)
+            // bp-spotlight MetaAwardsCorner: bottom-end of the hero box (bottom-10 end-10),
+            // pushed down by translate-y clamp(26px,4vh,58px).
+            if awardsCorner, let meta {
+                HeroAwardsCornerView(meta: meta)
+                    .padding(.trailing, BP.px(40))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(height: boxHeight - BP.px(40) + BP.px(26), alignment: .bottomTrailing)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
@@ -174,6 +191,62 @@ struct KenBurnsImage: View {
             try? await Task.sleep(for: .milliseconds(10080))
             guard !Task.isCancelled else { return }
             withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 3.92)) { phase = 2 }
+        }
+    }
+}
+
+/// components/meta-awards-corner.tsx (the "full" tier) under the hero: an anime title's top
+/// bundled win ("{award} Winner", "{year} Anime of the Year", "+N more awards") or a classic
+/// title's live + bundled awards ("{Headline} Winner|Nominee" over two "{n} Oscars" lines); a
+/// laurel wraps the mark only for a win. Computed in the engine (`cards.heroAwards`).
+struct HeroAwardsCornerView: View {
+    let meta: Meta
+    @State private var corner: Corner?
+    struct Corner: Decodable { var kind: String; var headline: String; var lines: [String]; var won: Bool; var mark: String; var tint: String }
+
+    var body: some View {
+        HStack(spacing: BP.px(12)) {
+            if let c = corner {
+                VStack(alignment: .trailing, spacing: BP.px(2)) {
+                    Text(c.headline).font(BP.sans(10.5, .bold)).textCase(.uppercase).tracking(BP.px(1.9))
+                        .foregroundStyle(BP.ink.opacity(0.55)).lineLimit(1)
+                    ForEach(Array(c.lines.enumerated()), id: \.offset) { i, line in
+                        if c.kind == "anime" && i > 0 {
+                            Text(line).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                        } else {
+                            Text(line).font(BP.sans(13, c.kind == "anime" ? .semibold : .medium)).foregroundStyle(BP.ink.opacity(0.85)).lineLimit(1)
+                        }
+                    }
+                }
+                mark(c)
+            }
+        }
+        .frame(maxWidth: BP.px(500), alignment: .trailing)
+        .animation(.easeOut(duration: 0.26), value: corner?.headline)
+        .allowsHitTesting(false)
+        .task(id: meta.id) {
+            corner = nil
+            // Focus glides across a rail; the Wikidata read waits for it to settle.
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await AwardsCatalog.installIfNeeded()
+            let found: Corner? = try? await HarborEngine.shared.call("cards.heroAwards", [meta])
+            guard !Task.isCancelled else { return }
+            corner = found
+        }
+    }
+
+    @ViewBuilder private func mark(_ c: Corner) -> some View {
+        let tint = c.kind == "anime" ? BP.accent : (Color(css: c.tint) ?? BP.accent)
+        if c.won {
+            HStack(spacing: BP.px(2)) {
+                Image(systemName: "laurel.leading").font(.system(size: BP.px(30), weight: .regular))
+                Text(c.mark).font(BP.sans(12, .bold)).lineLimit(1)
+                Image(systemName: "laurel.trailing").font(.system(size: BP.px(30), weight: .regular))
+            }
+            .foregroundStyle(tint)
+        } else {
+            Text(c.mark).font(BP.sans(14, .bold)).foregroundStyle(tint).lineLimit(1).opacity(0.85)
         }
     }
 }

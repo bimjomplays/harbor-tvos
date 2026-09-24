@@ -28,6 +28,10 @@ struct LiveRowView: View {
     @State private var playing: LiveRowModel.Cell?
     @FocusState private var focusedId: String?
     let onOpenGuide: () -> Void
+    /// bp-live-row onHot: the focused cell (nil once focus leaves the row), for Home's band and
+    /// its ambient preview (bp-live-hero); and whether this row's player is up.
+    var onHot: ((LiveRowModel.Cell?) -> Void)? = nil
+    var onPlaying: ((Bool) -> Void)? = nil
 
     var body: some View {
         Group {
@@ -54,6 +58,8 @@ struct LiveRowView: View {
             }
         }
         .task { await model.load() }
+        .onChange(of: focusedId) { _, id in onHot?(id.flatMap { key in model.cells.first(where: { $0.id == key }) }) }
+        .onChange(of: playing?.id) { _, id in onPlaying?(id != nil) }
         .fullScreenCover(item: $playing) { c in
             PlayerScreen(title: c.channel.shownName, subtitle: c.now?.title ?? c.channel.groupLabel ?? c.channel.group, url: URL(string: c.channel.url) ?? URL(string: "about:blank")!,
                          headers: c.channel.headers ?? [:], isLive: true) { _ in playing = nil }
