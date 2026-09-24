@@ -403,10 +403,8 @@ export async function browse(mode: BrowseMode, category: string | null, search: 
     const official = await rising();
     const ql = q.toLowerCase();
     const officialFiltered = official.filter((a) => {
-      if (!adultsAllowed && cat !== "nsfw") {
-        const bh = (a.manifest as { behaviorHints?: { adult?: boolean } } | undefined)?.behaviorHints;
-        if (bh?.adult) return false;
-      }
+      // The age gate covers the rising list too (upstream only checks behaviorHints.adult here) (review 30).
+      if (!adultsAllowed && cat !== "nsfw" && isAdultSA(a)) return false;
       if (cat && !a.categories.some((c) => c.slug === cat)) return false;
       if (ql) {
         const m = a.manifest as { name?: string; description?: string } | undefined;
@@ -422,6 +420,8 @@ export async function browse(mode: BrowseMode, category: string | null, search: 
     await recordVelocitySnapshot().catch(() => undefined);
     const movers = computeMovers(80).filter((m) => {
       if (cat && !m.community.categories.some((c) => c.slug === cat)) return false;
+      // The velocity fallback's index is fetched without nsfw=exclude: gate it here (review 30).
+      if (!adultsAllowed && cat !== "nsfw" && m.community.categories.some((c) => c.slug === "nsfw")) return false;
       if (ql) {
         const name = (m.community.name ?? "").toLowerCase();
         const slug = m.community.slug.toLowerCase();
@@ -586,7 +586,7 @@ export async function detail(addonId: string, authKey: string | null, adultsAllo
   const prefixValue = idPrefixes.slice(0, 3).join(", ") + (idPrefixes.length > 3 ? ` +${idPrefixes.length - 3}` : "");
   const catalogCount = m?.catalogs?.length ?? 0;
   const stats: AddonDetail["stats"] = [];
-  const push = (label: string, value: string, mono = false) => stats.push({ label, value, mono });
+  const push = (label: string, value: unknown, mono = false) => stats.push({ label, value: String(value ?? ""), mono });
   if (m?.version) push(t("Version"), m.version);
   if (resources.length) push(t("Resources"), resources.join(", "));
   if (types.length) push(t("Types"), types.join(", "));
@@ -616,7 +616,8 @@ export async function detail(addonId: string, authKey: string | null, adultsAllo
     version: m?.version ?? null,
     types,
     resources,
-    catalogs: (m?.catalogs ?? []).map((c) => ({ name: c.name ?? c.id, type: c.type })),
+    // A manifest can omit a catalog's type: coerced so one odd entry can't fail the page's decode (review 30).
+    catalogs: (m?.catalogs ?? []).map((c) => ({ name: String(c.name ?? c.id ?? ""), type: String(c.type ?? "") })),
     stats,
     configurable: hints.configurable || hints.required,
     configurationRequired: hints.required,
@@ -784,7 +785,7 @@ type OrganizeRow = { key: string; name: string; host: string; addonId: string; l
 const rowsOf = (items: Array<{ transportUrl: string; manifest?: Manifest }>): OrganizeRow[] =>
   entriesOf(items).map((e) => ({ key: e.key, name: e.name, host: e.host, addonId: e.addonId, logo: e.logo ?? null }));
 
-export async function organizeLoad(authKey: string | null): Promise<{ ok: boolean; signedIn: boolean; cloud: OrganizeRow[]; device: OrganizeRow[]; backups: number }> {
+export async function organizeLoad(authKey: string | null, reset = false): Promise<{ ok: boolean; signedIn: boolean; cloud: OrganizeRow[]; device: OrganizeRow[]; backups: number }> {
   if (!authKey) {
     const device = loadInstalled();
     organizeState = { authKey: null, cloud: [], device, backedUp: false };
@@ -797,7 +798,9 @@ export async function organizeLoad(authKey: string | null): Promise<{ ok: boolea
   }
   const cloudUrls = new Set(cloud.map((a) => a.transportUrl));
   const device = loadInstalled().filter((d) => !cloudUrls.has(d.transportUrl));
-  organizeState = { authKey, cloud, device, backedUp: organizeState?.authKey === authKey ? organizeState.backedUp : false };
+  organizeState = { authKey, cloud, device, // organize/page.tsx backedUpRef lives per page mount: a new Organize visit backs up again
+  // before its first write; only Reload / Try again keep the flag (review 30).
+  backedUp: !reset && organizeState?.authKey === authKey ? organizeState.backedUp : false };
   return { ok: true, signedIn: true, cloud: rowsOf(cloud), device: rowsOf(device), backups: loadBackups().length };
 }
 

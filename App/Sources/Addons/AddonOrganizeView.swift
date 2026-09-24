@@ -71,7 +71,7 @@ struct AddonOrganizeView: View {
         .onExitCommand {
             if grabbed != nil { grabbed = nil } else if backupsOpen { backupsOpen = false } else if !locked { onClose() }
         }
-        .task { await load() }
+        .task { await load(reset: true) }
     }
 
     // MARK: header
@@ -288,10 +288,11 @@ struct AddonOrganizeView: View {
 
     // MARK: engine
 
-    private func load() async {
+    /// `reset`: a new visit (the backup-before-first-write starts over); Reload / Try again keep it.
+    private func load(reset: Bool = false) async {
         loading = true; defer { loading = false }
         notice = nil; grabbed = nil
-        guard let r: Loaded = try? await HarborEngine.shared.call("addonsManager.organizeLoad", [authKey]) else { loadError = true; return }
+        guard let r: Loaded = try? await HarborEngine.shared.call("addonsManager.organizeLoad", [authKey, reset]) else { loadError = true; return }
         loadError = !r.ok
         signedIn = r.signedIn
         baselineCloud = r.cloud; cloud = r.cloud
