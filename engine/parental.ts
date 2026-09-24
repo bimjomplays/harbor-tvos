@@ -62,7 +62,7 @@ export function hiddenTabsFor(profileId: string): HiddenTabs {
 const BP_TAB_GATES: Array<{ room: string; parentalKey?: LockableTab; hiddenByAnime?: boolean }> = [
   { room: "anime", parentalKey: "anime", hiddenByAnime: true },
   // The TV's Manga tab (Stage 13) takes the key the desktop sidebar gives it (chrome/nav-items.tsx
-  // manga `parentalKey: "anime"`); its own hideKey "manga" is read with the setting on the TV.
+  // manga `parentalKey: "anime"`). Hiding it is sidebar editing now (engine/navEdit.ts).
   { room: "manga", parentalKey: "anime" },
   // The TV's eBook tab (Stage 13) likewise takes nav-items.tsx ebook `parentalKey: "anime"`.
   { room: "ebook", parentalKey: "anime" },
@@ -119,16 +119,14 @@ export function lockedTabsValue(draft: Record<string, unknown> | null): HiddenTa
 }
 
 // ----------------------------------------------------------- profile-identity-sync.tsx
-const CATEGORIES: ContentCategory[] = ["anime", "liveTv", "sports", "adult", "manga"];
+// settings/types.ts ContentCategory. The manga and liveTv switches retired into sidebar editing
+// (settings/load.ts `_navHideMigrateV1` → navCustomization.hidden, engine/navEdit.ts), so a
+// profile blob that still carries them no longer writes them into the settings.
+const CATEGORIES: ContentCategory[] = ["anime", "sports", "adult"];
 
-/** profile-identity-sync.tsx sameHideContent: manga is deliberately not compared upstream. */
+/** profile-identity-sync.tsx sameHideContent. */
 function sameHideContent(a: Partial<ContentFilters>, b: Partial<ContentFilters>): boolean {
-  return (
-    Boolean(a.anime) === Boolean(b.anime) &&
-    Boolean(a.liveTv) === Boolean(b.liveTv) &&
-    Boolean(a.sports) === Boolean(b.sports) &&
-    Boolean(a.adult) === Boolean(b.adult)
-  );
+  return Boolean(a.anime) === Boolean(b.anime) && Boolean(a.sports) === Boolean(b.sports) && Boolean(a.adult) === Boolean(b.adult);
 }
 
 /**

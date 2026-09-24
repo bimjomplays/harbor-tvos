@@ -106,7 +106,13 @@ export const stubs = {
     b.onResolve({ filter: /(^@\/lib\/ebook\/extensions$)|(^\.\/extensions$)/ }, (a) =>
       a.path.startsWith("@/") || /lib\/ebook\//.test(a.importer) ? { path: path.join(here, "ebookExtensions.ts") } : undefined);
     // Vite `?raw` imports (lib/ebook/translation.ts reads its prompt this way) are the file's text.
-    b.onResolve({ filter: /\?raw$/ }, (a) => ({ path: path.resolve(path.dirname(a.importer), a.path.slice(0, -4)), namespace: "raw-text" }));
+    // Asset files (svg, png, …) fall through to the asset stub below; `@/` is upstream's src alias.
+    b.onResolve({ filter: /\?raw$/ }, (a) => {
+      const p = a.path.slice(0, -4);
+      if (/\.(png|jpe?g|gif|webp|avif|svg|woff2?|ttf|otf|mp3|wav|mp4|webm)$/i.test(p)) return undefined;
+      const full = p.startsWith("@/") ? path.join(upstream, p.slice(2)) : path.resolve(path.dirname(a.importer), p);
+      return { path: full, namespace: "raw-text" };
+    });
     b.onLoad({ filter: /.*/, namespace: "raw-text" }, (a) => ({ contents: fs.readFileSync(a.path, "utf8"), loader: "text" }));
     // Home media servers: upstream's transport is a Tauri command and its index store is
     // IndexedDB; the bundle swaps both for engine/media/* (fetch, localStorage). Only the
@@ -206,12 +212,24 @@ export default {
 `,
     }));
 
+    // --- Nav icon animations ---------------------------------------------------------------
+    // chrome/nav-items.tsx (engine/navEdit.ts reads its pure order/hide helpers) renders each tab
+    // with lottie-web and ~200 KB of Lottie JSON. Both are render-only: the player throws if
+    // ever called, the animation data is an empty object.
+    b.onResolve({ filter: /^lottie-web($|\/)/ }, (a) => ({ path: a.path, namespace: "lottie-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "lottie-stub" }, () => ({
+      contents: "const dead = () => { throw new Error('HarborEngine: lottie-web is render-only'); }; export default { loadAnimation: dead }; export const loadAnimation = dead;",
+      loader: "js",
+    }));
+    b.onResolve({ filter: /[\\/]assets[\\/]lottie[\\/].*\.json$/ }, (a) => ({ path: a.path, namespace: "lottie-data-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "lottie-data-stub" }, () => ({ contents: "export default {};", loader: "js" }));
+
     // --- Vite asset imports ----------------------------------------------------------------
     // \`import poster from "@/assets/x.png"\` is a Vite URL string. tvOS ships no web assets,
     // so it becomes a stable "harbor-asset:" identifier the Swift side can map to a bundled
     // image (or ignore). Never a data URI: that would put megabytes in the JS.
-    b.onResolve({ filter: /\.(png|jpe?g|gif|webp|avif|svg|woff2?|ttf|otf|mp3|wav|mp4|webm)$/ }, (a) => ({
-      path: a.path.replace(/^.*[\\/]assets[\\/]/, ""),
+    b.onResolve({ filter: /\.(png|jpe?g|gif|webp|avif|svg|woff2?|ttf|otf|mp3|wav|mp4|webm)(\?raw)?$/ }, (a) => ({
+      path: a.path.replace(/^.*[\\/]assets[\\/]/, "").replace(/\?raw$/, ""),
       namespace: "asset-stub",
     }));
     b.onLoad({ filter: /.*/, namespace: "asset-stub" }, (a) => ({

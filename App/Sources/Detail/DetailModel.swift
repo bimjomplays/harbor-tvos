@@ -268,7 +268,9 @@ final class DetailModel: ObservableObject {
         guard let authKey, !watchlistBusy else { return }
         watchlistBusy = true; defer { watchlistBusy = false }
         if inWatchlist {
-            _ = try? await HarborEngine.shared.callJSON("stremio.removeBookmark", [.string(authKey), .string(meta.id)])
+            // watchlist.ts removal (upstream ec6a696d): every cloud form of the title goes, tt… and
+            // tmdb:… alike, so a twin saved elsewhere cannot keep the card alive.
+            _ = try? await HarborEngine.shared.callJSON("cards.removeFromWatchlist", [.string(authKey), .string(meta.id), imdbId.map { .string($0) } ?? .null])
             inWatchlist = false
         } else {
             _ = try? await HarborEngine.shared.callJSON("stremio.saveBookmark", [.string(authKey), .string(meta.id), .object(["type": .string(meta.type), "name": .string(meta.name), "poster": meta.poster.map { .string($0) } ?? .null])])

@@ -11,8 +11,11 @@ import { animeHasDub, dubSetReady, ensureDubSet } from "@/lib/providers/anime-du
 import { isTop10, setTop10Metas } from "@/lib/top10-set";
 import { isWatchedFlagged } from "@/lib/watched-flag";
 import { isMovieWatchedLocal } from "@/lib/movie-watched";
-import { setWatchlistAggregate, watchlistHas } from "@/lib/watchlist";
-import { library } from "@/lib/stremio";
+import { evictWatchlistAggregate, watchlistAllIds, watchlistHas } from "@/lib/watchlist";
+import { refreshWatchlistAggregates } from "@/lib/watchlist-sync";
+import { ANIME_CLOUD_ID, cloudWriteId, removeStremioBookmark } from "@/lib/stremio";
+import { isAuthenticated as traktConnected } from "@/lib/trakt/session";
+import { isAuthenticated as simklConnected } from "@/lib/simkl/session";
 import { loadEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
 import { BP_ANIME_ID } from "@/views/big-picture/use-bp-card-badges";
@@ -132,18 +135,32 @@ export function setTop10(metas: Array<{ id: string; name: string }>): void {
 }
 
 /**
- * watchlist-sync.tsx: the Stremio library (minus removed/temp) feeds the aggregate the
- * bookmark mark reads. Trakt/Simkl lists join when those trackers land.
+ * watchlist-sync.tsx refreshWatchlistAggregates: the Stremio library (minus removed/temp) plus the
+ * Trakt and Simkl watchlists (imdb and tmdb:movie|tv forms) feed the aggregate the bookmark mark
+ * reads. A signed-out or disconnected source contributes nothing. Returns the aggregate's size.
  */
 export async function refreshWatchlist(authKey: string | null): Promise<number> {
-  if (!authKey) {
-    setWatchlistAggregate([]);
-    return 0;
-  }
-  const items = await library(authKey);
-  const ids = items.filter((it) => !it.removed && !it.temp).map((it) => it._id);
-  setWatchlistAggregate(ids);
-  return ids.length;
+  await refreshWatchlistAggregates(authKey, traktConnected(), simklConnected());
+  return watchlistAllIds().length;
+}
+
+/**
+ * watchlist.ts syncWithStremio's removal (ec6a696d "twin ghosts"): the same film can sit in the
+ * cloud as tt… and as tmdb:…, so every form the add path could have written goes, and the
+ * aggregate drops them at once (evictWatchlistAggregate) instead of waiting for a refresh.
+ * `imdbId` is the resolved tt id when the detail page knows it. Returns the ids removed.
+ */
+export async function removeFromWatchlist(authKey: string, id: string, imdbId: string | null): Promise<string[]> {
+  const imdb = typeof imdbId === "string" && /^tt\d+$/.test(imdbId) ? imdbId : null;
+  const forms = new Set<string>();
+  const withImdb = cloudWriteId(id, imdb, !!imdb);
+  const withMeta = cloudWriteId(id, imdb, false);
+  if (withImdb) forms.add(withImdb);
+  if (withMeta) forms.add(withMeta);
+  if (ANIME_CLOUD_ID.test(id)) forms.add(id);
+  for (const rid of forms) await removeStremioBookmark(authKey, rid);
+  evictWatchlistAggregate(forms);
+  return Array.from(forms);
 }
 
 // ------------------------------------------------------------------ hero awards corner

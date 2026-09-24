@@ -25,6 +25,8 @@ struct SettingsView: View {
                     .padding(.bottom, BP.px(10))
                 // Stage 9: settings-sidebar.tsx "LOOK & FEEL" → Appearance (theme-panel.tsx).
                 section("Appearance") { AppearancePanel() }
+                // chrome/nav-edit.tsx in-place sidebar editing, for the top bar (Settings/TabsPanel.swift).
+                section("Tabs") { TabsPanel() }
                 section("Harbor account") {
                     if let s = account.session {
                         row(T("Signed in as %@", s.user.username), detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")

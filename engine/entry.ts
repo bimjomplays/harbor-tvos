@@ -71,6 +71,7 @@ import * as themesGlue from "./themes";
 import { bpIntroPoolLoad, bpIntroPoolSave } from "@/views/big-picture/bp-intro-pool";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as parentalGlue from "./parental";
+import * as navEditGlue from "./navEdit";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
 import * as servicesGlue from "./services";
@@ -545,6 +546,7 @@ export const cards = {
   heroAwards: cardsGlue.heroAwards,
   setTop10: cardsGlue.setTop10,
   refreshWatchlist: cardsGlue.refreshWatchlist,
+  removeFromWatchlist: cardsGlue.removeFromWatchlist,
 };
 
 /** Simkl: PIN sign-in, session status, scrobbles (same wire shapes as `trakt`). */
@@ -647,6 +649,15 @@ export const parental = {
   lockable: parentalGlue.lockable,
   lockedTabsValue: parentalGlue.lockedTabsValue,
   syncIdentity: parentalGlue.syncIdentity,
+};
+
+/** Top-bar tab editing on upstream's sidebar model (chrome/nav-items.tsx, chrome/nav-edit.tsx). */
+export const navEdit = {
+  layout: navEditGlue.layout,
+  toggleHidden: navEditGlue.toggleHidden,
+  move: navEditGlue.move,
+  showAll: navEditGlue.showAll,
+  reset: navEditGlue.reset,
 };
 
 /** Library room: tabs and one filtered/sorted/grouped feed per tab (use-bp-library). */
