@@ -447,6 +447,31 @@ export function remembered(token: string, profileId: string, linked: boolean, me
   return i;
 }
 
+/**
+ * use-pick-handler's PlayerSrc.streamRef for a picked stream, trimmed to what lib/dead-streams
+ * fingerprints (infoHash + fileIdx, else url, else addon + title) and what playback-history's
+ * streamMatchesEntry compares, so the player can mark it dead (views/player.tsx) or forget it
+ * (use-player-exit onStubEject) after the picker's search is gone.
+ * TV: `url` is the addon's own link (upstream's streamRef carries none, so a url-only stream it
+ * marks by addon + title is never matched by isStreamDead on the picker's side; with the url the
+ * auto candidates skip it as intended).
+ */
+export function deadRef(token: string, streamIndex: number): Record<string, unknown> | null {
+  const stream = lastResults.get(token)?.picker.all[streamIndex];
+  if (!stream) return null;
+  return {
+    infoHash: stream.infoHash ?? null,
+    fileIdx: stream.fileIdx ?? null,
+    url: stream.url ?? null,
+    addonId: stream.addonId ?? null,
+    title: stream.title ?? null,
+    parsedTitle: stream.parsedTitle ?? null,
+    resolution: stream.resolution ?? null,
+    source: stream.source ?? null,
+    size: stream.size ?? null,
+  };
+}
+
 export function forget(token: string): void {
   lastResults.delete(token);
 }

@@ -200,11 +200,13 @@ export async function reportProgress(connectionId: string, itemId: string, posit
 }
 
 /** progress-sync.ts session teardown: tells a transcoding server the session ended. */
-export async function stopPlayback(connectionId: string, itemId: string, playbackSessionId: string, positionMs: number): Promise<void> {
-  // A quality switch replaced the session the player was opened with (and already stopped that one).
+export async function stopPlayback(connectionId: string, itemId: string, openedSessionId: string | null, positionMs: number): Promise<void> {
+  // A quality switch replaced the session the player was opened with (and already stopped that
+  // one): the held session is the live one, even when it is none (back to direct play).
   const held = playing.get(sessionKey(connectionId, itemId));
   playing.delete(sessionKey(connectionId, itemId));
-  if (held?.playbackSessionId) playbackSessionId = held.playbackSessionId;
+  const playbackSessionId = held ? held.playbackSessionId ?? null : openedSessionId;
+  if (!playbackSessionId) return;
   const connection = mediaServerConnections().find((c) => c.id === connectionId);
   if (!connection) return;
   const item = (await mediaServerItems(connectionId)).find((i) => i.id === itemId);

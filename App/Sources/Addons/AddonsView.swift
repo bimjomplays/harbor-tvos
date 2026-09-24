@@ -192,7 +192,8 @@ final class AddonsModel: ObservableObject {
         let q = trimmedQuery
         let search: String? = q.isEmpty ? nil : q
         let r: Page? = try? await HarborEngine.shared.call("addonsManager.browse", [mode.rawValue, category, search, adultAllowed, page])
-        guard gen == browseGeneration else { browseLoading = false; return }
+        // Filters changed while this page loaded: its reload bounced off browseLoading, so it runs now (review 30).
+        guard gen == browseGeneration else { browseLoading = false; await loadMoreBrowse(); return }
         browseLoading = false
         guard let r else { hasMore = false; return }
         // community-browse-list: a row already shown (same uuid) is not repeated.

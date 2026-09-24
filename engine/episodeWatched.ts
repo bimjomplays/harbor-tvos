@@ -198,12 +198,18 @@ export function watchedKeysFor(metaId: string, refs: EpisodeRef[]): Set<string> 
 /**
  * Everything the strip draws for `season` (refs is the whole title so "up to here" and the
  * next-season up-next read the same answer). Next up is the first unwatched card of the season,
- * as use-episode-progress-map.ts / use-anime-progress-map.ts pick it.
+ * as use-episode-progress-map.ts / use-anime-progress-map.ts pick it. `shown`, when given, is the
+ * strip itself as "season:episode" keys in its order (an anime season chip of the TVDB panel mixes
+ * Kitsu seasons, use-anime-progress-map displayEpisodes); it replaces the season filter.
  */
-export function state(metaId: string, refs: EpisodeRef[], season: number | null, profileId: string, linked: boolean): EpisodeWatchedState {
+export function state(metaId: string, refs: EpisodeRef[], season: number | null, profileId: string, linked: boolean, shown?: string[] | null): EpisodeWatchedState {
   const settings = loadEffective(profileId, linked);
   const watched = watchedKeysFor(metaId, refs);
-  const inSeason = season == null ? refs : refs.filter((r) => r.season === season);
+  let inSeason = season == null ? refs : refs.filter((r) => r.season === season);
+  if (Array.isArray(shown)) {
+    const byKey = new Map(refs.map((r) => [key(r.season, r.episode), r] as const));
+    inSeason = shown.map((k) => byKey.get(k)).filter((r): r is EpisodeRef => r != null);
+  }
   const resume = resumeKeys();
   const started: string[] = [];
   const masks: Record<string, SpoilerMask> = {};
@@ -235,7 +241,7 @@ export function upNextMask(profileId: string, linked: boolean, watched: boolean)
 
 // ------------------------------------------------------------------------------ the marks
 
-export type MarkScope = "episode" | "upTo" | "season";
+export type MarkScope = "episode" | "upTo" | "season" | "shown";
 
 function simklShowIds(owner: string, season: number, episode: number): SimklIds | null {
   if (!simklSession()) return null;
@@ -252,6 +258,8 @@ function simklShowIds(owner: string, season: number, episode: number): SimklIds 
  *   "episode" unwatched → "Mark as unwatched" (also clears the episode's local resume entry)
  *   "upTo"              → "Mark watched up to here" (aired episodes of this entry, earlier seasons too)
  *   "season"            → use-mark-season.ts / use-anime-watched-routing.ts markMany
+ *   "shown"             → anime-episodes.tsx markSeason = markMany(displayEpisodes): every ref
+ *                         passed (the anime season chip on screen), grouped by the id its marks live under
  * The manual store is written before this returns. Simkl history follows when connected, an anime
  * season mark advances AniList/MAL progress when their auto-sync is on, and a series then pushes
  * its marks into the Stremio library bitfield; those run in the background (settle() awaits them).
@@ -267,6 +275,7 @@ export function mark(
   profileId: string,
   linked: boolean,
 ): boolean {
+  if (scope === "shown") return markShown(authKey, meta, imdbId, refs, watched, profileId, linked);
   const owner = ownerOf(target, meta.id);
   const manualMeta: ManualWatchedMeta = { type: "series", name: meta.name, poster: meta.poster, background: meta.background };
   const pool = refs.filter((r) => ownerOf(r, meta.id) === owner);
@@ -321,6 +330,41 @@ export function mark(
   const network = async () => {
     await Promise.all(writes.map((p) => timeout(p, 10000, undefined)));
     if (authKey && owner === meta.id) await timeout(pushToLibrary(authKey, meta, imdbId), 12000, false);
+  };
+  const prev = inflight;
+  inflight = prev.then(network).catch(() => undefined);
+  return true;
+}
+
+/**
+ * use-anime-watched-routing.ts markMany(displayEpisodes, watched): aired episodes only when marking,
+ * one manual write per owner (a franchise entry keeps its own id), AniList / MAL progress to the
+ * highest episode when their auto-sync is on, then the Stremio library bitfield of the page's own id.
+ */
+function markShown(authKey: string | null, meta: Meta, imdbId: string | null, refs: EpisodeRef[], watched: boolean, profileId: string, linked: boolean): boolean {
+  const eligible = watched ? refs.filter((e) => airedByNow(e.released)) : refs;
+  if (eligible.length === 0) return false;
+  const groups = new Map<string, Array<{ season: number; episode: number }>>();
+  for (const e of eligible) {
+    const owner = ownerOf(e, meta.id);
+    const list = groups.get(owner) ?? [];
+    list.push({ season: e.season, episode: e.episode });
+    groups.set(owner, list);
+  }
+  const settings = loadEffective(profileId, linked);
+  const writes: Array<Promise<unknown>> = [];
+  for (const [owner, eps] of groups) {
+    if (watched) recordManualWatchedMeta(owner, { type: "series", name: meta.name, poster: meta.poster, background: meta.background });
+    setManualWatchedMany(owner, eps, watched);
+    const highest = Math.max(...eps.map((e) => e.episode));
+    if (watched && ANIME_ID.test(owner) && Number.isFinite(highest) && highest > 0) {
+      if (settings.anilistAutoSync) writes.push(syncAnimeProgress(owner, highest, meta.name));
+      if (settings.malAutoSync) writes.push(syncMalProgress(owner, highest, meta.name));
+    }
+  }
+  const network = async () => {
+    await Promise.all(writes.map((p) => timeout(p, 10000, undefined)));
+    if (authKey && groups.has(meta.id)) await timeout(pushToLibrary(authKey, meta, imdbId), 12000, false);
   };
   const prev = inflight;
   inflight = prev.then(network).catch(() => undefined);

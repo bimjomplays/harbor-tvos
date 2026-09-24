@@ -132,6 +132,7 @@ struct KidsDetailView: View {
             PlayPickerView(meta: target.meta, episode: target.episode, onPlay: { _, resolved in
                 guard let link = resolved.data, let url = URL(string: link.url) else { return }
                 self.picker = nil
+                let pick = PlayerPickInfo(autoPicked: resolved.autoPicked ?? false, attempt: target.attempt, streamRef: resolved.streamRef)
                 let ep = target.episode
                 let s: Int? = ep?["season"]?.number.map { Int($0) }
                 let e: Int? = ep?["episode"]?.number.map { Int($0) }
@@ -142,13 +143,20 @@ struct KidsDetailView: View {
                 // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     let upNext: String? = nextEpisode(after: ctx).map { n in "S\(n.season) E\(n.episode) · \(n.name)" }
-                    playing = KidsPlayTarget(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep)
+                    playing = KidsPlayTarget(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, pick: pick)
                 }
             }, autoPlay: pickerAuto)
         }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
-                         onChooseAnother: { pickerAuto = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = KidsPickerTarget(meta: meta, episode: t.episode) } }) { natural in
+                         onChooseAnother: { pickerAuto = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = KidsPickerTarget(meta: meta, episode: t.episode) } },
+                         pick: t.pick,
+                         onPickAgain: { auto in
+                             // views/player.tsx openPicker(meta, episode, { autoPlay: true, attempt: attempt + 1 }).
+                             pickerAuto = auto
+                             let next = (t.pick?.attempt ?? 0) + 1
+                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = KidsPickerTarget(meta: meta, episode: t.episode, attempt: next) }
+                         }) { natural in
                 playing = nil
                 // A finished episode opens the next one of the loaded season, straight to its best source.
                 if natural, let next = nextEpisode(after: t.context) {
@@ -331,6 +339,8 @@ struct KidsDetailView: View {
 struct KidsPickerTarget: Identifiable {
     let meta: Meta
     let episode: AnyJSON?
+    /// view.ts picker frame `attempt`: how many times the player sent this title back (0 = the viewer opened it).
+    var attempt = 0
     let id = UUID()
 }
 
@@ -343,6 +353,8 @@ struct KidsPlayTarget: Identifiable {
     var context: PlaybackContext
     var upNext: String?
     var episode: AnyJSON?
+    /// PlayerSrc autoFired / attempt / streamRef (views/player.tsx next-stream skip).
+    var pick: PlayerPickInfo? = nil
 }
 
 /// kids-episodes.tsx EpisodeCard: 16:9 still, "Ep n" badge, the star rating badge, name below.

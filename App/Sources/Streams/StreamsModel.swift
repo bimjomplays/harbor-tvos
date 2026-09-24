@@ -194,6 +194,10 @@ final class StreamsModel: ObservableObject {
         var debridFailure: Bool? = nil
         /// engine/streams.ts P2pPlan: resolve would have handed this torrent to the local engine.
         var p2p: TorrentEngine.Plan? = nil
+        /// view.ts PlayerSrc.autoFired: set by the picker when instant play fired this stream on its own.
+        var autoPicked: Bool? = nil
+        /// view.ts PlayerSrc.streamRef (engine streamsRoom.deadRef): set by the picker for the stream it handed over.
+        var streamRef: AnyJSON? = nil
     }
 
     /// A home-server copy resolves through the server (direct play or transcode).
@@ -217,6 +221,14 @@ final class StreamsModel: ObservableObject {
         let anime = meta.type == "anime" || ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) }
         // use-bp-stream-play prefer1080: !!kid.
         return (try? await HarborEngine.shared.call("streamsRoom.autoCandidates", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep, anime, nil as [String]?, p?.kid != nil])) ?? []
+    }
+
+    /// use-pick-handler streamRef: what lib/dead-streams fingerprints for this stream, so the player
+    /// can mark it dead after this search is gone (nil when the search no longer has it).
+    func deadRef(_ stream: ScoredStream) async -> AnyJSON? {
+        guard let ref = try? await HarborEngine.shared.callJSON("streamsRoom.deadRef", [.string(token), .number(Double(stream.index))]) else { return nil }
+        if case .null = ref { return nil }
+        return ref
     }
 
     /// use-pick-handler savePlayback: remember what played for next time's instant play.
@@ -294,4 +306,15 @@ final class StreamsModel: ObservableObject {
             }
         }
     }
+}
+
+/// view.ts PlayerSrc autoFired / attempt / streamRef: how a picker's pick reached the player, for
+/// views/player.tsx's next-stream skip (a stalled or failed auto pick) and use-stub-detection.ts.
+struct PlayerPickInfo {
+    /// PlayerSrc.autoFired: instant play fired this stream; nobody chose it.
+    var autoPicked: Bool
+    /// PlayerSrc.attempt: how many times the player has sent this title back to the picker.
+    var attempt: Int
+    /// PlayerSrc.streamRef as engine streamsRoom.deadRef built it.
+    var streamRef: AnyJSON?
 }

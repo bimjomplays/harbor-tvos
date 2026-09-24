@@ -31,12 +31,21 @@ struct PlayerScreen: View {
     var liveChannel: LiveModel.Channel? = nil
     /// "Add to Multiview": the caller closes the player and opens Multiview with this channel.
     var onAddToMultiview: ((LiveModel.Channel) -> Void)? = nil
+    /// view.ts PlayerSrc autoFired / attempt / streamRef: how the picker handed this stream over
+    /// (nil when no picker did).
+    var pick: PlayerPickInfo? = nil
+    /// views/player.tsx / use-player-exit.ts openPicker(meta, episode, { autoPlay, attempt: attempt + 1 }):
+    /// once this player has closed, the caller reopens the picker, firing on its own when `auto`.
+    /// Without it the player never sends a stream back (stall skip, stub detection).
+    var onPickAgain: ((_ auto: Bool) -> Void)? = nil
     /// use-live-channel-overlay switchChannel: the channel tuned in place (nil = the one opened).
     @State private var tuned: LiveModel.Channel?
     /// goPrevChannel: the channels tuned before, newest last, 12 at most.
     @State private var prevChannels: [LiveModel.Channel] = []
     /// KidsStreamSwitcher onPick: the stream picked in place of the one opened (nil = the one opened).
     @State private var switched: SwitchedStream?
+    /// A quality switch made while paused starts the new stream paused (bp-ten-foot startPaused: !playing, review 29).
+    @State private var pausedAfterSwitch = false
     /// Whether the stream was swapped in place (the kid switcher, a quality change): TrackMemory keys by the original release otherwise.
     var switchedInPlace: Bool { switched != nil }
     struct SwitchedStream { var url: URL; var headers: [String: String] }
@@ -106,6 +115,15 @@ struct PlayerScreen: View {
     @ObservedObject private var sleepTimer = SleepTimer.shared
     /// lib/media-session.ts: this player's claim on Now Playing and the remote commands.
     @State private var nowPlayingId = UUID()
+    /// views/player.tsx playbackStartedRef: a pause, a position or a picture was seen, so this stream
+    /// is never skipped as stalled.
+    @State private var playbackStarted = false
+    /// views/player.tsx autoAdvancedRef: this player already sent its stream back to the picker.
+    @State private var sentBack = false
+    /// views/player.tsx: the stall wait runs from the stream's load (the player opening).
+    @State private var openedAt = Date()
+    /// use-stub-detection.ts stubCheckedRef: the stub check ran for this stream.
+    @State private var stubChecked = false
 
     struct SkipSegment: Decodable, Identifiable {
         var kind: String       // "intro" | "outro" | "recap" | "ad" | ...
@@ -131,6 +149,12 @@ struct PlayerScreen: View {
         var nextEpisodeLeadSec: Double = -1
         var seekBackStepSec: Double = 10
         var seekForwardStepSec: Double = 10
+        /// views/player.tsx: skip an auto-picked stream that has not started after the wait
+        /// (lib/player/stall-wait.ts stallWaitSec, clamped by the engine).
+        var autoNextStreamOnStall = false
+        var autoNextStreamOnStallSec: Double = 10
+        /// use-stub-detection.ts runs under settings.instantPlay.
+        var instantPlay = true
     }
 
     enum Panel { case audio, subtitles, anime4k, channels, kidsSources, homeServerQuality, speed }
@@ -164,7 +188,7 @@ struct PlayerScreen: View {
                                      controller = c
                                      pipActive = false
                                      applyRate(c)
-                                     if resumePending != nil { c.setPaused(true) }
+                                     if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                                  },
                                  onPictureInPicture: { on in if engine == .native { pipChanged(on) } })
                     .ignoresSafeArea()
@@ -175,7 +199,7 @@ struct PlayerScreen: View {
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               trackMemory: trackMemory,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
-                              onReady: { controller = $0; pipActive = false; applyRate($0); if resumePending != nil { $0.setPaused(true) } })
+                              onReady: { controller = $0; pipActive = false; applyRate($0); if resumePending != nil || pausedAfterSwitch { $0.setPaused(true); pausedAfterSwitch = false } })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else {
@@ -341,10 +365,83 @@ struct PlayerScreen: View {
             if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
             skipTick()
             nowPlayingTick()
+            stallTick()
+            stubTick()
         }
+        // views/player.tsx: an auto pick that fails before it ever played goes on to the next source.
+        .onChange(of: status.state) { _, state in if state == "error" { autoNextOnError() } }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
         .animation(.easeOut(duration: 0.32), value: roomOpen)
+    }
+
+    // MARK: next stream (views/player.tsx autoNextStreamOnStall, use-stub-detection.ts)
+
+    /// views/player.tsx `src.autoFired && !src.isLive && !inRoom`, plus a caller that can reopen the
+    /// picker; a stream swapped in place (the kid switcher) was chosen by hand.
+    private var autoPickLive: Bool {
+        pick?.autoPicked == true && onPickAgain != nil && !isLive && !together.inRoom && switched == nil
+            && !playbackStarted && !sentBack && !finishing
+    }
+
+    /// lib/player/stall-wait.ts hasPlaybackStartedForStallCheck: paused, a position, or a picture.
+    private func notePlaybackStarted() {
+        guard !playbackStarted, let c = controller else { return }
+        if snap.paused || snap.position > 0 || c.videoWidth() > 0 { playbackStarted = true }
+    }
+
+    /// views/player.tsx (opt-in autoNextStreamOnStall): an auto-picked stream that has not started
+    /// within the wait is marked dead and the picker fires the next candidate. First load only.
+    private func stallTick() {
+        notePlaybackStarted()
+        guard autoPickLive, prefs.autoNextStreamOnStall, status.state != "error",
+              Date().timeIntervalSince(openedAt) >= prefs.autoNextStreamOnStallSec else { return }
+        sendBackToPicker(auto: true, markDead: true)
+    }
+
+    /// views/player.tsx: `snap.status === "error"` on an auto pick that never played (not gated by
+    /// the setting) marks it dead and fires the next candidate instead of the source error card.
+    private func autoNextOnError() {
+        notePlaybackStarted()
+        guard autoPickLive else { return }
+        sendBackToPicker(auto: true, markDead: true)
+    }
+
+    /// use-stub-detection.ts (under instantPlay): a movie or episode whose file is under
+    /// SHORT_PLAYBACK_SEC while playing is checked once; the engine marks a stub dead, records the
+    /// event for the next picker's notice and forgets the remembered pick (onStubEject), and the
+    /// picker comes back firing on its own, up to MAX_AUTORETRY_ATTEMPTS (5), then the player just closes.
+    private func stubTick() {
+        guard prefs.instantPlay, !stubChecked, onPickAgain != nil, !isLive, switched == nil, !sentBack, !finishing,
+              let context,
+              snap.duration > 0, snap.duration < 180, status.state == "playing" else { return }
+        stubChecked = true
+        struct StubInput: Encodable {
+            var meta: Meta; var url: String; var title: String; var ref: AnyJSON?
+            var durationSec: Double; var playing: Bool; var season: Int?; var episode: Int?
+        }
+        let input = StubInput(meta: context.meta, url: url.absoluteString, title: title, ref: pick?.streamRef,
+                              durationSec: snap.duration, playing: true, season: context.season, episode: context.episode)
+        let nextAttempt = (pick?.attempt ?? 0) + 1
+        Task { @MainActor in
+            let flagged: Bool = (try? await HarborEngine.shared.call("deadStreams.flagStub", [input])) ?? false
+            guard flagged, !sentBack, !finishing else { return }
+            if nextAttempt > 5 { finish(natural: false); return }
+            sendBackToPicker(auto: true, markDead: false)
+        }
+    }
+
+    /// Close, then hand back to the caller's picker. The dead mark lands in the engine first, so
+    /// the reopened picker's auto candidates (isStreamDead) already skip this stream.
+    private func sendBackToPicker(auto: Bool, markDead: Bool) {
+        guard let again = onPickAgain, !sentBack, !finishing else { return }
+        sentBack = true
+        let ref = markDead ? pick?.streamRef : nil
+        finish(natural: false)
+        Task { @MainActor in
+            if let ref { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) }
+            again(auto)
+        }
     }
 
     // MARK: skip pill (skip-pill-container.tsx, bp-skip-pill.tsx)
@@ -894,7 +991,7 @@ struct PlayerScreen: View {
         case .homeServerQuality:
             if let h = context?.homeServer {
                 HomeServerQualityPanel(session: h, positionSec: snap.position, playing: !snap.paused,
-                                       onSwitched: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
+                                       onSwitched: { next, headers in pausedAfterSwitch = snap.paused; switchStream(to: next, headers: headers) }, onClose: { closePanel() })
             }
         case .kidsSources:
             if let context {
