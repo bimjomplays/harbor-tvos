@@ -20,13 +20,17 @@ struct GuidePortalView: View {
     private static let dwell: Duration = .milliseconds(700)
     private static var failed = Set<String>()
 
+    /// Anything over the guide the caller cannot see (a cover, the saver, the lock, playback).
+    @ObservedObject private var gate = PreviewGate.shared
+    private var stopped: Bool { suspended || gate.blocked }
+
     @State private var armed = false
     @State private var playing = false
     @State private var failures = 0
 
     private var mountVideo: Bool {
         _ = failures
-        return armed && !channel.url.isEmpty && !Self.failed.contains(channel.id) && !suspended && !UIAccessibility.isReduceMotionEnabled
+        return armed && !channel.url.isEmpty && !Self.failed.contains(channel.id) && !stopped && !UIAccessibility.isReduceMotionEnabled
     }
 
     var body: some View {
@@ -72,7 +76,8 @@ struct GuidePortalView: View {
             try? await Task.sleep(for: Self.dwell)
             if !Task.isCancelled { armed = true }
         }
-        .onChange(of: suspended) { _, on in if on { playing = false } }
+        // Suspending unmounts the player (MPVPlayerView's dismantle stops mpv); it fades in afresh.
+        .onChange(of: stopped) { _, on in if on { playing = false } }
     }
 
     private var range: String {

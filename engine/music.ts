@@ -54,25 +54,49 @@ const LIKED_KEY = "harbor.music.liked.v1";
 const RECENTS_KEY = "harbor.music.recents.v1";
 const RECENTS_LIMIT = 50;
 
+/** A track as it is stored: artwork without Subsonic / Plex credentials (musicSources artworkAtRest). */
+function atRest(track: MusicTrack): MusicTrack {
+  if (!track.artwork) return track;
+  const artwork = src.artworkAtRest(track.artwork);
+  return artwork === track.artwork ? track : { ...track, artwork };
+}
+/** The stored lists, as stored. A list written before credentials were stripped is rewritten here. */
 function readList(key: string): MusicTrack[] {
+  let raw: string | null = null;
+  let list: MusicTrack[] = [];
   try {
-    const raw = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
-    return Array.isArray(raw) ? (raw.filter((x) => x && typeof x === "object" && typeof (x as MusicTrack).id === "string") as MusicTrack[]) : [];
+    raw = localStorage.getItem(key);
+    const parsed = JSON.parse(raw ?? "[]") as unknown;
+    list = Array.isArray(parsed) ? (parsed.filter((x) => x && typeof x === "object" && typeof (x as MusicTrack).id === "string") as MusicTrack[]) : [];
   } catch {
     return [];
   }
+  const clean = list.map(atRest);
+  if (raw !== null && clean.some((x, i) => x !== list[i])) writeList(key, clean);
+  return clean;
 }
 function writeList(key: string, list: MusicTrack[]): void {
   try {
-    localStorage.setItem(key, JSON.stringify(list));
+    localStorage.setItem(key, JSON.stringify(list.map(atRest)));
   } catch {
     /* a full store must not stop playback */
   }
 }
+/** A stored track for the room: its artwork signed again with today's credentials. */
+function forDisplay(track: MusicTrack): MusicTrack {
+  if (!track.artwork) return track;
+  const artwork = src.artworkForDisplay(track.artwork);
+  return artwork === track.artwork ? track : { ...track, artwork };
+}
+/** Rewrite both stored lists without credentials (a disconnect, or an older build's lists). */
+export function scrubLibrary(): void {
+  readList(LIKED_KEY);
+  readList(RECENTS_KEY);
+}
 export type MusicLibrary = { liked: MusicTrack[]; likedIds: string[]; recents: MusicTrack[] };
 export function library(): MusicLibrary {
   const liked = readList(LIKED_KEY);
-  return { liked, likedIds: liked.map((x) => x.id), recents: readList(RECENTS_KEY) };
+  return { liked: liked.map(forDisplay), likedIds: liked.map((x) => x.id), recents: readList(RECENTS_KEY).map(forDisplay) };
 }
 export function addRecent(track: MusicTrack): MusicLibrary {
   writeList(RECENTS_KEY, [track, ...readList(RECENTS_KEY).filter((x) => x.id !== track.id)].slice(0, RECENTS_LIMIT));
@@ -387,6 +411,7 @@ export async function subsonicConnect(url: string, username: string, password: s
 }
 export function subsonicDisconnect(): boolean {
   src.subsonicDisconnect();
+  scrubLibrary();
   homeCache = null;
   return true;
 }

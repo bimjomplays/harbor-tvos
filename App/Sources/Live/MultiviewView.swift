@@ -246,7 +246,9 @@ struct MultiviewView: View {
         // the viewer leaves the app instead of sounding from the home screen.
         return MultiviewCell(slot: i, channel: ch, audio: model.audioFocus == i && scenePhase != .background,
                              nowTitle: ch.flatMap { live.guide[$0.id]?.now?.title },
-                             suspended: fullScreen != nil,
+                             // The `audio` background mode keeps the app alive off screen: every
+                             // tile lets go of its stream until the scene is active again.
+                             suspended: fullScreen != nil || scenePhase != .active,
                              focus: $focus,
                              onPick: { pickerSlot = i },
                              onClose: { model.close(i); focusLater(.cell(i)) },

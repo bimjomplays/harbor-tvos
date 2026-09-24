@@ -158,7 +158,7 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(panel != nil || resumePending != nil || leaveConfirm)
+                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
@@ -170,7 +170,7 @@ struct PlayerScreen: View {
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+            if chrome, !roomOpen, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport.
                 Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
             }
@@ -178,13 +178,13 @@ struct PlayerScreen: View {
                 Group { if isKid { kidsResumePrompt } else { resumePrompt(resumePending) } }.transition(.opacity)
             }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
-            if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
-            if status.state == "error", isLive, liveGuide != nil, panel == nil { liveErrorCard.transition(.opacity) }
-            if status.state == "loading", !isLive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
-            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, resumePending == nil, status.state != "error" {
+            if status.state == "error", !isLive, !roomOpen { sourceErrorCard.transition(.opacity) }
+            if status.state == "error", isLive, liveGuide != nil, panel == nil, !roomOpen { liveErrorCard.transition(.opacity) }
+            if status.state == "loading", !isLive, !roomOpen, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
             }
-            if panel == nil, !leaveConfirm, resumePending == nil {
+            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil {
                 if showUpNextCard, let upNext {
                     upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if let seg = activeSegment {
@@ -201,6 +201,12 @@ struct PlayerScreen: View {
                     .background(Capsule().fill(BP.void_.opacity(0.7)))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(BP.gutter)
+            }
+            // The Watch Together room over the picture. Not a fullScreenCover: covering the player
+            // would make it disappear (PlaybackState, the torrent's owner) while the room is open.
+            if roomOpen {
+                TogetherView(inPlayer: true, onClose: { roomOpen = false; focus = .surface; wake() })
+                    .transition(.opacity)
             }
         }
         .onPlayPauseCommand { togglePause() }
@@ -219,7 +225,6 @@ struct PlayerScreen: View {
         .onAppear { focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url) }
         .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: switched?.url ?? url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
-        .fullScreenCover(isPresented: $roomOpen, onDismiss: { focus = .surface; wake() }) { TogetherView(inPlayer: true) }
         // The app now declares background audio for music; a film or channel still stops
         // when the viewer leaves the app (mpv would otherwise keep sounding).
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in controller?.setPaused(true) }
@@ -273,6 +278,7 @@ struct PlayerScreen: View {
         }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
+        .animation(.easeOut(duration: 0.32), value: roomOpen)
     }
 
     /// The segment the playhead is inside (skip-intro/index.ts activeSegment), unless already skipped.
@@ -892,7 +898,7 @@ struct PlayerScreen: View {
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(Self.hideAfter))
-            if !Task.isCancelled, panel == nil, !snap.paused { chrome = false; focus = .surface }
+            if !Task.isCancelled, panel == nil, !roomOpen, !snap.paused { chrome = false; focus = .surface }
         }
     }
 

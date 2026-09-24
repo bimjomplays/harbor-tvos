@@ -34,6 +34,12 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         return c
     }
 
+    /// The view left the hierarchy for good (a cover over it does not count): release mpv now
+    /// rather than whenever SwiftUI lets go of the controller.
+    static func dismantleUIViewController(_ c: MPVPlayerController, coordinator: ()) {
+        c.stop()
+    }
+
     func updateUIViewController(_ c: MPVPlayerController, context: Context) {
         // Multiview audio focus moves between tiles without reloading the stream.
         if c.muted != muted {

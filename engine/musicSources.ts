@@ -1767,6 +1767,80 @@ export async function subsonicConnect(address: string, username: string, passwor
   subsonicConnectorRef.health = classify(failure, ["could not reach"]);
   throw failure instanceof Error ? failure : new Error("Harbor could not reach that music server");
 }
+// ------------------------------------------------------------ artwork at rest (no credentials)
+// Subsonic cover art carries u/t/s in its query and Plex art carries X-Plex-Token (twice: the
+// transcoder's own and the inner image path's). Tracks the TV keeps (liked, recents) are stored
+// with those stripped, and the credentials, which live only in the Keychain, go back on at
+// read time; a source that is no longer connected gets no artwork rather than a stale secret.
+const SUBSONIC_AUTH_PARAMS = ["u", "t", "s", "p"];
+const isSubsonicCover = (u: URL) => /\/rest\/getCoverArt(\.view)?$/.test(u.pathname);
+const isPlexTranscode = (u: URL) => u.pathname === "/photo/:/transcode";
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+/** The inner `url` of Plex's photo transcoder, with or without its token. */
+function plexInner(inner: string, token: string | null): string {
+  const q = inner.indexOf("?");
+  const path = q < 0 ? inner : inner.slice(0, q);
+  const params = new URLSearchParams(q < 0 ? "" : inner.slice(q + 1));
+  params.delete("X-Plex-Token");
+  if (token) params.append("X-Plex-Token", token);
+  const rest = params.toString();
+  return rest ? `${path}?${rest}` : path;
+}
+/** An artwork URL as it may be stored: every credential stripped. Idempotent. */
+export function artworkAtRest(raw: string): string {
+  if (!raw) return raw;
+  const u = parseUrl(raw);
+  if (!u) return raw;
+  if (isSubsonicCover(u)) {
+    if (!SUBSONIC_AUTH_PARAMS.some((k) => u.searchParams.has(k))) return raw;
+    for (const k of SUBSONIC_AUTH_PARAMS) u.searchParams.delete(k);
+    return u.toString();
+  }
+  if (isPlexTranscode(u) || u.searchParams.has("X-Plex-Token")) {
+    const inner = u.searchParams.get("url");
+    if (!u.searchParams.has("X-Plex-Token") && !(inner && inner.includes("X-Plex-Token"))) return raw;
+    u.searchParams.delete("X-Plex-Token");
+    if (inner) u.searchParams.set("url", plexInner(inner, null));
+    return u.toString();
+  }
+  return raw;
+}
+/** A stored artwork URL with the current credentials put back ("" when its source is gone). */
+export function artworkForDisplay(raw: string): string {
+  if (!raw) return raw;
+  const u = parseUrl(raw);
+  if (!u) return raw;
+  if (isSubsonicCover(u)) {
+    if (u.searchParams.has("t")) return raw;
+    const p = subsonicPairing();
+    const base = p ? parseUrl(`${p.baseUrl}/rest/`)?.toString() : undefined;
+    if (!p || !base || !u.toString().startsWith(base)) return "";
+    for (const k of SUBSONIC_AUTH_PARAMS) u.searchParams.delete(k);
+    const out = new URL(u.toString());
+    out.search = "";
+    for (const [k, v] of subsonicAuth(p)) out.searchParams.append(k, v);
+    for (const [k, v] of u.searchParams) if (k !== "v" && k !== "c") out.searchParams.append(k, v);
+    return out.toString();
+  }
+  if (isPlexTranscode(u)) {
+    if (u.searchParams.has("X-Plex-Token")) return raw;
+    const conn = mediaServerConnections().find((c) => c.provider === "plex" && c.enabled !== false && c.origin.replace(/\/+$/, "") === u.origin);
+    const token = conn ? mediaServerToken(conn) : null;
+    if (!token) return "";
+    const inner = u.searchParams.get("url");
+    if (inner) u.searchParams.set("url", plexInner(inner, token));
+    u.searchParams.append("X-Plex-Token", token);
+    return u.toString();
+  }
+  return raw;
+}
+
 /** mod.rs disconnect */
 export function subsonicDisconnect(): void {
   subsonicSave(null);

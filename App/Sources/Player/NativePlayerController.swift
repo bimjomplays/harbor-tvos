@@ -90,10 +90,13 @@ final class NativePlayerController: UIViewController {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.poll() }
     }
 
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        teardown()
-    }
+    // Teardown is tied to the view truly leaving (NativePlayerView.dismantleUIViewController, or
+    // deinit), not to viewDidDisappear: a fullScreenCover over the player must not stop it.
+
+    /// Stop playback for good: the owner is done with this player. Safe to call more than once.
+    func stop() { teardown() }
+
+    deinit { teardown() }
 
     private func teardown() {
         guard !tornDown else { return }
@@ -112,7 +115,7 @@ final class NativePlayerController: UIViewController {
         onEnded = nil
         onUnsupported = nil
         // The player owned the display mode while it was up (as MPVPlayerController does).
-        if let window = view.window ?? UIApplication.shared.connectedScenes.compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first {
+        if let window = viewIfLoaded?.window ?? HarborOverlayWindow.mainWindow {
             window.avDisplayManager.preferredDisplayCriteria = nil
         }
     }
@@ -574,4 +577,9 @@ struct NativePlayerView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ c: NativePlayerController, context: Context) {}
+
+    /// The view left the hierarchy for good (a cover over it does not count).
+    static func dismantleUIViewController(_ c: NativePlayerController, coordinator: ()) {
+        c.stop()
+    }
 }

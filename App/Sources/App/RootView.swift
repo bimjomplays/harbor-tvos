@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
-    @StateObject private var saver = ScreensaverModel()
+    @ObservedObject private var saver = ScreensaverModel.shared
     @ObservedObject private var curfew = CurfewState.shared
     @StateObject private var app = AppModel()
     @ObservedObject private var theme = ThemeStore.shared
@@ -11,7 +11,12 @@ struct RootView: View {
     @ObservedObject private var profiles = ProfilesStore.shared
     /// settings.uiLanguage drives every string on screen (App/L10n.swift), not the system language.
     @ObservedObject private var settings = SettingsBridge.shared
-    private var language: String { L10n.normalize(settings.slice.uiLanguage) }
+    /// A film or channel is up: a theme or language that profile sync pulls in meanwhile waits for
+    /// it to end, because either one rebuilds the whole tree (and the player with it).
+    @ObservedObject private var playback = PlaybackState.shared
+    /// The language the tree was built in, kept while playback runs (nil = follow settings).
+    @State private var heldLanguage: String?
+    private var language: String { heldLanguage ?? L10n.normalize(settings.slice.uiLanguage) }
 
     var body: some View {
         ZStack {
@@ -27,9 +32,9 @@ struct RootView: View {
             }
             // bp-shell passes navigationEnabled && !introUp: nothing under the wall takes a press.
             .disabled(intro.phase == .showing)
-            if app.stage == .shell, saver.active { ScreensaverView(model: saver).transition(.opacity).zIndex(10) }
-            // curfew-guard: topmost on every entry, or it is the appearance of child safety without any of it.
-            if app.stage == .shell, curfew.locked { CurfewLockView(state: curfew).transition(.opacity).zIndex(20) }
+            // The screensaver and the curfew lock (curfew-guard: topmost on every entry, or it is the
+            // appearance of child safety without any of it) are hosted in a window above this one
+            // (ShellOverlay), so no fullScreenCover can hide them; see `overlayUp`.
             // bp-controller-toast.tsx: mounted beside the screensaver, over every Big Picture surface.
             ControllerToastView(monitor: GamepadMonitor.shared).zIndex(15)
             // bp-shell.tsx: {introUp && <BpIntro …/>}, the front door after the boot splash.
@@ -49,6 +54,11 @@ struct RootView: View {
             if st == .shell { saver.start(); curfew.start() }
             if old == .boot, st != .boot { startIntro() }
             theme.holding = st == .onboarding
+        }
+        .onChange(of: overlayUp) { _, up in syncOverlay(up) }
+        .onChange(of: playback.active) { _, on in
+            heldLanguage = on ? language : nil
+            theme.holdingForPlayback = on
         }
         .onChange(of: pool.posters) { _, posters in
             // bp-shell.tsx: remember this session's art for the next boot, feed the wall if it
@@ -70,6 +80,23 @@ struct RootView: View {
         .onOpenURL { app.handle(url: $0) }
         // lib/theme.ts applyTheme: data-theme-mode follows the canvas (MinUI and Kawaii are light).
         .preferredColorScheme(theme.state?.light == true ? .light : .dark)
+    }
+
+    private var overlayUp: Bool { app.stage == .shell && (curfew.locked || saver.active) }
+
+    private func syncOverlay(_ up: Bool) {
+        guard up else { ShellOverlay.shared.hide(); return }
+        ShellOverlay.shared.show(
+            ShellOverlayView(saver: saver, curfew: curfew)
+                .environment(\.locale, Locale(identifier: language))
+                .environment(\.layoutDirection, L10n.rtlLanguages.contains(language) ? .rightToLeft : .leftToRight)
+                .preferredColorScheme(theme.state?.light == true ? .light : .dark)
+                .environmentObject(app)
+                .environmentObject(app.account)
+                .environmentObject(app.profiles)
+                .environmentObject(app.sync)
+                .environmentObject(SettingsBridge.shared)
+        )
     }
 
     /// The wall goes up once per launch (UI-test fixtures never raise it). It opens on this

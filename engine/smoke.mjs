@@ -252,6 +252,14 @@ r.ok("benchmark still works", (() => {
   const p1 = await m.prepare(album.tracks[0], null, null);
   const u1 = new URL(p1.stream.url);
   r.ok("Navidrome resolves a raw stream URL with token auth and reports now playing", u1.pathname === "/rest/stream" && u1.searchParams.get("format") === "raw" && u1.searchParams.get("id") === "mf-1" && u1.searchParams.get("u") === "alice" && !u1.searchParams.has("f") && scrobbles.some((s) => s[0] === "mf-1" && s[1] === "false"), JSON.stringify({ url: p1.stream.url, scrobbles }));
+  // Liked / recents live in plain storage: Subsonic's u/t/s never go in; the room gets them back.
+  const artTrack = { ...p1.track, artwork: newest.cards[0].artwork };
+  m.addRecent(artTrack);
+  m.setLiked(artTrack, true);
+  const rawRecents = store.get("harbor.music.recents.v1") ?? "";
+  const rawLiked = store.get("harbor.music.liked.v1") ?? "";
+  const shownArt = m.library().recents[0].artwork;
+  r.ok("music liked/recents store Navidrome cover art without u/t/s and sign it again for the room", rawRecents.includes("/rest/getCoverArt?") && !/[?&](u|t|s)=/.test(rawRecents) && !/[?&](u|t|s)=/.test(rawLiked) && !rawRecents.includes(store.get("harbor.subsonic.v1.token")) && new URL(shownArt).searchParams.get("t") === store.get("harbor.subsonic.v1.token") && new URL(shownArt).searchParams.get("u") === "alice" && new URL(shownArt).searchParams.get("id") === new URL(artTrack.artwork).searchParams.get("id") && new URL(artTrack.artwork).searchParams.get("t") !== null, JSON.stringify({ rawRecents: rawRecents.slice(0, 300), shownArt }));
   const p2 = await m.prepare(album.tracks[1], null, null);
   r.ok("Navidrome asks the server for MP3 when the file is Opus (AVPlayer cannot decode it)", new URL(p2.stream.url).searchParams.get("format") === "mp3" && new URL(p2.stream.url).searchParams.get("maxBitRate") === "320", p2.stream.url);
   const ns = await m.search("hysteria", "subsonic");
@@ -295,6 +303,14 @@ r.ok("benchmark still works", (() => {
 
   m.subsonicDisconnect();
   r.ok("music.subsonicDisconnect forgets the pairing", !store.has("harbor.subsonic.v1.token") && m.connections().find((c) => c.id === "subsonic").status === "disconnected");
+  r.ok("after the disconnect a stored Navidrome track shows no artwork (no stale credentials to sign it with)", m.library().recents.find((x) => x.id === p1.track.id)?.artwork === "", JSON.stringify(m.library().recents.map((x) => x.artwork)));
+  // A list an older build wrote with Plex's X-Plex-Token (outer and inner) is rewritten clean on read.
+  const plexArt = "https://10.0.0.5:32400/photo/:/transcode?url=%2Flibrary%2Fmetadata%2F7%2Fthumb%2F9%3FX-Plex-Token%3Dsecret1&width=480&height=480&minSize=1&upscale=1&format=jpg&quality=-1&X-Plex-Token=secret1";
+  const legacyList = JSON.stringify([{ id: "plex:7", connectorId: "plex", sourceId: "7", title: "Song", artist: "Band", artwork: plexArt, durationSeconds: 60, durationLabel: "1:00" }]);
+  rec.run(`localStorage.setItem("harbor.music.liked.v1", ${JSON.stringify(legacyList)})`);
+  const legacy = m.library();
+  const rawLegacy = store.get("harbor.music.liked.v1") ?? "";
+  r.ok("music: an older liked list with X-Plex-Token is scrubbed in storage; without the Plex server it shows no art", !rawLegacy.includes("secret1") && rawLegacy.includes("/photo/:/transcode") && rawLegacy.includes("thumb") && legacy.liked[0].artwork === "" && legacy.likedIds[0] === "plex:7", rawLegacy);
   rec.dispose();
 }
 
@@ -1647,6 +1663,11 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   T.publishState({ mediaId: "tt0068646", mediaTitle: "The Godfather", episode: null, posterUrl: null, positionSeconds: 5, playing: true });
   const st = sent("state").slice(-1)[0];
   r.ok("together.publishState stamps updatedBy with this client", st && st.state.updatedBy === me2 && st.state.positionSeconds === 5 && st.state.hostClientId === null, JSON.stringify(st));
+  // attachClient: the old client's leave() lands after its listener is gone, so the relay change
+  // itself must drop the room (else the view stays "joined" with the old roster and timers).
+  const leavesBefore = sent("leave").length;
+  const vRelay = T.setRelay(id, "wss://third.example.invalid");
+  r.ok("a relay change while joined leaves the old room and drops it from the view at once", sent("leave").length === leavesBefore + 1 && vRelay.state === "disconnected" && vRelay.room === null && vRelay.participants.length === 0 && !vRelay.inRoom, JSON.stringify({ state: vRelay.state, room: vRelay.room, participants: vRelay.participants.map((p) => p.name) }));
   const left = T.leave();
   r.ok("together.leave says leave and drops the room", sent("leave").some((f) => f.room === code) && sent("leave").slice(-1)[0].room === "ZZZZ22" && left.state === "disconnected" && left.room === null && left.chat.length === 0, JSON.stringify({ leave: sent("leave"), state: left.state }));
   T.reset();
