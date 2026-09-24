@@ -31,6 +31,15 @@ final class MPVPlayerController: UIViewController {
     /// bp-guide-portal's MultiPlayer (muted, cover): a muted mini preview. It never touches the
     /// display mode or HDR, decodes no audio and keeps a small live cache.
     var preview = false
+    /// A Multiview tile (views/multiview/cell.tsx MultiPlayer): like a preview it never touches
+    /// the display mode or HDR and keeps a small live cache, but it decodes audio so the tile
+    /// that holds the audio focus can be unmuted in place (`setMuted`).
+    var tile = false
+    /// Start muted (mpv `mute=yes`) while still decoding the audio track; `setMuted(false)`
+    /// brings the sound back at once. Separate from `preview`, which drops audio entirely.
+    var muted = false
+    /// Only the full player hands tvOS display criteria (and resets them); previews and tiles never do.
+    private var ownsDisplay: Bool { !preview && !tile }
 
     private let layer = MPVMetalLayer()
     private var mpv: OpaquePointer?
@@ -62,13 +71,16 @@ final class MPVPlayerController: UIViewController {
         teardown()
     }
 
-    deinit { teardown() }
+    deinit {
+        timer?.invalidate()
+        teardown()
+    }
 
     /// Detach the wakeup callback and destroy on the event queue, so a pending readEvents
     /// never touches a handle mid-destroy.
     private func teardown() {
-        // A preview never set criteria; resetting here could clear the real player's.
-        if !preview { resetDisplayCriteria() }
+        // A preview or tile never set criteria; resetting here could clear the real player's.
+        if ownsDisplay { resetDisplayCriteria() }
         let handle = mpv
         mpv = nil
         guard let handle else { return }
@@ -86,7 +98,7 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "gpu-api", "vulkan"))
         check(mpv_set_option_string(handle, "gpu-context", "moltenvk"))
         check(mpv_set_option_string(handle, "hwdec", "videotoolbox"))
-        check(mpv_set_option_string(handle, "target-colorspace-hint", preview ? "no" : "yes")) // HDR passthrough (never for a preview)
+        check(mpv_set_option_string(handle, "target-colorspace-hint", ownsDisplay ? "yes" : "no")) // HDR passthrough (never for a preview or tile)
         // Upstream's pre-init set (src-tauri/src/mpv.rs:349-416, docs/player-spec.md §2.1).
         check(mpv_set_option_string(handle, "title", "Harbor"))
         check(mpv_set_option_string(handle, "audio-client-name", "Harbor"))
@@ -120,6 +132,16 @@ final class MPVPlayerController: UIViewController {
             check(mpv_set_option_string(handle, "stream-buffer-size", "16MiB"))
             check(mpv_set_option_string(handle, "stream-lavf-o", "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=429,reconnect_delay_max=10,reconnect_delay_total_max=60"))
         }
+        if tile {
+            // Up to four of these decode at once: a short live cache each (multi-player.tsx keeps
+            // hls.js/mpegts.js buffers small for the same reason).
+            check(mpv_set_option_string(handle, "cache-secs", "8"))
+            check(mpv_set_option_string(handle, "demuxer-max-bytes", "32MiB"))
+            check(mpv_set_option_string(handle, "demuxer-max-back-bytes", "4MiB"))
+            check(mpv_set_option_string(handle, "demuxer-readahead-secs", "8"))
+            check(mpv_set_option_string(handle, "stream-buffer-size", "4MiB"))
+        }
+        if muted && !preview { check(mpv_set_option_string(handle, "mute", "yes")) }
         if preview {
             check(mpv_set_option_string(handle, "mute", "yes"))
             check(mpv_set_option_string(handle, "aid", "no"))
@@ -400,7 +422,7 @@ final class MPVPlayerController: UIViewController {
     /// on Apple TV the OS owns the HDMI mode, so we hand it fps + dynamic range once known.
     private var displayCriteriaApplied = false
     private func applyDisplayCriteria() {
-        guard !preview, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
+        guard ownsDisplay, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
               let w = Int32(string("video-params/w") ?? ""), let h = Int32(string("video-params/h") ?? ""), w > 0, h > 0 else { return }
         displayCriteriaApplied = true
         // AVDisplayCriteria(refreshRate:formatDescription:) is the public tvOS initializer; the

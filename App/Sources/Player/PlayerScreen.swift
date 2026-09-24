@@ -24,6 +24,17 @@ struct PlayerScreen: View {
     /// bp-player-controls "Previous episode": the caller opens the previous episode's picker.
     /// "Next episode" needs nothing new: closing with `true` is how the caller advances.
     var onPreviousEpisode: (() -> Void)? = nil
+    /// Live TV (use-live-channel-overlay.ts): the source the channel came from. It turns on the
+    /// transport's "TV Guide" (switch channel in place) and "Previous channel".
+    var liveGuide: LiveModel? = nil
+    /// The channel being played, when it came from `liveGuide`.
+    var liveChannel: LiveModel.Channel? = nil
+    /// "Add to Multiview": the caller closes the player and opens Multiview with this channel.
+    var onAddToMultiview: ((LiveModel.Channel) -> Void)? = nil
+    /// use-live-channel-overlay switchChannel: the channel tuned in place (nil = the one opened).
+    @State private var tuned: LiveModel.Channel?
+    /// goPrevChannel: the channels tuned before, newest last, 12 at most.
+    @State private var prevChannels: [LiveModel.Channel] = []
     @State private var subDelay: Double = 0
     /// bp-player-sources BpAudioLane: mpv audio-delay, ±0.1 / ±0.5 s.
     @State private var audioDelay: Double = 0
@@ -94,7 +105,7 @@ struct PlayerScreen: View {
         var seekForwardStepSec: Double = 10
     }
 
-    enum Panel { case audio, subtitles, anime4k }
+    enum Panel { case audio, subtitles, anime4k, channels }
     struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
@@ -110,7 +121,7 @@ struct PlayerScreen: View {
         ZStack(alignment: .bottomLeading) {
             if let startAt, engine == .native {
                 // A report from a native player that is being replaced by mpv is dropped.
-                NativePlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
+                NativePlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                                  preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                                  preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                                  onStatus: { s in if engine == .native { status = s } },
@@ -124,7 +135,7 @@ struct PlayerScreen: View {
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else if let startAt {
-                MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
+                MPVPlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
@@ -149,10 +160,11 @@ struct PlayerScreen: View {
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || isLive { chromeView.transition(.opacity) }
+            if chrome, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) { chromeView.transition(.opacity) }
             if let resumePending { resumePrompt(resumePending).transition(.opacity) }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
+            if status.state == "error", isLive, liveGuide != nil, panel == nil { liveErrorCard.transition(.opacity) }
             if status.state == "loading", !isLive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
@@ -194,9 +206,7 @@ struct PlayerScreen: View {
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         .task {
             // use-player-bridge.ts / player-utils.ts pickBridge: settle the engine before anything loads.
-            let choice = await PlayerEngineChoice.choose(url: url, isLive: isLive, hints: streamHints)
-            engine = choice.engine
-            engineWant = choice.want
+            await settleEngine(for: playURL, hints: streamHints)
             // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
             // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.
             let slice = SettingsBridge.shared.slice
@@ -251,7 +261,7 @@ struct PlayerScreen: View {
 
     /// AniSkip / SkipDB / TheIntroDB / IntroDB App / chapters through the engine (lib/skip-intro).
     private func loadSegments() async {
-        guard let context, snap.duration > 0 else { return }
+        guard let context, !context.playlistVod, snap.duration > 0 else { return }
         let p = ProfilesStore.shared.active
         let ep: AnyJSON = context.season.map { s in
             .object(["season": .number(Double(s)), "episode": .number(Double(context.episode ?? 1)),
@@ -403,8 +413,8 @@ struct PlayerScreen: View {
             Spacer()
             HStack(alignment: .lastTextBaseline, spacing: BP.px(14)) {
                 VStack(alignment: .leading, spacing: BP.px(4)) {
-                    Text(title).font(BP.display(26)).foregroundStyle(BP.ink)
-                    if let subtitle { Text(subtitle).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
+                    Text(shownTitle).font(BP.display(26)).foregroundStyle(BP.ink)
+                    if let s = shownSubtitle { Text(s).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
                 }
                 Spacer()
                 Text(status.state == "loading" ? "Loading…" : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
@@ -438,6 +448,13 @@ struct PlayerScreen: View {
                 chip("Audio", "waveform") { open(.audio) }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
+                // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
+                if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
+                // use-player-hotkeys playerPrevChannel: back to the last channel watched.
+                if isLive, !prevChannels.isEmpty { chip("Previous channel", "arrow.uturn.backward", id: "prevchannel") { goPrevChannel() } }
+                if isLive, let add = onAddToMultiview, let ch = currentChannel {
+                    chip("Add to Multiview", "rectangle.split.2x2", id: "multiview") { finish(natural: false); add(ch) }
+                }
                 // bp-player-rail: the mute toggle ("Muted" / "Sound on").
                 chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
                     controller?.setMuted(!muted)
@@ -623,7 +640,81 @@ struct PlayerScreen: View {
             PlayerSubtitlesPanel(controller: controller, context: context, title: title, subDelay: $subDelay) { closePanel() }
         case .audio:
             PlayerAudioPanel(controller: controller, title: title, audioDelay: $audioDelay) { closePanel() }
+        case .channels:
+            if let liveGuide {
+                LivePlayerGuidePanel(model: liveGuide, current: currentChannel, onPick: { tune($0) }, onClose: { closePanel() })
+            }
         }
+    }
+
+    // MARK: live channels (use-live-channel-overlay.ts)
+
+    private var currentChannel: LiveModel.Channel? { tuned ?? liveChannel }
+    private var playURL: URL { tuned.flatMap { URL(string: $0.url) } ?? url }
+    private var playHeaders: [String: String] { tuned.map { $0.headers ?? [:] } ?? headers }
+    private var shownTitle: String { tuned?.name ?? title }
+    private var shownSubtitle: String? {
+        guard let t = tuned else { return subtitle }
+        return liveGuide?.guide[t.id]?.now?.title ?? t.group
+    }
+
+    /// switchChannel: the new stream replaces the old one in place; the channel we leave goes on
+    /// the "Previous channel" stack (12 deep, no repeats on top).
+    private func tune(_ ch: LiveModel.Channel) {
+        let from = currentChannel
+        guard ch.id != from?.id else { closePanel(); return }
+        if let from {
+            if prevChannels.last?.id != from.id { prevChannels.append(from) }
+            if prevChannels.count > 12 { prevChannels.removeFirst() }
+        }
+        tuned = ch
+        liveGuide?.played(ch)
+        status = MPVPlayerController.Status()
+        loadingSince = Date()
+        controller = nil
+        // A new channel is a new source: the engine rule runs again before it plays
+        // (use-player-bridge.ts keys the bridge on the source).
+        startAt = nil
+        let target = playURL
+        Task {
+            guard await settleEngine(for: target, hints: nil) else { return }
+            startAt = 0
+            reloadToken += 1
+        }
+        if panel != nil { closePanel() } else { wake() }
+    }
+
+    /// goPrevChannel: pop to the last channel that is not the one playing; tuning it pushes the
+    /// one we leave, so the button flips between the two most recent channels.
+    private func goPrevChannel() {
+        let playing = currentChannel?.id
+        var prev = prevChannels.popLast()
+        while let p = prev, p.id == playing { prev = prevChannels.popLast() }
+        guard let prev else { return }
+        tune(prev)
+    }
+
+    /// live-channel-error.tsx: the channel is not answering; Back, Try again, or Browse channels.
+    private var liveErrorCard: some View {
+        VStack(alignment: .leading, spacing: BP.px(12)) {
+            Spacer()
+            HStack(spacing: BP.px(10)) {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash").foregroundStyle(BP.danger)
+                Text("This channel isn't responding").font(BP.display(30)).foregroundStyle(BP.ink)
+            }
+            Text("It looks offline right now. Free playlists often include channels that have gone dark, so another one is usually a click away.")
+                .font(BP.sans(16)).foregroundStyle(BP.inkMuted).frame(maxWidth: BP.px(900), alignment: .leading)
+            HStack(spacing: BP.px(10)) {
+                chip("Back", "chevron.left", id: "live-back") { finish(natural: false) }
+                chip("Try again", "arrow.clockwise", id: "live-retry") { status = MPVPlayerController.Status(); loadingSince = Date(); controller = nil; reloadToken += 1 }
+                chip("Browse channels", "list.bullet.rectangle", id: "live-browse") { open(.channels) }
+            }
+            .focusSection()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(BP.gutter).padding(.bottom, BP.px(20))
+        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.6), BP.void_.opacity(0.95)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .onAppear { hideTask?.cancel(); focusLater(.chip("live-browse")) }
     }
 
     private func open(_ p: Panel) {
@@ -696,7 +787,7 @@ struct PlayerScreen: View {
 
     /// lib/trakt/scrobble-hook.ts: "start" when playing, "pause" on pause, "stop" at the end.
     private func scrobbleTick() {
-        guard let context, !isLive, snap.duration > 150 else { return }
+        guard let context, !context.playlistVod, !isLive, snap.duration > 150 else { return }
         let paused = snap.paused
         if scrobbleState == nil, !paused, snap.position > 1 { sendScrobble("start") }
         else if scrobbleState == "start", paused, !lastScrobblePaused { sendScrobble("pause") }
@@ -849,6 +940,19 @@ struct PlayerScreen: View {
         Task { try? await SettingsBridge.shared.patch(["playerEngine": .string("mpv")]) }
         engineWant = "mpv"
         switchToMpv()
+    }
+
+    /// use-player-bridge.ts chosenEngine / pickBridge for the source about to play.
+    /// `false` when another channel was tuned while the rule ran; that tune settles its own.
+    @discardableResult
+    private func settleEngine(for target: URL, hints: PlayerStreamHints?) async -> Bool {
+        let choice = await PlayerEngineChoice.choose(url: target, isLive: isLive, hints: hints)
+        guard playURL == target else { return false }
+        engine = choice.engine
+        engineWant = choice.want
+        engineFallbackTried = false
+        noAudioWarning = false
+        return true
     }
 
     /// Hands the stream to mpv where the native player left it (or where it was to start).

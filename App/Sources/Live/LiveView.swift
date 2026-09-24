@@ -111,6 +111,18 @@ final class LiveModel: ObservableObject {
         }
     }
 
+    /// Now/next for channels outside the chosen category (the player's TV Guide, the Multiview
+    /// picker), merged into `guide`; 400 ids at most per ask.
+    func refreshNowNext(ids: [String]) async {
+        guard let id = selectedPlaylist, !ids.isEmpty else { return }
+        let ask = Array(ids.prefix(400))
+        if let list: [NowNext] = try? await HarborEngine.shared.call("live.nowNext", [id, ask]) {
+            var next = guide
+            for n in list { next[n.id] = n }
+            guide = next
+        }
+    }
+
     /// bp-live-tick: recompute "now" every 30 s so progress bars and now/next roll over.
     private func startTick() {
         tick?.cancel()
@@ -253,6 +265,14 @@ struct LiveView: View {
     @State private var showHidden = false
     /// epg-match-modal: the channel whose guide match is being picked.
     @State private var matching: LiveModel.Channel?
+    /// view-mode-toggle.tsx "Multiview"; `multiviewSeed` is the channel "Add to Multiview" brought.
+    @State private var showMultiview = false
+    @State private var multiviewSeed: LiveModel.Channel?
+    /// Set by the player's "Add to Multiview"; Multiview opens once the player's cover is gone
+    /// (a present-while-dismissing is dropped on tvOS).
+    @State private var pendingMultiview: LiveModel.Channel?
+    /// nav "Playlists" (views/playlist-vod.tsx): the source's movies and shows.
+    @State private var showVod = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -269,7 +289,7 @@ struct LiveView: View {
                     } else if grid && model.guideNote == nil {
                         LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } },
                                       replay: { ch, prog in Task { await startReplay(ch, prog) } },
-                                      previewSuspended: playing != nil || replaying != nil || showSources || matching != nil,
+                                      previewSuspended: playing != nil || replaying != nil || showSources || matching != nil || showMultiview || showVod,
                                       match: { ch in matching = ch })
                     } else {
                         guideList
@@ -279,8 +299,20 @@ struct LiveView: View {
             }
         }
         .task { await model.load() }
-        .fullScreenCover(item: $playing) { ch in
-            PlayerScreen(title: ch.name, subtitle: model.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!, headers: ch.headers ?? [:], isLive: true) { _ in playing = nil }
+        .fullScreenCover(item: $playing, onDismiss: {
+            guard let ch = pendingMultiview else { return }
+            pendingMultiview = nil
+            multiviewSeed = ch
+            showMultiview = true
+        }) { ch in
+            PlayerScreen(title: ch.name, subtitle: model.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!, headers: ch.headers ?? [:], isLive: true,
+                         liveGuide: model, liveChannel: ch, onAddToMultiview: { pendingMultiview = $0 }) { _ in playing = nil }
+        }
+        .fullScreenCover(isPresented: $showMultiview, onDismiss: { multiviewSeed = nil }) {
+            MultiviewView(live: model, seed: multiviewSeed, dismiss: { showMultiview = false })
+        }
+        .fullScreenCover(isPresented: $showVod) {
+            PlaylistVodView(dismiss: { showVod = false })
         }
         .fullScreenCover(item: $replaying) { r in
             // A bounded replay: VOD cache profile, seekable, subtitle says so (use-live-actions.ts).
@@ -317,6 +349,16 @@ struct LiveView: View {
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
+                // view-mode-toggle.tsx "Multiview": up to four channels at once.
+                Button { multiviewSeed = nil; showMultiview = true } label: {
+                    Label("Multiview", systemImage: "rectangle.split.2x2")
+                }
+                .buttonStyle(BPActionStyle())
+                // nav "Playlists": the movies and shows the sources carry (views/playlist-vod.tsx).
+                Button { showVod = true } label: {
+                    Label("Playlists", systemImage: "film.stack")
+                }
+                .buttonStyle(BPActionStyle())
                 // bp-live-filters: star on Favorites, a flag on country groups, no count at zero.
                 ForEach(model.categories, id: \.key) { c in
                     Button {

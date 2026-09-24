@@ -582,6 +582,65 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("services.rows without a key: hasKey false, no rows", noRows.hasKey === false && noRows.rows.length === 0 && noRows.name === "Netflix");
 }
 
+// ------------------------------------------------------------------------- kids room
+{
+  const profiles = JSON.stringify({ activeId: "k1", profiles: [{ id: "k1", isPrimary: true, kid: { age: 7, curfewMinutes: null, parentPinHash: null } }] });
+  const json = (url, body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url, body: JSON.stringify(body) });
+  // Cinemeta fallback (no TMDB key): Animation and Family top lists through the kid filters.
+  const cm = loadEngine({ storage: new Map([["harbor.profiles.v1", profiles]]) });
+  cm.node.host.fetch = async (req) => {
+    const mk = (prefix, genres) => Array.from({ length: 10 }, (_, i) => ({ id: `tt${prefix}${i}`, type: "movie", name: `${prefix} ${i}`, releaseInfo: "2001", background: `https://img.invalid/${prefix}${i}.jpg`, genres }));
+    if (req.url.includes("/catalog/movie/top/genre=Animation")) return json(req.url, { metas: [...mk("91", ["Animation", "Comedy"]), { id: "tt9900", type: "movie", name: "Scary", releaseInfo: "2001", genres: ["Animation", "Horror", "Family"] }, { id: "tt9901", type: "movie", name: "Later", releaseInfo: "2999", genres: ["Family"] }] });
+    if (req.url.includes("/catalog/movie/top/genre=Family")) return json(req.url, { metas: [...mk("92", ["Family"]), { id: "tt9902", type: "movie", name: "Drama only", releaseInfo: "2001", genres: ["Drama"] }] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const plain = await cm.engine.kidsRoom.page("k1", true);
+  const plainIds = plain.rows.flatMap((x) => x.metas.map((m) => m.id));
+  r.ok("kidsRoom.page without TMDB: Cinemeta Animated/Family rows, hero from Animation", !plain.hasTmdb && plain.hero.length === 5 && JSON.stringify(plain.rows.map((x) => [x.key, x.title])) === JSON.stringify([["cinemeta-animation", "Animated Movies"], ["cinemeta-family", "Family Movies"]]), JSON.stringify({ hero: plain.hero.length, rows: plain.rows.map((x) => [x.key, x.metas.length]) }));
+  r.ok("kidsRoom.page drops unsafe genres, unreleased and non-family titles, and hero repeats", !plainIds.some((id) => ["tt9900", "tt9901", "tt9902"].includes(id)) && !plain.hero.some((h) => plainIds.includes(h.id)), JSON.stringify(plainIds));
+  r.eq("kidsRoom.franchises is empty without a TMDB key (the rail renders nothing)", cm.engine.kidsRoom.franchises("k1", true), []);
+  r.eq("kidsRoom.episodes without a TMDB key", await cm.engine.kidsRoom.episodes(1, 1, "k1", true), []);
+  cm.dispose();
+
+  // TMDB: kidsSpecs rows and the hero, with the US certification ceiling on movie discovers.
+  const tm = loadEngine({ storage: new Map([["harbor.profiles.v1", profiles]]) });
+  tm.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, tm.engine.settings.sourceKeyFor("k1", true));
+  const urls = [];
+  let serial = 0;
+  tm.node.host.fetch = async (req) => {
+    urls.push(req.url);
+    if (req.url.includes("api.themoviedb.org/3/discover/")) {
+      const tv = req.url.includes("/discover/tv");
+      const results = Array.from({ length: 20 }, () => {
+        serial += 1;
+        return tv
+          ? { id: serial, name: `Show ${serial}`, first_air_date: "2010-01-01", backdrop_path: "/b.jpg", poster_path: "/p.jpg", genre_ids: [10762] }
+          : { id: serial, title: `Film ${serial}`, release_date: "2010-01-01", backdrop_path: "/b.jpg", poster_path: "/p.jpg", genre_ids: [10751], adult: serial % 20 === 1 };
+      });
+      return json(req.url, { page: 1, total_pages: 5, results });
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const built = await tm.engine.kidsRoom.page("k1", true);
+  const ids = built.rows.flatMap((x) => x.metas.map((m) => m.id));
+  r.ok("kidsRoom.page with TMDB builds kidsSpecs rows in upstream order", built.hasTmdb && built.rows.length >= 5 && built.rows.map((x) => x.key).join(",").startsWith("trending-kids,animated-movies,g-pg-picks,kids-tv"), JSON.stringify(built.rows.map((x) => [x.key, x.metas.length])));
+  r.ok("kidsRoom.page hero: at most 10, no adult titles, never repeated in the rows", built.hero.length > 0 && built.hero.length <= 10 && built.hero.every((m) => !m.adult) && !built.hero.some((h) => ids.includes(h.id)) && new Set(ids).size === ids.length, JSON.stringify(built.hero.map((m) => m.id)));
+  r.ok("kidsRoom movie discovers carry certification.lte=PG, US and no horror/thriller", urls.filter((u) => u.includes("/discover/movie")).every((u) => u.includes("certification.lte=PG") && u.includes("certification_country=US") && /without_genres=(16%2C)?27%2C53/.test(u)), urls.filter((u) => u.includes("/discover/movie")).slice(0, 2).join(" "));
+  const before = built.rows.find((x) => x.key === "trending-kids").metas.length;
+  const more = await tm.engine.kidsRoom.loadMore("k1", true, "trending-kids");
+  r.ok("kidsRoom.loadMore appends the next page of a row", more && more.key === "trending-kids" && more.metas.length > before && urls.some((u) => u.includes("/discover/movie") && u.includes("page=2")), JSON.stringify({ before, after: more && more.metas.length }));
+  r.eq("kidsRoom.loadMore for an unknown row", await tm.engine.kidsRoom.loadMore("k1", true, "nope"), null);
+  const tiles = tm.engine.kidsRoom.franchises("k1", true);
+  r.ok("kidsRoom.franchises: every Pick a World tile has three gradient stops and its cta art", tiles.length === 14 && tiles[0].key === "toy-story" && tiles.every((t) => t.stops.length === 3 && t.stops.every((c) => /^#[0-9a-f]{6}$/.test(c)) && t.art === `/kids/cta/${t.key}.webp`) && tiles.find((t) => t.key === "hotel-t").drop === 18, JSON.stringify(tiles.filter((t) => t.stops.length !== 3).map((t) => t.key)));
+  r.eq("kidsRoom.gradStops maps Tailwind classes to hex", tm.engine.kidsRoom.gradStops("from-sky-400 via-sky-300 to-amber-300"), ["#38bdf8", "#7dd3fc", "#fcd34d"]);
+  const lego = await tm.engine.kidsRoom.franchisePage("k1", true, "lego", 1);
+  r.ok("kidsRoom.franchisePage (keyword franchise) filters adult titles", Array.isArray(lego) && lego.every((m) => !m.adult), JSON.stringify(lego.length));
+  r.eq("kidsRoom.franchisePage for an unknown franchise", await tm.engine.kidsRoom.franchisePage("k1", true, "nope", 1), []);
+  const det = await tm.engine.kidsRoom.detail({ id: "tmdb:movie:5", type: "movie", name: "Film 5", releaseInfo: "2010", poster: "https://img.invalid/p.jpg" }, "k1", true);
+  r.ok("kidsRoom.detail falls back to the meta when TMDB and Cinemeta have nothing", det.name === "Film 5" && det.backdrop === "https://img.invalid/p.jpg" && det.year === "2010" && det.tvId === null && det.recs.length === 0 && det.collection === null, JSON.stringify(det));
+  tm.dispose();
+}
+
 // ------------------------------------------------------------------------ library room
 {
   r.eq("libraryRoom.tabs (signed out of trackers)", engine.libraryRoom.tabs().map((t) => t.id), ["library", "watchlist", "history", "lists", "favorites"]);
@@ -809,6 +868,55 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.settingsRoom.commit("skipIntro", "on", "default", true); engine.settingsRoom.commit("service", "netflix", "default", true); engine.settingsRoom.commit("subLang", "French", "default", true);
 }
 
+// ------------------------------------------ themes, language picker, settings preview, done facts
+{
+  const near = (a, hex) => [16, 8, 0].every((sh, i) => Math.abs(Math.round(a[i] * 255) - ((hex >> sh) & 0xff)) <= 1) && a[3] === 1;
+  const st = engine.themes.state("default", true);
+  r.eq("themes.state: upstream's library, built-in then featured", st.presets.map((p) => p.id), ["cool-grey", "nord", "stremio", "tokyo-night", "dracula", "forest", "noir", "velvet", "crunch", "kawaii", "aurora", "minui"]);
+  r.eq("themes.state: default is Harbor default in Sentient + Switzer", [st.active, st.fontPair, st.faces.display, st.faces.sans, st.light], ["cool-grey", "sentient-switzer", "sentient", "switzer", false]);
+  const shipped = { canvas: 0x111213, surface: 0x191b1c, elevated: 0x252628, raised: 0x323335, ink: 0xf4f5f7, inkMuted: 0xa3a5a6, inkSubtle: 0x626365, accent: 0xf4a25c, danger: 0xc53637, void: 0x0d0e0f, panel: 0x161819, panel2: 0x222325, on: 0x404142 };
+  r.ok("themes.state: default palette matches Theme.swift's shipped tokens", Object.entries(shipped).every(([k, hex]) => near(st.palette[k], hex)), JSON.stringify(st.palette));
+  r.eq("themes.parseColor: #rrggbbaa and rgba()", [engine.themes.parseColor("#88c0d02e")[3].toFixed(2), engine.themes.parseColor("rgba(255,255,255,0.9)")[3]], ["0.18", 0.9]);
+  r.ok("themes.parseColor: oklch", near(engine.themes.parseColor("oklch(0.18 0.004 260)"), 0x111213));
+  const aurora = engine.themes.parseGradient("radial-gradient(ellipse 90% 70% at 20% 0%, #2e7fd6 0%, #14397f 30%, #0a1c4e 60%, #050d28 100%), radial-gradient(ellipse 70% 60% at 80% 100%, #5e36b8 0%, transparent 60%)");
+  r.eq("themes.parseGradient: two radial layers, top first", aurora.map((l) => [l.kind, l.rx, l.ry, l.cx, l.cy, l.stops.length]), [["radial", 0.9, 0.7, 0.2, 0, 4], ["radial", 0.7, 0.6, 0.8, 1, 2]]);
+  r.eq("themes.parseGradient: data: or url images give no layers", engine.themes.parseGradient("url(x.png)"), []);
+  const stremio = engine.themes.apply("stremio", "default", true);
+  r.eq("themes.apply(stremio): preset font, gradient backdrop", [stremio.active, stremio.fontPair, stremio.faces.sans, stremio.background.layers[0].kind, stremio.background.layers[0].angle, stremio.cardStyle], ["stremio", "plus-jakarta", "system", "linear", 41, "stremio"]);
+  r.eq("themes.apply writes settings.theme", engine.settings.load().theme.preset, "stremio");
+  r.eq("themes.apply ignores an unknown id", engine.themes.apply("not-a-theme", "default", true).active, "stremio");
+  r.eq("themes.apply(minui) is a light theme", [engine.themes.apply("minui", "default", true).light, engine.themes.state("default", true).bokeh], [true, false]);
+  r.eq("themes.apply(aurora) carries bokeh", engine.themes.apply("aurora", "default", true).bokeh, true);
+  r.eq("themes.setFontPair: picked pair kept, preset without one uses it", (engine.themes.apply("nord", "default", true), engine.themes.setFontPair("fraunces-inter", "default", true).fontPair), "fraunces-inter");
+  engine.themes.setFontPair("sentient-switzer", "default", true);
+  r.eq("themes.apply back to the default", engine.themes.apply("cool-grey", "default", true).active, "cool-grey");
+  const langs = engine.settingsRoom.languages("default", true);
+  r.eq("settingsRoom.languages: upstream's 16 in order, English first", [langs.languages.length, langs.languages[0].code, langs.languages[0].flags, langs.current], [16, "en", ["\u{1F1FA}\u{1F1F8}"], "en"]);
+  r.eq("settingsRoom.languages: Indonesian has no flag (upstream shows its code)", langs.languages.find((l) => l.code === "id").flags, []);
+  r.eq("settingsRoom.flagEmoji(Portuguese (Brazil))", engine.settingsRoom.flagEmoji("Portuguese (Brazil)"), "\u{1F1E7}\u{1F1F7}");
+  engine.settingsRoom.commit("uiLanguage", "fr", "default", true);
+  r.eq("commit uiLanguage fr reaches settings, i18n and the pane", [engine.settingsRoom.languages("default", true).current, engine.settingsRoom.applyUiLanguage("default", true), engine.settingsRoom.pane("default", true).language.greeting], ["fr", "fr", "Bonjour"]);
+  engine.settingsRoom.commit("uiLanguage", "en", "default", true);
+  const pane = engine.settingsRoom.pane("default", true);
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 6, 3, 3, "Off"]);
+  r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
+  const setupKey = engine.settings.sourceKeyFor("default", true);
+  const before = engine.settingsRoom.pane("default", true).setup[1][1];
+  engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, setupKey);
+  const smokeList = engine.live.addPlaylist("Smoke setup", "https://example.invalid/setup.m3u", null);
+  const after = String(Number(before) + 1);
+  const setupRows = engine.settingsRoom.controls("setup", "default", true);
+  r.eq("ST-1: setup push rows report what is connected and how many playlists", setupRows.filter((c) => c.kind === "push").map((c) => c.detail), ["Connected: TMDB", `${after} added`]);
+  r.eq("settingsRoom.pane(setup) lines follow", engine.settingsRoom.pane("default", true).setup, [["TMDB", "On"], ["Live TV playlists", after], ["Setup", "TMDB"]]);
+  engine.live.removePlaylist(smokeList.id);
+  engine.settings.patch({ tmdbKey: "" }, setupKey);
+  const f = engine.onboarding.facts("default", true);
+  r.eq("onboarding.facts: counts and the stock fan with no picks", [typeof f.servicesOn, f.art.length, f.art[0].startsWith("https://image.tmdb.org/t/p/w342/")], ["number", 5, true]);
+  r.eq("intro.poolSave refuses fewer than 16 urls", [engine.intro.poolSave(["https://x/1.jpg"]), engine.intro.poolLoad()], [0, []]);
+  const urls = Array.from({ length: 120 }, (_, i) => `https://x/${i}.jpg`);
+  r.eq("intro.poolSave keeps 96, poolLoad reads them back", [engine.intro.poolSave(urls), engine.intro.poolLoad()[95]], [96, "https://x/95.jpg"]);
+}
+
 // ------------------------------------------------------------- live EPG (recorded host)
 {
   const now = Date.now();
@@ -911,6 +1019,75 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
     return x.kind === "xtream" && x.xtream && x.xtream.username === "u" && /xmltv\.php/.test(x.epgUrl || "");
   })());
+  {
+    // Stage 8 remainder: Multiview prefs (lib/multiview/store.ts) and Playlist VOD (views/playlist-vod.tsx).
+    const L = rec.engine.live, V = rec.engine.liveVod;
+    r.eq("live.multiviewPrefs defaults to the 2x2 layout, four slots, banner shown", L.multiviewPrefs(), { layout: "2x2", slotCount: 4, maxSlots: 4, bannerDismissed: false });
+    r.eq("live.setMultiviewLayout stores a layout and its slot count", L.setMultiviewLayout("2v"), { layout: "2v", slotCount: 2 });
+    r.eq("live.setMultiviewLayout ignores an unknown layout", L.setMultiviewLayout("9x9"), { layout: "2v", slotCount: 2 });
+    L.dismissMultiviewBanner();
+    r.ok("live.dismissMultiviewBanner is remembered", L.multiviewPrefs().bannerDismissed === true && L.multiviewPrefs().layout === "2v");
+    const m3uv = [
+      "#EXTM3U",
+      '#EXTINF:-1 group-title="News",CNN', "https://example.invalid/cnn.m3u8",
+      '#EXTINF:-1 tvg-type="movie" tvg-logo="https://x/dune.jpg" group-title="Movies",EN - Dune Part Two (2024) 1080p', "http://host.invalid:8080/movie/u/p/11.mkv",
+      '#EXTINF:-1 group-title="Movies",Arrival 2016', "http://host.invalid:8080/movie/u/p/12.mp4",
+      '#EXTINF:-1 group-title="Series",Severance S02E01', "http://host.invalid:8080/series/u/p/21.mkv",
+      '#EXTINF:-1 group-title="Series",Severance S01E02', "http://host.invalid:8080/series/u/p/22.mkv",
+      '#EXTINF:-1 group-title="Series",Severance S01E01', "http://host.invalid:8080/series/u/p/23.mkv",
+    ].join("\n") + "\n";
+    rec.node.host.fetch = async (req) => ({ status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: m3uv });
+    const plv = L.addPlaylist("VOD list", "https://vod.example.invalid/list.m3u");
+    const lv = await L.channels(plv.id);
+    r.eq("the live list still holds only the live channel", lv.channels.map((c) => c.name), ["CNN"]);
+    const srcs = V.sources();
+    r.ok("liveVod.sources lists the playlist and keeps an active one", srcs.sources.some((s) => s.id === plv.id && s.kind === "m3u") && typeof srcs.activeId === "string", JSON.stringify(srcs));
+    V.setActive(plv.id);
+    r.eq("liveVod.setActive remembers the source", V.sources().activeId, plv.id);
+    const st = await V.load(plv.id);
+    r.ok("liveVod.load classifies an M3U: two movies, one series", st.movies === 2 && st.series === 1 && !st.moviesLoading && st.movieError === null, JSON.stringify(st));
+    const mp = V.page(plv.id, "movies", "", 0, 60);
+    r.eq("liveVod.page(movies): cleaned titles, A-Z, years", mp.items.map((m) => [m.title, m.year]), [["Arrival", 2016], ["Dune Part Two", 2024]]);
+    r.eq("liveVod.page filters with the query (normalizeArabic, substring)", V.page(plv.id, "movies", "DUNE", 0, 60).items.map((m) => m.title), ["Dune Part Two"]);
+    const sp = V.page(plv.id, "series", "", 0, 60);
+    r.ok("liveVod.page(series): grouped by show with an episode count", sp.total === 1 && sp.items[0].title === "Severance" && sp.items[0].subtitle === "3 episodes", JSON.stringify(sp));
+    const sd = await V.series(plv.id, sp.items[0].id);
+    r.eq("liveVod.series: seasons and episodes in order", [sd.seasons, sd.episodes.map((e) => [e.season, e.episode])], [[1, 2], [[1, 1], [1, 2], [2, 1]]]);
+    const pm = V.playMovie(plv.id, mp.items[1].id);
+    r.ok("liveVod.playMovie: vod: meta, the file, the year underneath", pm.meta.id.startsWith("vod:") && pm.meta.type === "movie" && pm.url.endsWith("/11.mkv") && pm.subtitle === "2024" && pm.meta.poster === "https://x/dune.jpg", JSON.stringify(pm));
+    const pe = V.playEpisode(plv.id, sd.id, 1, 2);
+    r.ok("liveVod.playEpisode: series meta and the S/E line", pe.meta.id === sd.id && pe.season === 1 && pe.episode === 2 && pe.subtitle === "Severance · S1 · E2", JSON.stringify(pe));
+    r.eq("liveVod.saveProgress keeps a local spot only", V.saveProgress({ meta: pe.meta, season: 1, episode: 2, positionMs: 600000, durationMs: 2400000 }), { watched: false, cloud: "none" });
+    r.eq("liveVod.startPosition reads it back", V.startPosition(pe.meta.id, 1, 2).ms, 600000);
+    r.eq("a watched episode clears its spot", [V.saveProgress({ meta: pe.meta, season: 1, episode: 2, positionMs: 2300000, durationMs: 2400000 }).watched, V.startPosition(pe.meta.id, 1, 2).ms], [true, 0]);
+    r.eq("a VOD id is kept only in the resume store (no Continue Watching, no watched flags)", [...rec.node.storage.entries()].filter(([k, v]) => k !== "harbor.resume" && /vod:series/.test(String(v))).map(([k]) => k), []);
+    // Xtream: the VOD and series APIs, episodes fetched when a series opens (xtream-vod.ts).
+    rec.node.host.fetch = async (req) => {
+      const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+      const action = new URL(req.url).searchParams.get("action");
+      if (action === "get_vod_categories") return json([{ category_id: "1", category_name: "Action" }]);
+      if (action === "get_vod_streams") return json([{ stream_id: 7, name: "Heat (1995)", stream_icon: "https://x/heat.jpg", category_id: "1", container_extension: "mp4" }, { stream_id: 8, name: "Live thing", stream_type: "live" }]);
+      if (action === "get_series_categories") return json([{ category_id: "5", category_name: "Drama" }]);
+      if (action === "get_series") return json([{ series_id: 44, name: "The Wire", cover: "https://x/wire.jpg", category_id: "5" }]);
+      if (action === "get_series_info") return json({ episodes: { "1": [{ id: 901, episode_num: 1, title: "The Target", container_extension: "mkv", info: { duration_secs: 3600, plot: "Pilot." } }, { id: 902, episode_num: 2, title: "The Detail", container_extension: "mkv" }] } });
+      return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    };
+    const xv = L.addStructured("xtream", "XV", "", "", "http://xv.example.invalid:8080", "user", "pass");
+    const xs = await V.load(xv.id);
+    r.ok("liveVod.load (Xtream): one movie (live rows dropped), one series, totals", xs.kind === "xtream" && xs.movies === 1 && xs.series === 1 && xs.movieTotal === 2 && xs.seriesTotal === 1 && typeof xs.fetchedAt === "number", JSON.stringify(xs));
+    const xm = V.page(xv.id, "movies", "", 0, 60).items[0];
+    r.ok("Xtream movie: /movie/<user>/<pass>/<id>.<ext>, category as group", xm.url === "http://xv.example.invalid:8080/movie/user/pass/7.mp4" && xm.group === "Action" && xm.year === 1995, JSON.stringify(xm));
+    const xsr = V.page(xv.id, "series", "", 0, 60).items[0];
+    r.eq("Xtream series card says its category until opened", xsr.subtitle, "Drama");
+    const xd = await V.series(xv.id, xsr.id);
+    r.ok("liveVod.series (Xtream): get_series_info episodes with titles, plot and runtime", xd.episodes.length === 2 && xd.episodes[0].title === "The Target" && xd.episodes[0].plot === "Pilot." && xd.episodes[0].durationSec === 3600 && xd.episodes[1].url === "http://xv.example.invalid:8080/series/user/pass/902.mkv", JSON.stringify(xd.episodes));
+    V.saveProgress({ meta: { id: xd.id }, season: 1, episode: 1, positionMs: 1800000, durationMs: 3600000 });
+    const xd2 = await V.series(xv.id, xsr.id);
+    r.ok("episode progress follows the saved spot (episode-row episodeProgressOf)", Math.abs(xd2.episodes[0].progress - 0.5) < 1e-9 && xd2.episodes[0].leftSec === 1800 && xd2.episodes[1].progress === 0, JSON.stringify(xd2.episodes.map((e) => [e.progress, e.leftSec])));
+    L.removePlaylist(xv.id);
+    r.eq("live.removePlaylist drops the VOD library too", V.page(xv.id, "movies", "", 0, 60).libraryTotal, 0);
+    L.removePlaylist(plv.id);
+  }
   rec.dispose();
 }
 

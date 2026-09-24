@@ -57,7 +57,8 @@ struct WhoIsWatchingView: View {
 
     private func tile(_ p: ProfilesStore.Profile) -> some View {
         Button {
-            // bpWhoKidSelectable() is true on a TV shell: Big Picture stays mounted and gates from inside.
+            // bpWhoKidSelectable() is true on a TV shell, so a kid tile is never `unavailable` (dimmed):
+            // Big Picture stays mounted and the kid lands on the Kids surface (KidsShellView).
             if p.passwordHash != nil { pinFor = p } else { profiles.select(p.id); app.stage = .shell }
         } label: {
             VStack(spacing: BP.px(12)) {
@@ -75,8 +76,6 @@ struct WhoIsWatchingView: View {
                 Text(p.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
             }
             .frame(width: faceSize * 1.42)
-            .opacity(p.kid != nil ? 0.5 : 1)
-            .saturation(p.kid != nil ? 0 : 1)
         }
         .buttonStyle(BPTileStyle(radius: faceSize * 0.71))
         .accessibilityIdentifier("who-tile-\(p.id)")

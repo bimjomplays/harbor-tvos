@@ -26,7 +26,15 @@ function mix(lists: Meta[][]): Meta[] {
   return out;
 }
 
+/** The last mix handed to the taste step, so the done flourish can deal the viewer's own picks. */
+let lastTitles: Meta[] = [];
+
 export async function tasteTitles(profileId: string, linked: boolean): Promise<Meta[]> {
+  lastTitles = await buildTasteTitles(profileId, linked);
+  return lastTitles;
+}
+
+async function buildTasteTitles(profileId: string, linked: boolean): Promise<Meta[]> {
   const tmdbKey = loadEffective(profileId, linked).tmdbKey;
   if (tmdbKey) {
     const [movies, series, ...byGenre] = await Promise.all([
@@ -53,4 +61,30 @@ export function vote(id: string, up: boolean, name: string, type: string): strin
 
 export function upvoted(): string[] {
   return Array.from(getUpvotedIds());
+}
+
+// bp-done-flourish.tsx: a stock fan when nothing was picked.
+const IMG = "https://image.tmdb.org/t/p/w342";
+const FALLBACK = [
+  "/rzpHPSEgPTpRs8EHbygwsOw7jC0.jpg",
+  "/1g0dhYtq4irTY1GPXvft6k4YLjm.jpg",
+  "/iPOn6DinuVyLY17YM9mKuPofV08.jpg",
+  "/7V0Ebks0GgpKvQ7QbLAIdX5dos4.jpg",
+  "/sfQtVlIHljToOwYjhe21KPGzZWK.jpg",
+];
+
+/**
+ * use-bp-onboard-facts.ts (the counts the done step reads) plus bp-done-flourish's art: "their own
+ * five, not a stock fan. The last thing this flow says should be made of what the person just chose."
+ */
+export function facts(profileId: string, linked: boolean) {
+  const s = loadEffective(profileId, linked);
+  const picked = getUpvotedIds();
+  const mine = lastTitles.filter((m) => picked.has(m.id) && m.poster).slice(0, 5).map((m) => m.poster as string);
+  return {
+    servicesOn: Object.values(s.streaming).filter(Boolean).length,
+    subLangs: s.preferredSubLangs,
+    tastePicks: picked.size,
+    art: mine.length > 0 ? mine : FALLBACK.map((p) => `${IMG}${p}`),
+  };
 }

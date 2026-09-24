@@ -58,6 +58,7 @@ import * as streamGlue from "./streams";
 import * as playerGlue from "./player";
 import * as subtitleGlue from "./subtitles";
 import * as liveGlue from "./live";
+import * as liveVodGlue from "./liveVod";
 import * as accountGlue from "./account";
 import * as syncGlue from "./sync";
 import * as cardsGlue from "./cards";
@@ -66,6 +67,8 @@ import * as anime4kGlue from "./anime4k";
 import * as sportsGlue from "./sports";
 import * as sportsEventGlue from "./sportsEvent";
 import * as settingsRoomGlue from "./settingsRoom";
+import * as themesGlue from "./themes";
+import { bpIntroPoolLoad, bpIntroPoolSave } from "@/views/big-picture/bp-intro-pool";
 import * as profilesRoomGlue from "./profilesRoom";
 import * as libraryGlue from "./library";
 import * as animeGlue from "./animeRoom";
@@ -85,6 +88,7 @@ import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
 import * as letterboxdGlue from "./letterboxd";
+import * as kidsGlue from "./kids";
 import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
 
@@ -601,6 +605,22 @@ export const settingsRoom = {
   categories: settingsRoomGlue.categories,
   controls: settingsRoomGlue.controls,
   commit: settingsRoomGlue.commit,
+  /** bp-settings-pane.tsx: the right-hand preview's data for every category. */
+  pane: settingsRoomGlue.pane,
+  /** bp-step-language.tsx / Settings → Language: LANGUAGES with flags and the stored choice. */
+  languages: settingsRoomGlue.languages,
+  /** Re-applies the profile's uiLanguage to lib/i18n after a settings reload. */
+  applyUiLanguage: settingsRoomGlue.applyUiLanguage,
+  flagEmoji: settingsRoomGlue.flagEmoji,
+};
+
+/** Stage 9 themes: upstream's preset library resolved to Big Picture colours, fonts, backgrounds. */
+export const themes = {
+  state: themesGlue.state,
+  apply: themesGlue.apply,
+  setFontPair: themesGlue.setFontPair,
+  parseColor: themesGlue.parseCssColor,
+  parseGradient: themesGlue.parseGradientLayers,
 };
 
 /** Profiles: upstream's avatar catalog, brand colours, per-profile storage purge. */
@@ -677,6 +697,18 @@ export const homeServers = {
   stopPlayback: homeGlue.stopPlayback,
 };
 
+/** Kids mode (views/kids.tsx, kids-franchise-rail, grid kidsHero, kids-detail.tsx): the kid profile's surface. */
+export const kidsRoom = {
+  page: kidsGlue.page,
+  loadMore: kidsGlue.loadMore,
+  logo: kidsGlue.logo,
+  franchises: kidsGlue.franchises,
+  franchisePage: kidsGlue.franchisePage,
+  detail: kidsGlue.detail,
+  episodes: kidsGlue.episodes,
+  gradStops: kidsGlue.gradStops,
+};
+
 /** use-bp-anime-detail: the Kitsu chain for anime ids (episodes as PlayEpisodes, characters). */
 export const animeDetail = { load: animeDetailGlue.load };
 
@@ -716,11 +748,25 @@ export const actions = {
   trackerRemove: actionsGlue.trackerRemove,
 };
 
+/**
+ * bp-intro-pool.ts: the poster urls the front-door wall (bp-intro.tsx) drew from last session, so
+ * every boot after the first opens on real art at the first frame. Urls only, capped at 96.
+ */
+export const intro = {
+  poolLoad: bpIntroPoolLoad,
+  poolSave(urls: string[]): number {
+    bpIntroPoolSave(urls);
+    return bpIntroPoolLoad().length;
+  },
+};
+
 /** Onboarding taste step (onboarding/use-bp-taste-titles + bp-step-taste): titles to pick, votes. */
 export const onboarding = {
   tasteTitles: onboardingGlue.tasteTitles,
   vote: onboardingGlue.vote,
   upvoted: onboardingGlue.upvoted,
+  /** use-bp-onboard-facts + bp-done-flourish: counts for the recap and the five posters it deals. */
+  facts: onboardingGlue.facts,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */
@@ -748,6 +794,24 @@ export const live = {
   catchupUrl: liveGlue.catchupUrl,
   epgCandidates: liveGlue.epgCandidates,
   setEpgMatch: liveGlue.setEpgMatch,
+  /** Multiview (lib/multiview/store.ts): the remembered layout and the info banner. */
+  multiviewPrefs: liveGlue.multiviewPrefs,
+  setMultiviewLayout: liveGlue.setMultiviewLayout,
+  dismissMultiviewBanner: liveGlue.dismissMultiviewBanner,
+};
+
+/** Playlist VOD (views/playlist-vod.tsx): an IPTV source's movies and series, paged, with local resume. */
+export const liveVod = {
+  sources: liveVodGlue.sources,
+  setActive: liveVodGlue.setActive,
+  load: liveVodGlue.load,
+  status: liveVodGlue.status,
+  page: liveVodGlue.page,
+  series: liveVodGlue.series,
+  playMovie: liveVodGlue.playMovie,
+  playEpisode: liveVodGlue.playEpisode,
+  startPosition: liveVodGlue.startPosition,
+  saveProgress: liveVodGlue.saveProgress,
 };
 
 /** Online subtitles: OpenSubtitles v3 / Wyzie / subtitle addons, ranked by the viewer's languages. */
