@@ -9,8 +9,22 @@ struct BPRowView: View {
     var onSeeAll: (() -> Void)? = nil
     /// bp-quick-panel: hold Select on a tile.
     var onQuick: ((Meta) -> Void)? = nil
+    /// bp-restore: the route this row remembers its cell under (nil = no memory).
+    var restoreRoute: String? = nil
+    /// Route entry (bp-restore readBpPosition): the cell that takes focus when the page resets.
+    var restoreCell: String? = nil
+    /// The row gained (true) or lost (false) the focused tile.
+    var onHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var seeAllFocused: Bool
+    @Environment(\.shellFocusNamespace) private var shellNS
+    @Namespace private var rowNS
+
+    /// readBpRowPosition: the cell this row had last time focus left it.
+    private var remembered: String? {
+        guard let route = restoreRoute else { return nil }
+        return BPRestore.rowCell(route, row.key)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -26,27 +40,44 @@ struct BPRowView: View {
             }
             .padding(.horizontal, BP.gutter)
             .animation(.easeOut(duration: 0.26), value: focusedId == nil)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: BP.trackGap) {
-                    ForEach(Array(row.metas.enumerated()), id: \.element.id) { i, meta in
-                        Button { onSelect(meta) } label: {
-                            BPTileView(meta: meta, shape: row.shape, rank: i + 1, focused: focusedId == meta.id)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: BP.trackGap) {
+                        ForEach(Array(row.metas.enumerated()), id: \.element.id) { i, meta in
+                            Button { onSelect(meta) } label: {
+                                BPTileView(meta: meta, shape: row.shape, rank: i + 1, focused: focusedId == meta.id)
+                            }
+                            .buttonStyle(BPTileStyle())
+                            .focused($focusedId, equals: meta.id)
+                            .prefersDefaultFocus(restoreCell == meta.id, in: shellNS ?? rowNS)
+                            .accessibilityIdentifier("tile-\(row.key)-\(i)")
+                            .onLongPressGesture(minimumDuration: 0.6) { onQuick?(meta) }
                         }
-                        .buttonStyle(BPTileStyle())
-                        .focused($focusedId, equals: meta.id)
-                        .accessibilityIdentifier("tile-\(row.key)-\(i)")
-                        .onLongPressGesture(minimumDuration: 0.6) { onQuick?(meta) }
                     }
+                    .padding(.horizontal, BP.gutter)
+                    .padding(.vertical, BP.px(14))   // room for the lift and ring
                 }
-                .padding(.horizontal, BP.gutter)
-                .padding(.vertical, BP.px(14))   // room for the lift and ring
+                .scrollClipDisabled()
+                .onAppear {
+                    // A remembered cell further along the track is brought into view (and so into
+                    // existence, the track is lazy) before focus is asked to land on it.
+                    guard let target = restoreCell ?? remembered,
+                          let i = row.metas.firstIndex(where: { $0.id == target }), i > 3 else { return }
+                    proxy.scrollTo(target, anchor: UnitPoint(x: 0.1, y: 0.5))
+                }
             }
-            .scrollClipDisabled()
         }
+        // Entering the row from above or below lands on its remembered cell, not the nearest one.
+        // With no memory the value names no tile (never nil), so the usual nearest-tile rule applies.
+        .defaultFocus($focusedId, remembered ?? "bp-restore:none", priority: .userInitiated)
         .focusSection()
         .onChange(of: focusedId) { _, id in
-            if let id, let m = row.metas.first(where: { $0.id == id }) { onFocus(m) }
+            if let id, let m = row.metas.first(where: { $0.id == id }) {
+                if let route = restoreRoute { BPRestore.remember(route: route, row: row.key, cell: id) }
+                onFocus(m)
+            }
         }
+        .onChange(of: focusedId != nil) { _, held in onHold?(held) }
     }
 }
 
@@ -58,10 +89,19 @@ struct BPRailView<Lead: View>: View {
     var onSeeAll: ((BrowseRow) -> Void)? = nil
     var onQuick: ((Meta) -> Void)? = nil
     var topInset: CGFloat = 0
+    /// bp-restore: the route rows remember their cells under, and the position to re-enter at.
+    var restoreRoute: String? = nil
+    var entry: BPRestore.Position? = nil
+    var onHold: ((String, Bool) -> Void)? = nil
     @ViewBuilder var lead: () -> Lead
     @State private var focusedRow: String?
     /// Where the focused row parks: just under the spotlight copy (bp rail "resting floor").
     private var parkAnchor: CGFloat { (topInset + BP.px(6)) / 1080 }
+
+    private func parkEntry(_ proxy: ScrollViewProxy) {
+        guard focusedRow == nil, let e = entry, rows.contains(where: { $0.key == e.row }) else { return }
+        proxy.scrollTo(e.row, anchor: UnitPoint(x: 0, y: parkAnchor))
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -71,7 +111,9 @@ struct BPRailView<Lead: View>: View {
                     lead().id("lead")
                     ForEach(rows) { row in
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
-                                  onSeeAll: onSeeAll.map { cb in { cb(row) } }, onQuick: onQuick)
+                                  onSeeAll: onSeeAll.map { cb in { cb(row) } }, onQuick: onQuick,
+                                  restoreRoute: restoreRoute, restoreCell: entry?.row == row.key ? entry?.cell : nil,
+                                  onHold: { held in onHold?(row.key, held) })
                             .id(row.key)
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
@@ -88,6 +130,9 @@ struct BPRailView<Lead: View>: View {
                 guard let key else { return }
                 withAnimation(BP.easeSlow) { proxy.scrollTo(key, anchor: UnitPoint(x: 0, y: parkAnchor)) }
             }
+            // Route entry: park the remembered row first so it exists when focus resets into it.
+            .onAppear { parkEntry(proxy) }
+            .onChange(of: rows.isEmpty) { _, empty in if !empty { parkEntry(proxy) } }
         }
     }
 }

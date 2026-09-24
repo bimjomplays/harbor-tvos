@@ -18,7 +18,7 @@ struct TmdbKeyForm: View {
                     Text("The key is saved on this device only.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                 }
             }
-            BPField(label: "TMDB API key, v3 auth", placeholder: "32 characters", text: $key)
+            BPField(label: "TMDB API key, v3 auth", placeholder: "32 characters", text: $key, phone: true)
             HStack(spacing: BP.px(12)) {
                 Button(busy ? "Checking…" : "Verify key") { Task { await verify() } }
                     .buttonStyle(BPActionStyle(primary: true)).disabled(busy || key.count < 20)

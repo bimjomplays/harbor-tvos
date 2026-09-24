@@ -22,6 +22,14 @@ final class ActivityMonitor: ObservableObject {
 extension UIWindow {
     @objc dynamic func harbor_sendEvent(_ event: UIEvent) {
         ActivityMonitor.shared.touch()
+        // use-bp-focus.ts: SFX.click() on select, SFX.close() on Back. Remote and pad presses both
+        // arrive here as UIPresses (pad A = select, B = menu). Playback owns its presses.
+        if let presses = event as? UIPressesEvent, !PlaybackState.shared.active {
+            for press in presses.allPresses where press.phase == .began {
+                if press.type == .select { BPSound.shared.click() }
+                else if press.type == .menu { BPSound.shared.close() }
+            }
+        }
         harbor_sendEvent(event)   // swapped: the original implementation
     }
 }

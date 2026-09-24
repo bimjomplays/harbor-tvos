@@ -17,8 +17,15 @@ struct RootView: View {
             if app.stage == .shell, saver.active { ScreensaverView(model: saver).transition(.opacity).zIndex(10) }
             // curfew-guard: topmost on every entry, or it is the appearance of child safety without any of it.
             if app.stage == .shell, curfew.locked { CurfewLockView(state: curfew).transition(.opacity).zIndex(20) }
+            // bp-controller-toast.tsx: mounted beside the screensaver, over every Big Picture surface.
+            ControllerToastView(monitor: GamepadMonitor.shared).zIndex(15)
         }
-        .onChange(of: app.stage) { _, st in if st == .shell { saver.start(); curfew.start() } }
+        .onAppear { GamepadMonitor.shared.start() }
+        .onChange(of: app.stage) { _, st in
+            // bp-shell.tsx mount (the first Big Picture surface, settings now loaded): SFX.boot(); SFX.open().
+            if st != .boot { BPSound.shared.bootOnce() }
+            if st == .shell { saver.start(); curfew.start() }
+        }
         .environmentObject(app)
         .environmentObject(app.account)
         .environmentObject(app.profiles)

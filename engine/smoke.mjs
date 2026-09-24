@@ -234,6 +234,31 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------------- TV hand-off: account.adopt (recorded host)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const seen = [];
+  rec.node.host.fetch = async (req) => {
+    seen.push([req.url, JSON.stringify(req.headers || {})]);
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Unauthorized", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/identity/api/me")) {
+      return JSON.stringify(req.headers || {}).includes("tok_phone")
+        ? json({ user: { id: "u_phone", username: "deckhand", handle: "deckhand" } })
+        : json({ error: "unauthorized" }, 401);
+    }
+    return json({ error: "not_found" }, 404);
+  };
+  const adopted = await rec.engine.account.adopt("tok_phone", "deckhand", "ref_phone");
+  r.ok("account.adopt applies the phone's session with the server's user", adopted && adopted.user.id === "u_phone" && adopted.token === "tok_phone" && adopted.hasRefresh === true, JSON.stringify(adopted));
+  r.ok("account.adopt asked /identity/api/me with the delivered bearer", seen.some(([u, h]) => u.endsWith("/themes/api/identity/api/me") && h.includes("Bearer tok_phone")), JSON.stringify(seen));
+  const refused = await rec.engine.account.adopt("tok_bad", "deckhand", null).then(() => "applied", (e) => String(e && e.message));
+  r.ok("account.adopt refuses a token that does not resolve to a user", refused.includes("harbor-api:") && refused.includes("401"), refused);
+  r.ok("a refused adopt leaves the earlier session in place", rec.engine.account.session() && rec.engine.account.session().user.id === "u_phone");
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------- anime4k
 {
   r.eq("anime4k.files lists the 11 shaders", engine.anime4k.files().length, 11);
@@ -262,6 +287,42 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
     r.eq("detailRoom.videoClips: other trailers first, deduped, names fall back to type", clips.map((c) => [c.ytId, c.name, c.type]), [["bbb", "Trailer", "Trailer"], ["aaa", "Trailer", "Trailer"], ["ccc", "Featurette", "Featurette"]]);
   }
   r.eq("detailRoom.collection is null without a TMDB key", await engine.detailRoom.collection(10, "default", true), null);
+}
+
+// ------------------------------------------- detail hero actions, picker outcomes, still ladder
+// DT-3 (use-bp-detail-actions state + writes), DT-6/DT-7 (remembered pick, resolve copy, P2P
+// gate), DT-11 (use-bp-episode-art ladder) on a recording host: nothing leaves the machine.
+{
+  const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const artHits = [];
+  rec.node.host.fetch = async (req) => {
+    artHits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.includes("/api/tvdb/images")) return json({ images: { s1e2: "https://artworks.thetvdb.com/banners/episodes/1/2.jpg" } });
+    if (req.url.includes("ani.zip")) return json({ episodes: { "2": { seasonNumber: 1, episodeNumber: 2, image: "https://img.anizip.example/2.jpg" } }, mappings: { imdb_id: "tt0903747" } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  const film = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", poster: "https://example.invalid/p.jpg" };
+  const show = { id: "tt0903747", type: "series", name: "Breaking Bad" };
+  const hs = e.actions.heroState(film, "tt0111161", "default", true);
+  r.eq("actions.heroState: a fresh movie", [hs.favorite, hs.reminder, hs.watchedLocal, hs.traktMovie, hs.showWatchedButton, hs.rating], [false, false, false, false, true, null]);
+  r.eq("actions.toggleFavorite adds then removes", [e.actions.toggleFavorite(film, "tt0111161", "default"), e.actions.heroState(film, null, "default", true).favorite, e.actions.toggleFavorite(film, "tt0111161", "default")], [true, true, false]);
+  r.eq("actions.toggleReminder on a series (heroState follows)", [e.actions.toggleReminder(show), e.actions.heroState(show, null, "default", true).reminder, e.actions.toggleReminder(show), e.actions.heroState(film, null, "default", true).reminder], [true, true, false, false]);
+  r.eq("actions.trackers without a Simkl/AniList/MAL session", await e.actions.trackers({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop" }, false), []);
+  r.eq("actions.traktMarkWatched without a Trakt session", await e.actions.traktMarkWatched("tt0111161"), false);
+  r.eq("streamsRoom.remembered with an unknown token", e.streamsRoom.remembered("nope", "default", true, film, null, null), null);
+  r.eq("streamsRoom.p2pConsentNeeded with an unknown token", e.streamsRoom.p2pConsentNeeded("nope", "default", true, 0, false), false);
+  r.ok("streamsRoom.failureMessage carries picker-utils copy", /isn't cached on your debrid/.test(e.streamsRoom.failureMessage("not-cached") ?? "") && e.streamsRoom.failureMessage("some-new-code") === null, e.streamsRoom.failureMessage("not-cached"));
+  const miss = await e.streamsRoom.resolve("default", true, "nope", 0, true);
+  r.eq("streamsRoom.resolve of an unknown stream carries message + debridFailure", [miss.ok, miss.code, miss.message, miss.debridFailure], [false, "no-such-stream", null, false]);
+  const art = await e.detailRoom.episodeArt(show, 1, [
+    { key: "a", season: 1, episode: 1, still: "https://example.invalid/s1e1.jpg" },
+    { key: "b", season: 1, episode: 2 },
+  ], "default", true);
+  r.ok("detailRoom.episodeArt: the meta's still leads an episode no provider has, metahub last", art.a[0] === "https://example.invalid/s1e1.jpg" && /episodes\.metahub\.space\/tt0903747\/1\/1\//.test(art.a[art.a.length - 1]), JSON.stringify(art.a));
+  r.ok("detailRoom.episodeArt: TVDB proxy before ani.zip before metahub for a gap", /thetvdb/.test(art.b[0]) && art.b[1] === "https://img.anizip.example/2.jpg" && /metahub/.test(art.b[2]) && art.b.length === 3, JSON.stringify(art.b));
+  rec.dispose();
 }
 
 // ----------------------------------------------------------------------- home servers
@@ -408,6 +469,101 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.libraryRoom.setSort("recent", "default", true);
 }
 
+// ---------------------------- collections editing, TVDB lists, Letterboxd, library repair
+// One recorded host: Harbor's TVDB proxy, Stremboxd and Stremio's datastore, all mocked.
+{
+  const rec = loadEngine({});
+  const E = rec.engine;
+  let tvdbDown = false;
+  let lbWatchlist = true;
+  let stremioPhase = "repair";
+  const puts = [];
+  rec.node.host.fetch = async (req) => {
+    const json = (body, status = 200) => ({ status, statusText: status === 200 ? "OK" : "Error", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const u = req.url;
+    if (u.includes("/api/tvdb/v4/")) {
+      if (tvdbDown) return json({ error: "down" }, 502);
+      if (u.includes("/search?")) return json({ data: [{ tvdb_id: "123", name: "Smoke Saga Collection", image_url: "/lists/123.jpg", overview: "Every Smoke film." }] });
+      if (u.includes("/lists/123/extended")) return json({ data: { id: 123, name: "Smoke Saga Collection", overview: "Every Smoke film.", image: null, entities: [{ movieId: 5, order: 2 }, { seriesId: 7, order: 1 }, { movieId: 9, order: 3 }] } });
+      if (u.includes("/movies/5/extended")) return json({ data: { name: "Smoke Film", year: 2001, image: "/p5.jpg", remoteIds: [{ id: "tt0000005" }] } });
+      if (u.includes("/series/7/extended")) return json({ data: { name: "Smoke Show", year: "1999", image: null, remoteIds: [] } });
+      return json({ data: null }, 404);
+    }
+    if (u.startsWith("https://api.stremboxd.com/")) {
+      if (u.endsWith("/manifest.json")) return json({ id: "community.stremboxd", catalogs: [...(lbWatchlist ? [{ id: "letterboxd-watchlist", name: "smoke's Watchlist" }] : []), { id: "letterboxd-popular", name: "Popular This Week" }] });
+      if (u.includes("/catalog/movie/letterboxd-watchlist")) return json({ metas: [1, 2, 3, 4, 5].map((n) => ({ id: `tt000010${n}`, type: "movie", name: `Watch ${n}`, year: 2020 + n, imdbRating: "7.1", links: [{ name: "x", category: "Letterboxd", url: "https://letterboxd.com/film/x/" }] })) });
+      return json({ metas: [] });
+    }
+    if (u.startsWith("https://api.strem.io/api/")) {
+      const path = u.slice("https://api.strem.io/api/".length);
+      if (path === "datastoreMeta") return json({ result: [["tt1", "1"], ["tt2", "2"], ["tt3", "3"]] });
+      if (path === "datastoreGet") {
+        if (stremioPhase === "repair") return json({ result: [{ _id: "tt1", name: "Needs repair", type: "movie" }, { name: "No id" }] });
+        return json({ result: [
+          { _id: "tt3", name: "Mislabelled Anime", type: "series", removed: false, temp: false, state: { video_id: "kitsu:1:1" } },
+          { _id: "tt2", name: "Fine", type: "movie", removed: false, temp: false, state: { video_id: "tt2" } },
+        ] });
+      }
+      if (path === "datastorePut") { puts.push(1); return json({ result: { success: true } }); }
+    }
+    return json({ error: "not_found" }, 404);
+  };
+
+  // CL-2: own collections from the TV.
+  const made = E.collectionsRoom.create("Smoke picks");
+  r.ok("collectionsRoom.create makes an editable collection", made && made.source === "mine" && made.name === "Smoke picks" && made.count === 0, JSON.stringify(made));
+  const added = E.collectionsRoom.addItem(made.ref, { id: "tt0111161", type: "movie", name: "The Shawshank Redemption", poster: null });
+  r.ok("collectionsRoom.addItem adds a title once", added.count === 1 && E.collectionsRoom.addItem(made.ref, { id: "tt0111161", type: "movie", name: "x" }).count === 1, JSON.stringify(added.items));
+  r.eq("collectionsRoom.rename", E.collectionsRoom.rename(made.ref, "  Smoke favourites ").name, "Smoke favourites");
+  r.eq("collectionsRoom.removeItem", E.collectionsRoom.removeItem(made.ref, "tt0111161").count, 0);
+  r.eq("collectionsRoom.create with no name uses upstream's default", E.collectionsRoom.create("  ").name, "Untitled collection");
+  E.collectionsRoom.remove(made.ref);
+  r.ok("collectionsRoom.remove deletes it", !E.collectionsRoom.mine().some((c) => c.ref === made.ref) && E.collectionsRoom.mine().length === 1, JSON.stringify(E.collectionsRoom.mine().map((c) => c.name)));
+  r.eq("collectionsRoom.searchTitles ignores a one-letter query", await E.collectionsRoom.searchTitles("a", "default", true), []);
+
+  // CL-1: TVDB lists through Harbor's proxy, no key.
+  const t1 = await E.collectionsRoom.tvdb("all", 0);
+  r.ok("collectionsRoom.tvdb pulls five seed names and dedupes hits", t1.next === 5 && !t1.done && !t1.failed && t1.cards.length === 1 && t1.cards[0].key === "tvdb:123" && t1.cards[0].count === null && t1.cards[0].image === "https://artworks.thetvdb.com/lists/123.jpg", JSON.stringify(t1));
+  const t2 = await E.collectionsRoom.tvdb("all", 5);
+  r.ok("collectionsRoom.tvdb 'all' stops at ten names and says more exist", t2.done && t2.capped && t2.next === 10, JSON.stringify({ ...t2, cards: t2.cards.length }));
+  const td = await E.collectionsRoom.tvdbDetail(123, "Fallback");
+  r.ok("collectionsRoom.tvdbDetail hydrates entries in list order and drops unknown ones", !td.failed && td.name === "Smoke Saga Collection" && td.items.map((i) => i.id).join(",") === "tvdb:series:7,tt0000005" && td.items[1].poster === "https://artworks.thetvdb.com/p5.jpg", JSON.stringify(td));
+  tvdbDown = true;
+  const t3 = await E.collectionsRoom.tvdb("tvdb", 40);
+  r.ok("collectionsRoom.tvdb reports an unreachable TVDB", t3.failed && t3.cards.length === 0, JSON.stringify(t3));
+  r.ok("collectionsRoom.tvdbDetail of an unknown list fails softly", (await E.collectionsRoom.tvdbDetail(999, "Fallback")).failed === true);
+  tvdbDown = false;
+
+  // LB-3 / DS-4: Letterboxd public mode.
+  r.eq("letterboxd.status off by default", E.letterboxd.status("default", true).active, false);
+  r.eq("libraryRoom.tabs hides Letterboxd until connected", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), false);
+  lbWatchlist = false;
+  const lbBad = await E.letterboxd.connect("default", true, "smoke");
+  r.ok("letterboxd.connect refuses a username with no public watchlist", lbBad.ok === false && /watchlist/.test(lbBad.message) && E.letterboxd.status("default", true).active === false, JSON.stringify(lbBad));
+  lbWatchlist = true;
+  const lbOk = await E.letterboxd.connect("default", true, "@smoke");
+  r.ok("letterboxd.connect turns public mode on", lbOk.ok && lbOk.catalogs === 2 && E.letterboxd.status("default", true).active && E.letterboxd.status("default", true).username === "smoke", JSON.stringify(lbOk));
+  r.eq("libraryRoom.tabs shows Letterboxd once connected", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), true);
+  const lbFeed = await E.libraryRoom.feed({ tab: "letterboxd", profileId: "default", linked: true, authKey: null });
+  r.ok("libraryRoom.feed(letterboxd) lists the watchlist", lbFeed.status === "ready" && lbFeed.total === 5 && lbFeed.sections[0].items[0].meta.type === "movie", JSON.stringify({ status: lbFeed.status, total: lbFeed.total }));
+  const lbRows = await E.letterboxd.movieRows("default", true);
+  r.ok("letterboxd.movieRows keeps rows with four titles or more, named from the manifest", lbRows.length === 1 && lbRows[0].key === "letterboxd-letterboxd-watchlist" && lbRows[0].name === "smoke's Watchlist" && lbRows[0].metas.length === 5, JSON.stringify(lbRows.map((x) => [x.key, x.name, x.metas.length])));
+  E.letterboxd.disable("default", true);
+  r.eq("letterboxd.disable hides the tab again", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), false);
+  r.eq("letterboxd.movieRows empty when off", await E.letterboxd.movieRows("default", true), []);
+
+  // LB-4: library repair.
+  r.ok("libraryRoom.repair needs a Stremio session", await E.libraryRoom.repair(null).then(() => false, (e) => /Sign in to Stremio first/.test(e.message)));
+  const rep = await E.libraryRoom.repair("auth_smoke");
+  r.ok("libraryRoom.repair rewrites dirty items and counts unrepairable ones", rep.total === 2 && rep.repaired === 1 && rep.unrepairable === 1 && rep.alreadyClean === 0 && puts.length === 1, JSON.stringify(rep));
+  stremioPhase = "anime";
+  const scan = await E.libraryRoom.animeScan("auth_smoke");
+  r.eq("libraryRoom.animeScan finds anime saved under a tt id", scan, [{ id: "tt3", name: "Mislabelled Anime" }]);
+  r.eq("libraryRoom.animeHeal removes what the scan found", await E.libraryRoom.animeHeal("auth_smoke"), 1);
+  r.eq("libraryRoom.animeHeal with nothing scanned", await E.libraryRoom.animeHeal("auth_smoke"), 0);
+  rec.dispose();
+}
+
 // ----------------------------------------------------------------------- profiles room
 {
   const av = engine.profilesRoom.avatars();
@@ -537,6 +693,45 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
     return x.kind === "xtream" && x.xtream && x.xtream.username === "u" && /xmltv\.php/.test(x.epgUrl || "");
   })());
+  rec.dispose();
+}
+
+// ----------------------------------------------- player chrome + subtitle panel (recorded host)
+// bp-player-subtitles / bp-subtitle-find / bp-subtitle-tune: track rows, Find more over a fake
+// Cinemeta + OpenSubtitles v3, presets; player.prefs for the up-next lead and seek steps.
+{
+  const rec = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const hits = [];
+  rec.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/series/top/search=")) return json({ metas: [{ id: "tt0903747", type: "series", name: "Breaking Bad", releaseInfo: "2008-2013" }] });
+    if (req.url.startsWith("https://v3-cinemeta.strem.io/catalog/movie/top/search=")) return json({ metas: [{ id: "tt1000001", type: "movie", name: "Breaking Bad Movie", releaseInfo: "2019" }] });
+    if (req.url === "https://opensubtitles-v3.strem.io/subtitles/series/tt0903747:2:5.json") return json({ subtitles: [
+      { id: "1", url: "https://subs.example.invalid/a.srt", lang: "eng" },
+      { id: "2", url: "https://subs.example.invalid/b.srt", lang: "eng", m: "Breaking.Bad.S02E05.SDH.HI" },
+      { id: "3", url: "https://subs.example.invalid/c.srt", lang: "fre" },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  r.eq("player.prefs: upstream defaults (auto lead, auto-advance on, 10 s steps)", e.player.prefs("default", true), { autoPlayNextEpisode: true, nextEpisodeLeadSec: -1, seekBackStepSec: 10, seekForwardStepSec: 10 });
+  r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
+  const tv = e.subtitles.trackView("default", true, [
+    { id: 1, lang: "eng", title: null, codec: "subrip", external: false },
+    { id: 2, lang: "fre", title: "French", codec: "ass", external: false, forced: true },
+    { id: 3, lang: "en", title: "Show.S01E02.1080p.WEB-DL.x264-GRP", external: true, hearingImpaired: true, externalFilename: "/c/a.srt" },
+    { id: 4, lang: "ger", title: "German", external: false, secondary: true },
+  ], "Show.S01E02.1080p.WEB-DL.x264-GRP.mkv", 1, 2);
+  const row = (id) => tv.tracks.find((t) => t.id === id);
+  r.ok("subtitles.trackView keeps preferred languages plus the secondary track", row("1").keep && !row("2").keep && row("3").keep && row("4").keep, JSON.stringify(tv.tracks.map((t) => [t.id, t.keep])));
+  r.ok("subtitles.trackView labels rows like bp-subtitle-parts", row("1").title === "Embedded 1 · SUBRIP" && row("3").detail === "External · English" && row("3").tags.join() === "HI/SDH" && row("2").tags.join() === "Forced" && row("1").langDisplay === "English", JSON.stringify(tv.tracks));
+  r.ok("subtitles.trackView ranks the release-matched external track as the best match", tv.ranked[0] && tv.ranked[0].id === "3" && tv.ranked[0].eligible === true, JSON.stringify(tv.ranked));
+  const target = await e.subtitles.titleTarget("breaking bad s2e5", { imdbId: "tt0111161", type: "movie", title: "The Shawshank Redemption" });
+  r.eq("subtitles.titleTarget parses S2E5 and picks the Cinemeta series", target, { imdbId: "tt0903747", type: "series", title: "Breaking Bad", season: 2, episode: 5 });
+  r.eq("subtitles.titleTarget: a one-letter query re-runs the current target", await e.subtitles.titleTarget("b", { imdbId: "", type: "movie", title: "x" }), null);
+  const found = await e.subtitles.find("default", true, null, target, null, null, null);
+  r.ok("subtitles.find searches the other title's episode with provider details and HI flags", found.tooNew === false && found.results.length === 3 && found.results[1].hearingImpaired === true && found.results[1].tags.join() === "HI/SDH" && found.results[0].provider === "OpenSubtitles" && found.results[2].langName === "French" && hits.includes("https://opensubtitles-v3.strem.io/subtitles/series/tt0903747:2:5.json"), JSON.stringify(found));
   rec.dispose();
 }
 

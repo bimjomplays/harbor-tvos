@@ -18,7 +18,7 @@ final class DetailModel: ObservableObject {
     @Published private(set) var meta: Meta
     @Published private(set) var episodes: [Episode] = []
     @Published private(set) var seasons: [Int] = []
-    @Published var season: Int = 1 { didSet { if season != oldValue { Task { await loadEpisodeFacts() } } } }
+    @Published var season: Int = 1 { didSet { if season != oldValue { Task { await loadEpisodeFacts(); await loadEpisodeArt() } } } }
     @Published private(set) var loading = false
     /// use-bp-episode-facts: per-episode rating (IMDb over TMDB) and runtime, keyed "season:episode".
     @Published private(set) var episodeFacts: [String: EpisodeFact] = [:]
@@ -31,6 +31,105 @@ final class DetailModel: ObservableObject {
         for f in list { episodeFacts["\(f.season):\(f.episode)"] = f }
     }
     func fact(for ep: Episode) -> EpisodeFact? { episodeFacts["\(ep.season):\(ep.episode)"] }
+
+    /// use-bp-episode-art: per episode id, the still urls to try in order (TMDB → TVDB → ani.zip → the
+    /// meta's own thumbnail → metahub). Missing until the engine answers; the cell then uses the thumbnail.
+    @Published private(set) var episodeArt: [String: [String]] = [:]
+
+    func loadEpisodeArt() async {
+        guard isSeries else { return }
+        struct Ref: Encodable { var key: String; var season: Int; var episode: Int; var still: String? }
+        let s = season
+        let refs = episodes.filter { $0.season == s }.map { Ref(key: $0.id, season: $0.season, episode: $0.episode, still: $0.thumbnail) }
+        guard !refs.isEmpty else { return }
+        let p = ProfilesStore.shared.active
+        let art: [String: [String]]? = try? await HarborEngine.shared.call("detailRoom.episodeArt", [meta, s, refs, p?.id ?? "default", p?.linked ?? true])
+        if let art { episodeArt.merge(art) { _, new in new } }
+    }
+
+    func stillChain(for ep: Episode) -> [String] {
+        if let chain = episodeArt[ep.id] { return chain }
+        return ep.thumbnail.map { [$0] } ?? []
+    }
+
+    // MARK: hero actions (use-bp-detail-actions.ts)
+
+    struct HeroState: Decodable, Equatable {
+        var favorite: Bool; var reminder: Bool; var watchedLocal: Bool; var traktMovie: Bool; var showWatchedButton: Bool; var rating: Int?
+    }
+    @Published private(set) var hero: HeroState?
+    /// stremio-watched stremioMovieWatched(libraryItem): flaggedWatched or timesWatched on the Stremio entry.
+    @Published private(set) var stremioWatched = false
+    /// use-bp-anime-detail canonicalId: trackers file against it, never the shell the viewer arrived under.
+    @Published private(set) var canonicalId: String?
+    /// use-bp-trackers: Simkl, plus AniList and MyAnimeList for anime, when signed in.
+    struct Tracker: Decodable, Identifiable, Equatable {
+        struct Choice: Decodable, Identifiable, Equatable { var id: String; var label: String }
+        var key: String; var name: String; var status: String?; var statusLabel: String?; var choices: [Choice]; var canRemove: Bool
+        var id: String { key }
+    }
+    @Published private(set) var trackers: [Tracker] = []
+
+    var isMovie: Bool { meta.type == "movie" }
+    var imdbId: String? { meta.id.hasPrefix("tt") ? meta.id : extras?.imdbId }
+    /// use-bp-detail-actions `watched`: isMovieWatchedLocal || stremioMovieWatched.
+    var movieWatched: Bool { isMovie && ((hero?.watchedLocal ?? false) || stremioWatched) }
+    private var trackerMeta: Meta {
+        guard let c = canonicalId, c != meta.id else { return meta }
+        var m = meta
+        m.id = c
+        return m
+    }
+
+    func loadHero() async {
+        let p = ProfilesStore.shared.active
+        let state: HeroState? = try? await HarborEngine.shared.call("actions.heroState", [meta, imdbId, p?.id ?? "default", p?.linked ?? true])
+        if let state { hero = state }
+    }
+
+    func toggleFavorite() async {
+        let p = ProfilesStore.shared.active
+        let _: Bool? = try? await HarborEngine.shared.call("actions.toggleFavorite", [meta, imdbId, p?.id ?? "default"]) as Bool
+        await loadHero()
+    }
+
+    func toggleReminder() async {
+        let _: Bool? = try? await HarborEngine.shared.call("actions.toggleReminder", [meta]) as Bool
+        await loadHero()
+    }
+
+    /// "Mark watched" / "Marked watched": markMovieWatched or unmarkMovieWatched (local, Stremio, Trakt, Simkl).
+    func toggleWatched() async {
+        let next = !movieWatched
+        let _: Bool? = try? await HarborEngine.shared.call("actions.setMovieWatched", [meta, imdbId, next]) as Bool
+        if !next { stremioWatched = false }
+        await loadHero()
+        await CardMarksStore.shared.remark()
+    }
+
+    func traktMarkWatched() async {
+        let _: Bool? = try? await HarborEngine.shared.call("actions.traktMarkWatched", [meta.id]) as Bool
+    }
+
+    func loadTrackers() async {
+        let list: [Tracker]? = try? await HarborEngine.shared.call("actions.trackers", [trackerMeta, isMovie])
+        trackers = list ?? []
+    }
+
+    /// bp-status-dialog choice: the label flips at once (use-bp-trackers set), the service's answer wins.
+    func setTracker(_ key: String, status: String) async {
+        if let i = trackers.firstIndex(where: { $0.key == key }) {
+            trackers[i].status = status
+            trackers[i].statusLabel = trackers[i].choices.first(where: { $0.id == status })?.label
+        }
+        let t: Tracker? = try? await HarborEngine.shared.call("actions.trackerSet", [key, trackerMeta, isMovie, status])
+        if let t, let i = trackers.firstIndex(where: { $0.key == key }) { trackers[i] = t }
+    }
+
+    func removeTracker(_ key: String) async {
+        let t: Tracker? = try? await HarborEngine.shared.call("actions.trackerRemove", [key, trackerMeta, isMovie])
+        if let t, let i = trackers.firstIndex(where: { $0.key == key }) { trackers[i] = t }
+    }
     /// Resume state for the Play button (detail-spec §1.3/1.4): where the viewer left off.
     @Published private(set) var resume: Resume?
     /// Stremio library membership ("Add to Watchlist" / "In Watchlist", detail-spec §1.3).
@@ -123,19 +222,25 @@ final class DetailModel: ObservableObject {
                 seasons = Array(Set(episodes.map(\.season))).sorted()
                 if let first = seasons.first, !seasons.contains(season) { season = first }
                 characters = a.characters
+                canonicalId = a.canonicalId
             }
         } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
             meta = full
         }
         if !isAnimeId { buildEpisodes() }
         await loadResume()
+        await loadHero()
         if isSeries, let authKey {
             let keys: [String] = (try? await HarborEngine.shared.call("player.watchedEpisodes", [authKey, meta])) ?? []
             watched = Set(keys)
         }
+        await loadEpisodeArt()
         await loadExtras()
+        // The favourite check also answers to the IMDb id TMDB just resolved.
+        if !meta.id.hasPrefix("tt"), extras?.imdbId != nil { await loadHero() }
         await loadEpisodeFacts()
         await loadAwards()
+        await loadTrackers()
     }
 
     /// use-bp-detail: TMDB lands independently of the meta; the franchise collection last.
@@ -175,7 +280,7 @@ final class DetailModel: ObservableObject {
     /// Cloud library entry first (Stremio), else the local resume store, like bpResumeMark.
     private func loadResume() async {
         struct Item: Decodable {
-            struct State: Decodable { var timeOffset: Double?; var duration: Double?; var season: Int?; var episode: Int?; var video_id: String? }
+            struct State: Decodable { var timeOffset: Double?; var duration: Double?; var season: Int?; var episode: Int?; var video_id: String?; var flaggedWatched: Double?; var timesWatched: Double? }
             var state: State?
             var removed: Bool?
         }
@@ -183,6 +288,7 @@ final class DetailModel: ObservableObject {
         if let authKey,
            let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, meta.id]) {
             inWatchlist = item.map { $0.removed != true } ?? false
+            stremioWatched = isMovie && ((item?.state?.flaggedWatched ?? 0) > 0 || (item?.state?.timesWatched ?? 0) > 0)
             guard let st = item?.state, let off = st.timeOffset, off > 0 else { return await loadLocalResume() }
             var s = st.season, e = st.episode
             if (e ?? 0) == 0, let vid = st.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: meta.id) { s = parsed.season; e = parsed.episode }

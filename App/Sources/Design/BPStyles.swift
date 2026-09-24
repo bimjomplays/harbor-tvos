@@ -30,8 +30,10 @@ struct BPFocusModifier: ViewModifier {
 /// Card-like tile (posters, profile faces, choice cards).
 struct BPTileStyle: ButtonStyle {
     var radius: CGFloat = BP.rXS
+    /// bp-settings-parts.tsx onCellFocus: runs when the tile takes focus.
+    var onFocus: (() -> Void)? = nil
     func makeBody(configuration: Configuration) -> some View {
-        BPFocusReader { focused in
+        BPFocusReader(onFocus: onFocus) { focused in
             configuration.label
                 .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius))
         }
@@ -78,38 +80,72 @@ struct BPTabStyle: ButtonStyle {
     }
 }
 
-/// Lets a ButtonStyle body read the focus state of the button it decorates.
+/// Lets a ButtonStyle body read the focus state of the button it decorates. Every focus it
+/// gains plays the theme's hover (use-bp-focus.ts moveFocus: SFX.hover()).
 struct BPFocusReader<Content: View>: View {
     @Environment(\.isFocused) private var focused
+    let onFocus: (() -> Void)?
     let content: (Bool) -> Content
-    init(@ViewBuilder content: @escaping (Bool) -> Content) { self.content = content }
-    var body: some View { content(focused) }
+    init(onFocus: (() -> Void)? = nil, @ViewBuilder content: @escaping (Bool) -> Content) {
+        self.onFocus = onFocus
+        self.content = content
+    }
+    var body: some View {
+        content(focused)
+            .onChange(of: focused) { _, now in
+                guard now else { return }
+                onFocus?()
+                BPSound.shared.hover()
+            }
+    }
 }
 
 /// Text field styled as a Big Picture input. Focusing does not start editing;
 /// pressing Select opens the tvOS keyboard, which is exactly upstream's rule.
+///
+/// Long text (every URL field, plus any field that passes `phone: true`) also gets a phone
+/// button: decision 7, long text is typed on the phone (PhoneTypingSheet, bp-phone-typing.tsx).
 struct BPField: View {
     let label: String
     let placeholder: String
     @Binding var text: String
     var secure = false
     var keyboard: UIKeyboardType = .default
+    /// nil: offered for URL fields only. Secret fields never get it unless a caller asks.
+    var phone: Bool? = nil
+    @State private var phoneOpen = false
+
+    private var offersPhone: Bool { phone ?? (keyboard == .URL && !secure) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             Text(label).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
-            Group {
-                if secure { SecureField(placeholder, text: $text) } else { TextField(placeholder, text: $text) }
+            HStack(spacing: BP.px(8)) {
+                Group {
+                    if secure { SecureField(placeholder, text: $text) } else { TextField(placeholder, text: $text) }
+                }
+                .font(BP.sans(17))
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.plain)
+                .padding(.horizontal, BP.px(14))
+                .frame(height: BP.px(50))
+                .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                if offersPhone {
+                    Button { phoneOpen = true } label: {
+                        Image(systemName: "iphone").font(.system(size: BP.px(18), weight: .semibold))
+                    }
+                    .buttonStyle(BPActionStyle())
+                    .accessibilityLabel("Type on your phone")
+                }
             }
-            .font(BP.sans(17))
-            .keyboardType(keyboard)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .textFieldStyle(.plain)
-            .padding(.horizontal, BP.px(14))
-            .frame(height: BP.px(50))
-            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
-            .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+        }
+        .fullScreenCover(isPresented: $phoneOpen) {
+            PhoneTypingSheet(label: label, placeholder: placeholder, text: $text, secure: secure,
+                             purpose: "Scan this with your phone camera, then type straight into “\(label)” on your phone.",
+                             onClose: { phoneOpen = false })
         }
     }
 }

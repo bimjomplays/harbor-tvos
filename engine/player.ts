@@ -7,7 +7,24 @@ import { setMovieWatchedLocal } from "@/lib/movie-watched";
 import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
+import { loadEffective } from "@/lib/settings/profile-store";
 import { unzlibSync } from "fflate";
+
+/**
+ * The playback settings the Big Picture chrome reads (settings/defaults.ts): the up-next lead
+ * (skip-pill-container.tsx nextEpisodeLead: -1 = auto, 0 = off), auto-advance
+ * (player.tsx useAutoNextEpisode) and the seek steps (bp-player-scrub.tsx).
+ */
+export function prefs(profileId: string, linked: boolean) {
+  const s = loadEffective(profileId, linked);
+  const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  return {
+    autoPlayNextEpisode: s.autoPlayNextEpisode !== false,
+    nextEpisodeLeadSec: num(s.nextEpisodeLeadSec, -1),
+    seekBackStepSec: num(s.seekBackStepSec, 10) || 10,
+    seekForwardStepSec: num(s.seekForwardStepSec, 10) || 10,
+  };
+}
 
 // lib/stremio-watched.ts canonicalVideoOrder (not exported): Stremio indexes the watched
 // bitfield against videos sorted by (season, episode, released); bit i is that position.

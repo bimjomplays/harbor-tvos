@@ -5,6 +5,8 @@ struct ContinueRowView: View {
     let items: [ContinueItem]
     let onFocus: (ContinueItem) -> Void
     let onSelect: (ContinueItem) -> Void
+    /// The row gained (true) or lost (false) the focused card.
+    var onHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedId: String?
 
     var body: some View {
@@ -29,5 +31,6 @@ struct ContinueRowView: View {
         .onChange(of: focusedId) { _, id in
             if let id, let i = items.first(where: { $0.id == id }) { onFocus(i) }
         }
+        .onChange(of: focusedId != nil) { _, held in onHold?(held) }
     }
 }

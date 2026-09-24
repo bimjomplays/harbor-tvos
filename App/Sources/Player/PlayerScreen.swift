@@ -9,7 +9,7 @@ struct PlayerScreen: View {
     let url: URL
     var headers: [String: String] = [:]
     var context: PlaybackContext? = nil
-    /// "S1 E2 · Title" of what follows; drives the up-next pill near the end (player-spec §1.9).
+    /// "S1 E2 · Title" of what follows; drives the up-next card and Next episode (bp-up-next.tsx).
     var upNext: String? = nil
     /// Live streams: live mpv cache options, no seek bar, no progress saves.
     var isLive: Bool = false
@@ -18,8 +18,24 @@ struct PlayerScreen: View {
     var onChooseAnother: (() -> Void)? = nil
     /// bp-player-sources "Switch source": reopen the picker and resume the new stream here.
     var onSwitchSource: ((Double) -> Void)? = nil
+    /// bp-player-controls "Previous episode": the caller opens the previous episode's picker.
+    /// "Next episode" needs nothing new: closing with `true` is how the caller advances.
+    var onPreviousEpisode: (() -> Void)? = nil
     @State private var subDelay: Double = 0
-    @State private var subScale: Double = 1
+    /// bp-player-sources BpAudioLane: mpv audio-delay, ±0.1 / ±0.5 s.
+    @State private var audioDelay: Double = 0
+    /// bp-player-rail mute chip.
+    @State private var muted = false
+    /// bp-player-scrub: demuxer cache end, drawn as the buffered fill.
+    @State private var buffered: Double = 0
+    /// bp-player-scrub nudge(): presses accumulate into one seek committed 420 ms after the last.
+    @State private var pendingSeek: Double?
+    @State private var seekRun = 0
+    @State private var seekCommit: Task<Void, Never>?
+    /// player.tsx autoNextCancelled: "Keep watching" on the up-next card.
+    @State private var autoNextCancelled = false
+    @State private var prefs = PlayerPrefs()
+    @State private var finishing = false
     @State private var loadingSince = Date()
     let onClose: (_ endedNaturally: Bool) -> Void
     @State private var reloadToken = 0
@@ -37,8 +53,6 @@ struct PlayerScreen: View {
     @State private var lastSavedPos: Double = -10
     @State private var snap: (position: Double, duration: Double, paused: Bool) = (0, 0, false)
     @State private var panel: Panel?
-    @State private var tracks: [MPVPlayerController.Track] = []
-    @State private var online: [OnlineSubtitle] = []
     @State private var segments: [SkipSegment] = []
     @State private var segmentsLoadedFor: Double = 0
     @State private var skippedIds: Set<String> = []
@@ -59,17 +73,14 @@ struct PlayerScreen: View {
             }
         }
     }
-    @State private var onlineState: String?
     @FocusState private var focus: FocusTarget?
 
-    struct OnlineSubtitle: Decodable, Identifiable {
-        var id: String
-        var url: String
-        var lang: String
-        var langName: String?
-        var title: String?
-        var displayTitle: String?
-        var source: String
+    /// engine player.prefs: settings/defaults.ts nextEpisodeLeadSec, autoPlayNextEpisode, seek steps.
+    struct PlayerPrefs: Decodable {
+        var autoPlayNextEpisode = true
+        var nextEpisodeLeadSec: Double = -1
+        var seekBackStepSec: Double = 10
+        var seekForwardStepSec: Double = 10
     }
 
     enum Panel { case audio, subtitles, anime4k }
@@ -90,7 +101,7 @@ struct PlayerScreen: View {
                 MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
-                              onStatus: { status = $0 }, onEnded: { finish(natural: true) },
+                              onStatus: { status = $0 }, onEnded: { endedNaturally() },
                               onReady: { controller = $0; if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
                     .id(reloadToken)
@@ -104,23 +115,29 @@ struct PlayerScreen: View {
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
-                    case .left: controller?.seek(-10); wake()
-                    case .right: controller?.seek(10); wake()
+                    case .left: if isLive { controller?.seek(-10); wake() } else { nudgeSeek(ahead: false) }
+                    case .right: if isLive { controller?.seek(10); wake() } else { nudgeSeek(ahead: true) }
+                    case .up where showUpNextCard: focus = .chip("upnext-keep")
                     case .up where activeSegment != nil: focus = .chip("skip")
                     default: wake()
                     }
                 }
-            if chrome, resumePending == nil, !leaveConfirm, status.state != "error" || isLive { chromeView.transition(.opacity) }
+            // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
+            if chrome, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || isLive { chromeView.transition(.opacity) }
             if let resumePending { resumePrompt(resumePending).transition(.opacity) }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
             if status.state == "loading", !isLive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
-            if let seg = activeSegment {
-                skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if let upNext, snap.duration > 120, snap.duration - snap.position <= 40, !snap.paused {
-                upNextPill(upNext).transition(.move(edge: .trailing).combined(with: .opacity))
+            if panel == nil, !leaveConfirm, resumePending == nil {
+                if showUpNextCard, let upNext {
+                    upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let seg = activeSegment {
+                    skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
-            if let panel { panelView(panel).transition(.move(edge: .trailing).combined(with: .opacity)) }
+            if let panel {
+                panelView(panel).transition(panel == .anime4k ? AnyTransition.move(edge: .trailing).combined(with: .opacity) : AnyTransition.opacity)
+            }
             if let a = anime4k, a.active, a.indicator, !chrome {
                 // anime4k-indicator.tsx: a quiet corner pill while a chain is live.
                 Text("Anime4K · Mode \(a.mode ?? "")").font(BP.sans(11, .bold)).foregroundStyle(BP.ink)
@@ -134,7 +151,8 @@ struct PlayerScreen: View {
         .onExitCommand {
             if resumePending != nil { acknowledgeResume(true) }          // Back takes the default action (bp-resume-prompt)
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
-            else if panel != nil { panel = nil; focus = .surface; wake() }
+            else if panel != nil { closePanel() }
+            else if showUpNextCard { cancelAutoNext() }                     // bp-up-next: Back is "Keep watching"
             else if focus == .chip("skip") { focus = .surface }
             else if chrome { chrome = false }
             else { requestClose() }
@@ -158,9 +176,18 @@ struct PlayerScreen: View {
             } else {
                 startAt = sec
             }
+            let profile = ProfilesStore.shared.active
+            do {
+                let loaded: PlayerPrefs = try await HarborEngine.shared.call("player.prefs", [profile?.id ?? "default", profile?.linked ?? true])
+                prefs = loaded
+            } catch {}
         }
         .onReceive(tick) { _ in
-            if let c = controller { snap = c.snapshot() }
+            if let c = controller {
+                snap = c.snapshot()
+                muted = c.isMuted()
+                buffered = c.bufferedSec()
+            }
             if !isLive, let c = controller, status.state != "loading" {
                 let w = c.videoWidth()
                 if w > 0, w != anime4kAppliedFor { anime4kAppliedFor = w; Task { await applyAnime4k(srcWidth: w) } }
@@ -199,18 +226,21 @@ struct PlayerScreen: View {
     }
 
     private func skipPill(_ seg: SkipSegment) -> some View {
-        VStack {
+        // bp-skip-pill: an outro with an episode after it reads "Next Episode" and plays it.
+        let outroNext = isOutro(seg) && hasNextEp && leadSec > 0
+        return VStack {
             Spacer()
             HStack {
                 Spacer()
                 Button {
+                    if outroNext { playNext(); return }
                     skippedIds.insert(seg.id)
                     controller?.seek(to: seg.endSec)
                     wake()
                 } label: {
                     HStack(spacing: BP.px(8)) {
-                        Image(systemName: "forward.fill")
-                        Text(seg.label).font(BP.sans(14, .semibold))
+                        Image(systemName: outroNext ? "chevron.forward.2" : "forward.fill")
+                        Text(outroNext ? "Next Episode" : seg.label).font(BP.sans(14, .semibold))
                     }
                     .foregroundStyle(BP.ink)
                     .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
@@ -220,37 +250,113 @@ struct PlayerScreen: View {
                 .buttonStyle(.plain)
                 .focused($focus, equals: .chip("skip"))
             }
-            .padding(.bottom, chrome ? BP.px(150) : BP.px(40)).padding(.trailing, BP.gutter)
+            .padding(.bottom, chrome ? BP.px(300) : BP.px(40)).padding(.trailing, BP.gutter)
         }
         .ignoresSafeArea()
         // bp-skip-pill: a soft target. It never takes the ring on arrival (Select must keep meaning
         // pause); Up from the surface or the transport reaches it, Menu hands the ring back.
     }
 
-    /// Up-next pill in the last 40 seconds; Play/Pause or Select skips straight to the next episode.
-    private func upNextPill(_ text: String) -> some View {
-        VStack {
+    // MARK: up next (bp-up-next.tsx, skip-pill-container.tsx, use-auto-next-episode.ts)
+
+    private var hasNextEp: Bool { upNext != nil && !autoNextCancelled && !isLive }
+    private var remainingSec: Double { max(0, snap.duration - snap.position) }
+    /// skip-pill-container.tsx nextEpisodeLead: 0 = off, > 0 = fixed, -1 = 4 % of the runtime within 15–45 s.
+    private var leadSec: Double {
+        let setting = prefs.nextEpisodeLeadSec
+        if setting == 0 { return 0 }
+        if setting > 0 { return setting }
+        return min(45, max(15, (snap.duration * 0.04).rounded()))
+    }
+    private func isOutro(_ seg: SkipSegment) -> Bool { seg.kind == "outro" || seg.kind == "credits" }
+
+    /// The card shows inside the lead: over a real outro segment, or as the synthetic outro when the
+    /// title has none (skip-pill-container syntheticOutro).
+    private var showUpNextCard: Bool {
+        guard hasNextEp, leadSec > 0, snap.duration > 0, remainingSec > 0, remainingSec <= leadSec else { return false }
+        if let seg = activeSegment { return isOutro(seg) }
+        return remainingSec >= 0.5 && !segments.contains { isOutro($0) }
+    }
+
+    /// use-episode-navigation goToEpisode: the caller opens the next episode's picker with instant play.
+    private func playNext() { finish(natural: false, advance: true) }
+
+    private func cancelAutoNext() {
+        autoNextCancelled = true
+        focus = .surface
+        wake()
+    }
+
+    /// use-auto-next-episode.ts: at a natural end the next episode follows unless the viewer chose
+    /// "Keep watching", autoPlayNextEpisode is off, or the file is a stub (under 150 s).
+    private func endedNaturally() {
+        let advance = upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
+        finish(natural: true, advance: advance)
+    }
+
+    /// bp-up-next.tsx BpUpNext: the next episode, a countdown ring, "Play now" and "Keep watching".
+    /// It never takes the ring on arrival (Select keeps meaning pause); Up or the chrome reaches it.
+    private func upNextCard(_ text: String) -> some View {
+        let seconds = Int(remainingSec.rounded(.up))
+        let progress = leadSec > 0 ? min(1, max(0, 1 - Double(seconds) / leadSec)) : 0
+        let parts = text.components(separatedBy: " · ")
+        let epLabel = parts.first ?? text
+        let name = parts.dropFirst().joined(separator: " · ")
+        let heading = name.isEmpty ? epLabel : name
+        return VStack {
+            Spacer()
             HStack {
                 Spacer()
-                Button { finish(natural: true) } label: {
-                    HStack(spacing: BP.px(10)) {
-                        Image(systemName: "forward.end.fill")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Up next in \(max(0, Int(snap.duration - snap.position)))s").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase)
-                            Text(text).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                        }
+                HStack(alignment: .top, spacing: BP.px(16)) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel)
+                        Text(epLabel).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1.8).foregroundStyle(BP.inkSubtle)
                     }
-                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
-                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.void_.opacity(0.92)))
-                    .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                    .frame(width: BP.px(200), height: BP.px(112))
+                    VStack(alignment: .leading, spacing: BP.px(6)) {
+                        HStack(alignment: .top) {
+                            Text("Up Next").font(BP.sans(11.5, .bold)).textCase(.uppercase).tracking(1.6).foregroundStyle(BP.inkSubtle)
+                            Spacer()
+                            countdownRing(seconds: seconds, progress: progress)
+                        }
+                        Text(heading).font(BP.display(20)).foregroundStyle(BP.ink).lineLimit(2)
+                        if heading != epLabel {
+                            Text(epLabel).font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                        }
+                        HStack(spacing: BP.px(10)) {
+                            Button { playNext() } label: { Label("Play now", systemImage: "play.fill") }
+                                .buttonStyle(BPActionStyle())
+                                .focused($focus, equals: .chip("upnext-play"))
+                            Button { cancelAutoNext() } label: { Label("Keep watching", systemImage: "xmark") }
+                                .buttonStyle(BPActionStyle())
+                                .focused($focus, equals: .chip("upnext-keep"))
+                        }
+                        .padding(.top, BP.px(6))
+                    }
                 }
-                .buttonStyle(.plain)
-                .focused($focus, equals: .chip("upnext"))
+                .padding(BP.px(18))
+                .frame(width: BP.px(600), alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel2))
+                .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                .shadow(color: .black.opacity(0.9), radius: 60, y: 40)
+                .focusSection()
             }
-            .padding(.top, BP.px(40)).padding(.trailing, BP.gutter)
-            Spacer()
+            .padding(.bottom, chrome ? BP.px(300) : BP.px(40)).padding(.trailing, BP.gutter)
         }
         .ignoresSafeArea()
+    }
+
+    /// bp-up-next.tsx CountdownRing: whole seconds left, the ring filling toward the jump.
+    private func countdownRing(seconds: Int, progress: Double) -> some View {
+        ZStack {
+            Circle().stroke(BP.edge2, lineWidth: 3.5)
+            Circle().trim(from: 0, to: progress)
+                .stroke(BP.accent, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(seconds)").font(BP.sans(15, .bold)).foregroundStyle(BP.ink).monospacedDigit()
+        }
+        .frame(width: BP.px(46), height: BP.px(46))
+        .animation(.linear(duration: 0.2), value: progress)
     }
 
     // MARK: chrome
@@ -267,16 +373,41 @@ struct PlayerScreen: View {
                 Text(status.state == "loading" ? "Loading…" : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
                     .font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle)
             }
-            if !isLive { seekBar }
+            if !isLive {
+                seekBar
+                scrubReadout
+            }
+            // bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed
+            // when there is none; VOD gets Back / Forward by the seek step.
+            HStack(spacing: BP.px(10)) {
+                if !isLive, onPreviousEpisode != nil || upNext != nil {
+                    iconChip("prev", "backward.end.fill") { let go = onPreviousEpisode; finish(natural: false); go?() }
+                        .disabled(onPreviousEpisode == nil)
+                }
+                if !isLive { iconChip("rewind", "gobackward") { seekBy(-prefs.seekBackStepSec) } }
+                chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
+                if !isLive { iconChip("forward", "goforward") { seekBy(prefs.seekForwardStepSec) } }
+                if !isLive, onPreviousEpisode != nil || upNext != nil {
+                    iconChip("next", "forward.end.fill") { playNext() }
+                        .disabled(upNext == nil)
+                }
+                Spacer()
+            }
+            .focusSection()
+            // bp-player-rail.tsx: Back, one chip per panel, then the mute toggle.
             HStack(spacing: BP.px(10)) {
                 chip("Back", "chevron.left") { requestClose() }
-                chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill") { togglePause() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
-                if !isLive { chip(anime4kChipLabel, "sparkles") { open(.anime4k) } }
+                if !isLive { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
+                // bp-player-rail: the mute toggle ("Muted" / "Sound on").
+                chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
+                    controller?.setMuted(!muted)
+                    muted.toggle()
+                }
                 Spacer()
-                Text(isLive ? "LIVE" : "\(fmt(snap.position)) / \(fmt(snap.duration))").font(BP.sans(14, .semibold)).foregroundStyle(isLive ? BP.live : BP.ink).monospacedDigit()
+                if isLive { Text("LIVE").font(BP.sans(14, .semibold)).foregroundStyle(BP.live) }
             }
             .focusSection()
         }
@@ -287,23 +418,89 @@ struct PlayerScreen: View {
         .ignoresSafeArea()
     }
 
+    /// bp-player-scrub.tsx: buffered fill under the played fill; while presses accumulate, a
+    /// marker stays where playback really is.
     private var seekBar: some View {
-        ZStack(alignment: .leading) {
-            Capsule().fill(BP.edge2).frame(height: BP.px(4))
-            Capsule().fill(BP.ink).frame(width: max(0, progressWidth), height: BP.px(4))
+        let shown = pendingSeek ?? snap.position
+        return GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(BP.edge2)
+                Capsule().fill(BP.ink.opacity(0.3)).frame(width: g.size.width * fraction(max(buffered, shown)))
+                Capsule().fill(BP.ink).frame(width: g.size.width * fraction(shown))
+                if pendingSeek != nil {
+                    Capsule().fill(BP.accent).frame(width: 3).offset(x: g.size.width * fraction(snap.position) - 1.5)
+                }
+            }
         }
-        .frame(height: BP.px(10))
+        .frame(height: BP.px(5))
+        .padding(.vertical, BP.px(3))
     }
 
-    private var progressWidth: CGFloat {
-        guard snap.duration > 0 else { return 0 }
-        return (1920 - 2 * BP.gutter) * CGFloat(snap.position / snap.duration)
+    private func fraction(_ sec: Double) -> CGFloat {
+        guard snap.duration > 0, sec.isFinite else { return 0 }
+        return CGFloat(min(1, max(0, sec / snap.duration)))
     }
 
-    private func chip(_ label: String, _ icon: String, action: @escaping () -> Void) -> some View {
+    /// bp-player-scrub.tsx readout: position, "{time} left", "Ends {time}".
+    private var scrubReadout: some View {
+        let shown = pendingSeek ?? snap.position
+        let remaining = snap.duration > 0 ? max(0, snap.duration - shown) : 0
+        return HStack(spacing: BP.px(10)) {
+            Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? BP.inkSubtle : BP.ink)
+            Spacer()
+            if snap.duration > 0 {
+                Text("\(fmt(remaining)) left").foregroundStyle(BP.inkSubtle)
+                Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(BP.inkMuted)
+            }
+        }
+        .font(BP.sans(13, .semibold))
+        .monospacedDigit()
+    }
+
+    /// bp-player-scrub.tsx nudge(): each press adds a step to one pending seek, committed 420 ms after
+    /// the last; a held direction ramps the step 1× → 3× (after 10) → 6× (after 26).
+    private func nudgeSeek(ahead: Bool) {
+        guard controller != nil else { return }
+        let run = seekRun
+        seekRun = run + 1
+        let scale: Double = run < 10 ? 1 : (run < 26 ? 3 : 6)
+        let delta = (ahead ? prefs.seekForwardStepSec : -prefs.seekBackStepSec) * scale
+        let base = pendingSeek ?? snap.position
+        let cap = snap.duration > 0 ? snap.duration - 1 : base + delta
+        pendingSeek = max(0, min(cap, base + delta))
+        wake()
+        seekCommit?.cancel()
+        seekCommit = Task {
+            try? await Task.sleep(for: .milliseconds(420))
+            if Task.isCancelled { return }
+            if let target = pendingSeek {
+                controller?.seek(to: target)
+                snap.position = target
+            }
+            pendingSeek = nil
+            seekRun = 0
+        }
+    }
+
+    private func chip(_ label: String, _ icon: String, id: String? = nil, active: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: { action(); wake() }) { Label(label, systemImage: icon) }
+            .buttonStyle(BPActionStyle(primary: active))
+            .focused($focus, equals: .chip(id ?? label))
+    }
+
+    /// use-bp-playback seekBy: one step, clamped inside the file.
+    private func seekBy(_ delta: Double) {
+        let target = snap.position + delta
+        let clamped = snap.duration > 0 ? min(snap.duration - 1, max(0, target)) : max(0, target)
+        controller?.seek(to: clamped)
+        snap.position = clamped
+    }
+
+    /// bp-player-controls.tsx BpControl: an icon-only transport button.
+    private func iconChip(_ id: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: { action(); wake() }) { Image(systemName: icon) }
             .buttonStyle(BPActionStyle())
-            .focused($focus, equals: .chip(label))
+            .focused($focus, equals: .chip(id))
     }
 
     // MARK: panels (audio / subtitle tracks)
@@ -344,7 +541,7 @@ struct PlayerScreen: View {
         Task {
             try? await SettingsBridge.shared.patch(["playerAnime4kOverride": .string(override), "playerAnime4k": .bool(true)])
             anime4kAppliedFor = -1
-            panel = nil; focus = .surface; wake()
+            closePanel()
         }
     }
 
@@ -381,88 +578,27 @@ struct PlayerScreen: View {
         .ignoresSafeArea()
     }
 
-    private func panelView(_ which: Panel) -> some View {
-        if which == .anime4k { return AnyView(anime4kPanel()) }
-        let kind = which == .subtitles ? "sub" : "audio"
-        let list = tracks.filter { $0.type == kind }
-        return AnyView(HStack {
-            Spacer()
-            VStack(alignment: .leading, spacing: BP.px(8)) {
-                Text(which == .subtitles ? "Subtitles" : "Audio").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.bottom, BP.px(6))
-                if which == .subtitles {
-                    trackButton(nil, label: "Off", selected: !list.contains { $0.selected }, kind: kind)
-                }
-                ForEach(list) { t in trackButton(t, label: t.label, selected: t.selected, kind: kind) }
-                if list.isEmpty && which == .audio { BPNote(text: "No audio tracks reported yet.") }
-                if which == .subtitles {
-                    Divider().overlay(BP.edge2).padding(.vertical, BP.px(6))
-                    // bp-subtitle-tune: manual offset steps and a size stepper.
-                    Text("Manual offset · \(subDelay == 0 ? "in sync" : String(format: "%+.1f s", subDelay))").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
-                    HStack(spacing: BP.px(6)) {
-                        ForEach([-1.0, -0.1, 0.1, 1.0], id: \.self) { step in
-                            Button(String(format: "%@%.1fs", step > 0 ? "+" : "", step)) { nudgeSubs(step) }.buttonStyle(BPActionStyle()).focused($focus, equals: .chip("sub\(step)"))
-                        }
-                        Button("Reset") { subDelay = 0; controller?.setSubDelay(0); wake() }.buttonStyle(BPActionStyle()).disabled(subDelay == 0)
-                    }
-                    Text("Subtitles late? Nudge plus. Early? Nudge minus.").font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
-                    HStack(spacing: BP.px(6)) {
-                        Text("Size").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
-                        Button("−") { subScale = max(0.5, subScale - 0.1); controller?.setSubScale(subScale); wake() }.buttonStyle(BPActionStyle())
-                        Text(String(format: "%.0f%%", subScale * 100)).font(BP.sans(12)).foregroundStyle(BP.ink).monospacedDigit()
-                        Button("+") { subScale = min(2.5, subScale + 0.1); controller?.setSubScale(subScale); wake() }.buttonStyle(BPActionStyle())
-                    }
-                    Divider().overlay(BP.edge2).padding(.vertical, BP.px(6))
-                    Button(onlineState == "searching" ? "Searching…" : "Search online") { Task { await searchOnline() } }
-                        .buttonStyle(BPActionStyle()).disabled(onlineState == "searching")
-                        .focused($focus, equals: .track(-2))
-                    if let onlineState, onlineState != "searching" { BPNote(text: onlineState) }
-                    ForEach(online) { sub in
-                        Button { Task { await addOnline(sub) } } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(sub.langName ?? sub.lang).font(BP.sans(14, .semibold))
-                                Text(sub.displayTitle ?? sub.title ?? sub.source).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(BPActionStyle())
-                    }
-                }
-            }
-            .padding(BP.px(24))
-            .frame(width: BP.px(380), alignment: .leading)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .background(BP.panel.opacity(0.96))
-            .focusSection()
+    @ViewBuilder private func panelView(_ which: Panel) -> some View {
+        switch which {
+        case .anime4k:
+            anime4kPanel()
+        case .subtitles:
+            PlayerSubtitlesPanel(controller: controller, context: context, title: title, subDelay: $subDelay) { closePanel() }
+        case .audio:
+            PlayerAudioPanel(controller: controller, title: title, audioDelay: $audioDelay) { closePanel() }
         }
-        .ignoresSafeArea())
-    }
-
-    private func trackButton(_ t: MPVPlayerController.Track?, label: String, selected: Bool, kind: String) -> some View {
-        Button {
-            controller?.select(track: t, type: kind)
-            refreshTracks()
-            wake()
-        } label: {
-            HStack { Text(label); Spacer(); if selected { Image(systemName: "checkmark") } }.frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(BPActionStyle(primary: selected))
-        .focused($focus, equals: .track(t?.id ?? -1))
     }
 
     private func open(_ p: Panel) {
-        refreshTracks()
         panel = p
         hideTask?.cancel()
-        // Subtitles has an "Off" row (-1); Audio focuses its first track, or the panel's chip row is left to Menu.
-        let kind = p == .subtitles ? "sub" : "audio"
-        let target = p == .anime4k ? -10 : (p == .subtitles ? -1 : (tracks.first { $0.type == kind }?.id ?? -1))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(target) }
+        // The Subtitles and Audio dialogs seed their own ring; Anime4K lands on its first option.
+        if p == .anime4k { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(-10) } }
     }
 
-    private func refreshTracks() { tracks = controller?.tracks() ?? [] }
-
-    private func nudgeSubs(_ step: Double) {
-        subDelay = (subDelay + step * 10).rounded() / 10
-        controller?.setSubDelay(subDelay)
+    private func closePanel() {
+        panel = nil
+        focus = .surface
         wake()
     }
 
@@ -487,39 +623,6 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(BP.gutter).padding(.bottom, BP.px(20))
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.5), BP.void_.opacity(0.9)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
-    }
-
-    /// OpenSubtitles v3 / Wyzie / subtitle addons through the engine (lib/subtitles/search.ts).
-    private func searchOnline() async {
-        guard let context else { return }
-        onlineState = "searching"
-        let p = ProfilesStore.shared.active
-        let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
-        do {
-            let results: [OnlineSubtitle] = try await HarborEngine.shared.call("subtitles.search",
-                [p?.id ?? "default", p?.linked ?? true, authKey, context.meta, context.season, context.episode, context.imdbId])
-            online = results
-            onlineState = results.isEmpty ? "Nothing found online." : nil
-        } catch {
-            onlineState = error.localizedDescription
-        }
-    }
-
-    /// Download + decode through the engine (handles zips, encodings), hand mpv a local file.
-    private func addOnline(_ sub: OnlineSubtitle) async {
-        struct Prepared: Decodable { var text: String; var format: String }
-        do {
-            let prep: Prepared = try await HarborEngine.shared.call("subtitles.prepare", [sub.url])
-            let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("subs", isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let file = dir.appendingPathComponent("\(sub.id.replacingOccurrences(of: "/", with: "_")).\(prep.format)")
-            try prep.text.write(to: file, atomically: true, encoding: .utf8)
-            controller?.addSubtitle(file: file, title: sub.displayTitle ?? sub.title ?? sub.langName ?? sub.lang, lang: sub.lang)
-            refreshTracks()
-            onlineState = "Added \(sub.langName ?? sub.lang)."
-        } catch {
-            onlineState = "Couldn't load that subtitle: \(error.localizedDescription)"
-        }
     }
 
     // MARK: behaviour
@@ -702,7 +805,12 @@ struct PlayerScreen: View {
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
 
-    private func finish(natural: Bool) {
+    /// `natural`: the file played to its end (saved as finished). `advance`: the caller should move
+    /// on to the next episode (defaults to `natural`, the way onClose always read).
+    private func finish(natural: Bool, advance: Bool? = nil) {
+        // "Play now" and the file's own end can both land in the last second; close once.
+        guard !finishing else { return }
+        finishing = true
         if scrobbleState != nil {
             let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0
             sendScrobble(progress >= 90 ? "stop" : "pause")
@@ -716,7 +824,7 @@ struct PlayerScreen: View {
                 await saveTick(flush: true)
             }
             if let context, context.homeServer != nil, let c = controller { await context.stopHomeServerSession(positionSec: c.snapshot().position) }
-            onClose(natural)
+            onClose(advance ?? natural)
             // The watched check on the tiles reads the flags this session just wrote.
             await CardMarksStore.shared.remark()
         }

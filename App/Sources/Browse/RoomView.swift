@@ -21,7 +21,9 @@ struct RoomView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            SpotlightView(meta: model.spotlight, boxHeight: heroHeight)
+            SpotlightView(meta: model.spotlight, boxHeight: heroHeight,
+                          pips: model.heroCount > 1 && !model.tileHeld ? HeroPips(total: model.heroCount, active: model.heroIndex) : nil,
+                          drift: model.room != .anime)
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load this room.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
@@ -37,7 +39,9 @@ struct RoomView: View {
                                else if m.id.hasPrefix("addon:") { addonPage = AddonTarget(base: String(m.id.dropFirst(6)), name: m.name, logo: m.providerBadge?.logo) }
                                else { detail = m }
                            },
-                           onSeeAll: { seeAll = $0 }, onQuick: { quick = $0 }, topInset: heroHeight) {
+                           onSeeAll: { seeAll = $0 }, onQuick: { BPSound.shared.open(); quick = $0 }, topInset: heroHeight,
+                           restoreRoute: model.restoreKey, entry: model.entry,
+                           onHold: { key, held in model.hold(key, held) }) {
                     if model.room == .anime, let hero = model.spotlight, hero.type != "service" {
                         // bp-anime-hero-actions: the focused hero's Resume / Start Watching and More Info.
                         AnimeHeroActionsView(meta: hero, resume: model.continueWatching.first { $0.id == hero.id },
@@ -46,7 +50,8 @@ struct RoomView: View {
                     }
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
-                                        onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) })
+                                        onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) },
+                                        onHold: { model.hold("cw", $0) })
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
                     if model.room == .home { LiveRowView { app.room = .live } }
@@ -58,7 +63,9 @@ struct RoomView: View {
         // Rows arrive after first render; pull focus into them so Select acts on a tile,
         // not on the tab the bar was left on (upstream autofocuses the first row too).
         .onChange(of: model.rows.isEmpty) { _, empty in
-            if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ShellFocus.shared.requestDefault() } }
+            // A restored position needs its row parked and its track scrolled (both lazy) first.
+            let wait = model.entry == nil ? 0.05 : 0.3
+            if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + wait) { ShellFocus.shared.requestDefault() } }
         }
         .fullScreenCover(item: $seeAll) { row in
             CatalogPageView(room: model.room, row: row)

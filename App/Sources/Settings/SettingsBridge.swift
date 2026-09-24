@@ -55,6 +55,10 @@ final class SettingsBridge: ObservableObject {
         var bigPictureMosaic: Bool? = true
         /// bp-settings "Edge margin": a fraction of the screen kept clear on every edge.
         var bigPictureOverscan: Double? = 0
+        /// use-bp-sound.ts: the Big Picture sound theme (none/glass/modern/retro/cinematic) and
+        /// bp-tv-app.tsx's SFX volume (0-100); played by BPSound.
+        var bigPictureSound: String? = "cinematic"
+        var sfxVolume: Double? = 50
     }
 
     /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).

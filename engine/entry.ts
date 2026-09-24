@@ -83,6 +83,7 @@ import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
 import * as collectionsGlue from "./collections";
+import * as letterboxdGlue from "./letterboxd";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -444,16 +445,40 @@ export const streamsRoom = {
   forget: streamGlue.forget,
   autoCandidates: streamGlue.autoCandidates,
   rememberPlayback: streamGlue.rememberPlayback,
+  remembered: streamGlue.remembered,
+  p2pConsentNeeded: streamGlue.p2pConsentNeeded,
+  setP2pAutoConsent: streamGlue.setP2pAutoConsent,
+  failureMessage: streamGlue.failureMessage,
 };
 export type { StreamSearch } from "./streams";
 
-/** Collections: this device's lists + community collections (harbor.site). */
+/** Collections: this device's collections (editable), community (harbor.site), TMDB curated, TVDB lists. */
 export const collectionsRoom = {
   categories: collectionsGlue.categories,
   tmdb: collectionsGlue.tmdb,
+  tvdb: collectionsGlue.tvdb,
+  tvdbDetail: collectionsGlue.tvdbDetail,
   mine: collectionsGlue.mine,
   community: collectionsGlue.community,
   all: collectionsGlue.all,
+  limits: collectionsGlue.limits,
+  mineCard: collectionsGlue.mineCard,
+  create: collectionsGlue.create,
+  rename: collectionsGlue.rename,
+  remove: collectionsGlue.remove,
+  addItem: collectionsGlue.addItem,
+  removeItem: collectionsGlue.removeItem,
+  saveCommunity: collectionsGlue.saveCommunity,
+  searchTitles: collectionsGlue.searchTitles,
+};
+
+/** Letterboxd (Stremboxd public mode): username connect, Library tab feed, Movies rows. */
+export const letterboxd = {
+  status: letterboxdGlue.status,
+  connect: letterboxdGlue.connect,
+  disable: letterboxdGlue.disable,
+  watchlist: letterboxdGlue.watchlist,
+  movieRows: letterboxdGlue.movieRows,
 };
 
 /** Trakt: device-code sign-in, session status, scrobbles. */
@@ -474,6 +499,7 @@ export const account = {
   token: accountGlue.token,
   refreshIfDue: accountGlue.refreshIfDue,
   reloadUser: accountGlue.reloadUser,
+  adopt: accountGlue.adopt,
   start: accountGlue.start,
   stop: accountGlue.stop,
 };
@@ -564,6 +590,9 @@ export const libraryRoom = {
   tabs: libraryGlue.tabs,
   feed: libraryGlue.feed,
   setSort: libraryGlue.setSort,
+  repair: libraryGlue.repair,
+  animeScan: libraryGlue.animeScan,
+  animeHeal: libraryGlue.animeHeal,
 };
 
 /** Anime room: progressive Jikan spec rows, anime CW, hero, awards, addon rows (use-bp-anime). */
@@ -596,6 +625,7 @@ export const detailRoom = {
   gallery: detailGlue.gallery,
   extras: detailGlue.extras,
   collection: detailGlue.collection,
+  episodeArt: detailGlue.episodeArt,
 };
 
 /** Person page: facts, Known For, IMDb Top, collaborators, awards, filmography sections. */
@@ -649,6 +679,14 @@ export const actions = {
   animeRowToggleHidden: actionsGlue.animeRowToggleHidden,
   animeRowRename: actionsGlue.animeRowRename,
   animeRowsReset: actionsGlue.animeRowsReset,
+  heroState: actionsGlue.heroState,
+  toggleFavorite: actionsGlue.toggleFavorite,
+  toggleReminder: actionsGlue.toggleReminder,
+  setMovieWatched: actionsGlue.setMovieWatched,
+  traktMarkWatched: actionsGlue.traktMarkWatched,
+  trackers: actionsGlue.trackers,
+  trackerSet: actionsGlue.trackerSet,
+  trackerRemove: actionsGlue.trackerRemove,
 };
 
 /** Onboarding taste step (onboarding/use-bp-taste-titles + bp-step-taste): titles to pick, votes. */
@@ -689,6 +727,13 @@ export const live = {
 export const subtitles = {
   search: subtitleGlue.search,
   prepare: subtitleGlue.prepare,
+  /** bp-player-subtitles: track rows (language groups, badges, best-match order). */
+  trackView: subtitleGlue.trackView,
+  /** bp-subtitle-find: search a target title / season / episode, and parse a typed title. */
+  find: subtitleGlue.find,
+  titleTarget: subtitleGlue.titleTarget,
+  /** bp-subtitle-tune BpSubtitleLook presets. */
+  presets: subtitleGlue.presets,
 };
 
 /** Playback progress: where to start, and the 4-second progress write (local + Stremio). */
@@ -698,6 +743,8 @@ export const player = {
   localResume: playerGlue.localResume,
   watchedEpisodes: playerGlue.watchedEpisodes,
   decodeWatchedField: playerGlue.decodeWatchedField,
+  /** Up-next lead, auto-advance and seek steps for the Big Picture chrome. */
+  prefs: playerGlue.prefs,
 };
 
 // ================================================================================== runtime
