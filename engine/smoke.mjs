@@ -1758,6 +1758,51 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     pe("auto", { url: "https://cdn.example.invalid/master.m3u8", fallbackTried: true }),
     e.player.engineFor("default", true, { url: "https://cdn.example.invalid/a.mkv" }).want,
   ], ["native", "mpv", "mpv", "auto"]);
+  // Per-show track memory + track rules (use-track-autoload.ts, lib/player-prefs.ts, subtitle-memory.ts).
+  {
+    const D = e.settings.DEFAULT;
+    const A = (id, lang, title, extra = {}) => ({ id, type: "audio", lang, title, ...extra });
+    const S = (id, lang, title, extra = {}) => ({ id, type: "sub", lang, title, ...extra });
+    const commentary = [A(1, "eng", "Director's Commentary", { selected: true, default: true }), A(2, "eng", "Main"), A(3, "jpn", null)];
+    const p1 = e.player.trackPlan("default", true, null, commentary);
+    r.eq("player.trackPlan: trackBlockWords (default commentary) skips the commentary track", [p1.audioId, D.trackBlockWords], ["2", ["commentary"]]);
+    r.eq("player.planTracks: an empty block list keeps the default commentary track", e.player.planTracks({ ...D, trackBlockWords: [] }, null, commentary).audioId, null);
+    const subs = [A(1, "eng", null, { selected: true }), S(1, "eng", "English"), S(2, "eng", "English Forced", { forced: true }), S(3, "spa", "Spanish")];
+    const p2 = e.player.planTracks(D, null, subs);
+    r.eq("player.planTracks: picks the preferred-language full subtitle, never the forced one", [p2.sub, p2.subId, p2.subDelaySec], ["select", "1", 0]);
+    r.eq("player.planTracks: subtitlesOffByDefault turns subtitles off", e.player.planTracks({ ...D, subtitlesOffByDefault: true }, null, subs).sub, "off");
+    const forced = e.player.planTracks({ ...D, forcedSubsWhenNativeAudio: true }, null, subs);
+    r.eq("player.planTracks: forcedSubsWhenNativeAudio picks the forced track under native audio", [forced.sub, forced.subId], ["select", "2"]);
+    const foreignAudio = e.player.planTracks({ ...D, forcedSubsWhenNativeAudio: true, preferredAudioLangs: ["Japanese"] }, null, [A(1, "jpn", null), ...subs.slice(1)]);
+    r.eq("player.planTracks: forcedSubsWhenNativeAudio keeps full subtitles under foreign audio", foreignAudio.subId, "1");
+    r.eq("player.planTracks: secondarySubLang auto-picks the second subtitle", e.player.planTracks({ ...D, secondarySubLang: "Spanish" }, null, subs).secondaryId, "3");
+    // Memory round trip: episode 1's picks carry to episode 2 of the same show.
+    const ep1 = { metaId: "tt7000001", season: 1, episode: 1, genres: ["Drama"] };
+    const ep2 = { ...ep1, episode: 2 };
+    r.ok("player.remember*: audio language, subtitle language and delay are saved", e.player.rememberAudio(ep1, A(3, "jpn", null)) &&
+      e.player.rememberSubtitle(ep1, S(3, "spa", "Spanish")) && e.player.rememberSubDelay(ep1, 1.5), "");
+    const mem = e.player.trackMemory(ep2);
+    r.eq("player.trackMemory: per-show prefs are keyed by the series id", [mem.prefs.audioLang, mem.prefs.subLang, mem.prefs.subsOff, mem.prefs.subDelaySec, mem.subtitle], ["jpn", "spa", false, 1.5, null]);
+    r.ok("player prefs persist under upstream's key", JSON.parse(rec.node.storage.get("harbor.player.prefs.v1") ?? "{}").tt7000001?.audioLang === "jpn", "");
+    const next = e.player.trackPlan("default", true, ep2, [A(1, "eng", null, { selected: true }), A(2, "jpn", null), S(1, "eng", "English"), S(2, "spa", "Spanish")]);
+    r.eq("player.trackPlan: the next episode gets the show's audio, subtitle language and delay", [next.audioId, next.sub, next.subId, next.subDelaySec], ["2", "select", "2", 1.5]);
+    e.player.rememberSubtitle(ep2, null);
+    r.eq("player.trackPlan: subtitles turned off stay off for the show", e.player.trackPlan("default", true, { ...ep1, episode: 3 }, subs).sub, "off");
+    // Per-episode subtitle memory: the exact embedded track comes back on a revisit.
+    const movie = { metaId: "tt7000002" };
+    const movieSubs = [S(1, "eng", "English"), S(4, "eng", "English SDH", { hearingImpaired: true })];
+    e.player.rememberSubtitle(movie, movieSubs[1]);
+    const back = e.player.trackPlan("default", true, movie, movieSubs);
+    r.eq("player.trackPlan: a revisit restores the exact remembered track", [back.sub, back.subId], ["select", "4"]);
+    // An added subtitle remembers its download URL, and comes back as a restore on the next visit.
+    const film = { metaId: "tt7000003", filename: "Film.2020.1080p.WEB-DL.x264-GRP.mkv" };
+    e.player.noteSubtitleSource("/caches/subs/os_1.srt", "https://subs.example.invalid/os_1.srt");
+    e.player.rememberSubtitle(film, S(1001, "en", "Film.2020.1080p", { external: true, externalFilename: "os_1.srt" }));
+    const again = e.player.trackPlan("default", true, film, [S(1, "fre", "French")]);
+    r.eq("player.trackPlan: a remembered added subtitle is fetched again (same release)", again.restore && again.restore.source, "https://subs.example.invalid/os_1.srt");
+    const otherRelease = e.player.trackPlan("default", true, { ...film, filename: "Film.2020.2160p.BluRay.x265-OTHER.mkv" }, [S(1, "fre", "French")]);
+    r.eq("player.trackPlan: another release does not restore it (subtitle-memory streamKey)", otherRelease.restore, null);
+  }
   r.ok("settingsRoom: the html5 engine option reads AVPlayer on the TV", e.settingsRoom.controls("playback", "default", true).some((c) => c.id === "engine" && c.options.some((o) => o.value === "html5" && o.label === "AVPlayer") && c.options.some((o) => o.value === "auto")), "");
   r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
   const tv = e.subtitles.trackView("default", true, [
