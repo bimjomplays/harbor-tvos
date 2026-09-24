@@ -570,7 +570,7 @@ struct MusicSourcesView: View {
 
     private func hint(_ row: MusicConnectionRow) -> String? {
         switch row.id {
-        case "jellyfin", "plex": return row.status == "disconnected" ? "Sign in to \(row.name) under Settings › Home servers; its music library appears here." : row.detail
+        case "jellyfin", "plex": return row.status == "disconnected" ? T("Sign in to %@ under Settings › Home servers; its music library appears here.", row.name) : row.detail
         case "catalog": return "Charts, new releases and search from Deezer, ListenBrainz and Apple’s public catalog. Songs play from a connected source."
         case "subsonic":
             guard row.status != "disconnected" else { return copy("music.connect.serverBody", "Point Harbor at a folder, Plex, Jellyfin, Navidrome or Subsonic and this shelf fills with albums you already own.") }
@@ -642,7 +642,7 @@ struct MusicSourcesView: View {
                 .buttonStyle(BPActionStyle(primary: !connected))
                 .accessibilityIdentifier("music-source-\(row.id)")
             } else if row.gated {
-                Button(row.enabled ? "Turn off" : copy("music.connect.action", "Connect")) {
+                Button(row.enabled ? T("Turn off") : copy("music.connect.action", "Connect")) {
                     if row.enabled {
                         Task {
                             let _: MusicConsentState? = try? await HarborEngine.shared.call("music.setSoundCloud", [false])
@@ -691,7 +691,7 @@ struct MusicConsentView: View {
                         ForEach(["music.consent.hosting", "music.consent.terms", "music.consent.responsibility", "music.consent.rights"], id: \.self) { key in
                             MusicConsentParagraph(text: copy(key, ""))
                         }
-                        Text("SoundCloud terms: soundcloud.com/terms-of-use").font(BP.sans(14)).foregroundStyle(BP.inkSubtle)
+                        Text(T("Read the %@ terms", "SoundCloud") + ": soundcloud.com/terms-of-use").font(BP.sans(14)).foregroundStyle(BP.inkSubtle)
                         // The end of the text: reaching it counts as "read to the end" (the scroll check).
                         Button { read = true } label: { Text("I have read this").font(BP.sans(14, .semibold)) }
                             .buttonStyle(BPActionStyle())
@@ -811,7 +811,7 @@ struct MusicLastFmView: View {
         ZStack {
             BP.void_.opacity(0.92).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(16)) {
-                Text("Last.fm").font(BP.sans(24, .bold)).foregroundStyle(BP.ink)
+                Text(verbatim: "Last.fm").font(BP.sans(24, .bold)).foregroundStyle(BP.ink)
                 Text(subtitle).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
                 if let pending {
                     HStack(alignment: .top, spacing: BP.px(18)) {
@@ -961,7 +961,7 @@ struct MusicSpotifyView: View {
 
     private var label: String {
         if working || spotify.connecting { return copy("music.connect.connecting", "Connecting") }
-        return pending == nil ? copy("music.spotifySetup.authorize", "Authorize Spotify") : "Finish connection"
+        return pending == nil ? copy("music.spotifySetup.authorize", "Authorize Spotify") : copy("music.lastfm.finish", "Finish connection")
     }
 
     /// spotify-setup.tsx: a typed client id, or the one saved on this device (Use saved configuration).

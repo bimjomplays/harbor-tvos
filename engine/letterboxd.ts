@@ -4,6 +4,7 @@
 // and the Letterboxd rows on Movies (use-bp-movies useBpLetterboxdRows). Full mode (password
 // sign-in through Stremboxd) is desktop-only here; a session made elsewhere is still honoured.
 import type { Meta } from "@/lib/cinemeta";
+import type { HomeRow } from "@/views/home/home-types";
 import { fetchFullModeCatalog, fetchStremboxdCatalog, validateStremboxdConfig } from "@/lib/stremboxd/client";
 import { buildStremboxdConfig } from "@/lib/stremboxd/settings-helper";
 import { buildLetterboxdHomeRows } from "@/lib/stremboxd/home-rails";
@@ -91,17 +92,32 @@ export async function watchlist(profileId: string, linked: boolean): Promise<{ m
   }
 }
 
-/** use-bp-movies useBpLetterboxdRows: home-rails rows (four titles or more), no paging. */
-export async function movieRows(profileId: string, linked: boolean): Promise<Array<{ key: string; name: string; metas: Meta[] }>> {
+/**
+ * use-bp-extra-rows.ts `letterboxdRows`: stremboxd/home-rails rows as upstream builds them (Home
+ * takes them verbatim, between the Simkl rails and the anime rows); empty unless `lbReady`.
+ */
+export async function homeRailRows(profileId: string, linked: boolean): Promise<HomeRow[]> {
   if (!ready(profileId, linked)) return [];
   const lb = settingsOf(profileId, linked);
-  const rows = await buildLetterboxdHomeRows({
+  return buildLetterboxdHomeRows({
     configSegment: lb.encodedConfig,
     selectedCatalogs: lb.selectedCatalogs,
     hiddenCatalogs: lb.hiddenCatalogs,
     catalogOrder: lb.catalogOrder,
     session: getLetterboxdSession(),
     listRefs: lb.listRefs,
-  }).catch(() => []);
+  }).catch(() => [] as HomeRow[]);
+}
+
+/** use-bp-extra-rows.ts letterboxdRows deps: null while not `lbReady`, else what the rows depend on. */
+export function homeRailKey(profileId: string, linked: boolean): string | null {
+  if (!ready(profileId, linked)) return null;
+  const lb = settingsOf(profileId, linked);
+  return JSON.stringify([lb.encodedConfig, lb.selectedCatalogs, lb.hiddenCatalogs, lb.catalogOrder, lb.listRefs, getLetterboxdSession()?.userId ?? null]);
+}
+
+/** use-bp-movies useBpLetterboxdRows: home-rails rows (four titles or more), no paging. */
+export async function movieRows(profileId: string, linked: boolean): Promise<Array<{ key: string; name: string; metas: Meta[] }>> {
+  const rows = await homeRailRows(profileId, linked);
   return rows.map((r) => ({ key: r.key, name: r.name, metas: r.metas.map((m) => ({ id: m.id, type: "movie", name: m.name, poster: m.poster, background: m.background, releaseInfo: m.releaseInfo, imdbRating: m.imdbRating } as Meta)) }));
 }
