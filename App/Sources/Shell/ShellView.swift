@@ -25,6 +25,8 @@ struct ShellView: View {
     @EnvironmentObject private var settings: SettingsBridge
     /// Per-profile tab locks and hidden anime (Profiles/ParentalGate.swift).
     @ObservedObject private var parental = ParentalGate.shared
+    /// The eBook tab, off until Settings turns it on (EBook/EBookModels.swift EBookGate).
+    @AppStorage(EBookGate.key) private var ebookOn = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -53,6 +55,7 @@ struct ShellView: View {
         // profile switch or a lock that just took effect.
         .onChange(of: app.room) { _, _ in leaveHiddenRoom() }
         .onChange(of: parental.gate) { _, _ in leaveHiddenRoom() }
+        .onChange(of: ebookOn) { _, _ in leaveHiddenRoom() }
         .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
@@ -93,12 +96,14 @@ struct ShellView: View {
             MusicView()
         case .manga:
             MangaView()
+        case .ebook:
+            EBookView()
         default: RoomPlaceholderView(room: app.room)
         }
     }
 
     private func leaveHiddenRoom() {
-        if parental.hides(app.room) { app.room = .home }
+        if parental.hides(app.room) || (app.room == .ebook && !ebookOn) { app.room = .home }
     }
 
     private var backToHome: (() -> Void)? {
@@ -123,7 +128,7 @@ struct ShellView: View {
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
         guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
-        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental)
+        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental)
         guard !order.isEmpty else { return }
         let from = order.firstIndex(of: app.room) ?? 0
         let next = ((from + delta) % order.count + order.count) % order.count
@@ -199,9 +204,10 @@ enum BPHintAction: String {
 extension Room {
     /// bp-top-bar.tsx visibleTabs: the tab strip and the shoulder cycle both read this, so a tab
     /// can never be hidden from one and reachable through the other. Manga (Stage 13) shows only
-    /// while the reader is switched on and not hidden (nav-items hideKey "manga").
-    @MainActor static func shellTabs(sportsDeclined: Bool, mangaOn: Bool, gate: ParentalGate) -> [Room] {
-        tabs.filter { !(sportsDeclined && $0 == .sports) && !(!mangaOn && $0 == .manga) && !gate.hides($0) }
+    /// while the reader is switched on and not hidden (nav-items hideKey "manga"); eBook only
+    /// once Settings turns it on (EBookGate).
+    @MainActor static func shellTabs(sportsDeclined: Bool, mangaOn: Bool, ebookOn: Bool, gate: ParentalGate) -> [Room] {
+        tabs.filter { !(sportsDeclined && $0 == .sports) && !(!mangaOn && $0 == .manga) && !(!ebookOn && $0 == .ebook) && !gate.hides($0) }
     }
 }
 
@@ -212,6 +218,7 @@ struct TopBarView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var profiles: ProfilesStore
     @ObservedObject private var parental = ParentalGate.shared
+    @AppStorage(EBookGate.key) private var ebookOn = false
     @FocusState private var focusedTab: Room?
 
     var body: some View {
@@ -221,7 +228,7 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
-            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental)) { r in
+            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental)) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)

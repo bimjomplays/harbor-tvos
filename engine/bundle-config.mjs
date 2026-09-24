@@ -99,6 +99,15 @@ export const stubs = {
     b.onResolve({ filter: /^@\/data\/awards\.json$/ }, (a) => ({ path: a.path, namespace: "awards-stub" }));
     // Rejecting keeps upstream's `requested` flag reset and never replaces an installed catalog.
     b.onLoad({ filter: /.*/, namespace: "awards-stub" }, () => ({ contents: "throw new Error('HarborEngine: the awards catalog is installed by the host (discoverRoom.installAwards)');", loader: "js" }));
+    // eBooks (Stage 13): lib/ebook/extensions.ts keeps its repositories and plugins in IndexedDB
+    // and runs them in a Worker, neither of which JavaScriptCore has; its loader would reject and
+    // take every provider down with it (providers.ts awaits it before listing sources). Imports of
+    // it from the ebook modules resolve to engine/ebookExtensions.ts: no repositories, no plugins.
+    b.onResolve({ filter: /(^@\/lib\/ebook\/extensions$)|(^\.\/extensions$)/ }, (a) =>
+      a.path.startsWith("@/") || /lib\/ebook\//.test(a.importer) ? { path: path.join(here, "ebookExtensions.ts") } : undefined);
+    // Vite `?raw` imports (lib/ebook/translation.ts reads its prompt this way) are the file's text.
+    b.onResolve({ filter: /\?raw$/ }, (a) => ({ path: path.resolve(path.dirname(a.importer), a.path.slice(0, -4)), namespace: "raw-text" }));
+    b.onLoad({ filter: /.*/, namespace: "raw-text" }, (a) => ({ contents: fs.readFileSync(a.path, "utf8"), loader: "text" }));
     // Home media servers: upstream's transport is a Tauri command and its index store is
     // IndexedDB; the bundle swaps both for engine/media/* (fetch, localStorage). Only the
     // upstream modules themselves are redirected; engine/media imports the real files by path.

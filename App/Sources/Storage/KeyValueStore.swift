@@ -21,9 +21,12 @@ final class KeyValueStore {
                                                    "harbor.installed-addons", "harbor.onboarding.bp", "harbor.customlists.v1",
                                                    "harbor.reminders.v1", "harbor.reminders.unseen.v1", "harbor.moviewatched.v1",
                                                    "harbor.manga.suwayomi.active.v1", "harbor.manga.activesource.v2", "harbor.manga.configured.v1",
-                                                   "harbor.media-server.connections.v1", "harbor.media-server.mappings.v1", "harbor.media-server.summaries.v1"]
+                                                   "harbor.media-server.connections.v1", "harbor.media-server.mappings.v1", "harbor.media-server.summaries.v1",
+                                                   // Stage 13 eBooks (lib/ebook/sources, library, reader-state): sources, shelf, favourites, reader prefs.
+                                                   "harbor.ebook.sources.v1", "harbor.ebook.library.v1", "harbor.ebook.favorites.v1", "harbor.ebook.read-later.v1", "harbor.ebook.reader.v1"]
     private static let durablePrefixes = ["harbor.sync.revs", "harbor.sync.idmap", "harbor.settings.", "harbor.installed-addons.", "harbor.tvsettings.v1.",
-                                          "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1."]
+                                          "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1.",
+                                          "harbor.ebook.progress.v1.", "harbor.ebook.resume.v1.", "harbor.ebook.bookmarks.v1."]
     /// Every key the engine may own: upstream uses both `harbor.` and `harbor-` spellings.
     static func isEngineKey(_ key: String) -> Bool { key.hasPrefix("harbor.") || key.hasPrefix("harbor-") }
 
