@@ -456,7 +456,7 @@ struct MusicVolumeControl: View {
             .accessibilityIdentifier("music-mute")
             Button { player.stepVolume(by: -0.05) } label: { Image(systemName: "minus").font(.system(size: BP.px(15), weight: .semibold)) }
                 .buttonStyle(MusicIconStyle())
-                .accessibilityLabel(label)
+                .accessibilityLabel(label + " −")
                 .accessibilityValue("\(Int((player.volume * 100).rounded()))%")
             GeometryReader { g in
                 ZStack(alignment: .leading) {
@@ -467,7 +467,7 @@ struct MusicVolumeControl: View {
             .frame(height: BP.px(4))
             Button { player.stepVolume(by: 0.05) } label: { Image(systemName: "plus").font(.system(size: BP.px(15), weight: .semibold)) }
                 .buttonStyle(MusicIconStyle())
-                .accessibilityLabel(label)
+                .accessibilityLabel(label + " +")
                 .accessibilityValue("\(Int((player.volume * 100).rounded()))%")
             Text(verbatim: "\(label) · \(Int((player.volume * 100).rounded()))%")
                 .font(BP.sans(12.5)).monospacedDigit().foregroundStyle(BP.inkSubtle).lineLimit(1)

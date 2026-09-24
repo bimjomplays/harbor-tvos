@@ -324,7 +324,8 @@ struct MusicNowPlayingView: View {
                     ZStack {
                         if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
                     }
-                    .frame(width: BP.px(340), height: BP.px(340))
+                    // 280 (was 340) leaves room for the volume row without pushing the transport off screen (review 37).
+                    .frame(width: BP.px(280), height: BP.px(280))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
                     .shadow(color: .black.opacity(0.55), radius: 40, y: 20)
                     Text(player.current?.title ?? "").font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(2)
