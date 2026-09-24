@@ -7,6 +7,12 @@ struct TorrentReadout: View {
     let url: URL
     /// The player already holds the stream and waits on the next piece (snap.buffering).
     var buffering = false
+    /// cinematic-player-loader.tsx kid branch: white type on the sea plate, and no large-file P2P
+    /// warning (`!kid && heavyForP2p`).
+    var kid = false
+
+    private var ink: Color { kid ? .white : BP.ink }
+    private var inkMuted: Color { kid ? .white.opacity(0.7) : BP.inkMuted }
 
     enum Phase { case searching, connected, slow, noPeers }
     struct Sample {
@@ -34,17 +40,17 @@ struct TorrentReadout: View {
             meter
             HStack(alignment: .firstTextBaseline, spacing: BP.px(10)) {
                 if sample.peers == 0, sample.phase != .noPeers {
-                    Circle().fill(BP.ink.opacity(0.45)).frame(width: BP.px(9), height: BP.px(9))
+                    Circle().fill(ink.opacity(0.45)).frame(width: BP.px(9), height: BP.px(9))
                 }
-                Text(label).font(BP.sans(15, .bold)).textCase(.uppercase).tracking(2.4).foregroundStyle(BP.ink)
+                Text(label).font(BP.sans(15, .bold)).textCase(.uppercase).tracking(2.4).foregroundStyle(ink)
                 Spacer(minLength: BP.px(10))
-                if pct >= 1 { Text("\(Int(pct.rounded()))%").font(BP.sans(19, .semibold)).monospacedDigit().foregroundStyle(BP.inkMuted) }
+                if pct >= 1 { Text("\(Int(pct.rounded()))%").font(BP.sans(19, .semibold)).monospacedDigit().foregroundStyle(inkMuted) }
             }
             if !parts.isEmpty {
-                Text(parts.joined(separator: " · ")).font(BP.sans(19, .medium)).monospacedDigit().foregroundStyle(BP.inkMuted)
+                Text(parts.joined(separator: " · ")).font(BP.sans(19, .medium)).monospacedDigit().foregroundStyle(inkMuted)
             }
-            if let note { Text(note).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted.opacity(0.8)).fixedSize(horizontal: false, vertical: true) }
-            if let heavyNote { Text(heavyNote).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted.opacity(0.8)).fixedSize(horizontal: false, vertical: true) }
+            if let note { Text(note).font(BP.sans(15, .medium)).foregroundStyle(inkMuted.opacity(0.8)).fixedSize(horizontal: false, vertical: true) }
+            if !kid, let heavyNote { Text(heavyNote).font(BP.sans(15, .medium)).foregroundStyle(inkMuted.opacity(0.8)).fixedSize(horizontal: false, vertical: true) }
         }
         .frame(maxWidth: BP.px(620), alignment: .leading)
         .task(id: url) { await poll() }
@@ -53,12 +59,12 @@ struct TorrentReadout: View {
     private var meter: some View {
         GeometryReader { g in
             ZStack(alignment: .leading) {
-                Capsule().fill(BP.glass)
+                Capsule().fill(kid ? Color.white.opacity(0.25) : BP.glass)
                 if pct >= 1 {
-                    Capsule().fill(BP.ink).frame(width: g.size.width * pct / 100)
+                    Capsule().fill(ink).frame(width: g.size.width * pct / 100)
                         .animation(.linear(duration: 1.9), value: pct)
                 } else {
-                    Capsule().fill(BP.ink.opacity(0.6)).frame(width: g.size.width * 0.2)
+                    Capsule().fill(ink.opacity(0.6)).frame(width: g.size.width * 0.2)
                 }
             }
         }

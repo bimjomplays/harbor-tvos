@@ -67,8 +67,14 @@ struct KidsPlayerTransport: View {
             }
             .shadow(color: .black.opacity(0.6), radius: 8, y: 2)
             Spacer(minLength: BP.px(12))
-            // The FullscreenClock slot (settings.fullscreenClockEnabled is off by default).
-            Color.clear.frame(width: BP.px(112), height: 1)
+            // `flex min-w-[7rem] shrink-0 justify-end`: FullscreenClock variant="kids" (the TV player
+            // is always full screen; settings.fullscreenClockEnabled is off by default).
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                KidsFullscreenClock(position: position, duration: duration)
+            }
+            .frame(minWidth: BP.px(112))
+            .fixedSize()
         }
         .padding(.horizontal, BP.gutter)
         .padding(.top, BP.px(28)).padding(.bottom, BP.px(48))
@@ -219,14 +225,24 @@ struct KidsSeaBackdrop: View {
     /// `12 + (i % 3) * step` px.
     let bubbleStep: Double
     var translucent = false
+    /// The gradient's stop opacities when something is painted under it (cinematic-player-loader's
+    /// `from-[#3aa6c4]/85 via-[#1c789f]/88 to-[#0a3d5c]/94` veil); nil = `translucent`'s.
+    var veil: (top: Double, mid: Double, bottom: Double)? = nil
     var octoRed: (bottom: CGFloat, left: CGFloat, height: CGFloat, opacity: Double) = (0.12, 0.09, 96, 0.85)
     var octoPurple: (bottom: CGFloat, right: CGFloat, height: CGFloat, opacity: Double) = (0.10, 0.10, 80, 0.75)
+    /// cinematic-player-loader.tsx: `lilorangestar2` at `right-[18%] top-[18%] h-10 opacity-90`.
+    var orangeStar = false
+
+    private var alphas: (top: Double, mid: Double, bottom: Double) {
+        if let veil { return veil }
+        return translucent ? (top: 0.95, mid: 0.96, bottom: 0.98) : (top: 1, mid: 1, bottom: 1)
+    }
 
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .topLeading) {
-                LinearGradient(colors: [KidsPlayerColors.top.opacity(translucent ? 0.95 : 1), KidsPlayerColors.mid.opacity(translucent ? 0.96 : 1),
-                                        KidsPlayerColors.bottom.opacity(translucent ? 0.98 : 1)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [KidsPlayerColors.top.opacity(alphas.top), KidsPlayerColors.mid.opacity(alphas.mid),
+                                        KidsPlayerColors.bottom.opacity(alphas.bottom)], startPoint: .top, endPoint: .bottom)
                 TimelineView(.animation) { tl in
                     let now = tl.date.timeIntervalSinceReferenceDate
                     ZStack(alignment: .topLeading) {
@@ -244,6 +260,12 @@ struct KidsSeaBackdrop: View {
                     .opacity(octoPurple.opacity)
                     .position(x: g.size.width * (1 - octoPurple.right) - BP.px(octoPurple.height) * 0.5,
                               y: g.size.height * (1 - octoPurple.bottom) - BP.px(octoPurple.height) / 2)
+                if orangeStar {
+                    KidsArt(doodle: "lilorangestar2")
+                        .frame(height: BP.px(40))
+                        .opacity(0.9)
+                        .position(x: g.size.width * 0.82 - BP.px(20), y: g.size.height * 0.18 + BP.px(20))
+                }
             }
         }
         .ignoresSafeArea()
@@ -271,6 +293,185 @@ struct KidsSeaBackdrop: View {
         let bob = CGFloat((1 - cos(now / 4.5 * 2 * Double.pi)) / 2) * BP.px(9)
         let h = BP.px(octoRed.height)
         return CGPoint(x: box.width * octoRed.left + h * 0.5, y: box.height * (1 - octoRed.bottom) - h / 2 - bob)
+    }
+}
+
+/// fullscreen-clock.tsx FullscreenClock / ClockDisplay, variant "kids": the local time in the chosen
+/// style (at least 16 px, extra-bold, `min-w-[6.5rem] px-4`), and "Ends at" under it while a
+/// runtime is known. Nothing when settings.fullscreenClockEnabled is off (the default). The TV
+/// player is always full screen, so fullscreenClockWindowed has nothing to decide.
+struct KidsFullscreenClock: View {
+    let position: Double
+    let duration: Double
+    @ObservedObject private var settings = SettingsBridge.shared
+
+    var body: some View {
+        if settings.slice.fullscreenClockEnabled ?? false {
+            // msUntilNextClockTick: the face turns over on the minute, or every second with seconds on.
+            if settings.slice.fullscreenClockShowSeconds ?? false {
+                TimelineView(.periodic(from: .now, by: 1)) { tl in face(tl.date) }
+            } else {
+                TimelineView(.everyMinute) { tl in face(tl.date) }
+            }
+        }
+    }
+
+    private func face(_ now: Date) -> some View {
+        let s = settings.slice
+        let format = s.fullscreenClockFormat ?? "system"
+        let seconds = s.fullscreenClockShowSeconds ?? false
+        let style = s.fullscreenClockStyle ?? "glass"
+        // `variant === "kids" ? Math.max(sizePx, 16) : sizePx`; the end line is 80 % of it, 10 at least.
+        let size = max(CGFloat(s.fullscreenClockSizePx ?? 13), 16)
+        let endSize = max(10, (size * 0.8).rounded())
+        // estimatePlaybackEndTime at rate 1 (the kids transport has no speed control).
+        let remaining = duration - position
+        let end: Date? = (s.fullscreenClockShowEndTime ?? true) && duration > 0 && position >= 0 && remaining > 0
+            ? now.addingTimeInterval(remaining) : nil
+        return VStack(spacing: BP.px(6)) {
+            Text(verbatim: Self.format(now, format: format, seconds: seconds))
+                .font(.system(size: BP.px(size), weight: .heavy))
+                .monospacedDigit()
+                .lineLimit(1)
+                .foregroundStyle(style == "accent" ? BP.canvas : (style == "glass" ? Color.white.opacity(0.9) : Color.white))
+                .padding(.horizontal, BP.px(16))
+                .frame(minWidth: BP.px(104), minHeight: BP.px(size + 32))
+                .background(plate(style))
+                .shadow(color: .black.opacity(style == "minimal" ? 0.9 : 0.3), radius: style == "minimal" ? 8 : 14, y: 2)
+            if let end {
+                HStack(spacing: BP.px(5)) {
+                    Text(T("Ends at")).foregroundStyle(.white.opacity(0.7))
+                    Text(verbatim: Self.format(end, format: format, seconds: false)).monospacedDigit().foregroundStyle(.white.opacity(0.9))
+                }
+                .font(.system(size: BP.px(endSize), weight: .bold))
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.9), radius: 8, y: 2)
+            }
+        }
+        .fixedSize()
+    }
+
+    /// STYLE_CLASSES: glass (black/40 pill), minimal (bare), solid (black/85 card), accent (accent pill).
+    @ViewBuilder private func plate(_ style: String) -> some View {
+        switch style {
+        case "minimal":
+            Color.clear
+        case "solid":
+            RoundedRectangle(cornerRadius: BP.px(8), style: .continuous).fill(Color.black.opacity(0.85))
+                .overlay(RoundedRectangle(cornerRadius: BP.px(8), style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        case "accent":
+            Capsule().fill(BP.accent)
+                .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        default:
+            Capsule().fill(Color.black.opacity(0.4))
+                .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
+        }
+    }
+
+    /// local-time.ts formatLocalTime: hour + 2-digit minute (+ seconds), 12 h / 24 h forced or the
+    /// language's own cycle ("system"), in the UI language.
+    static func format(_ date: Date, format: String, seconds: Bool) -> String {
+        let template: String
+        switch format {
+        case "12h": template = seconds ? "hmmssa" : "hmma"
+        case "24h": template = seconds ? "HHmmss" : "HHmm"
+        default: template = seconds ? "jmmss" : "jmm"
+        }
+        let f = DateFormatter()
+        f.locale = L10n.locale
+        f.setLocalizedDateFormatFromTemplate(template)
+        return f.string(from: date)
+    }
+}
+
+/// cinematic-player-loader.tsx, kid branch: until the first frame, the deep-sea plate
+/// (`bg-[#0c4a6e]`, the title art blurred 36 px at 20 %, the sky-to-sea veil at 85/88/94 %,
+/// LOADER_BUBBLES, both octopuses and the orange star) under the pulsing title logo, the episode
+/// line and the loader, with Cancel at the bottom. For a torrent the TV's own engine serves
+/// (isLocalEngine) the readout stays, as upstream's does for kids; the large-file P2P warning and
+/// the remote engine's peer line are adult-only (`!kid && …`).
+struct KidsPlayerLoader: View {
+    /// `src.episode?.still || meta.background || meta.poster`.
+    let backdrop: String?
+    let logo: String?
+    let title: String
+    /// "S1 · E02 · Name".
+    let episodeLine: String?
+    /// The stream the TV's torrent engine serves, if it is one.
+    let torrentURL: URL?
+    /// isLocalUrl(src.url): "Loading" for a file, else "Connecting".
+    let isLocalFile: Bool
+    var focus: FocusState<PlayerScreen.FocusTarget?>.Binding
+    let onCancel: () -> Void
+
+    /// .animate-loader-pulse: opacity .42 → 1 → .42 over 2.4 s.
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            KidsPlayerColors.ink
+            if let backdrop {
+                RemoteImage(url: backdrop)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .saturation(1.5)
+                    .blur(radius: BP.px(36), opaque: true)
+                    .opacity(0.2)
+            }
+            KidsSeaBackdrop(bubbles: [8, 20, 33, 47, 60, 72, 85, 94], bubbleStep: 6, veil: (0.85, 0.88, 0.94),
+                            octoRed: (0.14, 0.10, 96, 0.85), octoPurple: (0.12, 0.12, 80, 0.75), orangeStar: true)
+            VStack(spacing: BP.px(28)) {
+                Group {
+                    if let logo, !logo.isEmpty {
+                        KidsLogoImage(url: logo)
+                            .frame(maxWidth: BP.px(900), maxHeight: BP.px(176))
+                            .shadow(color: .black.opacity(0.65), radius: 30, y: 24)
+                    } else {
+                        Text(verbatim: title)
+                            .font(KidsTheme.font(64, .medium)).foregroundStyle(.white)
+                            .multilineTextAlignment(.center).lineLimit(2)
+                            .shadow(color: .black.opacity(0.7), radius: 22, y: 18)
+                    }
+                }
+                .opacity(pulse ? 1 : 0.42)
+                if let episodeLine {
+                    Text(verbatim: episodeLine)
+                        .font(BP.sans(12.5, .semibold)).textCase(.uppercase).tracking(BP.px(4))
+                        .foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                }
+                if let torrentURL {
+                    TorrentReadout(url: torrentURL, kid: true)
+                } else {
+                    // HarborLoader size="md" with its caption.
+                    VStack(spacing: BP.px(12)) {
+                        ProgressView().tint(.white)
+                        Text(T(isLocalFile ? "Loading" : "Connecting"))
+                            .font(BP.sans(12.5, .medium)).textCase(.uppercase).tracking(BP.px(2.25))
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+            }
+            .frame(maxWidth: BP.px(1100))
+            .padding(.horizontal, BP.gutter)
+            VStack {
+                Spacer()
+                // The loader's Cancel: in the kids pill so the ring reads on the sea plate.
+                Button(action: onCancel) {
+                    HStack(spacing: BP.px(10)) {
+                        Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy))
+                        Text("Cancel").font(KidsTheme.font(18, .heavy))
+                    }
+                }
+                .buttonStyle(KidsPillStyle(fill: .white.opacity(0.15), focusedFill: .white.opacity(0.25), ink: .white, height: BP.px(60)))
+                .focused(focus, equals: .chip("kids-cancel"))
+                .padding(.bottom, BP.px(56))
+            }
+            .focusSection()
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 }
 

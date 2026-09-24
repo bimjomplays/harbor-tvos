@@ -49,6 +49,14 @@ final class SettingsBridge: ObservableObject {
         var resumePlayback: Bool? = true
         var resumePrompt: Bool? = false
         var playerConfirmLeave: Bool? = true
+        // fullscreen-clock.tsx (settings/defaults.ts fullscreenClock*): the corner clock TransportKids
+        // shows. Read only; a missing key decodes as nil, so readers fall back to these defaults.
+        var fullscreenClockEnabled: Bool? = false
+        var fullscreenClockFormat: String? = "system"
+        var fullscreenClockStyle: String? = "glass"
+        var fullscreenClockShowSeconds: Bool? = false
+        var fullscreenClockShowEndTime: Bool? = true
+        var fullscreenClockSizePx: Double? = 13
         // Screensaver (settings/defaults.ts:122-126) and the hero feed it draws from.
         var screensaver: Bool? = true
         var screensaverDelayMin: Double? = 5

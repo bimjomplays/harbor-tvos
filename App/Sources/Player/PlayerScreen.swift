@@ -162,7 +162,7 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive)
+                .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
@@ -174,8 +174,9 @@ struct PlayerScreen: View {
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
-                // transport.tsx: a kid profile gets TransportKids instead of the full transport.
+            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+                // transport.tsx: a kid profile gets TransportKids instead of the full transport
+                // (`kid && !pipMode`; TransportKids has no PiP control, so a kid never leaves for PiP).
                 Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
             }
             if let resumePending {
@@ -184,7 +185,9 @@ struct PlayerScreen: View {
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if status.state == "error", !isLive, !roomOpen { sourceErrorCard.transition(.opacity) }
             if status.state == "error", isLive, liveGuide != nil, panel == nil, !roomOpen { liveErrorCard.transition(.opacity) }
-            if status.state == "loading", !isLive, !roomOpen, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            if status.state == "loading", !isKid, !isLive, !roomOpen, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            // cinematic-player-loader.tsx: a kid gets the sea loader over everything until the first frame.
+            if kidsLoading { kidsLoader.transition(.opacity) }
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, status.state != "error" {
                 noAudioCard.transition(.opacity)
             }
@@ -221,6 +224,7 @@ struct PlayerScreen: View {
             else if resumePending != nil { acknowledgeResume(true) }     // Back takes the default action (bp-resume-prompt)
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
             else if panel != nil { closePanel() }
+            else if kidsLoading { finish(natural: false) }                   // the kid loader's Cancel (onCancel closes, no leave dialog)
             else if noAudioWarning, engine == .native { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
             else if showUpNextCard { cancelAutoNext() }                     // bp-up-next: Back is "Keep watching"
             else if focus == .chip("skip") { focus = .surface }
@@ -721,6 +725,35 @@ struct PlayerScreen: View {
                             onMute: { controller?.setMuted(!muted); muted.toggle(); wake() },
                             onSubtitles: { toggleKidSubtitles(); wake() },
                             onPickAnother: { open(.kidsSources) })
+    }
+
+    /// cinematic-player-loader.tsx `showing` for a kid: from the start until the stream plays (a
+    /// switched video, a retry or a new source starts it again), never over the resume fork, an
+    /// error, a live channel (its own card) or the Together room.
+    private var kidsLoading: Bool {
+        guard isKid, !isLive, !roomOpen, !pipActive, resumePending == nil else { return false }
+        return status.state == "idle" || status.state == "loading"
+    }
+
+    private var kidsLoader: some View {
+        let meta = context?.meta
+        return KidsPlayerLoader(backdrop: meta?.background ?? meta?.poster, logo: meta?.logo, title: shownTitle,
+                                episodeLine: kidsEpisodeLine,
+                                torrentURL: TorrentEngine.streamRef(playURL) != nil ? playURL : nil,
+                                isLocalFile: playURL.isFileURL, focus: $focus,
+                                onCancel: { finish(natural: false) })
+            .onAppear { focusLater(.chip("kids-cancel")) }
+            // The ring goes back to the stage once the picture is up (the resume fork and the error
+            // card seed their own).
+            .onDisappear { if resumePending == nil, status.state != "error", panel == nil, !finishing { focusLater(.surface) } }
+    }
+
+    /// The loader's `S{season} · E{02}{ · name}` line.
+    private var kidsEpisodeLine: String? {
+        guard let context, let s = context.season else { return nil }
+        var line = "S\(s) · E" + String(format: "%02d", context.episode ?? 1)
+        if let sub = subtitle, let r = sub.range(of: " · ") { line += " · " + String(sub[r.upperBound...]) }
+        return line
     }
 
     private var kidsResumePrompt: some View {
