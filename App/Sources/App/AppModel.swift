@@ -56,13 +56,17 @@ final class AppModel: ObservableObject {
 
     private var bag = Set<AnyCancellable>()
 
-    init() {
+    /// `isBrowseLayer`: the PiP browse layer's own model (Player/PiPBrowse.swift). It leaves the
+    /// app-wide reloads a profile switch makes to the app's model (which runs them once), and the
+    /// layer goes down on a switch anyway.
+    init(isBrowseLayer: Bool = false) {
         // A pull can adopt a roster that no longer holds the active profile (deleted on another
         // device): the engine clears the active id and the shell must go back to who-is-watching.
         profiles.$activeId.dropFirst().receive(on: RunLoop.main).sink { [weak self] id in
             guard let self, id == nil, self.stage == .shell else { return }
             self.stage = .whoIsWatching
         }.store(in: &bag)
+        guard !isBrowseLayer else { return }
         // Settings (and so the theme and display language) can be per profile: a switch re-reads them.
         profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { id in
             guard id != nil, !Fixtures.active else { return }

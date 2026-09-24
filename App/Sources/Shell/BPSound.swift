@@ -94,8 +94,11 @@ final class BPSound {
     }
 
     private func play(_ cue: BPSoundCue) {
-        // Never over video: the player's own panels use the same focus styles (review 15).
-        if PlaybackState.shared.active { return }
+        // Never over video: the player's own panels use the same focus styles (review 15). The PiP
+        // browse layer is the exception: the film is in the small PiP window and the viewer is
+        // browsing Harbor, as upstream's desktop app sounds while its picture floats (lib/sfx.ts
+        // has no playback mute). A player opened from the layer is quiet again.
+        if PlaybackState.shared.active && !PiPBrowse.shared.soundsOverPiP { return }
         let t = theme
         let themed = cue != .turnNext && cue != .turnPrev
         if themed && t == "none" { return }

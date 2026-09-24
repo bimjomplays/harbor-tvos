@@ -80,7 +80,8 @@ struct RootView: View {
         .environmentObject(app.sync)
         .environmentObject(SettingsBridge.shared)
         .task { await app.boot() }
-        .onOpenURL { app.handle(url: $0) }
+        // While the PiP browse layer is up the app's own shell is hidden under it: the link opens in the layer.
+        .onOpenURL { (PiPBrowse.shared.layerApp ?? app).handle(url: $0) }
         // lib/theme.ts applyTheme: data-theme-mode follows the canvas (MinUI and Kawaii are light).
         .preferredColorScheme(theme.state?.light == true ? .light : .dark)
     }
@@ -103,17 +104,14 @@ struct RootView: View {
     }
 
     /// The PiP browse layer: a Big Picture shell on its own AppModel (its tabs must never swap the
-    /// room that presented the player under it), with the environment this tree gets. PiPBrowse
-    /// takes its window down by itself.
+    /// room that presented the player under it), with the environment this tree gets (PiPBrowseRoot
+    /// follows the theme and language itself). PiPBrowse takes its window down by itself.
     private func syncBrowse(_ up: Bool) {
         guard up else { return }
-        let model = AppModel()
+        let model = AppModel(isBrowseLayer: true)
         model.stage = .shell
         PiPBrowse.shared.present(
             PiPBrowseRoot()
-                .environment(\.locale, Locale(identifier: language))
-                .environment(\.layoutDirection, L10n.rtlLanguages.contains(language) ? .rightToLeft : .leftToRight)
-                .preferredColorScheme(theme.state?.light == true ? .light : .dark)
                 .environmentObject(model)
                 .environmentObject(model.account)
                 .environmentObject(model.profiles)

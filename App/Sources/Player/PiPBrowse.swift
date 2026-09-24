@@ -39,7 +39,13 @@ final class PiPBrowse: ObservableObject {
 
     /// The layer is up (or going up). RootView builds its window when this turns on (syncBrowse).
     @Published private(set) var isUp = false
-    private var owner: Owner?
+    private var owner: Owner? {
+        didSet { if filmInPiP != (owner != nil) { filmInPiP = owner != nil } }
+    }
+    /// The film that stepped aside still plays in the PiP window under the layer. Any other
+    /// playback while the layer is up was opened from the layer itself (PiPBrowseRoot holds its
+    /// language for it; BPSound stays quiet for it).
+    @Published private(set) var filmInPiP = false
     private var window: HarborOverlayWindow?
     /// The AppModel the layer's shell runs on (ShellView tells its own layer apart by it).
     private weak var browseApp: AppModel?
@@ -74,6 +80,16 @@ final class PiPBrowse: ObservableObject {
 
     /// `app` is the layer's own AppModel: that ShellView is the layer's.
     func isBrowseApp(_ app: AppModel) -> Bool { browseApp === app }
+
+    /// The layer's AppModel while its window is up: RootView sends deep links there, so the
+    /// detail page or shared list opens where the viewer is looking (the app's own shell is
+    /// hidden under the layer).
+    var layerApp: AppModel? { window == nil ? nil : browseApp }
+
+    /// UI sounds may play over playback: the only film is the one in the PiP window, small in a
+    /// corner, while the viewer browses the layer (upstream's lib/sfx.ts never mutes for video;
+    /// BPSound's own rule is about panels drawn over a full-screen picture).
+    var soundsOverPiP: Bool { filmInPiP && window != nil }
 
     /// Nothing is presented over the layer's shell (its shoulder-button tabs may turn).
     var noCoverPresented: Bool { window?.rootViewController?.presentedViewController == nil }
@@ -168,13 +184,35 @@ final class PiPBrowse: ObservableObject {
 
 /// What the layer's window shows: the Big Picture shell over the ambient background, as RootView
 /// draws it (adult profiles only: a kid never gets Picture in Picture).
+///
+/// Like RootView, the tree is keyed on the theme revision and the display language, so a theme
+/// or language chosen in the layer's Settings (or pulled in by profile sync) repaints it while it
+/// is up. The film in PiP lives in the app's own tree, so the layer never waits for it; a player
+/// or Multiview opened from the layer is in this tree, and the language waits for it to end.
+/// (ThemeStore itself holds a new theme while anything plays: it lands when the film stops.)
 struct PiPBrowseRoot: View {
+    @ObservedObject private var theme = ThemeStore.shared
+    @ObservedObject private var settings = SettingsBridge.shared
+    @ObservedObject private var playback = PlaybackState.shared
+    @ObservedObject private var browse = PiPBrowse.shared
+    /// The language the layer was built in, kept while a player opened from it runs.
+    @State private var heldLanguage: String?
+    private var language: String { heldLanguage ?? L10n.normalize(settings.slice.uiLanguage) }
+    /// Something opened from the layer plays (anything but the film in the PiP window).
+    private var layerPlaying: Bool { playback.active && !browse.filmInPiP }
+
     var body: some View {
         ZStack {
             BPAmbientBackground()
             ShellView()
         }
+        .id("\(theme.revision)|\(language)")
+        .environment(\.locale, Locale(identifier: language))
+        .environment(\.layoutDirection, L10n.rtlLanguages.contains(language) ? .rightToLeft : .leftToRight)
+        .onChange(of: layerPlaying) { _, on in heldLanguage = on ? language : nil }
         // The remote's Play/Pause, when nothing focused on the layer uses it, drives the film in PiP.
         .onPlayPauseCommand { PiPBrowse.shared.togglePlayback() }
+        // lib/theme.ts applyTheme: data-theme-mode follows the canvas (MinUI and Kawaii are light).
+        .preferredColorScheme(theme.state?.light == true ? .light : .dark)
     }
 }
