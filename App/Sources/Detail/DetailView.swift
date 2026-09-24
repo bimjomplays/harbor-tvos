@@ -142,6 +142,7 @@ struct DetailView: View {
         }
         .ignoresSafeArea()
         .task {
+            model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) }
             await model.load()
             if autoPlay, picker == nil {
                 pickerAuto = roomPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
@@ -520,15 +521,19 @@ struct DetailView: View {
 
     private var episodes: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            HStack(spacing: BP.px(8)) {
-                ForEach(model.seasons.prefix(8), id: \.self) { s in
-                    Button(s == 0 ? "Specials" : "Season \(s)") { model.season = s }
-                        .buttonStyle(BPActionStyle(primary: model.season == s))
+            if model.animeSeasonKey != nil {
+                animeSeasonChips
+            } else {
+                HStack(spacing: BP.px(8)) {
+                    ForEach(model.seasons.prefix(8), id: \.self) { s in
+                        Button(s == 0 ? "Specials" : "Season \(s)") { model.season = s }
+                            .buttonStyle(BPActionStyle(primary: model.season == s))
+                    }
+                    // bp-season-menu: long runs open the scrollable list instead of a chip wall.
+                    if model.seasons.count > 8 { Button("All \(model.seasons.count) seasons") { seasonsSheet = true }.buttonStyle(BPActionStyle()) }
                 }
-                // bp-season-menu: long runs open the scrollable list instead of a chip wall.
-                if model.seasons.count > 8 { Button("All \(model.seasons.count) seasons") { seasonsSheet = true }.buttonStyle(BPActionStyle()) }
+                .focusSection()
             }
-            .focusSection()
             ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: BP.trackGap) {
@@ -550,11 +555,56 @@ struct DetailView: View {
             .scrollClipDisabled()
             // use-bp-episode-strip: land on the resume episode when the strip first shows.
             .onChange(of: model.seasonEpisodes.count) { _, n in
-                guard n > 0, let r = model.resume, r.season == model.season, let e = r.episode, let target = model.seasonEpisodes.first(where: { $0.episode == e }) else { return }
+                // An anime chip can hold several Kitsu seasons, so the card is found by its own pair.
+                guard n > 0, let r = model.resume, let s = r.season, let e = r.episode,
+                      let target = model.seasonEpisodes.first(where: { $0.season == s && $0.episode == e }) else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { proxy.scrollTo(target.id, anchor: .leading) } }
             }
             }
             .focusSection()
+        }
+    }
+
+    /// bp-anime-seasons.tsx BpAnimeSeasonChips: the Episodes heading, then named season chips (year
+    /// span and episode count under the name; specials and extras last behind a divider) and the
+    /// TVDB order toggle on one track, so the strip stays one D-pad step below.
+    private var animeSeasonChips: some View {
+        VStack(alignment: .leading, spacing: BP.px(6)) {
+            // BpEpisodesHeading: "Episodes" and the strip's count.
+            HStack(alignment: .firstTextBaseline, spacing: BP.px(10)) {
+                Text(T("Episodes")).font(BP.sans(16, .bold)).foregroundStyle(BP.ink)
+                let n = model.seasonEpisodes.count
+                if n > 0 { Text(T("%lld episodes", n)).font(BP.sans(12, .semibold)).monospacedDigit().foregroundStyle(BP.inkSubtle) }
+            }
+            if model.animeHasChips {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: BP.px(6)) {
+                        let hasSeasons = model.animeChips.count > 1
+                        let hasOrders = model.animeOrders.count > 1
+                        if hasSeasons {
+                            ForEach(model.animeChips) { c in
+                                if c.divider { AnimeChipDivider() }
+                                Button { model.selectAnimeSeason(c.key) } label: { AnimeSeasonChipLabel(chip: c, selected: c.key == model.animeSeasonKey) }
+                                    .buttonStyle(AnimeSeasonChipStyle(selected: c.key == model.animeSeasonKey))
+                                    .accessibilityIdentifier("anime-season-\(c.key)")
+                            }
+                        }
+                        if hasSeasons && hasOrders { AnimeChipDivider() }
+                        if hasOrders {
+                            Text(T("Order")).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(BP.px(1.5)).foregroundStyle(BP.inkSubtle)
+                                .padding(.trailing, BP.px(2))
+                            ForEach(model.animeOrders) { o in
+                                Button(o.short) { Task { await model.setAnimeOrder(o.value) } }
+                                    .buttonStyle(PlayerChipStyle(on: o.value == model.animeOrderType))
+                                    .accessibilityIdentifier("anime-order-\(o.value)")
+                            }
+                        }
+                    }
+                    .padding(.vertical, BP.px(14))
+                }
+                .scrollClipDisabled()
+                .focusSection()
+            }
         }
     }
 
@@ -685,6 +735,56 @@ struct EpisodeStill: View {
     }
 }
 
+/// bp-anime-season-chip.tsx BpAnimeSeasonChip: BpChip's pill one line taller, the season's name
+/// (and an OVA / Movie / Special badge when one comes) over its years and episode count.
+struct AnimeSeasonChipLabel: View {
+    let chip: DetailModel.AnimeSeasonChip
+    let selected: Bool
+    /// The chip button's focus: group-data-[bp-focus=true] turns both lines to the canvas colour.
+    @Environment(\.isFocused) private var focused
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(1)) {
+            HStack(spacing: BP.px(4)) {
+                Text(chip.name).font(BP.sans(14, .semibold)).lineLimit(1).frame(maxWidth: BP.px(250), alignment: .leading)
+                if let badge = chip.badge, !badge.isEmpty {
+                    Text(badge).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.2))
+                        .padding(.horizontal, BP.px(5)).padding(.vertical, BP.px(1))
+                        .background(Capsule().fill(BP.void_.opacity(focused ? 0.25 : 0.45)))
+                }
+            }
+            .foregroundStyle(focused ? BP.canvas : (selected ? BP.ink : BP.inkSubtle))
+            if !chip.meta.isEmpty {
+                Text(chip.meta).font(BP.sans(12, .medium)).monospacedDigit().lineLimit(1)
+                    .foregroundStyle(focused ? BP.canvas : BP.inkMuted)
+            }
+        }
+        .padding(.horizontal, BP.px(13))
+        .padding(.vertical, BP.px(5))
+        .frame(minHeight: BP.px(43))
+    }
+}
+
+/// BpAnimeSeasonChip faces: the picked season sits on the void, the rest are an edge hairline; focus floods ink.
+struct AnimeSeasonChipStyle: ButtonStyle {
+    var selected: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        BPFocusReader { focused in
+            configuration.label
+                .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(focused ? BP.ink : (selected ? BP.void_.opacity(0.72) : Color.clear)))
+                .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(selected || focused ? Color.clear : BP.edge, lineWidth: 1))
+                .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: BP.rLG, lift: 1.02))
+        }
+    }
+}
+
+/// bp-library-chips.tsx BpChipDivider: a hairline between chip groups.
+struct AnimeChipDivider: View {
+    var body: some View {
+        Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(26)).padding(.horizontal, BP.px(4))
+    }
+}
+
 struct EpisodeCell: View {
     let episode: DetailModel.Episode
     var watched = false
@@ -715,7 +815,7 @@ struct EpisodeCell: View {
                     .scaleEffect(hideThumb ? 1.05 : 1)
                     .animation(BP.easeFast, value: hideThumb)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
-                Text("E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
+                Text(episode.tag ?? "E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
                 // use-bp-episode-facts chip: rating (IMDb mark when it is IMDb's) and runtime.
                 if let f = fact, (f.rating != nil && showRating) || f.runtime != nil {
                     HStack(spacing: BP.px(4)) {
@@ -744,7 +844,9 @@ struct EpisodeCell: View {
             Text(episode.title).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 .blur(radius: hideTitle ? BP.px(6) : 0)
                 .animation(BP.easeFast, value: hideTitle)
-            if let d = episode.released { Text(d.formatted(date: .abbreviated, time: .omitted)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
+            // bp-anime-seasons.tsx facts: "Abs E{n}" (absolute order renumbers the run) · the air date.
+            let facts = [episode.absoluteLabel, episode.released.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }
+            if !facts.isEmpty { Text(facts.joined(separator: " · ")).font(BP.sans(11)).monospacedDigit().foregroundStyle(BP.inkSubtle).lineLimit(1) }
             // bp-episode-card.tsx: the overview, two lines, when showEpisodeDescription is on.
             if showDescription, let o = episode.overview, !o.isEmpty {
                 Text(o).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(2).lineSpacing(2)

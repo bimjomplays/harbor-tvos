@@ -89,6 +89,7 @@ import * as addonsRoomGlue from "./addonsRoom";
 import * as addonsManagerGlue from "./addonsManager";
 import * as animeDetailGlue from "./animeDetail";
 import * as deadStreamsGlue from "./deadStreams";
+import * as animeSeasonsGlue from "./animeSeasons";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
@@ -775,7 +776,16 @@ export const kidsRoom = {
 };
 
 /** use-bp-anime-detail: the Kitsu chain for anime ids (episodes as PlayEpisodes, characters). */
-export const animeDetail = { load: animeDetailGlue.load };
+export const animeDetail = { load: animeDetailGlue.load, seasons: animeDetailGlue.seasons, seasonsFor: animeDetailGlue.seasonsFor };
+/** engine/animeSeasons.ts: the chip copy and season pick of bp-anime-seasons / use-bp-anime-detail. */
+export const animeSeasons = {
+  seasonYears: animeSeasonsGlue.seasonYears,
+  shortOrderLabel: animeSeasonsGlue.shortOrderLabel,
+  activeSeasonKey: animeSeasonsGlue.activeSeasonKey,
+  intentSeasonKey: animeSeasonsGlue.intentSeasonKey,
+  effectiveOrderType: animeSeasonsGlue.effectiveOrderType,
+  chipsFor: animeSeasonsGlue.chipsFor,
+};
 
 /** bp-home "Your addons" band and the addon page: cards, catalogs, paged feeds. */
 export const addonsRoom = {
