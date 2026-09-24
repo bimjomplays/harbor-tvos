@@ -51,10 +51,14 @@ final class BrowseModel: ObservableObject {
         } else {
             entry = BPRestore.position(key)
         }
-        if room == .anime, !(source is FixtureBrowseSource) {
-            // Jikan rows land one by one; re-read the page (from memory) after each burst.
+        // Anime: Jikan rows land one by one; re-read the page (from memory) after each burst.
+        // Home: use-bp-extra-rows' async rows (Trakt, Simkl, anime, pinned…) that missed the
+        // build's grace, and Settings → Home rows edits (engine/homeExtras.ts); the engine reuses
+        // the catalog rows it just built for that re-read.
+        let reloadEvent: String? = room == .anime ? "harbor:anime-updated" : (room == .home && source.cacheId == nil ? "harbor:home-updated" : nil)
+        if let reloadEvent, !(source is FixtureBrowseSource) {
             unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
-                guard type == "harbor:anime-updated" else { return }
+                guard type == reloadEvent else { return }
                 self?.refreshTask?.cancel()
                 self?.refreshTask = Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(400))
