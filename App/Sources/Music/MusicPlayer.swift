@@ -14,6 +14,9 @@ import UIKit
 ///   playing on the Apple TV home screen, as upstream's keeps playing with its window hidden.
 /// - Now Playing + remote commands: MPNowPlayingInfoCenter / MPRemoteCommandCenter
 ///   (upstream's updateMediaSession + the OS media keys).
+/// - Scrobbles: music/engine.rs counts the seconds actually heard and, when a track that passed
+///   should_scrobble ends (EndFile or natural EOF), calls scrobble_track (Navidrome + Last.fm).
+/// - Track radio: radio.ts armTrackRadio keeps a started radio topped up near its end.
 @MainActor
 final class MusicPlayer: ObservableObject {
     static let shared = MusicPlayer()
@@ -57,6 +60,22 @@ final class MusicPlayer: ObservableObject {
     private var skipUnavailable = false
     /// The source of the last track that started (player.ts workingSource).
     private var lastSource: String?
+
+    /// engine.rs event loop: the entry being listened to, when it started (unix seconds), the
+    /// seconds actually heard (time-pos steps of at most 2 s, so seeks do not count).
+    private var scrobbleTrack: MusicTrack?
+    private var scrobbleStartedAt = 0
+    private var listened: Double = 0
+    private var lastTick: Double?
+
+    /// music-track-grid.tsx radioStatus: a station being built, or why it could not be.
+    enum RadioStatus: Equatable { case loading, failed(String) }
+    @Published private(set) var radioStatus: RadioStatus?
+    private var radioRequest = 0
+    /// radio.ts armed: the queue came from Start radio and is extended near its end.
+    private var radioArmed = false
+    private var radioExtending = false
+    private var radioGeneration = 0
 
     private init() {
         player.actionAtItemEnd = .advance
@@ -125,6 +144,9 @@ final class MusicPlayer: ObservableObject {
 
     /// player.ts playMusic(track, queue): the queue is replaced and `track` starts.
     func play(_ track: MusicTrack, queue list: [MusicTrack]? = nil) {
+        disarmRadio()
+        // A radio error belongs to the last attempt; playing something else clears it.
+        if radioStatus != .some(.loading) { radioStatus = nil }
         var q = list ?? [track]
         if !q.contains(where: { $0.queueKey == track.queueKey }) { q.insert(track, at: 0) }
         let at = q.firstIndex { $0.queueKey == track.queueKey } ?? 0
@@ -201,6 +223,7 @@ final class MusicPlayer: ObservableObject {
 
     func remove(at i: Int) {
         guard queue.indices.contains(i), i != index else { return }
+        if i == 0 { disarmRadio() }
         queue.remove(at: i)
         if i < index { index -= 1 }
         dropPreloaded()
@@ -208,6 +231,8 @@ final class MusicPlayer: ObservableObject {
 
     /// player.ts closeMusicPlayer
     func close() {
+        finishScrobble()
+        disarmRadio()
         request += 1
         player.pause()
         clearItems()
@@ -231,6 +256,8 @@ final class MusicPlayer: ObservableObject {
 
     private func start(at i: Int) {
         guard queue.indices.contains(i) else { return }
+        // mpv's EndFile for whatever was playing: it scrobbles if it was heard long enough.
+        finishScrobble()
         request += 1
         let ticket = request
         let entry = queue[i]
@@ -265,8 +292,10 @@ final class MusicPlayer: ObservableObject {
             player.play()
             phase = .playing
             lastSource = track.connectorId
+            beginScrobble(track)
             addRecent(track)
             refreshNowPlaying()
+            extendRadioIfDue()
         } catch {
             guard ticket == request else { return }
             fail(error.localizedDescription)
@@ -368,6 +397,8 @@ final class MusicPlayer: ObservableObject {
     private func itemEnded(_ item: AVPlayerItem) {
         guard let entry = items[ObjectIdentifier(item)] else { return }
         forget(item)
+        // engine.rs natural EOF: the finished entry scrobbles now, before anything else starts.
+        if scrobbleTrack?.queueKey == entry.track.queueKey { finishScrobble() }
         // With a preloaded successor the AVQueuePlayer has already moved on (currentItemChanged).
         if items.values.contains(where: { $0.index == entry.index + 1 }) { return }
         next(auto: true)
@@ -376,13 +407,16 @@ final class MusicPlayer: ObservableObject {
     /// The AVQueuePlayer advanced into a preloaded item: that entry is now current.
     private func currentItemChanged() {
         guard let item = player.currentItem, let entry = items[ObjectIdentifier(item)], entry.index != index else { return }
+        finishScrobble()
         index = entry.index
         current = entry.track
         failed = []
         position = 0
         duration = entry.track.seconds
+        beginScrobble(entry.track)
         addRecent(entry.track)
         refreshNowPlaying()
+        extendRadioIfDue()
     }
 
     /// Resolve the next entry late in the current one and queue it behind (gapless).
@@ -421,7 +455,15 @@ final class MusicPlayer: ObservableObject {
     private func tick() {
         guard current != nil, let item = player.currentItem else { return }
         let t = player.currentTime().seconds
-        if t.isFinite { position = max(0, t) }
+        if t.isFinite {
+            position = max(0, t)
+            // engine.rs listened_increment: forward steps of at most 2 s count as heard.
+            if let previous = lastTick, scrobbleTrack != nil {
+                let delta = t - previous
+                if delta > 0, delta <= 2 { listened += delta }
+            }
+            lastTick = t
+        }
         let d = item.duration.seconds
         if d.isFinite, d > 0 { duration = d }
         preloadNextIfDue()
@@ -452,6 +494,83 @@ final class MusicPlayer: ObservableObject {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
+    }
+
+    // MARK: - scrobbles (music/engine.rs + commands/accounts.rs scrobble_track)
+
+    /// engine.rs should_scrobble: half the track or four minutes, whichever comes first.
+    nonisolated static func shouldScrobble(listened: Double, duration: Double) -> Bool {
+        let threshold = duration.isFinite && duration > 0 ? min(duration * 0.5, 240) : 240
+        return listened >= threshold
+    }
+
+    private func beginScrobble(_ track: MusicTrack) {
+        scrobbleTrack = track
+        scrobbleStartedAt = Int(Date().timeIntervalSince1970)
+        listened = 0
+        lastTick = nil
+    }
+
+    /// The listened entry ended (finished, skipped or stopped): scrobble it once if it counts.
+    private func finishScrobble() {
+        guard let track = scrobbleTrack else { return }
+        scrobbleTrack = nil
+        let heard = listened
+        let length = duration > 0 ? duration : track.seconds
+        listened = 0
+        lastTick = nil
+        guard Self.shouldScrobble(listened: heard, duration: length) else { return }
+        let startedAt = scrobbleStartedAt
+        Task {
+            // Failures are only logged upstream (music://lastfm "error"); playback never waits.
+            let _: MusicScrobbleResult? = try? await HarborEngine.shared.call("music.scrobble", [track, startedAt])
+        }
+    }
+
+    // MARK: - track radio (radio.ts via engine/musicRadio.ts)
+
+    /// music-track-grid.tsx startRadio: build the station, play it, arm the extension.
+    func startRadio(_ track: MusicTrack) {
+        radioRequest += 1
+        let ticket = radioRequest
+        radioStatus = .loading
+        Task {
+            do {
+                let station: [MusicTrack] = try await HarborEngine.shared.call("music.radio", [track])
+                guard ticket == radioRequest else { return }
+                guard let first = station.first else { throw MusicPlaybackError.message("music.radio.error") }
+                radioStatus = nil
+                play(first, queue: station)
+                radioArmed = true
+                radioGeneration += 1
+            } catch {
+                guard ticket == radioRequest else { return }
+                radioStatus = .failed(MusicCopy.shared("music.radio.error", "Couldn’t start radio. Try again or choose another source."))
+            }
+        }
+    }
+
+    private func disarmRadio() {
+        radioArmed = false
+        radioExtending = false
+        radioGeneration += 1
+    }
+
+    /// radio.ts armTrackRadio: within EXTEND_AT (4) entries of the end, append more.
+    private func extendRadioIfDue() {
+        guard radioArmed, !radioExtending, index >= 0, index >= queue.count - 4 else { return }
+        radioExtending = true
+        let generation = radioGeneration
+        let snapshot = queue
+        let at = index
+        Task {
+            let more: [MusicTrack]? = try? await HarborEngine.shared.call("music.radioExtend", [snapshot, at])
+            guard generation == radioGeneration, radioArmed else { return }
+            radioExtending = false
+            let known = Set(queue.map(\.queueKey))
+            let fresh = (more ?? []).filter { !known.contains($0.queueKey) }
+            if !fresh.isEmpty { queue.append(contentsOf: fresh) }
+        }
     }
 
     // MARK: - Now Playing + remote commands

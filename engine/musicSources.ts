@@ -6,8 +6,10 @@
 //   soundcloud  connectors/soundcloud/*.rs                   (gated by source consent)
 //   jellyfin    connectors/jellyfin/*.rs                     (adopts the home-server connection)
 //   plex        connectors/plex/*.rs                         (adopts the home-server connection)
+//   subsonic    connectors/subsonic/*.rs                     (its own sign-in: Navidrome / Subsonic)
+// plus the open databases the catalog leans on: catalog/listenbrainz.rs, musicbrainz.rs.
 // Left out, with the reasons in docs/music-spec.md: spotify (librespot), youtube (yt-dlp),
-// local (no user file system), subsonic (needs its own sign-in form; next batch).
+// local (no user file system).
 import type {
   MusicAlbumRef,
   MusicArtistRef,
@@ -23,7 +25,8 @@ import type {
 } from "@/lib/music/types";
 import { mediaServerConnections, mediaServerToken } from "@/lib/media-server/connections";
 import { musicSourceAllowed } from "@/lib/music/source-consent";
-import { getSecret } from "@/lib/secret-store";
+import { getSecret, setSecret } from "@/lib/secret-store";
+import { md5Hex } from "./md5";
 
 export type MusicStream = { url: string; mimeType: string; bitrate: number; httpHeaders?: Record<string, string> };
 type Health = MusicConnectorHealth["health"];
@@ -331,6 +334,184 @@ export const itunes = {
   artistAlbums: async (id: string) => pick(await itunesResults(`https://itunes.apple.com/lookup?id=${catalogNumericId(id, "itunes:artist:")}&entity=album&limit=200`), itunesAlbum, 200),
 };
 
+// http.rs: one polite client for the open databases (MusicBrainz asks for a contactable agent).
+const OPEN_DATA_AGENT = "Harbor/1.0 ( https://github.com/harborstremio/harbor )";
+const OPEN_DATA_TIMEOUT = 6000;
+async function openDataGet(url: string, provider: string): Promise<{ contentType: string; text: string }> {
+  const res = await request(url, { headers: { "User-Agent": OPEN_DATA_AGENT, Accept: "application/json" }, timeoutMs: OPEN_DATA_TIMEOUT });
+  if (res.status < 200 || res.status >= 300) throw new Error(`${provider} returned HTTP ${res.status}`);
+  return { contentType: res.headers.get("content-type") ?? "", text: res.text };
+}
+/** listenbrainz.rs pace() / musicbrainz.rs LAST_REQUEST: at most one call a second per service. */
+function pacer(): () => Promise<void> {
+  let chain: Promise<void> = Promise.resolve();
+  let last = 0;
+  return () => {
+    const turn = chain.then(async () => {
+      const wait = last + 1000 - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      last = Date.now();
+    });
+    chain = turn.catch(() => undefined);
+    return turn;
+  };
+}
+
+// coverart.rs
+function safeMbid(raw: unknown): string | undefined {
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  return trimmed.length === 36 && /^[0-9a-fA-F-]+$/.test(trimmed) ? trimmed.toLowerCase() : undefined;
+}
+function releaseArtwork(releaseMbid: string, caaId: number | string): string {
+  return `https://archive.org/download/mbid-${releaseMbid}/mbid-${releaseMbid}-${caaId}_thumb500.jpg`;
+}
+/** catalog/mod.rs release_year: the head of a date, 1000..=3000. */
+function catalogYear(value: unknown): number | undefined {
+  const head = typeof value === "string" ? value.trim().slice(0, 4) : "";
+  const year = /^\d{4}$/.test(head) ? Number(head) : NaN;
+  return year >= 1000 && year <= 3000 ? year : undefined;
+}
+
+// listenbrainz.rs: fresh releases (the "New releases" shelf) and the sitewide artist chart
+// (the charting-artists fallback when Deezer's artist chart fails).
+const LB_FRESH = "https://api.listenbrainz.org/1/explore/fresh-releases/?days=7&sort=release_date&past=true&future=false";
+const LB_SITEWIDE = "https://api.listenbrainz.org/1/stats/sitewide/artists?count=25&offset=0&range=month";
+const lbPace = pacer();
+async function lbFetch(url: string): Promise<string> {
+  await lbPace();
+  const res = await openDataGet(url, "ListenBrainz");
+  if (!res.text.trim()) return "";
+  if (!res.contentType.includes("json")) throw new Error("ListenBrainz is verifying the client");
+  return res.text;
+}
+/** listenbrainz.rs listens(): 1234567 → "1,234,567 listens". */
+function listens(count: number): string {
+  return `${String(Math.floor(count)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")} listens`;
+}
+export function parseFreshReleases(body: string, limit: number): MusicAlbumRef[] {
+  if (!body.trim()) return [];
+  let parsed: { payload?: { releases?: Record<string, unknown>[] } };
+  try {
+    parsed = JSON.parse(body);
+  } catch (cause) {
+    throw new Error(`ListenBrainz fresh releases were unreadable: ${cause instanceof Error ? cause.message : cause}`);
+  }
+  if (!Array.isArray(parsed?.payload?.releases)) throw new Error("ListenBrainz fresh releases were unreadable: missing releases");
+  const releases = parsed.payload!.releases!.filter((r) => r.release_group_primary_type === "Album" || r.release_group_primary_type === "EP");
+  releases.sort((a, b) => String(b.release_date ?? "").localeCompare(String(a.release_date ?? "")));
+  const out: MusicAlbumRef[] = [];
+  for (const release of releases) {
+    if (out.length >= limit) break;
+    const title = text(release.release_name);
+    const artist = text(release.artist_credit_name);
+    const artMbid = safeMbid(release.caa_release_mbid);
+    const caaId = num(release.caa_id);
+    if (!title || !artist || !artMbid || caaId === undefined) continue;
+    const releaseMbid = safeMbid(release.release_mbid);
+    const groupMbid = safeMbid(release.release_group_mbid);
+    const [entity, mbid] = releaseMbid ? ["release", releaseMbid] : ["release-group", groupMbid];
+    if (!mbid) continue;
+    // caa_id is a 64-bit integer; String(num) keeps it exact below 2^53 (current ids are ~3.5e10).
+    out.push({ id: `musicbrainz:${entity}:${mbid}`, connectorId: "catalog", title, artist, artwork: releaseArtwork(artMbid, caaId), year: catalogYear(release.release_date) });
+  }
+  return out;
+}
+function parseTopArtists(body: string, limit: number): MusicArtistRef[] {
+  if (!body.trim()) return [];
+  let parsed: { payload?: { artists?: Record<string, unknown>[] } };
+  try {
+    parsed = JSON.parse(body);
+  } catch (cause) {
+    throw new Error(`ListenBrainz statistics were unreadable: ${cause instanceof Error ? cause.message : cause}`);
+  }
+  const out: MusicArtistRef[] = [];
+  for (const entry of parsed?.payload?.artists ?? []) {
+    if (out.length >= limit) break;
+    const name = text(entry.artist_name);
+    const mbid = safeMbid(entry.artist_mbid);
+    if (!name || !mbid) continue;
+    const count = num(entry.listen_count);
+    out.push({ id: `musicbrainz:artist:${mbid}`, connectorId: "catalog", name, subtitle: count !== undefined ? listens(count) : undefined });
+  }
+  return out;
+}
+export const listenbrainz = {
+  freshReleases: async (limit: number) => parseFreshReleases(await lbFetch(LB_FRESH), limit),
+  topArtists: async (limit: number) => parseTopArtists(await lbFetch(LB_SITEWIDE), limit),
+};
+
+// musicbrainz.rs: track lists for the ListenBrainz releases and artists opened from the home.
+const mbPace = pacer();
+async function mbFetch(path: string): Promise<Record<string, unknown>> {
+  await mbPace();
+  const res = await openDataGet(`https://musicbrainz.org/ws/2/${path}&fmt=json`, "MusicBrainz");
+  try {
+    return JSON.parse(res.text) as Record<string, unknown>;
+  } catch (cause) {
+    throw new Error(`MusicBrainz response was unreadable: ${cause instanceof Error ? cause.message : cause}`);
+  }
+}
+function mbId(id: string, prefix: string): string {
+  const found = id.startsWith(prefix) ? safeMbid(id.slice(prefix.length)) : undefined;
+  if (!found) throw new Error("Invalid MusicBrainz identity");
+  return found;
+}
+function mbCredit(entry: Record<string, unknown>, fallback: string): string {
+  const credits = Array.isArray(entry["artist-credit"]) ? (entry["artist-credit"] as Record<string, unknown>[]) : [];
+  const joined = credits.map((c) => `${typeof c.name === "string" ? c.name : typeof (c.artist as Record<string, unknown> | undefined)?.name === "string" ? (c.artist as Record<string, unknown>).name : ""}${typeof c.joinphrase === "string" ? c.joinphrase : ""}`).join("");
+  return joined.trim() ? joined : fallback;
+}
+function mbRecording(entry: Record<string, unknown>, fallback: string): MusicTrack | undefined {
+  const id = safeMbid(entry.id);
+  const title = typeof entry.title === "string" ? entry.title.trim() : "";
+  if (!id || !title) return undefined;
+  const seconds = Math.floor((num(entry.length) ?? 0) / 1000);
+  return { id: `musicbrainz:recording:${id}`, connectorId: "catalog", sourceId: id, title, artist: mbCredit(entry, fallback), artwork: "", durationSeconds: seconds, durationLabel: durationLabel(seconds) };
+}
+export const musicbrainz = {
+  albumTracks: async (album: MusicAlbumRef): Promise<MusicTrack[]> => {
+    let release: string;
+    if (album.id.startsWith("musicbrainz:release:")) release = mbId(album.id, "musicbrainz:release:");
+    else {
+      const group = mbId(album.id, "musicbrainz:release-group:");
+      const data = await mbFetch(`release?release-group=${group}&status=official&limit=1`);
+      const first = safeMbid(((data.releases as Record<string, unknown>[] | undefined) ?? [])[0]?.id);
+      if (!first) throw new Error("MusicBrainz has no published edition for this release");
+      release = first;
+    }
+    const data = await mbFetch(`release/${release}?inc=recordings+artist-credits`);
+    const tracks: MusicTrack[] = [];
+    for (const medium of (data.media as Record<string, unknown>[] | undefined) ?? []) {
+      for (const entry of (medium.tracks as Record<string, unknown>[] | undefined) ?? []) {
+        const track = mbRecording((entry.recording as Record<string, unknown>) ?? {}, album.artist);
+        if (!track) continue;
+        // The release-track identity keeps a recording repeated on two discs distinct.
+        const trackId = safeMbid(entry.id);
+        if (trackId) track.id = `musicbrainz:track:${trackId}`;
+        if (typeof entry.title === "string" && entry.title.trim()) track.title = entry.title;
+        tracks.push({ ...track, album: album.title, artwork: album.artwork });
+      }
+    }
+    return tracks;
+  },
+  artistTracks: async (artist: MusicArtistRef): Promise<MusicTrack[]> => {
+    const id = mbId(artist.id, "musicbrainz:artist:");
+    const data = await mbFetch(`recording?artist=${id}&limit=50&inc=artist-credits`);
+    return ((data.recordings as Record<string, unknown>[] | undefined) ?? []).map((e) => mbRecording(e, artist.name)).filter((t): t is MusicTrack => !!t);
+  },
+  artistAlbums: async (artist: MusicArtistRef): Promise<MusicAlbumRef[]> => {
+    const id = mbId(artist.id, "musicbrainz:artist:");
+    const data = await mbFetch(`release-group?artist=${id}&type=album|ep&limit=50`);
+    const out: MusicAlbumRef[] = [];
+    for (const entry of (data["release-groups"] as Record<string, unknown>[] | undefined) ?? []) {
+      const group = safeMbid(entry.id);
+      if (!group || typeof entry.title !== "string") continue;
+      out.push({ id: `musicbrainz:release-group:${group}`, connectorId: "catalog", title: entry.title, artist: artist.name, artwork: `https://coverartarchive.org/release-group/${group}/front-500`, year: catalogYear(entry["first-release-date"]) });
+    }
+    return out;
+  },
+};
+
 function settle<T>(provider: string, work: Promise<T>): Promise<T> {
   return withTimeout(work, PROVIDER_TIMEOUT, `${provider} timed out`);
 }
@@ -349,12 +530,13 @@ function catalogConnector(): Connector {
     resolve: async () => {
       throw unsupported("catalog", "playback");
     },
-    // catalog/mod.rs home_rows. ListenBrainz fresh releases and its top-artists fallback are
-    // not ported yet (docs/music-spec.md), so the Deezer rows carry the shelf.
+    // catalog/mod.rs home_rows: ListenBrainz fresh releases, the Deezer charts and editorial,
+    // with ListenBrainz's sitewide artist chart standing in when Deezer's artist chart fails.
     browseHome: () =>
       record(
         (async () => {
-          const [tracks, albums, artists, editorial] = await Promise.allSettled([
+          const [releases, tracks, albums, artists, editorial] = await Promise.allSettled([
+            settle("ListenBrainz", listenbrainz.freshReleases(CATALOG_ROW_LIMIT)),
             settle("Deezer", deezer.chartTracks(CATALOG_ROW_LIMIT)),
             settle("Deezer", deezer.chartAlbums(CATALOG_ROW_LIMIT)),
             settle("Deezer", deezer.chartArtists(CATALOG_ROW_LIMIT)),
@@ -366,9 +548,20 @@ function catalogConnector(): Connector {
             if (r.status === "rejected") failures.push(String(r.reason instanceof Error ? r.reason.message : r.reason));
             else if (r.value.length) rows.push(build(r.value));
           };
+          take(releases, (v) => row("catalog:new-releases", "music.row.newReleases", false, "Fresh releases from ListenBrainz", "covers", "catalog", albumItems(v)));
           take(tracks, (v) => row("catalog:charts:tracks", "Top tracks", true, "Track chart from Deezer", "trackGrid", "catalog", trackItems(v)));
           take(albums, (v) => row("catalog:charts", "music.row.charts", false, "Album chart from Deezer", "covers", "catalog", albumItems(v)));
-          take(artists, (v) => row("catalog:charting-artists", "Charting artists", true, "Artist chart from Deezer", "circles", "catalog", artistItems(v)));
+          if (artists.status === "fulfilled" && artists.value.length) {
+            rows.push(row("catalog:charting-artists", "Charting artists", true, "Artist chart from Deezer", "circles", "catalog", artistItems(artists.value)));
+          } else {
+            // The Rust starts both requests together; the TV asks ListenBrainz only when needed.
+            if (artists.status === "rejected") failures.push(String(artists.reason instanceof Error ? artists.reason.message : artists.reason));
+            const popular = await settle("ListenBrainz", listenbrainz.topArtists(CATALOG_ROW_LIMIT)).then(
+              (value) => ({ status: "fulfilled", value }) as const,
+              (reason) => ({ status: "rejected", reason }) as const,
+            );
+            take(popular, (v) => row("catalog:charting-artists", "Charting artists", true, "Most played on ListenBrainz this month", "circles", "catalog", artistItems(v)));
+          }
           take(editorial, (v) => row("catalog:editorial", "Editorial selection", true, "Selected by the Deezer editors", "covers", "catalog", albumItems(v)));
           if (!rows.length) throw new Error(failures.length ? [...new Set(failures)].sort().join("; ") : "The open catalog has nothing to show right now");
           return rows;
@@ -407,7 +600,9 @@ function catalogConnector(): Connector {
           ? settle("Deezer", deezer.albumTracks(album.id))
           : album.id.startsWith("itunes:album:")
             ? settle("iTunes", itunes.tracks(album.id, "itunes:album:"))
-            : Promise.reject(new Error("This catalog has not supplied a track list for this release")),
+            : album.id.startsWith("musicbrainz:")
+              ? settle("MusicBrainz", musicbrainz.albumTracks(album))
+              : Promise.reject(new Error("This catalog has not supplied a track list for this release")),
       ),
     artistTop: (artist) =>
       record(
@@ -415,7 +610,9 @@ function catalogConnector(): Connector {
           ? settle("Deezer", deezer.artistTop(artist.id))
           : artist.id.startsWith("itunes:artist:")
             ? settle("iTunes", itunes.tracks(artist.id, "itunes:artist:"))
-            : Promise.reject(new Error("This catalog has not supplied tracks for this artist")),
+            : artist.id.startsWith("musicbrainz:artist:")
+              ? settle("MusicBrainz", musicbrainz.artistTracks(artist))
+              : Promise.reject(new Error("This catalog has not supplied tracks for this artist")),
       ),
     artistRows: async (artist) => {
       const rows: MusicCatalogRow[] = [];
@@ -427,6 +624,9 @@ function catalogConnector(): Connector {
       } else if (artist.id.startsWith("itunes:artist:")) {
         const albums = await settle("iTunes", itunes.artistAlbums(artist.id));
         if (albums.length) rows.push(row("artist:albums", "music.search.albums", false, "Apple Music", "covers", "catalog", albumItems(albums)));
+      } else if (artist.id.startsWith("musicbrainz:artist:")) {
+        const albums = await settle("MusicBrainz", musicbrainz.artistAlbums(artist));
+        if (albums.length) rows.push(row("artist:albums", "music.search.albums", false, "MusicBrainz", "covers", "catalog", albumItems(albums)));
       }
       return rows;
     },
@@ -1305,9 +1505,341 @@ function plexConnector(): Connector {
   return self;
 }
 
+// ======================================================================= Subsonic / Navidrome
+// connectors/subsonic/{mod,client,pairing,catalog,convert,model}.rs. Its own sign-in (server
+// URL, username, password); the password itself is never stored, only upstream's pairing:
+// base URL, username, salt and token (Navidrome's /auth/login exchange, else md5(password+salt)).
+// The four keys live in the secret store as upstream's do (the TV's Keychain tier).
+export type SubsonicPairing = { baseUrl: string; username: string; salt: string; token: string };
+const SUBSONIC_KEYS = {
+  baseUrl: "harbor.subsonic.v1.baseUrl",
+  username: "harbor.subsonic.v1.username",
+  salt: "harbor.subsonic.v1.salt",
+  token: "harbor.subsonic.v1.token",
+} as const;
+const SUBSONIC_API_VERSION = "1.16.1";
+const SUBSONIC_CLIENT = "Harbor";
+const SUBSONIC_TIMEOUT = 20_000;
+const SUBSONIC_ART = "512";
+const NAVIDROME_PORT = "4533";
+const SUBSONIC_HOME_SIZE = 24;
+
+/** pairing.rs load(): all four entries, trimmed and non-empty, or nothing. */
+export function subsonicPairing(): SubsonicPairing | null {
+  const entry = (key: string) => {
+    const value = getSecret(key)?.trim();
+    return value ? value : null;
+  };
+  const baseUrl = entry(SUBSONIC_KEYS.baseUrl);
+  const username = entry(SUBSONIC_KEYS.username);
+  const salt = entry(SUBSONIC_KEYS.salt);
+  const token = entry(SUBSONIC_KEYS.token);
+  return baseUrl && username && salt && token ? { baseUrl, username, salt, token } : null;
+}
+function subsonicSave(p: SubsonicPairing | null): void {
+  setSecret(SUBSONIC_KEYS.baseUrl, p?.baseUrl ?? null);
+  setSecret(SUBSONIC_KEYS.username, p?.username ?? null);
+  setSecret(SUBSONIC_KEYS.salt, p?.salt ?? null);
+  setSecret(SUBSONIC_KEYS.token, p?.token ?? null);
+}
+function subsonicAuth(p: SubsonicPairing): [string, string][] {
+  return [["u", p.username], ["t", p.token], ["s", p.salt], ["v", SUBSONIC_API_VERSION], ["c", SUBSONIC_CLIENT]];
+}
+/** client.rs media_url: auth in the query, no f=json (a stream or an image, not an envelope). */
+function subsonicMediaUrl(p: SubsonicPairing, method: string, extra: [string, string][]): string {
+  const url = new URL(`${p.baseUrl}/rest/${method}`);
+  for (const [k, v] of [...subsonicAuth(p), ...extra]) url.searchParams.append(k, v);
+  return url.toString();
+}
+export function subsonicStreamUrl(p: SubsonicPairing, songId: string, transcode = false): string {
+  // client.rs stream_url asks for format=raw. AVPlayer has no Ogg/Opus/WMA/APE/WavPack decoder,
+  // so on the TV those files ask the server for 320k MP3 instead (see subsonicResolve).
+  return subsonicMediaUrl(p, "stream", transcode ? [["id", songId], ["format", "mp3"], ["maxBitRate", "320"]] : [["id", songId], ["format", "raw"]]);
+}
+function subsonicCoverArt(p: SubsonicPairing, cover: string): string {
+  return subsonicMediaUrl(p, "getCoverArt", [["id", cover], ["size", SUBSONIC_ART]]);
+}
+/** client.rs describe(): 40/41 mean the saved pairing went stale. */
+function subsonicDescribe(error: { code?: unknown; message?: unknown } | undefined): string {
+  if (!error || typeof error !== "object") return "Music server rejected the request";
+  const code = num(error.code) ?? 0;
+  if (code === 40 || code === 41) return "Your music server rejected this sign in. Connect it again.";
+  return text(error.message) ?? `Music server error ${code}`;
+}
+type SubsonicBody = Record<string, unknown> & { status?: string; error?: { code?: number; message?: string } };
+/** client.rs call(): GET /rest/<method> with auth + f=json, the envelope unwrapped. */
+async function subsonicCall(p: SubsonicPairing, method: string, extra: [string, string][] = []): Promise<SubsonicBody> {
+  const url = new URL(`${p.baseUrl}/rest/${method}`);
+  for (const [k, v] of [...subsonicAuth(p), ["f", "json"], ...extra]) url.searchParams.append(k, v);
+  let res: Awaited<ReturnType<typeof request>>;
+  try {
+    res = await request(url.toString(), { headers: { "User-Agent": "Harbor/1.0" }, timeoutMs: SUBSONIC_TIMEOUT });
+  } catch (cause) {
+    throw new Error(`Music server request failed: ${cause instanceof Error ? cause.message.replace(/^request failed: /, "") : cause}`);
+  }
+  if (res.status < 200 || res.status >= 300) throw new Error(`Music server returned HTTP ${res.status}`);
+  let body: SubsonicBody | undefined;
+  try {
+    body = (JSON.parse(res.text) as Record<string, unknown>)["subsonic-response"] as SubsonicBody | undefined;
+  } catch {
+    body = undefined;
+  }
+  if (!body || typeof body !== "object") throw new Error("Music server sent a response Harbor could not read");
+  if (body.status !== "ok") throw new Error(subsonicDescribe(body.error));
+  return body;
+}
+/** client.rs scrobble(): submission=false is "now playing", true with a time is the scrobble. */
+export async function subsonicScrobble(p: SubsonicPairing, songId: string, completedAtMillis: number | null): Promise<void> {
+  const extra: [string, string][] = [["id", songId]];
+  if (completedAtMillis !== null) extra.push(["submission", "true"], ["time", String(Math.floor(completedAtMillis))]);
+  else extra.push(["submission", "false"]);
+  await subsonicCall(p, "scrobble", extra);
+}
+/** client.rs base_candidates: a bare host is tried as https, http, then http on Navidrome's port. */
+export function subsonicBaseCandidates(raw: string): string[] {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) throw new Error("Enter the address of your music server");
+  const normalize = (value: string): string => {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new Error("That music server address is not valid");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("A music server address must start with http or https");
+    if (!parsed.hostname) throw new Error("That music server address is missing a host");
+    return parsed.toString().replace(/\/+$/, "");
+  };
+  if (trimmed.includes("://")) return [normalize(trimmed)];
+  const out = [normalize(`https://${trimmed}`), normalize(`http://${trimmed}`)];
+  if (!trimmed.includes(":")) out.push(normalize(`http://${trimmed}:${NAVIDROME_PORT}`));
+  return out;
+}
+function subsonicSalt(): string {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
+/** client.rs exchange(): Navidrome's native login hands out a ready salt + token. */
+async function subsonicExchange(base: string, username: string, password: string): Promise<SubsonicPairing | null> {
+  try {
+    const res = await request(`${base}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "Harbor/1.0" }, body: JSON.stringify({ username, password }), timeoutMs: SUBSONIC_TIMEOUT });
+    if (res.status < 200 || res.status >= 300) return null;
+    const login = JSON.parse(res.text) as { username?: unknown; subsonicSalt?: unknown; subsonicToken?: unknown };
+    const salt = typeof login.subsonicSalt === "string" && login.subsonicSalt.length >= 6 ? login.subsonicSalt : null;
+    const token = typeof login.subsonicToken === "string" && login.subsonicToken.length === 32 ? login.subsonicToken : null;
+    if (!salt || !token) return null;
+    return { baseUrl: base, username: typeof login.username === "string" && login.username ? login.username : username, salt, token };
+  } catch {
+    return null;
+  }
+}
+/** client.rs pair(): exchange or salt, then ping to prove the pairing. */
+async function subsonicPair(base: string, username: string, password: string): Promise<SubsonicPairing> {
+  const salt = subsonicSalt();
+  const pairing = (await subsonicExchange(base, username, password)) ?? { baseUrl: base, username, salt, token: md5Hex(`${password}${salt}`) };
+  await subsonicCall(pairing, "ping");
+  return pairing;
+}
+/** convert.rs safe_id */
+function subsonicSafeId(raw: string): string {
+  let trimmed = raw.trim();
+  if (trimmed.startsWith("subsonic:")) trimmed = trimmed.slice("subsonic:".length);
+  if (!trimmed || trimmed.length > 128 || !/^[\x21-\x7e]+$/.test(trimmed)) throw new Error("That music server item is not available");
+  return trimmed;
+}
+type SubsonicChild = Record<string, unknown> & { id?: unknown };
+function subsonicArtwork(p: SubsonicPairing, cover: unknown): string {
+  const c = text(cover);
+  return c ? subsonicCoverArt(p, c) : "";
+}
+/** convert.rs track_ref */
+function subsonicTrack(p: SubsonicPairing, song: SubsonicChild): MusicTrack | undefined {
+  const id = typeof song.id === "string" ? song.id : typeof song.id === "number" ? String(song.id) : undefined;
+  if (!id) return undefined;
+  const seconds = Math.max(0, Math.floor(num(song.duration) ?? 0));
+  return { id: `subsonic:${id}`, connectorId: "subsonic", sourceId: id, title: typeof song.title === "string" ? song.title : "", artist: typeof song.artist === "string" ? song.artist : "", album: typeof song.album === "string" ? song.album : undefined, artwork: subsonicArtwork(p, song.coverArt), durationSeconds: seconds, durationLabel: durationLabel(seconds) };
+}
+/** convert.rs album_ref */
+function subsonicAlbum(p: SubsonicPairing, album: SubsonicChild): MusicAlbumRef | undefined {
+  if (typeof album.id !== "string") return undefined;
+  return { id: album.id, connectorId: "subsonic", title: typeof album.name === "string" ? album.name : "", artist: typeof album.artist === "string" ? album.artist : "", artwork: subsonicArtwork(p, album.coverArt), year: num(album.year), trackCount: num(album.songCount) };
+}
+/** convert.rs artist_ref: the server's cover art, else its own artistImageUrl. */
+function subsonicArtist(p: SubsonicPairing, artist: SubsonicChild): MusicArtistRef | undefined {
+  if (typeof artist.id !== "string") return undefined;
+  const art = subsonicArtwork(p, artist.coverArt) || text(artist.artistImageUrl);
+  return { id: artist.id, connectorId: "subsonic", name: typeof artist.name === "string" ? artist.name : "", artwork: art || undefined };
+}
+/** convert.rs playlist_ref */
+function subsonicPlaylist(p: SubsonicPairing, playlist: SubsonicChild): MusicPlaylistRef | undefined {
+  if (typeof playlist.id !== "string") return undefined;
+  const art = subsonicArtwork(p, playlist.coverArt);
+  return { id: playlist.id, connectorId: "subsonic", name: typeof playlist.name === "string" ? playlist.name : "", artwork: art ? [art] : [], trackCount: num(playlist.songCount), subtitle: text(playlist.comment) };
+}
+function subsonicList(value: unknown, key: string): SubsonicChild[] {
+  const node = value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
+  return Array.isArray(node) ? (node as SubsonicChild[]) : [];
+}
+/** model.rs in_disc_order */
+function subsonicDiscOrder(songs: SubsonicChild[]): SubsonicChild[] {
+  return songs
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => (num(a.s.discNumber) ?? 1) - (num(b.s.discNumber) ?? 1) || (num(a.s.track) ?? 0) - (num(b.s.track) ?? 0) || a.i - b.i)
+    .map((x) => x.s);
+}
+// catalog.rs. The row titles are upstream's lookup keys; lib/i18n has no copy for them yet, so
+// music.ts gives them the English the rows are named for (see SUBSONIC_ROW_TITLES there).
+async function subsonicHome(p: SubsonicPairing): Promise<MusicCatalogRow[]> {
+  const albumRow = async (type: string, id: string, title: string) => {
+    const body = await subsonicCall(p, "getAlbumList2", [["type", type], ["size", String(SUBSONIC_HOME_SIZE)]]);
+    return row(id, title, false, undefined, "covers", "subsonic", albumItems(subsonicList(body.albumList2, "album").map((a) => subsonicAlbum(p, a)).filter(defined)));
+  };
+  const outcomes = await Promise.allSettled([
+    albumRow("newest", "subsonic:home:newest", "music.row.serverNewest"),
+    albumRow("frequent", "subsonic:home:frequent", "music.row.serverFrequent"),
+    albumRow("random", "subsonic:home:random", "music.row.serverRandom"),
+    subsonicCall(p, "getStarred2").then((body) => row("subsonic:home:starred", "music.row.serverStarred", false, undefined, "trackGrid", "subsonic", trackItems(subsonicList(body.starred2, "song").slice(0, SUBSONIC_HOME_SIZE).map((s) => subsonicTrack(p, s)).filter(defined)))),
+    subsonicCall(p, "getArtists").then((body) => {
+      const artists = subsonicList(body.artists, "index").flatMap((index) => subsonicList(index, "artist"));
+      return row("subsonic:home:artists", "music.row.serverArtists", false, undefined, "circles", "subsonic", artistItems(artists.slice(0, SUBSONIC_HOME_SIZE).map((a) => subsonicArtist(p, a)).filter(defined)));
+    }),
+    subsonicCall(p, "getPlaylists").then((body) => row("subsonic:home:playlists", "music.row.serverPlaylists", false, undefined, "covers", "subsonic", playlistItems(subsonicList(body.playlists, "playlist").slice(0, SUBSONIC_HOME_SIZE).map((x) => subsonicPlaylist(p, x)).filter(defined)))),
+  ]);
+  const rows: MusicCatalogRow[] = [];
+  let failure: unknown = null;
+  for (const o of outcomes) {
+    if (o.status === "fulfilled") {
+      if (o.value.items.length) rows.push(o.value);
+    } else failure = o.reason;
+  }
+  if (failure && !rows.length) throw failure;
+  return rows;
+}
+async function subsonicAlbumSongs(p: SubsonicPairing, album: string): Promise<MusicTrack[]> {
+  const body = await subsonicCall(p, "getAlbum", [["id", album]]);
+  return subsonicDiscOrder(subsonicList(body.album, "song")).map((s) => subsonicTrack(p, s)).filter(defined);
+}
+/** catalog.rs artist_songs: the first four albums' songs, 30 at most. */
+async function subsonicArtistSongs(p: SubsonicPairing, artist: string): Promise<MusicTrack[]> {
+  const body = await subsonicCall(p, "getArtist", [["id", artist]]);
+  const ids = subsonicList(body.artist, "album").slice(0, 4).map((a) => a.id).filter((id): id is string => typeof id === "string");
+  if (!ids.length) return [];
+  const settled = await Promise.allSettled(ids.map((id) => subsonicAlbumSongs(p, id)));
+  const tracks = settled.flatMap((s) => (s.status === "fulfilled" ? s.value : []));
+  const failed = settled.find((s) => s.status === "rejected") as PromiseRejectedResult | undefined;
+  if (failed && !tracks.length) throw failed.reason;
+  return tracks.slice(0, 30);
+}
+async function subsonicSearch3(p: SubsonicPairing, query: string, artists: number, albums: number, songs: number) {
+  const body = await subsonicCall(p, "search3", [["query", query], ["artistCount", String(artists)], ["albumCount", String(albums)], ["songCount", String(songs)]]);
+  return body.searchResult3 ?? {};
+}
+// AVPlayer cannot open these containers; the server transcodes them (TV rule, see stream URL).
+const SUBSONIC_TRANSCODE = new Set(["ogg", "oga", "opus", "webm", "mka", "wv", "ape", "wma", "mpc", "dsf", "dff"]);
+async function subsonicResolve(p: SubsonicPairing, track: MusicTrack): Promise<MusicStream> {
+  const songId = subsonicSafeId(track.sourceId ?? track.id);
+  // mod.rs stream(): the "now playing" report is fire-and-forget.
+  void subsonicScrobble(p, songId, null).catch(() => undefined);
+  const song = await subsonicCall(p, "getSong", [["id", songId]]).then((b) => (b.song as Record<string, unknown> | undefined) ?? {}, () => ({}) as Record<string, unknown>);
+  const suffix = (text(song.suffix) ?? "").toLowerCase();
+  const transcode = SUBSONIC_TRANSCODE.has(suffix);
+  return { url: subsonicStreamUrl(p, songId, transcode), mimeType: transcode ? "audio/mpeg" : "audio/*", bitrate: transcode ? 320 : num(song.bitRate) ?? 0 };
+}
+/** mod.rs sign_in: every base candidate in turn, the last failure reported. */
+export async function subsonicConnect(address: string, username: string, password: string): Promise<SubsonicPairing> {
+  const field = (value: string, label: string) => {
+    if (!value || !value.trim()) throw new Error(`Enter your music server ${label}`);
+    return value;
+  };
+  const base = field(address, "address");
+  const user = field(username, "username").trim();
+  const pass = field(password, "password");
+  let failure: unknown = null;
+  for (const candidate of subsonicBaseCandidates(base)) {
+    try {
+      const pairing = await subsonicPair(candidate, user, pass);
+      subsonicSave(pairing);
+      subsonicConnectorRef.health = "healthy";
+      return pairing;
+    } catch (cause) {
+      failure = cause;
+    }
+  }
+  subsonicConnectorRef.health = classify(failure, ["could not reach"]);
+  throw failure instanceof Error ? failure : new Error("Harbor could not reach that music server");
+}
+/** mod.rs disconnect */
+export function subsonicDisconnect(): void {
+  subsonicSave(null);
+  subsonicConnectorRef.health = "unknown";
+}
+
+function subsonicConnector(): Connector {
+  const need = (): SubsonicPairing => {
+    const p = subsonicPairing();
+    if (!p) throw new Error("Connect your music server first");
+    return p;
+  };
+  const self: Connector = {
+    id: "subsonic",
+    name: "Navidrome",
+    kind: "server",
+    searchable: true,
+    playable: true,
+    browsable: true,
+    health: "unknown",
+    ready: () => subsonicPairing() !== null,
+    detail: () => subsonicPairing()?.baseUrl,
+    search: (query, limit) =>
+      record(
+        (async () => {
+          const p = need();
+          const r = await subsonicSearch3(p, query, 0, 0, limit);
+          return subsonicList(r, "song").map((s) => subsonicTrack(p, s)).filter(defined);
+        })(),
+      ),
+    searchTyped: (query, limit) =>
+      record(
+        (async () => {
+          const p = need();
+          const r = await subsonicSearch3(p, query, limit, limit, limit);
+          const results: MusicSearchResults = {
+            tracks: subsonicList(r, "song").map((s) => subsonicTrack(p, s)).filter(defined),
+            albums: subsonicList(r, "album").map((a) => subsonicAlbum(p, a)).filter(defined),
+            artists: subsonicList(r, "artist").map((a) => subsonicArtist(p, a)).filter(defined),
+            playlists: [],
+          };
+          results.top = results.tracks[0] ? { kind: "track", ...results.tracks[0] } : results.albums[0] ? { kind: "album", ...results.albums[0] } : undefined;
+          return results;
+        })(),
+      ),
+    browseHome: () => {
+      const p = subsonicPairing();
+      return p ? record(subsonicHome(p)) : Promise.resolve([]);
+    },
+    resolve: (track) => record((async () => subsonicResolve(need(), track))()),
+    albumTracks: (album) => record((async () => subsonicAlbumSongs(need(), subsonicSafeId(album.id)))()),
+    artistTop: (artist) => record((async () => subsonicArtistSongs(need(), subsonicSafeId(artist.id)))()),
+    artistRows: async () => [],
+    playlistTracks: (playlist) =>
+      record(
+        (async () => {
+          const p = need();
+          const body = await subsonicCall(p, "getPlaylist", [["id", subsonicSafeId(playlist.id)]]);
+          return subsonicList(body.playlist, "entry").map((s) => subsonicTrack(p, s)).filter(defined);
+        })(),
+      ),
+    stationTracks: async () => {
+      throw unsupported("subsonic", "stations");
+    },
+  };
+  const record = recorder(self, ["could not reach"]);
+  return self;
+}
+const subsonicConnectorRef = subsonicConnector();
+
 // ================================================================================ registry
 // registry.rs + matching.rs + rows.rs, over the connectors above.
-export const connectors: Connector[] = [catalogConnector(), jellyfinConnector(), plexConnector(), soundcloudConnector()];
+export const connectors: Connector[] = [catalogConnector(), jellyfinConnector(), plexConnector(), subsonicConnectorRef, soundcloudConnector()];
 export function connector(id: string | undefined | null): Connector | undefined {
   return connectors.find((c) => c.id === id);
 }
@@ -1403,6 +1935,35 @@ export async function searchTyped(query: string, limit: number, connectorId: str
     }
   }
   return { ...merged, errors };
+}
+
+/** registry.rs search (music_search) + matching.rs settle_search_results: round-robin, deduped. */
+export async function searchTracks(query: string, limit: number): Promise<MusicTrack[]> {
+  const searchable = active().filter((c) => c.searchable);
+  const live = searchable.filter((c) => c.health !== "offline");
+  const targets = live.length ? live : searchable;
+  const settled = await Promise.all(targets.map((c) => c.search(query, limit).then((v) => ({ ok: true as const, v }), (e) => ({ ok: false as const, e: `${c.id}: ${e instanceof Error ? e.message : e}` }))));
+  const queues = settled.filter((s) => s.ok).map((s) => [...(s as { v: MusicTrack[] }).v]);
+  if (!queues.length) throw new Error(settled.map((s) => (s.ok ? "" : s.e)).filter(Boolean).join("; ") || "Music sources are offline");
+  const seen = new Set<string>();
+  const out: MusicTrack[] = [];
+  while (out.length < limit) {
+    let advanced = false;
+    for (const queue of queues) {
+      while (queue.length) {
+        const t = queue.shift()!;
+        advanced = true;
+        if (!seen.has(sourceKey(t))) {
+          seen.add(sourceKey(t));
+          out.push(t);
+          break;
+        }
+      }
+      if (out.length === limit) break;
+    }
+    if (!advanced) break;
+  }
+  return out;
 }
 
 // matching.rs

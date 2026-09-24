@@ -835,6 +835,8 @@ export const liveVod = {
 export const subtitles = {
   search: subtitleGlue.search,
   prepare: subtitleGlue.prepare,
+  /** html5 bridge ensureLoaded: parsed cues for the AVPlayer engine's own subtitle overlay. */
+  cues: subtitleGlue.cues,
   /** bp-player-subtitles: track rows (language groups, badges, best-match order). */
   trackView: subtitleGlue.trackView,
   /** bp-subtitle-find: search a target title / season / episode, and parse a typed title. */
@@ -1005,6 +1007,19 @@ export const music = {
   acceptSoundCloud: musicGlue.acceptSoundCloud,
   setSoundCloud: musicGlue.setSoundCloud,
   withdrawConsent: musicGlue.withdrawConsent,
+  // second batch: Navidrome, Last.fm scrobbling, track radio, lyrics
+  subsonicConnect: musicGlue.subsonicConnect,
+  subsonicDisconnect: musicGlue.subsonicDisconnect,
+  lastfmStatus: musicGlue.lastfmStatus,
+  lastfmBegin: musicGlue.lastfmBegin,
+  lastfmFinish: musicGlue.lastfmFinish,
+  lastfmDisconnect: musicGlue.lastfmDisconnect,
+  scrobble: musicGlue.scrobble,
+  shouldScrobble: musicGlue.shouldScrobble,
+  radio: musicGlue.radio,
+  radioExtend: musicGlue.radioExtend,
+  lyrics: musicGlue.lyrics,
+  setLyricOffset: musicGlue.setLyricOffset,
 };
 
 // ================================================================================== runtime

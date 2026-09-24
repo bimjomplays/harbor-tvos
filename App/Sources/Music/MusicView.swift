@@ -18,6 +18,7 @@ struct MusicView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(28)) {
                     mast
+                    if player.radioStatus != nil { MusicRadioStatusNote().padding(.horizontal, BP.gutter) }
                     if model.failed { offline }
                     ForEach(model.bands) { band in
                         MusicBandView(band: band, onCard: { open($0, in: $1) })
@@ -260,10 +261,32 @@ struct MusicTrackMenuItems: View {
     var body: some View {
         Button { player.playNext(track) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
         Button { player.enqueue(track) } label: { Label(copy("music.card.addToQueue", "Add to queue"), systemImage: "text.append") }
+        // music-track-menu.tsx "Start radio" (radio.ts): a station seeded by this track.
+        Button { player.startRadio(track) } label: { Label(copy("music.card.startRadio", "Start radio"), systemImage: "dot.radiowaves.left.and.right") }
         Button { player.toggleLiked(track) } label: {
             player.isLiked(track)
                 ? Label(copy("music.unsaveTrack", "Remove from saved tracks"), systemImage: "heart.slash")
                 : Label(copy("music.saveTrack", "Save track"), systemImage: "heart")
+        }
+    }
+}
+
+/// music-track-grid.tsx radio status line: "Loading" while the station is built, then the
+/// radio error if it could not be (it stays until the next attempt, as upstream's does).
+struct MusicRadioStatusNote: View {
+    @ObservedObject private var player = MusicPlayer.shared
+    @ObservedObject private var copy = MusicCopy.shared
+    var body: some View {
+        switch player.radioStatus {
+        case .some(.loading):
+            HStack(spacing: BP.px(10)) {
+                ProgressView()
+                BPNote(text: copy("music.loading", "Loading music"))
+            }
+        case .some(.failed(let message)):
+            BPNote(text: message, tone: BP.danger)
+        case .none:
+            EmptyView()
         }
     }
 }

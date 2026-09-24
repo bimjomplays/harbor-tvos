@@ -12,7 +12,11 @@ import {
 } from "@/lib/music/source-consent";
 import { favoriteArtists } from "@/lib/music/sources";
 import { isMusicLiked, likedIdsFor } from "@/lib/music/liked";
+import { loadTrackLyrics } from "@/lib/music/lyrics";
+import { getLyricOffset, setLyricOffset as storeLyricOffset } from "@/lib/music/lyric-offset";
 import * as src from "./musicSources";
+import * as radioLib from "./musicRadio";
+import * as scrobbling from "./musicScrobble";
 
 // ------------------------------------------------------------------------------ copy
 const COPY_KEYS = [
@@ -27,6 +31,13 @@ const COPY_KEYS = [
   "music.connect.serverBody", "music.consent.title", "music.consent.hosting", "music.consent.terms", "music.consent.responsibility", "music.consent.rights",
   "music.consent.enable", "music.consent.accept", "music.home.title", "music.home.body", "music.offline.title", "music.offline.retry",
   "music.searchLabel", "music.position", "music.trackCount", "music.connect.action",
+  // second batch: Navidrome sign-in, Last.fm, radio, lyrics (music.ts / music-now-playing.ts)
+  "music.connect.title", "music.connect.connecting", "music.connect.disconnect", "music.connect.connected", "music.connect.failed",
+  "music.connections.scrobbler", "music.connections.capability.scrobble",
+  "music.lastfm.connected", "music.lastfm.saved", "music.lastfm.history", "music.lastfm.live", "music.lastfm.connect", "music.lastfm.disconnect",
+  "music.lastfm.apiKey", "music.lastfm.secret", "music.lastfm.finish", "music.lastfm.authorize", "music.lastfm.browserPrompt",
+  "music.card.startRadio", "music.radio.error", "music.now.next",
+  "Lyrics", "Lyric sync", "Lyrics earlier", "Lyrics later", "Finding lyrics", "No lyrics for this track",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */
@@ -114,12 +125,31 @@ export function card(item: MusicCatalogItem): MusicCard {
       return { ...base, key: `station:${item.connectorId}:${item.id}`, title: item.name, subtitle: item.subtitle ?? t("music.row.stationBadge"), artwork: item.artwork, artworks: [], circle: false, track: null };
   }
 }
+/**
+ * subsonic/catalog.rs names its shelves with keys (music.row.serverNewest ...) that upstream's
+ * catalogs never define, so the desktop shows the raw key. The TV shows upstream copy where a
+ * string with the same meaning exists, and plain English for the two that have none.
+ */
+const SUBSONIC_ROW_TITLES: Record<string, () => string> = {
+  "music.row.serverNewest": () => t("music.row.server"),
+  "music.row.serverFrequent": () => "Most played",
+  "music.row.serverRandom": () => "Random albums",
+  "music.row.serverStarred": () => t("music.row.liked"),
+  "music.row.serverArtists": () => t("music.search.artists"),
+  "music.row.serverPlaylists": () => t("music.row.playlists"),
+};
+function rowTitle(rowData: MusicCatalogRow): string {
+  if (rowData.titleLiteral) return rowData.title;
+  const translated = t(rowData.title);
+  const fallback = SUBSONIC_ROW_TITLES[rowData.title];
+  return translated === rowData.title && fallback ? fallback() : translated;
+}
 function band(key: string, rowData: MusicCatalogRow, extra: Partial<MusicBand> = {}): MusicBand {
   const seen = new Set<string>();
   const cards = rowData.items.map(card).filter((c) => (seen.has(c.key) ? false : (seen.add(c.key), true)));
   return {
     key,
-    title: rowData.titleLiteral ? rowData.title : t(rowData.title),
+    title: rowTitle(rowData),
     subtitle: rowData.subtitle ?? "",
     layout: rowData.layout,
     source: rowData.source,
@@ -309,20 +339,95 @@ export function stopped(): void {
   src.jellyfinStopped();
 }
 
+// ----------------------------------------------------------------- radio, lyrics, scrobbles
+function familiar(): MusicTrack[] {
+  const lib = library();
+  return [...lib.recents, ...lib.liked];
+}
+/** player.ts musicRadioTracks -> radio.ts loadTrackRadio (the station; Swift plays + arms it). */
+export async function radio(track: MusicTrack): Promise<MusicTrack[]> {
+  try {
+    return await radioLib.loadTrackRadio(track, familiar());
+  } catch {
+    throw new Error(t("music.radio.error"));
+  }
+}
+/** radio.ts armTrackRadio's extension, asked for by Swift near the end of a radio queue. */
+export async function radioExtend(queue: MusicTrack[], index: number): Promise<MusicTrack[]> {
+  return radioLib.extendTrackRadio(queue ?? [], index, familiar()).catch(() => []);
+}
+
+/**
+ * music-now-playing.tsx lyrics panel: lyrics.ts loadTrackLyrics (LRCLIB, synced lines only)
+ * with its nine-second give-up, and the per-track sync offset from lyric-offset.ts.
+ */
+export async function lyrics(track: MusicTrack): Promise<{ lines: Array<{ at: number; text: string }>; offset: number }> {
+  const lines = await src.withTimeout(loadTrackLyrics(track), 9000, "lyrics").catch(() => null);
+  return { lines: lines ?? [], offset: getLyricOffset(track) };
+}
+/** lyric-offset.ts setLyricOffset (clamped to +-8 s in 0.25 s steps); returns the stored value. */
+export function setLyricOffset(track: MusicTrack, seconds: number): number {
+  return storeLyricOffset(track, seconds);
+}
+
+/** accounts.rs scrobble_track (Subsonic, then Last.fm). Swift calls it past should_scrobble. */
+export function scrobble(track: MusicTrack, startedAt: number) {
+  return scrobbling.scrobble(track, startedAt);
+}
+export function shouldScrobble(listenedSeconds: number, durationSeconds: number): boolean {
+  return scrobbling.shouldScrobble(listenedSeconds, durationSeconds);
+}
+
+// --------------------------------------------------------------------- Navidrome sign-in
+/** subsonic/mod.rs connect: the Connections sheet's form (Server URL, Username, Password). */
+export async function subsonicConnect(url: string, username: string, password: string): Promise<{ account: string; detail: string }> {
+  const pairing = await src.subsonicConnect(url ?? "", username ?? "", password ?? "");
+  homeCache = null;
+  return { account: pairing.username, detail: pairing.baseUrl };
+}
+export function subsonicDisconnect(): boolean {
+  src.subsonicDisconnect();
+  homeCache = null;
+  return true;
+}
+
+// ------------------------------------------------------------------------------ Last.fm
+export const lastfmStatus = scrobbling.lastfmStatus;
+export const lastfmBegin = scrobbling.lastfmBegin;
+export const lastfmFinish = scrobbling.lastfmFinish;
+export const lastfmDisconnect = scrobbling.lastfmDisconnect;
+
 // ------------------------------------------------------------------ sources + consent
 export function connections() {
   const consent = getMusicSourceConsent();
-  return src.connectors.map((c) => ({
+  const rows = src.connectors.map((c) => ({
     id: c.id,
     name: c.name,
-    kind: c.kind,
+    kind: c.kind as string,
     status: c.ready() ? (c.health === "offline" ? "error" : "connected") : "disconnected",
-    health: c.health,
-    detail: c.detail?.() ?? null,
+    health: c.health as string,
+    detail: (c.detail?.() ?? null) as string | null,
+    // subsonic/mod.rs connection(): the signed-in user is the account.
+    account: (c.id === "subsonic" ? src.subsonicPairing()?.username ?? null : null) as string | null,
     gated: c.id === "soundcloud",
     enabled: c.id === "soundcloud" ? !!consent.acceptedAt && consent.sources.soundcloud : c.ready(),
-    capabilities: [c.searchable ? "search" : null, c.browsable ? "browse" : null, c.playable ? "play" : null].filter(Boolean),
+    capabilities: [c.searchable ? "search" : null, c.browsable ? "browse" : null, c.playable ? "play" : null, c.id === "subsonic" ? "library" : null].filter(Boolean) as string[],
   }));
+  // lastfm.rs LastFmConnector: a scrobbler (kind "scrobbler", capability "scrobble").
+  const fm = scrobbling.lastfmStatus();
+  rows.push({
+    id: "lastfm",
+    name: "Last.fm",
+    kind: "scrobbler",
+    status: fm.connected ? (fm.health === "offline" ? "error" : "connected") : "disconnected",
+    health: fm.health,
+    detail: null,
+    account: fm.username,
+    gated: false,
+    enabled: fm.connected,
+    capabilities: ["scrobble"],
+  });
+  return rows;
 }
 
 export function consent(): { accepted: boolean; soundcloud: boolean } {

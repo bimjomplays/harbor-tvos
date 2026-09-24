@@ -39,8 +39,9 @@ extension MPVPlayerController: PlayerEngineControlling {
 }
 
 extension PlayerEngineControlling {
-    /// html5 bridge capabilities: no audio offset, no shaders; on the TV the native engine also has
-    /// no sideloaded, restyled, shifted or second subtitles (AVPlayer renders the file's own tracks).
+    /// html5 bridge capabilities: no audio offset, no shaders, and only the engine's own
+    /// (sideloaded) subtitles can be shifted, restyled or drawn second; the file's embedded tracks
+    /// stay with AVPlayer's renderer (NativePlayerController, NativeSubtitleOverlay).
     var supportsMpvExtras: Bool { engineKind == .mpv }
 }
 

@@ -111,12 +111,39 @@ struct MusicConnectionRow: Decodable, Identifiable {
     var status: String
     var health: String
     var detail: String?
+    /// The signed-in account (Navidrome user, Last.fm user), as upstream's MusicConnection.account.
+    var account: String?
     var gated: Bool
     var enabled: Bool
     var capabilities: [String]
 }
 
 struct MusicConsentState: Decodable { var accepted: Bool; var soundcloud: Bool }
+
+/// engine/music.ts subsonicConnect: the account and server the pairing was made with.
+struct MusicSubsonicConnected: Decodable { var account: String; var detail: String }
+
+/// engine/musicScrobble.ts lastfmStatus (lastfm.rs status + the saved credentials).
+struct MusicLastFmStatus: Decodable {
+    var connected: Bool
+    var username: String?
+    var saved: Bool
+    var apiKey: String
+    var health: String
+}
+
+/// engine/musicScrobble.ts lastfmBegin (lastfm.rs LastFmAuthStart).
+struct MusicLastFmAuthStart: Decodable { var token: String; var authUrl: String }
+
+/// engine/musicScrobble.ts scrobble: "scrobbled" is upstream's music://lastfm event.
+struct MusicScrobbleResult: Decodable { var status: String; var message: String? }
+
+/// engine/music.ts lyrics: lyrics.ts LyricLine[] and the lyric-offset.ts offset for the track.
+struct MusicLyrics: Decodable {
+    struct Line: Decodable, Hashable { var at: Double; var text: String }
+    var lines: [Line]
+    var offset: Double
+}
 
 /// The room's copy, from upstream's English (or the profile's language) through lib/i18n.
 @MainActor
