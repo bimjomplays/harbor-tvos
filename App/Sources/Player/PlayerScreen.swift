@@ -311,7 +311,8 @@ struct PlayerScreen: View {
             do {
                 let loaded: PlayerPrefs = try await HarborEngine.shared.call("player.prefs", [profile?.id ?? "default", profile?.linked ?? true])
                 prefs = loaded
-                beginNowPlaying()   // the remote's skip intervals follow the seek steps
+                // A player that closed meanwhile must not claim Now Playing back (review 28).
+                if !Task.isCancelled, !finishing { beginNowPlaying() }   // the remote's skip intervals follow the seek steps
             } catch {}
         }
         .onReceive(tick) { _ in
@@ -688,7 +689,7 @@ struct PlayerScreen: View {
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
                 // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
-                if !isLive, context?.homeServer != nil { chip("Quality", "speedometer", id: "hsquality") { open(.homeServerQuality) } }
+                if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
                 if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
                 // use-player-hotkeys playerPrevChannel: back to the last channel watched.
@@ -1170,7 +1171,8 @@ struct PlayerScreen: View {
 
     /// use-sleep-timer.ts fire handler (bridge.pause()); the chrome comes up so the pause shows.
     private func sleepFired() {
-        controller?.setPaused(true)
+        // A Watch Together room pauses for everyone, as a press would (review 28).
+        if let c = controller, !c.snapshot().paused, !together.interceptToggle(c) { c.setPaused(true) }
         if let c = controller { snap = c.snapshot() }
         chrome = true
         scheduleHide()
@@ -1507,6 +1509,8 @@ struct PlayerScreen: View {
             }
             if let context, context.homeServer != nil, let c = controller { await context.stopHomeServerSession(positionSec: c.snapshot().position) }
             SleepTimer.shared.playerClosed(advancing: advance ?? natural)
+            // use-still-watching counts auto-advanced episodes in a row: a close that doesn't advance ends the run (review 28).
+            if !(advance ?? natural) { StillWatching.reset() }
             onClose(advance ?? natural)
             // The watched check on the tiles reads the flags this session just wrote.
             await CardMarksStore.shared.remark()
