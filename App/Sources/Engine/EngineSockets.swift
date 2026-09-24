@@ -54,7 +54,8 @@ final class EngineSockets: NSObject, URLSessionWebSocketDelegate {
     func close(id: Int, code: Int, reason: String) {
         lock.lock()
         let task = tasks[id]
-        closeCodes[id] = code
+        // A close can race a socket that already finished here; don't leave its code behind (review 18).
+        if task != nil { closeCodes[id] = code } else { closeCodes.removeValue(forKey: id) }
         lock.unlock()
         let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: code) ?? .normalClosure
         task?.cancel(with: closeCode, reason: reason.data(using: .utf8))
@@ -68,6 +69,8 @@ final class EngineSockets: NSObject, URLSessionWebSocketDelegate {
                 self.deliver(id, "message", text)
                 self.receive(task, id: id)
             case .success(.data(let data)):
+                // The Together relay speaks JSON text only (lib/together/protocol.ts); a binary frame
+                // is handed over as UTF-8 text, not a Blob/ArrayBuffer (the shim has no binary path).
                 self.deliver(id, "message", String(decoding: data, as: UTF8.self))
                 self.receive(task, id: id)
             case .success:
