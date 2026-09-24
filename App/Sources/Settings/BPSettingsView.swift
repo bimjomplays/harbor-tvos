@@ -93,7 +93,16 @@ struct BPSettingsView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var account: AccountStore
     let openConnect: () -> Void
-    @State private var depth = 1
+    @State private var depth = BPSettingsView.initialDepth()
+    /// A theme change rebuilds the tree mid-visit (ThemeStore.revision): the column comes back at
+    /// the depth it was on; a fresh visit still opens on the categories (review 17).
+    private static var saved: (depth: Int, revision: Int)?
+    private static func initialDepth() -> Int {
+        let now = ThemeStore.shared.revision
+        guard let s = saved, s.revision != now else { return 1 }
+        saved = (s.depth, now)
+        return s.depth
+    }
     @FocusState private var focus: String?
 
     var body: some View {
@@ -119,6 +128,7 @@ struct BPSettingsView: View {
 
     private func goBack() {
         depth = 1
+        Self.saved = (1, ThemeStore.shared.revision)
         let id = model.active
         DispatchQueue.main.async { focus = "cat:\(id)" }
     }
@@ -126,6 +136,7 @@ struct BPSettingsView: View {
     private func open(_ id: String) {
         model.select(id)
         depth = 2
+        Self.saved = (2, ThemeStore.shared.revision)
         // bp-settings.tsx: a depth change moves the ring into the swapped column.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focus = "first" }
     }
