@@ -11,6 +11,8 @@ final class DiscoverModel: ObservableObject {
         var rails: [Rail]
         var queue: Queue
         var genres: [Genre]
+        /// discover.tsx voyageBannerPool: the Voyages banner shows once it holds three titles.
+        var voyagePool: [Meta]?
     }
 
     @Published private(set) var build: Build?
@@ -22,6 +24,8 @@ final class DiscoverModel: ObservableObject {
     @Published private(set) var people: [Person] = []
     /// bp-award-tiles BpAnimeAwardTile: one tile per bundled anime award source.
     @Published private(set) var animeAwards: [AnimeAwardTile] = []
+    /// voyage-banner.tsx: the voyage in progress (or none) and the streak (engine/voyage.ts).
+    @Published private(set) var voyage: VoyageModel.Snapshot?
     struct AnimeAwardTile: Decodable, Identifiable { var id: String; var name: String; var shortName: String; var wins: Int }
 
     struct Awards: Decodable {
@@ -49,6 +53,7 @@ final class DiscoverModel: ObservableObject {
             failed = error.localizedDescription
         }
         loading = false
+        await loadVoyage()
         await AwardsCatalog.installIfNeeded()
         awards = try? await HarborEngine.shared.call("discoverRoom.awards", [])
         animeAwards = (try? await HarborEngine.shared.call("discoverRoom.animeAwardSources", [])) ?? []
@@ -64,6 +69,10 @@ final class DiscoverModel: ObservableObject {
                 genreArt[g.genre] = metas
             }
         }
+    }
+
+    func loadVoyage() async {
+        if let s: VoyageModel.Snapshot = try? await HarborEngine.shared.call("voyageRoom.state", []) { voyage = s }
     }
 
     var rows: [BrowseRow] { (build?.rails ?? []).map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas) } }
