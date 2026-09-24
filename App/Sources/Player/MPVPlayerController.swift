@@ -502,6 +502,8 @@ final class MPVPlayerController: UIViewController {
     /// Settings → Video and Audio → Match Content on). Upstream relies on mpv for this on desktop;
     /// on Apple TV the OS owns the HDMI mode, so we hand it fps + dynamic range once known.
     private var displayCriteriaApplied = false
+    /// Where the criteria went, so the reset clears that window's (not another player's).
+    private weak var displayWindow: UIWindow?
     private func applyDisplayCriteria() {
         guard ownsDisplay, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
               let w = Int32(string("video-params/w") ?? ""), let h = Int32(string("video-params/h") ?? ""), w > 0, h > 0 else { return }
@@ -531,16 +533,21 @@ final class MPVPlayerController: UIViewController {
                                                     extensions: ext as CFDictionary, formatDescriptionOut: &desc)
         guard status == noErr, let desc else { push("display: format description failed (\(status))"); return }
         let criteria = AVDisplayCriteria(refreshRate: Float(fps), formatDescription: desc)
+        // The window this player is in: the app's own, or the PiP browse layer's (PiPBrowse) for a
+        // film opened from there.
+        let own = viewIfLoaded?.window
+        displayWindow = own
         DispatchQueue.main.async {
-            guard let window = HarborOverlayWindow.mainWindow else { return }
+            guard let window = own ?? HarborOverlayWindow.mainWindow else { return }
             window.avDisplayManager.preferredDisplayCriteria = criteria
         }
         push("display: \(fps) fps \(gamma) \(primaries)")
     }
 
     private func resetDisplayCriteria() {
+        let own = displayWindow
         DispatchQueue.main.async {
-            guard let window = HarborOverlayWindow.mainWindow else { return }
+            guard let window = own ?? HarborOverlayWindow.mainWindow else { return }
             window.avDisplayManager.preferredDisplayCriteria = nil
         }
     }

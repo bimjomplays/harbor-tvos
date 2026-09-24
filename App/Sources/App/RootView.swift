@@ -14,6 +14,8 @@ struct RootView: View {
     /// A film or channel is up: a theme or language that profile sync pulls in meanwhile waits for
     /// it to end, because either one rebuilds the whole tree (and the player with it).
     @ObservedObject private var playback = PlaybackState.shared
+    /// Picture in Picture's browse layer (Player/PiPBrowse.swift): built here, like the overlay.
+    @ObservedObject private var browse = PiPBrowse.shared
     /// The language the tree was built in, kept while playback runs (nil = follow settings).
     @State private var heldLanguage: String?
     private var language: String { heldLanguage ?? L10n.normalize(settings.slice.uiLanguage) }
@@ -56,6 +58,7 @@ struct RootView: View {
             theme.holding = st == .onboarding
         }
         .onChange(of: overlayUp) { _, up in syncOverlay(up) }
+        .onChange(of: browse.isUp) { _, up in syncBrowse(up) }
         .onChange(of: playback.active) { _, on in
             heldLanguage = on ? language : nil
             theme.holdingForPlayback = on
@@ -97,6 +100,26 @@ struct RootView: View {
                 .environmentObject(app.sync)
                 .environmentObject(SettingsBridge.shared)
         )
+    }
+
+    /// The PiP browse layer: a Big Picture shell on its own AppModel (its tabs must never swap the
+    /// room that presented the player under it), with the environment this tree gets. PiPBrowse
+    /// takes its window down by itself.
+    private func syncBrowse(_ up: Bool) {
+        guard up else { return }
+        let model = AppModel()
+        model.stage = .shell
+        PiPBrowse.shared.present(
+            PiPBrowseRoot()
+                .environment(\.locale, Locale(identifier: language))
+                .environment(\.layoutDirection, L10n.rtlLanguages.contains(language) ? .rightToLeft : .leftToRight)
+                .preferredColorScheme(theme.state?.light == true ? .light : .dark)
+                .environmentObject(model)
+                .environmentObject(model.account)
+                .environmentObject(model.profiles)
+                .environmentObject(model.sync)
+                .environmentObject(SettingsBridge.shared),
+            app: model)
     }
 
     /// The wall goes up once per launch (UI-test fixtures never raise it). It opens on this

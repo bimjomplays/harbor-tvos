@@ -62,7 +62,8 @@ struct ShellView: View {
         .onChange(of: settings.navLayout) { _, _ in leaveHiddenTab() }
         .onChange(of: settings.mangaOn) { _, _ in leaveHiddenTab() }
         .onChange(of: settings.sportsDeclined) { _, _ in leaveHiddenTab() }
-        .onDisappear { GamepadMonitor.shared.onTab = nil }
+        // The PiP browse layer's shell leaves the hooks alone: PiPBrowse hands them back to the main shell.
+        .onDisappear { if !inBrowseLayer { GamepadMonitor.shared.onTab = nil } }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
         .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
@@ -121,9 +122,16 @@ struct ShellView: View {
     }
 
     private var backToHome: (() -> Void)? {
-        if app.room == .home { return nil }
+        // In the PiP browse layer, Back at Home returns to the player screen instead of leaving the app.
+        if app.room == .home {
+            guard inBrowseLayer else { return nil }
+            return { PiPBrowse.shared.backToPlayer() }
+        }
         return { app.room = .home }
     }
+
+    /// This shell is the Picture in Picture browse layer's (Player/PiPBrowse.swift), over a player.
+    private var inBrowseLayer: Bool { PiPBrowse.shared.isBrowseApp(app) }
 
     /// bp-shell.tsx HINTS per route kind. "search" and "phone" are left out: both name the pad's
     /// Y button (the quick panel / phone typing), which this port does not bind, and the bar
@@ -131,7 +139,7 @@ struct ShellView: View {
     /// when one works); on Apple TV Up already reaches the bar, so it is never advertised.
     private var hints: [BPHintAction] {
         switch app.room {
-        case .home: return [.select, .exit, .tabs]
+        case .home: return inBrowseLayer ? [.select, .back, .tabs] : [.select, .exit, .tabs]
         case .search: return [.type, .back, .tabs]
         default: return [.select, .back, .tabs]
         }
@@ -141,7 +149,9 @@ struct ShellView: View {
     /// Only on a bare route: bp-shell passes no onTab while a layer is up, and a full-screen cover
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
-        guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
+        // The PiP browse layer's shell turns over the player in PiP: only its own covers count there.
+        let clear = inBrowseLayer ? PiPBrowse.shared.noCoverPresented : (!PlaybackState.shared.active && Self.noCoverPresented)
+        guard app.stage == .shell, clear, !CurfewState.shared.locked else { return }
         let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)
         guard !order.isEmpty else { return }
         // A room off the strip (Settings, or a hidden tab opened from Search) steps onto its ends.

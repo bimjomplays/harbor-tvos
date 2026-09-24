@@ -84,6 +84,15 @@ final class NativePlayerController: UIViewController {
     private(set) var isPictureInPictureActive = false
     /// usePipMode's pip://entered / pip://exited: true when PiP starts, false once it is stopping.
     var onPictureInPicture: ((Bool) -> Void)?
+    /// The PiP window's restore button (restoreUserInterfaceForPictureInPictureStop): the player
+    /// screen has to be in front again before the picture flies back to it (PiPBrowse).
+    var onPictureInPictureRestore: (() -> Void)?
+    /// The viewer closed the PiP window: it stopped with neither its restore button nor a stop
+    /// from Harbor (stopPictureInPicture) behind it.
+    var onPictureInPictureClosed: (() -> Void)?
+    /// This PiP run is ending through the restore button / through stopPictureInPicture().
+    private var pipRestoring = false
+    private var pipStopRequested = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -159,6 +168,8 @@ final class NativePlayerController: UIViewController {
         isPictureInPictureActive = false
         pipStarting = false
         onPictureInPicture = nil
+        onPictureInPictureRestore = nil
+        onPictureInPictureClosed = nil
         subtitleOutput?.setDelegate(nil, queue: nil)
         subtitleOutput = nil
         observations.forEach { $0.invalidate() }
@@ -672,7 +683,7 @@ final class NativePlayerController: UIViewController {
 
     /// exitPiP: back to the full picture.
     func stopPictureInPicture() {
-        if isPictureInPictureActive { pip?.stopPictureInPicture() }
+        if isPictureInPictureActive { pipStopRequested = true; pip?.stopPictureInPicture() }
         else if pipStarting { pipGiveUp(pipAttempt) }
     }
 
@@ -701,6 +712,8 @@ final class NativePlayerController: UIViewController {
         pipPossibleObservation?.invalidate()
         pipPossibleObservation = nil
         isPictureInPictureActive = true
+        pipRestoring = false
+        pipStopRequested = false
         // The picture is in the PiP window now; nothing needs drawing here meanwhile.
         host.view.isHidden = true
         subtitleHost?.view.isHidden = true
@@ -733,6 +746,18 @@ final class NativePlayerController: UIViewController {
         lastCueKey = "-"
         tickCues()
         refreshState()
+        let closedByViewer = !pipRestoring && !pipStopRequested
+        pipRestoring = false
+        pipStopRequested = false
+        if closedByViewer { onPictureInPictureClosed?() }
+    }
+
+    /// The restore button: the owner brings the player screen back (PiPBrowse lowers its layer),
+    /// then AVKit animates the picture home.
+    fileprivate func pipRestore() {
+        guard !tornDown else { return }
+        pipRestoring = true
+        onPictureInPictureRestore?()
     }
 
     fileprivate func pipFailed(_ error: NSError?) {
@@ -870,10 +895,14 @@ extension NativePlayerController: AVPictureInPictureControllerDelegate {
         Task { @MainActor in self.pipDidStop() }
     }
 
-    /// The player screen never leaves while PiP is on, so there is nothing to bring back.
+    /// The player screen may have stepped aside for the PiP browse layer (PiPBrowse): it comes
+    /// back to the front first, then AVKit is told the interface is ready for the picture.
     nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
                                                 restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-        completionHandler(true)
+        Task { @MainActor in
+            self.pipRestore()
+            completionHandler(true)
+        }
     }
 }
 
@@ -899,6 +928,10 @@ struct NativePlayerView: UIViewControllerRepresentable {
     var onReady: ((NativePlayerController) -> Void)? = nil
     /// Picture in Picture started (true) or is ending (false).
     var onPictureInPicture: ((Bool) -> Void)? = nil
+    /// The PiP window's restore button was pressed (the player screen must come back to the front).
+    var onPictureInPictureRestore: (() -> Void)? = nil
+    /// The viewer closed the PiP window.
+    var onPictureInPictureClosed: (() -> Void)? = nil
 
     func makeUIViewController(context: Context) -> NativePlayerController {
         let c = NativePlayerController()
@@ -913,6 +946,8 @@ struct NativePlayerView: UIViewControllerRepresentable {
         c.onEnded = onEnded
         c.onUnsupported = onUnsupported
         c.onPictureInPicture = onPictureInPicture
+        c.onPictureInPictureRestore = onPictureInPictureRestore
+        c.onPictureInPictureClosed = onPictureInPictureClosed
         DispatchQueue.main.async { onReady?(c) }
         return c
     }

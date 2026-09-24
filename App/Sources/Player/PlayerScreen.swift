@@ -38,6 +38,9 @@ struct PlayerScreen: View {
     /// once this player has closed, the caller reopens the picker, firing on its own when `auto`.
     /// Without it the player never sends a stream back (stall skip, stub detection).
     var onPickAgain: ((_ auto: Bool) -> Void)? = nil
+    /// Picture in Picture may step this screen aside for the browse layer (Player/PiPBrowse.swift).
+    /// Multiview's full-screen player keeps the placard instead: its grid is under it.
+    var browseDuringPiP: Bool = true
     /// use-live-channel-overlay switchChannel: the channel tuned in place (nil = the one opened).
     @State private var tuned: LiveModel.Channel?
     /// goPrevChannel: the channels tuned before, newest last, 12 at most.
@@ -84,6 +87,10 @@ struct PlayerScreen: View {
     @State private var noAudioWarning = false
     /// use-pip-mode.ts pipMode: the picture is in the Picture in Picture window (AVPlayer engine only).
     @State private var pipActive = false
+    /// This player was opened from the PiP browse layer (it lives in that window): its own PiP
+    /// keeps the placard, the layer never stacks on itself.
+    @State private var inBrowseLayer = false
+    @State private var openedOnce = false
     @State private var startAt: Double?
     /// bp-resume-prompt: the saved position waits for "Pick up where you left off" / "Start over" (settings.resumePrompt).
     @State private var resumePending: Double?
@@ -192,7 +199,9 @@ struct PlayerScreen: View {
                                      applyRate(c)
                                      if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                                  },
-                                 onPictureInPicture: { on in if engine == .native { pipChanged(on) } })
+                                 onPictureInPicture: { on in if engine == .native { pipChanged(on) } },
+                                 onPictureInPictureRestore: { if engine == .native { PiPBrowse.shared.restore(nowPlayingId) } },
+                                 onPictureInPictureClosed: { if engine == .native { pipClosedByViewer() } })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else if let startAt {
@@ -296,7 +305,13 @@ struct PlayerScreen: View {
         // use-player-media: a torrent served by the TV's engine belongs to this player while it is
         // open, and is removed once it closes (TorrentEngine; a no-op for every other URL).
         .onAppear {
-            focus = .surface; scheduleHide(); PlaybackState.shared.active = true; TorrentEngine.shared.playerOpened(url: url)
+            if !openedOnce {
+                openedOnce = true
+                // A player opened from the PiP browse layer: the one in PiP stops and saves first.
+                inBrowseLayer = PiPBrowse.shared.isUp
+                PiPBrowse.shared.playbackOpening(nowPlayingId)
+            }
+            focus = .surface; scheduleHide(); PlaybackState.shared.claim(nowPlayingId); TorrentEngine.shared.playerOpened(url: url)
             SleepTimer.shared.playerOpened(url: url)
             // use-sleep-timer.ts registerSleepFireHandler: a minutes timer running out pauses this player.
             SleepTimer.shared.register(nowPlayingId) { sleepFired() }
@@ -307,7 +322,9 @@ struct PlayerScreen: View {
             skipHideTask?.cancel()
             // media-session.ts clearMediaControls before PlaybackState lets the music take Now Playing back.
             VideoNowPlaying.shared.end(nowPlayingId)
-            PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: switched?.url ?? url)
+            // A player torn down while it owned the PiP browse layer (the tree rebuilt) takes it down.
+            PiPBrowse.shared.release(nowPlayingId, keepBrowsing: false)
+            PlaybackState.shared.release(nowPlayingId); TorrentEngine.shared.playerClosed(url: switched?.url ?? url)
         }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         // The app now declares background audio for music; a film or channel still stops
@@ -649,6 +666,13 @@ struct PlayerScreen: View {
         // use-sleep-timer.ts: "End of episode" (or the last of "End of next episode") stops here.
         let sleepStops = SleepTimer.shared.episodeEnded()
         let advance = !sleepStops && upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
+        // Ended in Picture in Picture: what follows (the next episode, Still watching) has to be on
+        // screen, so the browse layer goes down and the picture comes home first; a title that just
+        // ends leaves the viewer browsing (the player closes under the layer).
+        if pipActive || controller?.isPictureInPictureActive == true {
+            PiPBrowse.shared.release(nowPlayingId, keepBrowsing: !advance)
+            if advance { controller?.stopPictureInPicture() }
+        }
         // player.tsx autoAdvance → use-still-watching gateAdvance: enough episodes in a row with no
         // press asks "Still watching?" instead of moving on.
         let s = SettingsBridge.shared.slice
@@ -1457,10 +1481,45 @@ struct PlayerScreen: View {
             leaveConfirm = false
             roomOpen = false
             focusLater(.chip("pip-exit"))
+            // The player screen steps aside: the viewer browses Harbor while the picture floats.
+            if canBrowseDuringPiP { browseHarbor() }
         } else {
+            // A closing player needs no ring; Still watching (a natural end in PiP) shows only now.
+            guard !finishing else { return }
+            if stillPrompt { focusLater(.chip("still-continue")); return }
             focus = .surface
             wake()
         }
+    }
+
+    /// PiPBrowse is open to this player: an adult's AVPlayer in the app's own window.
+    private var canBrowseDuringPiP: Bool {
+        engine == .native && browseDuringPiP && !inBrowseLayer && !isKid
+    }
+
+    /// The browse layer goes up over this screen, which keeps playing (and saving, scrobbling,
+    /// holding Now Playing and its torrent) under it.
+    private func browseHarbor() {
+        PiPBrowse.shared.stepAside(PiPBrowse.Owner(
+            id: nowPlayingId,
+            // media-session.ts mediaKeyGate: a press that also arrives as a remote command toggles once.
+            toggle: { if VideoNowPlaying.shared.mediaKeyGate() { togglePause() } },
+            end: {
+                // Another video opens from the layer (or the profile changed): stop here and save.
+                controller?.setPaused(true)
+                controller?.stopPictureInPicture()
+                finish(natural: false)
+            },
+            returned: { focusLater(.chip("pip-exit")) }))
+    }
+
+    /// The PiP window was closed while the viewer browses: stop and save, and let them browse on.
+    /// (With the placard in front, the picture just comes back to it, as before.)
+    private func pipClosedByViewer() {
+        guard PiPBrowse.shared.owns(nowPlayingId) else { return }
+        PiPBrowse.shared.release(nowPlayingId, keepBrowsing: true)
+        controller?.setPaused(true)
+        finish(natural: false)
     }
 
     /// The stage while the picture plays in the PiP window: where it went and the way back. The
@@ -1474,6 +1533,8 @@ struct PlayerScreen: View {
                 Text(verbatim: shownTitle).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 HStack(spacing: BP.px(10)) {
                     chip("Exit Picture in Picture", "pip.exit", id: "pip-exit") { controller?.stopPictureInPicture() }
+                    // Back to browsing (PiPBrowse) while the picture stays in the PiP window.
+                    if canBrowseDuringPiP { chip("Browse Harbor", "square.grid.2x2", id: "pip-browse") { browseHarbor() } }
                     chip("Leave", "rectangle.portrait.and.arrow.right", id: "pip-leave") { finish(natural: false) }
                 }
                 .padding(.top, BP.px(8))
@@ -1617,6 +1678,10 @@ struct PlayerScreen: View {
         // "Play now" and the file's own end can both land in the last second; close once.
         guard !finishing else { return }
         finishing = true
+        // Closing while the PiP browse layer is over this player: the layer goes down too, so what
+        // the caller opens next (the next episode, the picker) is on screen. Closes that leave the
+        // viewer browsing released the layer before this.
+        PiPBrowse.shared.release(nowPlayingId, keepBrowsing: false)
         together.closing()
         if scrobbleState != nil {
             let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0

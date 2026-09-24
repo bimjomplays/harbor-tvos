@@ -112,6 +112,8 @@ struct MultiviewView: View {
     /// accounts commonly allow one or two connections, and the full player wants the decoder).
     @State private var fullScreen: LiveModel.Channel?
     @State private var seeded = false
+    /// Multiview's hold on PlaybackState (the players it opens hold their own).
+    @State private var playbackClaim = UUID()
     @FocusState private var focus: Target?
     enum Target: Hashable { case cell(Int), band(String) }
 
@@ -152,13 +154,18 @@ struct MultiviewView: View {
             }
             focusLater(.cell(0))
         }
-        .onAppear { PlaybackState.shared.active = true }
+        .onAppear {
+            // Opened from the PiP browse layer: the film in Picture in Picture stops first (PiPBrowse).
+            PiPBrowse.shared.playbackOpening(nil)
+            PlaybackState.shared.claim(playbackClaim)
+        }
         // No reset here: presenting the full player can report a disappear while Multiview stays
         // underneath; the grid is cleared by leave() and goes with this view otherwise.
-        .onDisappear { if fullScreen == nil { PlaybackState.shared.active = false } }
-        .fullScreenCover(item: $fullScreen, onDismiss: { PlaybackState.shared.active = true }) { ch in
+        .onDisappear { if fullScreen == nil { PlaybackState.shared.release(playbackClaim) } }
+        .fullScreenCover(item: $fullScreen, onDismiss: { PlaybackState.shared.claim(playbackClaim) }) { ch in
+            // The grid is under this player: its PiP keeps the placard rather than stepping aside.
             PlayerScreen(title: ch.name, subtitle: live.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!,
-                         headers: ch.headers ?? [:], isLive: true, liveGuide: live, liveChannel: ch) { _ in fullScreen = nil }
+                         headers: ch.headers ?? [:], isLive: true, liveGuide: live, liveChannel: ch, browseDuringPiP: false) { _ in fullScreen = nil }
         }
     }
 

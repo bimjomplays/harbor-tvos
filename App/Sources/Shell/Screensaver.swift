@@ -40,6 +40,20 @@ extension UIWindow {
 final class PlaybackState: ObservableObject {
     static let shared = PlaybackState()
     @Published var active = false
+    /// The players (and Multiview) that hold playback. Two can overlap for a moment: a video
+    /// started from the PiP browse layer opens while the one in Picture in Picture is still
+    /// closing, and the late close must not clear the new one's claim (PiPBrowse).
+    private var claims: Set<UUID> = []
+
+    func claim(_ id: UUID) {
+        claims.insert(id)
+        if !active { active = true }
+    }
+
+    func release(_ id: UUID) {
+        guard claims.remove(id) != nil else { return }
+        if claims.isEmpty, active { active = false }
+    }
 }
 
 /// Live previews (the guide portal, Home's Live hero) stop streaming whenever anything is over
@@ -65,8 +79,11 @@ final class PreviewGate: ObservableObject {
 
     func refresh() {
         // Off screen too: the `audio` background mode (music) keeps the app, and mpv, running.
+        // The PiP browse layer (PiPBrowse) sits over the main window: nothing under it may stream,
+        // and one video (in the PiP window, or just ended there) is enough for it too.
         let b = PlaybackState.shared.active || ScreensaverModel.shared.active || CurfewState.shared.locked
-            || !HarborOverlayWindow.noCoverPresented || UIApplication.shared.applicationState != .active
+            || !HarborOverlayWindow.noCoverPresented || PiPBrowse.shared.isUp
+            || UIApplication.shared.applicationState != .active
         if b != blocked { blocked = b }
     }
 }
@@ -214,12 +231,16 @@ final class ShellOverlay {
         w.makeKeyAndVisible()
     }
 
+    /// Up (the lock or the saver): the window that must stay key.
+    var keyWindow: UIWindow? { window }
+
     func hide() {
         guard let w = window else { return }
         window = nil
         w.isHidden = true
         w.rootViewController = nil
-        HarborOverlayWindow.mainWindow?.makeKey()
+        // The PiP browse layer, when up, is what the viewer was using under the saver.
+        (PiPBrowse.shared.layerWindow ?? HarborOverlayWindow.mainWindow)?.makeKey()
     }
 }
 
