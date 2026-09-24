@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     /// lib/deep-link.ts: a title opened from another app (harbor:// or stremio://).
     @Published var deepLinkMeta: Meta?
     @Published var deepLinkNote: String?
+    /// lib/deep-link.ts parseHarborList: a shared list opened from another app.
+    @Published var deepLinkList: Social.ListRef?
 
     /// parseHarborOpen / parseStremioOpen / emitDeepLinkInstall, as the TV receives them.
     func handle(url: URL) {
@@ -25,6 +27,11 @@ final class AppModel: ObservableObject {
         if parts.first == "detail", parts.count >= 3 {
             deepLinkMeta = Meta(id: parts[2], type: parts[1], name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
                                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
+            if stage != .shell, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            return
+        }
+        if scheme == "harbor", parts.first == "list", parts.count >= 3, !parts[1].isEmpty, !parts[2].isEmpty {
+            deepLinkList = Social.ListRef(handle: parts[1], listId: parts[2])
             if stage != .shell, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
             return
         }
@@ -62,6 +69,8 @@ final class AppModel: ObservableObject {
             Task { @MainActor in
                 await SettingsBridge.shared.load()
                 await ThemeStore.shared.load()
+                // Watch Together's relay lives in each profile's settings too (togetherRelayUrl).
+                await TogetherModel.shared.attach()
             }
         }.store(in: &bag)
     }
@@ -84,6 +93,8 @@ final class AppModel: ObservableObject {
             if account.isSignedIn { await refreshRoster() }
             // App.tsx MediaServerSyncRunner: due home-server indexes at launch, then every 15 minutes.
             _ = try? await HarborEngine.shared.callJSON("homeServers.startRunner", [])
+            // Stage 10: the Watch Together room client (engine/together.ts) for the active profile.
+            await TogetherModel.shared.attach()
         }
         try? await Task.sleep(for: .seconds(Fixtures.active ? 0.2 : 1.2))
         if let fixed = Fixtures.stage {
@@ -138,7 +149,7 @@ final class AppModel: ObservableObject {
 }
 
 enum Room: String, CaseIterable, Identifiable {
-    case home, discover, anime, shows, movies, music, live, sports, search, calendar, library, collections, settings
+    case home, discover, anime, manga, shows, movies, music, live, sports, search, calendar, library, collections, settings
     var id: String { rawValue }
 
     var label: String {
@@ -146,6 +157,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .home: return "Home"
         case .discover: return "Discover"
         case .anime: return "Anime"
+        case .manga: return "Manga"
         case .shows: return "Shows"
         case .movies: return "Movies"
         case .music: return "Music"
@@ -163,6 +175,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .home: return "house.fill"
         case .discover: return "safari.fill"
         case .anime: return "sparkles"
+        case .manga: return "book.fill"
         case .shows: return "tv"
         case .movies: return "film"
         case .music: return "music.note"
@@ -184,6 +197,7 @@ enum Room: String, CaseIterable, Identifiable {
         case .live: return 8
         case .music: return 12
         case .sports: return 11
+        case .manga: return 13
         case .settings: return 1
         }
     }

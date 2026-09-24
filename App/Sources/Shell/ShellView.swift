@@ -55,8 +55,12 @@ struct ShellView: View {
         .onChange(of: parental.gate) { _, _ in leaveHiddenRoom() }
         .onDisappear { GamepadMonitor.shared.onTab = nil }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
+        // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
+        .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
         // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
         .overlay(alignment: .top) { ReminderToastHost() }
+        // Watch Together invites, summons and chat while browsing (Together/TogetherOverlays.swift).
+        .overlay { TogetherToastHost() }
         .overlay(alignment: .top) {
             if let n = app.deepLinkNote {
                 Text(n).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))
@@ -87,6 +91,8 @@ struct ShellView: View {
             SportsView()
         case .music:
             MusicView()
+        case .manga:
+            MangaView()
         default: RoomPlaceholderView(room: app.room)
         }
     }
@@ -117,7 +123,7 @@ struct ShellView: View {
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
         guard app.stage == .shell, !PlaybackState.shared.active, !CurfewState.shared.locked, Self.noCoverPresented else { return }
-        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, gate: parental)
+        let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental)
         guard !order.isEmpty else { return }
         let from = order.firstIndex(of: app.room) ?? 0
         let next = ((from + delta) % order.count + order.count) % order.count
@@ -192,9 +198,10 @@ enum BPHintAction: String {
 
 extension Room {
     /// bp-top-bar.tsx visibleTabs: the tab strip and the shoulder cycle both read this, so a tab
-    /// can never be hidden from one and reachable through the other.
-    @MainActor static func shellTabs(sportsDeclined: Bool, gate: ParentalGate) -> [Room] {
-        tabs.filter { !(sportsDeclined && $0 == .sports) && !gate.hides($0) }
+    /// can never be hidden from one and reachable through the other. Manga (Stage 13) shows only
+    /// while the reader is switched on and not hidden (nav-items hideKey "manga").
+    @MainActor static func shellTabs(sportsDeclined: Bool, mangaOn: Bool, gate: ParentalGate) -> [Room] {
+        tabs.filter { !(sportsDeclined && $0 == .sports) && !(!mangaOn && $0 == .manga) && !gate.hides($0) }
     }
 }
 
@@ -214,7 +221,7 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
-            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, gate: parental)) { r in
+            ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, gate: parental)) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
                     .focused($focusedTab, equals: r)
@@ -238,6 +245,8 @@ struct TopBarView: View {
                 .buttonStyle(BPTabStyleWide())
                 .accessibilityIdentifier("profile-chip")
             }
+            // Stage 10 account area: profile, notifications, activity, groups, Watch together.
+            AccountMenuButton().environmentObject(app)
             Button { app.room = .settings } label: { Image(systemName: Room.settings.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .accessibilityIdentifier("tab-settings")

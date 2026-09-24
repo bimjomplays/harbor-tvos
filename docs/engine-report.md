@@ -110,6 +110,18 @@ anything else is called. Reference implementation for Node: `engine/shims/node-h
 | `setTimeout` | `(delayMs: number, id: number) => void` | schedule a native timer. When it fires the host **must** call `globalThis.__harbor_timer_fire(id)` on the JS thread. Repeating timers are re-armed by the shim, so the host never repeats on its own |
 | `clearTimeout` | `(id: number) => void` | cancel a scheduled timer; a stale id is a no-op |
 
+Optional (Stage 10, `engine/shims/websocket.js`; reported by
+`HarborEngine.runtime.missingOptionalHostFunctions()`, not required to boot). Without them
+`new WebSocket()` throws and Watch Together reports the relay as unreachable.
+
+| function | signature | semantics |
+|---|---|---|
+| `wsOpen` | `(url: string, id: number) => void` | open a WebSocket (`ws://` / `wss://`). Report back with `globalThis.__harbor_ws_event(id, kind, data)`: `"open"` once, `"message"` per text frame (`data` = the text), `"error"` on a failure, and exactly one `"close"` with `data` = JSON `{code, reason, wasClean}` |
+| `wsSend` | `(id: number, text: string) => void` | send one text frame |
+| `wsClose` | `(id: number, code: number, reason: string) => void` | close; the host still reports `"close"` once it has |
+
+Swift: `App/Sources/Engine/EngineSockets.swift` (`URLSessionWebSocketTask`).
+
 ```ts
 type HostRequest = {
   requestId: number;          // pair with abort()

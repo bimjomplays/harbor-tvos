@@ -7,6 +7,8 @@ struct SearchView: View {
     @State private var spotlight: Meta?
     @State private var detail: Meta?
     @State private var phoneOpen = false
+    /// A manga result (SR-9) or a franchise manga opened in the manga detail page.
+    @State private var mangaOpen: MangaOpen?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -43,6 +45,8 @@ struct SearchView: View {
         .onChange(of: channel?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: collection?.id) { _, id in if id != nil { model.commitRecent() } }
         .onChange(of: addonPage?.id) { _, id in if id != nil { model.commitRecent() } }
+        .onChange(of: mangaOpen?.id) { _, id in if id != nil { model.commitRecent() } }
+        .fullScreenCover(item: $mangaOpen) { o in MangaDetailView(mangaId: o.id) }
         .fullScreenCover(item: $collection) { hit in SearchCollectionView(hit: hit) { collection = nil } }
         .fullScreenCover(item: $addonPage) { t in AddonPageView(base: t.base, name: t.name, logo: t.logo) }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
@@ -71,6 +75,18 @@ struct SearchView: View {
     @State private var addonPage: RoomView.AddonTarget?
 
     @StateObject private var addons = AddonsModel()
+
+    /// bp-search-cells: a manga hit opens the manga detail. A franchise row's manga carries an
+    /// AniList id, which the reader cannot open, so it is resolved back by title first
+    /// (search-manga-resolve resolveMangaIdByTitle); nothing found opens nothing.
+    @MainActor private func select(_ m: Meta) {
+        guard m.type == "manga" else { detail = m; return }
+        guard m.id.hasPrefix("anilist:") else { mangaOpen = MangaOpen(id: m.id); return }
+        Task {
+            let id: String? = try? await HarborEngine.shared.call("manga.resolveTitle", [m.name])
+            if let id { mangaOpen = MangaOpen(id: id) }
+        }
+    }
 
     /// bp-search-cells addonBase: the transport url without its manifest.json.
     private static func addonBase(_ transportUrl: String) -> String {
@@ -182,8 +198,8 @@ struct SearchView: View {
         .focusSection()
     }
 
-    private static func isCoreRow(_ key: String) -> Bool { key == "movies" || key == "series" || key == "anime" }
-    /// Movies, Series and Anime rows under the active chip.
+    private static func isCoreRow(_ key: String) -> Bool { key == "movies" || key == "series" || key == "anime" || key == "manga" }
+    /// Movies, Series, Anime and Manga rows under the active chip.
     private var coreRows: [BrowseRow] { model.rows.filter { Self.isCoreRow($0.key) && model.shows(SearchModel.group(ofRow: $0.key)) } }
     /// Franchise and per-addon rows under the active chip.
     private var laterRows: [BrowseRow] { model.rows.filter { !Self.isCoreRow($0.key) && model.shows(SearchModel.group(ofRow: $0.key)) } }
@@ -279,15 +295,15 @@ struct SearchView: View {
                     }
                     .focusSection()
                 }
-                // use-bp-search slot order: Movies, Series, Anime, Live TV, Collections, Franchise,
+                // use-bp-search slot order: Movies, Series, Anime, Manga, Live TV, Collections, Franchise,
                 // one row per addon, then "Addons you could install".
                 ForEach(coreRows) { row in
-                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
                 }
                 if model.shows(.livetv) && !model.channels.isEmpty { channelRow }
                 if model.shows(.collections) && !model.collections.isEmpty { collectionRow }
                 ForEach(laterRows) { row in
-                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+                    BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
                 }
                 if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
                 Color.clear.frame(height: BP.hintHeight + BP.px(40))

@@ -19,6 +19,8 @@ import { bpMapLimit } from "@/views/big-picture/use-bp-collections";
 import type { Meta } from "@/lib/cinemeta";
 import { playlists } from "./live";
 import { hiddenTabsFor } from "./parental";
+import { searchManga } from "@/lib/manga/api";
+import type { MangaSummary } from "@/lib/manga/model";
 
 const SOURCE_TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 60_000;
@@ -128,6 +130,10 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
   // its tab not locked. `hiddenTabs` is the profile's lockedTabs whether or not a PIN is set.
   const hiddenTabs = hiddenTabsFor(profileId);
   const animeAllowed = !hiddenTabs.anime && !hide.anime;
+  // search-context: manga is asked for only when the reader is switched on and not hidden, and
+  // the franchise (character) search runs when either anime or manga is allowed.
+  const mangaAllowed = settings.mangaEnabled === true && !hide.manga;
+  const franchiseAllowed = animeAllowed || mangaAllowed;
   const lists = playlists();
   const liveTv = !hiddenTabs.liveTv && lists.length > 0 ? searchLiveTvChannels(trimmed, lists) : [];
   const normalized = normalizeSearchQuery(trimmed);
@@ -138,7 +144,8 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
     ? guard<SearchResults | null>(cached(tmdbCache, [key, settings.tmdbLanguage, settings.translateTitles, normalized].join("\0"), () => searchAll(key, trimmed)), null)
     : Promise.resolve(null);
   const animeP = animeAllowed ? guard(cached(animeCache, normalized, () => searchAnime(trimmed)), []) : Promise.resolve([]);
-  const charactersP: Promise<CharacterHit[]> = animeAllowed ? guard(anilistCharacterSearch(trimmed), []) : Promise.resolve([]);
+  const charactersP: Promise<CharacterHit[]> = franchiseAllowed ? guard(anilistCharacterSearch(trimmed), []) : Promise.resolve([]);
+  const mangaP: Promise<MangaSummary[]> = mangaAllowed ? guard(searchManga(trimmed), []) : Promise.resolve([]);
   const addonP = guard(addonsP.then((a) => searchAddonCatalogs(a, trimmed)), { movies: [] as Meta[], series: [] as Meta[] });
   const cineP = guard(cached(cineCache, normalized, () => searchCinemeta(trimmed)), { movies: [], series: [] });
   const collectionsP = guard(collections(trimmed), [] as TvdbCollectionHit[]);
@@ -157,7 +164,7 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
   // Groups are streamed; the call itself waits only for the primary sources.
   void groupsP;
 
-  const [tmdb, anime, characters, addon, cine, collectionHits] = await Promise.all([tmdbP, animeP, charactersP, addonP, cineP, collectionsP]);
+  const [tmdb, anime, characters, addon, cine, collectionHits, manga] = await Promise.all([tmdbP, animeP, charactersP, addonP, cineP, collectionsP, mangaP]);
   const base = tmdb ?? empty;
   const animeTitles = new Set(anime.map((a) => normShow(a.name)));
   const notAnimeDupe = (m: { name?: string }) => animeTitles.size === 0 || !animeTitles.has(normShow(m.name ?? ""));
@@ -173,8 +180,10 @@ export async function fanOut(query: string, profileId: string, linked: boolean, 
     series,
     liveTv,
     anime,
-    manga: [],
-    characters: characters.map((ch) => ({ ...ch, manga: [] })).filter((ch) => ch.anime.length > 0),
+    manga,
+    characters: characters
+      .map((ch) => ({ ...ch, anime: animeAllowed ? ch.anime : [], manga: mangaAllowed ? ch.manga : [] }))
+      .filter((ch) => ch.anime.length + ch.manga.length > 0),
     addonGroups: queries.filter((q) => q.state === "ok").map((q) => ({ id: q.id, name: q.name, logo: q.logo, metas: q.metas.filter((m) => !shown.has(m.id)) })).filter((g) => g.metas.length > 0),
     addonQueries: queries.slice(),
     addons: searchAddonIndex(trimmed),

@@ -61,6 +61,9 @@ export function hiddenTabsFor(profileId: string): HiddenTabs {
 // desktop sidebar gives it (chrome/nav-items.tsx `parentalKey: "calendar"`).
 const BP_TAB_GATES: Array<{ room: string; parentalKey?: LockableTab; hiddenByAnime?: boolean }> = [
   { room: "anime", parentalKey: "anime", hiddenByAnime: true },
+  // The TV's Manga tab (Stage 13) takes the key the desktop sidebar gives it (chrome/nav-items.tsx
+  // manga `parentalKey: "anime"`); its own hideKey "manga" is read with the setting on the TV.
+  { room: "manga", parentalKey: "anime" },
   { room: "shows", parentalKey: "shows" },
   { room: "movies", parentalKey: "movies" },
   { room: "sports", parentalKey: "sports" },

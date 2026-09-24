@@ -93,6 +93,9 @@ import * as kidsGlue from "./kids";
 import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
 import * as musicGlue from "./music";
+import * as mangaGlue from "./manga";
+import * as socialGlue from "./social";
+import * as togetherGlue from "./together";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
 declare const __HARBOR_BUILT_AT__: string;
@@ -875,6 +878,113 @@ export const wrapped = {
   enabled: wrappedGlue.enabled,
 };
 
+// ==================================================================================== manga
+/**
+ * Stage 13 manga (views/manga.tsx, manga-detail, manga-reader): Suwayomi servers as sources,
+ * browse/search, detail with chapters, pages with their auth headers, reading progress,
+ * favourites and reader prefs. Plugin, Mangayomi and HTML sources need a Worker / IndexedDB /
+ * DOMParser and are not offered on tvOS.
+ */
+export const manga = {
+  state: mangaGlue.state,
+  addServer: mangaGlue.addServer,
+  testServer: mangaGlue.testServer,
+  removeServer: mangaGlue.removeServer,
+  setActive: mangaGlue.setActive,
+  popular: mangaGlue.popular,
+  search: mangaGlue.search,
+  searchEverywhere: mangaGlue.searchEverywhere,
+  tags: mangaGlue.tags,
+  detail: mangaGlue.detail,
+  progressFor: mangaGlue.progressFor,
+  matchChapter: mangaGlue.matchChapter,
+  resume: mangaGlue.resume,
+  openByTitle: mangaGlue.openByTitle,
+  resolveTitle: mangaGlue.resolveTitle,
+  firstByTitle: mangaGlue.firstByTitle,
+  animeSource: mangaGlue.animeSource,
+  pages: mangaGlue.pages,
+  readerOrder: mangaGlue.readerOrder,
+  startPage: mangaGlue.startPage,
+  recordPage: mangaGlue.recordPage,
+  markComplete: mangaGlue.markComplete,
+  closeReader: mangaGlue.closeReader,
+  chapterLabel: mangaGlue.chapterLabel,
+  prefs: mangaGlue.prefs,
+  savePrefs: mangaGlue.savePrefs,
+  progress: mangaGlue.progress,
+  removeProgress: mangaGlue.removeProgress,
+  readChapters: mangaGlue.readChapters,
+  favorites: mangaGlue.favorites,
+  isFavorite: mangaGlue.isFavorite,
+  toggleFavorite: mangaGlue.toggleFavorite,
+};
+
+// ================================================================================== social
+/**
+ * Stage 10 social surfaces (engine/social.ts over lib/social + views/profile/profile-api):
+ * account menu identity, profiles, notifications, the friends feed, groups, shared lists.
+ */
+export const social = {
+  me: socialGlue.me,
+  profile: socialGlue.profile,
+  comments: socialGlue.comments,
+  comment: socialGlue.comment,
+  commentLike: socialGlue.commentLike,
+  friendRequest: socialGlue.friendRequest,
+  friendAccept: socialGlue.friendAccept,
+  friendDecline: socialGlue.friendDecline,
+  friendRemove: socialGlue.friendRemove,
+  notifications: socialGlue.notifications,
+  notificationsMarkRead: socialGlue.notificationsMarkRead,
+  notificationsDismiss: socialGlue.notificationsDismiss,
+  feed: socialGlue.feed,
+  watching: socialGlue.watching,
+  groups: socialGlue.groups,
+  group: socialGlue.group,
+  groupJoin: socialGlue.groupJoin,
+  groupLeave: socialGlue.groupLeave,
+  groupRespond: socialGlue.groupRespond,
+  groupPosts: socialGlue.groupPosts,
+  groupPostLike: socialGlue.groupPostLike,
+  groupPost: socialGlue.groupPost,
+  parseListLink: socialGlue.parseListLink,
+  sharedList: socialGlue.sharedList,
+  listLike: socialGlue.listLike,
+  listSave: socialGlue.listSave,
+};
+
+/** Watch Together (engine/together.ts over lib/together): the room client and its state. */
+export const together = {
+  configure: togetherGlue.configure,
+  setRelay: togetherGlue.setRelay,
+  setGuestsPick: togetherGlue.setGuestsPick,
+  setName: togetherGlue.setName,
+  start: togetherGlue.start,
+  parseJoin: togetherGlue.parseJoin,
+  join: togetherGlue.join,
+  leave: togetherGlue.leave,
+  retry: togetherGlue.retry,
+  publishState: togetherGlue.publishState,
+  sendCommand: togetherGlue.sendCommand,
+  sendChat: togetherGlue.sendChat,
+  markReady: togetherGlue.markReady,
+  claimHost: togetherGlue.claimHost,
+  startRoom: togetherGlue.startRoom,
+  notifyHostLeaving: togetherGlue.notifyHostLeaving,
+  clearInvite: togetherGlue.clearInvite,
+  suppressOutgoingFor: togetherGlue.suppressOutgoingFor,
+  sendInvite: togetherGlue.sendInvite,
+  setLocation: togetherGlue.setLocation,
+  dismiss: togetherGlue.dismiss,
+  wasInvitedTo: togetherGlue.wasInvitedTo,
+  playerOpened: togetherGlue.playerOpened,
+  sourceDescriptor: togetherGlue.sourceDescriptor,
+  inviteUrl: togetherGlue.inviteUrl,
+  view: togetherGlue.view,
+  reset: togetherGlue.reset,
+};
+
 /** Music room (Stage 12; views/music.tsx over the connectors in musicSources.ts). */
 export const music = {
   copy: musicGlue.copy,
@@ -905,6 +1015,8 @@ export const runtime = {
   /** Everything the host still has to implement; must be empty before anything else is called. */
   missingHostFunctions: shims.missingHostFunctions,
   hostFunctions: shims.hostFunctions,
+  /** Optional host functions (WebSocket) this host lacks; Watch Together needs them. */
+  missingOptionalHostFunctions: shims.missingOptionalHostFunctions,
   /** Observe every event upstream dispatches on `window`. Returns an unsubscribe function. */
   onEvent: shims.events.on,
   /** Dispatch an event into the bundle (Swift -> JS). */
