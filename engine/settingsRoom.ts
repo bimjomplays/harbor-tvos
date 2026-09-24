@@ -88,9 +88,20 @@ function aiSearchDetail(profileId: string, linked: boolean): string {
   return `${ai.tab === "groq" ? "Groq" : "OpenRouter"} · ${ai.label || ai.model}`;
 }
 
+/**
+ * Rows the TV adds to a category. Upstream's Big Picture catalog has no X-Ray row (only the
+ * desktop's quality-panel/xray-tab.tsx "Enable X-Ray" switches settings.xrayEnabled), yet
+ * player-overlay-layers.tsx mounts XrayOverlay on the ten-foot player too: the TV puts the
+ * switch after Instant play so a viewer on the couch can turn it on. Off by default.
+ */
+export function tvExtraControls(id: BpCatId, s: Settings): BpControl[] {
+  if (id !== "playback") return [];
+  return [{ kind: "options", id: "xray", label: t("X-Ray"), value: s.xrayEnabled ? "on" : "off", options: [{ value: "on", label: t("On") }, { value: "off", label: t("Off") }] }];
+}
+
 export function controls(id: BpCatId, profileId: string, linked: boolean): TvControl[] {
   const s = loadEffective(profileId, linked);
-  const upstreamRows: TvControl[] = bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined")
+  const upstreamRows: TvControl[] = [...bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined"), ...tvExtraControls(id, s)]
     .filter((c) => !TV_HIDDEN_CONTROLS.has(c.id));
   // Setup: AI search right after the Live TV playlists row.
   const live = upstreamRows.findIndex((c) => c.kind === "push" && c.pane === "live");
@@ -139,6 +150,7 @@ export function commit(id: string, value: string, profileId: string, linked: boo
     case "skipIntro": patch.autoSkipIntro = on; break;
     case "autoNext": patch.autoPlayNextEpisode = on; break;
     case "instantPlay": patch.instantPlay = on; break;
+    case "xray": patch.xrayEnabled = on; break;
     case "homeMode": patch.homeMode = value as Settings["homeMode"]; break;
     case "hideWatched": patch.hideWatchedInCatalogs = on; break;
     case "service": patch.streaming = { ...s.streaming, [value]: !s.streaming[value as StreamingService] }; break;
@@ -258,6 +270,8 @@ export function pane(profileId: string, linked: boolean) {
       [t("Skip intros"), t(s.autoSkipIntro ? "On" : "Off")],
       [t("Auto-play next episode"), t(s.autoPlayNextEpisode ? "On" : "Off")],
       [t("Instant play"), t(s.instantPlay ? "On" : "Off")],
+      // The TV's X-Ray row (tvExtraControls).
+      [t("X-Ray"), t(s.xrayEnabled ? "On" : "Off")],
     ],
     setup: [
       ["TMDB", s.tmdbKey.trim() ? t("On") : t("None")],

@@ -81,6 +81,7 @@ import * as servicesGlue from "./services";
 import * as trackersGlue from "./trackers";
 import * as detailGlue from "./detailRoom";
 import * as personGlue from "./personRoom";
+import * as xrayGlue from "./xray";
 import * as homeGlue from "./homeServers";
 import * as searchGlue from "./search";
 import * as aiSearchGlue from "./aiSearch";
@@ -789,6 +790,16 @@ export const detailRoom = {
 
 /** Person page: facts, Known For, IMDb Top, collaborators, awards, filmography sections. */
 export const personRoom = { page: personGlue.page };
+
+/** X-Ray while paused (components/player/xray/*, lib/xray/use-xray-cast.ts; settings.xrayEnabled). */
+export const xray = {
+  load: xrayGlue.load,
+  enabled: xrayGlue.enabled,
+  assemble: xrayGlue.assemble,
+  crewPeople: xrayGlue.crewPeople,
+  fmtVotes: xrayGlue.fmtVotes,
+  initials: xrayGlue.initials,
+};
 
 /** Home media servers: Plex (PIN), Jellyfin, Emby — connect, index, copies, playback. */
 export const homeServers = {
