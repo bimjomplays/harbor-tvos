@@ -20,6 +20,9 @@ final class DiscoverModel: ObservableObject {
     @Published private(set) var genreArt: [String: [Meta]] = [:]
     @Published private(set) var awards: Awards?
     @Published private(set) var people: [Person] = []
+    /// bp-award-tiles BpAnimeAwardTile: one tile per bundled anime award source.
+    @Published private(set) var animeAwards: [AnimeAwardTile] = []
+    struct AnimeAwardTile: Decodable, Identifiable { var id: String; var name: String; var shortName: String; var wins: Int }
 
     struct Awards: Decodable {
         struct Summary: Decodable, Identifiable { var type: String; var title: String; var shorthand: String; var tint: String; var wins: Int; var span: String; var id: String { type } }
@@ -48,6 +51,7 @@ final class DiscoverModel: ObservableObject {
         loading = false
         await AwardsCatalog.installIfNeeded()
         awards = try? await HarborEngine.shared.call("discoverRoom.awards", [])
+        animeAwards = (try? await HarborEngine.shared.call("discoverRoom.animeAwardSources", [])) ?? []
         people = (try? await HarborEngine.shared.call("discoverRoom.people", [24])) ?? []
     }
 

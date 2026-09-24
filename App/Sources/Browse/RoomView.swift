@@ -12,6 +12,13 @@ struct RoomView: View {
     struct AddonTarget: Identifiable { var base: String; var name: String; var logo: String?; var id: String { base } }
     @State private var service: ServiceTarget?
     struct ServiceTarget: Identifiable { var id: String; var name: String }
+    @State private var collection: HomeCollectionView.Target?
+    /// use-bp-sections: the band focus asks for, and the one on screen once it has settled.
+    @State private var bandWanted: HomeBand?
+    @State private var band: HomeBand?
+    /// bp-live-row `hot`: the focused Live TV cell, and whether that row's player is up.
+    @State private var liveHot: LiveRowModel.Cell?
+    @State private var livePlaying = false
     @Environment(\.shellFocusNamespace) private var shellNS
     @Namespace private var localNS
 
@@ -21,9 +28,22 @@ struct RoomView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            // bp-home: a band that owns the backdrop fades the spotlight out (180 ms) and its
+            // identity in (300 ms after 140 ms); card-owned bands keep the spotlight.
             SpotlightView(meta: model.spotlight, boxHeight: heroHeight,
                           pips: model.heroCount > 1 && !model.tileHeld ? HeroPips(total: model.heroCount, active: model.heroIndex) : nil,
-                          drift: model.room != .anime)
+                          drift: model.room != .anime, awardsCorner: model.room != .anime)
+                .opacity(band == nil ? 1 : 0)
+                .animation(band == nil ? BP.easeSlow.delay(0.14) : .easeIn(duration: 0.18), value: band == nil)
+            if let band {
+                HomeBandBackdrop(band: band).transition(.opacity)
+            }
+            if model.isHomePage {
+                LiveHeroPreview(channel: liveHot?.channel, suspended: previewSuspended)
+            }
+            if let band {
+                BandIdentityView(band: band, boxHeight: heroHeight).transition(.opacity)
+            }
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load this room.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
@@ -33,13 +53,25 @@ struct RoomView: View {
             } else if model.loading && model.rows.isEmpty {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
             } else {
-                BPRailView(rows: model.rows, onFocus: { m, _ in if m.type != "service" { model.focus(m) } },
+                BPRailView(rows: model.rows, onFocus: { m, row in focusTile(m, row: row) },
                            onSelect: { m in
                                if m.id.hasPrefix("service:") { service = ServiceTarget(id: String(m.id.dropFirst(8)), name: m.name) }
                                else if m.id.hasPrefix("addon:") { addonPage = AddonTarget(base: String(m.id.dropFirst(6)), name: m.name, logo: m.providerBadge?.logo) }
+                               else if m.id.hasPrefix("collection:tmdb:") {
+                                   BPSound.shared.open()
+                                   collection = HomeCollectionView.Target(ref: String(m.id.dropFirst(16)), name: m.name, image: m.background)
+                               }
                                else { detail = m }
                            },
-                           onSeeAll: { seeAll = $0 }, onQuick: { BPSound.shared.open(); quick = $0 }, topInset: heroHeight,
+                           onSeeAll: { row in
+                               // bp-collections-row lead: "View all" goes to the Collections tab.
+                               if row.key == "collections" { app.room = .collections } else { seeAll = row }
+                           },
+                           onQuick: { m in
+                               // bp-quick-panel acts on a title; band tiles (services, addons, collections) have none.
+                               guard !["service", "addon", "collection"].contains(m.type) else { return }
+                               BPSound.shared.open(); quick = m
+                           }, topInset: heroHeight,
                            restoreRoute: model.restoreKey, entry: model.entry,
                            onHold: { key, held in model.hold(key, held) }) {
                     if model.room == .anime, let hero = model.spotlight, hero.type != "service" {
@@ -50,11 +82,18 @@ struct RoomView: View {
                     }
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
-                                        onFocus: { model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) },
+                                        onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) },
                                         onHold: { model.hold("cw", $0) })
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
-                    if model.room == .home { LiveRowView { app.room = .live } }
+                    if model.isHomePage {
+                        LiveRowView(onOpenGuide: { app.room = .live }, onHot: { cell in
+                            liveHot = cell
+                            model.hold("live", cell != nil)
+                            if let cell { bandWanted = HomeBand.forChannel(cell) }
+                            else if bandWanted?.id == .live { bandWanted = nil }
+                        }, onPlaying: { livePlaying = $0 })
+                    }
                 }
                 .prefersDefaultFocus(true, in: shellNS ?? localNS)
             }
@@ -67,6 +106,25 @@ struct RoomView: View {
             let wait = model.entry == nil ? 0.05 : 0.3
             if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + wait) { ShellFocus.shared.requestDefault() } }
         }
+        // BAND_SETTLE_MS: a new band (or a new cell in it) commits once focus has rested; a later
+        // record for the same cell (its posters arriving) replaces it at once.
+        .task(id: bandWanted?.key) {
+            let next = bandWanted
+            if next != nil { try? await Task.sleep(for: HomeBand.settle) }
+            guard !Task.isCancelled else { return }
+            withAnimation(BP.easeFast) { band = next }
+        }
+        .onChange(of: bandWanted) { _, next in
+            if let next, band?.key == next.key { band = next }
+        }
+        // Focus left every row (to the top bar): the band lets go. Row hand-offs report the old
+        // row's release and the new row's hold in either order, so this waits a beat first.
+        .task(id: model.tileHeld || liveHot != nil) {
+            guard !model.tileHeld, liveHot == nil, bandWanted != nil else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, !model.tileHeld, liveHot == nil else { return }
+            bandWanted = nil
+        }
         .fullScreenCover(item: $seeAll) { row in
             CatalogPageView(room: model.room, row: row)
         }
@@ -75,6 +133,42 @@ struct RoomView: View {
         .fullScreenCover(item: $service) { t in ServicePageView(service: t.id, name: t.name) }
         .fullScreenCover(item: $addonPage) { t in AddonPageView(base: t.base, name: t.name, logo: t.logo) }
         .fullScreenCover(item: $play) { m in DetailView(meta: m, autoPlay: true) }
+        .fullScreenCover(item: $collection) { t in HomeCollectionView(target: t) { collection = nil } }
+    }
+
+    /// A rail tile took focus. On Home, a tile of a band-owned row (services, addons, collections)
+    /// raises that band instead of the spotlight; any other tile hands the hero back to the title.
+    private func focusTile(_ m: Meta, row: BrowseRow) {
+        if model.isHomePage, let id = HomeBand.band(forRow: row.key) {
+            let record = HomeBand.forTile(m, in: id)
+            bandWanted = record
+            if id == .services || id == .addons { loadPosters(for: record, meta: m) }
+            return
+        }
+        bandWanted = nil
+        if m.type != "service" { model.focus(m) }
+    }
+
+    /// The band mosaic's posters resolve long after the focus that asked for them, so the record
+    /// is republished when they land (bp-service-row / bp-addon-row).
+    private func loadPosters(for record: HomeBand, meta: Meta) {
+        Task {
+            let p = ProfilesStore.shared.active
+            let posters: [String]
+            if record.id == .services {
+                posters = (try? await HarborEngine.shared.call("services.posters", [String(meta.id.dropFirst(8)), p?.id ?? "default", p?.linked ?? true])) ?? []
+            } else {
+                posters = (try? await HarborEngine.shared.call("addonsRoom.bandPosters", [String(meta.id.dropFirst(6))])) ?? []
+            }
+            guard !posters.isEmpty, bandWanted?.key == record.key else { return }
+            bandWanted?.posters = posters
+        }
+    }
+
+    /// bp-live-hero `mountVideo`: never while this row's player or any page over Home is up.
+    private var previewSuspended: Bool {
+        livePlaying || detail != nil || quick != nil || seeAll != nil || service != nil || addonPage != nil || play != nil
+            || collection != nil || app.room != .home
     }
 
     /// Home hero box: clamp(260px, 34vh, 380px) − 56px give (bp-tokens.ts:227-228, 172-175).
