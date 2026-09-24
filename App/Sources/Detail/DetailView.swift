@@ -149,7 +149,7 @@ struct DetailView: View {
         }
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {
             if let picker {
-                PlayPickerView(meta: picker.meta, episode: picker.episode, autoPlay: pickerAuto, applyPreference: pickerPref) { stream, resolved in
+                PlayPickerView(meta: picker.meta, episode: picker.episode, onPlay: { stream, resolved in
                     guard let link = resolved.data, let url = URL(string: link.url) else { return }
                     let ep = picker.episode
                     let sub = ep.flatMap { e -> String? in
@@ -177,7 +177,7 @@ struct DetailView: View {
                             playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints)
                         }
                     }
-                }
+                }, autoPlay: pickerAuto, applyPreference: pickerPref)
             }
         }
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }

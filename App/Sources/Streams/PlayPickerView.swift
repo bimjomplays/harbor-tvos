@@ -247,7 +247,9 @@ struct PlayPickerView: View {
             if done || model.phase == .done || sinceStart >= 10 { autoState = .exhausted }
             return
         }
-        let candidates = await model.autoCandidates(meta: meta, episode: episode)
+        // use-bp-stream-play: auto picks from the filtered list (the saved filter's pool) (review 29).
+        let allowed = Set(pool.map(\.id))
+        let candidates = await model.autoCandidates(meta: meta, episode: episode).filter { model.streams.indices.contains($0) && allowed.contains(model.streams[$0].id) }
         guard autoState == .waiting else { return }
         guard let first = candidates.dropFirst(autoTried).first, model.streams.indices.contains(first) else {
             if done || model.phase == .done || sinceStart >= 10 { autoState = .exhausted }
@@ -554,7 +556,7 @@ struct PlayPickerView: View {
                     Text(s.addonName).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
                     if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
                 }
-                let headline = s.parsedTitle ?? s.title ?? s.name ?? "Stream"
+                let headline = s.tvRow?.headline ?? s.parsedTitle ?? s.title ?? s.name ?? "Stream"
                 Text(headline).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 // bp-stream-row.tsx: the addon's whole description (fullStreamDescription), else the
                 // one-line summary; both with the pictographs dropped (engine stampPickerRows).
