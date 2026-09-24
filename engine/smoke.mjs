@@ -131,7 +131,7 @@ r.ok("benchmark still works", (() => {
   const m = rec.engine.music;
   r.eq("music.copy speaks upstream's English", [m.copy()["music.title"], m.copy()["music.row.upNext"]], ["Music", "Up next"]);
   const conns = m.connections();
-  r.ok("music.connections lists catalog, Jellyfin, Plex and SoundCloud; SoundCloud waits for consent", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,soundcloud" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
+  r.ok("music.connections lists catalog, Jellyfin, Plex, Navidrome, SoundCloud and Last.fm; SoundCloud waits for consent", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,subsonic,soundcloud,lastfm" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
   const h = await m.home(true, null);
   const keys = h.bands.map((b) => b.key);
   r.ok("music.home: server notice, charts stand in for fresh (numbered), artists, catalog extras", keys[0] === "server" && h.bands[0].notice && keys.includes("fresh") && h.bands.find((b) => b.key === "fresh").numbered && h.bands.find((b) => b.key === "fresh").cards[0].track.connectorId === "catalog" && keys.includes("home:catalog:charting-artists") && keys.includes("home:catalog:charts") && !hits.some((x) => x.includes("soundcloud")), JSON.stringify({ keys, errors: h.errors }));
@@ -163,6 +163,138 @@ r.ok("benchmark still works", (() => {
   const album = server ? await m.open(server.cards[0].item) : { tracks: [] };
   const jp = album.tracks[0] ? await m.prepare(album.tracks[0], null, null) : { stream: { url: "", mimeType: "" } };
   r.ok("Jellyfin album opens and a FLAC track resolves to the universal URL with its session", album.tracks[0] && album.tracks[0].durationLabel === "4:35" && jp.stream.mimeType === "audio/flac" && jp.stream.url.includes("/Audio/trk1/universal?") && jp.stream.url.includes("playSessionId=ps1") && !/opus|ogg/.test(new URL(jp.stream.url).searchParams.get("container")) && hits.some((x) => x.startsWith("POST") && x.endsWith("/Sessions/Playing")), JSON.stringify(jp));
+  rec.dispose();
+}
+
+// ------------------------- music, second batch: Navidrome, Last.fm, ListenBrainz, radio, lyrics
+{
+  const { createHash } = await import("node:crypto");
+  const md5 = (s) => createHash("md5").update(s, "utf8").digest("hex");
+  const nd = "http://nd.example.invalid";
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const hits = [];
+  const scrobbles = [];
+  const fmCalls = [];
+  let fmScrobbleReply = { scrobbles: { "@attr": { accepted: 1 } } };
+  const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
+  const ok = (extra = {}) => ({ "subsonic-response": { status: "ok", version: "1.16.1", type: "navidrome", ...extra } });
+  const mbRelease = "1b6c4560-1234-4e7c-bd9f-a5f31d5cfe1a";
+  const seedTrack = { id: "deezer:track:3135556", connectorId: "catalog", sourceId: "3135556", title: "Harder, Better, Faster, Stronger", artist: "Daft Punk", album: "Discovery", artwork: "", durationSeconds: 224, durationLabel: "3:44" };
+  const dzTrack = (id, title, artistId, artist) => ({ id, title, duration: 200, artist: { id: artistId, name: artist }, album: { title: `${title} LP`, cover_big: "https://cdn.example.invalid/c.jpg" } });
+  rec.node.host.fetch = async (req) => {
+    hits.push(`${req.method} ${req.url}`);
+    const u = new URL(req.url);
+    if (u.origin === nd) {
+      if (u.pathname === "/auth/login") return json(req, { error: "not navidrome" }, 404);
+      const q = u.searchParams;
+      const authed = q.get("u") === "alice" && q.get("t") === md5(`sesame${q.get("s")}`) && q.get("v") === "1.16.1" && q.get("c") === "Harbor";
+      if (!authed) return json(req, { "subsonic-response": { status: "failed", version: "1.16.1", error: { code: 40, message: "Wrong username or password" } } });
+      const m = u.pathname.replace(/^\/rest\//, "");
+      if (m === "ping") return json(req, ok());
+      if (m === "getAlbumList2") return json(req, ok({ albumList2: q.get("type") === "newest" ? { album: [{ id: "al-1", name: "Absolution", artist: "Muse", coverArt: "al-1_2c", songCount: 14, year: 2003 }] } : {} }));
+      if (m === "getStarred2") return json(req, ok({ starred2: { song: [{ id: "mf-1", title: "Hysteria", artist: "Muse", album: "Absolution", coverArt: "mf-1_9f", duration: 227 }] } }));
+      if (m === "getArtists") return json(req, ok({ artists: { ignoredArticles: "The", index: [{ name: "M", artist: [{ id: "ar-1", name: "Muse" }] }, { name: "R", artist: [{ id: "ar-2", name: "Radiohead", artistImageUrl: "https://example.invalid/r.jpg" }] }] } }));
+      if (m === "getPlaylists") return json(req, ok({ playlists: {} }));
+      if (m === "getAlbum") return json(req, ok({ album: { song: [{ id: "c", title: "C", track: 1, discNumber: 2 }, { id: "mf-2", title: "B", track: 2, artist: "Muse" }, { id: "mf-1", title: "A", track: 1, artist: "Muse", duration: 227 }] } }));
+      if (m === "getSong") return json(req, ok({ song: { id: q.get("id"), suffix: q.get("id") === "mf-2" ? "opus" : "flac", bitRate: 900 } }));
+      if (m === "search3") return json(req, ok({ searchResult3: { song: [{ id: "mf-1", title: "Hysteria", artist: "Muse", duration: 227 }] } }));
+      if (m === "scrobble") { scrobbles.push([q.get("id"), q.get("submission"), q.get("time")]); return json(req, ok()); }
+      return json(req, ok());
+    }
+    if (u.host === "ws.audioscrobbler.com") {
+      const form = Object.fromEntries(new URLSearchParams(req.body || ""));
+      fmCalls.push(form);
+      const { api_sig, format, ...signed } = form;
+      const expected = md5(Object.keys(signed).sort().map((k) => `${k}${signed[k]}`).join("") + "shh");
+      if (api_sig !== expected || format !== "json") return json(req, { error: 13, message: "Invalid method signature supplied" }, 403);
+      if (form.method === "auth.getToken") return json(req, { token: "tok123" });
+      if (form.method === "auth.getSession") return json(req, { session: { name: "alice", key: "sk1", subscriber: 0 } });
+      if (form.method === "track.scrobble") return json(req, fmScrobbleReply);
+    }
+    if (u.host === "api.listenbrainz.org" && u.pathname === "/1/explore/fresh-releases/") return json(req, { payload: { releases: [
+      { artist_credit_name: "Someone", caa_id: 11, caa_release_mbid: "aa21d4e9-af51-4e7c-bd9f-a5f31d5cfe1a", release_date: "2026-08-30", release_group_mbid: "6e335887-60ba-38f0-95af-fae7774336bf", release_group_primary_type: "Single", release_mbid: "bb21d4e9-af51-4e7c-bd9f-a5f31d5cfe1a", release_name: "A single" },
+      { artist_credit_name: "Bonobo", caa_id: 34059386237, caa_release_mbid: "cd21d4e9-af51-4e7c-bd9f-a5f31d5cfe1a", release_date: "2026-08-29", release_group_mbid: "6e335887-60ba-38f0-95af-fae7774336bf", release_group_primary_type: "Album", release_mbid: mbRelease, release_name: "Fragments" },
+    ] } });
+    if (u.host === "musicbrainz.org" && u.pathname === `/ws/2/release/${mbRelease}`) return json(req, { media: [{ tracks: [{ id: "11111111-2222-3333-4444-555555555555", title: "Polyghost", recording: { id: "99999999-2222-3333-4444-555555555555", title: "Polyghost", length: 245000, "artist-credit": [{ name: "Bonobo", joinphrase: " & " }, { name: "Jacob Lusk" }] } }] }] });
+    if (u.host === "lrclib.net") {
+      if (u.pathname === "/api/get") return json(req, { id: 1, duration: 224, instrumental: false, plainLyrics: "Work it", syncedLyrics: "[00:01.50]Work it\n[00:03.2]Make it\n[00:05.00][00:07.00]Do it" });
+      return json(req, []);
+    }
+    if (u.host === "api.deezer.com") {
+      if (u.pathname === "/track/3135556") return json(req, { id: 3135556, type: "track", title: "Harder, Better, Faster, Stronger", duration: 224, bpm: 123, release_date: "2001-03-07", artist: { id: 27, name: "Daft Punk" }, album: { id: 302127, title: "Discovery" } });
+      if (u.pathname === "/album/302127") return json(req, { id: 302127, release_date: "2001-03-07", genres: { data: [{ id: 113 }] } });
+      if (u.pathname === "/artist/27/radio") return json(req, { data: [dzTrack(1, "Da Funk", 27, "Daft Punk"), dzTrack(2, "D.A.N.C.E.", 28, "Justice"), dzTrack(3, "Music Sounds Better", 29, "Stardust"), dzTrack(4, "Karaoke Version of Around", 30, "Karaoke Kings"), dzTrack(5, "Genesis", 28, "Justice")] });
+      if (u.pathname === "/artist/27/related") return json(req, { data: [{ id: 28, name: "Justice" }, { id: 31, name: "Cassius" }] });
+      if (u.pathname === "/artist/28/top") return json(req, { data: [dzTrack(2, "D.A.N.C.E.", 28, "Justice"), dzTrack(6, "Phantom", 28, "Justice")] });
+      if (u.pathname === "/artist/31/top") return json(req, { data: [dzTrack(7, "1999", 31, "Cassius"), dzTrack(8, "Feeling for You", 31, "Cassius")] });
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const m = rec.engine.music;
+  const store = rec.node.storage;
+
+  // Navidrome sign-in (subsonic/mod.rs sign_in + client.rs pair: no /auth/login, so md5 token auth)
+  const bad = await m.subsonicConnect(nd, "alice", "wrong").then(() => "connected", (e) => e.message);
+  r.eq("music.subsonicConnect: a rejected sign-in reads as upstream's reconnect prompt", bad, "Your music server rejected this sign in. Connect it again.");
+  const conn = await m.subsonicConnect(`${nd}/`, " alice ", "sesame");
+  const salt = store.get("harbor.subsonic.v1.salt");
+  r.ok("music.subsonicConnect pairs with salt + md5(password+salt) and never stores the password", conn.account === "alice" && conn.detail === nd && salt && salt.length === 16 && store.get("harbor.subsonic.v1.token") === md5(`sesame${salt}`) && store.get("harbor.subsonic.v1.baseUrl") === nd && ![...store.values()].some((v) => String(v).includes("sesame")), JSON.stringify({ conn, salt }));
+  const nconn = m.connections();
+  r.ok("music.connections: Navidrome connected as alice, Last.fm listed as a scrobbler", nconn.find((c) => c.id === "subsonic").status === "connected" && nconn.find((c) => c.id === "subsonic").account === "alice" && nconn.find((c) => c.id === "lastfm").kind === "scrobbler" && nconn.find((c) => c.id === "lastfm").status === "disconnected", JSON.stringify(nconn.map((c) => [c.id, c.status, c.account])));
+  const h = await m.home(true, null);
+  const newest = h.bands.find((b) => b.key === "server:subsonic:home:newest");
+  const starred = h.bands.find((b) => b.key === "server:subsonic:home:starred");
+  r.ok("music.home: Navidrome shelves (newest, starred, artists) with sized cover art; empty lists collapse", !!newest && newest.title === "On your server" && newest.cards[0].artwork.includes("/rest/getCoverArt?") && newest.cards[0].artwork.includes("size=512") && !newest.cards[0].artwork.includes("f=json") && !!starred && starred.title === "Liked tracks" && h.bands.some((b) => b.key === "server:subsonic:home:artists" && b.cards[1].artwork === "https://example.invalid/r.jpg") && !h.bands.some((b) => b.key.includes("subsonic:home:frequent") || b.key.includes("subsonic:home:playlists")) && !h.bands.some((b) => b.key === "server"), JSON.stringify(h.bands.map((b) => [b.key, b.title])));
+  const album = await m.open(newest.cards[0].item);
+  r.eq("Navidrome album opens in disc then track order", album.tracks.map((t) => t.sourceId), ["mf-1", "mf-2", "c"]);
+  const p1 = await m.prepare(album.tracks[0], null, null);
+  const u1 = new URL(p1.stream.url);
+  r.ok("Navidrome resolves a raw stream URL with token auth and reports now playing", u1.pathname === "/rest/stream" && u1.searchParams.get("format") === "raw" && u1.searchParams.get("id") === "mf-1" && u1.searchParams.get("u") === "alice" && !u1.searchParams.has("f") && scrobbles.some((s) => s[0] === "mf-1" && s[1] === "false"), JSON.stringify({ url: p1.stream.url, scrobbles }));
+  const p2 = await m.prepare(album.tracks[1], null, null);
+  r.ok("Navidrome asks the server for MP3 when the file is Opus (AVPlayer cannot decode it)", new URL(p2.stream.url).searchParams.get("format") === "mp3" && new URL(p2.stream.url).searchParams.get("maxBitRate") === "320", p2.stream.url);
+  const ns = await m.search("hysteria", "subsonic");
+  r.ok("music.search scoped to Navidrome uses search3", ns.tracks[0] && ns.tracks[0].track.id === "subsonic:mf-1" && ns.tracks[0].track.durationLabel === "3:47", JSON.stringify(ns.tracks));
+
+  // Last.fm (lastfm.rs): signed auth.getToken -> phone approval -> auth.getSession, then scrobbles
+  r.eq("music.shouldScrobble uses half the track or four minutes (engine.rs)", [m.shouldScrobble(149, 300), m.shouldScrobble(150, 300), m.shouldScrobble(239, 900), m.shouldScrobble(240, 900)], [false, true, false, true]);
+  const skipped = await m.scrobble({ ...seedTrack }, 1700000000);
+  r.eq("music.scrobble without a Last.fm session is skipped", skipped.status, "skipped");
+  const begin = await m.lastfmBegin(" key ", "shh");
+  r.ok("music.lastfmBegin signs auth.getToken and returns the phone link", begin.token === "tok123" && begin.authUrl === "https://www.last.fm/api/auth/?api_key=key&token=tok123" && fmCalls[0].method === "auth.getToken" && store.get("harbor.lastfm.v1.apiKey") === "key", JSON.stringify({ begin, fmCalls }));
+  const fin = await m.lastfmFinish(begin.token);
+  r.ok("music.lastfmFinish stores the session and reports the account", fin.connected && fin.username === "alice" && store.get("harbor.lastfm.v1.sessionKey") === "sk1" && m.connections().find((c) => c.id === "lastfm").status === "connected", JSON.stringify(fin));
+  const sc = await m.scrobble(album.tracks[0], 1700000000);
+  const call = fmCalls[fmCalls.length - 1];
+  r.ok("music.scrobble: Navidrome submission with its time, then a signed track.scrobble", sc.status === "scrobbled" && call.method === "track.scrobble" && call.sk === "sk1" && call.timestamp === "1700000000" && call.chosenByUser === "1" && call.duration === "227" && call.artist === "Muse" && scrobbles.some((s) => s[0] === "mf-1" && s[1] === "true" && s[2] === "1700000000000"), JSON.stringify({ sc, call, scrobbles }));
+  fmScrobbleReply = { error: 9, message: "Invalid session key - Please re-authenticate" };
+  const failed = await m.scrobble(seedTrack, 1700000001);
+  r.ok("music.scrobble reports a Last.fm error and marks the connection", failed.status === "error" && failed.message === "Last.fm error 9: Invalid session key - Please re-authenticate", JSON.stringify(failed));
+  const gone = m.lastfmDisconnect();
+  r.ok("music.lastfmDisconnect clears all four secrets", !gone.connected && !store.has("harbor.lastfm.v1.apiKey") && !store.has("harbor.lastfm.v1.sessionKey"), JSON.stringify(gone));
+
+  // ListenBrainz fresh releases (catalog/listenbrainz.rs) opening through MusicBrainz
+  const fresh = h.bands.find((b) => b.key === "new-releases");
+  r.ok("music.home: ListenBrainz fresh releases fill New releases (albums and EPs only, Cover Art Archive art)", !!fresh && fresh.title === "New releases" && fresh.cards.length === 1 && fresh.cards[0].title === "Fragments" && fresh.cards[0].artwork === "https://archive.org/download/mbid-cd21d4e9-af51-4e7c-bd9f-a5f31d5cfe1a/mbid-cd21d4e9-af51-4e7c-bd9f-a5f31d5cfe1a-34059386237_thumb500.jpg", JSON.stringify(fresh));
+  const release = fresh ? await m.open(fresh.cards[0].item) : { tracks: [] };
+  r.ok("a ListenBrainz release opens with MusicBrainz's track list", release.tracks[0] && release.tracks[0].id === "musicbrainz:track:11111111-2222-3333-4444-555555555555" && release.tracks[0].artist === "Bonobo & Jacob Lusk" && release.tracks[0].durationLabel === "4:05" && release.tracks[0].album === "Fragments", JSON.stringify(release.tracks));
+
+  // Lyrics (lyrics.ts: LRCLIB synced lines) and the per-track offset (lyric-offset.ts)
+  const ly = await m.lyrics(seedTrack);
+  r.eq("music.lyrics parses LRCLIB synced lyrics, repeated stamps included", ly.lines.map((l) => [l.at, l.text]), [[1.5, "Work it"], [3.2, "Make it"], [5, "Do it"], [7, "Do it"]]);
+  r.eq("music.setLyricOffset clamps to 0.25 s steps and is read back", [m.setLyricOffset(seedTrack, 0.3), m.setLyricOffset(seedTrack, 99), (await m.lyrics(seedTrack)).offset], [0.25, 8, 8]);
+  const none = await m.lyrics({ ...seedTrack, id: "x", album: undefined, title: "Unknown", artist: "Nobody" });
+  r.eq("music.lyrics is empty when LRCLIB has nothing", none.lines.length, 0);
+
+  // Track radio (radio.ts): Deezer radio + related-artist lanes, variants dropped, spaced by artist
+  const station = await m.radio(seedTrack);
+  r.ok("music.radio seeds the station with the track, then ranked Deezer picks without karaoke variants", station.length >= 6 && station[0].id === seedTrack.id && !station.some((t) => /karaoke/i.test(t.title)) && station.slice(1).every((t) => t.connectorId === "catalog" && t.mediaKind === "audio"), JSON.stringify(station.map((t) => `${t.artist} - ${t.title}`)));
+  const more = await m.radioExtend(station, station.length - 2);
+  r.ok("music.radioExtend never repeats a queued track", Array.isArray(more) && more.every((t) => !station.some((s) => s.title === t.title && s.artist === t.artist)), JSON.stringify(more.map((t) => t.title)));
+
+  m.subsonicDisconnect();
+  r.ok("music.subsonicDisconnect forgets the pairing", !store.has("harbor.subsonic.v1.token") && m.connections().find((c) => c.id === "subsonic").status === "disconnected");
   rec.dispose();
 }
 

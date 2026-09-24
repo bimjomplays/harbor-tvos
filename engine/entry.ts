@@ -1005,6 +1005,19 @@ export const music = {
   acceptSoundCloud: musicGlue.acceptSoundCloud,
   setSoundCloud: musicGlue.setSoundCloud,
   withdrawConsent: musicGlue.withdrawConsent,
+  // second batch: Navidrome, Last.fm scrobbling, track radio, lyrics
+  subsonicConnect: musicGlue.subsonicConnect,
+  subsonicDisconnect: musicGlue.subsonicDisconnect,
+  lastfmStatus: musicGlue.lastfmStatus,
+  lastfmBegin: musicGlue.lastfmBegin,
+  lastfmFinish: musicGlue.lastfmFinish,
+  lastfmDisconnect: musicGlue.lastfmDisconnect,
+  scrobble: musicGlue.scrobble,
+  shouldScrobble: musicGlue.shouldScrobble,
+  radio: musicGlue.radio,
+  radioExtend: musicGlue.radioExtend,
+  lyrics: musicGlue.lyrics,
+  setLyricOffset: musicGlue.setLyricOffset,
 };
 
 // ================================================================================== runtime
