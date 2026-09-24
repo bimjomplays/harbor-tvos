@@ -245,7 +245,7 @@ struct SportsEventView: View {
         case "channel":
             if let first = w.channels.first { Button((w.label ?? T("Watch")) + " · " + first.name) { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
         case "picker":
-            Button(w.channels.isEmpty ? "Search your channels" : "Watch · \(w.channels.count) channel\(w.channels.count == 1 ? "" : "s") found") { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
+            Button(w.channels.isEmpty ? T("Search your channels") : w.channels.count == 1 ? T("Watch · 1 channel found") : T("Watch · %lld channels found", w.channels.count)) { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
         case "addons":
             Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle(primary: true))
         default:
@@ -311,8 +311,8 @@ struct SportsEventView: View {
                 }
             }
             if w.channels.isEmpty {
-                Text(w.sources == 0 ? "No playlists yet. Add one in Live TV and Harbor will match its channels to fixtures."
-                     : "None of your channels match this fixture. Search your channels and pin the one that carries it. (\(w.scanned) sports channels scanned)")
+                Text(w.sources == 0 ? T("No playlists yet. Add one in Live TV and Harbor will match its channels to fixtures.")
+                     : T("None of your channels match this fixture. Search your channels and pin the one that carries it.") + " (\(w.scanned) sports channels scanned)")
                     .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
             // bp-sports-picker onAddons: offered whenever an addon has any listing.
@@ -335,7 +335,7 @@ struct SportsEventView: View {
     }
 
     private func broadcastLink(_ b: SportsEventModel.Broadcast) -> SportsLink {
-        SportsLink(title: b.title, url: b.url, app: b.app, message: "Official broadcast. It plays in the \(b.platformLabel) app, or scan to watch on your phone.")
+        SportsLink(title: b.title, url: b.url, app: b.app, message: T("Official broadcast. It plays in the %@ app, or scan to watch on your phone.", b.platformLabel))
     }
 
     private func play(_ opt: SportsEventModel.WatchOption) {

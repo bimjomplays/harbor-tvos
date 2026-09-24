@@ -152,7 +152,7 @@ struct SportsBroadcastsView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: BP.px(10)) {
                         ForEach(broadcasts) { b in
-                            Button { link = SportsLink(title: b.title, url: b.url, app: b.app, message: "Official broadcast. It plays in the \(b.platformLabel) app, or scan to watch on your phone.") } label: {
+                            Button { link = SportsLink(title: b.title, url: b.url, app: b.app, message: T("Official broadcast. It plays in the %@ app, or scan to watch on your phone.", b.platformLabel)) } label: {
                                 HStack(spacing: BP.px(14)) {
                                     Image(systemName: b.platform == "youtube" ? "play.rectangle.fill" : b.platform == "twitch" ? "tv.fill" : "dot.radiowaves.left.and.right")
                                         .font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.inkMuted)

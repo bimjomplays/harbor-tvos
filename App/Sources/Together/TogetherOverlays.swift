@@ -210,7 +210,7 @@ struct TogetherPlayerLayer: View {
 
     /// room-layer.tsx ForeignNoticeBox.
     private func foreign(_ n: TogetherPlayback.ForeignNotice, _ v: TogetherModel.Snapshot) -> String {
-        "Now watching \(n.title ?? "Something else"). Pick it from the home view to follow."
+        T("Now watching %@. Pick it from the home view to follow.", n.title ?? T("Something else"))
     }
 
     private func banner(_ text: String) -> some View {

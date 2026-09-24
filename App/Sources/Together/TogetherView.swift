@@ -214,7 +214,7 @@ struct TogetherView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(Self.quickReplies, id: \.self) { q in
-                        Button(q) { room.sendChat(q) }.buttonStyle(BPActionStyle())
+                        Button(T(q)) { room.sendChat(T(q)) }.buttonStyle(BPActionStyle())
                     }
                     Button { draft = ""; typing = .chat } label: { Label("Message", systemImage: "iphone") }.buttonStyle(BPActionStyle(primary: true))
                 }

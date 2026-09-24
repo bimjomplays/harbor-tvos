@@ -165,7 +165,7 @@ enum AiringCountdown {
         guard let atMs else { return nil }
         let left = atMs - now.timeIntervalSince1970 * 1000
         guard left > 0 else { return nil }
-        return "in \(remaining(left))"
+        return T("in %@", remaining(left))
     }
 }
 

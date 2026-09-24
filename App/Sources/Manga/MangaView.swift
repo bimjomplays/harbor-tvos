@@ -410,7 +410,7 @@ struct MangaSourcesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: BP.px(22)) {
                     Text("Manga sources").font(BP.display(34)).foregroundStyle(BP.ink)
-                    BPNote(text: T("Harbor does not host any manga or any sources. Connect your own server or open a folder you already have, and mix as many as you like.") + " " + Self.tvNote)
+                    BPNote(text: T("Harbor does not host any manga or any sources. Connect your own server or open a folder you already have, and mix as many as you like.") + " " + T(Self.tvNote))
                         .frame(maxWidth: BP.px(760), alignment: .leading)
                     if let s = store.state, !s.servers.isEmpty { serverList(s) }
                     form
@@ -461,7 +461,7 @@ struct MangaSourcesView: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text("Add a server").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text("Connect a Suwayomi server").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             BPField(label: "Server address", placeholder: "http://192.168.1.20:4567", text: $address, keyboard: .URL)
             BPField(label: "Name (optional)", placeholder: "My Server", text: $name)
             HStack(spacing: BP.px(12)) {

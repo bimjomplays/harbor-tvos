@@ -8,6 +8,11 @@
 //   App/Locales/<lang>.json                          the raw catalog, handed to the engine's
 //                                                    lib/i18n (i18n.installCatalog) at boot
 //
+// tools/locales-tvos.json adds the TV's own copy that upstream has no key for (Apple TV phone
+// sheets, relay/list/guide notes …): { "English {placeholder} key": { "<lang>": "…" } }, keys
+// starting with "_" are comments. Upstream keys always win; {placeholder} keys get the same
+// Swift-format twins as upstream's. Swift only, the engine never sees them.
+//
 // Keys are upstream's English source strings (translate.ts). SwiftUI's Text("\(n) results")
 // looks up "%lld results", so a key like "{count} results" also gets "%lld results" and
 // "%@ results" entries whose values use positional specifiers (%1$lld) in the translation's
@@ -43,6 +48,8 @@ const { LANGUAGES } = await loadModule(path.join(i18nDir, "languages.ts"));
 const en = (await loadModule(path.join(i18nDir, "locales/en.ts"))).default;
 
 const VARIANT = /#(one|few|many)$/;
+const extras = JSON.parse(fs.readFileSync(path.join(root, "tools/locales-tvos.json"), "utf8"));
+for (const k of Object.keys(extras)) if (k.startsWith("_")) delete extras[k];
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
 
 /** .strings escaping: backslash, quote and control characters; everything else stays UTF-8. */
@@ -123,6 +130,16 @@ for (const { code } of LANGUAGES) {
   for (const [k, v] of Object.entries(catalog)) if (typeof v === "string" && !VARIANT.test(k)) put(k, v);
   // 2. id-style keys (nav.home) are shown in English by their en value ("Home").
   for (const [k, v] of Object.entries(en)) if (k !== v && catalog[k] !== undefined && !VARIANT.test(k)) put(v, catalog[k]);
+  // 2b. tvOS-only copy (tools/locales-tvos.json); a translation must keep the key's placeholders.
+  let tv = 0;
+  for (const [k, byLang] of Object.entries(extras)) {
+    const v = byLang[code];
+    const names = new Set([...k.matchAll(PLACEHOLDER)].map((m) => m[1]));
+    const bad = typeof v !== "string" || [...v.matchAll(PLACEHOLDER)].some((m) => !names.has(m[1]));
+    if (bad) { console.warn(`locales-tvos.json: ${code} ${v === undefined ? "missing" : "bad placeholder"} for ${JSON.stringify(k)}`); continue; }
+    if (!entries.has(k)) tv++;
+    put(k, v);
+  }
   // 3. Swift-format twins of {placeholder} keys, and the plural table.
   const plurals = [];
   for (const [k, v] of [...entries]) {
@@ -145,7 +162,7 @@ for (const { code } of LANGUAGES) {
   fs.writeFileSync(path.join(outDir, `${code}.json`), json);
   const bytes = Buffer.byteLength(strings) + Buffer.byteLength(json);
   total += bytes;
-  summary.push(`${code} ${entries.size} keys, ${plurals.length} plurals, ${(bytes / 1048576).toFixed(1)} MB`);
+  summary.push(`${code} ${entries.size} keys (${tv} tvOS), ${plurals.length} plurals, ${(bytes / 1048576).toFixed(1)} MB`);
 }
 console.log(summary.join("\n"));
 console.log(`App/Locales  ${(total / 1048576).toFixed(1)} MB for ${summary.length} languages`);

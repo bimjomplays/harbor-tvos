@@ -196,7 +196,7 @@ struct CalendarConfigRailView: View {
                         }
                         Spacer()
                         // result-pill.tsx
-                        Text(resultCount == 1 ? "1 result" : T("%lld results", resultCount))
+                        Text(resultCount == 1 ? "1 " + T("result") : T("%lld results", resultCount))
                             .font(BP.sans(11.5, .semibold)).foregroundStyle(BP.ink)
                             .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
                             .background(Capsule().fill(BP.glass))

@@ -230,7 +230,7 @@ struct GroupPageView: View {
             Text(g.description?.isEmpty == false ? g.description! : T("This group has not written a description yet.")).font(BP.sans(16)).foregroundStyle(BP.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if !g.tags.isEmpty { Text(g.tags.map { "#\($0)" }.joined(separator: "  ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkSubtle) }
-            if let role = g.role { Text("Your role: \(role.capitalized)").font(BP.sans(13)).foregroundStyle(BP.inkSubtle) }
+            if let role = g.role { Text("Your role: \(T(role.capitalized))").font(BP.sans(13)).foregroundStyle(BP.inkSubtle) }
         }
         .focusable()
     }

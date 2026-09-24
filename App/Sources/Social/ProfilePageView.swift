@@ -102,7 +102,7 @@ struct ProfilePageView: View {
                     }
                     HStack(spacing: BP.px(10)) {
                         Text("@\(s.handle)").font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted)
-                        Text("Level \(Int(s.level))").font(BP.sans(12, .bold)).foregroundStyle(BP.canvas)
+                        Text(T("Level") + " \(Int(s.level))").font(BP.sans(12, .bold)).foregroundStyle(BP.canvas)
                             .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(3)).background(Capsule().fill(BP.accent))
                         Text(s.online ? "Online now" : "Offline").font(BP.sans(13, .semibold)).foregroundStyle(s.online ? BP.live : BP.inkSubtle)
                     }

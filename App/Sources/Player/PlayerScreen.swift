@@ -92,10 +92,10 @@ struct PlayerScreen: View {
         var id: String { "\(kind)-\(startSec)-\(endSec)" }
         var label: String {
             switch kind {
-            case "intro": return "Skip intro"
-            case "outro", "credits": return "Skip outro"
-            case "recap": return "Skip recap"
-            case "ad": return "Skip ad"
+            case "intro": return "Skip Intro"
+            case "outro", "credits": return "Skip Credits"
+            case "recap": return "Skip Recap"
+            case "ad": return "Skip injected ad?"
             default: return "Skip \(kind)"
             }
         }
@@ -315,7 +315,7 @@ struct PlayerScreen: View {
                 } label: {
                     HStack(spacing: BP.px(8)) {
                         Image(systemName: outroNext ? "chevron.forward.2" : "forward.fill")
-                        Text(outroNext ? "Next Episode" : seg.label).font(BP.sans(14, .semibold))
+                        Text(T(outroNext ? "Next Episode" : seg.label)).font(BP.sans(14, .semibold))
                     }
                     .foregroundStyle(BP.ink)
                     .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
@@ -1024,7 +1024,7 @@ struct PlayerScreen: View {
                 Text("Harbor couldn't play this source").font(BP.display(30)).foregroundStyle(BP.ink)
             }
             Text("The source responded but the stream would not open. Try a different one.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
-            if let e = status.error { Text("Source said: \(e)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+            if let e = status.error { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
             HStack(spacing: BP.px(10)) {
                 if onChooseAnother != nil {
                     chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false); go?() }

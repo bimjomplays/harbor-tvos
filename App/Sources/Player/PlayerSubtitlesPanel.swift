@@ -220,7 +220,7 @@ struct PlayerSubtitlesPanel: View {
     @ViewBuilder private var tracksLane: some View {
         PlayerChipRow {
             PlayerRowLabel(text: "Languages")
-            chip("All languages \(langTracks.count)", on: activeLang == Self.all) { activeLang = Self.all }
+            chip(T("All languages") + " \(langTracks.count)", on: activeLang == Self.all) { activeLang = Self.all }
             ForEach(groups) { g in
                 chip("\(g.display) \(g.count)", on: activeLang == g.id) { activeLang = g.id }
             }
@@ -376,7 +376,7 @@ struct PlayerSubtitlesPanel: View {
         }
         if list.count > limit {
             PlayerChipRow {
-                chip("Show \(list.count - limit) more") { limit += Self.page }
+                chip(T("Show %lld more", list.count - limit)) { limit += Self.page }
             }
         }
     }

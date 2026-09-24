@@ -77,7 +77,7 @@ struct SportsApiKeyPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            BPNote(text: "Optional schedules and scores for selected Soccer and hockey competitions. Your API-Sports plan and request limits apply.")
+            BPNote(text: T("Optional schedules and scores for selected %@ and hockey competitions. Your API-Sports plan and request limits apply.", T("Soccer")))
             if let i = info, !i.leagues.isEmpty { Text(i.leagues.joined(separator: " · ")).font(BP.sans(14)).foregroundStyle(BP.inkMuted) }
             if let i = info, i.saved { Text("Key saved on this device (\(i.length) characters)").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink) }
             BPField(label: "API-Sports key", placeholder: "Paste your API-Sports key", text: $draft, secure: true)

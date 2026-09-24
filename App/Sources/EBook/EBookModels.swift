@@ -87,9 +87,9 @@ struct EBook: Codable, Identifiable, Hashable {
     /// EBookCard's facts line: "{n} books · {year} · {n} vols".
     var cardFacts: String {
         var parts: [String] = []
-        if let b = books, !b.isEmpty { parts.append("\(b.count) books") }
+        if let b = books, !b.isEmpty { parts.append(T("%lld books", b.count)) }
         if let y = year { parts.append(String(Int(y))) }
-        if let v = volumes, v > 0 { parts.append("\(Int(v)) vols") }
+        if let v = volumes, v > 0 { parts.append(T("%lld vols", Int(v))) }
         return parts.joined(separator: " · ")
     }
 
@@ -110,8 +110,8 @@ struct EBookChapter: Codable, Identifiable, Hashable {
 
     /// harbor-reader chapter label: "Chapter 3" when numbered, else the title.
     var label: String {
-        if let c = chapter, !c.isEmpty { return "Chapter \(c)" }
-        return title.isEmpty ? "Chapter" : title
+        if let c = chapter, !c.isEmpty { return T("Chapter %@", c) }
+        return title.isEmpty ? T("Chapter") : title
     }
 }
 

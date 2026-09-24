@@ -198,7 +198,7 @@ struct EBookDetailView: View {
                         header(book)
                         chapterSection
                         if !model.authorBooks.isEmpty, let author = book.authors.first {
-                            rail("ebook-author", "More by \(author)", "Other titles from the same author", model.authorBooks)
+                            rail("ebook-author", T("More by %@", author), "Other titles from the same author", model.authorBooks)
                         }
                         if model.recommendationsFailed {
                             VStack(alignment: .leading, spacing: BP.px(8)) {
@@ -314,8 +314,8 @@ struct EBookDetailView: View {
         var out: [String] = []
         if let y = book.year { out.append(String(Int(y))) }
         if let s = book.status, !s.isEmpty { out.append(s.prefix(1).uppercased() + s.dropFirst().lowercased()) }
-        if let v = book.volumes, v > 0 { out.append("\(Int(v)) volumes") }
-        if let c = model.chapters?.count, c > 0 { out.append("\(c) chapters") } else if let c = book.chapters, c > 0 { out.append("\(Int(c)) chapters") }
+        if let v = book.volumes, v > 0 { out.append(T("%lld volumes", Int(v))) }
+        if let c = model.chapters?.count, c > 0 { out.append(T("%lld chapters", c)) } else if let c = book.chapters, c > 0 { out.append(T("%lld chapters", Int(c))) }
         return out
     }
 
@@ -413,7 +413,7 @@ struct EBookDetailView: View {
 
     private func rail(_ key: String, _ title: String, _ subtitle: String, _ books: [EBook]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(2)) {
-            BPRowView(row: BrowseRow(key: key, title: title, metas: books.map(\.meta)),
+            BPRowView(row: BrowseRow(key: key, title: T(title), metas: books.map(\.meta)),
                       onFocus: { _ in },
                       onSelect: { m in nested = EBookOpen(id: m.id) })
             Text(T(subtitle)).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.horizontal, BP.gutter)

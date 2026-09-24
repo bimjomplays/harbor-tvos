@@ -224,7 +224,7 @@ struct CalendarView: View {
                 if model.loading && d.total == 0 { CalendarSkeleton(weekdays: d.weekdays) } else { grid(d) }
             }
         } else {
-            CalendarSkeleton(weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])
+            CalendarSkeleton(weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map { T($0) })
         }
     }
 

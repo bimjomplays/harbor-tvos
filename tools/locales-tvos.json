@@ -1,0 +1,836 @@
+{
+  "_about": "Apple TV copy that upstream's catalogs have no key for. tools/build_locales.mjs merges these into App/Locales/<lang>.lproj after upstream's keys (upstream wins). Keys are the English source string; {name} placeholders get Swift-format twins (%@ / %lld) like upstream's. Keep every language; keep the key's placeholders.",
+
+  "Couldn't load this room.": {
+    "ar": "تعذّر تحميل هذا القسم.", "de": "Dieser Bereich konnte nicht geladen werden.", "es": "No se pudo cargar esta sección.",
+    "fr": "Impossible de charger cette section.", "hi": "यह सेक्शन लोड नहीं हो सका।", "id": "Tidak dapat memuat bagian ini.",
+    "it": "Impossibile caricare questa sezione.", "ja": "このページを読み込めませんでした。", "ko": "이 화면을 불러올 수 없습니다.",
+    "pl": "Nie udało się wczytać tej sekcji.", "pt": "Não foi possível carregar esta seção.", "ru": "Не удалось загрузить этот раздел.",
+    "tr": "Bu bölüm yüklenemedi.", "vi": "Không thể tải mục này.", "zh": "无法加载此页面。"
+  },
+  "No catalog rows came back. Check the connection, or add a TMDB key in Settings.": {
+    "ar": "لم تصل أي صفوف من الكتالوج. تحقّق من الاتصال، أو أضف مفتاح TMDB في الإعدادات.",
+    "de": "Es kamen keine Katalogreihen zurück. Prüfe die Verbindung oder füge in den Einstellungen einen TMDB-Schlüssel hinzu.",
+    "es": "No llegó ninguna fila del catálogo. Revisa la conexión o añade una clave de TMDB en Configuración.",
+    "fr": "Aucune rangée de catalogue n’a été reçue. Vérifiez la connexion ou ajoutez une clé TMDB dans les paramètres.",
+    "hi": "कैटलॉग की कोई पंक्ति नहीं मिली। कनेक्शन जाँचें, या सेटिंग्स में TMDB कुंजी जोड़ें।",
+    "id": "Tidak ada baris katalog yang diterima. Periksa koneksi, atau tambahkan kunci TMDB di Pengaturan.",
+    "it": "Non è arrivata nessuna riga del catalogo. Controlla la connessione o aggiungi una chiave TMDB nelle Impostazioni.",
+    "ja": "カタログの行が返ってきませんでした。接続を確認するか、設定でTMDBキーを追加してください。",
+    "ko": "카탈로그 행을 받지 못했습니다. 연결을 확인하거나 설정에서 TMDB 키를 추가하세요.",
+    "pl": "Nie otrzymano żadnych wierszy katalogu. Sprawdź połączenie lub dodaj klucz TMDB w Ustawieniach.",
+    "pt": "Nenhuma fileira do catálogo foi recebida. Verifique a conexão ou adicione uma chave do TMDB em Configurações.",
+    "ru": "Строки каталога не получены. Проверьте подключение или добавьте ключ TMDB в настройках.",
+    "tr": "Hiç katalog satırı gelmedi. Bağlantıyı kontrol edin veya Ayarlar'da bir TMDB anahtarı ekleyin.",
+    "vi": "Không nhận được hàng danh mục nào. Hãy kiểm tra kết nối hoặc thêm khóa TMDB trong Cài đặt.",
+    "zh": "没有返回任何目录行。请检查网络连接，或在设置中添加 TMDB 密钥。"
+  },
+
+  "Read the eBook": {
+    "ar": "اقرأ الكتاب الإلكتروني", "de": "E-Book lesen", "es": "Leer el eBook", "fr": "Lire le livre numérique", "hi": "ई-बुक पढ़ें",
+    "id": "Baca eBook", "it": "Leggi l'eBook", "ja": "電子書籍を読む", "ko": "eBook 읽기", "pl": "Czytaj e-book", "pt": "Ler o livro digital",
+    "ru": "Читать электронную книгу", "tr": "e-Kitabı Oku", "vi": "Đọc sách điện tử", "zh": "阅读电子书"
+  },
+  "Your manga source does not have this title.": {
+    "ar": "مصدر المانجا لديك لا يحتوي على هذا العنوان.", "de": "Deine Manga-Quelle hat diesen Titel nicht.", "es": "Tu fuente de manga no tiene este título.",
+    "fr": "Votre source de manga ne propose pas ce titre.", "hi": "आपके मांगा स्रोत में यह शीर्षक नहीं है।", "id": "Sumber manga Anda tidak memiliki judul ini.",
+    "it": "La tua fonte manga non ha questo titolo.", "ja": "お使いのマンガソースにはこの作品がありません。", "ko": "만화 소스에 이 작품이 없습니다.",
+    "pl": "Twoje źródło mangi nie ma tego tytułu.", "pt": "Sua fonte de mangá não tem este título.", "ru": "В вашем источнике манги нет этого тайтла.",
+    "tr": "Manga kaynağınızda bu eser yok.", "vi": "Nguồn manga của bạn không có truyện này.", "zh": "你的漫画来源中没有这部作品。"
+  },
+  "Press {key} for the next chapter": {
+    "ar": "اضغط {key} للفصل التالي", "de": "Drücke {key} für das nächste Kapitel", "es": "Pulsa {key} para el siguiente capítulo",
+    "fr": "Appuyez sur {key} pour le chapitre suivant", "hi": "अगले अध्याय के लिए {key} दबाएँ", "id": "Tekan {key} untuk bab berikutnya",
+    "it": "Premi {key} per il capitolo successivo", "ja": "{key} を押すと次の章へ", "ko": "다음 챕터로 가려면 {key}를 누르세요",
+    "pl": "Naciśnij {key}, aby przejść do następnego rozdziału", "pt": "Pressione {key} para o próximo capítulo", "ru": "Нажмите {key}, чтобы перейти к следующей главе",
+    "tr": "Sonraki bölüm için {key} tuşuna basın", "vi": "Nhấn {key} để sang chương tiếp theo", "zh": "按 {key} 进入下一章"
+  },
+  "Press ▼ for the next chapter": {
+    "ar": "اضغط ▼ للفصل التالي", "de": "Drücke ▼ für das nächste Kapitel", "es": "Pulsa ▼ para el siguiente capítulo",
+    "fr": "Appuyez sur ▼ pour le chapitre suivant", "hi": "अगले अध्याय के लिए ▼ दबाएँ", "id": "Tekan ▼ untuk bab berikutnya",
+    "it": "Premi ▼ per il capitolo successivo", "ja": "▼ を押すと次の章へ", "ko": "다음 챕터로 가려면 ▼를 누르세요",
+    "pl": "Naciśnij ▼, aby przejść do następnego rozdziału", "pt": "Pressione ▼ para o próximo capítulo", "ru": "Нажмите ▼, чтобы перейти к следующей главе",
+    "tr": "Sonraki bölüm için ▼ tuşuna basın", "vi": "Nhấn ▼ để sang chương tiếp theo", "zh": "按 ▼ 进入下一章"
+  },
+  "The source did not return any pages. Try again, or go back and pick another chapter.": {
+    "ar": "لم يُرجع المصدر أي صفحات. حاول مرة أخرى، أو ارجع واختر فصلًا آخر.",
+    "de": "Die Quelle hat keine Seiten geliefert. Versuche es erneut oder geh zurück und wähle ein anderes Kapitel.",
+    "es": "La fuente no devolvió ninguna página. Inténtalo de nuevo o vuelve y elige otro capítulo.",
+    "fr": "La source n’a renvoyé aucune page. Réessayez, ou revenez en arrière et choisissez un autre chapitre.",
+    "hi": "स्रोत ने कोई पेज नहीं लौटाया। फिर से कोशिश करें, या वापस जाकर कोई दूसरा अध्याय चुनें।",
+    "id": "Sumber tidak mengembalikan halaman apa pun. Coba lagi, atau kembali dan pilih bab lain.",
+    "it": "La fonte non ha restituito nessuna pagina. Riprova, oppure torna indietro e scegli un altro capitolo.",
+    "ja": "ソースからページが返されませんでした。もう一度試すか、戻って別の章を選んでください。",
+    "ko": "소스에서 페이지를 받지 못했습니다. 다시 시도하거나 돌아가서 다른 챕터를 고르세요.",
+    "pl": "Źródło nie zwróciło żadnych stron. Spróbuj ponownie albo wróć i wybierz inny rozdział.",
+    "pt": "A fonte não retornou nenhuma página. Tente novamente ou volte e escolha outro capítulo.",
+    "ru": "Источник не вернул ни одной страницы. Попробуйте ещё раз или вернитесь и выберите другую главу.",
+    "tr": "Kaynak hiç sayfa döndürmedi. Tekrar deneyin ya da geri dönüp başka bir bölüm seçin.",
+    "vi": "Nguồn không trả về trang nào. Hãy thử lại hoặc quay lại và chọn chương khác.",
+    "zh": "来源没有返回任何页面。请重试，或返回选择其他章节。"
+  },
+  "Apple TV reads from Suwayomi servers. Source plugins and local folders are added in Harbor on your computer.": {
+    "ar": "يقرأ Apple TV من خوادم Suwayomi. تُضاف إضافات المصادر والمجلدات المحلية في Harbor على حاسوبك.",
+    "de": "Apple TV liest von Suwayomi-Servern. Quell-Plugins und lokale Ordner fügst du in Harbor auf deinem Computer hinzu.",
+    "es": "Apple TV lee desde servidores Suwayomi. Los complementos de fuentes y las carpetas locales se añaden en Harbor en tu ordenador.",
+    "fr": "L’Apple TV lit depuis des serveurs Suwayomi. Les plugins de sources et les dossiers locaux s’ajoutent dans Harbor sur votre ordinateur.",
+    "hi": "Apple TV Suwayomi सर्वर से पढ़ता है। स्रोत प्लगइन और लोकल फ़ोल्डर आपके कंप्यूटर पर Harbor में जोड़े जाते हैं।",
+    "id": "Apple TV membaca dari server Suwayomi. Plugin sumber dan folder lokal ditambahkan di Harbor pada komputer Anda.",
+    "it": "Apple TV legge dai server Suwayomi. I plugin delle fonti e le cartelle locali si aggiungono in Harbor sul tuo computer.",
+    "ja": "Apple TVはSuwayomiサーバーから読み込みます。ソースプラグインとローカルフォルダーは、パソコンのHarborで追加します。",
+    "ko": "Apple TV는 Suwayomi 서버에서 읽어옵니다. 소스 플러그인과 로컬 폴더는 컴퓨터의 Harbor에서 추가합니다.",
+    "pl": "Apple TV czyta z serwerów Suwayomi. Wtyczki źródeł i lokalne foldery dodajesz w Harbor na komputerze.",
+    "pt": "A Apple TV lê de servidores Suwayomi. Plugins de fontes e pastas locais são adicionados no Harbor do seu computador.",
+    "ru": "Apple TV читает с серверов Suwayomi. Плагины источников и локальные папки добавляются в Harbor на компьютере.",
+    "tr": "Apple TV, Suwayomi sunucularından okur. Kaynak eklentileri ve yerel klasörler bilgisayarınızdaki Harbor'dan eklenir.",
+    "vi": "Apple TV đọc từ máy chủ Suwayomi. Plugin nguồn và thư mục cục bộ được thêm trong Harbor trên máy tính của bạn.",
+    "zh": "Apple TV 从 Suwayomi 服务器读取。来源插件和本地文件夹需在电脑上的 Harbor 中添加。"
+  },
+  "Use this server": {
+    "ar": "استخدم هذا الخادم", "de": "Diesen Server verwenden", "es": "Usar este servidor", "fr": "Utiliser ce serveur", "hi": "यह सर्वर इस्तेमाल करें",
+    "id": "Gunakan server ini", "it": "Usa questo server", "ja": "このサーバーを使う", "ko": "이 서버 사용", "pl": "Użyj tego serwera",
+    "pt": "Usar este servidor", "ru": "Использовать этот сервер", "tr": "Bu sunucuyu kullan", "vi": "Dùng máy chủ này", "zh": "使用此服务器"
+  },
+  "Server added.": {
+    "ar": "تمت إضافة الخادم.", "de": "Server hinzugefügt.", "es": "Servidor añadido.", "fr": "Serveur ajouté.", "hi": "सर्वर जोड़ा गया।",
+    "id": "Server ditambahkan.", "it": "Server aggiunto.", "ja": "サーバーを追加しました。", "ko": "서버를 추가했습니다.", "pl": "Dodano serwer.",
+    "pt": "Servidor adicionado.", "ru": "Сервер добавлен.", "tr": "Sunucu eklendi.", "vi": "Đã thêm máy chủ.", "zh": "已添加服务器。"
+  },
+
+  "Search EPG channels": {
+    "ar": "البحث في قنوات دليل البرامج", "de": "EPG-Kanäle durchsuchen", "es": "Buscar canales de EPG", "fr": "Rechercher des chaînes EPG",
+    "hi": "EPG चैनलों में खोजें", "id": "Cari saluran EPG", "it": "Cerca canali EPG", "ja": "EPGチャンネルを検索", "ko": "EPG 채널 검색",
+    "pl": "Przeszukaj kanały EPG", "pt": "Pesquisar canais de EPG", "ru": "Поиск по каналам EPG", "tr": "EPG kanallarında ara",
+    "vi": "Tìm kiếm kênh EPG", "zh": "搜索 EPG 频道"
+  },
+  "Hold Select": {
+    "ar": "اضغط مطولًا على زر التحديد", "de": "Auswahltaste gedrückt halten", "es": "Mantén pulsado Seleccionar", "fr": "Maintenez Sélectionner",
+    "hi": "Select दबाकर रखें", "id": "Tahan Pilih", "it": "Tieni premuto Seleziona", "ja": "決定ボタンを長押し", "ko": "선택 버튼 길게 누르기",
+    "pl": "Przytrzymaj Wybierz", "pt": "Mantenha Selecionar pressionado", "ru": "Удерживайте «Выбрать»", "tr": "Seç tuşunu basılı tutun",
+    "vi": "Nhấn giữ nút Chọn", "zh": "按住选择键"
+  },
+  "No guide for this source. Add an EPG URL under Sources.": {
+    "ar": "لا يوجد دليل برامج لهذا المصدر. أضف عنوان EPG من المصادر.",
+    "de": "Für diese Quelle gibt es kein TV-Programm. Füge unter Quellen eine EPG-URL hinzu.",
+    "es": "Esta fuente no tiene guía. Añade una URL de EPG en Fuentes.",
+    "fr": "Aucun guide pour cette source. Ajoutez une URL EPG dans Sources.",
+    "hi": "इस स्रोत के लिए कोई गाइड नहीं है। स्रोत में EPG URL जोड़ें।",
+    "id": "Tidak ada panduan untuk sumber ini. Tambahkan URL EPG di Sumber.",
+    "it": "Nessuna guida per questa fonte. Aggiungi un URL EPG in Fonti.",
+    "ja": "このソースには番組表がありません。「ソース」でEPGのURLを追加してください。",
+    "ko": "이 소스에는 편성표가 없습니다. 소스에서 EPG URL을 추가하세요.",
+    "pl": "To źródło nie ma programu TV. Dodaj adres URL EPG w Źródłach.",
+    "pt": "Esta fonte não tem guia. Adicione uma URL de EPG em Fontes.",
+    "ru": "Для этого источника нет телепрограммы. Добавьте URL EPG в разделе «Источники».",
+    "tr": "Bu kaynağın rehberi yok. Kaynaklar bölümünden bir EPG URL'si ekleyin.",
+    "vi": "Nguồn này không có lịch phát sóng. Hãy thêm URL EPG trong Nguồn.",
+    "zh": "此来源没有节目指南。请在“来源”中添加 EPG URL。"
+  },
+  "The guide loaded but lists no channels.": {
+    "ar": "تم تحميل الدليل لكنه لا يضم أي قنوات.", "de": "Das TV-Programm wurde geladen, enthält aber keine Kanäle.",
+    "es": "La guía se cargó, pero no incluye ningún canal.", "fr": "Le guide a été chargé mais ne contient aucune chaîne.",
+    "hi": "गाइड लोड हुई, लेकिन उसमें कोई चैनल नहीं है।", "id": "Panduan dimuat tetapi tidak berisi saluran.",
+    "it": "La guida è stata caricata ma non elenca alcun canale.", "ja": "番組表を読み込みましたが、チャンネルがありません。",
+    "ko": "편성표를 불러왔지만 채널이 없습니다.", "pl": "Program TV się wczytał, ale nie zawiera kanałów.",
+    "pt": "O guia foi carregado, mas não lista nenhum canal.", "ru": "Телепрограмма загружена, но в ней нет каналов.",
+    "tr": "Rehber yüklendi ama hiç kanal içermiyor.", "vi": "Đã tải lịch phát sóng nhưng không có kênh nào.",
+    "zh": "节目指南已加载，但没有列出任何频道。"
+  },
+  "Guide failed: {error}": {
+    "ar": "تعذّر تحميل الدليل: {error}", "de": "TV-Programm fehlgeschlagen: {error}", "es": "Error de la guía: {error}", "fr": "Échec du guide : {error}",
+    "hi": "गाइड लोड नहीं हुई: {error}", "id": "Panduan gagal: {error}", "it": "Errore della guida: {error}", "ja": "番組表の読み込みに失敗しました: {error}",
+    "ko": "편성표 오류: {error}", "pl": "Błąd programu TV: {error}", "pt": "Falha no guia: {error}", "ru": "Ошибка телепрограммы: {error}",
+    "tr": "Rehber yüklenemedi: {error}", "vi": "Lỗi lịch phát sóng: {error}", "zh": "节目指南加载失败：{error}"
+  },
+  "{channel} · catch up": {
+    "ar": "{channel} · إعادة المشاهدة", "de": "{channel} · Nachholen", "es": "{channel} · diferido", "fr": "{channel} · en différé",
+    "hi": "{channel} · कैच-अप", "id": "{channel} · tayangan ulang", "it": "{channel} · in differita", "ja": "{channel} · 見逃し再生",
+    "ko": "{channel} · 다시보기", "pl": "{channel} · nadrabianie", "pt": "{channel} · reprise", "ru": "{channel} · из архива",
+    "tr": "{channel} · geriye dönük izleme", "vi": "{channel} · xem lại", "zh": "{channel} · 回看"
+  },
+  "Hide group": {
+    "ar": "إخفاء المجموعة", "de": "Gruppe ausblenden", "es": "Ocultar grupo", "fr": "Masquer le groupe", "hi": "समूह छिपाएँ", "id": "Sembunyikan grup",
+    "it": "Nascondi gruppo", "ja": "グループを非表示", "ko": "그룹 숨기기", "pl": "Ukryj grupę", "pt": "Ocultar grupo", "ru": "Скрыть группу",
+    "tr": "Grubu gizle", "vi": "Ẩn nhóm", "zh": "隐藏分组"
+  },
+  "Pin channel": {
+    "ar": "تثبيت القناة", "de": "Kanal anheften", "es": "Fijar canal", "fr": "Épingler la chaîne", "hi": "चैनल पिन करें", "id": "Sematkan saluran",
+    "it": "Fissa il canale", "ja": "チャンネルを固定", "ko": "채널 고정", "pl": "Przypnij kanał", "pt": "Fixar canal", "ru": "Закрепить канал",
+    "tr": "Kanalı sabitle", "vi": "Ghim kênh", "zh": "置顶频道"
+  },
+  "Paste an M3U or M3U8 playlist URL, an IPTV middleware address, or an Xtream Codes login URL (get.php with username and password). Xtream guides are found automatically.": {
+    "ar": "الصق عنوان قائمة تشغيل M3U أو M3U8، أو عنوان وسيط IPTV، أو رابط تسجيل دخول Xtream Codes (get.php مع اسم المستخدم وكلمة المرور). يُعثر على أدلة Xtream تلقائيًا.",
+    "de": "Füge eine M3U- oder M3U8-Playlist-URL, eine IPTV-Middleware-Adresse oder eine Xtream-Codes-Login-URL (get.php mit Benutzername und Passwort) ein. Xtream-Programmdaten werden automatisch gefunden.",
+    "es": "Pega la URL de una lista M3U o M3U8, la dirección de un middleware IPTV o una URL de inicio de sesión de Xtream Codes (get.php con usuario y contraseña). Las guías de Xtream se encuentran automáticamente.",
+    "fr": "Collez l’URL d’une playlist M3U ou M3U8, l’adresse d’un middleware IPTV ou une URL de connexion Xtream Codes (get.php avec nom d’utilisateur et mot de passe). Les guides Xtream sont trouvés automatiquement.",
+    "hi": "M3U या M3U8 प्लेलिस्ट URL, IPTV मिडलवेयर पता, या Xtream Codes लॉगिन URL (यूज़रनेम और पासवर्ड के साथ get.php) पेस्ट करें। Xtream गाइड अपने-आप मिल जाती हैं।",
+    "id": "Tempel URL playlist M3U atau M3U8, alamat middleware IPTV, atau URL login Xtream Codes (get.php dengan nama pengguna dan kata sandi). Panduan Xtream ditemukan secara otomatis.",
+    "it": "Incolla l'URL di una playlist M3U o M3U8, l'indirizzo di un middleware IPTV o un URL di accesso Xtream Codes (get.php con nome utente e password). Le guide Xtream vengono trovate automaticamente.",
+    "ja": "M3U / M3U8 プレイリストのURL、IPTVミドルウェアのアドレス、またはXtream Codesのログイン URL（ユーザー名とパスワード付きの get.php）を貼り付けてください。Xtreamの番組表は自動で見つかります。",
+    "ko": "M3U 또는 M3U8 재생목록 URL, IPTV 미들웨어 주소, 또는 Xtream Codes 로그인 URL(사용자 이름과 비밀번호가 포함된 get.php)을 붙여넣으세요. Xtream 편성표는 자동으로 찾습니다.",
+    "pl": "Wklej adres URL playlisty M3U lub M3U8, adres middleware IPTV albo adres logowania Xtream Codes (get.php z nazwą użytkownika i hasłem). Programy TV Xtream są wyszukiwane automatycznie.",
+    "pt": "Cole a URL de uma playlist M3U ou M3U8, o endereço de um middleware IPTV ou uma URL de login do Xtream Codes (get.php com usuário e senha). Os guias do Xtream são encontrados automaticamente.",
+    "ru": "Вставьте URL плейлиста M3U или M3U8, адрес IPTV-middleware или URL входа Xtream Codes (get.php с именем пользователя и паролем). Телепрограмма Xtream находится автоматически.",
+    "tr": "Bir M3U veya M3U8 oynatma listesi URL'si, bir IPTV ara katman adresi ya da bir Xtream Codes giriş URL'si (kullanıcı adı ve şifreli get.php) yapıştırın. Xtream rehberleri otomatik olarak bulunur.",
+    "vi": "Dán URL danh sách phát M3U hoặc M3U8, địa chỉ middleware IPTV hoặc URL đăng nhập Xtream Codes (get.php kèm tên người dùng và mật khẩu). Lịch phát sóng Xtream được tìm tự động.",
+    "zh": "粘贴 M3U 或 M3U8 播放列表 URL、IPTV 中间件地址，或 Xtream Codes 登录 URL（带用户名和密码的 get.php）。Xtream 的节目指南会自动找到。"
+  },
+  "Adding…": {
+    "ar": "جارٍ الإضافة…", "de": "Wird hinzugefügt…", "es": "Añadiendo…", "fr": "Ajout…", "hi": "जोड़ा जा रहा है…", "id": "Menambahkan…",
+    "it": "Aggiunta in corso…", "ja": "追加中…", "ko": "추가하는 중…", "pl": "Dodawanie…", "pt": "Adicionando…", "ru": "Добавление…",
+    "tr": "Ekleniyor…", "vi": "Đang thêm…", "zh": "正在添加…"
+  },
+  "Guide: {url}": {
+    "ar": "الدليل: {url}", "de": "TV-Programm: {url}", "es": "Guía: {url}", "fr": "Guide : {url}", "hi": "गाइड: {url}", "id": "Panduan: {url}",
+    "it": "Guida: {url}", "ja": "番組表: {url}", "ko": "편성표: {url}", "pl": "Program TV: {url}", "pt": "Guia: {url}", "ru": "Телепрограмма: {url}",
+    "tr": "Rehber: {url}", "vi": "Lịch phát sóng: {url}", "zh": "节目指南：{url}"
+  },
+  "No guide URL": {
+    "ar": "لا يوجد عنوان للدليل", "de": "Keine Programm-URL", "es": "Sin URL de guía", "fr": "Aucune URL de guide", "hi": "कोई गाइड URL नहीं",
+    "id": "Tidak ada URL panduan", "it": "Nessun URL della guida", "ja": "番組表のURLなし", "ko": "편성표 URL 없음", "pl": "Brak adresu programu TV",
+    "pt": "Sem URL do guia", "ru": "Нет URL телепрограммы", "tr": "Rehber URL'si yok", "vi": "Không có URL lịch phát sóng", "zh": "没有节目指南 URL"
+  },
+  "Use the EPG URL above for the selected source": {
+    "ar": "استخدم عنوان EPG أعلاه للمصدر المحدد", "de": "Die obige EPG-URL für die ausgewählte Quelle verwenden",
+    "es": "Usar la URL de EPG de arriba para la fuente seleccionada", "fr": "Utiliser l’URL EPG ci-dessus pour la source sélectionnée",
+    "hi": "चुने गए स्रोत के लिए ऊपर वाला EPG URL इस्तेमाल करें", "id": "Gunakan URL EPG di atas untuk sumber yang dipilih",
+    "it": "Usa l'URL EPG qui sopra per la fonte selezionata", "ja": "上のEPG URLを選択中のソースに使う", "ko": "위의 EPG URL을 선택한 소스에 사용",
+    "pl": "Użyj powyższego adresu EPG dla wybranego źródła", "pt": "Usar a URL de EPG acima na fonte selecionada",
+    "ru": "Использовать URL EPG выше для выбранного источника", "tr": "Yukarıdaki EPG URL'sini seçili kaynak için kullan",
+    "vi": "Dùng URL EPG ở trên cho nguồn đã chọn", "zh": "将上方的 EPG URL 用于所选来源"
+  },
+  "Refresh channels and guide": {
+    "ar": "تحديث القنوات والدليل", "de": "Kanäle und TV-Programm aktualisieren", "es": "Actualizar canales y guía", "fr": "Actualiser les chaînes et le guide",
+    "hi": "चैनल और गाइड रीफ़्रेश करें", "id": "Muat ulang saluran dan panduan", "it": "Aggiorna canali e guida", "ja": "チャンネルと番組表を更新",
+    "ko": "채널 및 편성표 새로 고침", "pl": "Odśwież kanały i program TV", "pt": "Atualizar canais e guia", "ru": "Обновить каналы и телепрограмму",
+    "tr": "Kanalları ve rehberi yenile", "vi": "Làm mới kênh và lịch phát sóng", "zh": "刷新频道和节目指南"
+  },
+  "Add an M3U or Xtream source in Live TV first. Its movies and shows appear here.": {
+    "ar": "أضف أولًا مصدر M3U أو Xtream في البث التلفزيوني المباشر. ستظهر أفلامه ومسلسلاته هنا.",
+    "de": "Füge zuerst unter Live-TV eine M3U- oder Xtream-Quelle hinzu. Ihre Filme und Serien erscheinen dann hier.",
+    "es": "Primero añade una fuente M3U o Xtream en TV en vivo. Sus películas y series aparecerán aquí.",
+    "fr": "Ajoutez d’abord une source M3U ou Xtream dans TV en direct. Ses films et séries apparaîtront ici.",
+    "hi": "पहले लाइव TV में कोई M3U या Xtream स्रोत जोड़ें। उसकी फ़िल्में और शो यहाँ दिखेंगे।",
+    "id": "Tambahkan sumber M3U atau Xtream di TV Langsung terlebih dahulu. Film dan acaranya akan muncul di sini.",
+    "it": "Aggiungi prima una fonte M3U o Xtream in TV in diretta. I suoi film e le sue serie appariranno qui.",
+    "ja": "まずライブTVでM3UまたはXtreamのソースを追加してください。その映画と番組がここに表示されます。",
+    "ko": "먼저 실시간 TV에서 M3U 또는 Xtream 소스를 추가하세요. 해당 영화와 시리즈가 여기에 표시됩니다.",
+    "pl": "Najpierw dodaj źródło M3U lub Xtream w Telewizji na żywo. Jego filmy i seriale pojawią się tutaj.",
+    "pt": "Primeiro adicione uma fonte M3U ou Xtream em TV ao vivo. Os filmes e séries dela aparecem aqui.",
+    "ru": "Сначала добавьте источник M3U или Xtream в разделе «Прямой эфир». Его фильмы и сериалы появятся здесь.",
+    "tr": "Önce Canlı TV'de bir M3U veya Xtream kaynağı ekleyin. Filmleri ve dizileri burada görünür.",
+    "vi": "Trước tiên hãy thêm nguồn M3U hoặc Xtream trong TV trực tiếp. Phim và chương trình của nguồn sẽ hiện ở đây.",
+    "zh": "请先在“直播电视”中添加 M3U 或 Xtream 来源。其中的电影和剧集会显示在这里。"
+  },
+
+  "Account and notifications": {
+    "ar": "الحساب والإشعارات", "de": "Konto und Benachrichtigungen", "es": "Cuenta y notificaciones", "fr": "Compte et notifications",
+    "hi": "खाता और सूचनाएँ", "id": "Akun dan notifikasi", "it": "Account e notifiche", "ja": "アカウントと通知", "ko": "계정 및 알림",
+    "pl": "Konto i powiadomienia", "pt": "Conta e notificações", "ru": "Аккаунт и уведомления", "tr": "Hesap ve bildirimler",
+    "vi": "Tài khoản và thông báo", "zh": "账户和通知"
+  },
+  "Account and notifications, {n} new": {
+    "ar": "الحساب والإشعارات، الجديدة: {n}", "de": "Konto und Benachrichtigungen, {n} neu", "es": "Cuenta y notificaciones, {n} nuevas",
+    "fr": "Compte et notifications, {n} nouvelles", "hi": "खाता और सूचनाएँ, {n} नई", "id": "Akun dan notifikasi, {n} baru",
+    "it": "Account e notifiche, {n} nuove", "ja": "アカウントと通知、新着 {n} 件", "ko": "계정 및 알림, 새 알림 {n}개",
+    "pl": "Konto i powiadomienia, nowe: {n}", "pt": "Conta e notificações, {n} novas", "ru": "Аккаунт и уведомления, новых: {n}",
+    "tr": "Hesap ve bildirimler, {n} yeni", "vi": "Tài khoản và thông báo, {n} mới", "zh": "账户和通知，{n} 条新通知"
+  },
+  "Open a shared list": {
+    "ar": "فتح قائمة مشتركة", "de": "Geteilte Liste öffnen", "es": "Abrir una lista compartida", "fr": "Ouvrir une liste partagée",
+    "hi": "साझा सूची खोलें", "id": "Buka daftar bersama", "it": "Apri un elenco condiviso", "ja": "共有リストを開く", "ko": "공유 목록 열기",
+    "pl": "Otwórz udostępnioną listę", "pt": "Abrir uma lista compartilhada", "ru": "Открыть общий список", "tr": "Paylaşılan bir liste aç",
+    "vi": "Mở danh sách được chia sẻ", "zh": "打开共享列表"
+  },
+  "Not signed in to a Harbor account": {
+    "ar": "لم يتم تسجيل الدخول إلى حساب Harbor", "de": "Nicht bei einem Harbor-Konto angemeldet", "es": "No has iniciado sesión en una cuenta de Harbor",
+    "fr": "Non connecté à un compte Harbor", "hi": "किसी Harbor खाते में साइन इन नहीं है", "id": "Belum masuk ke akun Harbor",
+    "it": "Nessun account Harbor collegato", "ja": "Harborアカウントにサインインしていません", "ko": "Harbor 계정에 로그인되어 있지 않음",
+    "pl": "Nie zalogowano do konta Harbor", "pt": "Sem sessão iniciada em uma conta Harbor", "ru": "Вход в аккаунт Harbor не выполнен",
+    "tr": "Bir Harbor hesabında oturum açılmadı", "vi": "Chưa đăng nhập tài khoản Harbor", "zh": "未登录 Harbor 账户"
+  },
+  "Groups are made on desktop Harbor or harbor.site.": {
+    "ar": "تُنشأ المجموعات في Harbor لسطح المكتب أو على harbor.site.", "de": "Gruppen werden in Harbor für den Desktop oder auf harbor.site erstellt.",
+    "es": "Los grupos se crean en Harbor para escritorio o en harbor.site.", "fr": "Les groupes se créent dans Harbor sur ordinateur ou sur harbor.site.",
+    "hi": "समूह डेस्कटॉप Harbor या harbor.site पर बनाए जाते हैं।", "id": "Grup dibuat di Harbor desktop atau harbor.site.",
+    "it": "I gruppi si creano in Harbor per desktop o su harbor.site.", "ja": "グループはデスクトップ版Harborまたはharbor.siteで作成します。",
+    "ko": "그룹은 데스크톱 Harbor 또는 harbor.site에서 만듭니다.", "pl": "Grupy tworzy się w Harbor na komputerze lub na harbor.site.",
+    "pt": "Os grupos são criados no Harbor para desktop ou em harbor.site.", "ru": "Группы создаются в настольной версии Harbor или на harbor.site.",
+    "tr": "Gruplar masaüstü Harbor'da veya harbor.site'ta oluşturulur.", "vi": "Nhóm được tạo trên Harbor máy tính hoặc harbor.site.",
+    "zh": "群组需在桌面版 Harbor 或 harbor.site 上创建。"
+  },
+  "Search groups": {
+    "ar": "البحث في المجموعات", "de": "Gruppen durchsuchen", "es": "Buscar grupos", "fr": "Rechercher des groupes", "hi": "समूह खोजें",
+    "id": "Cari grup", "it": "Cerca gruppi", "ja": "グループを検索", "ko": "그룹 검색", "pl": "Szukaj grup", "pt": "Pesquisar grupos",
+    "ru": "Поиск групп", "tr": "Gruplarda ara", "vi": "Tìm nhóm", "zh": "搜索群组"
+  },
+  "Scan this with your phone camera, then type what to look for.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم اكتب ما تبحث عنه.", "de": "Scanne das mit deiner Handykamera und tippe dann ein, wonach du suchst.",
+    "es": "Escanea esto con la cámara del teléfono y luego escribe lo que quieres buscar.", "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis saisissez ce que vous cherchez.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर टाइप करें कि क्या खोजना है।", "id": "Pindai ini dengan kamera ponsel, lalu ketik yang ingin dicari.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi digita cosa cercare.", "ja": "スマートフォンのカメラでスキャンして、探したいものを入力してください。",
+    "ko": "휴대폰 카메라로 스캔한 다음 찾을 내용을 입력하세요.", "pl": "Zeskanuj to aparatem telefonu, a potem wpisz, czego szukasz.",
+    "pt": "Leia isto com a câmera do celular e digite o que procurar.", "ru": "Отсканируйте это камерой телефона, затем введите, что искать.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından ne aradığınızı yazın.", "vi": "Quét mã này bằng camera điện thoại, rồi nhập nội dung cần tìm.",
+    "zh": "用手机相机扫描此码，然后输入要查找的内容。"
+  },
+  "Group unavailable": {
+    "ar": "المجموعة غير متاحة", "de": "Gruppe nicht verfügbar", "es": "Grupo no disponible", "fr": "Groupe indisponible", "hi": "समूह उपलब्ध नहीं है",
+    "id": "Grup tidak tersedia", "it": "Gruppo non disponibile", "ja": "グループを利用できません", "ko": "그룹을 사용할 수 없음", "pl": "Grupa niedostępna",
+    "pt": "Grupo indisponível", "ru": "Группа недоступна", "tr": "Grup kullanılamıyor", "vi": "Nhóm không khả dụng", "zh": "群组不可用"
+  },
+  "Share something with the group": {
+    "ar": "شارك شيئًا مع المجموعة", "de": "Etwas mit der Gruppe teilen", "es": "Compartir algo con el grupo", "fr": "Partager quelque chose avec le groupe",
+    "hi": "समूह के साथ कुछ साझा करें", "id": "Bagikan sesuatu dengan grup", "it": "Condividi qualcosa con il gruppo", "ja": "グループに投稿する",
+    "ko": "그룹에 공유하기", "pl": "Udostępnij coś grupie", "pt": "Compartilhe algo com o grupo", "ru": "Поделитесь чем-нибудь с группой",
+    "tr": "Grupla bir şeyler paylaşın", "vi": "Chia sẻ điều gì đó với nhóm", "zh": "在群组中分享内容"
+  },
+  "Scan this with your phone camera, then write your post on your phone.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم اكتب منشورك على الهاتف.", "de": "Scanne das mit deiner Handykamera und schreib deinen Beitrag dann auf dem Smartphone.",
+    "es": "Escanea esto con la cámara del teléfono y luego escribe tu publicación en él.", "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis rédigez votre publication sur le téléphone.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर फ़ोन पर अपनी पोस्ट लिखें।", "id": "Pindai ini dengan kamera ponsel, lalu tulis postingan Anda di ponsel.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi scrivi il post sul telefono.", "ja": "スマートフォンのカメラでスキャンして、スマートフォンで投稿を書いてください。",
+    "ko": "휴대폰 카메라로 스캔한 다음 휴대폰에서 게시물을 작성하세요.", "pl": "Zeskanuj to aparatem telefonu, a potem napisz post na telefonie.",
+    "pt": "Leia isto com a câmera do celular e escreva sua publicação no celular.", "ru": "Отсканируйте это камерой телефона, затем напишите пост на телефоне.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından gönderinizi telefonda yazın.", "vi": "Quét mã này bằng camera điện thoại, rồi viết bài đăng trên điện thoại.",
+    "zh": "用手机相机扫描此码，然后在手机上撰写帖子。"
+  },
+  "Leave this group?": {
+    "ar": "مغادرة هذه المجموعة؟", "de": "Diese Gruppe verlassen?", "es": "¿Salir de este grupo?", "fr": "Quitter ce groupe ?", "hi": "यह समूह छोड़ें?",
+    "id": "Keluar dari grup ini?", "it": "Uscire da questo gruppo?", "ja": "このグループから退出しますか？", "ko": "이 그룹에서 나갈까요?",
+    "pl": "Opuścić tę grupę?", "pt": "Sair deste grupo?", "ru": "Покинуть эту группу?", "tr": "Bu gruptan ayrılsın mı?",
+    "vi": "Rời nhóm này?", "zh": "要退出此群组吗？"
+  },
+  "Write a post": {
+    "ar": "اكتب منشورًا", "de": "Beitrag schreiben", "es": "Escribir una publicación", "fr": "Écrire une publication", "hi": "पोस्ट लिखें",
+    "id": "Tulis postingan", "it": "Scrivi un post", "ja": "投稿を書く", "ko": "게시물 작성", "pl": "Napisz post", "pt": "Escrever uma publicação",
+    "ru": "Написать пост", "tr": "Gönderi yaz", "vi": "Viết bài đăng", "zh": "发帖"
+  },
+  "Members' posts show here.": {
+    "ar": "تظهر منشورات الأعضاء هنا.", "de": "Beiträge der Mitglieder erscheinen hier.", "es": "Las publicaciones de los miembros aparecen aquí.",
+    "fr": "Les publications des membres s’affichent ici.", "hi": "सदस्यों की पोस्ट यहाँ दिखती हैं।", "id": "Postingan anggota muncul di sini.",
+    "it": "I post dei membri compaiono qui.", "ja": "メンバーの投稿がここに表示されます。", "ko": "멤버의 게시물이 여기에 표시됩니다.",
+    "pl": "Tutaj pojawiają się posty członków.", "pt": "As publicações dos membros aparecem aqui.", "ru": "Здесь появляются посты участников.",
+    "tr": "Üyelerin gönderileri burada görünür.", "vi": "Bài đăng của thành viên hiển thị ở đây.", "zh": "成员的帖子会显示在这里。"
+  },
+  "Your role: {role}": {
+    "ar": "دورك: {role}", "de": "Deine Rolle: {role}", "es": "Tu rol: {role}", "fr": "Votre rôle : {role}", "hi": "आपकी भूमिका: {role}",
+    "id": "Peran Anda: {role}", "it": "Il tuo ruolo: {role}", "ja": "あなたの役割: {role}", "ko": "내 역할: {role}", "pl": "Twoja rola: {role}",
+    "pt": "Sua função: {role}", "ru": "Ваша роль: {role}", "tr": "Rolünüz: {role}", "vi": "Vai trò của bạn: {role}", "zh": "你的角色：{role}"
+  },
+  "Friend requests, comments, badges and group news land here.": {
+    "ar": "تصل هنا طلبات الصداقة والتعليقات والشارات وأخبار المجموعات.", "de": "Freundschaftsanfragen, Kommentare, Abzeichen und Gruppenneuigkeiten landen hier.",
+    "es": "Aquí llegan las solicitudes de amistad, los comentarios, las insignias y las novedades de los grupos.",
+    "fr": "Les demandes d’ami, commentaires, badges et nouvelles des groupes arrivent ici.",
+    "hi": "फ़्रेंड रिक्वेस्ट, टिप्पणियाँ, बैज और समूह की खबरें यहाँ आती हैं।", "id": "Permintaan pertemanan, komentar, lencana, dan kabar grup muncul di sini.",
+    "it": "Qui arrivano richieste di amicizia, commenti, badge e novità dei gruppi.", "ja": "フレンド申請、コメント、バッジ、グループのお知らせがここに届きます。",
+    "ko": "친구 요청, 댓글, 배지, 그룹 소식이 여기에 표시됩니다.", "pl": "Tutaj trafiają zaproszenia do znajomych, komentarze, odznaki i wieści z grup.",
+    "pt": "Pedidos de amizade, comentários, emblemas e novidades dos grupos chegam aqui.", "ru": "Сюда приходят запросы в друзья, комментарии, значки и новости групп.",
+    "tr": "Arkadaşlık istekleri, yorumlar, rozetler ve grup haberleri buraya gelir.", "vi": "Lời mời kết bạn, bình luận, huy hiệu và tin nhóm sẽ hiện ở đây.",
+    "zh": "好友请求、评论、徽章和群组消息会显示在这里。"
+  },
+  "Notifications arrive once this TV is signed in to a Harbor account.": {
+    "ar": "تصل الإشعارات بعد تسجيل دخول هذا التلفاز إلى حساب Harbor.", "de": "Benachrichtigungen kommen an, sobald dieser Fernseher bei einem Harbor-Konto angemeldet ist.",
+    "es": "Las notificaciones llegarán cuando este televisor inicie sesión en una cuenta de Harbor.", "fr": "Les notifications arrivent dès que ce téléviseur est connecté à un compte Harbor.",
+    "hi": "यह TV किसी Harbor खाते में साइन इन होते ही सूचनाएँ आने लगेंगी।", "id": "Notifikasi akan masuk setelah TV ini masuk ke akun Harbor.",
+    "it": "Le notifiche arrivano quando questa TV è collegata a un account Harbor.", "ja": "このテレビでHarborアカウントにサインインすると、通知が届くようになります。",
+    "ko": "이 TV에서 Harbor 계정에 로그인하면 알림이 도착합니다.", "pl": "Powiadomienia pojawią się, gdy ten telewizor zaloguje się do konta Harbor.",
+    "pt": "As notificações chegam quando esta TV entrar em uma conta Harbor.", "ru": "Уведомления начнут приходить, когда на этом телевизоре будет выполнен вход в аккаунт Harbor.",
+    "tr": "Bu TV bir Harbor hesabında oturum açtığında bildirimler gelir.", "vi": "Thông báo sẽ đến khi TV này đăng nhập tài khoản Harbor.",
+    "zh": "这台电视登录 Harbor 账户后即可收到通知。"
+  },
+  "Scan this with your phone camera, then write your comment on your phone.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم اكتب تعليقك على الهاتف.", "de": "Scanne das mit deiner Handykamera und schreib deinen Kommentar dann auf dem Smartphone.",
+    "es": "Escanea esto con la cámara del teléfono y luego escribe tu comentario en él.", "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis rédigez votre commentaire sur le téléphone.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर फ़ोन पर अपनी टिप्पणी लिखें।", "id": "Pindai ini dengan kamera ponsel, lalu tulis komentar Anda di ponsel.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi scrivi il commento sul telefono.", "ja": "スマートフォンのカメラでスキャンして、スマートフォンでコメントを書いてください。",
+    "ko": "휴대폰 카메라로 스캔한 다음 휴대폰에서 댓글을 작성하세요.", "pl": "Zeskanuj to aparatem telefonu, a potem napisz komentarz na telefonie.",
+    "pt": "Leia isto com a câmera do celular e escreva seu comentário no celular.", "ru": "Отсканируйте это камерой телефона, затем напишите комментарий на телефоне.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından yorumunuzu telefonda yazın.", "vi": "Quét mã này bằng camera điện thoại, rồi viết bình luận trên điện thoại.",
+    "zh": "用手机相机扫描此码，然后在手机上撰写评论。"
+  },
+  "Loading profile…": {
+    "ar": "جارٍ تحميل الملف الشخصي…", "de": "Profil wird geladen…", "es": "Cargando perfil…", "fr": "Chargement du profil…", "hi": "प्रोफ़ाइल लोड हो रही है…",
+    "id": "Memuat profil…", "it": "Caricamento del profilo…", "ja": "プロフィールを読み込み中…", "ko": "프로필을 불러오는 중…", "pl": "Wczytywanie profilu…",
+    "pt": "Carregando perfil…", "ru": "Загрузка профиля…", "tr": "Profil yükleniyor…", "vi": "Đang tải hồ sơ…", "zh": "正在加载个人资料…"
+  },
+  "Claim a handle on desktop Harbor or harbor.site to get a public profile.": {
+    "ar": "احجز اسم مستخدم في Harbor لسطح المكتب أو على harbor.site لتحصل على ملف شخصي عام.",
+    "de": "Sichere dir in Harbor für den Desktop oder auf harbor.site einen Handle, um ein öffentliches Profil zu bekommen.",
+    "es": "Reserva un nombre de usuario en Harbor para escritorio o en harbor.site para tener un perfil público.",
+    "fr": "Réservez un identifiant dans Harbor sur ordinateur ou sur harbor.site pour obtenir un profil public.",
+    "hi": "सार्वजनिक प्रोफ़ाइल पाने के लिए डेस्कटॉप Harbor या harbor.site पर एक हैंडल लें।",
+    "id": "Klaim nama pengguna di Harbor desktop atau harbor.site untuk mendapatkan profil publik.",
+    "it": "Scegli un handle in Harbor per desktop o su harbor.site per avere un profilo pubblico.",
+    "ja": "公開プロフィールを持つには、デスクトップ版Harborまたはharbor.siteでハンドルを取得してください。",
+    "ko": "공개 프로필을 만들려면 데스크톱 Harbor 또는 harbor.site에서 핸들을 등록하세요.",
+    "pl": "Zarezerwuj nazwę użytkownika w Harbor na komputerze lub na harbor.site, aby mieć publiczny profil.",
+    "pt": "Reserve um nome de usuário no Harbor para desktop ou em harbor.site para ter um perfil público.",
+    "ru": "Займите имя пользователя в настольной версии Harbor или на harbor.site, чтобы получить публичный профиль.",
+    "tr": "Herkese açık bir profil için masaüstü Harbor'da veya harbor.site'ta bir kullanıcı adı alın.",
+    "vi": "Hãy đăng ký tên người dùng trên Harbor máy tính hoặc harbor.site để có hồ sơ công khai.",
+    "zh": "在桌面版 Harbor 或 harbor.site 上注册用户名，即可拥有公开个人资料。"
+  },
+  "Your Harbor account's profile shows here once this TV is signed in (Settings → Account).": {
+    "ar": "يظهر الملف الشخصي لحسابك في Harbor هنا بعد تسجيل دخول هذا التلفاز (الإعدادات ← الحساب).",
+    "de": "Das Profil deines Harbor-Kontos erscheint hier, sobald dieser Fernseher angemeldet ist (Einstellungen → Konto).",
+    "es": "El perfil de tu cuenta de Harbor aparecerá aquí cuando este televisor inicie sesión (Configuración → Cuenta).",
+    "fr": "Le profil de votre compte Harbor s’affiche ici dès que ce téléviseur est connecté (Paramètres → Compte).",
+    "hi": "यह TV साइन इन होते ही आपके Harbor खाते की प्रोफ़ाइल यहाँ दिखेगी (सेटिंग्स → खाता)।",
+    "id": "Profil akun Harbor Anda muncul di sini setelah TV ini masuk (Pengaturan → Akun).",
+    "it": "Il profilo del tuo account Harbor compare qui quando questa TV è collegata (Impostazioni → Account).",
+    "ja": "このテレビでサインインすると、Harborアカウントのプロフィールがここに表示されます（設定 → アカウント）。",
+    "ko": "이 TV에서 로그인하면 Harbor 계정의 프로필이 여기에 표시됩니다(설정 → 계정).",
+    "pl": "Profil Twojego konta Harbor pojawi się tutaj, gdy ten telewizor się zaloguje (Ustawienia → Konto).",
+    "pt": "O perfil da sua conta Harbor aparece aqui quando esta TV entrar na conta (Configurações → Conta).",
+    "ru": "Профиль вашего аккаунта Harbor появится здесь после входа на этом телевизоре (Настройки → Аккаунт).",
+    "tr": "Bu TV'de oturum açıldığında Harbor hesabınızın profili burada görünür (Ayarlar → Hesap).",
+    "vi": "Hồ sơ tài khoản Harbor của bạn sẽ hiện ở đây khi TV này đăng nhập (Cài đặt → Tài khoản).",
+    "zh": "这台电视登录后，你的 Harbor 账户个人资料会显示在这里（设置 → 账户）。"
+  },
+  "A LIST BY {name}": {
+    "ar": "قائمة من {name}", "de": "EINE LISTE VON {name}", "es": "UNA LISTA DE {name}", "fr": "UNE LISTE DE {name}", "hi": "{name} की सूची",
+    "id": "DAFTAR OLEH {name}", "it": "UN ELENCO DI {name}", "ja": "{name} のリスト", "ko": "{name}님의 목록", "pl": "LISTA OD {name}",
+    "pt": "UMA LISTA DE {name}", "ru": "СПИСОК ОТ {name}", "tr": "{name} TARAFINDAN BİR LİSTE", "vi": "DANH SÁCH CỦA {name}", "zh": "{name} 的列表"
+  },
+  "Loading list…": {
+    "ar": "جارٍ تحميل القائمة…", "de": "Liste wird geladen…", "es": "Cargando lista…", "fr": "Chargement de la liste…", "hi": "सूची लोड हो रही है…",
+    "id": "Memuat daftar…", "it": "Caricamento dell'elenco…", "ja": "リストを読み込み中…", "ko": "목록을 불러오는 중…", "pl": "Wczytywanie listy…",
+    "pt": "Carregando lista…", "ru": "Загрузка списка…", "tr": "Liste yükleniyor…", "vi": "Đang tải danh sách…", "zh": "正在加载列表…"
+  },
+  "This list is gone": {
+    "ar": "هذه القائمة لم تعد موجودة", "de": "Diese Liste gibt es nicht mehr", "es": "Esta lista ya no existe", "fr": "Cette liste n’existe plus",
+    "hi": "यह सूची अब मौजूद नहीं है", "id": "Daftar ini sudah tidak ada", "it": "Questo elenco non esiste più", "ja": "このリストはなくなりました",
+    "ko": "이 목록은 더 이상 없습니다", "pl": "Ta lista już nie istnieje", "pt": "Esta lista não existe mais", "ru": "Этого списка больше нет",
+    "tr": "Bu liste artık yok", "vi": "Danh sách này không còn nữa", "zh": "此列表已不存在"
+  },
+  "The link may be old, or the list is no longer shared.": {
+    "ar": "ربما يكون الرابط قديمًا، أو لم تعد القائمة مشتركة.", "de": "Der Link ist vielleicht veraltet, oder die Liste wird nicht mehr geteilt.",
+    "es": "Puede que el enlace sea antiguo o que la lista ya no se comparta.", "fr": "Le lien est peut-être ancien, ou la liste n’est plus partagée.",
+    "hi": "हो सकता है लिंक पुराना हो, या सूची अब साझा न की जा रही हो।", "id": "Tautannya mungkin sudah lama, atau daftar ini tidak lagi dibagikan.",
+    "it": "Il link potrebbe essere vecchio, oppure l'elenco non è più condiviso.", "ja": "リンクが古いか、リストの共有が終了した可能性があります。",
+    "ko": "링크가 오래되었거나 목록이 더 이상 공유되지 않습니다.", "pl": "Link może być nieaktualny albo lista nie jest już udostępniana.",
+    "pt": "O link pode ser antigo ou a lista não é mais compartilhada.", "ru": "Возможно, ссылка устарела или список больше не общий.",
+    "tr": "Bağlantı eski olabilir ya da liste artık paylaşılmıyor.", "vi": "Có thể liên kết đã cũ hoặc danh sách không còn được chia sẻ.",
+    "zh": "链接可能已过期，或该列表已不再共享。"
+  },
+  "Could not load this list": {
+    "ar": "تعذّر تحميل هذه القائمة", "de": "Diese Liste konnte nicht geladen werden", "es": "No se pudo cargar esta lista", "fr": "Impossible de charger cette liste",
+    "hi": "यह सूची लोड नहीं हो सकी", "id": "Tidak dapat memuat daftar ini", "it": "Impossibile caricare questo elenco", "ja": "このリストを読み込めませんでした",
+    "ko": "이 목록을 불러올 수 없습니다", "pl": "Nie udało się wczytać tej listy", "pt": "Não foi possível carregar esta lista", "ru": "Не удалось загрузить список",
+    "tr": "Bu liste yüklenemedi", "vi": "Không thể tải danh sách này", "zh": "无法加载此列表"
+  },
+  "Already in your lists.": {
+    "ar": "موجودة بالفعل في قوائمك.", "de": "Schon in deinen Listen.", "es": "Ya está en tus listas.", "fr": "Déjà dans vos listes.",
+    "hi": "पहले से आपकी सूचियों में है।", "id": "Sudah ada di daftar Anda.", "it": "È già nei tuoi elenchi.", "ja": "すでにリストにあります。",
+    "ko": "이미 내 목록에 있습니다.", "pl": "Już jest na Twoich listach.", "pt": "Já está nas suas listas.", "ru": "Уже в ваших списках.",
+    "tr": "Zaten listelerinizde.", "vi": "Đã có trong danh sách của bạn.", "zh": "已在你的列表中。"
+  },
+  "Paste the list's share link on your phone, or type the maker's handle and the list id as handle/list.": {
+    "ar": "الصق رابط مشاركة القائمة على هاتفك، أو اكتب اسم مستخدم صاحبها ومعرّف القائمة بالشكل handle/list.",
+    "de": "Füge auf dem Smartphone den Freigabelink der Liste ein oder gib Handle und Listen-ID der erstellenden Person als handle/list ein.",
+    "es": "Pega en el teléfono el enlace para compartir la lista, o escribe el nombre de usuario de su creador y el id de la lista como handle/list.",
+    "fr": "Collez le lien de partage de la liste sur votre téléphone, ou saisissez l’identifiant de son auteur et l’id de la liste sous la forme handle/list.",
+    "hi": "फ़ोन पर सूची का शेयर लिंक पेस्ट करें, या बनाने वाले का हैंडल और सूची id को handle/list के रूप में टाइप करें।",
+    "id": "Tempel tautan berbagi daftar di ponsel, atau ketik nama pengguna pembuatnya dan id daftar sebagai handle/list.",
+    "it": "Incolla sul telefono il link di condivisione dell'elenco, oppure digita l'handle di chi l'ha creato e l'id dell'elenco come handle/list.",
+    "ja": "スマートフォンでリストの共有リンクを貼り付けるか、作成者のハンドルとリストIDを handle/list の形式で入力してください。",
+    "ko": "휴대폰에서 목록 공유 링크를 붙여넣거나, 만든 사람의 핸들과 목록 ID를 handle/list 형식으로 입력하세요.",
+    "pl": "Wklej na telefonie link do udostępnionej listy albo wpisz nazwę użytkownika autora i id listy w formacie handle/list.",
+    "pt": "Cole no celular o link de compartilhamento da lista ou digite o nome de usuário de quem a criou e o id da lista como handle/list.",
+    "ru": "Вставьте на телефоне ссылку на список или введите имя автора и id списка в виде handle/list.",
+    "tr": "Listenin paylaşım bağlantısını telefonunuza yapıştırın ya da oluşturanın kullanıcı adını ve liste kimliğini handle/list biçiminde yazın.",
+    "vi": "Dán liên kết chia sẻ của danh sách trên điện thoại, hoặc nhập tên người dùng của người tạo và id danh sách theo dạng handle/list.",
+    "zh": "在手机上粘贴列表的分享链接，或按 handle/list 格式输入创建者的用户名和列表 ID。"
+  },
+  "Type the link on your phone": {
+    "ar": "اكتب الرابط على هاتفك", "de": "Link auf dem Smartphone eingeben", "es": "Escribe el enlace en tu teléfono", "fr": "Saisissez le lien sur votre téléphone",
+    "hi": "अपने फ़ोन पर लिंक टाइप करें", "id": "Ketik tautannya di ponsel Anda", "it": "Digita il link sul telefono", "ja": "スマートフォンでリンクを入力",
+    "ko": "휴대폰에서 링크 입력", "pl": "Wpisz link na telefonie", "pt": "Digite o link no celular", "ru": "Введите ссылку на телефоне",
+    "tr": "Bağlantıyı telefonunuzdan yazın", "vi": "Nhập liên kết trên điện thoại", "zh": "在手机上输入链接"
+  },
+  "Scan this with your phone camera, then paste the shared list's link.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم الصق رابط القائمة المشتركة.", "de": "Scanne das mit deiner Handykamera und füge dann den Link der geteilten Liste ein.",
+    "es": "Escanea esto con la cámara del teléfono y luego pega el enlace de la lista compartida.", "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis collez le lien de la liste partagée.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर साझा सूची का लिंक पेस्ट करें।", "id": "Pindai ini dengan kamera ponsel, lalu tempel tautan daftar bersama.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi incolla il link dell'elenco condiviso.", "ja": "スマートフォンのカメラでスキャンして、共有リストのリンクを貼り付けてください。",
+    "ko": "휴대폰 카메라로 스캔한 다음 공유 목록 링크를 붙여넣으세요.", "pl": "Zeskanuj to aparatem telefonu, a potem wklej link do udostępnionej listy.",
+    "pt": "Leia isto com a câmera do celular e cole o link da lista compartilhada.", "ru": "Отсканируйте это камерой телефона, затем вставьте ссылку на общий список.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından paylaşılan listenin bağlantısını yapıştırın.", "vi": "Quét mã này bằng camera điện thoại, rồi dán liên kết của danh sách được chia sẻ.",
+    "zh": "用手机相机扫描此码，然后粘贴共享列表的链接。"
+  },
+  "That doesn't look like a shared list link.": {
+    "ar": "لا يبدو هذا رابط قائمة مشتركة.", "de": "Das sieht nicht nach einem Link zu einer geteilten Liste aus.", "es": "Eso no parece un enlace de lista compartida.",
+    "fr": "Cela ne ressemble pas à un lien de liste partagée.", "hi": "यह साझा सूची का लिंक नहीं लगता।", "id": "Itu sepertinya bukan tautan daftar bersama.",
+    "it": "Non sembra un link a un elenco condiviso.", "ja": "共有リストのリンクではないようです。", "ko": "공유 목록 링크가 아닌 것 같습니다.",
+    "pl": "To nie wygląda na link do udostępnionej listy.", "pt": "Isso não parece um link de lista compartilhada.", "ru": "Это не похоже на ссылку на общий список.",
+    "tr": "Bu, paylaşılan bir liste bağlantısına benzemiyor.", "vi": "Đây có vẻ không phải liên kết danh sách được chia sẻ.", "zh": "这看起来不像共享列表链接。"
+  },
+
+  "Couldn't join that room.": {
+    "ar": "تعذّر الانضمام إلى تلك الغرفة.", "de": "Diesem Raum konnte nicht beigetreten werden.", "es": "No se pudo entrar en esa sala.",
+    "fr": "Impossible de rejoindre ce salon.", "hi": "उस रूम से नहीं जुड़ सके।", "id": "Tidak dapat bergabung ke ruang itu.",
+    "it": "Impossibile entrare in quella stanza.", "ja": "そのルームに参加できませんでした。", "ko": "그 방에 참여할 수 없습니다.",
+    "pl": "Nie udało się dołączyć do tego pokoju.", "pt": "Não foi possível entrar nessa sala.", "ru": "Не удалось войти в эту комнату.",
+    "tr": "O odaya katılınamadı.", "vi": "Không thể tham gia phòng đó.", "zh": "无法加入该房间。"
+  },
+  "Set up a relay first (Watch together settings), or join with an invite link.": {
+    "ar": "اضبط الخادم أولًا (إعدادات المشاهدة معاً)، أو انضم برابط دعوة.",
+    "de": "Richte zuerst ein Relay ein (Einstellungen für Gemeinsam ansehen) oder tritt über einen Einladungslink bei.",
+    "es": "Configura primero un retransmisor (ajustes de Ver juntos) o únete con un enlace de invitación.",
+    "fr": "Configurez d’abord un relais (paramètres de Regarder ensemble), ou rejoignez avec un lien d’invitation.",
+    "hi": "पहले रिले सेट करें (साथ में देखें की सेटिंग्स), या आमंत्रण लिंक से जुड़ें।",
+    "id": "Siapkan relay terlebih dahulu (pengaturan Nonton bersama), atau bergabung dengan tautan undangan.",
+    "it": "Configura prima un relay (impostazioni di Guarda insieme) oppure entra con un link di invito.",
+    "ja": "先にリレーを設定する（「一緒に観る」の設定）か、招待リンクで参加してください。",
+    "ko": "먼저 릴레이를 설정하거나(함께 보기 설정) 초대 링크로 참여하세요.",
+    "pl": "Najpierw skonfiguruj przekaźnik (ustawienia Wspólnego oglądania) albo dołącz przez link z zaproszeniem.",
+    "pt": "Configure primeiro uma retransmissão (configurações de Assistir juntos) ou entre com um link de convite.",
+    "ru": "Сначала настройте ретранслятор (настройки «Смотреть вместе») или присоединитесь по ссылке-приглашению.",
+    "tr": "Önce bir aktarıcı kurun (Birlikte İzle ayarları) ya da bir davet bağlantısıyla katılın.",
+    "vi": "Hãy thiết lập relay trước (cài đặt Xem cùng nhau), hoặc tham gia bằng liên kết mời.",
+    "zh": "请先设置中继（“一起观看”设置），或通过邀请链接加入。"
+  },
+  "That doesn't look like a room code or an invite link.": {
+    "ar": "لا يبدو هذا رمز غرفة أو رابط دعوة.", "de": "Das sieht weder nach einem Raumcode noch nach einem Einladungslink aus.",
+    "es": "Eso no parece un código de sala ni un enlace de invitación.", "fr": "Cela ne ressemble ni à un code de salon ni à un lien d’invitation.",
+    "hi": "यह न तो रूम कोड लगता है, न ही आमंत्रण लिंक।", "id": "Itu sepertinya bukan kode ruang atau tautan undangan.",
+    "it": "Non sembra un codice della stanza né un link di invito.", "ja": "ルームコードでも招待リンクでもないようです。",
+    "ko": "방 코드나 초대 링크가 아닌 것 같습니다.", "pl": "To nie wygląda na kod pokoju ani link z zaproszeniem.",
+    "pt": "Isso não parece um código de sala nem um link de convite.", "ru": "Это не похоже ни на код комнаты, ни на ссылку-приглашение.",
+    "tr": "Bu bir oda koduna veya davet bağlantısına benzemiyor.", "vi": "Đây có vẻ không phải mã phòng hay liên kết mời.",
+    "zh": "这看起来不像房间码或邀请链接。"
+  },
+  "Now watching {title}. Pick it from the home view to follow.": {
+    "ar": "يُعرض الآن {title}. اختره من الصفحة الرئيسية لتتابع.", "de": "Gerade läuft {title}. Wähle es auf der Startseite aus, um mitzuschauen.",
+    "es": "Ahora se está viendo {title}. Elígelo desde el inicio para seguirlo.", "fr": "En cours : {title}. Choisissez-le depuis l’accueil pour suivre.",
+    "hi": "अभी {title} देखा जा रहा है। साथ देखने के लिए इसे होम से चुनें।", "id": "Sedang menonton {title}. Pilih dari beranda untuk ikut.",
+    "it": "Ora in visione: {title}. Sceglilo dalla schermata principale per seguire.", "ja": "現在 {title} を視聴中です。ホームから選ぶと一緒に観られます。",
+    "ko": "지금 {title}을(를) 보는 중입니다. 함께 보려면 홈에서 선택하세요.", "pl": "Teraz oglądane: {title}. Wybierz to na ekranie głównym, aby dołączyć.",
+    "pt": "Assistindo agora: {title}. Escolha na tela inicial para acompanhar.", "ru": "Сейчас смотрят «{title}». Выберите это на главной, чтобы присоединиться.",
+    "tr": "Şu an {title} izleniyor. Takip etmek için ana ekrandan seçin.", "vi": "Đang xem {title}. Chọn nó từ trang chủ để xem cùng.",
+    "zh": "正在观看 {title}。在首页选择它即可跟随。"
+  },
+  "Ready!": {
+    "ar": "جاهز!", "de": "Bereit!", "es": "¡Listo!", "fr": "Prêt !", "hi": "तैयार!", "id": "Siap!", "it": "Pronto!", "ja": "準備OK！", "ko": "준비됐어요!",
+    "pl": "Gotowe!", "pt": "Pronto!", "ru": "Готов!", "tr": "Hazırım!", "vi": "Sẵn sàng!", "zh": "准备好了！"
+  },
+  "Pause please": {
+    "ar": "أوقفوا مؤقتًا من فضلكم", "de": "Bitte pausieren", "es": "Pausa, por favor", "fr": "Pause, s’il vous plaît", "hi": "कृपया रोकें",
+    "id": "Tolong jeda", "it": "Pausa, per favore", "ja": "一時停止して", "ko": "잠깐 멈춰 주세요", "pl": "Pauza, proszę", "pt": "Pausa, por favor",
+    "ru": "Поставьте на паузу", "tr": "Lütfen duraklatın", "vi": "Tạm dừng giúp mình", "zh": "请暂停一下"
+  },
+  "One sec": {
+    "ar": "لحظة", "de": "Moment", "es": "Un segundo", "fr": "Une seconde", "hi": "एक सेकंड", "id": "Sebentar", "it": "Un attimo", "ja": "ちょっと待って",
+    "ko": "잠깐만요", "pl": "Chwileczkę", "pt": "Só um segundo", "ru": "Секунду", "tr": "Bir saniye", "vi": "Chờ chút", "zh": "稍等"
+  },
+  "Rewind a bit?": {
+    "ar": "نرجع قليلًا؟", "de": "Ein Stück zurück?", "es": "¿Retrocedemos un poco?", "fr": "On revient un peu en arrière ?", "hi": "थोड़ा पीछे करें?",
+    "id": "Mundur sedikit?", "it": "Torniamo un po' indietro?", "ja": "少し巻き戻す？", "ko": "조금 되감을까요?", "pl": "Cofnąć trochę?",
+    "pt": "Voltar um pouco?", "ru": "Отмотаем немного?", "tr": "Biraz geri saralım mı?", "vi": "Tua lại một chút nhé?", "zh": "倒回去一点？"
+  },
+  "Couldn't reach the relay.": {
+    "ar": "تعذّر الوصول إلى الخادم.", "de": "Das Relay ist nicht erreichbar.", "es": "No se pudo conectar con el retransmisor.", "fr": "Impossible de joindre le relais.",
+    "hi": "रिले तक नहीं पहुँच सके।", "id": "Tidak dapat menjangkau relay.", "it": "Impossibile raggiungere il relay.", "ja": "リレーに接続できませんでした。",
+    "ko": "릴레이에 연결할 수 없습니다.", "pl": "Nie udało się połączyć z przekaźnikiem.", "pt": "Não foi possível alcançar a retransmissão.",
+    "ru": "Не удалось связаться с ретранслятором.", "tr": "Aktarıcıya ulaşılamadı.", "vi": "Không thể kết nối tới relay.", "zh": "无法连接到中继。"
+  },
+  "Connecting to the relay…": {
+    "ar": "جارٍ الاتصال بالخادم…", "de": "Verbindung zum Relay wird hergestellt…", "es": "Conectando con el retransmisor…", "fr": "Connexion au relais…",
+    "hi": "रिले से कनेक्ट हो रहा है…", "id": "Menghubungkan ke relay…", "it": "Connessione al relay…", "ja": "リレーに接続中…", "ko": "릴레이에 연결하는 중…",
+    "pl": "Łączenie z przekaźnikiem…", "pt": "Conectando à retransmissão…", "ru": "Подключение к ретранслятору…", "tr": "Aktarıcıya bağlanılıyor…",
+    "vi": "Đang kết nối tới relay…", "zh": "正在连接中继…"
+  },
+  "Scan to join, or share code {code}": {
+    "ar": "امسح للانضمام، أو شارك الرمز {code}", "de": "Zum Beitreten scannen oder den Code {code} teilen", "es": "Escanea para unirte o comparte el código {code}",
+    "fr": "Scannez pour rejoindre, ou partagez le code {code}", "hi": "जुड़ने के लिए स्कैन करें, या कोड {code} साझा करें", "id": "Pindai untuk bergabung, atau bagikan kode {code}",
+    "it": "Scansiona per entrare, oppure condividi il codice {code}", "ja": "スキャンして参加するか、コード {code} を共有", "ko": "스캔해서 참여하거나 코드 {code}를 공유하세요",
+    "pl": "Zeskanuj, aby dołączyć, albo udostępnij kod {code}", "pt": "Leia para entrar ou compartilhe o código {code}", "ru": "Отсканируйте, чтобы присоединиться, или поделитесь кодом {code}",
+    "tr": "Katılmak için tarayın ya da {code} kodunu paylaşın", "vi": "Quét để tham gia, hoặc chia sẻ mã {code}", "zh": "扫码加入，或分享房间码 {code}"
+  },
+  "Say something to the room": {
+    "ar": "قل شيئًا للغرفة", "de": "Sag etwas im Raum", "es": "Di algo a la sala", "fr": "Dites quelque chose au salon", "hi": "रूम में कुछ कहें",
+    "id": "Katakan sesuatu ke ruang", "it": "Scrivi qualcosa alla stanza", "ja": "ルームにメッセージを送る", "ko": "방에 한마디 하기", "pl": "Napisz coś do pokoju",
+    "pt": "Diga algo para a sala", "ru": "Напишите что-нибудь в комнату", "tr": "Odaya bir şey söyleyin", "vi": "Nói gì đó với phòng", "zh": "在房间里说点什么"
+  },
+  "Scan this with your phone camera, then type your message; Send posts it to the room.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم اكتب رسالتك؛ يؤدي الإرسال إلى نشرها في الغرفة.",
+    "de": "Scanne das mit deiner Handykamera und tippe dann deine Nachricht; Senden stellt sie in den Raum.",
+    "es": "Escanea esto con la cámara del teléfono y escribe tu mensaje; Enviar lo publica en la sala.",
+    "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis saisissez votre message ; Envoyer le publie dans le salon.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर अपना संदेश टाइप करें; भेजें दबाने पर वह रूम में पोस्ट हो जाएगा।",
+    "id": "Pindai ini dengan kamera ponsel, lalu ketik pesan Anda; Kirim akan memostingnya ke ruang.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi scrivi il messaggio; Invia lo pubblica nella stanza.",
+    "ja": "スマートフォンのカメラでスキャンしてメッセージを入力してください。「送信」でルームに投稿されます。",
+    "ko": "휴대폰 카메라로 스캔한 다음 메시지를 입력하세요. 보내기를 누르면 방에 게시됩니다.",
+    "pl": "Zeskanuj to aparatem telefonu i wpisz wiadomość; Wyślij opublikuje ją w pokoju.",
+    "pt": "Leia isto com a câmera do celular e digite sua mensagem; Enviar a publica na sala.",
+    "ru": "Отсканируйте это камерой телефона и введите сообщение; кнопка «Отправить» опубликует его в комнате.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından mesajınızı yazın; Gönder mesajı odaya iletir.",
+    "vi": "Quét mã này bằng camera điện thoại, rồi nhập tin nhắn; nút Gửi sẽ đăng nó vào phòng.",
+    "zh": "用手机相机扫描此码，然后输入消息；点“发送”即可发到房间。"
+  },
+  "Scan this with your phone camera, then type the name the room sees.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم اكتب الاسم الذي تراه الغرفة.", "de": "Scanne das mit deiner Handykamera und tippe dann den Namen ein, den der Raum sieht.",
+    "es": "Escanea esto con la cámara del teléfono y escribe el nombre que verá la sala.", "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis saisissez le nom que verra le salon.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर वह नाम टाइप करें जो रूम में दिखेगा।", "id": "Pindai ini dengan kamera ponsel, lalu ketik nama yang dilihat ruang.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi digita il nome che vedrà la stanza.", "ja": "スマートフォンのカメラでスキャンして、ルームに表示する名前を入力してください。",
+    "ko": "휴대폰 카메라로 스캔한 다음 방에 표시될 이름을 입력하세요.", "pl": "Zeskanuj to aparatem telefonu, a potem wpisz nazwę widoczną w pokoju.",
+    "pt": "Leia isto com a câmera do celular e digite o nome que a sala verá.", "ru": "Отсканируйте это камерой телефона, затем введите имя, которое увидят в комнате.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından odada görünecek adı yazın.", "vi": "Quét mã này bằng camera điện thoại, rồi nhập tên mà phòng sẽ thấy.",
+    "zh": "用手机相机扫描此码，然后输入房间里显示的名字。"
+  },
+  "Scan this with your phone camera, then paste the invite link a friend sent you.": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم الصق رابط الدعوة الذي أرسله لك صديقك.", "de": "Scanne das mit deiner Handykamera und füge dann den Einladungslink ein, den dir jemand geschickt hat.",
+    "es": "Escanea esto con la cámara del teléfono y pega el enlace de invitación que te envió un amigo.", "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis collez le lien d’invitation qu’un ami vous a envoyé.",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर दोस्त का भेजा आमंत्रण लिंक पेस्ट करें।", "id": "Pindai ini dengan kamera ponsel, lalu tempel tautan undangan yang dikirim teman Anda.",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi incolla il link di invito che ti ha mandato un amico.", "ja": "スマートフォンのカメラでスキャンして、友だちから届いた招待リンクを貼り付けてください。",
+    "ko": "휴대폰 카메라로 스캔한 다음 친구가 보낸 초대 링크를 붙여넣으세요.", "pl": "Zeskanuj to aparatem telefonu, a potem wklej link z zaproszeniem od znajomego.",
+    "pt": "Leia isto com a câmera do celular e cole o link de convite que um amigo enviou.", "ru": "Отсканируйте это камерой телефона, затем вставьте ссылку-приглашение от друга.",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından bir arkadaşınızın gönderdiği davet bağlantısını yapıştırın.", "vi": "Quét mã này bằng camera điện thoại, rồi dán liên kết mời mà bạn bè đã gửi.",
+    "zh": "用手机相机扫描此码，然后粘贴朋友发来的邀请链接。"
+  },
+  "Scan this with your phone camera, then paste your relay's address (Settings → Relay on desktop Harbor shows it).": {
+    "ar": "امسح هذا بكاميرا هاتفك، ثم الصق عنوان الخادم (يظهر في الإعدادات ← الخادم في Harbor لسطح المكتب).",
+    "de": "Scanne das mit deiner Handykamera und füge dann die Adresse deines Relays ein (in Harbor für den Desktop unter Einstellungen → Relay).",
+    "es": "Escanea esto con la cámara del teléfono y pega la dirección de tu retransmisor (la muestra Harbor para escritorio en Configuración → Retransmisor).",
+    "fr": "Scannez ceci avec l’appareil photo de votre téléphone, puis collez l’adresse de votre relais (Paramètres → Relais dans Harbor sur ordinateur l’affiche).",
+    "hi": "इसे अपने फ़ोन के कैमरे से स्कैन करें, फिर अपने रिले का पता पेस्ट करें (डेस्कटॉप Harbor में सेटिंग्स → रिले में दिखता है)।",
+    "id": "Pindai ini dengan kamera ponsel, lalu tempel alamat relay Anda (ditampilkan di Pengaturan → Relay pada Harbor desktop).",
+    "it": "Scansiona il codice con la fotocamera del telefono, poi incolla l'indirizzo del tuo relay (lo trovi in Impostazioni → Relay di Harbor per desktop).",
+    "ja": "スマートフォンのカメラでスキャンして、リレーのアドレスを貼り付けてください（デスクトップ版Harborの 設定 → リレー に表示されます）。",
+    "ko": "휴대폰 카메라로 스캔한 다음 릴레이 주소를 붙여넣으세요(데스크톱 Harbor의 설정 → 릴레이에 표시됩니다).",
+    "pl": "Zeskanuj to aparatem telefonu, a potem wklej adres swojego przekaźnika (widać go w Harbor na komputerze w Ustawienia → Przekaźnik).",
+    "pt": "Leia isto com a câmera do celular e cole o endereço da sua retransmissão (aparece em Configurações → Retransmissão no Harbor para desktop).",
+    "ru": "Отсканируйте это камерой телефона, затем вставьте адрес ретранслятора (он указан в настольной версии Harbor: Настройки → Ретранслятор).",
+    "tr": "Bunu telefonunuzun kamerasıyla tarayın, ardından aktarıcınızın adresini yapıştırın (masaüstü Harbor'da Ayarlar → Aktarıcı'da görünür).",
+    "vi": "Quét mã này bằng camera điện thoại, rồi dán địa chỉ relay của bạn (xem trong Cài đặt → Relay trên Harbor máy tính).",
+    "zh": "用手机相机扫描此码，然后粘贴你的中继地址（在桌面版 Harbor 的 设置 → 中继 中可以看到）。"
+  },
+
+  "This source can't be read on Apple TV yet. Project Gutenberg books can.": {
+    "ar": "لا يمكن قراءة هذا المصدر على Apple TV بعد. أما كتب Project Gutenberg فيمكن.",
+    "de": "Diese Quelle lässt sich auf Apple TV noch nicht lesen. Bücher von Project Gutenberg schon.",
+    "es": "Esta fuente aún no se puede leer en Apple TV. Los libros de Project Gutenberg, sí.",
+    "fr": "Cette source ne peut pas encore être lue sur l’Apple TV. Les livres de Project Gutenberg, si.",
+    "hi": "यह स्रोत अभी Apple TV पर नहीं पढ़ा जा सकता। Project Gutenberg की किताबें पढ़ी जा सकती हैं।",
+    "id": "Sumber ini belum bisa dibaca di Apple TV. Buku Project Gutenberg bisa.",
+    "it": "Questa fonte non si può ancora leggere su Apple TV. I libri di Project Gutenberg sì.",
+    "ja": "このソースはまだApple TVで読めません。Project Gutenbergの本は読めます。",
+    "ko": "이 소스는 아직 Apple TV에서 읽을 수 없습니다. Project Gutenberg 책은 읽을 수 있습니다.",
+    "pl": "Tego źródła nie można jeszcze czytać na Apple TV. Książki z Project Gutenberg można.",
+    "pt": "Esta fonte ainda não pode ser lida na Apple TV. Os livros do Project Gutenberg podem.",
+    "ru": "Этот источник пока нельзя читать на Apple TV. Книги Project Gutenberg — можно.",
+    "tr": "Bu kaynak henüz Apple TV'de okunamıyor. Project Gutenberg kitapları okunabilir.",
+    "vi": "Chưa thể đọc nguồn này trên Apple TV. Sách của Project Gutenberg thì đọc được.",
+    "zh": "此来源暂时无法在 Apple TV 上阅读。Project Gutenberg 的图书可以阅读。"
+  },
+  "This eBook could not be loaded.": {
+    "ar": "تعذّر تحميل هذا الكتاب الإلكتروني.", "de": "Dieses E-Book konnte nicht geladen werden.", "es": "No se pudo cargar este eBook.",
+    "fr": "Impossible de charger ce livre numérique.", "hi": "यह ई-बुक लोड नहीं हो सकी।", "id": "eBook ini tidak dapat dimuat.",
+    "it": "Impossibile caricare questo eBook.", "ja": "この電子書籍を読み込めませんでした。", "ko": "이 eBook을 불러올 수 없습니다.",
+    "pl": "Nie udało się wczytać tego e-booka.", "pt": "Não foi possível carregar este livro digital.", "ru": "Не удалось загрузить эту электронную книгу.",
+    "tr": "Bu e-kitap yüklenemedi.", "vi": "Không thể tải sách điện tử này.", "zh": "无法加载此电子书。"
+  },
+  "Looking for this book in your sources…": {
+    "ar": "جارٍ البحث عن هذا الكتاب في مصادرك…", "de": "Dieses Buch wird in deinen Quellen gesucht…", "es": "Buscando este libro en tus fuentes…",
+    "fr": "Recherche de ce livre dans vos sources…", "hi": "आपके स्रोतों में यह किताब खोजी जा रही है…", "id": "Mencari buku ini di sumber Anda…",
+    "it": "Ricerca di questo libro nelle tue fonti…", "ja": "ソースからこの本を探しています…", "ko": "소스에서 이 책을 찾는 중…",
+    "pl": "Szukanie tej książki w Twoich źródłach…", "pt": "Procurando este livro nas suas fontes…", "ru": "Ищем эту книгу в ваших источниках…",
+    "tr": "Bu kitap kaynaklarınızda aranıyor…", "vi": "Đang tìm cuốn sách này trong các nguồn của bạn…", "zh": "正在你的来源中查找这本书…"
+  },
+  "Not available in your sources yet": {
+    "ar": "غير متاح في مصادرك بعد", "de": "In deinen Quellen noch nicht verfügbar", "es": "Aún no está disponible en tus fuentes",
+    "fr": "Pas encore disponible dans vos sources", "hi": "आपके स्रोतों में अभी उपलब्ध नहीं है", "id": "Belum tersedia di sumber Anda",
+    "it": "Non ancora disponibile nelle tue fonti", "ja": "お使いのソースにはまだありません", "ko": "아직 내 소스에 없습니다",
+    "pl": "Jeszcze niedostępne w Twoich źródłach", "pt": "Ainda não disponível nas suas fontes", "ru": "Пока нет в ваших источниках",
+    "tr": "Kaynaklarınızda henüz mevcut değil", "vi": "Chưa có trong các nguồn của bạn", "zh": "你的来源中暂时没有"
+  },
+  "There is nothing to read aloud on this page.": {
+    "ar": "لا يوجد ما يُقرأ بصوت عالٍ في هذه الصفحة.", "de": "Auf dieser Seite gibt es nichts zum Vorlesen.", "es": "No hay nada que leer en voz alta en esta página.",
+    "fr": "Il n’y a rien à lire à voix haute sur cette page.", "hi": "इस पेज पर ज़ोर से पढ़ने के लिए कुछ नहीं है।", "id": "Tidak ada yang bisa dibacakan di halaman ini.",
+    "it": "Non c'è niente da leggere ad alta voce in questa pagina.", "ja": "このページには読み上げる内容がありません。", "ko": "이 페이지에는 읽어 줄 내용이 없습니다.",
+    "pl": "Na tej stronie nie ma nic do przeczytania na głos.", "pt": "Não há nada para ler em voz alta nesta página.", "ru": "На этой странице нечего читать вслух.",
+    "tr": "Bu sayfada sesli okunacak bir şey yok.", "vi": "Trang này không có nội dung để đọc to.", "zh": "此页面没有可朗读的内容。"
+  },
+  "Read aloud": {
+    "ar": "القراءة بصوت عالٍ", "de": "Vorlesen", "es": "Leer en voz alta", "fr": "Lire à voix haute", "hi": "ज़ोर से पढ़ें", "id": "Bacakan",
+    "it": "Leggi ad alta voce", "ja": "読み上げ", "ko": "소리 내어 읽기", "pl": "Czytaj na głos", "pt": "Ler em voz alta", "ru": "Читать вслух",
+    "tr": "Sesli oku", "vi": "Đọc to", "zh": "朗读"
+  },
+  "Read aloud uses this device's voice for the language you pick.": {
+    "ar": "تستخدم القراءة بصوت عالٍ صوت هذا الجهاز للغة التي تختارها.", "de": "Vorlesen nutzt die Stimme dieses Geräts für die gewählte Sprache.",
+    "es": "La lectura en voz alta usa la voz de este dispositivo para el idioma que elijas.", "fr": "La lecture à voix haute utilise la voix de cet appareil pour la langue choisie.",
+    "hi": "ज़ोर से पढ़ना, चुनी गई भाषा के लिए इस डिवाइस की आवाज़ इस्तेमाल करता है।", "id": "Fitur bacakan memakai suara perangkat ini untuk bahasa yang Anda pilih.",
+    "it": "La lettura ad alta voce usa la voce di questo dispositivo per la lingua scelta.", "ja": "読み上げには、選んだ言語に対応するこのデバイスの音声を使います。",
+    "ko": "소리 내어 읽기는 선택한 언어에 맞는 이 기기의 음성을 사용합니다.", "pl": "Czytanie na głos używa głosu tego urządzenia dla wybranego języka.",
+    "pt": "A leitura em voz alta usa a voz deste dispositivo para o idioma escolhido.", "ru": "Для чтения вслух используется голос этого устройства для выбранного языка.",
+    "tr": "Sesli okuma, seçtiğiniz dil için bu cihazın sesini kullanır.", "vi": "Tính năng đọc to dùng giọng của thiết bị này cho ngôn ngữ bạn chọn.",
+    "zh": "朗读会使用本设备中所选语言的语音。"
+  },
+  "Title or author": {
+    "ar": "العنوان أو المؤلف", "de": "Titel oder Autor", "es": "Título o autor", "fr": "Titre ou auteur", "hi": "शीर्षक या लेखक", "id": "Judul atau penulis",
+    "it": "Titolo o autore", "ja": "タイトルまたは著者", "ko": "제목 또는 저자", "pl": "Tytuł lub autor", "pt": "Título ou autor", "ru": "Название или автор",
+    "tr": "Başlık veya yazar", "vi": "Tên sách hoặc tác giả", "zh": "书名或作者"
+  },
+  "This source did not answer. Try again, or try another source.": {
+    "ar": "لم يستجب هذا المصدر. حاول مرة أخرى، أو جرّب مصدرًا آخر.", "de": "Diese Quelle hat nicht geantwortet. Versuche es erneut oder nimm eine andere Quelle.",
+    "es": "Esta fuente no respondió. Inténtalo de nuevo o prueba otra fuente.", "fr": "Cette source n’a pas répondu. Réessayez, ou essayez une autre source.",
+    "hi": "इस स्रोत ने जवाब नहीं दिया। फिर से कोशिश करें, या कोई दूसरा स्रोत आज़माएँ।", "id": "Sumber ini tidak merespons. Coba lagi, atau coba sumber lain.",
+    "it": "Questa fonte non ha risposto. Riprova, oppure prova un'altra fonte.", "ja": "このソースから応答がありませんでした。もう一度試すか、別のソースを試してください。",
+    "ko": "이 소스가 응답하지 않았습니다. 다시 시도하거나 다른 소스를 사용해 보세요.", "pl": "To źródło nie odpowiedziało. Spróbuj ponownie lub użyj innego źródła.",
+    "pt": "Esta fonte não respondeu. Tente novamente ou tente outra fonte.", "ru": "Источник не ответил. Попробуйте ещё раз или выберите другой источник.",
+    "tr": "Bu kaynak yanıt vermedi. Tekrar deneyin ya da başka bir kaynak deneyin.", "vi": "Nguồn này không phản hồi. Hãy thử lại hoặc thử nguồn khác.",
+    "zh": "此来源没有响应。请重试，或换一个来源。"
+  },
+  "In progress": {
+    "ar": "قيد القراءة", "de": "Begonnen", "es": "En curso", "fr": "En cours", "hi": "जारी है", "id": "Sedang dibaca", "it": "In corso", "ja": "読書中",
+    "ko": "읽는 중", "pl": "W trakcie", "pt": "Em andamento", "ru": "В процессе", "tr": "Devam ediyor", "vi": "Đang đọc", "zh": "进行中"
+  },
+  "Open any eBook and choose Bookmark to add it to your shelf.": {
+    "ar": "افتح أي كتاب إلكتروني واختر «إشارة مرجعية» لإضافته إلى رفّك.", "de": "Öffne ein beliebiges E-Book und wähle „Lesezeichen“, um es deinem Regal hinzuzufügen.",
+    "es": "Abre cualquier eBook y elige Marcador para añadirlo a tu estante.", "fr": "Ouvrez n’importe quel livre numérique et choisissez Signet pour l’ajouter à votre étagère.",
+    "hi": "कोई भी ई-बुक खोलें और उसे अपनी शेल्फ़ में जोड़ने के लिए बुकमार्क चुनें।", "id": "Buka eBook mana pun dan pilih Penanda buku untuk menambahkannya ke rak Anda.",
+    "it": "Apri un eBook qualsiasi e scegli Segnalibro per aggiungerlo al tuo scaffale.", "ja": "電子書籍を開いて「しおり」を選ぶと、シェルフに追加されます。",
+    "ko": "아무 eBook이나 열고 북마크를 선택하면 서재에 추가됩니다.", "pl": "Otwórz dowolny e-book i wybierz Dodaj zakładkę, aby dodać go na półkę.",
+    "pt": "Abra qualquer livro digital e escolha Adicionar marcador para colocá-lo na estante.", "ru": "Откройте любую электронную книгу и выберите «Добавить закладку», чтобы поставить её на полку.",
+    "tr": "Herhangi bir e-kitabı açın ve kitaplığınıza eklemek için Yer imi ekle'yi seçin.", "vi": "Mở bất kỳ sách điện tử nào và chọn Đánh dấu trang để thêm vào kệ sách.",
+    "zh": "打开任意电子书并选择“收藏”，即可把它加入书架。"
+  },
+  "Apple TV reads Project Gutenberg's public-domain library. Local folders, site sources and extensions are available in Harbor on your computer.": {
+    "ar": "يقرأ Apple TV مكتبة Project Gutenberg للكتب العامة. تتوفر المجلدات المحلية ومصادر المواقع والإضافات في Harbor على حاسوبك.",
+    "de": "Apple TV liest die gemeinfreie Bibliothek von Project Gutenberg. Lokale Ordner, Website-Quellen und Erweiterungen gibt es in Harbor auf deinem Computer.",
+    "es": "Apple TV lee la biblioteca de dominio público de Project Gutenberg. Las carpetas locales, las fuentes de sitios y las extensiones están disponibles en Harbor en tu ordenador.",
+    "fr": "L’Apple TV lit la bibliothèque du domaine public de Project Gutenberg. Les dossiers locaux, les sources de sites et les extensions sont disponibles dans Harbor sur votre ordinateur.",
+    "hi": "Apple TV, Project Gutenberg की पब्लिक-डोमेन लाइब्रेरी पढ़ता है। लोकल फ़ोल्डर, साइट स्रोत और एक्सटेंशन आपके कंप्यूटर पर Harbor में उपलब्ध हैं।",
+    "id": "Apple TV membaca perpustakaan domain publik Project Gutenberg. Folder lokal, sumber situs, dan ekstensi tersedia di Harbor pada komputer Anda.",
+    "it": "Apple TV legge la biblioteca di pubblico dominio di Project Gutenberg. Cartelle locali, fonti dai siti ed estensioni sono disponibili in Harbor sul tuo computer.",
+    "ja": "Apple TVではProject Gutenbergのパブリックドメイン作品を読めます。ローカルフォルダー、サイトのソース、拡張機能はパソコンのHarborで使えます。",
+    "ko": "Apple TV는 Project Gutenberg의 퍼블릭 도메인 도서관을 읽습니다. 로컬 폴더, 사이트 소스, 확장 기능은 컴퓨터의 Harbor에서 사용할 수 있습니다.",
+    "pl": "Apple TV czyta bibliotekę domeny publicznej Project Gutenberg. Lokalne foldery, źródła ze stron i rozszerzenia są dostępne w Harbor na komputerze.",
+    "pt": "A Apple TV lê a biblioteca de domínio público do Project Gutenberg. Pastas locais, fontes de sites e extensões estão disponíveis no Harbor do seu computador.",
+    "ru": "Apple TV читает библиотеку общественного достояния Project Gutenberg. Локальные папки, источники с сайтов и расширения доступны в Harbor на компьютере.",
+    "tr": "Apple TV, Project Gutenberg'in kamu malı kütüphanesini okur. Yerel klasörler, site kaynakları ve uzantılar bilgisayarınızdaki Harbor'da kullanılabilir.",
+    "vi": "Apple TV đọc thư viện sách phạm vi công cộng của Project Gutenberg. Thư mục cục bộ, nguồn từ trang web và tiện ích mở rộng có trong Harbor trên máy tính của bạn.",
+    "zh": "Apple TV 可阅读 Project Gutenberg 的公版图书馆。本地文件夹、网站来源和扩展可在电脑上的 Harbor 中使用。"
+  },
+  "Not readable on Apple TV": {
+    "ar": "غير قابل للقراءة على Apple TV", "de": "Auf Apple TV nicht lesbar", "es": "No se puede leer en Apple TV", "fr": "Illisible sur l’Apple TV",
+    "hi": "Apple TV पर पढ़ा नहीं जा सकता", "id": "Tidak dapat dibaca di Apple TV", "it": "Non leggibile su Apple TV", "ja": "Apple TVでは読めません",
+    "ko": "Apple TV에서 읽을 수 없음", "pl": "Nie do czytania na Apple TV", "pt": "Não pode ser lido na Apple TV", "ru": "Нельзя читать на Apple TV",
+    "tr": "Apple TV'de okunamaz", "vi": "Không đọc được trên Apple TV", "zh": "无法在 Apple TV 上阅读"
+  },
+
+  "This source opens in a web browser. Scan to open it on your phone.": {
+    "ar": "يفتح هذا المصدر في متصفح الويب. امسح الرمز لفتحه على هاتفك.", "de": "Diese Quelle öffnet sich im Webbrowser. Scanne den Code, um sie auf dem Smartphone zu öffnen.",
+    "es": "Esta fuente se abre en un navegador web. Escanea para abrirla en tu teléfono.", "fr": "Cette source s’ouvre dans un navigateur web. Scannez pour l’ouvrir sur votre téléphone.",
+    "hi": "यह स्रोत वेब ब्राउज़र में खुलता है। इसे अपने फ़ोन पर खोलने के लिए स्कैन करें।", "id": "Sumber ini terbuka di browser web. Pindai untuk membukanya di ponsel Anda.",
+    "it": "Questa fonte si apre in un browser web. Scansiona per aprirla sul telefono.", "ja": "このソースはWebブラウザで開きます。スキャンするとスマートフォンで開けます。",
+    "ko": "이 소스는 웹 브라우저에서 열립니다. 스캔해서 휴대폰에서 여세요.", "pl": "To źródło otwiera się w przeglądarce. Zeskanuj, aby otworzyć je na telefonie.",
+    "pt": "Esta fonte abre em um navegador. Leia o código para abri-la no celular.", "ru": "Этот источник открывается в браузере. Отсканируйте, чтобы открыть его на телефоне.",
+    "tr": "Bu kaynak bir web tarayıcısında açılır. Telefonunuzda açmak için tarayın.", "vi": "Nguồn này mở trong trình duyệt web. Quét để mở trên điện thoại.",
+    "zh": "此来源需在网页浏览器中打开。扫码即可在手机上打开。"
+  },
+  "Other channels": {
+    "ar": "قنوات أخرى", "de": "Weitere Kanäle", "es": "Otros canales", "fr": "Autres chaînes", "hi": "अन्य चैनल", "id": "Saluran lain", "it": "Altri canali",
+    "ja": "その他のチャンネル", "ko": "다른 채널", "pl": "Inne kanały", "pt": "Outros canais", "ru": "Другие каналы", "tr": "Diğer kanallar", "vi": "Kênh khác", "zh": "其他频道"
+  },
+  "Add a Live TV source to watch matches here.": {
+    "ar": "أضف مصدر بث تلفزيوني مباشر لمشاهدة المباريات هنا.", "de": "Füge eine Live-TV-Quelle hinzu, um Spiele hier zu schauen.",
+    "es": "Añade una fuente de TV en vivo para ver partidos aquí.", "fr": "Ajoutez une source TV en direct pour regarder les matchs ici.",
+    "hi": "यहाँ मैच देखने के लिए कोई लाइव TV स्रोत जोड़ें।", "id": "Tambahkan sumber TV Langsung untuk menonton pertandingan di sini.",
+    "it": "Aggiungi una fonte TV in diretta per guardare le partite qui.", "ja": "ここで試合を観るには、ライブTVのソースを追加してください。",
+    "ko": "여기서 경기를 보려면 실시간 TV 소스를 추가하세요.", "pl": "Dodaj źródło telewizji na żywo, aby oglądać tu mecze.",
+    "pt": "Adicione uma fonte de TV ao vivo para assistir às partidas aqui.", "ru": "Добавьте источник прямого эфира, чтобы смотреть матчи здесь.",
+    "tr": "Maçları burada izlemek için bir Canlı TV kaynağı ekleyin.", "vi": "Hãy thêm nguồn TV trực tiếp để xem trận đấu tại đây.",
+    "zh": "添加直播电视来源，即可在这里观看比赛。"
+  },
+  "Watch · 1 channel found": {
+    "ar": "شاهد · تم العثور على قناة واحدة", "de": "Ansehen · 1 Kanal gefunden", "es": "Ver · 1 canal encontrado", "fr": "Regarder · 1 chaîne trouvée",
+    "hi": "देखें · 1 चैनल मिला", "id": "Tonton · 1 saluran ditemukan", "it": "Guarda · 1 canale trovato", "ja": "観る · 1件のチャンネルが見つかりました",
+    "ko": "시청 · 채널 1개 찾음", "pl": "Oglądaj · znaleziono 1 kanał", "pt": "Assistir · 1 canal encontrado", "ru": "Смотреть · найден 1 канал",
+    "tr": "İzle · 1 kanal bulundu", "vi": "Xem · tìm thấy 1 kênh", "zh": "观看 · 找到 1 个频道"
+  },
+  "Watch · {n} channels found": {
+    "ar": "شاهد · عدد القنوات التي عُثر عليها: {n}", "de": "Ansehen · {n} Kanäle gefunden", "es": "Ver · {n} canales encontrados", "fr": "Regarder · {n} chaînes trouvées",
+    "hi": "देखें · {n} चैनल मिले", "id": "Tonton · {n} saluran ditemukan", "it": "Guarda · {n} canali trovati", "ja": "観る · {n}件のチャンネルが見つかりました",
+    "ko": "시청 · 채널 {n}개 찾음", "pl": "Oglądaj · znalezione kanały: {n}", "pt": "Assistir · {n} canais encontrados", "ru": "Смотреть · найдено каналов: {n}",
+    "tr": "İzle · {n} kanal bulundu", "vi": "Xem · tìm thấy {n} kênh", "zh": "观看 · 找到 {n} 个频道"
+  },
+  "Official broadcast. It plays in the {app} app, or scan to watch on your phone.": {
+    "ar": "بث رسمي. يُعرض في تطبيق {app}، أو امسح الرمز للمشاهدة على هاتفك.", "de": "Offizielle Übertragung. Sie läuft in der App {app}, oder scanne den Code, um auf dem Smartphone zu schauen.",
+    "es": "Emisión oficial. Se reproduce en la app {app}, o escanea para verla en tu teléfono.", "fr": "Diffusion officielle. Elle se lit dans l’app {app}, ou scannez pour regarder sur votre téléphone.",
+    "hi": "आधिकारिक प्रसारण। यह {app} ऐप में चलता है, या फ़ोन पर देखने के लिए स्कैन करें।", "id": "Siaran resmi. Diputar di aplikasi {app}, atau pindai untuk menonton di ponsel Anda.",
+    "it": "Trasmissione ufficiale. Si guarda nell'app {app}, oppure scansiona per vederla sul telefono.", "ja": "公式放送です。{app} アプリで再生するか、スキャンしてスマートフォンで観てください。",
+    "ko": "공식 중계입니다. {app} 앱에서 재생되며, 스캔하면 휴대폰에서 볼 수 있습니다.", "pl": "Oficjalna transmisja. Działa w aplikacji {app} albo zeskanuj, aby oglądać na telefonie.",
+    "pt": "Transmissão oficial. Ela é reproduzida no app {app}, ou leia o código para assistir no celular.", "ru": "Официальная трансляция. Она идёт в приложении {app}, или отсканируйте, чтобы смотреть на телефоне.",
+    "tr": "Resmi yayın. {app} uygulamasında oynatılır ya da telefonunuzda izlemek için tarayın.", "vi": "Phát sóng chính thức. Phát trong ứng dụng {app}, hoặc quét để xem trên điện thoại.",
+    "zh": "官方直播。可在 {app} App 中播放，或扫码在手机上观看。"
+  },
+  "Connect Discord or Telegram and Harbor alerts you when something you follow is about to drop. Sports reminders are sent from this Apple TV while Harbor is open.": {
+    "ar": "اربط Discord أو Telegram وسينبّهك Harbor عندما يقترب موعد شيء تتابعه. تُرسل تذكيرات الرياضة من جهاز Apple TV هذا أثناء فتح Harbor.",
+    "de": "Verbinde Discord oder Telegram, und Harbor sagt dir Bescheid, wenn etwas, dem du folgst, gleich erscheint. Sport-Erinnerungen werden von diesem Apple TV gesendet, solange Harbor geöffnet ist.",
+    "es": "Conecta Discord o Telegram y Harbor te avisará cuando algo que sigues esté por salir. Los recordatorios de deportes se envían desde este Apple TV mientras Harbor está abierto.",
+    "fr": "Connectez Discord ou Telegram et Harbor vous prévient quand quelque chose que vous suivez va sortir. Les rappels sportifs sont envoyés depuis cette Apple TV tant que Harbor est ouvert.",
+    "hi": "Discord या Telegram कनेक्ट करें, और जब आपकी फ़ॉलो की हुई चीज़ आने वाली होगी तो Harbor आपको बताएगा। खेल रिमाइंडर इस Apple TV से तभी भेजे जाते हैं जब Harbor खुला हो।",
+    "id": "Hubungkan Discord atau Telegram dan Harbor akan memberi tahu saat sesuatu yang Anda ikuti akan rilis. Pengingat olahraga dikirim dari Apple TV ini selama Harbor terbuka.",
+    "it": "Collega Discord o Telegram e Harbor ti avvisa quando qualcosa che segui sta per uscire. I promemoria sportivi vengono inviati da questa Apple TV mentre Harbor è aperto.",
+    "ja": "DiscordまたはTelegramを接続すると、フォロー中のものが公開間近になったときにHarborが通知します。スポーツのリマインダーは、Harborを開いている間このApple TVから送信されます。",
+    "ko": "Discord 또는 Telegram을 연결하면 팔로우한 콘텐츠가 곧 나올 때 Harbor가 알려 줍니다. 스포츠 알림은 Harbor가 열려 있는 동안 이 Apple TV에서 전송됩니다.",
+    "pl": "Połącz Discord lub Telegram, a Harbor powiadomi Cię, gdy coś, co obserwujesz, zaraz się pojawi. Przypomnienia sportowe są wysyłane z tego Apple TV, gdy Harbor jest otwarty.",
+    "pt": "Conecte o Discord ou o Telegram e o Harbor avisa quando algo que você segue está para sair. Os lembretes de esportes são enviados desta Apple TV enquanto o Harbor está aberto.",
+    "ru": "Подключите Discord или Telegram, и Harbor сообщит, когда то, за чем вы следите, вот-вот выйдет. Спортивные напоминания отправляются с этой Apple TV, пока Harbor открыт.",
+    "tr": "Discord veya Telegram'ı bağlayın; takip ettiğiniz bir şey çıkmak üzereyken Harbor sizi uyarsın. Spor hatırlatıcıları, Harbor açıkken bu Apple TV'den gönderilir.",
+    "vi": "Kết nối Discord hoặc Telegram và Harbor sẽ báo bạn khi nội dung bạn theo dõi sắp ra mắt. Lời nhắc thể thao được gửi từ Apple TV này khi Harbor đang mở.",
+    "zh": "连接 Discord 或 Telegram 后，你关注的内容即将上线时 Harbor 会提醒你。体育提醒会在 Harbor 打开时从这台 Apple TV 发送。"
+  },
+  "Key saved on this device ({n} characters)": {
+    "ar": "المفتاح محفوظ على هذا الجهاز (عدد الأحرف: {n})", "de": "Schlüssel auf diesem Gerät gespeichert ({n} Zeichen)", "es": "Clave guardada en este dispositivo ({n} caracteres)",
+    "fr": "Clé enregistrée sur cet appareil ({n} caractères)", "hi": "कुंजी इस डिवाइस पर सेव है ({n} अक्षर)", "id": "Kunci disimpan di perangkat ini ({n} karakter)",
+    "it": "Chiave salvata su questo dispositivo ({n} caratteri)", "ja": "キーはこのデバイスに保存されています（{n}文字）", "ko": "이 기기에 키가 저장됨({n}자)",
+    "pl": "Klucz zapisany na tym urządzeniu (znaki: {n})", "pt": "Chave salva neste dispositivo ({n} caracteres)", "ru": "Ключ сохранён на этом устройстве (символов: {n})",
+    "tr": "Anahtar bu cihaza kaydedildi ({n} karakter)", "vi": "Đã lưu khóa trên thiết bị này ({n} ký tự)", "zh": "密钥已保存在本设备（{n} 个字符）"
+  },
+  "Key cleared.": {
+    "ar": "تم مسح المفتاح.", "de": "Schlüssel gelöscht.", "es": "Clave borrada.", "fr": "Clé effacée.", "hi": "कुंजी हटा दी गई।", "id": "Kunci dihapus.",
+    "it": "Chiave cancellata.", "ja": "キーを削除しました。", "ko": "키를 지웠습니다.", "pl": "Klucz usunięty.", "pt": "Chave apagada.", "ru": "Ключ удалён.",
+    "tr": "Anahtar temizlendi.", "vi": "Đã xóa khóa.", "zh": "已清除密钥。"
+  },
+  "This page opens in a web browser. Scan to open it on your phone.": {
+    "ar": "تفتح هذه الصفحة في متصفح الويب. امسح الرمز لفتحها على هاتفك.", "de": "Diese Seite öffnet sich im Webbrowser. Scanne den Code, um sie auf dem Smartphone zu öffnen.",
+    "es": "Esta página se abre en un navegador web. Escanea para abrirla en tu teléfono.", "fr": "Cette page s’ouvre dans un navigateur web. Scannez pour l’ouvrir sur votre téléphone.",
+    "hi": "यह पेज वेब ब्राउज़र में खुलता है। इसे अपने फ़ोन पर खोलने के लिए स्कैन करें।", "id": "Halaman ini terbuka di browser web. Pindai untuk membukanya di ponsel Anda.",
+    "it": "Questa pagina si apre in un browser web. Scansiona per aprirla sul telefono.", "ja": "このページはWebブラウザで開きます。スキャンするとスマートフォンで開けます。",
+    "ko": "이 페이지는 웹 브라우저에서 열립니다. 스캔해서 휴대폰에서 여세요.", "pl": "Ta strona otwiera się w przeglądarce. Zeskanuj, aby otworzyć ją na telefonie.",
+    "pt": "Esta página abre em um navegador. Leia o código para abri-la no celular.", "ru": "Эта страница открывается в браузере. Отсканируйте, чтобы открыть её на телефоне.",
+    "tr": "Bu sayfa bir web tarayıcısında açılır. Telefonunuzda açmak için tarayın.", "vi": "Trang này mở trong trình duyệt web. Quét để mở trên điện thoại.",
+    "zh": "此页面需在网页浏览器中打开。扫码即可在手机上打开。"
+  },
+  "Open in app": {
+    "ar": "فتح في التطبيق", "de": "In der App öffnen", "es": "Abrir en la app", "fr": "Ouvrir dans l’app", "hi": "ऐप में खोलें", "id": "Buka di aplikasi",
+    "it": "Apri nell'app", "ja": "アプリで開く", "ko": "앱에서 열기", "pl": "Otwórz w aplikacji", "pt": "Abrir no app", "ru": "Открыть в приложении",
+    "tr": "Uygulamada aç", "vi": "Mở trong ứng dụng", "zh": "在 App 中打开"
+  },
+  "Scan to open on your phone": {
+    "ar": "امسح لفتحه على هاتفك", "de": "Zum Öffnen auf dem Smartphone scannen", "es": "Escanea para abrir en tu teléfono", "fr": "Scannez pour ouvrir sur votre téléphone",
+    "hi": "फ़ोन पर खोलने के लिए स्कैन करें", "id": "Pindai untuk membuka di ponsel Anda", "it": "Scansiona per aprire sul telefono", "ja": "スキャンしてスマートフォンで開く",
+    "ko": "스캔해서 휴대폰에서 열기", "pl": "Zeskanuj, aby otworzyć na telefonie", "pt": "Leia para abrir no celular", "ru": "Отсканируйте, чтобы открыть на телефоне",
+    "tr": "Telefonunuzda açmak için tarayın", "vi": "Quét để mở trên điện thoại", "zh": "扫码在手机上打开"
+  },
+  "No app on this Apple TV opens this link. Scan the code to open it on your phone.": {
+    "ar": "لا يوجد تطبيق على Apple TV هذا يفتح هذا الرابط. امسح الرمز لفتحه على هاتفك.", "de": "Keine App auf diesem Apple TV öffnet diesen Link. Scanne den Code, um ihn auf dem Smartphone zu öffnen.",
+    "es": "Ninguna app de este Apple TV abre este enlace. Escanea el código para abrirlo en tu teléfono.", "fr": "Aucune app de cette Apple TV n’ouvre ce lien. Scannez le code pour l’ouvrir sur votre téléphone.",
+    "hi": "इस Apple TV पर कोई ऐप यह लिंक नहीं खोलता। इसे अपने फ़ोन पर खोलने के लिए कोड स्कैन करें।", "id": "Tidak ada aplikasi di Apple TV ini yang bisa membuka tautan ini. Pindai kodenya untuk membukanya di ponsel Anda.",
+    "it": "Nessuna app su questa Apple TV apre questo link. Scansiona il codice per aprirlo sul telefono.", "ja": "このApple TVにはこのリンクを開けるアプリがありません。コードをスキャンしてスマートフォンで開いてください。",
+    "ko": "이 Apple TV에는 이 링크를 여는 앱이 없습니다. 코드를 스캔해서 휴대폰에서 여세요.", "pl": "Żadna aplikacja na tym Apple TV nie otwiera tego linku. Zeskanuj kod, aby otworzyć go na telefonie.",
+    "pt": "Nenhum app desta Apple TV abre este link. Leia o código para abri-lo no celular.", "ru": "На этой Apple TV нет приложения для этой ссылки. Отсканируйте код, чтобы открыть её на телефоне.",
+    "tr": "Bu Apple TV'de bu bağlantıyı açan bir uygulama yok. Telefonunuzda açmak için kodu tarayın.", "vi": "Không có ứng dụng nào trên Apple TV này mở được liên kết. Quét mã để mở trên điện thoại.",
+    "zh": "这台 Apple TV 上没有能打开此链接的 App。扫码即可在手机上打开。"
+  },
+
+  "{n} new reminders": {
+    "ar": "تذكيرات جديدة: {n}", "de": "{n} neue Erinnerungen", "es": "{n} recordatorios nuevos", "fr": "{n} nouveaux rappels", "hi": "{n} नए रिमाइंडर",
+    "id": "{n} pengingat baru", "it": "{n} nuovi promemoria", "ja": "新しいリマインダー {n} 件", "ko": "새 알림 {n}개", "pl": "Nowe przypomnienia: {n}",
+    "pt": "{n} novos lembretes", "ru": "Новых напоминаний: {n}", "tr": "{n} yeni hatırlatıcı", "vi": "{n} lời nhắc mới", "zh": "{n} 条新提醒"
+  }
+}

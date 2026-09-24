@@ -53,7 +53,7 @@ final class Anime4KStore: ObservableObject {
             installed = Self.complete(in: dir)
             note = installed ? "Shaders ready." : "Some shaders are still missing."
         } catch {
-            note = "Download failed: \(error.localizedDescription)"
+            note = T("Download failed") + ": " + error.localizedDescription
             installed = Self.complete(in: dir)
         }
     }

@@ -343,7 +343,7 @@ struct SportsFieldView: View {
             .background(BP.void_.opacity(0.55))
             .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
-            if !f.yardLine.isEmpty { Text("Yard line: \(f.yardLine)").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1) }
+            if !f.yardLine.isEmpty { Text(T("Yard line") + ": " + f.yardLine).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1) }
             Text("Latest reported play").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
         }
     }
@@ -440,7 +440,7 @@ struct SportsLineupsRowView: View {
             .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
             Text("Positions are illustrative from the published lineup, not live tracking.").font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
             if benchOpen && !p.bench.isEmpty {
-                Text("Bench: \(p.bench.joined(separator: ", "))").font(BP.sans(11)).foregroundStyle(BP.inkSubtle).fixedSize(horizontal: false, vertical: true)
+                Text(T("Bench") + ": " + p.bench.joined(separator: ", ")).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).fixedSize(horizontal: false, vertical: true)
             }
         }
     }

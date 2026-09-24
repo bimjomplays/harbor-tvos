@@ -253,7 +253,7 @@ struct EBookView: View {
 
     private func rail(_ key: String, _ title: String, _ subtitle: String, _ books: [EBook]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(2)) {
-            BPRowView(row: BrowseRow(key: key, title: title, metas: books.map(\.meta)),
+            BPRowView(row: BrowseRow(key: key, title: T(title), metas: books.map(\.meta)),
                       onFocus: { m in spotlight = books.first { $0.id == m.id } },
                       onSelect: { m in open = EBookOpen(id: m.id) })
             Text(T(subtitle)).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.horizontal, BP.gutter)
@@ -543,7 +543,7 @@ struct EBookSourcesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: BP.px(22)) {
                     Text("eBook source settings").font(BP.display(34)).foregroundStyle(BP.ink)
-                    BPNote(text: "Harbor never hosts your books. " + Self.tvNote).frame(maxWidth: BP.px(760), alignment: .leading)
+                    BPNote(text: T("Harbor never hosts your books.") + " " + T(Self.tvNote)).frame(maxWidth: BP.px(760), alignment: .leading)
                     if let s = store.state, !s.sources.isEmpty {
                         VStack(alignment: .leading, spacing: BP.px(10)) {
                             Text("Your sources").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)

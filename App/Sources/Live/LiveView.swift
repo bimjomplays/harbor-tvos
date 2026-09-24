@@ -85,7 +85,7 @@ final class LiveModel: ObservableObject {
             let o: Out = try await HarborEngine.shared.call("live.loadEpg", [id, force])
             covered = o.channels
             guideNote = o.url == nil ? "No guide for this source. Add an EPG URL under Sources." : (o.channels == 0 ? "The guide loaded but lists no channels." : nil)
-        } catch { guideNote = "Guide failed: \(error.localizedDescription)" }
+        } catch { guideNote = T("Guide failed: %@", error.localizedDescription) }
         guideChannelCount = covered
         await refreshNowNext()
         // use-xtream-epg-fallback: an Xtream source with no usable XMLTV asks get_short_epg per channel.
@@ -318,7 +318,7 @@ struct LiveView: View {
         }
         .fullScreenCover(item: $replaying) { r in
             // A bounded replay: VOD cache profile, seekable, subtitle says so (use-live-actions.ts).
-            PlayerScreen(title: r.program.title, subtitle: "\(r.channel.shownName) · catch up", url: URL(string: r.url) ?? URL(string: "about:blank")!, headers: r.headers, isLive: false) { _ in replaying = nil }
+            PlayerScreen(title: r.program.title, subtitle: T("%@ · catch up", r.channel.shownName), url: URL(string: r.url) ?? URL(string: "about:blank")!, headers: r.headers, isLive: false) { _ in replaying = nil }
         }
         .fullScreenCover(isPresented: $showSources) {
             LiveSourcesSheet(model: model, firstRun: false, dismiss: { showSources = false })
@@ -547,7 +547,7 @@ struct LiveSourcesSheet: View {
                     BPNote(text: "Paste an M3U or M3U8 playlist URL, an IPTV middleware address, or an Xtream Codes login URL (get.php with username and password). Xtream guides are found automatically.")
                     // bp-live-setup kind picker: M3U link, Xtream Codes login, or guide data only.
                     HStack(spacing: BP.px(8)) {
-                        ForEach([("m3u", "M3U playlist"), ("xtream", "Xtream Codes"), ("epg", "Guide only")], id: \.0) { k, label in
+                        ForEach([("m3u", "M3U playlist"), ("xtream", "Xtream Codes"), ("epg", "Guide data only")], id: \.0) { k, label in
                             Button(T(label)) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k))
                         }
                     }
@@ -557,10 +557,10 @@ struct LiveSourcesSheet: View {
                         BPField(label: "Username", placeholder: "Username", text: $username)
                         BPField(label: "Password", placeholder: "Password", text: $password, secure: true)
                     } else if kind == "m3u" {
-                        BPField(label: "Playlist or login URL", placeholder: "https://…/playlist.m3u", text: $url, keyboard: .URL)
-                        BPField(label: "EPG URL (optional, XMLTV)", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
+                        BPField(label: "Playlist address", placeholder: "https://…/playlist.m3u", text: $url, keyboard: .URL)
+                        BPField(label: "EPG URL (optional)", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
                     } else {
-                        BPField(label: "Guide address (XMLTV)", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
+                        BPField(label: "XMLTV address", placeholder: "https://…/guide.xml.gz", text: $epg, keyboard: .URL)
                     }
                     HStack(spacing: BP.px(12)) {
                         Button(busy ? "Adding…" : "Add source") {
@@ -591,7 +591,7 @@ struct LiveSourcesSheet: View {
                                 .buttonStyle(BPActionStyle(primary: model.selectedPlaylist == pl.id))
                                 Button("Remove") { Task { await model.remove(pl.id) } }.buttonStyle(BPActionStyle())
                             }
-                            Text(pl.epgUrl.map { "Guide: \($0)" } ?? "No guide URL").font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                            Text(pl.epgUrl.map { T("Guide: %@", $0) } ?? T("No guide URL")).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                         }
                         if model.selectedPlaylist != nil {
                             Button("Use the EPG URL above for the selected source") {
