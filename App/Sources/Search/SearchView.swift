@@ -355,9 +355,9 @@ struct SearchCollectionView: View {
     var body: some View {
         ZStack {
             if let card, !card.items.isEmpty {
-                CollectionItemsOverlay(card: card, onClose: onClose) { item in
-                    detail = Meta(id: item.id, type: item.type, name: item.name, poster: item.poster, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
-                }
+                // A search hit is someone else's list: default limits, nothing to reload on change.
+                CollectionItemsOverlay(card: card, limits: CollectionsModel.Limits(collections: 24, items: 100),
+                                       onClose: onClose, onChanged: { _ in }, onOpen: { item in detail = item.meta })
             } else {
                 BP.void_.opacity(0.97).ignoresSafeArea()
                 VStack(alignment: .leading, spacing: BP.px(14)) {

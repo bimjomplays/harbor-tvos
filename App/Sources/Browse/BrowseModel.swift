@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import UIKit
 
 /// Where a room gets its rows. The engine (upstream logic in JavaScriptCore) implements this;
 /// `FixtureBrowseSource` feeds simulator screenshots without the network.
@@ -22,19 +23,34 @@ final class BrowseModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var failed: String?
     @Published var spotlight: Meta?
+    /// bp-hero-pips: how many titles the hero cycles through and which one it shows (0 = no cycle).
+    @Published private(set) var heroCount = 0
+    @Published private(set) var heroIndex = 0
+    /// A tile holds focus somewhere in the room (use-bp-hero-cycle cardFocused()).
+    @Published private(set) var tileHeld = false
 
     let room: Room
     private let source: BrowseSource
     private var heroTask: Task<Void, Never>?
     private var cardFocused = false
-    private var heroIndex = 0
+    private var heldRows: Set<String> = []
 
     private var unsubscribe: (() -> Void)?
     private var refreshTask: Task<Void, Never>?
 
+    /// bp-restore route entry: where focus lands when this page opens again. bp-home.tsx forgets
+    /// the Home position on mount (Home always opens on its first card); rows keep their memory.
+    private(set) var entry: BPRestore.Position?
+
     init(room: Room, source: BrowseSource) {
         self.room = room
         self.source = source
+        let key = "\(source.cacheId ?? room.rawValue).\(ProfilesStore.shared.activeId ?? "none")"
+        if room == .home && source.cacheId == nil {
+            BPRestore.forget(key)
+        } else {
+            entry = BPRestore.position(key)
+        }
         if room == .anime, !(source is FixtureBrowseSource) {
             // Jikan rows land one by one; re-read the page (from memory) after each burst.
             unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
@@ -51,7 +67,9 @@ final class BrowseModel: ObservableObject {
 
     deinit { unsubscribe?(); refreshTask?.cancel(); heroTask?.cancel() }
 
-    private var cacheKey: String { "bp.room.\(source.cacheId ?? room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
+    private var cacheKey: String { "bp.room.\(restoreKey)" }
+    /// The route key bp-restore remembers positions under (per page and profile).
+    var restoreKey: String { "\(source.cacheId ?? room.rawValue).\(ProfilesStore.shared.activeId ?? "none")" }
     /// Fixture rows never touch the cache, so a screenshot run cannot poison a live one.
     private var cacheable: Bool { !(source is FixtureBrowseSource) }
 
@@ -74,6 +92,11 @@ final class BrowseModel: ObservableObject {
             rows = live
             if cacheable { try? CacheStore.shared.set(live, for: cacheKey) }
             continueWatching = (try? await cw) ?? []
+            // A row that left while holding focus never reports losing it.
+            let keys = Set(live.map(\.key))
+            let cwShown = !continueWatching.isEmpty
+            heldRows = heldRows.filter { $0 == "cw" ? cwShown : keys.contains($0) }
+            tileHeld = !heldRows.isEmpty
             // A stale spotlight (from the cache, or a title that fell off the rows) resets.
             let known = Set(live.flatMap { $0.metas.map(\.id) })
             if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true { spotlight = live.first?.metas.first }
@@ -91,16 +114,31 @@ final class BrowseModel: ObservableObject {
         spotlight = meta
     }
 
-    /// use-bp-hero-cycle.ts: every 7 s advance through the first row's first 8 items,
-    /// unless a card holds focus.
+    /// A row (keyed) gained or lost the focused tile. The cycle reads this on every tick the way
+    /// upstream's cardFocused() asks the document whether the ring sits on a [data-bp-tile].
+    func hold(_ rowKey: String, _ held: Bool) {
+        if held { heldRows.insert(rowKey) } else { heldRows.remove(rowKey) }
+        if tileHeld != !heldRows.isEmpty { tileHeld = !heldRows.isEmpty }
+    }
+
+    /// use-bp-hero-cycle.ts: every 7 s (HOLD_MS) advance through the first row's first 8 items;
+    /// a tick that finds a card focused just waits another hold. Never under Reduce Motion
+    /// (`prefers-reduced-motion: reduce` returns before the first timer).
     private func startHeroCycle() {
         heroTask?.cancel()
         let pool = Array((rows.first?.metas ?? []).prefix(8))
-        guard pool.count > 1 else { return }
+        guard pool.count > 1, !UIAccessibility.isReduceMotionEnabled else {
+            heroCount = 0
+            return
+        }
+        if heroCount != pool.count || heroIndex >= pool.count { heroIndex = 0 }
+        heroCount = pool.count
         heroTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(7))
-                guard let self, !self.cardFocused else { continue }
+                guard let self, !Task.isCancelled else { return }
+                if UIAccessibility.isReduceMotionEnabled { self.heroCount = 0; return }
+                guard self.heldRows.isEmpty else { continue }
                 self.heroIndex = (self.heroIndex + 1) % pool.count
                 self.spotlight = pool[self.heroIndex]
             }

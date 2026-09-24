@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Detail page (bp-detail): hero with backdrop, logo/title, facts, actions, synopsis; then episodes.
 struct DetailView: View {
@@ -18,7 +19,77 @@ struct DetailView: View {
     @State private var seasonsSheet = false
     @State private var rateDialog = false
     @State private var person: DetailModel.Extras.Cast?
+    /// bp-status-dialog: the tracker whose list status is being changed.
+    @State private var trackerDialog: DetailModel.Tracker?
+    @FocusState private var heroFocus: String?
     @Environment(\.dismiss) private var dismiss
+
+    /// use-bp-detail-actions BpDetailAction.
+    struct HeroAction: Identifiable {
+        let key: String
+        let label: String
+        let icon: String
+        var active = false
+        var badge: String? = nil
+        let run: () -> Void
+        var id: String { key }
+    }
+
+    /// use-bp-detail-actions.ts, in its order: Sources (movies with instant play), Watchlist, trackers,
+    /// Mark watched on Trakt, Favourite, Remind me (series), Rate, Add to list, Mark watched (movies),
+    /// Watch trailer. Download is left out: tvOS has nowhere to keep a film offline. Back closes the page.
+    private var heroActions: [HeroAction] {
+        var out: [HeroAction] = []
+        let hero = model.hero
+        if model.isMovie, SettingsBridge.shared.slice.instantPlay ?? true {
+            // A series has no single set of streams; its Play already is the picker's way in.
+            out.append(HeroAction(key: "sources", label: "Sources", icon: "list.bullet") {
+                pickerAuto = false
+                picker = (model.meta, nil)
+            })
+        }
+        if model.canWatchlist {
+            let saved = model.inWatchlist
+            out.append(HeroAction(key: "watchlist", label: saved ? "In Watchlist" : "Add to Watchlist", icon: saved ? "checkmark" : "plus", active: saved) {
+                guard !model.watchlistBusy else { return }
+                Task { await model.toggleWatchlist() }
+            })
+        }
+        for tr in model.trackers {
+            let label = tr.statusLabel.map { "\(tr.name) · \($0)" } ?? "Add to \(tr.name)"
+            out.append(HeroAction(key: tr.key, label: label, icon: "plus", active: tr.status != nil) { trackerDialog = tr })
+        }
+        if model.isMovie, hero?.traktMovie == true {
+            out.append(HeroAction(key: "trakt", label: "Mark watched on Trakt", icon: "t.circle") {
+                Task { await model.traktMarkWatched() }
+            })
+        }
+        let fav = hero?.favorite ?? false
+        out.append(HeroAction(key: "favorite", label: fav ? "Favorited" : "Add to favorites", icon: fav ? "heart.fill" : "heart", active: fav) {
+            Task { await model.toggleFavorite() }
+        })
+        if model.isSeries {
+            let on = hero?.reminder ?? false
+            out.append(HeroAction(key: "reminder", label: on ? "Reminder on" : "Remind me", icon: on ? "bell.fill" : "bell", active: on) {
+                Task { await model.toggleReminder() }
+            })
+        }
+        let score = hero?.rating
+        out.append(HeroAction(key: "rate", label: score.map { "Your rating \($0)/10" } ?? "Rate this", icon: score == nil ? "star" : "star.fill",
+                              active: score != nil, badge: score.map { String($0) }) { rateDialog = true })
+        out.append(HeroAction(key: "lists", label: "Add to list", icon: "square.stack.3d.up") { listDialog = true })
+        if model.isMovie, hero?.showWatchedButton ?? true {
+            let watched = model.movieWatched
+            out.append(HeroAction(key: "watched", label: watched ? "Marked watched" : "Mark watched", icon: "checkmark", active: watched) {
+                Task { await model.toggleWatched() }
+            })
+        }
+        if let yt = model.trailerYtId {
+            out.append(HeroAction(key: "trailer", label: "Watch trailer", icon: "film") { trailer = TrailerPick(ytId: yt, name: nil) })
+        }
+        out.append(HeroAction(key: "back", label: "Back", icon: "chevron.left") { dismiss() })
+        return out
+    }
 
     struct PlayTarget: Identifiable {
         var id: String { url.absoluteString }
@@ -96,12 +167,19 @@ struct DetailView: View {
             SeasonsSheet(seasons: model.seasons, counts: Dictionary(grouping: model.episodes, by: \.season).mapValues(\.count), season: Binding(get: { model.season }, set: { model.season = $0 }))
         }
         .fullScreenCover(item: $awardType) { g in AwardsDialogView(group: g, entries: (model.awards?.entries ?? []).filter { $0.type == g.type }) }
-        .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: model.meta) }
+        // The Rate cell shows the score, so it re-reads the rating when the dialog closes.
+        .fullScreenCover(isPresented: $rateDialog, onDismiss: { Task { await model.loadHero() } }) { RateDialogView(meta: model.meta) }
+        .fullScreenCover(item: $trackerDialog) { tr in
+            TrackerDialogView(tracker: tr,
+                              onPick: { status in Task { await model.setTracker(tr.key, status: status) } },
+                              onRemove: { Task { await model.removeTracker(tr.key) } })
+        }
         .fullScreenCover(item: $person) { c in PersonView(personId: c.id, name: c.name) }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
                          onChooseAnother: { pickerAuto = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
-                         onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } }) { natural in
+                         onSwitchSource: { at in pickerAuto = false; switchFromSec = at; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, t.episode) } },
+                         onPreviousEpisode: previousEpisodeAction(t.context)) { natural in
                 playing = nil
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode,
@@ -111,6 +189,20 @@ struct DetailView: View {
                     if next.season > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; picker = (model.meta, next.playEpisode) } }
                 }
             }
+        }
+    }
+
+    /// bp-player-controls "Previous episode": the episode before this one opens its picker (after
+    /// the player's cover has dismissed, like Switch source); nil on the first episode or a movie.
+    private func previousEpisodeAction(_ ctx: PlaybackContext) -> (() -> Void)? {
+        guard let s = ctx.season, let e = ctx.episode,
+              let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx > 0 else { return nil }
+        let prev = model.episodes[idx - 1]
+        guard prev.season > 0 else { return nil }
+        let episode = prev.playEpisode
+        return {
+            pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = (model.meta, episode) }
         }
     }
 
@@ -159,28 +251,28 @@ struct DetailView: View {
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
+                .focused($heroFocus, equals: "play")
                 .accessibilityIdentifier("detail-play")
-                if SettingsBridge.shared.slice.instantPlay ?? true {
-                    // bp-detail-actions "Sources": the list, never auto-fired.
-                    Button { pickerAuto = false; if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) } } label: { Label("Sources", systemImage: "list.bullet") }
-                        .buttonStyle(BPActionStyle())
-                }
-                if model.canWatchlist {
-                    Button { Task { await model.toggleWatchlist() } } label: {
-                        Label(model.inWatchlist ? "In Watchlist" : "Add to Watchlist", systemImage: model.inWatchlist ? "bookmark.fill" : "bookmark")
+                // bp-detail-actions BpSecondaryAction: icon cells; the line under the row names the focused one.
+                ForEach(heroActions) { a in
+                    Button { a.run() } label: {
+                        if let badge = a.badge {
+                            Text(badge).font(BP.sans(13.4, .bold)).monospacedDigit()
+                        } else {
+                            Image(systemName: a.icon)
+                        }
                     }
-                    .buttonStyle(BPActionStyle(primary: model.inWatchlist)).disabled(model.watchlistBusy)
+                    .buttonStyle(DetailIconActionStyle(active: a.active))
+                    .focused($heroFocus, equals: a.key)
+                    .accessibilityLabel(a.label)
+                    .accessibilityIdentifier("detail-action-\(a.key)")
                 }
-                // bp-detail-actions: rate and add to a custom list from the TV.
-                // use-bp-detail-actions "Watch trailer" (only when a trailer id exists).
-                if let yt = model.trailerYtId {
-                    Button { trailer = TrailerPick(ytId: yt, name: nil) } label: { Label("Watch trailer", systemImage: "play.rectangle") }.buttonStyle(BPActionStyle())
-                }
-                Button { rateDialog = true } label: { Label("Rate", systemImage: "star") }.buttonStyle(BPActionStyle())
-                Button { listDialog = true } label: { Label("Add to list", systemImage: "text.badge.plus") }.buttonStyle(BPActionStyle())
-                Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
             }
             .focusSection()
+            // BP_ACTION_HINT: the focused icon's label; blank when Play or nothing in the row has focus.
+            Text(heroActions.first(where: { $0.key == heroFocus })?.label ?? " ")
+                .font(BP.sans(12.5, .semibold)).tracking(0.5).foregroundStyle(BP.inkSubtle)
+                .frame(height: BP.px(16), alignment: .leading)
             if let tag = model.extras?.tagline, !tag.isEmpty {
                 Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(620), alignment: .leading)
             }
@@ -402,7 +494,10 @@ struct DetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: BP.trackGap) {
                     ForEach(model.seasonEpisodes) { ep in
-                        Button { picker = (model.meta, ep.playEpisode) } label: { EpisodeCell(episode: ep, watched: model.isWatched(ep), fact: model.fact(for: ep)) }
+                        // use-bp-detail play(ep, fromStrip): the strip fires like Play when instant play is on.
+                        Button { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; picker = (model.meta, ep.playEpisode) } label: {
+                            EpisodeCell(episode: ep, watched: model.isWatched(ep), fact: model.fact(for: ep), chain: model.stillChain(for: ep), backdrop: model.meta.background)
+                        }
                             .buttonStyle(BPTileStyle())
                             .id(ep.id)
                             .accessibilityIdentifier("episode-\(ep.season)-\(ep.episode)")
@@ -422,16 +517,124 @@ struct DetailView: View {
     }
 }
 
+/// bp-detail-actions BpSecondaryAction: a square icon cell, `on` face when active, edge border otherwise.
+struct DetailIconActionStyle: ButtonStyle {
+    var active = false
+    func makeBody(configuration: Configuration) -> some View {
+        BPFocusReader { focused in
+            configuration.label
+                .font(.system(size: BP.px(17), weight: .semibold))
+                .foregroundStyle(BP.ink)
+                .frame(width: BP.tabItem, height: BP.tabItem)
+                .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(active || focused ? BP.on : Color.clear))
+                .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(active ? Color.clear : BP.edge2, lineWidth: 1))
+                .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: BP.rXS, lift: 1.02))
+        }
+    }
+}
+
+/// bp-status-dialog.tsx: the tracker's statuses (the current one lit and ticked), Close, and
+/// "Remove from list" when there is an entry. Select sets the status and closes.
+struct TrackerDialogView: View {
+    let tracker: DetailModel.Tracker
+    let onPick: (String) -> Void
+    let onRemove: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focus: String?
+
+    var body: some View {
+        ZStack {
+            BP.void_.opacity(0.78).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: BP.px(18)) {
+                Text(tracker.name).font(BP.display(26)).foregroundStyle(BP.ink)
+                VStack(alignment: .leading, spacing: BP.px(8)) {
+                    ForEach(tracker.choices) { c in
+                        Button { onPick(c.id); dismiss() } label: {
+                            HStack {
+                                Text(c.label)
+                                Spacer()
+                                if c.id == tracker.status { Image(systemName: "checkmark") }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(BPActionStyle(primary: c.id == tracker.status))
+                        .focused($focus, equals: c.id)
+                    }
+                }
+                .focusSection()
+                HStack(spacing: BP.px(10)) {
+                    Button("Close") { dismiss() }.buttonStyle(BPActionStyle())
+                    if tracker.canRemove {
+                        Button { onRemove(); dismiss() } label: { Label("Remove from list", systemImage: "trash") }.buttonStyle(BPActionStyle())
+                    }
+                }
+                .focusSection()
+            }
+            .padding(BP.px(36))
+            .frame(width: BP.px(760), alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
+            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+        }
+        .onExitCommand { dismiss() }
+        .task {
+            // Seed focus on the current status, else the first choice.
+            try? await Task.sleep(for: .milliseconds(100))
+            focus = tracker.status ?? tracker.choices.first?.id
+        }
+    }
+}
+
+/// bp-episode-still.tsx BpEpisodeStill: walks the still ladder and lands on the numbered plate
+/// (the series backdrop dimmed behind the episode number) once every url has failed.
+struct EpisodeStill: View {
+    let chain: [String]
+    let label: Int
+    var backdrop: String?
+    @State private var image: UIImage?
+    @State private var exhausted = false
+
+    var body: some View {
+        ZStack {
+            BP.panel2
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: .fill).transition(.opacity)
+            } else if exhausted {
+                if let backdrop {
+                    RemoteImage(url: backdrop).opacity(0.25).saturation(0.6)
+                    BP.void_.opacity(0.6)
+                }
+                Text("\(label)").font(BP.display(40)).monospacedDigit().foregroundStyle(BP.ink).opacity(0.6)
+            }
+        }
+        .task(id: chain.joined(separator: "|")) {
+            image = nil
+            exhausted = false
+            for url in chain {
+                guard let u = URL(string: url) else { continue }
+                if let img = await ImageLoader.shared.image(for: u) {
+                    withAnimation(BP.easeFast) { image = img }
+                    return
+                }
+                if Task.isCancelled { return }
+            }
+            exhausted = true
+        }
+    }
+}
+
 struct EpisodeCell: View {
     let episode: DetailModel.Episode
     var watched = false
     var fact: DetailModel.EpisodeFact? = nil
+    /// use-bp-episode-art ladder; nil draws the Cinemeta thumbnail alone.
+    var chain: [String]? = nil
+    var backdrop: String? = nil
     private static let size = CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded())
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             ZStack(alignment: .bottomLeading) {
-                RemoteImage(url: episode.thumbnail)
+                EpisodeStill(chain: chain ?? episode.thumbnail.map { [$0] } ?? [], label: episode.episode, backdrop: backdrop)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
                 Text("E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
                 // use-bp-episode-facts chip: rating (IMDb mark when it is IMDb's) and runtime.

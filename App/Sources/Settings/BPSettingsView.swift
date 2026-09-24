@@ -39,7 +39,12 @@ final class BPSettingsModel: ObservableObject {
         controls = (try? await HarborEngine.shared.call("settingsRoom.controls", [active, p.id, p.linked])) ?? []
     }
 
-    func select(_ id: String) { active = id; Task { await loadControls() } }
+    func select(_ id: String) {
+        // bp-settings.tsx: leaving the category puts the committed sound theme back.
+        BPSound.shared.audition = nil
+        active = id
+        Task { await loadControls() }
+    }
 
     func commit(_ control: String, _ value: String) async {
         let p = profile
@@ -47,6 +52,7 @@ final class BPSettingsModel: ObservableObject {
             SettingsBridge.shared.sportsDeclined = !c.sportsShown
         }
         await SettingsBridge.shared.load()
+        BPSound.shared.audition = nil
         await load()
     }
 }
@@ -85,6 +91,13 @@ struct BPSettingsView: View {
             .focusSection()
         }
         .task { await model.load() }
+        .onDisappear { BPSound.shared.audition = nil }
+    }
+
+    /// bp-settings.tsx: `onCellFocus={control.id === "sound" ? auditionSound : undefined}`.
+    private func audition(_ c: BPSettingsModel.Control, _ value: String) -> (() -> Void)? {
+        guard c.id == "sound" else { return nil }
+        return { BPSound.shared.audition = value }
     }
 
     @ViewBuilder private func controlRow(_ c: BPSettingsModel.Control) -> some View {
@@ -95,13 +108,13 @@ struct BPSettingsView: View {
                 let opts = c.options ?? []
                 if c.columns == 2 {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: BP.px(6)) {
-                        ForEach(opts) { o in cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil) { Task { await model.commit(c.id, o.value) } } }
+                        ForEach(opts) { o in cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil, focus: audition(c, o.value)) { Task { await model.commit(c.id, o.value) } } }
                     }
                     .frame(maxWidth: BP.px(620))
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: BP.px(6)) {
-                            ForEach(opts) { o in cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil) { Task { await model.commit(c.id, o.value) } } }
+                            ForEach(opts) { o in cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil, focus: audition(c, o.value)) { Task { await model.commit(c.id, o.value) } } }
                         }
                     }
                 }
@@ -162,7 +175,7 @@ struct BPSettingsView: View {
         Text(text.uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle)
     }
 
-    private func cell(_ text: String, on: Bool, letter: String?, action: @escaping () -> Void) -> some View {
+    private func cell(_ text: String, on: Bool, letter: String?, focus: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(letter.map { _ in text.replacingOccurrences(of: "px", with: "") } ?? text)
                 .font(letter.map { BP.sans(CGFloat(Double($0) ?? 15) * 0.55, .bold) } ?? BP.sans(14, on ? .bold : .semibold))
@@ -172,6 +185,6 @@ struct BPSettingsView: View {
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(on ? BP.on : BP.panel))
                 .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).strokeBorder(on ? .clear : BP.edge, lineWidth: 1))
         }
-        .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .buttonStyle(BPTileStyle(radius: BP.rSM, onFocus: focus))
     }
 }

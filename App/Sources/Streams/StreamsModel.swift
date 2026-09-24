@@ -60,6 +60,8 @@ final class StreamsModel: ObservableObject {
         var streamIds: [String]
         var addonCount: Int
         var addonOrder: [String]?
+        var debridCount: Int?
+        var seasonLock: Bool?
         var result: Result?
         var error: String?
     }
@@ -74,6 +76,12 @@ final class StreamsModel: ObservableObject {
     @Published private(set) var progress: (settled: Int, total: Int) = (0, 0)
     @Published private(set) var addonCount = 0
     @Published private(set) var debridErrors: [String] = []
+    /// use-bp-streams noSources half: how many debrid services are configured.
+    @Published private(set) var debridCount = 0
+    /// use-bp-stream-play seasonLock: auto-fire retries the same source too.
+    @Published private(set) var seasonLock = false
+    /// use-bp-streams rememberedStream: index into `streams` of the last pick (or season-locked source).
+    @Published private(set) var rememberedIndex: Int?
     /// Home-server copies of this title (use-bp-streams homeServerCopies), loaded beside the addon search.
     @Published private(set) var copies: [HomeCopy] = []
     struct HomeCopy: Decodable, Identifiable { var key: String; var label: String; var sourceLabel: String; var connectionId: String; var itemId: String; var versionId: String; var quality: String?; var sizeBytes: Double?; var resolution: String?; var progressMs: Double; var id: String { key } }
@@ -98,7 +106,7 @@ final class StreamsModel: ObservableObject {
     func search(meta: Meta, episode: AnyJSON?) async {
         lastMeta = meta; lastEpisode = episode
         phase = .searching
-        streams = []; primary = nil; progress = (0, 0)
+        streams = []; primary = nil; progress = (0, 0); rememberedIndex = nil
         subscribeOnce()
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
@@ -113,8 +121,13 @@ final class StreamsModel: ObservableObject {
             if let err = r.error { phase = .failed(err); return }
             addonCount = r.addonCount
             addonOrder = r.addonOrder ?? []
+            debridCount = r.debridCount ?? 0
+            seasonLock = r.seasonLock ?? false
             debridErrors = (r.result?.debridErrors ?? []).map { "\($0.name): \($0.code)" }
             apply(r.result?.picker)
+            let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
+            let pinned: Int? = try? await HarborEngine.shared.call("streamsRoom.remembered", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep])
+            rememberedIndex = pinned.flatMap { streams.indices.contains($0) ? $0 : nil }
             phase = .done
         } catch {
             phase = .failed(error.localizedDescription)
@@ -142,6 +155,10 @@ final class StreamsModel: ObservableObject {
         var code: String?
         /// Set for a home-server copy: who to report progress to, and where the server left off.
         var homeServer: HomeServerSession? = nil
+        /// picker-utils translatePickerError copy for `code` (nil when upstream has none).
+        var message: String? = nil
+        /// picker-utils isDebridFailure: the debrid's side failed, not the source.
+        var debridFailure: Bool? = nil
     }
 
     /// A home-server copy resolves through the server (direct play or transcode).
@@ -176,13 +193,26 @@ final class StreamsModel: ObservableObject {
             season.map { .number(Double($0)) } ?? .null, ep.map { .number(Double($0)) } ?? .null])
     }
 
-    func resolve(_ stream: ScoredStream) async -> Resolved {
+    func resolve(_ stream: ScoredStream, forceP2p: Bool = false) async -> Resolved {
         let p = ProfilesStore.shared.active
         do {
-            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true])
+            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true, forceP2p])
         } catch {
             return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription)
         }
+    }
+
+    /// use-pick-handler onPlay: whether this pick needs BpP2pDialog's consent first.
+    func p2pConsentNeeded(_ stream: ScoredStream) async -> Bool {
+        let p = ProfilesStore.shared.active
+        let needed: Bool? = try? await HarborEngine.shared.call("streamsRoom.p2pConsentNeeded", [token, p?.id ?? "default", p?.linked ?? true, stream.index, p?.kid != nil])
+        return needed ?? false
+    }
+
+    /// BpP2pDialog "Always stream P2P".
+    func setP2pAutoConsent() async {
+        let p = ProfilesStore.shared.active
+        _ = try? await HarborEngine.shared.callJSON("streamsRoom.setP2pAutoConsent", [.string(p?.id ?? "default"), .bool(p?.linked ?? true)])
     }
 
     private func apply(_ picker: RankedPicker?) {

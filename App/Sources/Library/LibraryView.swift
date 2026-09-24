@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Library room (bp-library.tsx): tabs (Saved / Watchlist / History / My Lists / Favorites, plus
-/// Trakt / Simkl when connected), filter rows (type, sort, grouping), search, and a vertical
-/// poster grid in date/title/year sections fed by the engine's use-bp-library port.
+/// Trakt / AniList / MyAnimeList / Simkl / Letterboxd when connected), filter rows (type, sort,
+/// grouping), search, the library repair panel, and a vertical poster grid in date/title/year
+/// sections fed by the engine's use-bp-library port.
 @MainActor
 final class LibraryModel: ObservableObject {
     struct Tab: Decodable, Identifiable { var id: String; var label: String }
@@ -32,6 +33,7 @@ final class LibraryModel: ObservableObject {
     @Published var query = ""
     @Published var showFilters = false
     @Published var showSearch = false
+    @Published var showRepair = false
     private var limit = 60
 
     private var profile: (id: String, linked: Bool, authKey: String?) {
@@ -40,7 +42,8 @@ final class LibraryModel: ObservableObject {
     }
 
     func start() async {
-        tabs = (try? await HarborEngine.shared.call("libraryRoom.tabs", [])) ?? []
+        let p = profile
+        tabs = (try? await HarborEngine.shared.call("libraryRoom.tabs", [p.id, p.linked])) ?? []
         if !tabs.contains(where: { $0.id == tab }) { tab = tabs.first?.id ?? "library" }
         await load()
     }
@@ -86,8 +89,9 @@ struct LibraryView: View {
                 tabRow
                 if model.showFilters { filters }
                 if model.showSearch { searchRow }
+                if model.showRepair { LibraryRepairPanel(onRepaired: { Task { await model.load(force: true) } }) }
                 if let f = model.feed {
-                    if f.status == "error" { BPNote(text: "Couldn't load your library. Try refreshing.", tone: BP.danger) }
+                    if f.status == "error" { BPNote(text: errorText, tone: BP.danger) }
                     if f.sections.isEmpty {
                         emptyState(f)
                     } else {
@@ -143,6 +147,8 @@ struct LibraryView: View {
                 Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }.buttonStyle(BPActionStyle(primary: model.showFilters))
                 Button { model.showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }.buttonStyle(BPActionStyle(primary: model.showSearch))
                 Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.buttonStyle(BPActionStyle())
+                // library-repair-rows.tsx lives in desktop Settings → Advanced; the TV keeps it beside the library.
+                Button { model.showRepair.toggle() } label: { Label("Repair library", systemImage: "wrench.and.screwdriver") }.buttonStyle(BPActionStyle(primary: model.showRepair))
                 if let f = model.feed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
             }
         }
@@ -183,6 +189,13 @@ struct LibraryView: View {
         .focusSection()
     }
 
+    // bp-library.tsx emptyCopy: a service tab names the service it could not reach.
+    private var errorText: String {
+        let names = ["trakt": "Trakt", "anilist": "AniList", "mal": "MyAnimeList", "simkl": "Simkl", "letterboxd": "Letterboxd"]
+        if let name = names[model.tab] { return "Couldn't reach \(name). Try refreshing." }
+        return "Couldn't load your library. Try refreshing."
+    }
+
     // bp-library.tsx empty copy per tab.
     private func emptyState(_ f: LibraryModel.Feed) -> some View {
         let text: String
@@ -195,7 +208,8 @@ struct LibraryView: View {
             case "history": text = "Nothing watched yet. Press play on something."
             case "lists": text = "You have no lists yet."
             case "favorites": text = "No favorites yet. Save a movie or show to see it here."
-            default: text = "Nothing saved yet. Add a title from any details page."
+            case "library": text = "Nothing saved yet. Add a title from any details page."
+            default: text = "Nothing here yet."
             }
         }
         return BPNote(text: text).padding(.top, BP.px(10))
