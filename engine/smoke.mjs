@@ -954,6 +954,26 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   };
   const e = rec.engine;
   r.eq("player.prefs: upstream defaults (auto lead, auto-advance on, 10 s steps)", e.player.prefs("default", true), { autoPlayNextEpisode: true, nextEpisodeLeadSec: -1, seekBackStepSec: 10, seekForwardStepSec: 10 });
+  // Auto / mpv / native (AVPlayer): use-player-bridge.ts chosenEngine + player-utils.ts pickBridge, TV mapping.
+  const pe = (want, h) => e.player.pickEngine(want, h).engine;
+  r.eq("player.pickEngine: Auto keeps MKV / not-web-ready / raw TS live on mpv", [
+    pe("auto", { url: "https://cdn.example.invalid/Movie.2160p.DV.mkv", hdrFormat: "DV", container: "mkv" }),
+    pe("auto", { url: "https://cdn.example.invalid/master.m3u8", notWebReady: true }),
+    pe("auto", { url: "http://iptv.example.invalid/live/1/2/3.ts", isLive: true }),
+  ], ["mpv", "mpv", "mpv"]);
+  r.eq("player.pickEngine: Auto hands web-ready HLS (live or not) and DV MP4 to AVPlayer", [
+    pe("auto", { url: "https://cdn.example.invalid/hls/master.m3u8?token=1" }),
+    pe("auto", { url: "http://iptv.example.invalid/live/ch.m3u8", isLive: true }),
+    pe("auto", { url: "https://cdn.example.invalid/dl/abc", filename: "Movie.2019.2160p.WEB-DL.DV.HEVC.mp4" }),
+    pe("auto", { url: "https://cdn.example.invalid/dl/abc.mp4", hdrFormat: "DV+HDR10", container: "mp4" }),
+  ], ["native", "native", "native", "native"]);
+  r.eq("player.pickEngine: explicit settings win; a native failure retries on mpv", [
+    pe("html5", { url: "https://cdn.example.invalid/a.mkv" }),
+    pe("mpv", { url: "https://cdn.example.invalid/master.m3u8", isLive: true }),
+    pe("auto", { url: "https://cdn.example.invalid/master.m3u8", fallbackTried: true }),
+    e.player.engineFor("default", true, { url: "https://cdn.example.invalid/a.mkv" }).want,
+  ], ["native", "mpv", "mpv", "auto"]);
+  r.ok("settingsRoom: the html5 engine option reads AVPlayer on the TV", e.settingsRoom.controls("playback", "default", true).some((c) => c.id === "engine" && c.options.some((o) => o.value === "html5" && o.label === "AVPlayer") && c.options.some((o) => o.value === "auto")), "");
   r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
   const tv = e.subtitles.trackView("default", true, [
     { id: 1, lang: "eng", title: null, codec: "subrip", external: false },

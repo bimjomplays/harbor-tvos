@@ -13,6 +13,9 @@ struct PlayerScreen: View {
     var upNext: String? = nil
     /// Live streams: live mpv cache options, no seek bar, no progress saves.
     var isLive: Bool = false
+    /// The picked stream's facts for the Auto engine rule (engine/player.ts pickEngine); nil plays
+    /// by URL alone (live channels, sports links).
+    var streamHints: PlayerStreamHints? = nil
     /// `true` when the file played to its end (next-episode logic keys off this).
     /// source-error-card "Pick another source": the caller reopens the picker after this closes.
     var onChooseAnother: (() -> Void)? = nil
@@ -43,7 +46,15 @@ struct PlayerScreen: View {
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
     @State private var hideTask: Task<Void, Never>?
-    @State private var controller: MPVPlayerController?
+    @State private var controller: (any PlayerEngineControlling)?
+    /// use-player-bridge.ts engine: mpv, or AVPlayer standing in for html5. Settled before startAt.
+    @State private var engine: PlayerEngineKind = .mpv
+    /// settings.playerEngine as read for this stream ("auto" | "mpv" | "html5").
+    @State private var engineWant = "auto"
+    /// use-player-bridge.ts autoFallbackTried: the native engine failed once; mpv has it now.
+    @State private var engineFallbackTried = false
+    /// player.tsx showNoAudioWarning: the native engine plays but cannot decode the audio.
+    @State private var noAudioWarning = false
     @State private var startAt: Double?
     /// bp-resume-prompt: the saved position waits for "Pick up where you left off" / "Start over" (settings.resumePrompt).
     @State private var resumePending: Double?
@@ -97,7 +108,22 @@ struct PlayerScreen: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            if let startAt {
+            if let startAt, engine == .native {
+                // A report from a native player that is being replaced by mpv is dropped.
+                NativePlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
+                                 preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
+                                 preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                                 onStatus: { s in if engine == .native { status = s } },
+                                 onEnded: { if engine == .native { endedNaturally() } },
+                                 onUnsupported: { nativeUnsupported($0) },
+                                 onReady: { c in
+                                     guard engine == .native else { return }
+                                     controller = c
+                                     if resumePending != nil { c.setPaused(true) }
+                                 })
+                    .ignoresSafeArea()
+                    .id(reloadToken)
+            } else if let startAt {
                 MPVPlayerView(url: url, headers: headers, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
@@ -128,6 +154,9 @@ struct PlayerScreen: View {
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
             if status.state == "error", !isLive { sourceErrorCard.transition(.opacity) }
             if status.state == "loading", !isLive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, resumePending == nil, status.state != "error" {
+                noAudioCard.transition(.opacity)
+            }
             if panel == nil, !leaveConfirm, resumePending == nil {
                 if showUpNextCard, let upNext {
                     upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
@@ -152,6 +181,7 @@ struct PlayerScreen: View {
             if resumePending != nil { acknowledgeResume(true) }          // Back takes the default action (bp-resume-prompt)
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
             else if panel != nil { closePanel() }
+            else if noAudioWarning, engine == .native { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
             else if showUpNextCard { cancelAutoNext() }                     // bp-up-next: Back is "Keep watching"
             else if focus == .chip("skip") { focus = .surface }
             else if chrome { chrome = false }
@@ -163,6 +193,10 @@ struct PlayerScreen: View {
         .onDisappear { PlaybackState.shared.active = false; TorrentEngine.shared.playerClosed(url: url) }
         .onReceive(CurfewState.shared.$locked) { if $0 { finish(natural: false) } }
         .task {
+            // use-player-bridge.ts / player-utils.ts pickBridge: settle the engine before anything loads.
+            let choice = await PlayerEngineChoice.choose(url: url, isLive: isLive, hints: streamHints)
+            engine = choice.engine
+            engineWant = choice.want
             // use-bridge-load: no resume for live or when the viewer turned it off; a saved spot past
             // RESUME_PROMPT_MIN_SEC (30 s) becomes a fork when resumePrompt is on, else a silent seek.
             let slice = SettingsBridge.shared.slice
@@ -190,7 +224,8 @@ struct PlayerScreen: View {
                 muted = c.isMuted()
                 buffered = c.bufferedSec()
             }
-            if !isLive, let c = controller, status.state != "loading" {
+            // Anime4K is an mpv shader chain (html5 bridge: setAnime4kShaders() {}).
+            if !isLive, engine == .mpv, let c = controller, status.state != "loading" {
                 let w = c.videoWidth()
                 if w > 0, w != anime4kAppliedFor { anime4kAppliedFor = w; Task { await applyAnime4k(srcWidth: w) } }
                 // A chain libplacebo refused shows up in mpv's warnings: drop it rather than play blind.
@@ -401,7 +436,7 @@ struct PlayerScreen: View {
                 chip("Back", "chevron.left") { requestClose() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
-                if !isLive { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
+                if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
                 if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
                 // bp-player-rail: the mute toggle ("Muted" / "Sound on").
                 chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
@@ -780,6 +815,8 @@ struct PlayerScreen: View {
                     chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false); go?() }
                 }
                 chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); reloadToken += 1 }
+                // header-warning.tsx onUseMpv: the forced native engine could not open it; mpv can try.
+                if engine == .native { chip("Use mpv engine", "play.rectangle") { useMpvEngine() } }
                 chip("Back", "chevron.left") { finish(natural: false) }
             }
             .focusSection()
@@ -788,6 +825,67 @@ struct PlayerScreen: View {
         .padding(BP.gutter).padding(.bottom, BP.px(20))
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.6), BP.void_.opacity(0.95)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .onAppear { hideTask?.cancel(); focusLater(.chip(onChooseAnother != nil ? "Pick another source" : "Try again")) }
+    }
+
+    // MARK: engines (use-player-bridge.ts, header-warning.tsx)
+
+    /// use-player-bridge.ts:176-186: in Auto, an html5 decode/codec failure or silent audio moves
+    /// the stream to mpv once (autoFallbackTried). A chosen native engine keeps playing and, for
+    /// silent audio, shows player.tsx's NoAudioWarning instead.
+    private func nativeUnsupported(_ reason: String) {
+        guard engine == .native, !finishing else { return }
+        if engineWant == "auto", !engineFallbackTried {
+            engineFallbackTried = true
+            switchToMpv()
+        } else if reason == "noAudio" {
+            noAudioWarning = true
+            hideTask?.cancel()
+            focusLater(.chip("Use mpv engine"))
+        }
+    }
+
+    /// header-warning.tsx onUseMpv → update({ playerEngine: "mpv" }), then this stream moves over.
+    private func useMpvEngine() {
+        Task { try? await SettingsBridge.shared.patch(["playerEngine": .string("mpv")]) }
+        engineWant = "mpv"
+        switchToMpv()
+    }
+
+    /// Hands the stream to mpv where the native player left it (or where it was to start).
+    private func switchToMpv() {
+        let at = snap.position > 5 ? snap.position : (startAt ?? 0)
+        noAudioWarning = false
+        controller = nil
+        status = MPVPlayerController.Status()
+        loadingSince = Date()
+        anime4kAppliedFor = -1
+        engine = .mpv
+        startAt = at
+        reloadToken += 1
+        focus = .surface
+        wake()
+    }
+
+    /// header-warning.tsx NoAudioWarning, over the stage above the transport.
+    private var noAudioCard: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: BP.px(12)) {
+                Text("No audio: this stream's audio format (likely Dolby or DTS) is not supported by the AVPlayer engine.")
+                    .font(BP.sans(15, .medium)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
+                HStack(spacing: BP.px(10)) {
+                    chip("Use mpv engine", "play.rectangle") { useMpvEngine() }
+                    chip("Dismiss", "xmark") { noAudioWarning = false; focus = .surface }
+                }
+                .focusSection()
+            }
+            .padding(.horizontal, BP.px(24)).padding(.vertical, BP.px(18))
+            .frame(maxWidth: BP.px(560))
+            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.void_.opacity(0.85)))
+            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+            .padding(.bottom, chrome ? BP.px(300) : BP.px(120))
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// bp-leave-confirm.tsx: Keep watching / Leave / Don't ask again.

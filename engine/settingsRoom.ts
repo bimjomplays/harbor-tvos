@@ -12,6 +12,9 @@ import { markSettingsPatched } from "./sync";
 
 const t = (key: string, vars?: Record<string, string | number>) => key.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? `{${k}}`));
 
+/** What the TV calls upstream's "html5" engine value: AVPlayer plays it (engine/player.ts pickEngine). */
+const NATIVE_ENGINE_LABEL = "AVPlayer";
+
 function stremioName(profileId: string): string | null {
   try {
     const raw = localStorage.getItem(`harbor.auth.${profileId}`);
@@ -30,7 +33,9 @@ export function categories(profileId: string, linked: boolean) {
   const s = loadEffective(profileId, linked);
   const connected = bpConnectedNames(facts(s, profileId));
   return {
-    categories: bpSettingsCategories(s, t, s.bigPictureOverscan ?? 0, connected),
+    // bp-settings-catalog summary: the TV's stand-in for upstream's html5 engine is AVPlayer.
+    categories: bpSettingsCategories(s, t, s.bigPictureOverscan ?? 0, connected).map((c) =>
+      c.id === "playback" && s.playerEngine === "html5" ? { ...c, summary: NATIVE_ENGINE_LABEL } : c),
     sportsShown: getSportsConsentSnapshot().status !== "declined",
     overscan: s.bigPictureOverscan ?? 0,
   };
@@ -44,6 +49,8 @@ export function controls(id: BpCatId, profileId: string, linked: boolean): BpCon
   const playlists = (s.iptvPlaylists ?? []).length;
   return out.map((c) => {
     // Service cells carry their brand tint so the TV can draw a chip without the SVG logo.
+    // "Player engine": upstream's "html5" value selects the TV's AVPlayer engine (player.ts pickEngine).
+    if (c.kind === "options" && c.id === "engine") return { ...c, options: c.options.map((o) => (o.value === "html5" ? { ...o, label: NATIVE_ENGINE_LABEL } : o)) };
     if (c.kind === "multi" && c.id === "service") return { ...c, items: c.items.map((i) => ({ ...i, tint: serviceBadge(i.value as StreamingService).tint })) };
     if (c.kind === "push" && c.pane === "connect" && connected.length > 0) return { ...c, detail: t("Connected: {list}", { list: connected.join(", ") }) };
     if (c.kind === "push" && c.pane === "live" && playlists > 0) return { ...c, detail: t("{count} added", { count: playlists }) };

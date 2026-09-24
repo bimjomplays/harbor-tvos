@@ -772,6 +772,9 @@ export const player = {
   decodeWatchedField: playerGlue.decodeWatchedField,
   /** Up-next lead, auto-advance and seek steps for the Big Picture chrome. */
   prefs: playerGlue.prefs,
+  /** Auto / mpv / native (AVPlayer) for one stream: use-player-bridge.ts + player-utils.ts pickBridge. */
+  engineFor: playerGlue.engineFor,
+  pickEngine: playerGlue.pickEngine,
 };
 
 /** Calendar room (views/calendar.tsx): one month per call, header prefs, the Custom rail, reminders. */
