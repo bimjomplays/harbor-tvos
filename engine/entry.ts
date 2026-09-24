@@ -884,6 +884,14 @@ export const player = {
   /** Auto / mpv / native (AVPlayer) for one stream: use-player-bridge.ts + player-utils.ts pickBridge. */
   engineFor: playerGlue.engineFor,
   pickEngine: playerGlue.pickEngine,
+  /** use-track-autoload.ts track choice + lib/player-prefs.ts / subtitle-memory.ts per-show memory. */
+  trackPlan: playerGlue.trackPlan,
+  planTracks: playerGlue.planTracks,
+  rememberAudio: playerGlue.rememberAudio,
+  rememberSubtitle: playerGlue.rememberSubtitle,
+  rememberSubDelay: playerGlue.rememberSubDelay,
+  noteSubtitleSource: playerGlue.noteSubtitleSource,
+  trackMemory: playerGlue.trackMemory,
 };
 
 /** Calendar room (views/calendar.tsx): one month per call, header prefs, the Custom rail, reminders. */

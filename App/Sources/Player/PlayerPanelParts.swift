@@ -126,6 +126,8 @@ struct PlayerAudioPanel: View {
                         ForEach(tracks) { t in
                             Button {
                                 controller?.select(track: t, type: "audio")
+                                // bp-ten-foot onAudio: the track's language becomes the show's audio language.
+                                controller?.rememberAudio(t)
                                 onClose()
                             } label: {
                                 PlayerLineLabel(icon: t.selected ? "checkmark" : "character.bubble", title: lines(t).0, detail: lines(t).1)
@@ -195,8 +197,8 @@ struct PlayerAudioPanel: View {
         let lang = t.lang.map { Locale(identifier: "en").localizedString(forLanguageCode: $0) ?? $0.uppercased() } ?? ""
         let trimmed = t.title?.trimmingCharacters(in: .whitespaces) ?? ""
         let named = (trimmed.isEmpty || trimmed == t.lang) ? "" : trimmed
-        let detail = [lang, t.codec?.uppercased() ?? "", t.channels ?? "", t.isDefault ? "Default" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
-        let head = !named.isEmpty ? named : (!lang.isEmpty ? lang : "Track")
+        let detail = [lang, t.codec?.uppercased() ?? "", t.channels ?? "", t.isDefault ? T("Default") : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        let head = !named.isEmpty ? named : (!lang.isEmpty ? lang : T("Track"))
         return (head, detail)
     }
 }

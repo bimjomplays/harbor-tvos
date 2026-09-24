@@ -9,6 +9,22 @@ import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { unzlibSync } from "fflate";
+import { readPlayerPrefs, writePlayerPrefs, type PerShowPrefs } from "@/lib/player-prefs";
+import {
+  readRememberedSub,
+  writeRememberedSub,
+  rememberedFromChoice,
+  rememberedSubAppliesToStream,
+  subtitleMediaKey,
+  subtitleStreamKey,
+  noteSubtitleOrigin,
+  lookupSubtitleOrigin,
+  type RememberedSub,
+} from "@/lib/subtitles/subtitle-memory";
+import { langScore, pickBestTrack, normalizeLang } from "@/lib/subtitles/language";
+import { isAutoSelectableSubtitleTrack, pickDesiredSubtitleTrack } from "@/lib/subtitles/track-selection";
+import type { Settings } from "@/lib/settings";
+import type { PlayerStreamRef } from "@/lib/view";
 
 /**
  * The playback settings the Big Picture chrome reads (settings/defaults.ts): the up-next lead
@@ -248,4 +264,312 @@ export function pickEngine(want: string | null | undefined, hints: EngineHints):
 export function engineFor(profileId: string, linked: boolean, hints: EngineHints): EngineChoice {
   const s = loadEffective(profileId, linked);
   return pickEngine(s.playerEngine, hints);
+}
+
+// ------------------------------------------------------------------ per-show track memory + rules
+// lib/player-prefs.ts (per show: audioLang, subLang, subsOff, subDelaySec; keyed by src.meta.id),
+// lib/subtitles/subtitle-memory.ts (per episode: the exact subtitle, or off) and the track choice
+// of views/player/hooks/use-track-autoload.ts. The hook's own helpers are not exported upstream, so
+// they are copied below verbatim; everything else is upstream's code. Swift hands over the track
+// list once the file is open and applies the plan (MPVPlayerController / NativePlayerController).
+
+/** Which title a player shows: upstream keys player-prefs by src.meta.id (the series or movie id). */
+export type TrackMemoryKey = {
+  metaId: string;
+  season?: number | null;
+  episode?: number | null;
+  genres?: string[] | null;
+  /** The stream's release file name: subtitle-memory's streamKey (subtitleStreamKey). */
+  filename?: string | null;
+};
+
+/** A track as Swift reads it (MPVPlayerController.Track); ids are only unique per type. */
+export type TrackIn = {
+  id: number | string;
+  type: string; // "audio" | "sub"
+  lang?: string | null;
+  title?: string | null;
+  codec?: string | null;
+  channels?: string | null;
+  external?: boolean;
+  forced?: boolean;
+  hearingImpaired?: boolean;
+  default?: boolean;
+  selected?: boolean;
+  secondary?: boolean;
+  externalFilename?: string | null;
+};
+
+type PlanTrack = {
+  id: string;
+  kind: "audio" | "subtitle";
+  label: string;
+  lang?: string;
+  title?: string;
+  external: boolean;
+  externalFilename?: string;
+  forced: boolean;
+  default: boolean;
+  selected: boolean;
+  secondary: boolean;
+};
+
+/** lib/player/mpv.ts track-list mapping: label = title || lang || "type id", then the tags. */
+function toPlanTrack(t: TrackIn): PlanTrack {
+  const type = t.type === "audio" ? "audio" : "sub";
+  const id = String(t.id);
+  const lang = t.lang ?? undefined;
+  const title = t.title ?? undefined;
+  const codec = t.codec ? t.codec.toUpperCase() : undefined;
+  const baseLabel = title || lang || `${type} ${id}`;
+  const tags: string[] = [];
+  if (codec) tags.push(codec);
+  if (type === "audio" && t.channels) tags.push(t.channels);
+  if (t.forced) tags.push("Forced");
+  if (t.hearingImpaired) tags.push("SDH");
+  if (t.external) tags.push("External");
+  return {
+    id,
+    kind: type === "audio" ? "audio" : "subtitle",
+    label: tags.length > 0 ? `${baseLabel} · ${tags.join(" · ")}` : baseLabel,
+    lang,
+    title,
+    external: t.external === true,
+    externalFilename: t.externalFilename ?? undefined,
+    forced: t.forced === true,
+    default: t.default === true,
+    selected: t.selected === true && t.secondary !== true,
+    secondary: t.secondary === true,
+  };
+}
+
+// use-track-autoload.ts helpers (module-private upstream), unchanged.
+function blockWords(s: Settings): string[] {
+  return (s.trackBlockWords ?? []).map((w) => w.trim().toLowerCase()).filter(Boolean);
+}
+function trackMatchesWords(t: { title?: string; label?: string }, words: string[]): boolean {
+  const hay = `${t.title ?? ""} ${t.label ?? ""}`.toLowerCase();
+  return words.some((w) => hay.includes(w));
+}
+function isForcedTrack(t: { title?: string; label?: string }): boolean {
+  return /\bforced\b/i.test(`${t.title ?? ""} ${t.label ?? ""}`);
+}
+function subsOffFor(prefs: PerShowPrefs | null, s: Settings): boolean {
+  if (prefs?.subsOff != null) return prefs.subsOff;
+  if (s.subtitlesOffByDefault) return true;
+  if (prefs?.subLang) return false;
+  return false;
+}
+function resolveLangPreference(primary: string[] | undefined, fallback: string[] | undefined): string[] {
+  if (primary && primary.length > 0) return primary;
+  if (fallback && fallback.length > 0) return fallback;
+  return ["English"];
+}
+function isJapanese(lang: string): boolean {
+  const l = lang.trim().toLowerCase();
+  return l === "ja" || l === "jpn" || l === "jp" || l === "japanese";
+}
+
+function streamRefOf(key: TrackMemoryKey | null | undefined): PlayerStreamRef | null {
+  const name = key?.filename?.trim();
+  return name ? { title: name } : null;
+}
+
+function mediaKeyOf(key: TrackMemoryKey): string {
+  return subtitleMediaKey(key.metaId, key.season ?? null, key.episode ?? null);
+}
+
+function baseName(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || path;
+}
+
+export type TrackPlan = {
+  /** Audio track to select; null leaves the current one. */
+  audioId: string | null;
+  /** "select" subId, "off", or "none" (no automatic choice: the engine's start state stays). */
+  sub: "select" | "off" | "none";
+  subId: string | null;
+  /** subtitle-memory: an added (external) subtitle to fetch again and select. */
+  restore: { source: string; lang: string | null; title: string | null } | null;
+  /** use-secondary-sub.ts autoPick over settings.secondarySubLang. */
+  secondaryId: string | null;
+  /** player-prefs subDelaySec (0 when none is saved). */
+  subDelaySec: number;
+  /** Why, for the player's log lines. */
+  notes: string[];
+};
+
+/**
+ * One pass of use-track-autoload's track effect for a freshly opened file (no user pick yet, no
+ * subtitle preselect), plus its subtitle-memory restore effect and use-secondary-sub's auto pick.
+ * External tracks are never auto-selected: upstream only auto-picks prepared autoload results.
+ */
+export function planTracks(settings: Settings, key: TrackMemoryKey | null, tracksIn: TrackIn[]): TrackPlan {
+  const tracks = (tracksIn ?? []).map(toPlanTrack);
+  const audioTracks = tracks.filter((t) => t.kind === "audio");
+  const subtitleTracks = tracks.filter((t) => t.kind === "subtitle");
+  const metaId = key?.metaId ?? "";
+  const notes: string[] = [];
+  const prefs = metaId ? readPlayerPrefs(metaId) : null;
+  const genres = key?.genres ?? [];
+  const isAnime = metaId.startsWith("kitsu:") || metaId.startsWith("mal:") || genres.some((g) => g.toLowerCase() === "anime");
+  const stripJaForNonAnime = (langs: string[]) => {
+    if (isAnime) return langs;
+    const kept = langs.filter((l) => !isJapanese(l));
+    return kept.length > 0 ? kept : langs;
+  };
+  const baseAudio = stripJaForNonAnime(resolveLangPreference(settings.preferredAudioLangs, settings.preferredLanguages));
+  const baseSub = stripJaForNonAnime(resolveLangPreference(settings.preferredSubLangs, settings.preferredLanguages));
+  const audioLangs = prefs?.audioLang ? [prefs.audioLang, ...baseAudio.filter((l) => l !== prefs.audioLang)] : baseAudio;
+  const subLangs = prefs?.subLang ? [prefs.subLang, ...baseSub.filter((l) => l !== prefs.subLang)] : baseSub;
+  const words = blockWords(settings);
+  const allow = <T extends { title?: string; label?: string }>(list: T[]): T[] => {
+    if (words.length === 0) return list;
+    const kept = list.filter((t) => !trackMatchesWords(t, words));
+    return kept.length > 0 ? kept : list;
+  };
+
+  let audioId: string | null = null;
+  let effAudio: PlanTrack | null = null;
+  if (audioTracks.length > 0) {
+    const cur = audioTracks.find((t) => t.selected) ?? null;
+    const want = pickBestTrack(allow(audioTracks), audioLangs);
+    effAudio = want ?? cur;
+    if (want && (!cur || cur.id !== want.id)) audioId = want.id;
+    if (want) notes.push(`audio: ${want.label}${prefs?.audioLang ? " (show's language)" : ""}`);
+  }
+
+  let sub: TrackPlan["sub"] = "none";
+  let subId: string | null = null;
+  let restore: TrackPlan["restore"] = null;
+  const remembered: RememberedSub | null = key && metaId ? readRememberedSub(mediaKeyOf(key)) : null;
+  const rememberedApplies = rememberedSubAppliesToStream(remembered, streamRefOf(key));
+  if (subsOffFor(prefs, settings)) {
+    sub = "off";
+    notes.push(prefs?.subsOff === true ? "subs: off (remembered)" : "subs: off by default");
+  } else if (remembered && rememberedApplies) {
+    const sameLang = (a?: string | null, b?: string | null) => normalizeLang(a ?? "") === normalizeLang(b ?? "");
+    if (remembered.off) {
+      sub = "off";
+      notes.push("subs: off (remembered)");
+    } else if (remembered.source) {
+      const source = remembered.source;
+      const existing = subtitleTracks.find((t) => t.externalFilename != null &&
+        (t.externalFilename === source || lookupSubtitleOrigin(t.externalFilename) === source));
+      if (existing) {
+        sub = "select";
+        subId = existing.id;
+      } else {
+        restore = { source, lang: remembered.lang ?? null, title: remembered.title ?? null };
+      }
+      notes.push(`subs: ${remembered.title ?? remembered.lang ?? "added"} (remembered)`);
+    } else {
+      const byTrackId = remembered.trackId
+        ? subtitleTracks.find((t) => !t.external && t.id === remembered.trackId && sameLang(t.lang, remembered.lang))
+        : undefined;
+      const want =
+        byTrackId ??
+        subtitleTracks.find((t) => !t.external && sameLang(t.lang, remembered.lang) && (!remembered.title || t.title === remembered.title)) ??
+        subtitleTracks.find((t) => !t.external && sameLang(t.lang, remembered.lang));
+      if (want) {
+        sub = "select";
+        subId = want.id;
+        notes.push(`subs: ${want.label} (remembered)`);
+      }
+    }
+  } else if (subtitleTracks.length > 0 && subLangs.length > 0) {
+    const nativeAudio = settings.forcedSubsWhenNativeAudio === true && effAudio != null && langScore(effAudio.lang ?? "", subLangs) >= 0;
+    const want = nativeAudio
+      ? (subtitleTracks
+          .filter((track) => isForcedTrack(track) && isAutoSelectableSubtitleTrack(track))
+          .sort((a, b) => langScore(b.lang ?? "", subLangs) - langScore(a.lang ?? "", subLangs))[0] ?? null)
+      : pickDesiredSubtitleTrack(allow(subtitleTracks), subLangs, settings.preferEmbeddedSubs === true);
+    if (want) {
+      sub = "select";
+      subId = want.id;
+      notes.push(`subs: ${want.label}${nativeAudio ? " (forced, native audio)" : ""}`);
+    } else if (nativeAudio) {
+      notes.push("subs: none (native audio, no forced track)");
+    }
+  }
+
+  // use-secondary-sub.ts autoPick: the best other track in settings.secondarySubLang.
+  let secondaryId: string | null = null;
+  const secondaryLang = (settings.secondarySubLang ?? "").trim();
+  if (secondaryLang) {
+    const primaryId = sub === "select" ? subId : sub === "off" ? null : (subtitleTracks.find((t) => t.selected)?.id ?? null);
+    const pick = pickBestTrack(subtitleTracks.filter((t) => t.id !== primaryId), [secondaryLang])?.id ?? null;
+    secondaryId = pick != null && pick !== primaryId ? pick : null;
+  }
+
+  const delay = typeof prefs?.subDelaySec === "number" && Number.isFinite(prefs.subDelaySec) ? prefs.subDelaySec : 0;
+  return { audioId, sub, subId, restore, secondaryId, subDelaySec: delay, notes };
+}
+
+/** Swift's entry: the profile's settings applied to one file's tracks. */
+export function trackPlan(profileId: string, linked: boolean, key: TrackMemoryKey | null, tracks: TrackIn[]): TrackPlan {
+  return planTracks(loadEffective(profileId, linked), key, tracks);
+}
+
+/** bp-ten-foot.tsx onAudio: the picked track's language becomes the show's audio language. */
+export function rememberAudio(key: TrackMemoryKey | null, track: TrackIn | null): boolean {
+  if (!key?.metaId || !track?.lang) return false;
+  writePlayerPrefs(key.metaId, { audioLang: track.lang });
+  return true;
+}
+
+/** bp-ten-foot.tsx onSubDelay: the show's subtitle delay. */
+export function rememberSubDelay(key: TrackMemoryKey | null, sec: number): boolean {
+  if (!key?.metaId || typeof sec !== "number" || !Number.isFinite(sec)) return false;
+  writePlayerPrefs(key.metaId, { subDelaySec: sec });
+  return true;
+}
+
+/**
+ * use-playback-controls.ts rememberSubChoice (bp-ten-foot onSubtitle / onAddSubtitle): a track
+ * (or null = off) becomes the show's subtitle language and this episode's remembered subtitle.
+ * `source` is the download URL of a subtitle that was just added (rememberedChoiceFromLoad).
+ */
+export function rememberSubtitle(key: TrackMemoryKey | null, track: TrackIn | null, source?: string | null): boolean {
+  if (!key?.metaId) return false;
+  const mediaKey = mediaKeyOf(key);
+  const streamKey = subtitleStreamKey(streamRefOf(key));
+  if (!track) {
+    writePlayerPrefs(key.metaId, { subsOff: true });
+    writeRememberedSub(mediaKey, { off: true });
+    return true;
+  }
+  const lang = track.lang ?? undefined;
+  writePlayerPrefs(key.metaId, lang ? { subLang: lang, subsOff: false } : { subsOff: false });
+  const external = track.external === true || !!source;
+  const file = track.externalFilename ?? undefined;
+  const origin = source || (file ? (lookupSubtitleOrigin(file) ?? lookupSubtitleOrigin(baseName(file))) : undefined);
+  writeRememberedSub(mediaKey, rememberedFromChoice({
+    id: String(track.id),
+    lang,
+    title: track.title ?? undefined,
+    external,
+    externalFilename: file,
+    source: external ? (origin ?? file) : undefined,
+    streamKey,
+  }));
+  return true;
+}
+
+/**
+ * noteSubtitleOrigin: the local file an added subtitle was written to (mpv lists the path,
+ * AVPlayer's list the file name) maps back to its download URL, so picking it again remembers the URL.
+ */
+export function noteSubtitleSource(file: string, source: string): boolean {
+  if (!file || !source) return false;
+  noteSubtitleOrigin(file, source);
+  noteSubtitleOrigin(baseName(file), source);
+  return true;
+}
+
+/** What is remembered for a title (player-prefs) and its episode (subtitle-memory). */
+export function trackMemory(key: TrackMemoryKey | null) {
+  if (!key?.metaId) return { prefs: null, subtitle: null };
+  return { prefs: readPlayerPrefs(key.metaId), subtitle: readRememberedSub(mediaKeyOf(key)) };
 }

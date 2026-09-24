@@ -134,6 +134,7 @@ struct PlayerScreen: View {
                 NativePlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                                  preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                                  preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                                 trackMemory: trackMemory,
                                  onStatus: { s in if engine == .native { status = s } },
                                  onEnded: { if engine == .native { endedNaturally() } },
                                  onUnsupported: { nativeUnsupported($0) },
@@ -150,6 +151,7 @@ struct PlayerScreen: View {
                 MPVPlayerView(url: playURL, headers: playHeaders, startAt: startAt, isLive: isLive,
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
+                              trackMemory: trackMemory,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
                               onReady: { controller = $0; pipActive = false; if resumePending != nil { $0.setPaused(true) } })
                     .ignoresSafeArea()
@@ -459,7 +461,7 @@ struct PlayerScreen: View {
                     if let s = shownSubtitle { Text(s).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
                 }
                 Spacer()
-                Text(status.state == "loading" ? "Loading…" : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
+                Text(status.state == "loading" ? T("Loading…") : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
                     .font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle)
             }
             if !isLive {
@@ -664,14 +666,14 @@ struct PlayerScreen: View {
                 ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                     Button { setAnime4k(o.0) } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack { Text(o.1).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark") } }
-                            Text(o.2).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                            HStack { Text(T(o.1)).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark") } }
+                            Text(T(o.2)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BPActionStyle(primary: current == o.0))
                     .focused($focus, equals: .track(-10 - i))
                 }
-                if let a = anime4k, a.active { BPNote(text: "Running mode \(a.mode ?? "") (\(a.tier == "fast" ? "fast" : "HQ")). Stutter? Switch the tier to Fast in Settings.") }
+                if let a = anime4k, a.active { BPNote(text: T("Running mode %@ (%@). Stutter? Switch the tier to Fast in Settings.", a.mode ?? "", a.tier == "fast" ? T("Fast") : "HQ")) }
                 if let n = anime4kNote { BPNote(text: n, tone: BP.danger) }
                 if !Anime4KStore.shared.installed { BPNote(text: "The shaders download on first use (about 3 MB).") }
             }
@@ -779,8 +781,8 @@ struct PlayerScreen: View {
     private func toggleKidSubtitles() {
         guard let c = controller else { return }
         let subs = c.tracks().filter { $0.type == "sub" }
-        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub") }
-        else if let first = subs.first { c.select(track: first, type: "sub") }
+        if subs.contains(where: { $0.selected }) { c.select(track: nil, type: "sub"); c.rememberSubtitle(nil) }
+        else if let first = subs.first { c.select(track: first, type: "sub"); c.rememberSubtitle(first) }
         kidSubs = c.tracks().filter { $0.type == "sub" }
     }
 
@@ -913,7 +915,7 @@ struct PlayerScreen: View {
                 // bp-connecting with a torrent: bp-p2p-status's stage, readiness and peers/speed.
                 TorrentReadout(url: playURL)
             } else {
-                Text(elapsed >= 22 ? "Still looking. Some sources take a while to answer." : "The player is opening the stream. \(elapsed) s").font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+                Text(elapsed >= 22 ? T("Still looking. Some sources take a while to answer.") : T("The player is opening the stream. %lld s", elapsed)).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
             }
             if elapsed >= 8 {
                 HStack(spacing: BP.px(10)) {
