@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 /// Detail page (bp-detail): hero with backdrop, logo/title, facts, actions, synopsis; then episodes.
 struct DetailView: View {
@@ -48,6 +49,9 @@ struct DetailView: View {
     /// on the hinted episode from its start after an auto-advance had moved the resume point on,
     /// with the resume label and bar stood down (hintElsewhere).
     @State private var hintSpent = false
+    /// (together pass 2) The page is on screen: any fullScreenCover over it (its own, or one a row
+    /// presents, like the gallery's lightbox) makes it disappear. followRoomInvite acts only then.
+    @State private var onScreen = false
 
     /// use-bp-detail-actions BpDetailAction.
     struct HeroAction: Identifiable {
@@ -182,6 +186,11 @@ struct DetailView: View {
         // bp-detail's pending-play effect: open playback once the meta and the episode are known;
         // awards, trackers, recommendations and the rest keep loading under the picker.
         .onChange(of: model.loadStage) { _, _ in fireAutoPlayIfReady() }
+        // (together pass 2) A Watch Together invite to this title (the host moved on to the next
+        // episode, or started it from here): see followRoomInvite.
+        .onReceive(TogetherModel.shared.$view.map(\.incomingInvite).removeDuplicates()) { _ in followRoomInvite() }
+        .onAppear { onScreen = true; followRoomInvite() }
+        .onDisappear { onScreen = false }
         // A Watch Together host who closed the player to reopen (Sources, Switch source, another
         // episode, a send-back) and leaves the picker with no pick has left the video (TogetherModel.abandonReopen).
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0; TogetherModel.shared.abandonReopen() }) {
@@ -276,6 +285,34 @@ struct DetailView: View {
         if let re = roomEpisode, let s = re["season"]?.number, let e = re["episode"]?.number {
             picker = (model.meta, model.episodes.first(where: { $0.season == Int(s) && $0.episode == Int(e) })?.playEpisode ?? re)
         } else if model.isSeries { picker = (model.meta, model.playTarget?.playEpisode ?? model.premiereEpisode) } else { picker = (model.meta, nil) }
+    }
+
+    /// (together pass 2) together-invite-toast.tsx joins an invite with openPicker(meta, invite.episode,
+    /// {autoPlay: !guestPick}). The shell's toast waits while anything covers the shell, so a room
+    /// guest whose host moved on to the next episode had to leave the player and then this page
+    /// before the invite showed (the pass-1 open item). An invite to this page's own title is
+    /// joined here instead, once nothing is over the page (on arrival, or when the page comes back
+    /// from the player): its picker opens on the invited episode. After the 0.4 s a cover needs to
+    /// finish going (a present while dismissing is dropped).
+    private func followRoomInvite() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            let room = TogetherModel.shared
+            guard room.view.inSession, let inv = room.view.incomingInvite, inv.invite.mediaId == model.meta.id else { return }
+            guard onScreen, ShellOverlay.shared.keyWindow == nil, picker == nil, playing == nil, related == nil, trailer == nil, person == nil,
+                  awardType == nil, trackerDialog == nil, !listDialog, !factsDialog, !seasonsSheet, !rateDialog else { return }
+            room.dismiss("invite")
+            let guestPick: Bool = inv.invite.guestPick == true
+            pickerAuto = guestPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
+            pickerPref = !guestPick
+            pickerAttempt = 0
+            switchFromSec = nil
+            var episode: AnyJSON? = inv.invite.episode
+            if let ref = inv.invite.episodeRef, let hit = model.episodes.first(where: { $0.season == ref.season && $0.episode == ref.episode }) {
+                episode = hit.playEpisode
+            }
+            picker = (model.meta, episode)
+        }
     }
 
     /// bp-player-controls "Previous episode": the episode before this one opens its picker (after

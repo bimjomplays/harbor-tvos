@@ -6,6 +6,15 @@ import UIKit
 /// together-chat-toast.tsx. Mounted over the shell and over the room screen.
 struct TogetherToastHost: View {
     var inRoomScreen = false
+    /// (together pass 2) The room screen shows something of its own over itself ("Now watching"'s
+    /// title page and its player, the phone-typing sheet): the invite waits, as the shell's does
+    /// under a cover. It auto-joined under them, and presenting from a view that already presents
+    /// is dropped on tvOS, so the invite was spent and lost (or a second title page stacked).
+    var screenCovered = false
+    /// (together pass 2) Mounted on the PiP browse layer's shell, whose covers are in the layer's
+    /// own window: the main window always has the player presented, so the layer never showed an
+    /// invite (ShellView hosts the toasts there so a guest browsing during PiP can follow).
+    var inBrowseLayer = false
     @ObservedObject private var room = TogetherModel.shared
     @State private var inviteStarted: Double?
     @State private var progress: Double = 0
@@ -55,7 +64,8 @@ struct TogetherToastHost: View {
         // as a cover on the main one: an invite arriving under the saver auto-joined (opened the
         // title and started playback) with nobody watching, or behind the kid's curfew lock.
         if ShellOverlay.shared.keyWindow != nil { return true }
-        guard !inRoomScreen else { return opening != nil }
+        guard !inRoomScreen else { return opening != nil || screenCovered }
+        if inBrowseLayer { return !PiPBrowse.shared.noCoverPresented }
         guard let root = HarborOverlayWindow.mainWindow?.rootViewController else { return false }
         return root.presentedViewController != nil
     }

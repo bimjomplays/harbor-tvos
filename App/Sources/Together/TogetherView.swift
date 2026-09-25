@@ -46,7 +46,7 @@ struct TogetherView: View {
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(56))
             }
             .disabled(inPlayer && typing != nil)
-            if !inPlayer { TogetherToastHost(inRoomScreen: true) }
+            if !inPlayer { TogetherToastHost(inRoomScreen: true, screenCovered: opening != nil || typing != nil) }
             // In the player the phone-typing sheet is drawn in place too, never as a cover.
             if inPlayer, let t = typing { typingSheet(t).transition(.opacity) }
         }

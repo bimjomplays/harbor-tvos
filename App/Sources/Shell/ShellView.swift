@@ -88,7 +88,7 @@ struct ShellView: View {
         // Watch Together invites, summons and chat while browsing (Together/TogetherOverlays.swift).
         // Only the visible shell hosts invites: the main shell under the PiP browse layer would
         // auto-join into a window nobody sees (review 36).
-        .overlay { if inBrowseLayer || !pipBrowse.isUp { TogetherToastHost() } }
+        .overlay { if inBrowseLayer || !pipBrowse.isUp { TogetherToastHost(inBrowseLayer: inBrowseLayer) } }
         .overlay(alignment: .top) {
             if let n = app.deepLinkNote {
                 Text(n).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))

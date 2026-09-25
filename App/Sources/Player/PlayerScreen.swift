@@ -1807,9 +1807,15 @@ struct PlayerScreen: View {
         if !isLive, SettingsBridge.shared.slice.playerConfirmLeave ?? true {
             leaveRemember = false
             let wasPlaying: Bool = controller.map { !$0.snapshot().paused } ?? true
-            leaveResumes = wasPlaying
+            // (together pass 2) Not a Watch Together guest's video: the room plays it again at the
+            // host's next heartbeat (a sync seek and play under the dialog, a second later), and a
+            // guest's pause is the room's to make (upstream's leave dialog pauses nothing). Keep
+            // watching leaves it to the room too: it started a guest alone under a room paused meanwhile.
+            let roomGuest: Bool = together.inRoom && !together.isHost
+            leaveResumes = wasPlaying && !roomGuest
             leaveConfirm = true
-            controller?.setPaused(true); if let c = controller { snap = c.snapshot() }
+            if !roomGuest { controller?.setPaused(true) }
+            if let c = controller { snap = c.snapshot() }
             hideTask?.cancel()
             focusLater(.chip("Keep watching"))
         } else {

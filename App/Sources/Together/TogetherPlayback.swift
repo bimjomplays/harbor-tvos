@@ -59,6 +59,13 @@ final class TogetherPlayback: ObservableObject {
     /// 0 / 0 once its stream has died, so a host's "Switch source" from the error card held the room
     /// at 0:00 and every guest jumped back to the start.
     private var lastPosition: Double = 0
+    /// The position the previous tick read (the host heartbeat's stall check).
+    private var lastTickPosition: Double = -1
+    private var lastTickPlaying = false
+    /// The invite to this very video that was already dropped (tick).
+    private var droppedInviteAt: Double?
+    /// Since when the room has listed this TV as not ready while its picture is up (tick).
+    private var notReadySince: Date?
     /// use-room-sync `b.setRate(state.speed)`: the player applies the room's speed (its own `rate`
     /// state and the engine), without remembering it for the show.
     var onRoomRate: ((Double) -> Void)?
@@ -110,6 +117,23 @@ final class TogetherPlayback: ObservableObject {
         if snap.duration > 0, snap.position > 0 { lastPosition = snap.position }
         let playing = !snap.paused
         let view = room.view
+        // (together pass 2) use-room-sync's heartbeat publishes only while the status is "playing" or
+        // "paused". The TV's snapshot has no buffering state, so a host whose stream stalled told the
+        // room "playing" at a frozen spot every second, and every guest (ahead by then) was sent back
+        // once a second until the host's stream recovered. Playing on two ticks without moving is a
+        // stall: no heartbeat for it (a press of Play just before a tick still goes out).
+        let stalled: Bool = playing && lastTickPlaying && abs(snap.position - lastTickPosition) < 0.05
+        lastTickPosition = snap.position
+        lastTickPlaying = playing
+
+        // (together pass 2) An invite to the video this player already shows: the relay repeats the
+        // host's invite to everyone whenever someone joins, and sends the room's media as an invite on
+        // every reconnect (a dropped network, the TV back from sleep). Under the player the toast
+        // waited, then auto-joined 4 s after this player closed and opened the same film again.
+        if let inv = view.incomingInvite, inv.at != droppedInviteAt, view.inSession, showsInvited(inv.invite) {
+            droppedInviteAt = inv.at
+            room.dismiss("invite")
+        }
 
         // (bug pass) use-room-sync resets readiness and the initial sync on [mediaKey, inRoom]:
         // markReady(false), selfFrameReady = false, initialSyncDone = false. Kept for good here, a
@@ -132,6 +156,23 @@ final class TogetherPlayback: ObservableObject {
             room.call("markReady", [.bool(true)])
         }
         if snap.duration > 0, !sourceAsked { askSource(c, duration: snap.duration) }
+        // (together pass 2) The relay marks everyone not ready when a host claims the room afresh
+        // (engine playerOpened: a host's source switch or reopen of the same title, and the TV host's
+        // own claim, which can land after its own "ready"). Upstream's guest reloads on the re-invite
+        // and says ready again; a TV guest keeps its picture, so the host's lobby read "still loading"
+        // for good. A picture that is up for the room's video says so again after 2 s.
+        let roomOnOtherMedia: Bool = view.syncState.map { isDifferentMedia($0) } ?? false
+        let selfListedReady: Bool = view.participants.first(where: { $0.isSelf })?.ready ?? true
+        if inRoom, selfFrameReady, !selfListedReady, !roomOnOtherMedia {
+            let since = notReadySince ?? Date()
+            notReadySince = since
+            if Date().timeIntervalSince(since) >= 2 {
+                notReadySince = nil
+                room.call("markReady", [.bool(true)])
+            }
+        } else {
+            notReadySince = nil
+        }
 
         // Lobby (use-room-sync lobby effects): hold at the host's paused spot until the room starts.
         if inRoom, !hasStarted, !view.started {
@@ -170,7 +211,7 @@ final class TogetherPlayback: ObservableObject {
             c.setPaused(false)
         }
         // Host heartbeat (HOST_HEARTBEAT_MS): the room follows this TV.
-        if inRoom, isHost, hasStarted, snap.duration > 0, snap.position > 0,
+        if inRoom, isHost, hasStarted, snap.duration > 0, snap.position > 0, !stalled,
            Date().timeIntervalSince(lastHeartbeat) >= Self.heartbeatS - 0.05 {
             lastHeartbeat = Date()
             publish(position: snap.position, playing: playing)
@@ -240,6 +281,14 @@ final class TogetherPlayback: ObservableObject {
         room.call("startRoom")
         room.call("suppressOutgoingFor", [.number(0)])
         c?.setPaused(false)
+        // (together pass 2) use-room-sync's heartbeat effect publishes at once when the host starts
+        // (its tick() before the interval). The TV's waited for the next tick, up to a second after
+        // "started" reached the guests, and their initial sync played from the lobby seed, which
+        // is 0:00 when the host resumed from the "Pick up where you left off" fork, then jumped.
+        if let s = c?.snapshot(), s.duration > 0 {
+            lastHeartbeat = Date()
+            publish(position: s.position, playing: true)
+        }
     }
 
     private func playWithoutSync(_ c: (any PlayerEngineControlling)?) {
@@ -315,6 +364,16 @@ final class TogetherPlayback: ObservableObject {
         room.publish(.object(state))
     }
 
+    /// The invite names the title and episode this player shows (provider-events inviteMediaKey).
+    private func showsInvited(_ i: TogetherModel.PlayInvite) -> Bool {
+        guard let ctx = context, i.mediaId == ctx.meta.id else { return false }
+        if let ep = i.episodeRef {
+            guard let s = ctx.season, let e = ctx.episode else { return false }
+            return ep.season == s && ep.episode == e
+        }
+        return ctx.season == nil || ctx.episode == nil
+    }
+
     /// use-room-sync isDifferentMedia.
     private func isDifferentMedia(_ s: TogetherModel.SyncState) -> Bool {
         guard let id = s.mediaId, let ctx = context else { return false }
@@ -367,7 +426,12 @@ final class TogetherPlayback: ObservableObject {
         let driftTooBig = drift > Self.driftToleranceS
         if syncCatchUp {
             if drift < Self.seekJumpS {
-                let buffered = c.bufferedSec()
+                // (together pass 2) Upstream's buffered is the seconds held ahead of the playhead
+                // (mpv demuxer-cache-duration); the TV's bufferedSec() is where the buffer ends (the
+                // scrub bar's fill). Read as is, "under 2 s buffered" never held and "near the end"
+                // held past the film's half, so a guest still buffering after a sync seek was seeked
+                // again at every heartbeat and a slow source never caught up.
+                let buffered = max(0, c.bufferedSec() - livePos)
                 let nearEof = snap.duration > 0 && livePos + buffered >= snap.duration - 0.5
                 if !playing || (buffered < 2.0 && !nearEof) {
                     if s.playing != playing { c.setPaused(!s.playing) }
