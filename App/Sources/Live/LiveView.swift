@@ -643,6 +643,9 @@ struct LiveSourcesSheet: View {
                         Text("Your sources").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                         ForEach(model.allSources) { pl in
                             let guideOnly = pl.kind == "epg"
+                            let detail: String = guideOnly
+                                ? T("Guide data only") + " · " + (pl.epgUrl ?? pl.url)
+                                : (pl.epgUrl.map { T("Guide: %@", $0) } ?? T("No guide URL"))
                             HStack(spacing: BP.px(8)) {
                                 // A guide-only source has no channels to show: it backs every source's guide.
                                 Button(pl.name) {
@@ -652,7 +655,7 @@ struct LiveSourcesSheet: View {
                                 .disabled(guideOnly)
                                 Button("Remove") { Task { await model.remove(pl.id) } }.buttonStyle(BPActionStyle())
                             }
-                            Text(guideOnly ? T("Guide data only") + " · " + (pl.epgUrl ?? pl.url) : (pl.epgUrl.map { T("Guide: %@", $0) } ?? T("No guide URL"))).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                            Text(detail).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                         }
                         if model.selectedPlaylist != nil {
                             Button("Use the EPG URL above for the selected source") {
