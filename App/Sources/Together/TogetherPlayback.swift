@@ -66,6 +66,8 @@ final class TogetherPlayback: ObservableObject {
     private var droppedInviteAt: Double?
     /// Since when the room has listed this TV as not ready while its picture is up (tick).
     private var notReadySince: Date?
+    /// (review 9) Ready re-sends since the room last listed this TV as ready (capped).
+    private var readyResends = 0
     /// use-room-sync `b.setRate(state.speed)`: the player applies the room's speed (its own `rate`
     /// state and the engine), without remembering it for the show.
     var onRoomRate: ((Double) -> Void)?
@@ -163,11 +165,19 @@ final class TogetherPlayback: ObservableObject {
         // for good. A picture that is up for the room's video says so again after 2 s.
         let roomOnOtherMedia: Bool = view.syncState.map { isDifferentMedia($0) } ?? false
         let selfListedReady: Bool = view.participants.first(where: { $0.isSelf })?.ready ?? true
-        if inRoom, selfFrameReady, !selfListedReady, !roomOnOtherMedia {
+        // (review 9) A host moving on to the next episode claims the room afresh (everyone not
+        // ready) and invites to it, but the room's state names this TV's episode until the host's
+        // new player loads and publishes: the re-send said "ready" for an episode this TV had not
+        // opened, and the host's lobby read everyone as loaded. An invite elsewhere waits.
+        let invitedElsewhere: Bool = !isHost && (view.incomingInvite.map { !showsInvited($0.invite) } ?? false)
+        if selfListedReady { readyResends = 0 }
+        // (review 9) Capped: a relay that never lists the TV as ready again got one every 2 s for good.
+        if inRoom, selfFrameReady, !selfListedReady, !roomOnOtherMedia, !invitedElsewhere, readyResends < 3 {
             let since = notReadySince ?? Date()
             notReadySince = since
             if Date().timeIntervalSince(since) >= 2 {
                 notReadySince = nil
+                readyResends += 1
                 room.call("markReady", [.bool(true)])
             }
         } else {
