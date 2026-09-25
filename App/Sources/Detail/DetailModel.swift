@@ -318,9 +318,49 @@ final class DetailModel: ObservableObject {
         return episodes.filter { $0.season == season }
     }
 
+    /// How far `load()` has got, for a one-press play (bp-detail's pending-play effect fires as soon
+    /// as the page has its meta and knows the episode, not after the rest of the page). It only
+    /// moves forward: a reload after a cover closes starts from the top, the stage stays put.
+    enum LoadStage: Int, Comparable {
+        /// Nothing yet.
+        case none
+        /// The full meta and (for a series) its episode list are in, or the fetch failed.
+        case meta
+        /// The Stremio library / local resume point under the page's own ids has been read.
+        case resume
+        /// The resume point under the IMDb id TMDB resolved has been read too (non-tt pages).
+        case library
+        static func < (a: LoadStage, b: LoadStage) -> Bool { a.rawValue < b.rawValue }
+    }
+    @Published private(set) var loadStage: LoadStage = .none
+    private func reach(_ stage: LoadStage) { if loadStage < stage { loadStage = stage } }
+
+    /// An episodeHint that names an episode on this page (a Continue Watching resume, an AI pick).
+    var hintOnPage: Bool {
+        guard let h = episodeHint else { return false }
+        return episodes.contains { $0.season == h.season && $0.episode == h.episode }
+    }
+
+    /// Whether Play already knows what it would start, so an autoPlay page can open the picker now
+    /// (bp-detail: a caller that named the episode has nothing to wait for). A movie needs only its
+    /// meta (the player reads its own resume point); a series needs its episode: the hint or the
+    /// room's episode names it at once, else the resume point decides, and a page without an IMDb
+    /// id only has every library candidate once TMDB resolved one (use-bp-library-item). Firing
+    /// before the resume point is known restarts a series at its premiere (bp-play-request.ts).
+    func knowsPlayTarget(roomEpisode: Bool) -> Bool {
+        switch loadStage {
+        case .none: return false
+        case .meta: return !isSeries || roomEpisode || hintOnPage
+        case .resume: return !isSeries || roomEpisode || hintOnPage || imdbId != nil || isAnimeId
+        case .library: return true
+        }
+    }
+
     func load() async {
         guard !loading else { return }
-        loading = true; defer { loading = false }
+        loading = true
+        // However it ended, a finished load is all Play will get.
+        defer { loading = false; reach(.library) }
         let kind = isSeries ? "series" : "movie"
         if isAnimeId {
             // use-bp-anime-detail: a kitsu id resolves to nothing on TMDB or Cinemeta; the Kitsu chain owns it.
@@ -347,7 +387,9 @@ final class DetailModel: ObservableObject {
             meta = full
         }
         if !isAnimeId { buildEpisodes() }
+        reach(.meta)
         await loadResume()
+        reach(.resume)
         await loadHero()
         if isSeries {
             // Local marks at once; the library pull and Trakt/Simkl history land after.
@@ -362,12 +404,15 @@ final class DetailModel: ObservableObject {
             await loadHero()
             // use-bp-library-item: the library entry may sit under that IMDb id (resume, watchlist).
             await loadResume()
+            reach(.library)
             // Trakt history is keyed by the IMDb id, which a TMDB-sourced series only has now (review 27).
             if isSeries {
                 let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.load", [authKey, meta, imdbId])
                 await loadWatchedState()
             }
         }
+        // Episode facts, awards and trackers never change what Play starts.
+        reach(.library)
         await loadEpisodeFacts()
         await loadAwards()
         await loadTrackers()

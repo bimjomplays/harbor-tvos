@@ -38,6 +38,9 @@ struct DetailView: View {
     /// after playback), but the hint season and autoPlay act once: an autoPlay page re-opened the
     /// picker (and instant play fired again) every time the player closed.
     @State private var didFirstLoad = false
+    /// autoPlay opens the picker once, as soon as the page knows what Play would start
+    /// (DetailModel.knowsPlayTarget), not after the whole page has loaded.
+    @State private var autoPlayFired = false
 
     /// use-bp-detail-actions BpDetailAction.
     struct HeroAction: Identifiable {
@@ -161,14 +164,13 @@ struct DetailView: View {
             await model.load()
             guard first else { return }
             if let h = episodeHint, model.seasons.contains(h.season) { model.season = h.season }
-            if autoPlay, picker == nil {
-                pickerAuto = roomPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
-                pickerPref = !roomPick
-                if let re = roomEpisode, let s = re["season"]?.number, let e = re["episode"]?.number {
-                    picker = (model.meta, model.episodes.first(where: { $0.season == Int(s) && $0.episode == Int(e) })?.playEpisode ?? re)
-                } else if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
-            }
+            // Normally fired already from the stage change below; this catches a load that
+            // finished before the observer saw a stage.
+            fireAutoPlayIfReady()
         }
+        // bp-detail's pending-play effect: open playback once the meta and the episode are known;
+        // awards, trackers, recommendations and the rest keep loading under the picker.
+        .onChange(of: model.loadStage) { _, _ in fireAutoPlayIfReady() }
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0 }) {
             if let picker {
                 PlayPickerView(meta: picker.meta, episode: picker.episode, onPlay: { stream, resolved in
@@ -238,6 +240,22 @@ struct DetailView: View {
                 }
             }
         }
+    }
+
+    /// autoPlay (quick panel / queue "Play", a Continue Watching resume, a Watch Together room):
+    /// opens the picker once, the first time the page knows what Play starts. A failed load still
+    /// ends in a stage, so it behaves as before (picker over the page it could show).
+    private func fireAutoPlayIfReady() {
+        guard autoPlay, !autoPlayFired, model.knowsPlayTarget(roomEpisode: roomEpisode != nil) else { return }
+        autoPlayFired = true
+        // A picker the viewer already opened by hand wins; the autoplay is spent either way.
+        guard picker == nil else { return }
+        if let h = episodeHint, model.seasons.contains(h.season) { model.season = h.season }
+        pickerAuto = roomPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
+        pickerPref = !roomPick
+        if let re = roomEpisode, let s = re["season"]?.number, let e = re["episode"]?.number {
+            picker = (model.meta, model.episodes.first(where: { $0.season == Int(s) && $0.episode == Int(e) })?.playEpisode ?? re)
+        } else if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
     }
 
     /// bp-player-controls "Previous episode": the episode before this one opens its picker (after
