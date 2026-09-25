@@ -49,13 +49,20 @@ export function rating(itemKey: string): { score: number; updatedAt: number } | 
   return r ? { score: r.score, updatedAt: r.updatedAt } : null;
 }
 
-/** bp-rate-dialog: 1–10, optimistic locally, synced to harbor.site when signed in. */
-export async function rate(meta: Meta, score: number): Promise<{ score: number; synced: boolean }> {
+/** bp-rate-dialog: 1–10, optimistic locally, synced to harbor.site when signed in.
+ *  (device-flow pass 6) `kept`: whether the score is still stored after a failed sync. lib/ratings
+ *  actions.ts rate() rolls the optimistic score back on a 4xx other than 429 (a signed-out viewer's
+ *  401), and keeps it on a network error or a 5xx. The dialog said "Saved on this device" either
+ *  way, with the picked score lit, over a rating that was gone once it closed. `score` is what is
+ *  stored now (0 for none). */
+export async function rate(meta: Meta, score: number): Promise<{ score: number; synced: boolean; kept: boolean }> {
+  const target = ratingTarget(meta, mediaTypeFor(meta));
   try {
-    await rateUpstream(ratingTarget(meta, mediaTypeFor(meta)), score);
-    return { score, synced: true };
+    await rateUpstream(target, score);
+    return { score, synced: true, kept: true };
   } catch {
-    return { score, synced: false };
+    const now = getRating(target.itemKey)?.score ?? 0;
+    return { score: now, synced: false, kept: now === score };
   }
 }
 

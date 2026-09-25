@@ -11,7 +11,12 @@ final class PersonModel: ObservableObject {
         var deptRank: Int?; var topLabel: String?
     }
     struct Collaborator: Decodable, Identifiable { var id: Int; var name: String; var portrait: String?; var role: String?; var titles: Int }
-    struct Award: Decodable, Identifiable { var type: String; var wins: Int; var nominations: Int; var id: String { type } }
+    struct Award: Decodable, Identifiable {
+        var type: String; var wins: Int; var nominations: Int
+        /// awards-catalog.ts AWARD_CATALOG[type].shorthand ("The Oscars"), nil for a body it lacks.
+        var shorthand: String?
+        var id: String { type }
+    }
     struct Section: Decodable, Identifiable { var id: String; var title: String; @LossyArray var metas: [Meta] }   // (bug pass 2) lossy
     struct Page: Decodable {
         var hasKey: Bool; var person: Person?
@@ -65,6 +70,15 @@ struct PersonView: View {
     /// can hand the ring to the Rating row's "Any rating" before it goes away.
     @FocusState private var chipFocus: String?
     @Environment(\.dismiss) private var dismiss
+    /// (device-flow pass 6) bp-person.tsx autofocusFirst: the page opens with the ring on the first
+    /// credit of Known For (else IMDb Top, else the first filmography row). The ring sat on Back,
+    /// the only thing on screen while the page loaded, so one Select closed the page.
+    @FocusState private var backFocused: Bool
+    @Namespace private var personNS
+    @Environment(\.resetFocus) private var resetFocus
+    /// The row and cell that take the ring once, as the first read lands.
+    @State private var lead: LeadCell?
+    struct LeadCell: Equatable { var row: String; var cell: String }
 
     /// Set when the page is drawn inside the player (PlayerXRay.swift, xray-overlay.tsx CastModal
     /// without onOpenDetail/onPlay): Back and Menu call it instead of dismissing the presentation
@@ -86,9 +100,10 @@ struct PersonView: View {
                 VStack(alignment: .leading, spacing: BP.px(24)) {
                     hero.padding(.horizontal, BP.gutter)
                     if let pg = model.page {
-                        if !pg.hasKey { BPNote(text: "Add a TMDB key in Settings to see filmographies.").padding(.horizontal, BP.gutter) }
-                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: T("Known For"), metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }) }
-                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: T("IMDb Top"), metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        // (device-flow pass 6) bp-person.tsx's no-key BpEmptyState copy (the TV has no Setup to open).
+                        if !pg.hasKey { BPNote(text: "Filmographies come from TMDB. Add a key in Setup to fill this page.").padding(.horizontal, BP.gutter) }
+                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: T("Known For"), metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }, restoreCell: leadCell("knownFor")) }
+                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: T("IMDb Top"), metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }, restoreCell: leadCell("topRated")) }
                         if let c = pg.collaborators, c.count >= 3 { collaborators(c) }
                         // bp-person.tsx: the Filmography heading and the Sort / Rating rows stand while
                         // the person has any credit (total > 0). (device-flow pass) They hung off the
@@ -99,10 +114,15 @@ struct PersonView: View {
                                 Text("Filmography").font(BP.display(24)).foregroundStyle(BP.ink)
                                 filterRow("Sort", [("popularity", "Popularity"), ("rating", "Rating"), ("newest", "Newest")], active: model.sort, trailing: T("%lld of %lld", pg.shownTotal ?? 0, pg.total ?? 0)) { model.sort = $0; Task { await model.load() } }
                                 filterRow("Rating", [("0", "Any rating"), ("6", T("Rated %lld+", 6)), ("7", T("Rated %lld+", 7)), ("8", T("Rated %lld+", 8))], active: String(model.minRating), trailing: nil) { model.minRating = Int($0) ?? 0; Task { await model.load() } }
+                                // (device-flow pass 6) bp-person.tsx BpFilterRow caption (filmography-rank.ts
+                                // MIN_VOTES_MOVIE 200, MIN_VOTES_TV 100): why a well-known title can drop out.
+                                Text(verbatim: T("Ratings count from %lld+ votes, %lld+ for TV", 200, 100))
+                                    .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+                                    .padding(.leading, BP.px(88))
                             }
                             .padding(.horizontal, BP.gutter)
                         }
-                        ForEach(pg.sections ?? []) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        ForEach(pg.sections ?? []) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }, restoreCell: leadCell("film:\(s.id)")) }
                         // bp-person.tsx BpEmptyState when nothing is shown (the no-key note is above).
                         if pg.hasKey, !model.loading, (pg.shownTotal ?? 0) == 0 {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -137,10 +157,18 @@ struct PersonView: View {
                 }
                 .padding(.top, BP.px(40))
             }
+            // The rows' restoreCell prefers default focus in this page's own scope (BPRowView reads
+            // the namespace from the environment; the shell's is behind this cover).
+            .focusScope(personNS)
+            .environment(\.shellFocusNamespace, personNS)
         }
         // (device-flow pass) Load once: the task runs again whenever a title or collaborator cover
         // closes, and refetched the whole page each time (person-updated still refreshes it).
-        .task { if model.page == nil { await model.load() } }
+        .task {
+            guard model.page == nil else { return }
+            await model.load()
+            seedLead()
+        }
         .onExitCommand { close() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $other) { c in PersonView(personId: c.id, name: c.name) }
@@ -188,9 +216,39 @@ struct PersonView: View {
                     }
                 }
                 Button { close() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
+                    .focused($backFocused)
             }
         }
         .focusSection()
+    }
+
+    /// The cell a row hands the ring to on the first landing (nil for every other row).
+    private func leadCell(_ row: String) -> String? {
+        guard let lead, lead.row == row else { return nil }
+        return lead.cell
+    }
+
+    /// bp-person.tsx focusId: knownFor, else topRated, else the first section. Only while the ring is
+    /// still on Back from the open (a viewer who already moved keeps their spot), and not inside the
+    /// player's X-Ray, whose titles do not open.
+    private func seedLead() {
+        guard onClose == nil, backFocused, let pg = model.page else { return }
+        var next: LeadCell? = nil
+        if let m = pg.knownFor?.first {
+            next = LeadCell(row: "knownFor", cell: m.id)
+        } else if let m = pg.topRated?.first {
+            next = LeadCell(row: "topRated", cell: m.id)
+        } else if let s = pg.sections?.first(where: { !$0.metas.isEmpty }), let m = s.metas.first {
+            next = LeadCell(row: "film:" + s.id, cell: m.id)
+        }
+        guard let next else { return }
+        lead = next
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            guard backFocused else { return }
+            resetFocus(in: personNS)
+        }
+        // Once the ring has had its chance, the cell stops preferring default focus.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { lead = nil }
     }
 
     /// bp-person.tsx BpPersonAwards: "{n} win(s)" (else "{n} nom(s)"), then the nominations beside a
@@ -198,7 +256,8 @@ struct PersonView: View {
     private static func awardLine(_ a: PersonModel.Award) -> String {
         let noms = a.nominations == 1 ? T("%lld nom", a.nominations) : T("%lld noms", a.nominations)
         let headline = a.wins > 0 ? (a.wins == 1 ? T("%lld win", a.wins) : T("%lld wins", a.wins)) : noms
-        let body = a.type.replacingOccurrences(of: "_", with: " ").capitalized
+        // (device-flow pass 6) AWARD_CATALOG[a.type]?.shorthand ?? t("Award"), raw like upstream.
+        let body: String = a.shorthand ?? T("Award")
         return "\(body): \(headline)" + (a.wins > 0 && a.nominations > 0 ? ", \(noms)" : "")
     }
 

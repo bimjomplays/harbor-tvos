@@ -44,7 +44,9 @@ final class LibraryModel: ObservableObject {
     /// stood under the new tab's chip and could be opened. bp-library's feed is per tab; nil here
     /// shows the spinner instead.
     var shownFeed: Feed? { feed.flatMap { $0.tab == tab ? $0 : nil } }
-    @Published private(set) var loading = false
+    /// (device-flow pass 6) Starts true: the page's first frame (before `.task` starts the first
+    /// read) shows the spinner, so a first read that fails can say so instead of leaving a blank page.
+    @Published private(set) var loading = true
     @Published var tab = "library"
     @Published var type = "all"
     @Published var sort = "recent"
@@ -372,8 +374,10 @@ struct LibraryView: View {
                     }
                 } else if model.loading {
                     ProgressView().tint(BP.inkMuted).padding(.top, BP.px(40))
-                } else if model.feed != nil {
+                } else {
                     // The new tab's read failed outright; the last tab's grid is not its answer.
+                    // (device-flow pass 6) So did a first read with no feed at all (the page stayed
+                    // blank under the chips); Refresh on the chip row reads it again.
                     BPNote(text: errorText, tone: BP.danger).padding(.top, BP.px(10))
                 }
             }
@@ -471,7 +475,8 @@ struct LibraryView: View {
                 if statsEnabled {
                     Button { showStats = true } label: { Label("Stats", systemImage: "chart.bar") }.buttonStyle(BPActionStyle())
                 }
-                if let f = model.shownFeed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
+                // bp-library.tsx: visible.length > 0 ? t("{n} titles") : "" (no "0 titles" over an empty tab).
+                if let f = model.shownFeed, f.matched > 0 { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
             }
         }
         // (layout pass) The track is exactly one chip tall: the focused chip's ring (9.5 pt out) lost
@@ -752,7 +757,9 @@ struct LibraryView: View {
 
     private var searchRow: some View {
         HStack(spacing: BP.px(8)) {
-            BPField(label: "Search this tab", placeholder: "Title", text: $draft)
+            // (device-flow pass 6) bp-library-search.tsx copy: aria-label t("Search your library"),
+            // the empty field t("Search title").
+            BPField(label: "Search your library", placeholder: "Search title", text: $draft)
                 // bp-library-search filters as the viewer types; the TV keyboard's Done now applies
                 // the query too, instead of returning to a grid that ignored it until Go.
                 .onSubmit { model.search(draft) }
