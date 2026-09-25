@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Library room (bp-library.tsx): tabs (Saved / Watchlist / History / My Lists / Favorites, plus
-/// Trakt / AniList / MyAnimeList / Simkl / Letterboxd when connected), filter rows (type, sort,
-/// grouping), search, the library repair panel, and a vertical poster grid in date/title/year
-/// sections fed by the engine's use-bp-library port.
+/// Trakt / AniList / MyAnimeList / Simkl / Letterboxd when connected), filter rows (group, Media
+/// Servers' Library and Genre, type, sort, grouping), search, the library repair panel, and a
+/// vertical poster grid in date/title/year sections fed by the engine's use-bp-library port.
 @MainActor
 final class LibraryModel: ObservableObject {
     struct Tab: Decodable, Identifiable { var id: String; var label: String }
@@ -13,18 +13,29 @@ final class LibraryModel: ObservableObject {
         var id: String { key }
     }
     struct Section: Decodable, Identifiable { var label: String; @LossyArray var items: [Entry]; var total: Int; var id: String { label } }   // (bug pass 2) lossy: synced library
-    struct Group: Decodable, Identifiable { var id: String; var label: String }
+    /// A filter option (a list, server, library or genre); `count` is bp-library's option count.
+    struct Group: Decodable, Identifiable { var id: String; var label: String; var count: Int? }
     struct Counts: Decodable { var all: Int; var movie: Int; var series: Int }
     struct Feed: Decodable {
         var tab: String; var sections: [Section]; var shown: Int; var matched: Int; var total: Int; var hasMore: Bool
         var groups: [Group]; var status: String; var hidden: Int; var signedIn: Bool; var sort: String; var counts: Counts
         /// bp-library `dated` / `years` over the filtered set: the View row and the Year sort.
         var dated: Bool?; var years: Bool?
-        /// Media Servers only: the type, server ("" for all), owned sort and direction the engine
-        /// used (restored from the saved filter preferences when the tab opens).
+        /// Media Servers only: the type, server ("" for all), library, genres, owned sort and direction
+        /// the engine used (restored from the saved filter preferences when the tab opens).
         var owned: Owned?
+        /// bp-library feed.entries.length: the "All" count of the group and Library rows.
+        var entries: Int?
+        /// Media Servers: bp-library's Library and Genre rows (feed.libraries, genreOptions).
+        var libraries: [Group]?
+        var genres: [Group]?
+        /// Media Servers: title lookups still out (harbor:media-server-details reports each batch).
+        var pending: Int?
     }
-    struct Owned: Decodable { var type: String; var group: String; var sort: String; var dir: String }
+    struct Owned: Decodable {
+        var type: String; var group: String; var sort: String; var dir: String
+        var library: String?; var genres: [String]?
+    }
 
     @Published private(set) var tabs: [Tab] = []
     @Published private(set) var feed: Feed?
@@ -52,6 +63,13 @@ final class LibraryModel: ObservableObject {
     /// bp-library "Episodes / Posters" for History (harbor.history.view).
     @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") == "episodes"
     @Published var group: String?
+    /// bp-library library / genres (Media Servers): the server library and the picked genres.
+    @Published var library: String?
+    @Published var genres: [String] = []
+    /// Bumped when a feed read because of harbor:media-server-details lands, so the grid can hand
+    /// the ring on if the re-sort took its tile off the page.
+    @Published private(set) var detailsLanded = 0
+    private var unsubscribe: (() -> Void)?
     @Published var query = ""
     @Published var showFilters = false
     @Published var showSearch = false
@@ -63,7 +81,17 @@ final class LibraryModel: ObservableObject {
         return (p?.id ?? "default", p?.linked ?? true, p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey })
     }
 
+    deinit { unsubscribe?() }
+
     func start() async {
+        // use-bp-library useMediaServerEntries: the feed is read again as media-server details
+        // land, so the owned sort (Rating, Duration) and the Genre row pick them up.
+        if unsubscribe == nil {
+            unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
+                guard type == "harbor:media-server-details" else { return }
+                Task { @MainActor in await self?.detailsArrived() }
+            }
+        }
         let p = profile
         // Runs again whenever a cover (Detail, Stats) closes: a failed read keeps the tabs on screen
         // instead of emptying the chip row and dropping the viewer back on Saved.
@@ -94,6 +122,8 @@ final class LibraryModel: ObservableObject {
         fields["ownedSort"] = AnyJSON.string(ownedSort)
         fields["sortDir"] = AnyJSON.string(sortDir)
         fields["restore"] = AnyJSON.bool(restore)
+        fields["library"] = library.map { AnyJSON.string($0) } ?? AnyJSON.null
+        fields["genres"] = AnyJSON.array(genres.map { AnyJSON.string($0) })
         let input: AnyJSON = .object(fields)
         if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]), mine == generation {
             feed = f
@@ -103,6 +133,9 @@ final class LibraryModel: ObservableObject {
                 restoreOwned = false
                 type = o.type
                 group = o.group.isEmpty ? nil : o.group
+                let lib: String = o.library ?? ""
+                library = lib.isEmpty ? nil : lib
+                genres = o.genres ?? []
                 ownedSort = o.sort
                 sortDir = o.dir
             }
@@ -114,7 +147,7 @@ final class LibraryModel: ObservableObject {
     /// search used to carry over, filtering the next tab by a title typed for the last one, even
     /// with the search row closed and nothing on screen saying so.
     func select(tab id: String) {
-        tab = id; group = nil; type = "all"; query = ""; limit = 60
+        tab = id; group = nil; library = nil; genres = []; type = "all"; query = ""; limit = 60
         ownedSort = "added"; sortDir = "desc"; restoreOwned = id == "media-servers"
         // Loading from this frame on: the new tab has no feed yet (shownFeed), so the page shows
         // the spinner, not the failed-read note, until the load below starts.
@@ -135,6 +168,19 @@ final class LibraryModel: ObservableObject {
     func toggleFlat() { flat.toggle(); Task { await load() } }
     func set(episodes on: Bool) { episodes = on; try? Prefs.set(on ? "episodes" : "posters", for: "harbor.history.view"); Task { await load() } }
     func set(group g: String?) { group = g; restoreOwned = false; limit = 60; Task { await load() } }
+    func set(library l: String?) { library = l; restoreOwned = false; limit = 60; Task { await load() } }
+    /// bp-library Genre group: each chip toggles its genre (a title must carry every picked one).
+    func toggle(genre g: String) {
+        if let i = genres.firstIndex(of: g) { genres.remove(at: i) } else { genres.append(g) }
+        restoreOwned = false; limit = 60
+        Task { await load() }
+    }
+    /// A details batch landed: read the Media Servers feed again with the same filters and page.
+    private func detailsArrived() async {
+        guard tab == "media-servers" else { return }
+        await load()
+        detailsLanded += 1
+    }
     func search(_ q: String) { query = q; limit = 60; Task { await load() } }
     func more() { limit += 60; Task { await load() } }
 }
@@ -158,6 +204,12 @@ struct LibraryView: View {
     @State private var focusAfterMore: Int?
     /// When the ring last left the grid by its tile going away (or moving off it).
     @State private var gridFocusLostAt: Date?
+    /// Where in the grid the ring last was: a details re-sort that takes that tile off the page
+    /// hands the ring to the tile now at the same place.
+    @State private var ringIndex: Int?
+    /// The filter chip ("filter:<row>:<option>") the ring was last on, kept when the chip goes away
+    /// under it so the ring can be handed on (handOnFilterRing).
+    @State private var lastFilterChip: String?
 
     private func closePanels() {
         let chip = model.showSearch ? "search" : (model.showFilters ? "filters" : "repair")
@@ -246,7 +298,29 @@ struct LibraryView: View {
         // bp-library BpChip autofocus={(showEmpty || first) && selected}: a grid that empties under
         // the ring (the last title taken off the Watchlist on its page, a filter) hands it to the
         // selected tab chip, not to wherever tvOS resets focus. (detail/search pass 2)
-        .onChange(of: focusedKey) { old, new in if old != nil, new == nil { gridFocusLostAt = Date() } }
+        .onChange(of: focusedKey) { old, new in
+            if old != nil, new == nil { gridFocusLostAt = Date() }
+            if let key = new {
+                ringIndex = gridKeys.firstIndex(of: key)
+                lastFilterChip = nil
+            }
+        }
+        // use-bp-library re-sorts as media-server details land. A tile the re-sort moved past the
+        // page's end took the ring with it; the tile now in its place takes it instead.
+        .onChange(of: model.detailsLanded) { _, _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                guard focusedKey == nil, focusedChip == nil, detail == nil, let i = ringIndex,
+                      let lost = gridFocusLostAt, Date().timeIntervalSince(lost) < 0.6 else { return }
+                let keys: [String] = gridKeys
+                guard !keys.isEmpty else { return }
+                focusedKey = keys[min(i, keys.count - 1)]
+            }
+        }
+        .onChange(of: focusedChip) { _, new in
+            guard let chip = new else { return }
+            lastFilterChip = chip.hasPrefix("filter:") ? chip : nil
+        }
+        .onChange(of: filterChipIds) { old, new in handOnFilterRing(old: old, new: new) }
         .onChange(of: model.shownFeed?.sections.isEmpty) { old, empty in
             guard empty == true, old == false else { return }
             // Only a ring the emptying grid just dropped (not one the viewer took to a filter row).
@@ -284,7 +358,7 @@ struct LibraryView: View {
                 // or group narrows the grid, the Search chip reads the query), so a closed panel
                 // still says why the grid is filtered.
                 Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }
-                    .buttonStyle(BPActionStyle(primary: model.showFilters || model.type != "all" || model.group != nil))
+                    .buttonStyle(BPActionStyle(primary: filtersLit))
                     .focused($focusedChip, equals: "filters")
                 Button { model.showSearch.toggle() } label: {
                     Label { Text(model.query.isEmpty ? T("Search") : model.query).lineLimit(1) } icon: { Image(systemName: "magnifyingglass") }
@@ -311,29 +385,47 @@ struct LibraryView: View {
     private var filters: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             // bp-library filterGroups order: the tab's own groups first, headed by the tab's label
-            // ("My Lists", "Media Servers", "Trakt"...), then Type, Sort (plus Direction on the
-            // owned tab), View, Episodes.
-            if let groups = model.shownFeed?.groups, !groups.isEmpty {
-                filterRow(tabLabel, [("", T("All"))] + groups.map { ($0.id, T($0.label)) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
+            // ("My Lists", "Media Servers", "Trakt"...), then Media Servers' Library, Type, Genre
+            // (owned tab), Sort (plus Direction on the owned tab), View, Episodes. Every option
+            // carries bp-library's count; "All" counts every entry of the tab.
+            if !groupOptions.isEmpty {
+                filterRow("group", tabLabel, allOption + groupOptions, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
+            }
+            // bp-library: Media Servers' Library group ("All libraries", then each server library).
+            if showLibraryRow {
+                filterRow("library", "Library", allLibrariesOption + libraryOptions, active: model.library ?? "") { model.set(library: $0.isEmpty ? nil : $0) }
             }
             // (device-flow pass 3) bp-library TYPES / SORTS labels ("Shows", "A-Z"); Year only when a
             // shown title has a release year; View only for the Recent sort with a dated title,
             // outside the owned (Media Servers) tab; the History row is upstream's "Episodes" group.
-            filterRow("Type", [("all", T("All") + " \(model.feed?.counts.all ?? 0)"), ("movie", T("Movies") + " \(model.feed?.counts.movie ?? 0)"), ("series", T("Shows") + " \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
+            filterRow("type", "Type", typeOptions, active: model.type) { model.set(type: $0) }
+            // bp-library Genre group (owned tab, once a title has genres): chips toggle, several at once.
+            if showGenreRow {
+                filterRow("genre", "Genre", genreOptions, active: "", selected: Set(model.genres)) { model.toggle(genre: $0) }
+            }
             if ownedTab {
                 // bp-library OWNED_SORTS and the Direction group.
-                filterRow("Sort", ownedSortOptions, active: model.ownedSort) { model.set(ownedSort: $0) }
-                filterRow("Direction", [("asc", T("Ascending")), ("desc", T("Descending"))], active: model.sortDir) { model.set(sortDir: $0) }
+                filterRow("sort", "Sort", ownedSortOptions, active: model.ownedSort) { model.set(ownedSort: $0) }
+                filterRow("direction", "Direction", directionOptions, active: model.sortDir) { model.set(sortDir: $0) }
             } else {
-                filterRow("Sort", sortOptions, active: model.sort) { model.set(sort: $0) }
+                filterRow("sort", "Sort", sortOptions, active: model.sort) { model.set(sort: $0) }
             }
             if showViewRow {
-                filterRow("View", [("grouped", T("Grouped")), ("flat", T("One list"))], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
+                filterRow("grouping", "View", viewOptions, active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
             }
             if model.tab == "history" {
-                filterRow("Episodes", [("posters", T("Posters")), ("episodes", T("Episodes"))], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
+                filterRow("cards", "Episodes", episodesOptions, active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
             }
         }
+    }
+
+    /// bp-library's Filters chip is selected while a group, library, genre or type narrows the grid.
+    private var filtersLit: Bool { model.showFilters || narrowed }
+
+    /// A group, library, genre or type pick narrows the grid (the empty copy says "No matches").
+    private var narrowed: Bool {
+        if model.type != "all" || model.group != nil { return true }
+        return model.library != nil || !model.genres.isEmpty
     }
 
     /// bp-library `ownedTab`: local files do not exist on tvOS, so Media Servers is the one.
@@ -345,17 +437,155 @@ struct LibraryView: View {
         return label ?? ""
     }
 
+    /// One chip of a filter row: bp-library-filters BpFilterOption (id, label, optional count).
+    struct FilterOption {
+        var id: String
+        var label: String
+        var count: Int?
+    }
+
+    private static func plain(_ pairs: [(String, String)]) -> [FilterOption] {
+        pairs.map { FilterOption(id: $0.0, label: $0.1, count: nil) }
+    }
+
+    /// bp-library feed.entries.length (an engine without it: the type row's count).
+    private var allCount: Int {
+        let n: Int? = model.shownFeed?.entries
+        let fallback: Int = model.shownFeed?.counts.all ?? 0
+        return n ?? fallback
+    }
+
+    private var allOption: [FilterOption] { [FilterOption(id: "", label: T("All"), count: allCount)] }
+    private var allLibrariesOption: [FilterOption] { [FilterOption(id: "", label: T("All libraries"), count: allCount)] }
+
+    private var groupOptions: [FilterOption] {
+        let groups: [LibraryModel.Group] = model.shownFeed?.groups ?? []
+        return groups.map { FilterOption(id: $0.id, label: T($0.label), count: $0.count) }
+    }
+
+    /// Server library names are the server's own, so they are not translated (upstream neither).
+    private var libraryOptions: [FilterOption] {
+        let libs: [LibraryModel.Group] = model.shownFeed?.libraries ?? []
+        return libs.map { FilterOption(id: $0.id, label: $0.label, count: $0.count) }
+    }
+
+    /// bp-library genreOptions: the engine lists them most titles first (a picked genre stays at 0).
+    private var genreOptions: [FilterOption] {
+        let genres: [LibraryModel.Group] = model.shownFeed?.genres ?? []
+        return genres.map { FilterOption(id: $0.id, label: $0.label, count: $0.count) }
+    }
+
+    private var typeOptions: [FilterOption] {
+        let c: LibraryModel.Counts? = model.feed?.counts
+        let all: Int = c?.all ?? 0
+        let movie: Int = c?.movie ?? 0
+        let series: Int = c?.series ?? 0
+        return [
+            FilterOption(id: "all", label: T("All"), count: all),
+            FilterOption(id: "movie", label: T("Movies"), count: movie),
+            FilterOption(id: "series", label: T("Shows"), count: series),
+        ]
+    }
+
+    private var directionOptions: [FilterOption] { Self.plain([("asc", T("Ascending")), ("desc", T("Descending"))]) }
+    private var viewOptions: [FilterOption] { Self.plain([("grouped", T("Grouped")), ("flat", T("One list"))]) }
+    private var episodesOptions: [FilterOption] { Self.plain([("posters", T("Posters")), ("episodes", T("Episodes"))]) }
+
+    /// bp-library: `tab === "media-servers" && feed.libraries.length > 0`.
+    private var showLibraryRow: Bool { model.tab == "media-servers" && !libraryOptions.isEmpty }
+
+    /// bp-library: `ownedTab && genreOptions.length > 0`.
+    private var showGenreRow: Bool { ownedTab && !genreOptions.isEmpty }
+
     /// bp-library OWNED_SORTS: every key offered (upstream does not hide Year on the owned tab).
-    private var ownedSortOptions: [(String, String)] {
-        [("added", T("Date added")), ("title", T("Title")), ("year", T("Year")), ("rating", T("Rating")), ("runtime", T("Duration"))]
+    private var ownedSortOptions: [FilterOption] {
+        Self.plain([("added", T("Date added")), ("title", T("Title")), ("year", T("Year")), ("rating", T("Rating")), ("runtime", T("Duration"))])
     }
 
     /// bp-library `sorts`: Year only while a shown title has a release year.
-    private var sortOptions: [(String, String)] {
+    private var sortOptions: [FilterOption] {
         var out: [(String, String)] = [("recent", T("Recent")), ("title", T("A-Z"))]
         let years: Bool = model.shownFeed?.years ?? true
         if years { out.append(("year", T("Year"))) }
+        return Self.plain(out)
+    }
+
+    /// The grid's tile keys in order (what ringIndex counts).
+    private var gridKeys: [String] {
+        let sections: [LibraryModel.Section] = model.shownFeed?.sections ?? []
+        return sections.flatMap { s in s.items.map { $0.key } }
+    }
+
+    /// Focus ids of the filter chips on screen ("filter:<row>:<option>"), in bp-library's order.
+    private var filterChipIds: [String] {
+        guard model.showFilters else { return [] }
+        var rows: [(String, [FilterOption])] = []
+        if !groupOptions.isEmpty { rows.append(("group", allOption + groupOptions)) }
+        if showLibraryRow { rows.append(("library", allLibrariesOption + libraryOptions)) }
+        rows.append(("type", typeOptions))
+        if showGenreRow { rows.append(("genre", genreOptions)) }
+        rows.append(("sort", ownedTab ? ownedSortOptions : sortOptions))
+        if ownedTab { rows.append(("direction", directionOptions)) }
+        if showViewRow { rows.append(("grouping", viewOptions)) }
+        if model.tab == "history" { rows.append(("cards", episodesOptions)) }
+        var out: [String] = []
+        for row in rows {
+            for o in row.1 { out.append("filter:" + row.0 + ":" + o.id) }
+        }
         return out
+    }
+
+    /// "filter:<row>:<option>" → "<row>".
+    private static func rowOf(_ chip: String) -> String {
+        let parts: [Substring] = chip.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        return parts.count >= 2 ? String(parts[1]) : ""
+    }
+
+    /// The chip a row hands the ring to: its active option (the first picked genre), else its first.
+    private func activeChip(row: String, among ids: [String]) -> String? {
+        let active: String
+        switch row {
+        case "group": active = model.group ?? ""
+        case "library": active = model.library ?? ""
+        case "type": active = model.type
+        case "genre": active = model.genres.first ?? ""
+        case "sort": active = ownedTab ? model.ownedSort : model.sort
+        case "direction": active = model.sortDir
+        case "grouping": active = model.flat ? "flat" : "grouped"
+        default: active = model.episodes ? "episodes" : "posters"
+        }
+        let want: String = "filter:" + row + ":" + active
+        if ids.contains(want) { return want }
+        let prefix: String = "filter:" + row + ":"
+        return ids.first(where: { $0.hasPrefix(prefix) })
+    }
+
+    /// A chip (or its whole row) went away under the ring: the Genre row comes and goes with the
+    /// details, a Library or server with the index, Year with the dated titles. The ring goes to
+    /// the same row's active chip, else the next row down (else up), not wherever tvOS drops it.
+    private func handOnFilterRing(old: [String], new: [String]) {
+        guard !new.isEmpty, let lost = lastFilterChip, old.contains(lost), !new.contains(lost) else { return }
+        guard focusedChip == nil || focusedChip == lost, focusedKey == nil else { return }
+        let row: String = Self.rowOf(lost)
+        var target: String? = activeChip(row: row, among: new)
+        if target == nil {
+            var order: [String] = []
+            for id in old {
+                let r: String = Self.rowOf(id)
+                if order.last != r { order.append(r) }
+            }
+            let remaining: Set<String> = Set(new.map { Self.rowOf($0) })
+            if let i = order.firstIndex(of: row) {
+                let after: String? = order[(i + 1)...].first(where: { remaining.contains($0) })
+                let before: String? = order[..<i].last(where: { remaining.contains($0) })
+                if let r = after ?? before { target = activeChip(row: r, among: new) }
+            }
+        }
+        guard let chip = target else { return }
+        DispatchQueue.main.async {
+            guard focusedKey == nil, focusedChip == nil || focusedChip == lost else { return }
+            focusedChip = chip
+        }
     }
 
     /// bp-library: the View group needs the Recent sort and a dated title, on a tab that is not
@@ -365,14 +595,34 @@ struct LibraryView: View {
         return !ownedTab && model.sort == "recent" && dated
     }
 
-    private func filterRow(_ heading: String, _ options: [(String, String)], active: String, pick: @escaping (String) -> Void) -> some View {
+    /// One bp-library-filters group: heading, then its chips (Left/Right within, Up/Down between).
+    /// `selected` makes it a multi-pick row (Genre). A chip counting 0 is dimmed, never disabled:
+    /// it stays focusable, so a picked genre that left the scope can still be cleared.
+    private func filterRow(_ key: String, _ heading: String, _ options: [FilterOption], active: String, selected: Set<String>? = nil, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
             Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
-            ForEach(options, id: \.0) { o in
-                Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)).bpSelected(active == o.0)
+            // A Genre or Library row can hold more chips than the page is wide.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: BP.px(8)) {
+                    ForEach(options, id: \.id) { o in
+                        filterChip(key, o, on: selected.map { $0.contains(o.id) } ?? (active == o.id), pick: pick)
+                    }
+                }
             }
+            // The focused chip's ring must not be clipped by the track (as tabRow).
+            .scrollClipDisabled()
         }
         .focusSection()
+    }
+
+    private func filterChip(_ key: String, _ o: FilterOption, on: Bool, pick: @escaping (String) -> Void) -> some View {
+        let title: String = o.count.map { o.label + " " + String($0) } ?? o.label
+        let dim: Bool = o.count == 0 && !on
+        return Button(title) { pick(o.id) }
+            .buttonStyle(BPActionStyle(primary: on))
+            .bpSelected(on)
+            .opacity(dim ? 0.45 : 1)
+            .focused($focusedChip, equals: "filter:" + key + ":" + o.id)
     }
 
     private var searchRow: some View {
@@ -402,7 +652,7 @@ struct LibraryView: View {
         let text: String
         if model.loading { text = "Loading…" }
         else if f.status == "error" { text = errorText }
-        else if f.total > 0 || !model.query.isEmpty || model.type != "all" || model.group != nil { text = "No matches for these filters." }
+        else if f.total > 0 || !model.query.isEmpty || narrowed { text = "No matches for these filters." }
         else {
             switch model.tab {
             case "library" where !f.signedIn: text = "Sign in to Stremio or connect Trakt in Settings to see your library here."

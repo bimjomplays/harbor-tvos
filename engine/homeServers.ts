@@ -5,7 +5,9 @@ import type { Meta } from "@/lib/cinemeta";
 import { mediaServerConnections, saveMediaServerConnection, removeMediaServerConnection, updateMediaServerConnection, mediaServerToken, mediaServerSyncDue } from "@/lib/media-server/connections";
 import { discoverAndAuthenticate } from "@/lib/media-server/discovery";
 import { synchronizeMediaServer, subscribeMediaServerSyncProgress, mediaServerAdapter } from "@/lib/media-server/sync";
-import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries } from "@/lib/media-server/index-store";
+import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries, mediaServerMetadata, putMediaServerMetadata } from "@/lib/media-server/index-store";
+import { hydrateLibraryMeta } from "@/views/library/hydrate-meta";
+import { createRequestScheduler } from "@/lib/request-scheduler";
 import { matchingServerItems, serverPlayableCopies, groupMediaServerTitles } from "@/lib/media-server/selectors";
 import { createMediaServerPlayerSrc, switchMediaServerQuality } from "@/lib/media-server/playback";
 import { decidePlaybackSource } from "@/lib/media-server/playback-policy";
@@ -18,7 +20,7 @@ import { mediaServerRequest } from "@/lib/media-server/transport";
 import { getSecret, setSecret } from "@/lib/secret-store";
 import { activeProfileId } from "@/lib/active-profile-id";
 import { scrubLibrary as scrubMusicLibrary } from "./music";
-import type { MediaServerConnection, MediaServerProvider, MediaServerQuality, MediaServerProgress, PlayableCopy } from "@/lib/media-server/types";
+import type { MediaServerConnection, MediaServerProvider, MediaServerQuality, MediaServerProgress, MediaServerTitle, PlayableCopy } from "@/lib/media-server/types";
 
 const PLEX_ORIGIN = "https://plex.tv";
 const DEVICE_KEY = "harbor.plex-auth.device.v1";
@@ -216,20 +218,121 @@ export async function stopPlayback(connectionId: string, itemId: string, openedS
 }
 
 // ------------------------------------------------------------------------- library view
-/** groupMediaServerTitles over every enabled connection, as Library entries. */
-export async function titles(): Promise<Array<{ key: string; meta: Meta; date: number | null; groups: string[]; libraries: string[]; connections: Array<{ id: string; label: string }> }>> {
+// use-bp-library.ts useMediaServerEntries: every title of the enabled connections, its meta read
+// from the per-title metadata store (key `${title.key}:locale:${tmdbLanguage}:${tmdbImageLangs}`)
+// or looked up with views/library/hydrate-meta (TMDB details for a tmdb: id, else the addon /
+// Cinemeta resolve) and put there, so Rating, Duration, genres and posters have values. Upstream
+// awaits every lookup (Promise.all) before the tab shows anything; here the titles come back at
+// once with what the store holds (else the server's own title and year), the missing ones are
+// looked up in the background and `harbor:media-server-details` tells the Library to read its
+// feed again, so the owned sort re-applies as the details land.
+export type LibraryTitle = { key: string; meta: Meta; date: number | null; groups: string[]; libraries: string[] };
+
+// lib/providers/tmdb/tmdb-client.ts runs TMDB through createRequestScheduler({ concurrency: 6 });
+// the lookups go through the same scheduler width, so a 5,000-title library is 6 at a time, not
+// 5,000 fetches at once. A miss is not asked again for 10 minutes (hydrate-meta's LRU keeps a
+// null answer too) unless the viewer refreshes.
+const DETAIL_CONCURRENCY = 6;
+const DETAIL_RETRY_MS = 10 * 60_000;
+const DETAIL_NOTIFY_MS = 1500;
+const detailRequests = createRequestScheduler({ concurrency: DETAIL_CONCURRENCY });
+const detailRunning = new Set<string>();
+const detailMissed = new Map<string, number>();
+let detailLanded = 0;
+let detailTimer: ReturnType<typeof setTimeout> | null = null;
+
+function detailEmit(): void {
+  if (detailTimer != null) { clearTimeout(detailTimer); detailTimer = null; }
+  if (detailLanded === 0) return;
+  const landed = detailLanded;
+  detailLanded = 0;
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("harbor:media-server-details", { detail: { landed, pending: detailRunning.size } }));
+}
+
+/** One refresh per 1.5 s while lookups land, and one as the last finishes. */
+function detailNotify(): void {
+  if (detailRunning.size === 0) { detailEmit(); return; }
+  if (detailTimer == null) detailTimer = setTimeout(detailEmit, DETAIL_NOTIFY_MS);
+}
+
+/** What the Library card and the owned sort read; the rest of a Cinemeta meta (videos…) stays out of the store. */
+function cardMeta(m: Meta): Meta {
+  return { id: m.id, type: m.type, name: m.name, poster: m.poster, background: m.background, logo: m.logo, description: m.description,
+    releaseInfo: m.releaseInfo, imdbRating: m.imdbRating, runtime: m.runtime, genres: m.genres } as Meta;
+}
+
+/** lib/remote/host-mount.tsx canonicalId: the id hydrate-meta can resolve (tmdb:, else the IMDb id). */
+function lookupId(t: MediaServerTitle): string | null {
+  if (t.identity.tmdbId != null) return `tmdb:${t.kind === "movie" ? "movie" : "tv"}:${t.identity.tmdbId}`;
+  if (t.identity.imdbId) return t.identity.imdbId;
+  if (t.identity.tvdbId != null) return t.key;
+  // "movie:unmatched:…" titles need review first; nothing can resolve them by id.
+  return null;
+}
+
+function lookUp(cacheKey: string, id: string, kind: "movie" | "series", tmdbKey: string | null): void {
+  if (detailRunning.has(cacheKey)) return;
+  const missedAt = detailMissed.get(cacheKey);
+  if (missedAt != null && Date.now() - missedAt < DETAIL_RETRY_MS) return;
+  detailRunning.add(cacheKey);
+  void detailRequests
+    .schedule(cacheKey, () => hydrateLibraryMeta(id, kind, tmdbKey).catch(() => null))
+    .then(async (meta) => {
+      if (meta && (meta.name || meta.poster)) {
+        await putMediaServerMetadata(cacheKey, cardMeta(meta));
+        detailMissed.delete(cacheKey);
+        detailLanded += 1;
+      } else detailMissed.set(cacheKey, Date.now());
+    }, () => { detailMissed.set(cacheKey, Date.now()); })
+    .finally(() => {
+      detailRunning.delete(cacheKey);
+      detailNotify();
+    });
+}
+
+/** The Media Servers feed: titles (stored details merged in), the enabled servers, their libraries,
+ *  and how many lookups are still out. `force` (Refresh) asks again for titles that missed. */
+export async function libraryFeed(profileId?: string, linked?: boolean, force?: boolean): Promise<{
+  entries: LibraryTitle[]; groups: Array<{ id: string; label: string }>; libraries: Array<{ id: string; label: string }>; pending: number;
+}> {
+  const s = loadEffective(profileId || activeProfileId(), linked !== false);
+  if (force) detailMissed.clear();
   const conns = mediaServerConnections().filter((c) => c.enabled);
   const enabled = new Set(conns.map((c) => c.id));
-  const all = await mediaServerItems();
-  const grouped = groupMediaServerTitles(all.filter((i) => enabled.has(i.connectionId)));
-  return grouped.map((t) => ({
-    key: t.key,
-    meta: { id: t.identity.imdbId ?? (t.identity.tmdbId != null ? `tmdb:${t.kind === "series" ? "tv" : "movie"}:${t.identity.tmdbId}` : t.key), type: t.kind, name: t.fallbackTitle, releaseInfo: t.year ? String(t.year) : undefined } as Meta,
-    date: t.addedAt ?? null,
-    groups: t.connectionIds,
-    libraries: t.libraryIds,
-    connections: conns.map((c) => ({ id: c.id, label: c.name })),
-  }));
+  const all = (await mediaServerItems()).filter((i) => enabled.has(i.connectionId));
+  const grouped = groupMediaServerTitles(all);
+  const languageKey = `${s.tmdbLanguage || "en"}:${(s.tmdbImageLangs ?? []).join(",")}`;
+  const tmdbKey = s.tmdbKey || null;
+  const entries: LibraryTitle[] = [];
+  for (const t of grouped) {
+    const base = { id: t.identity.imdbId ?? (t.identity.tmdbId != null ? `tmdb:${t.kind === "series" ? "tv" : "movie"}:${t.identity.tmdbId}` : t.key), type: t.kind, name: t.fallbackTitle, releaseInfo: t.year ? String(t.year) : undefined } as Meta;
+    const cacheKey = `${t.key}:locale:${languageKey}`;
+    const cached = await mediaServerMetadata<Meta>(cacheKey);
+    let meta: Meta = base;
+    if (cached) {
+      // The entry keeps the id the rest of the app opens (IMDb first) and the server's kind.
+      meta = { ...cached, id: base.id, type: base.type, name: cached.name || base.name, releaseInfo: cached.releaseInfo || base.releaseInfo };
+    } else {
+      const id = lookupId(t);
+      if (id) lookUp(cacheKey, id, t.kind, tmdbKey);
+    }
+    entries.push({ key: t.key, meta, date: t.addedAt ?? null, groups: t.connectionIds, libraries: t.libraryIds });
+  }
+  // use-bp-library.ts: libraryId → libraryName (else the id) over the enabled servers' items.
+  const libraryNames = new Map<string, string>();
+  for (const item of all) libraryNames.set(item.libraryId, item.libraryName || item.libraryId);
+  return {
+    entries,
+    groups: conns.map((c) => ({ id: c.id, label: c.name })),
+    libraries: [...libraryNames].map(([id, label]) => ({ id, label })),
+    pending: detailRunning.size,
+  };
+}
+
+/** groupMediaServerTitles over every enabled connection, as Library entries. */
+export async function titles(): Promise<LibraryTitle[]> {
+  return (await libraryFeed()).entries;
 }
 
 // ------------------------------------------------------------------------------ copies

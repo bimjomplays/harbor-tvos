@@ -2366,13 +2366,111 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("libraryRoom.sortOwned: Year reads the first four digits, missing last both ways", order("year", "desc") === "dabc" && order("year", "asc") === "badc", JSON.stringify([order("year", "desc"), order("year", "asc")]));
   r.ok("libraryRoom.sortOwned: Rating ignores a non-number, Duration reads the minutes", order("rating", "desc") === "cabd" && order("rating", "asc") === "acbd" && order("runtime", "asc") === "dbac" && order("runtime", "desc") === "abdc", JSON.stringify([order("rating", "desc"), order("rating", "asc"), order("runtime", "asc"), order("runtime", "desc")]));
   const ms0 = await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, restore: true });
-  r.eq("libraryRoom.feed(media-servers) opens on Date added, descending, unfiltered", ms0.owned, { type: "all", group: "", sort: "added", dir: "desc" });
-  await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, type: "movie", group: "ms9", ownedSort: "runtime", sortDir: "asc" });
+  r.eq("libraryRoom.feed(media-servers) opens on Date added, descending, unfiltered", ms0.owned, { type: "all", group: "", library: "", genres: [], sort: "added", dir: "desc" });
+  await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, type: "movie", group: "ms9", library: "lib4", genres: ["Drama", "Drama", ""], ownedSort: "runtime", sortDir: "asc" });
   const ms1 = await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, restore: true });
-  r.eq("libraryRoom.feed(media-servers) keeps type, server, sort and direction (filter-preferences)", ms1.owned, { type: "movie", group: "ms9", sort: "runtime", dir: "asc" });
+  r.eq("libraryRoom.feed(media-servers) keeps type, server, library, genres, sort and direction (filter-preferences)", ms1.owned, { type: "movie", group: "ms9", library: "lib4", genres: ["Drama"], sort: "runtime", dir: "asc" });
+  r.eq("libraryRoom.feed(media-servers) writes upstream's filter-preferences shape", JSON.parse(app.node.storage.get("harbor.library.filters.media-servers.default")), { type: "movie", genres: ["Drama"], sort: "runtime", sortDir: "asc", server: "ms9", library: "lib4" });
   const ms2 = await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, ownedSort: "bogus", sortDir: "up" });
-  r.eq("libraryRoom.feed(media-servers) falls back to Date added / descending on an unknown key", ms2.owned, { type: "all", group: "", sort: "added", dir: "desc" });
+  r.eq("libraryRoom.feed(media-servers) falls back to Date added / descending on an unknown key", ms2.owned, { type: "all", group: "", library: "", genres: [], sort: "added", dir: "desc" });
   r.eq("libraryRoom.feed leaves owned unset outside Media Servers", fav.owned, null);
+}
+
+// use-bp-library.ts useMediaServerEntries: media-server titles looked up (TMDB for a tmdb: id,
+// else the Cinemeta resolve), cached per title and locale, in the background six at a time, with
+// the Library and Genre rows of bp-library. Fixtures only: the servers are *.invalid, no network.
+{
+  const conn = (id, name) => ({ id, profileId: "p1", provider: "jellyfin", name, origin: `http://${id}.invalid`, userId: "u", enabled: true, readProgress: true, writeProgress: false, fanOut: true,
+    includeContinueWatching: true, directPlay: true, transcodeFallback: true, preferredQuality: "original", priority: 0, createdAt: 1, refreshInterval: "manual" });
+  const item = (connectionId, id, libraryId, libraryName, kind, title, identity, addedAt) => ({ id, connectionId, libraryId, libraryName, kind, title, identity, versions: [], addedAt, updatedAt: 1 });
+  const seedMs = (items, conns) => new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "p1", profiles: [{ id: "p1", isPrimary: true }] })],
+    ["harbor.media-server.connections.v1", JSON.stringify(conns)],
+    ["harbor.media-server.index.v1", JSON.stringify([...new Set(items.map((i) => i.connectionId))])],
+    ...[...new Set(items.map((i) => i.connectionId))].map((cid) => [`harbor.media-server.index.v1.${cid}`, JSON.stringify(items.filter((i) => i.connectionId === cid))]),
+  ]);
+  const ms = loadEngine({ storage: seedMs([
+    item("msA", "a1", "L1", "Movies", "movie", "Star Film", { tmdbId: 11 }, 100),
+    item("msA", "a2", "L1", "Movies", "movie", "Second", { imdbId: "tt0000002" }, 300),
+    item("msA", "a3", "L2", "Shows", "series", "A Show", { tmdbId: 22 }, 200),
+    item("msA", "a4", "L1", "Movies", "movie", "Home Video", {}, 50),
+    item("msB", "b1", "L9", "Films", "movie", "Star Film", { tmdbId: 11 }, 90),
+  ], [conn("msA", "Den"), conn("msB", "Attic")]) });
+  const hits = [];
+  ms.node.host.fetch = async (req) => {
+    hits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    await new Promise((res) => setTimeout(res, 5));
+    if (/api\.themoviedb\.org\/3\/movie\/11\?/.test(req.url)) return json({ id: 11, title: "Star Film", release_date: "1977-05-25", vote_average: 8.6, runtime: 121, poster_path: "/p11.jpg", genres: [{ name: "Adventure" }, { name: "Science Fiction" }] });
+    if (/api\.themoviedb\.org\/3\/tv\/22\?/.test(req.url)) return json({ id: 22, name: "A Show", first_air_date: "2008-01-20", vote_average: 9.5, episode_run_time: [47], poster_path: "/p22.jpg", genres: [{ name: "Drama" }] });
+    if (/cinemeta.*\/meta\/movie\/tt0000002\.json/.test(req.url)) return json({ meta: { id: "tt0000002", type: "movie", name: "Second", releaseInfo: "2001", imdbRating: "6.1", runtime: "90 min", genres: ["Drama"], poster: "https://images.invalid/p2.jpg", videos: [{ id: "x" }] } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  ms.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, ms.engine.settings.sourceKeyFor("p1", true));
+  const details = [];
+  ms.engine.runtime.onEvent((type, d) => { if (type === "harbor:media-server-details") details.push(d); });
+  const q = (extra = {}) => ms.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null, limit: 60, ...extra });
+  const keysOf = (f) => f.sections.flatMap((s) => s.items.map((e) => e.meta.name)).join("|");
+  const first = await q({ restore: true });
+  r.ok("media-server titles show before their details land (server title and year, lookups pending)", first.matched === 4 && first.pending === 3 && first.sections[0].items.every((e) => e.meta.imdbRating == null),
+    JSON.stringify({ matched: first.matched, pending: first.pending }));
+  r.eq("media-server Library row: every enabled server's libraries with counts; servers counted per title", [first.libraries, first.groups, first.entries],
+    [[{ id: "L1", label: "Movies", count: 3 }, { id: "L2", label: "Shows", count: 1 }, { id: "L9", label: "Films", count: 1 }], [{ id: "msA", label: "Den", count: 4 }, { id: "msB", label: "Attic", count: 1 }], 4]);
+  for (let i = 0; i < 200 && !(details.length > 0 && details[details.length - 1].pending === 0); i++) await new Promise((res) => setTimeout(res, 20));
+  r.ok("media-server lookups raise harbor:media-server-details, once they all land", details.length >= 1 && details.length <= 3 && details[details.length - 1].pending === 0 && details.reduce((n, d) => n + d.landed, 0) === 3, JSON.stringify(details));
+  const byRating = await q({ ownedSort: "rating", sortDir: "desc" });
+  r.eq("media-server Rating sort re-applies with the looked-up values (missing last)", keysOf(byRating), "A Show|Star Film|Second|Home Video");
+  const byRuntime = await q({ ownedSort: "runtime", sortDir: "asc" });
+  r.eq("media-server Duration sort reads TMDB runtime / episode run time and Cinemeta's minutes", keysOf(byRuntime), "A Show|Second|Star Film|Home Video");
+  const star = byRating.sections[0].items.find((e) => e.meta.name === "Star Film");
+  r.ok("media-server entry keeps its own id and kind, gains poster, year and genres", star.meta.id === "tmdb:movie:11" && star.meta.type === "movie" && star.meta.poster === "https://image.tmdb.org/t/p/w342/p11.jpg" && star.meta.releaseInfo === "1977" && star.meta.genres.join() === "Adventure,Science Fiction", JSON.stringify(star.meta));
+  r.eq("media-server Genre row: scoped genres, most titles first then by name", byRating.genres, [{ id: "Drama", label: "Drama", count: 2 }, { id: "Adventure", label: "Adventure", count: 1 }, { id: "Science Fiction", label: "Science Fiction", count: 1 }]);
+  const drama = await q({ genres: ["Drama"] });
+  const both = await q({ genres: ["Drama", "Adventure"] });
+  r.ok("media-server genres: a title must carry every picked genre", drama.matched === 2 && both.matched === 0 && both.total === 4, JSON.stringify([drama.matched, both.matched]));
+  const shows = await q({ library: "L2", genres: ["Adventure"] });
+  r.ok("media-server Library filter scopes counts and genres (a picked genre out of scope stays at 0)", shows.total === 1 && shows.counts.all === 1 && shows.matched === 0 && JSON.stringify(shows.genres) === JSON.stringify([{ id: "Drama", label: "Drama", count: 1 }, { id: "Adventure", label: "Adventure", count: 0 }]), JSON.stringify({ total: shows.total, genres: shows.genres }));
+  const films = await q({ library: "L9" });
+  r.eq("media-server Library filter keeps a title under each library that holds it", keysOf(films), "Star Film");
+  const restored = await q({ restore: true });
+  r.eq("media-server Library and Genre picks are restored from filter-preferences", [restored.owned.library, restored.owned.genres], ["L9", []]);
+  const stored = [...ms.node.storage.keys()].filter((k) => k.startsWith("harbor.media-server.meta.v1.")).map((k) => JSON.parse(ms.node.storage.get(k)).meta);
+  r.ok("media-server details persist per title and locale, without Cinemeta's episode list", stored.length === 3 && stored.every((m) => !("videos" in m)) && [...ms.node.storage.keys()].some((k) => /^harbor\.media-server\.meta\.v1\.tmdb:movie:11:locale:/.test(k)), JSON.stringify(stored.map((m) => m.name)));
+  const before = hits.length;
+  const again = await q();
+  await new Promise((res) => setTimeout(res, 50));
+  r.ok("media-server details come from the store next time (no lookups; unmatched titles never looked up)", hits.length === before && again.pending === 0 && !hits.some((u) => /Home%20Video|Home Video/.test(u)), JSON.stringify(hits.slice(before)));
+  ms.dispose();
+
+  // A big library: never more than six lookups at once, a handful of refreshes, and a miss is not asked again.
+  const many = Array.from({ length: 30 }, (_, n) => item("msA", `m${n}`, "L1", "Movies", "movie", `Film ${n}`, { tmdbId: 1000 + n }, n));
+  const big = loadEngine({ storage: seedMs(many, [conn("msA", "Den")]) });
+  let open = 0;
+  let peak = 0;
+  const bigHits = [];
+  big.node.host.fetch = async (req) => {
+    bigHits.push(req.url);
+    open++;
+    peak = Math.max(peak, open);
+    await new Promise((res) => setTimeout(res, 15));
+    open--;
+    const m = req.url.match(/\/3\/movie\/(\d+)\?/);
+    if (m && m[1] !== "1007") return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ id: Number(m[1]), title: `Film ${Number(m[1]) - 1000}`, vote_average: 5, runtime: 100 }) };
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  big.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, big.engine.settings.sourceKeyFor("p1", true));
+  const pings = [];
+  big.engine.runtime.onEvent((type, d) => { if (type === "harbor:media-server-details") pings.push(d); });
+  const bigFirst = await big.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null });
+  await big.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null });
+  for (let i = 0; i < 300 && !(pings.length > 0 && pings[pings.length - 1].pending === 0); i++) await new Promise((res) => setTimeout(res, 20));
+  r.ok("media-server lookups run six at a time and a second feed read does not queue them twice", bigFirst.pending === 30 && peak <= 6 && bigHits.filter((u) => /\/3\/movie\/1003\?/.test(u)).length === 1, JSON.stringify({ pending: bigFirst.pending, peak, n: bigHits.length }));
+  r.ok("media-server lookups refresh the Library a few times, not once per title", pings.length >= 1 && pings.length <= 6 && pings.reduce((n, d) => n + d.landed, 0) === 29, JSON.stringify(pings));
+  const missHits = bigHits.filter((u) => u.includes("1007")).length;
+  const bigAgain = await big.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null });
+  await new Promise((res) => setTimeout(res, 50));
+  r.ok("media-server title that missed is not looked up again on the next read", bigAgain.pending === 0 && bigHits.filter((u) => u.includes("1007")).length === missHits, JSON.stringify({ pending: bigAgain.pending, missHits }));
+  big.dispose();
 }
 
 // -------------------------------------------- calendar, reminders, stats (recorded host)

@@ -21,7 +21,7 @@ import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import { markSettingsPatched } from "./sync";
 import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 import { mediaServerConnections } from "@/lib/media-server/connections";
-import { titles as homeServerTitles } from "./homeServers";
+import { libraryFeed as homeServerFeed } from "./homeServers";
 import { status as letterboxdStatus, watchlist as letterboxdWatchlist } from "./letterboxd";
 import { repairStremioLibrary, type RepairProgress, type RepairResult } from "@/lib/stremio-library-repair";
 import { findCorruptAnimeEntries, healCorruptAnimeEntries } from "@/lib/anime-cw-repair";
@@ -33,6 +33,8 @@ type Status = "loading" | "ready" | "error";
 
 export type Entry = {
   key: string; meta: Meta; date: number | null; group?: string; groups?: string[];
+  /** Media Servers (bp-library-types libraries): the server libraries that hold the title. */
+  libraries?: string[];
   progress?: number; season?: number; episode?: number; watched?: boolean;
 };
 
@@ -189,10 +191,15 @@ export type FeedInput = {
   episodes?: boolean;
   /** Media Servers (bp-library ownedSort / sortDir): the owned tab's own sort and direction. */
   ownedSort?: OwnedSortKey | null; sortDir?: SortDir | null;
-  /** Media Servers: bp-library's [tab] effect. Type, server, sort and direction come from the saved
-   *  filter preferences (views/library/filter-preferences) instead of the input. */
+  /** Media Servers (bp-library library / genres): the server library ("" or null for all) and the
+   *  genres a title must all carry. */
+  library?: string | null; genres?: string[] | null;
+  /** Media Servers: bp-library's [tab] effect. Type, server, library, genres, sort and direction come
+   *  from the saved filter preferences (views/library/filter-preferences) instead of the input. */
   restore?: boolean;
 };
+
+type Option = { id: string; label: string; count?: number };
 
 /** One finished library page: filtered + sorted + grouped + capped, with chips data. */
 export async function feed(input: FeedInput) {
@@ -201,10 +208,14 @@ export async function feed(input: FeedInput) {
   const sort: SortKey = input.sort ?? ((s.librarySort as SortKey) || "recent");
   let type: TypeKey = input.type ?? "all";
   let group: string | null = input.group || null;
+  let library: string | null = input.library || null;
+  let genres: string[] = Array.isArray(input.genres) ? input.genres.filter((g) => typeof g === "string" && g.length > 0) : [];
+  let libraries: Option[] = [];
+  let pending = 0;
   const limit = input.limit ?? 60;
   const tab = input.tab;
   let entries: Entry[] = [];
-  let groups: Array<{ id: string; label: string }> = [];
+  let groups: Option[] = [];
   let status: Status = "ready";
   let hidden = 0;
   const signedIn = !!input.authKey || traktConnected();
@@ -251,11 +262,12 @@ export async function feed(input: FeedInput) {
     groups = [{ id: "watchlist", label: "Watchlist" }, { id: "history", label: "History" }];
     status = tr.status;
   } else if (tab === "media-servers") {
-    const list = await homeServerTitles();
-    entries = list.map((t) => ({ key: t.key, meta: t.meta, date: t.date, group: t.groups[0], groups: t.groups }));
-    const seen = new Map<string, string>();
-    for (const t of list) for (const c of t.connections) seen.set(c.id, c.label);
-    groups = [...seen].map(([id, label]) => ({ id, label }));
+    // use-bp-library.ts useMediaServerEntries: details load in the background (homeServers.libraryFeed).
+    const ms = await homeServerFeed(input.profileId, input.linked, !!input.force);
+    entries = ms.entries.map((t) => ({ key: t.key, meta: t.meta, date: t.date, group: t.groups[0], groups: t.groups, libraries: t.libraries }));
+    groups = ms.groups;
+    libraries = ms.libraries;
+    pending = ms.pending;
   } else if (tab === "anilist" || tab === "mal") {
     const svc = await (tab === "anilist" ? anilistGlue : malGlue).entries(!!input.force);
     entries = svc.entries; status = svc.status; groups = svc.groups;
@@ -271,28 +283,38 @@ export async function feed(input: FeedInput) {
   }
 
   // bp-library.tsx [tab] effect + filter-preferences write: Media Servers keeps its type, server,
-  // sort and direction per profile (harbor.library.filters.media-servers.<profile>); every other
-  // tab starts unfiltered on the shared librarySort.
-  let owned: { type: TypeKey; group: string; sort: OwnedSortKey; dir: SortDir } | null = null;
+  // library, genres, sort and direction per profile (harbor.library.filters.media-servers.<profile>);
+  // every other tab starts unfiltered on the shared librarySort.
+  let owned: { type: TypeKey; group: string; library: string; genres: string[]; sort: OwnedSortKey; dir: SortDir } | null = null;
   if (tab === "media-servers") {
     const saved = input.restore ? readLibraryFilterPreferences("media-servers") : {};
     if (input.restore) {
       type = saved.type === "movie" || saved.type === "series" ? saved.type : "all";
       group = saved.server && saved.server !== "all" ? saved.server : null;
+      library = typeof saved.library === "string" && saved.library && saved.library !== "all" ? saved.library : null;
+      genres = Array.isArray(saved.genres) ? saved.genres.filter((g): g is string => typeof g === "string" && g.length > 0) : [];
     }
+    genres = [...new Set(genres)];
     const sortKey: OwnedSortKey = (input.restore ? ownedSortKey(saved.sort) : ownedSortKey(input.ownedSort)) ?? "added";
     const dir: SortDir = (input.restore ? sortDirKey(saved.sortDir) : sortDirKey(input.sortDir)) ?? "desc";
-    owned = { type, group: group ?? "", sort: sortKey, dir };
-    // Genres and the Library row are not on the TV, so they are written as unset.
-    writeLibraryFilterPreferences("media-servers", { type, genres: [], sort: sortKey, sortDir: dir, server: group || "all", library: "all" });
+    owned = { type, group: group ?? "", library: library ?? "", genres, sort: sortKey, dir };
+    writeLibraryFilterPreferences("media-servers", { type, genres, sort: sortKey, sortDir: dir, server: group || "all", library: library || "all" });
+  } else {
+    library = null;
+    genres = [];
   }
 
-  // bp-library.tsx:210: chip counts describe the group-scoped set, before type/query filters; a
-  // media-server title belongs to every server that has it (e.groups).
+  // bp-library.tsx:210 scoped: chip counts describe the server- and library-scoped set, before
+  // type/query/genre filters; a media-server title belongs to every server that has it (e.groups)
+  // and every library that holds it (e.libraries).
   const pick = group;
-  const scoped = pick ? entries.filter((e) => e.group === pick || (e.groups?.includes(pick) ?? false)) : entries;
+  const lib = library;
+  const scoped = entries.filter((e) =>
+    (!pick || e.group === pick || (e.groups?.includes(pick) ?? false)) && (!lib || (e.libraries?.includes(lib) ?? false)));
   const total = scoped.length;
-  const filtered = applyFilter(scoped, type, input.query ?? "");
+  // bp-library visible: every picked genre must be on the title (the owned local tab would take any).
+  const filtered = applyFilter(scoped, type, input.query ?? "").filter((e) =>
+    genres.length === 0 || genres.every((g) => e.meta.genres?.includes(g) ?? false));
   // buildBpSections (or sortOwned on the owned tab) + capBpSections
   let sections: Array<{ label: string; items: Entry[]; total: number }>;
   if (filtered.length === 0) sections = [];
@@ -313,11 +335,34 @@ export async function feed(input: FeedInput) {
     capped.push({ label: sec.label, items, total: sec.total });
   }
   const counts = { all: scoped.length, movie: scoped.filter((e) => e.meta.type === "movie").length, series: scoped.filter((e) => e.meta.type === "series").length };
+  // bp-library groupCount / libraryCount (over every entry; "All" counts them all) and genreOptions
+  // (over the scoped set, most titles first, then by name). A picked genre no longer in scope stays
+  // listed with 0, so the chip that clears it never goes away under the ring.
+  const groupCount = new Map<string, number>();
+  const libraryCount = new Map<string, number>();
+  for (const e of entries) {
+    for (const m of e.groups ?? (e.group ? [e.group] : [])) groupCount.set(m, (groupCount.get(m) ?? 0) + 1);
+    for (const id of e.libraries ?? []) libraryCount.set(id, (libraryCount.get(id) ?? 0) + 1);
+  }
+  groups = groups.map((g) => ({ ...g, count: groupCount.get(g.id) ?? 0 }));
+  libraries = libraries.map((l) => ({ ...l, count: libraryCount.get(l.id) ?? 0 }));
+  let genreOptions: Option[] = [];
+  if (owned) {
+    const byGenre = new Map<string, number>();
+    for (const e of scoped) for (const g of e.meta.genres ?? []) byGenre.set(g, (byGenre.get(g) ?? 0) + 1);
+    for (const g of genres) if (!byGenre.has(g)) byGenre.set(g, 0);
+    genreOptions = [...byGenre].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([id, count]) => ({ id, label: id, count }));
+  }
   // bp-library.tsx:220-221: the View row needs a dated entry and the Year sort a release year,
   // both over the filtered (visible) set.
   const dated = filtered.some((e) => e.date != null);
   const years = filtered.some((e) => !!e.meta.releaseInfo);
-  return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts, dated, years, owned };
+  return {
+    tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts, dated, years, owned,
+    // bp-library filterGroups: "All" counts every entry of the tab; the Library and Genre rows are
+    // Media Servers only; `pending` is how many title lookups are still out.
+    entries: entries.length, libraries, genres: genreOptions, pending,
+  };
 }
 
 // ----------------------------------------------------------------------------- repair
