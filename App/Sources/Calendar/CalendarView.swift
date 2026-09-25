@@ -230,9 +230,19 @@ struct CalendarView: View {
         return d.year != model.year || d.month != model.month
     }
 
+    /// (review 28) The month build's own "error" status, where the switch below would draw it. Drawn
+    /// in the same place as a failed read's card, so a Try again that turns one into the other
+    /// keeps its button (and the ring) instead of swapping views under it.
+    private var errorCard: String? {
+        if readFailed { return T("Failed to load") }
+        guard let d = model.data, d.status == "error", model.pendingSource == nil,
+              !(model.loading && (d.year != model.year || d.month != model.month)) else { return nil }
+        return d.error ?? T("Failed to load")
+    }
+
     @ViewBuilder private var content: some View {
-        if readFailed {
-            loadError(T("Failed to load"))
+        if let message = errorCard {
+            loadError(message)
         } else if let d = model.data, model.pendingSource != nil {
             // use-calendar-data: a new source starts from no rows while it loads.
             CalendarSkeleton(weekdays: d.weekdays)

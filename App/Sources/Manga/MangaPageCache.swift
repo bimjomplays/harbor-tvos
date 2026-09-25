@@ -141,6 +141,8 @@ struct MangaPageImage: View {
     @State private var image: UIImage?
     @State private var failed = false
     @State private var attempt = 0
+    /// The page `image` was decoded from (a view kept across a chapter change gets a new page).
+    @State private var imageURL: String?
 
     var body: some View {
         ZStack {
@@ -158,10 +160,20 @@ struct MangaPageImage: View {
             }
         }
         .task(id: "\(page.url)|\(Int(width))|\(attempt)") {
+            // (review 29) Fit height draws a page at its measured aspect, so its width moves once the
+            // page lands (it was decoded for the 1.4 guess) and the new width decoded the page a second
+            // time. A decode of this page at least as wide as the new width, and not much wider (a
+            // zoom step out is 1.33× or more, and gets its smaller decode), is kept.
+            if let held = image, imageURL == page.url {
+                let px: CGFloat = held.size.width * held.scale
+                let want: CGFloat = MangaPageCache.decodeWidth(width)
+                if px >= want - 1, px <= want * 1.25 { return }
+            }
             failed = false
             let img = await MangaPageCache.shared.image(page, maxWidth: MangaPageCache.decodeWidth(width))
             guard !Task.isCancelled else { return }
             image = img
+            imageURL = img == nil ? nil : page.url
             failed = img == nil
             if let img, img.size.width > 0 { onAspect?(Double(img.size.height / img.size.width)) }
             // (device-flow pass 8) page-image.tsx autoRetried: an error is retried once by itself after

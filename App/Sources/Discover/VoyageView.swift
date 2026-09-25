@@ -13,6 +13,7 @@ struct VoyageView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var playing: PlayTarget?
     @FocusState private var focus: String?
+    @State private var retrying = false
     struct PlayTarget: Identifiable { var meta: Meta; var autoPlay: Bool; var id: String { meta.id } }
 
     private var accent: Color { model.active.flatMap { Color(oklch: $0.accent) } ?? BP.accent }
@@ -31,6 +32,8 @@ struct VoyageView: View {
                     header
                     if let a = model.active {
                         route(a)
+                    } else if model.loadFailed {
+                        loadError
                     } else if model.snapshot != nil {
                         chooser
                     } else {
@@ -77,6 +80,27 @@ struct VoyageView: View {
                 .buttonStyle(BPActionStyle())
                 .focused($focus, equals: "close")
         }
+        .focusSection()
+    }
+
+    /// (review 28) voyageRoom.state (or the themes) could not be read: the spinner stayed for good.
+    /// Close is in the header; Try again reads again and keeps the ring (dimmed) while it runs.
+    private var loadError: some View {
+        VStack(spacing: BP.px(12)) {
+            Text(T("Failed to load")).font(BP.sans(14, .semibold)).foregroundStyle(BP.danger)
+            Button(T("Try again")) {
+                guard !retrying else { return }
+                retrying = true
+                Task {
+                    await model.load()
+                    retrying = false
+                    if !model.loadFailed { settleFocus() }
+                }
+            }
+            .buttonStyle(BPActionStyle(primary: true, busy: retrying))
+            .focused($focus, equals: "voyage-retry")
+        }
+        .frame(maxWidth: .infinity).padding(.top, BP.px(120))
         .focusSection()
     }
 
@@ -318,6 +342,8 @@ struct VoyageView: View {
             else if a.ready { target = "start-voyage" }
             else if a.stuck { target = a.picked > 0 ? "start-these" : "wrap-up" }
             else { target = a.headings.first.map { "heading-\($0.id)" } ?? "reroll" }
+        } else if model.loadFailed {
+            target = "voyage-retry"
         } else {
             target = model.themes.first.map { "theme-\($0.id)" }
         }

@@ -69,9 +69,14 @@ final class VoyageModel: ObservableObject {
 
     var active: Active? { snapshot?.active }
 
+    /// (review 28) The voyage could not be read (no state, or no themes to choose from with no
+    /// voyage under way): the view shows the error with Try again instead of a spinner for good.
+    @Published private(set) var loadFailed = false
+
     func load() async {
         if themes.isEmpty { themes = (try? await HarborEngine.shared.call("voyageRoom.themes", [])) ?? [] }
         await refresh()
+        loadFailed = snapshot == nil || (snapshot?.active == nil && themes.isEmpty)
     }
 
     func refresh() async {

@@ -21,6 +21,9 @@ struct TogetherView: View {
     @State private var draft = ""
     @State private var opening: TogetherOpen?
     @FocusState private var focus: String?
+    /// (review 28) The room screen's toast host has a title page of its own up (an invite's or a
+    /// summon's): the room's ring hand-offs wait, as they do under `opening`.
+    @State private var toastCover = false
 
     private enum Typing: String, Identifiable { case chat, name, link, relay; var id: String { rawValue } }
 
@@ -46,7 +49,7 @@ struct TogetherView: View {
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(56))
             }
             .disabled(inPlayer && typing != nil)
-            if !inPlayer { TogetherToastHost(inRoomScreen: true, screenCovered: opening != nil || typing != nil) }
+            if !inPlayer { TogetherToastHost(inRoomScreen: true, screenCovered: opening != nil || typing != nil, onCover: { toastCover = $0 }) }
             // In the player the phone-typing sheet is drawn in place too, never as a cover.
             if inPlayer, let t = typing { typingSheet(t).transition(.opacity) }
         }
@@ -56,9 +59,18 @@ struct TogetherView: View {
         // first control of the page. It goes back to the button that opened the sheet (a cover
         // restores that by itself).
         .onChange(of: typing) { old, now in
-            guard inPlayer, now == nil, let old else { return }
+            guard now == nil, let old else { return }
             let back: String = typingOrigin(old)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if typing == nil { focus = back } }
+            // (review 28) A cover hands the ring back to its opener by itself, unless the sheet's
+            // own answer took that button away (an invite link joined, a relay URL set): then the
+            // ring goes to what replaced it, once the cover has gone and only if nothing holds it.
+            if inPlayer {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if typing == nil { focus = back } }
+            } else if back != typingOpener(old) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    if typing == nil, opening == nil, !toastCover, focus == nil { focus = back }
+                }
+            }
         }
         // (device-flow pass 7) Start a new room, Join and a pasted invite link sit in the lobby,
         // which the room replaces once the relay answers: the ring went with the button pressed
@@ -79,8 +91,8 @@ struct TogetherView: View {
         if let onClose { onClose() } else { dismiss() }
     }
 
-    /// The button that opens each phone-typing sheet (its focus key), for the ring's way back.
-    private func typingOrigin(_ t: Typing) -> String {
+    /// The button that opens each phone-typing sheet (its focus key).
+    private func typingOpener(_ t: Typing) -> String {
         switch t {
         case .chat: return "message"
         case .name: return room.view.inSession ? "roomName" : "name"
@@ -89,15 +101,34 @@ struct TogetherView: View {
         }
     }
 
+    /// Where the ring goes when a phone-typing sheet closes: its opener, or (review 28) what
+    /// replaced it when the sheet's answer changed the screen under it (a link joined a room while
+    /// the sheet was up, a relay URL turned the relay panel into the lobby, the room was left).
+    private func typingOrigin(_ t: Typing) -> String {
+        let v = room.view
+        if v.inSession { return t == .chat || t == .name ? typingOpener(t) : roomFirstKey }
+        if !v.enabled { return t == .link ? "link" : "relay" }
+        switch t {
+        case .name, .link: return typingOpener(t)
+        case .chat, .relay: return "start"
+        }
+    }
+
+    /// The room's first control: "Now watching" when the room is on a video, else Message.
+    private var roomFirstKey: String {
+        !inPlayer && room.view.syncState?.mediaId != nil ? "return" : "message"
+    }
+
     /// The room's first control once the lobby has gone from under the ring. Only when the ring
     /// has nowhere to be (it was on a lobby button) and no sheet or page is over the room.
     private func seedRoomFocus() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            guard room.view.inSession, typing == nil, opening == nil else { return }
+            // (review 28) Nor under the toast host's own title page, or the screensaver / curfew
+            // lock (their own window): a relay reconnect flips inSession under those too.
+            guard room.view.inSession, typing == nil, opening == nil, !toastCover, ShellOverlay.shared.keyWindow == nil else { return }
             let lobbyKeys: Set<String> = ["start", "link", "name", "relay", "public"]
             if let f = focus, !lobbyKeys.contains(f) { return }
-            let hasVideo: Bool = !inPlayer && room.view.syncState?.mediaId != nil
-            focus = hasVideo ? "return" : "message"
+            focus = roomFirstKey
         }
     }
 

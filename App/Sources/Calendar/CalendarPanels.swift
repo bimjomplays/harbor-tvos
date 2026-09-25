@@ -176,7 +176,10 @@ struct RemindersManagerView: View {
         let openedIndex: Int? = rows.firstIndex(where: { $0.id == lastOpened })
         let opened: String? = lastOpened
         Task {
-            let fresh: [ReminderCenter.Row] = await ReminderCenter.shared.list()
+            // (review 28) An unreadable answer keeps the rows (list() gives [] then, which showed
+            // "No reminders yet" over every reminder and sent the ring to Close), as remove does.
+            let read: [ReminderCenter.Row]? = try? await HarborEngine.shared.call("calendar.reminders", [])
+            guard let fresh = read else { return }
             rows = fresh
             guard let opened, !fresh.contains(where: { $0.id == opened }), detail == nil else { return }
             let target: String = fresh.isEmpty ? "close" : fresh[min(openedIndex ?? 0, fresh.count - 1)].id
