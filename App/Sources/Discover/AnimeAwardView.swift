@@ -63,6 +63,8 @@ struct AnimeAwardView: View {
             // viewer's year filter and the loaded award then.
             if data?.id == source { return }
             year = nil
+            // (review 33) A new source loads under the spinner, not the last source's failure line.
+            failed = false
             let got: Award? = try? await HarborEngine.shared.call("discoverRoom.animeAward", [source])
             // (device-flow pass) Engine calls don't stop when the task is cancelled: a source chip
             // pressed while the previous source still loaded got that source's winners under its name.

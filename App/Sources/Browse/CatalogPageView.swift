@@ -8,6 +8,10 @@ struct CatalogPageView: View {
     @State private var page = 1
     @State private var exhausted = false
     @State private var loading = false
+    /// (review 33) The last page read failed (not an empty page): paging stops there and a Try again
+    /// at the end of the grid runs it again. A failed read used to mark the page exhausted, so
+    /// scrolling on stopped silently for good.
+    @State private var pageFailed = false
     /// use-bp-genre-grid status when a genre page has nothing to show.
     @State private var emptyNote: String?
     @State private var spotlight: Meta?
@@ -49,13 +53,30 @@ struct CatalogPageView: View {
                         .buttonStyle(BPTileStyle())
                         .focused($focusedId, equals: meta.id)
                         .zIndex(focusedId == meta.id ? 1 : 0)
-                        .onAppear { if i >= metas.count - 12 { Task { await loadMore() } } }
+                        .onAppear { if i >= metas.count - 12, !pageFailed { Task { await loadMore() } } }
                     }
                 }
                 .padding(.horizontal, BP.gutter)
                 .padding(.top, Self.headroom)
                 .padding(.bottom, BP.hintHeight + BP.px(40))
-                if loading && emptyNote == nil { ProgressView().tint(BP.inkMuted).padding() }
+                if loading && emptyNote == nil && !pageFailed { ProgressView().tint(BP.inkMuted).padding() }
+                if pageFailed && !(emptyNote != nil && metas.isEmpty) {
+                    // (review 33) A page that failed to load: Try again reads it again (busy while it
+                    // runs, so the ring stays), and on success the ring goes to its first new title.
+                    Button("Try again") {
+                        guard !loading else { return }
+                        let before: Int = metas.count
+                        Task {
+                            await loadMore(retry: true)
+                            if metas.count > before {
+                                let id: String = metas[before].id
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focusedId = id }
+                            }
+                        }
+                    }
+                    .buttonStyle(BPActionStyle(primary: true, busy: loading))
+                    .padding(.horizontal, BP.gutter)
+                }
                 if let emptyNote, metas.isEmpty {
                     // (device-flow pass 10) The note and Try again stay up (dimmed) while the retry
                     // runs: they went away under the ring, which had nothing to land on in this page,
@@ -66,9 +87,12 @@ struct CatalogPageView: View {
                             guard !loading else { return }
                             exhausted = false; page = 0
                             Task {
-                                await loadMore()
+                                await loadMore(retry: true)
                                 // A retry that worked takes Try again away: the ring goes to the first title.
-                                if let first = metas.first { focusedId = first.id }
+                                if let first = metas.first {
+                                    let id: String = first.id
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focusedId = id }
+                                }
                             }
                         }
                         .buttonStyle(BPActionStyle(primary: true, busy: loading))
@@ -97,11 +121,13 @@ struct CatalogPageView: View {
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
     }
 
-    private func loadMore() async {
-        guard !loading, !exhausted else { return }
+    /// `retry`: a Try again press; a page that failed is not read again on scroll alone.
+    private func loadMore(retry: Bool = false) async {
+        guard !loading, !exhausted, retry || !pageFailed else { return }
         loading = true; defer { loading = false }
         let kind = room == .home ? "home" : (room == .movies ? "movies" : (room == .anime ? "anime" : "shows"))
-        let next: [Meta]
+        // nil: the read failed (the engine threw, or the genre page answered "failed").
+        let next: [Meta]?
         if row.key.hasPrefix("genre:") {
             // bp-genre-grid: TMDB discover pages for one genre shelf (use-bp-genre-grid).
             struct Page: Decodable { @LossyArray var metas: [Meta]; var status: String }   // (bug pass 2) lossy
@@ -114,8 +140,8 @@ struct CatalogPageView: View {
                 page += 1; skipped += 1
                 got = (try? await HarborEngine.shared.call("discoverRoom.genrePage", [p?.id ?? "default", p?.linked ?? true, genre, page + 1])) ?? Page(metas: [], status: "failed")
             }
-            next = got.metas
-            if next.isEmpty, metas.isEmpty {
+            next = got.status == "failed" ? nil : got.metas
+            if got.metas.isEmpty, metas.isEmpty {
                 switch got.status {
                 case "no-key": emptyNote = "Genre shelves are built from TMDB. Add a key in Setup to fill this one."
                 // bp-genre-grid.tsx: format keys with the genre through t().
@@ -127,13 +153,16 @@ struct CatalogPageView: View {
         } else if row.key.hasPrefix("svc:") {
             // A streaming-service category row pages through TMDB (services.page).
             let p = ProfilesStore.shared.active
-            next = (try? await HarborEngine.shared.call("services.page", [row.key, page + 1, p?.id ?? "default", p?.linked ?? true])) ?? []
+            next = try? await HarborEngine.shared.call("services.page", [row.key, page + 1, p?.id ?? "default", p?.linked ?? true])
         } else if room == .anime {
-            next = (try? await HarborEngine.shared.call("animeRoom.specPage", [row.key, page + 1])) ?? []
+            next = try? await HarborEngine.shared.call("animeRoom.specPage", [row.key, page + 1])
         } else {
-            next = (try? await HarborEngine.shared.call("rooms.page", [kind, row.key, page + 1])) ?? []
+            next = try? await HarborEngine.shared.call("rooms.page", [kind, row.key, page + 1])
         }
+        guard let next else { pageFailed = true; return }
+        pageFailed = false
         if next.isEmpty { exhausted = true; return }
+        emptyNote = nil
         page += 1
         // (bug pass) Also drops repeats inside the new page itself (duplicate ForEach ids).
         metas = (metas + next).uniquedById()

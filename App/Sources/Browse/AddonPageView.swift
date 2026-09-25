@@ -13,6 +13,10 @@ struct AddonPageView: View {
     @State private var page = 1
     @State private var loading = false
     @State private var done = false
+    /// (review 33) The last feed call failed (not an empty page): paging waits for Try again instead
+    /// of ending for good, which it did silently. An addon's own HTTP failure still answers [] (the
+    /// engine and upstream fetchAddonCatalogPage), so this covers a failed engine call.
+    @State private var pageFailed = false
     @State private var loadedCatalogs = false
     @State private var detail: Meta?
     @State private var spotlight: Meta?
@@ -64,11 +68,28 @@ struct AddonPageView: View {
                                 .buttonStyle(BPTileStyle())
                                 .focused($focusedId, equals: meta.id)
                                 .zIndex(focusedId == meta.id ? 1 : 0)
-                                .onAppear { if i >= metas.count - 12 { Task { await loadMore() } } }
+                                .onAppear { if i >= metas.count - 12, !pageFailed { Task { await loadMore() } } }
                         }
                     }
                     .padding(.horizontal, BP.gutter)
-                    if loading { ProgressView().tint(BP.inkMuted).padding(.horizontal, BP.gutter) }
+                    if loading && !pageFailed { ProgressView().tint(BP.inkMuted).padding(.horizontal, BP.gutter) }
+                    if pageFailed && !metas.isEmpty {
+                        // (review 33) A later page failed: Try again reads it again (busy while it runs,
+                        // so the ring stays), and on success the ring goes to its first new title.
+                        Button(T("Try again")) {
+                            guard !loading else { return }
+                            let before: Int = metas.count
+                            Task {
+                                await loadMore(retry: true)
+                                if metas.count > before {
+                                    let id: String = metas[before].id
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focusedId = id }
+                                }
+                            }
+                        }
+                        .buttonStyle(BPActionStyle(primary: true, busy: loading))
+                        .padding(.horizontal, BP.gutter)
+                    }
                     if loadedCatalogs, !loading, metas.isEmpty {
                         BPNote(text: catalogs.isEmpty
                                ? "This addon provides streams only. It has no catalog to browse, but it still works behind every title you open."
@@ -119,18 +140,22 @@ struct AddonPageView: View {
     }
 
     private func open(_ c: Catalog) async {
-        active = c; metas = []; page = 1; done = false
+        active = c; metas = []; page = 1; done = false; pageFailed = false
         await loadMore()
     }
 
-    private func loadMore() async {
-        guard let c = active, !loading, !done else { return }
+    /// `retry`: a Try again press; a page that failed is not read again on scroll alone.
+    private func loadMore(retry: Bool = false) async {
+        guard let c = active, !loading, !done, retry || !pageFailed else { return }
         loading = true; defer { loading = false }
         let nextLossy: LossyArray<Meta>? = try? await HarborEngine.shared.call("addonsRoom.feed", [c.cursor, page, metas.count])   // (bug pass 2) lossy
-        let next = nextLossy?.wrappedValue ?? []
         // (bug pass) A catalog chip pressed while this page loaded: its own first load bounced off
         // `loading`, so it runs now instead of leaving the grid on "This catalog came back empty".
         guard active?.key == c.key else { loading = false; await loadMore(); return }
+        // A failed first page keeps the chip's own retry (review 12) and the empty note.
+        guard let nextLossy else { pageFailed = true; return }
+        pageFailed = false
+        let next: [Meta] = nextLossy.wrappedValue
         if next.isEmpty { done = true; return }
         page += 1
         // (bug pass) Also drops repeats inside the new page itself (duplicate ForEach ids).

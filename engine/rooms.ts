@@ -55,7 +55,10 @@ const lastBuilds = new Map<string, HomeRow[]>();
 export async function page(room: "home" | "anime" | RoomKind, rowKey: string, page: number): Promise<Meta[]> {
   const row = lastBuilds.get(room)?.find((r) => r.key === rowKey);
   if (!row?.fetcher) return [];
-  return row.fetcher(page).catch(() => [] as Meta[]);
+  // (review 33) A page whose fetch throws (TMDB rows) reaches Swift as a failure, where See all
+  // offers Try again, instead of reading as the end of the row: paging stopped silently for good.
+  // Addon catalog pages still answer [] on a failed fetch (upstream fetchAddonCatalogPage).
+  return row.fetcher(page);
 }
 
 export const BP_TOP10_ROW_KEY = "bp-top10";
