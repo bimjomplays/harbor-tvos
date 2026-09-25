@@ -1316,6 +1316,7 @@ struct PlayerScreen: View {
 
     /// speed-menu.tsx onRate; shell-layer.tsx remembers it for the show (writePlayerPrefs rate).
     private func setRate(_ value: Double) {
+        guard value.isFinite, value > 0 else { return }   // (bug pass)
         rate = value
         controller?.setRate(value)
         if let m = trackMemory { TrackPlanner.send("player.rememberRate", [m, value]) }
