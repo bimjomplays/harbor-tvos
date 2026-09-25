@@ -57,6 +57,12 @@ final class DiscoverModel: ObservableObject {
         // the answer: clearing it at once swapped in the spinner and the ring fell to the tab bar.
         loading = true
         do {
+            // `--fixtures discfail` (NavigationTests4): every build fails, after a beat like a real
+            // read, so the failure card's Try again can be driven offline.
+            if FixtureBrowseSource.failDiscover {
+                try await Task.sleep(for: .seconds(2))
+                throw URLError(.notConnectedToInternet)
+            }
             let p = profile
             build = try await HarborEngine.shared.call("discoverRoom.buildFor", [p.id, p.linked])
             failed = nil

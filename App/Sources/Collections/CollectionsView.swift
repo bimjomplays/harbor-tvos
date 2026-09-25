@@ -397,6 +397,7 @@ struct CollectionsView: View {
                 Button(T(label)) { model.set(source: key) }
                     .buttonStyle(BPActionStyle(primary: model.source == key)).bpSelected(model.source == key)
                     .focused($focus, equals: "source:" + key)
+                    .accessibilityIdentifier("collections-source-" + key)
             }
             if canCreate {
                 // community-hub.tsx: "New collection", with the "{n} / {max}" count beside it.
@@ -404,6 +405,7 @@ struct CollectionsView: View {
                     .buttonStyle(BPActionStyle(primary: naming))
                     .disabled(model.mine.count >= model.limits.collections)
                     .focused($focus, equals: "new")
+                    .accessibilityIdentifier("collections-new")
                 Text("\(model.mine.count) / \(model.limits.collections)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
             Text("\(model.cards.count) collections").font(BP.sans(13)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(8))
@@ -426,8 +428,10 @@ struct CollectionsView: View {
                 }
             }
             .buttonStyle(BPActionStyle(primary: true, busy: creating))
+            .accessibilityIdentifier("collections-create")
             // (social pass) The row goes with Cancel: the ring returns to "New collection" instead of falling off.
             Button("Cancel") { naming = false; focus = "new" }.buttonStyle(BPActionStyle())
+                .accessibilityIdentifier("collections-cancel")
         }
         .focusSection()
         // (device-flow pass 10) Back inside the row closes it like Cancel (the overlay's panels do the

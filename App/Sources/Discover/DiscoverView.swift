@@ -54,6 +54,7 @@ struct DiscoverView: View {
                     }
                         .buttonStyle(BPActionStyle(primary: true, busy: model.loading))
                         .padding(.top, BP.px(6))
+                        .accessibilityIdentifier("discover-try-again")
                 }
                 // (device-flow pass 10) The card is centred and nothing else on the page takes focus:
                 // Down from a tab not above Try again found no target and the ring stayed on the bar
