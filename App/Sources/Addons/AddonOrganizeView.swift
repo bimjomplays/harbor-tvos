@@ -207,7 +207,10 @@ struct AddonOrganizeView: View {
         }
         // (bug pass 2) The ForEach is keyed by row id, so the moved row keeps its focus; say so
         // explicitly for a picked-up row, and bring the row's new place into view.
-        if grabbed == item.key { focusedRow = item.key }
+        // (addons pass) A row sent to either end disables the arrow just pressed (Move up / Move to
+        // top at the top, Move down at the bottom), which dropped the focus ring to wherever the
+        // focus engine found; it goes to the moved row instead.
+        if grabbed == item.key || target == 0 || target == list.count - 1 { focusedRow = item.key }
         moved = MoveMark(key: item.key, tick: (moved?.tick ?? 0) + 1)
     }
 
@@ -364,5 +367,8 @@ struct AddonOrganizeView: View {
         cloud = r.keys.compactMap { byKey[$0] }
         backupsOpen = false
         notice = Notice(danger: false, text: r.text)
+        // (addons pass) The panel closes under the Restore just pressed: focus goes to the
+        // restored list's first row rather than wherever the focus engine lands.
+        focusedRow = cloud.first?.key
     }
 }
