@@ -57,8 +57,12 @@ enum L10n {
             engineInstalled.insert(lang)
             return
         }
-        guard let url = Bundle.main.url(forResource: lang, withExtension: "json"),
-              let raw = try? String(contentsOf: url, encoding: .utf8) else { return }
+        guard let url = Bundle.main.url(forResource: lang, withExtension: "json") else { return }
+        // (device-flow pass 9) The catalog is ~1 MB (upstream's i18n/<lang>.json): read it off the
+        // main actor. SettingsBridge.load runs this during the boot splash for every non-English
+        // viewer, and again on each language switch, with the remote dead meanwhile.
+        let raw: String? = await Task.detached(priority: .userInitiated) { try? String(contentsOf: url, encoding: .utf8) }.value
+        guard let raw else { return }
         if let ok: Bool = try? await HarborEngine.shared.call("settingsRoom.installUiCatalog", [lang, raw]), ok {
             engineInstalled.insert(lang)
         }

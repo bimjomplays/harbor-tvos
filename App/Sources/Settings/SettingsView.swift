@@ -25,8 +25,10 @@ struct SettingsView: View {
     /// (device-flow pass 5) The cover that just closed (read in its onDismiss, when `sheet` is nil).
     @State private var closingSheet: Sheet?
     /// (device-flow pass 5) Replay walkthrough ("replay") or Switch profile ("switch") took the app
-    /// off the shell: the rebuilt page returns the ring to that button.
-    private static var ringReturn: String?
+    /// off the shell: the rebuilt page returns the ring to that button. (device-flow pass 9) Only
+    /// when no profile switch came in between (`AppModel.profileSwitches`): a pick of another profile
+    /// opens Home (use-bp-profile-reset), and the key waited for some later Settings visit.
+    private static var ringReturn: (key: String, serial: Int)?
     @FocusState private var returnFocus: String?
 
     @EnvironmentObject private var settings: SettingsBridge
@@ -170,7 +172,7 @@ struct SettingsView: View {
                                 // whatever room that shell was on, so the key waited for a later,
                                 // unrelated Settings visit and pulled the ring to Switch profile there.
                                 let fromLayer: Bool = PiPBrowse.shared.isBrowseApp(app)
-                                Self.ringReturn = app.stage == .whoIsWatching && !fromLayer ? "switch" : nil
+                                Self.ringReturn = app.stage == .whoIsWatching && !fromLayer ? (key: "switch", serial: app.profileSwitches) : nil
                             }
                             .buttonStyle(BPActionStyle())
                             .focused($returnFocus, equals: "switch")
@@ -201,7 +203,7 @@ struct SettingsView: View {
                         row("Replay walkthrough", detail: "Re-runs the welcome flow and clears every dismissed tip.")
                         Button {
                             app.replayOnboarding()
-                            Self.ringReturn = app.stage == .onboarding ? "replay" : nil
+                            Self.ringReturn = app.stage == .onboarding ? (key: "replay", serial: app.profileSwitches) : nil
                         } label: {
                             Label(T("Replay"), systemImage: "arrow.clockwise")
                         }
@@ -224,8 +226,10 @@ struct SettingsView: View {
         // the room (bp-who-is-watching-layer) and the ring comes back to what opened them: Replay
         // or Switch profile, once the page is laid out again.
         .task {
-            guard let key = Self.ringReturn else { return }
+            guard let back = Self.ringReturn else { return }
             Self.ringReturn = nil
+            guard back.serial == app.profileSwitches else { return }
+            let key: String = back.key
             try? await Task.sleep(for: .milliseconds(350))
             if sheet == nil { returnFocus = key }
         }

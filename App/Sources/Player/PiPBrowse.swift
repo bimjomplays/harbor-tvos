@@ -52,14 +52,24 @@ final class PiPBrowse: ObservableObject {
     /// The main shell's hooks, which the layer's ShellView takes over while it is up.
     private var savedFocusRequest: (() -> Void)?
     private var savedOnTab: ((Int) -> Void)?
+    /// (device-flow pass 9) The main shell that stashed `savedOnTab` (GamepadMonitor.onTabOwner).
+    private var savedOnTabOwner: UUID?
 
     /// The main shell's onAppear / onDisappear while the layer is up (its player cover closing
     /// under the layer re-appears it): its hooks go to the stash the layer hands back on lowering,
     /// never over the layer's own (review 36). Returns whether the stash took them.
-    func stashMainHooks(request: (() -> Void)?, onTab: ((Int) -> Void)?, appearing: Bool) -> Bool {
+    /// (device-flow pass 9) A disappearing shell empties the stash only if the hook in it is its
+    /// own: a rebuilt main shell (theme, language) appears before the old one disappears.
+    func stashMainHooks(request: (() -> Void)?, onTab: ((Int) -> Void)?, appearing: Bool, owner: UUID) -> Bool {
         guard window != nil else { return false }
-        if appearing { savedFocusRequest = request }
-        savedOnTab = onTab
+        if appearing {
+            savedFocusRequest = request
+            savedOnTab = onTab
+            savedOnTabOwner = owner
+        } else if savedOnTabOwner == nil || savedOnTabOwner == owner {
+            savedOnTab = nil
+            savedOnTabOwner = nil
+        }
         return true
     }
     private var bag = Set<AnyCancellable>()
@@ -108,6 +118,7 @@ final class PiPBrowse: ObservableObject {
         guard let scene = HarborOverlayWindow.mainWindow?.windowScene ?? scenes.first else { lower(returning: true); return }
         savedFocusRequest = ShellFocus.shared.request
         savedOnTab = GamepadMonitor.shared.onTab
+        savedOnTabOwner = GamepadMonitor.shared.onTabOwner
         browseApp = app
         let w = HarborOverlayWindow(windowScene: scene)
         // Over the app's window (and the player's cover in it), under ShellOverlay's lock and saver (+1).
@@ -175,9 +186,14 @@ final class PiPBrowse: ObservableObject {
         w.rootViewController = nil
         // The main shell gets its default-focus hook and shoulder-button tabs back.
         ShellFocus.shared.request = savedFocusRequest
-        GamepadMonitor.shared.onTab = savedOnTab
+        if let hook = savedOnTab, let owner = savedOnTabOwner {
+            GamepadMonitor.shared.setOnTab(hook, owner: owner)
+        } else {
+            GamepadMonitor.shared.onTab = savedOnTab
+        }
         savedFocusRequest = nil
         savedOnTab = nil
+        savedOnTabOwner = nil
         (ShellOverlay.shared.keyWindow ?? HarborOverlayWindow.mainWindow)?.makeKey()
     }
 }

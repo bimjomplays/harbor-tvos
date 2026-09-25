@@ -178,6 +178,9 @@ final class AppModel: ObservableObject {
     let sync = SyncReader.shared
     /// Search and Library state kept across tab switches (Shell/ShellViewState.swift).
     let views = ShellViewState()
+    /// (device-flow pass 9) Bumped on every change of the active profile (the reset below), so a
+    /// page can tell whether the profile it left the shell on is still the one it comes back to.
+    private(set) var profileSwitches = 0
 
     private var bag = Set<AnyCancellable>()
     private let isBrowseLayer: Bool
@@ -199,7 +202,14 @@ final class AppModel: ObservableObject {
         // the previous profile's SearchModel before the reset landed, and the new profile saw the
         // last one's query and results until the shell happened to redraw.
         profiles.$activeId.dropFirst().removeDuplicates().sink { [weak self] _ in
-            self?.views.reset()
+            guard let self else { return }
+            self.views.reset()
+            self.profileSwitches &+= 1
+            // (device-flow pass 9) use-bp-profile-reset onSwitch → goBigPictureTab("home"): "Home is
+            // the only route guaranteed to exist for whoever just arrived". The next profile opened
+            // on the room the last one left (their Library, Live TV or Settings, which may be a
+            // room this profile has hidden or locked, or never set up).
+            if self.room != .home { self.room = .home }
         }.store(in: &bag)
         guard !isBrowseLayer else { return }
         // lib/profiles.tsx window "focus": back in front after the prompt interval, Who's watching.
@@ -370,9 +380,15 @@ final class AppModel: ObservableObject {
     /// Detail page, a Settings cover, a PIN pad mid-entry or a room's in-place layer were gone
     /// after Back. A Watch Together room is left alone too (only the shell hosts its invites and
     /// summons). So the return prompt only replaces a bare room.
+    /// (device-flow pass 9) Nor under the curfew lock: curfew-guard sits over every Big Picture layer,
+    /// the picker included, so upstream's focus prompt opens under it and "Time's up!" is still
+    /// what the viewer sees. Here Who's watching replaces the shell and the lock went with it
+    /// (ShellOverlay only covers the shell stage): a kid without a parent PIN came back after the
+    /// prompt interval to the chooser, with no lock and no "Ask a grown-up" (its own Switch
+    /// profile button is the lock's way out).
     private var returnPromptClear: Bool {
         !PlaybackState.shared.active && !PiPBrowse.shared.isUp && HarborOverlayWindow.noCoverPresented
-            && !roomLayer && !TogetherModel.shared.view.inRoom
+            && !roomLayer && !TogetherModel.shared.view.inRoom && !CurfewState.shared.locked
     }
 
     func finishOnboarding() {

@@ -108,11 +108,31 @@ final class ScreensaverModel: ObservableObject {
     /// Harbor reappeared, and it could come on unseen in the background and swallow the first press.
     private var resumedAt = Date.distantPast
     private var resumeWatch: AnyCancellable?
+    /// (device-flow pass 9) use-bp-screensaver `suppressed` (bp-shell passes `introUp || layer !== ""`,
+    /// and the hook adds the player, the picker and the Live TV routes): RootView sets this while
+    /// the intro wall, setup or Who's watching is up, or the room is Live TV. The saver came on
+    /// unseen on Who's watching (the TV left on the chooser) and flashed up over the shell for up
+    /// to a tick after the pick, swallowing the next press; and it drifted over the Live TV guide.
+    var blocked = true {
+        didSet {
+            guard blocked != oldValue else { return }
+            suppressionChangedAt = Date()
+            if blocked, active { wake() }
+        }
+    }
+    /// (device-flow pass 9) The hook's effect re-runs whenever `suppressed` changes and restarts the
+    /// idle clock (lastRef = now). Here nothing did: a film watched to its end without a press (or
+    /// the TV left on Who's watching) left the last press long past, so the saver came up within
+    /// a tick of the player closing, over the detail page the film ended on.
+    private var suppressionChangedAt = Date.distantPast
+    private var playbackWatch: AnyCancellable?
 
     func start() {
         guard ticker == nil else { return }
         resumeWatch = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in self?.resumedAt = Date() }
+        playbackWatch = PlaybackState.shared.$active.removeDuplicates().dropFirst()
+            .sink { [weak self] _ in self?.suppressionChangedAt = Date() }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(4))
@@ -123,7 +143,7 @@ final class ScreensaverModel: ObservableObject {
 
     private func tick() async {
         let slice = SettingsBridge.shared.slice
-        guard slice.screensaver ?? true, !PlaybackState.shared.active else { if active { wake() }; return }
+        guard slice.screensaver ?? true, !PlaybackState.shared.active, !blocked else { if active { wake() }; return }
         if active {
             // (bug pass) The saver only wakes from its own overlay, which is up on the shell stage
             // only. It also turned on (unseen) on Who's watching or onboarding; presses there never
@@ -137,7 +157,7 @@ final class ScreensaverModel: ObservableObject {
         if Date().timeIntervalSince(idleSince) >= delay {
             await load(source: slice.heroFeed ?? "trending")
             // Pressed (or left the app) while the art loaded: stay down.
-            guard UIApplication.shared.applicationState == .active,
+            guard UIApplication.shared.applicationState == .active, !blocked, !PlaybackState.shared.active,
                   Date().timeIntervalSince(idleSince) >= delay else { return }
             active = true
             activatedAt = Date()
@@ -154,7 +174,8 @@ final class ScreensaverModel: ObservableObject {
     }
 
     /// The last press, or the app coming back on screen, whichever is later.
-    private var idleSince: Date { max(ActivityMonitor.shared.last, resumedAt) }
+    /// (device-flow pass 9) Or the saver's suppression last starting or ending.
+    private var idleSince: Date { max(ActivityMonitor.shared.last, resumedAt, suppressionChangedAt) }
 
     func wake() {
         ActivityMonitor.shared.touch()

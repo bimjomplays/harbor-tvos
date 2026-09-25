@@ -14,8 +14,27 @@ final class GamepadMonitor: ObservableObject {
 
     @Published private(set) var usingPad = false
     @Published var toast: Toast?
-    /// Set by the shell: LB = −1, RB = +1.
-    var onTab: ((Int) -> Void)?
+    /// Set by the shell: LB = −1, RB = +1. A plain write (the kids shell, PiPBrowse handing the
+    /// main shell's hook back) has no owner.
+    var onTab: ((Int) -> Void)? {
+        didSet { onTabOwner = nil }
+    }
+    /// (device-flow pass 9) The ShellView that set `onTab` (setOnTab). A theme or language change
+    /// rebuilds the whole tree (RootView's `.id`), and SwiftUI runs the new shell's onAppear before
+    /// the old one's onDisappear: the old shell's "clear the hook" then wiped the hook the new one
+    /// had just set, and LB/RB turned no tabs until the shell next appeared.
+    private(set) var onTabOwner: UUID?
+
+    func setOnTab(_ fn: @escaping (Int) -> Void, owner: UUID) {
+        onTab = fn
+        onTabOwner = owner
+    }
+
+    /// Clears the hook unless another shell has set its own since.
+    func clearOnTab(owner: UUID) {
+        guard onTabOwner == nil || onTabOwner == owner else { return }
+        onTab = nil
+    }
 
     private var seq = 0
     private var started = false

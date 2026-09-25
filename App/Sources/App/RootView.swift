@@ -58,6 +58,7 @@ struct RootView: View {
             theme.holding = st == .onboarding
         }
         .onChange(of: overlayUp) { _, up in syncOverlay(up) }
+        .onChange(of: saverBlocked) { _, blocked in saver.blocked = blocked }
         .onChange(of: browse.isUp) { _, up in syncBrowse(up) }
         .onChange(of: playback.active) { _, on in
             heldLanguage = on ? language : nil
@@ -88,6 +89,10 @@ struct RootView: View {
     }
 
     private var overlayUp: Bool { app.stage == .shell && (curfew.locked || saver.active) }
+
+    /// (device-flow pass 9) use-bp-screensaver `suppressed`: bp-shell's `introUp || layer !== ""`
+    /// (Who's watching, setup) and the hook's Live TV routes (topKind "live" / "vod").
+    private var saverBlocked: Bool { app.stage != .shell || intro.phase != .done || app.room == .live }
 
     /// Whether the root background's mosaic may run. Upstream draws none behind the boot splash
     /// (index-tv.html #boot), setup (bp-onboarding, z-60 on --bp-void), Who's watching (z-80 on

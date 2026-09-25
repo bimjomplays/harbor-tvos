@@ -331,6 +331,15 @@ final class AmbientPool: ObservableObject {
     func load() async {
         guard posters.isEmpty, !loading else { return }
         loading = true; defer { loading = false }
+        // (device-flow pass 9) RootView's background asks for the pool from its first frame, during
+        // the boot splash: `HarborEngine.shared` on the main actor built the ~4.4 MB bundle right
+        // there (or waited out AppModel.boot's off-main build), freezing the splash and every press
+        // for seconds, the very thing the lifecycle pass moved off the main thread. Build or wait
+        // for it off the main thread first.
+        if HarborEngine.loaded == nil {
+            let built: Bool = await Task.detached(priority: .userInitiated) { (try? HarborEngine.sharedOrThrow()) != nil }.value
+            guard built else { return }
+        }
         struct M: Decodable { var poster: String? }
         let metas: [M] = (try? await HarborEngine.shared.call("feed.hero", ["trending"])) ?? []
         var seen: Set<String> = []

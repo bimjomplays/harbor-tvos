@@ -52,6 +52,8 @@ struct ShellView: View {
     @AppStorage(EBookGate.key) private var ebookOn = false
     /// A row's Left off its start (BPRowView onNavEdge): the bar puts the ring on a tab.
     @State private var barRequest = BPBarRequest(serial: 0, tab: nil)
+    /// (device-flow pass 9) This shell's claim on GamepadMonitor's LB/RB hook (setOnTab / clearOnTab).
+    @State private var hookOwner = UUID()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -75,9 +77,9 @@ struct ShellView: View {
             let request: () -> Void = { resetFocus(in: focusNS) }
             let onTab: (Int) -> Void = { delta in cycleTab(delta) }
             // Under the PiP browse layer the main shell's hooks wait in PiPBrowse's stash (review 36).
-            if inBrowseLayer || !PiPBrowse.shared.stashMainHooks(request: request, onTab: onTab, appearing: true) {
+            if inBrowseLayer || !PiPBrowse.shared.stashMainHooks(request: request, onTab: onTab, appearing: true, owner: hookOwner) {
                 ShellFocus.shared.request = request
-                GamepadMonitor.shared.onTab = onTab
+                GamepadMonitor.shared.setOnTab(onTab, owner: hookOwner)
             }
             ParentalGate.shared.attach()
             leaveHiddenRoom()
@@ -96,7 +98,7 @@ struct ShellView: View {
         .onChange(of: settings.sportsDeclined) { _, _ in leaveHiddenTab() }
         // The PiP browse layer's shell leaves the hooks alone: PiPBrowse hands them back to the main shell.
         .onDisappear {
-            if !inBrowseLayer, !PiPBrowse.shared.stashMainHooks(request: nil, onTab: nil, appearing: false) { GamepadMonitor.shared.onTab = nil }
+            if !inBrowseLayer, !PiPBrowse.shared.stashMainHooks(request: nil, onTab: nil, appearing: false, owner: hookOwner) { GamepadMonitor.shared.clearOnTab(owner: hookOwner) }
         }
         // lib/deep-link.ts links (AppModel.handle) wait in DeepLinkQueue until nothing is presented
         // over this shell, then open here: a present from a view already presenting is dropped.
@@ -504,13 +506,15 @@ struct StatusGlyphs: View {
     }
 }
 
+/// bp-top-bar.tsx useClock (hour + minute). (device-flow pass 9) Redrawn on each minute boundary: a
+/// 30 s timer counted from when the view appeared showed the old minute for up to 30 s (upstream's
+/// 20 s interval, up to 20 s), and each rebuild (theme, language, a return to the shell) restarted it.
 struct ClockView: View {
-    @State private var now = Date()
-    private let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     var body: some View {
-        Text(now, format: .dateTime.hour().minute())
-            .font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted)
-            .onReceive(timer) { now = $0 }
+        TimelineView(.everyMinute) { context in
+            Text(context.date, format: .dateTime.hour().minute())
+                .font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted)
+        }
     }
 }
 
