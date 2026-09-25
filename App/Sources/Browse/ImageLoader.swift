@@ -25,13 +25,28 @@ actor ImageLoader {
     static let sizedMaxPixel = 3840
 
     private let session: URLSession
+    private let urlCache: URLCache
     private let memory = NSCache<NSString, UIImage>()
-    private var inflight: [String: Task<UIImage?, Never>] = [:]
+    /// (perf/memory pass) One fetch + decode per key, shared by every caller asking for it.
+    /// `waiters` counts the callers still waiting; when the last one is cancelled (its RemoteImage
+    /// scrolled off screen, or its URL or size changed) the download and decode are cancelled too.
+    /// They used to run to the end regardless, so a fast scroll through a long grid queued every
+    /// poster it passed (6 downloads per host at a time) ahead of the ones actually on screen.
+    private struct Flight {
+        let id: Int
+        let task: Task<UIImage?, Never>
+        var waiters: Int
+    }
+    private var inflight: [String: Flight] = [:]
+    private var nextFlight = 0
+    private static let urlCacheMemory = 32 << 20
 
     init() {
         let cfg = URLSessionConfiguration.default
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("harbor-images")
-        cfg.urlCache = URLCache(memoryCapacity: 32 << 20, diskCapacity: 400 << 20, directory: dir)
+        let cache = URLCache(memoryCapacity: Self.urlCacheMemory, diskCapacity: 400 << 20, directory: dir)
+        urlCache = cache
+        cfg.urlCache = cache
         cfg.requestCachePolicy = .returnCacheDataElseLoad
         cfg.httpMaximumConnectionsPerHost = 6
         cfg.timeoutIntervalForRequest = 15
@@ -47,22 +62,63 @@ actor ImageLoader {
         let keyString = target.map { "\(raw)#\($0.width)x\($0.height)\($0.fit ? "f" : "c")" } ?? raw
         let key = keyString as NSString
         if let hit = memory.object(forKey: key) { return hit }
-        if let task = inflight[keyString] { return await task.value }
-        // Manga covers live on the viewer's own Suwayomi server, which may ask for Basic auth.
-        var request = URLRequest(url: url)
-        if let auth = ImageAuth.shared.header(for: raw) { request.setValue(auth, forHTTPHeaderField: "Authorization") }
-        let session = self.session, req = request
-        // Detached: fetches and decodes run side by side, not one at a time on this actor.
-        let task = Task<UIImage?, Never>.detached(priority: .userInitiated) {
-            guard let (data, resp) = try? await session.data(for: req),
-                  (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else { return nil }
-            return ImageLoader.decode(data, target: target)
+        // A caller that is already cancelled (a cell that scrolled past) starts nothing.
+        if Task.isCancelled { return nil }
+        let flight: Flight
+        if var joined = inflight[keyString] {
+            joined.waiters += 1
+            inflight[keyString] = joined
+            flight = joined
+        } else {
+            // Manga covers live on the viewer's own Suwayomi server, which may ask for Basic auth.
+            var request = URLRequest(url: url)
+            if let auth = ImageAuth.shared.header(for: raw) { request.setValue(auth, forHTTPHeaderField: "Authorization") }
+            let session = self.session, req = request
+            // Detached: fetches and decodes run side by side, not one at a time on this actor.
+            let task = Task<UIImage?, Never>.detached(priority: .userInitiated) {
+                guard let (data, resp) = try? await session.data(for: req),
+                      (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else { return nil }
+                if Task.isCancelled { return nil }
+                return ImageLoader.decode(data, target: target)
+            }
+            nextFlight += 1
+            flight = Flight(id: nextFlight, task: task, waiters: 1)
+            inflight[keyString] = flight
         }
-        inflight[keyString] = task
-        let img = await task.value
-        inflight[keyString] = nil
-        if let img { memory.setObject(img, forKey: key, cost: Self.cost(of: img)) }
+        let flightId: Int = flight.id
+        let task: Task<UIImage?, Never> = flight.task
+        let img: UIImage? = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { await self.leave(keyString, flightId: flightId) }
+        }
+        // The first caller back finishes the flight: it caches the bitmap and clears the entry.
+        if inflight[keyString]?.id == flightId {
+            inflight[keyString] = nil
+            if let img { memory.setObject(img, forKey: key, cost: Self.cost(of: img)) }
+        }
         return img
+    }
+
+    /// A caller stopped waiting (its task was cancelled); the last one out cancels the fetch.
+    private func leave(_ keyString: String, flightId: Int) {
+        guard var flight = inflight[keyString], flight.id == flightId else { return }
+        flight.waiters -= 1
+        if flight.waiters > 0 {
+            inflight[keyString] = flight
+            return
+        }
+        inflight[keyString] = nil
+        flight.task.cancel()
+    }
+
+    /// (perf/memory pass) On a memory warning: drop every decoded bitmap and the URL cache's RAM
+    /// copy. The files on disk stay, so art shown again is a decode, not a download, and views keep
+    /// the images they are drawing (only the cache lets go of its references).
+    func purgeMemory() {
+        memory.removeAllObjects()
+        urlCache.memoryCapacity = 0
+        urlCache.memoryCapacity = Self.urlCacheMemory
     }
 
     /// Decoded bytes of the bitmap (what the cache limit is about).

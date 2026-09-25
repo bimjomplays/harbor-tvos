@@ -41,12 +41,17 @@ final class SocialCenter: ObservableObject {
         let mine = generation
         let m: Social.Me? = try? await HarborEngine.shared.call("social.me")
         guard mine == generation else { return }
-        if let m { me = m }
-        guard me.signedIn else { notifications = nil; badge = 0; return }
+        // (perf/memory pass) Publish only on a change: this runs every 60 s for every profile.
+        if let m, m != me { me = m }
+        guard me.signedIn else {
+            if notifications != nil { notifications = nil }
+            if badge != 0 { badge = 0 }
+            return
+        }
         let n: Social.Notifications? = try? await HarborEngine.shared.call("social.notifications")
         guard mine == generation, let n else { return }
-        notifications = n
-        badge = n.badge
+        if n != notifications { notifications = n }
+        if badge != n.badge { badge = n.badge }
     }
 
     /// use-notification-center.ts markRead: optimistic, then the server.

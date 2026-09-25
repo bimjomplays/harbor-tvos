@@ -6,19 +6,32 @@ import SwiftUI
 final class MangaDetailModel: ObservableObject {
     let mangaId: String
     @Published private(set) var detail: MangaSummary?
-    @Published private(set) var chapters: [MangaChapter] = []
+    @Published private(set) var chapters: [MangaChapter] = [] { didSet { derived = nil } }
     @Published private(set) var langs: [MangaDetailResult.Lang] = []
-    @Published var selectedLang = "en" { didSet { range = nil; visibleCount = Self.pageSize } }
+    @Published var selectedLang = "en" { didSet { derived = nil; range = nil; visibleCount = Self.pageSize } }
     @Published private(set) var extName: String?
     @Published private(set) var pending = true
     @Published private(set) var progress: MangaProgressEntry?
     @Published private(set) var readIds: Set<String> = []
     @Published private(set) var favorite = false
     /// chapter-list: oldest first by default; "newest" reverses.
-    @Published var newestFirst = false
+    @Published var newestFirst = false { didSet { derived = nil } }
     /// chapter-list range pager: one 50-chapter bucket, nil for all.
-    @Published var range: Int?
+    @Published var range: Int? { didSet { derived = nil } }
     @Published var visibleCount = MangaDetailModel.pageSize
+
+    /// (perf/memory pass) The chapter list's derived arrays, built once per change of chapters,
+    /// language, order or range. They were computed properties the page read about ten times per
+    /// body pass (each re-filtering every chapter, parsing every chapter number and sorting twice),
+    /// and the body runs on every focus move in the list: thousands of chapters on a long series.
+    private struct Derived {
+        var langFiltered: [MangaChapter]
+        var ranges: [PageRange]
+        var showPager: Bool
+        var ascending: [MangaChapter]
+        var ordered: [MangaChapter]
+    }
+    private var derived: Derived?
 
     nonisolated static let pageSize = 200
 
@@ -66,27 +79,26 @@ final class MangaDetailModel: ObservableObject {
     }
 
     /// The chapters in the picked language (manga-detail langFiltered).
-    var langFiltered: [MangaChapter] { chapters.filter { ($0.language ?? "") == selectedLang } }
+    var langFiltered: [MangaChapter] { derivedLists.langFiltered }
     var canRead: Bool { !langFiltered.isEmpty }
 
     /// chapter-list ascending: by chapter number, a chapter with none by its position.
-    var ascending: [MangaChapter] {
-        let list = langFiltered
-        let nums = Dictionary(list.enumerated().map { ($0.element.id, $0.element.number(fallback: $0.offset)) }, uniquingKeysWith: { a, _ in a })
-        var narrowed = list
-        if showPager, let range { narrowed = list.filter { Self.bucket(nums[$0.id] ?? 0) == range } }
-        return narrowed.sorted { (nums[$0.id] ?? 0) < (nums[$1.id] ?? 0) }
-    }
+    var ascending: [MangaChapter] { derivedLists.ascending }
 
-    var ordered: [MangaChapter] { newestFirst ? Array(ascending.reversed()) : ascending }
+    var ordered: [MangaChapter] { derivedLists.ordered }
 
     /// chapter-list bucketOf: 1-50, 51-100, ...
     static func bucket(_ n: Double) -> Int { Int(floor((ceil(n) - 1) / 50)) }
 
     /// chapter-list ranges, newest bucket first; shown past 60 chapters with more than one bucket.
     struct PageRange: Identifiable, Hashable { var b: Int; var lo: Int; var hi: Int; var id: Int { b } }
-    var ranges: [PageRange] {
-        let list = langFiltered
+    var ranges: [PageRange] { derivedLists.ranges }
+    var showPager: Bool { derivedLists.showPager }
+
+    private var derivedLists: Derived {
+        if let held = derived { return held }
+        let list: [MangaChapter] = chapters.filter { ($0.language ?? "") == selectedLang }
+        // ranges
         var maxN = 0.0
         var buckets = Set<Int>()
         for (i, c) in list.enumerated() {
@@ -94,9 +106,18 @@ final class MangaDetailModel: ObservableObject {
             maxN = max(maxN, ceil(n))
             buckets.insert(Self.bucket(n))
         }
-        return buckets.sorted(by: >).map { b in PageRange(b: b, lo: b * 50 + 1, hi: min(b * 50 + 50, Int(maxN))) }
+        let ranges: [PageRange] = buckets.sorted(by: >).map { b in PageRange(b: b, lo: b * 50 + 1, hi: min(b * 50 + 50, Int(maxN))) }
+        let pager: Bool = list.count > 60 && ranges.count > 1
+        // ascending
+        let nums = Dictionary(list.enumerated().map { ($0.element.id, $0.element.number(fallback: $0.offset)) }, uniquingKeysWith: { a, _ in a })
+        var narrowed = list
+        if pager, let range { narrowed = list.filter { Self.bucket(nums[$0.id] ?? 0) == range } }
+        let ascending: [MangaChapter] = narrowed.sorted { (nums[$0.id] ?? 0) < (nums[$1.id] ?? 0) }
+        let ordered: [MangaChapter] = newestFirst ? Array(ascending.reversed()) : ascending
+        let made = Derived(langFiltered: list, ranges: ranges, showPager: pager, ascending: ascending, ordered: ordered)
+        derived = made
+        return made
     }
-    var showPager: Bool { langFiltered.count > 60 && ranges.count > 1 }
 
     func isRead(_ c: MangaChapter) -> Bool { c.serverRead == true || readIds.contains(c.id) }
 
