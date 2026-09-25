@@ -38,14 +38,17 @@ final class SportsModel: ObservableObject {
         var day: String; var today: String; var liveDays: [String]; var dateTitle: String
         var heroes: [Game]; var rows: [Row]; var status: Status; var empty: Bool; var personalized: Bool; var explore: [Chip]
     }
-    struct Day: Decodable, Identifiable { var key: String; var label: String; var today: Bool; var id: String { key } }
+    /// bp-sports-date-band: weekday over the day of the month (`number`).
+    struct Day: Decodable, Identifiable { var key: String; var label: String; var number: Int?; var today: Bool; var id: String { key } }
     struct Consent: Decodable { var status: String }
 
     enum Mode: String, CaseIterable { case forYou = "for-you", live, schedule, hot, explore
         var label: String { switch self { case .forYou: return "For you"; case .live: return "Live now"; case .schedule: return "Schedule"; case .hot: return "Hot"; case .explore: return "Explore" } }
     }
 
-    @Published private(set) var consent: String = "unknown"
+    /// "" until the engine has answered (upstream reads the stored receipt synchronously). Starting
+    /// at "unknown" drew the whole consent notice for a frame or more every time the tab opened.
+    @Published private(set) var consent: String = ""
     @Published private(set) var page: Page?
     @Published private(set) var days: [Day] = []
     @Published private(set) var loading = false

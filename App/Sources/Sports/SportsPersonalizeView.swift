@@ -140,7 +140,9 @@ struct SportsPersonalizeView: View {
                 groups = Set(c.leagues.filter { leagues.contains($0.key) }.map(\.group))
             }
         }
-        .onExitCommand { dismiss() }
+        // (device-flow pass) bp-sports-personalize pushBpBack: Back steps to the previous step and
+        // only closes from the first one (it closed the whole flow from leagues or teams).
+        .onExitCommand { if step > 0 && !saving { step -= 1 } else { dismiss() } }
     }
 
     /// (layout pass) The sport grid (7 × 337 pt) and the league / team grids (5 × 472 pt) ran far

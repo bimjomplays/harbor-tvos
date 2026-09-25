@@ -1373,6 +1373,47 @@ r.ok("benchmark still works", (() => {
   r.ok("sports.page: failed feeds wait for the retry window instead of reloading on every read; Retry (force) still reloads",
     afterFirst > 0 && first.status.failed === true && afterRepeat === afterFirst && hits > afterRepeat,
     JSON.stringify({ afterFirst, afterRepeat, hits, failed: first.status.failed }));
+  // (device-flow pass) bp-sports.tsx note: the catalog key, then " · " and the league names.
+  r.ok("sports.page: the failed-feeds note is upstream's t() key followed by the league names",
+    typeof first.status.note === "string" && first.status.note.startsWith("Some feeds did not respond. Available events are still shown. · ") && !first.status.note.includes("("),
+    JSON.stringify(first.status.note));
+  // date-bar.tsx buildDays: 7 back, 7 ahead, each with its day of the month.
+  const strip = S.days("20260301", "en");
+  r.ok("sports.days: 15 cells from 7 days back to 7 ahead, each with the day of the month (across a month end)",
+    strip.length === 15 && strip[0].key === "20260222" && strip[0].number === 22 && strip[7].key === "20260301" && strip[7].number === 1 && strip[14].key === "20260308" && strip.every((d) => typeof d.label === "string" && d.label !== ""),
+    JSON.stringify(strip.map((d) => [d.key, d.label, d.number])));
+  const now = S.days(null, "en");
+  r.ok("sports.days: Today sits in the middle", now.length === 15 && now[7].today === true && now[7].label === "Today" && now.filter((d) => d.today).length === 1, JSON.stringify(now.slice(6, 9)));
+  rec.dispose();
+}
+
+// -------------------------------------- sports detail: a failed summary is not cached (device-flow pass)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  let up = false, hits = 0;
+  const summary = { header: { competitions: [{ date: new Date().toISOString(), status: { type: { state: "in", shortDetail: "Q2 5:00" } }, competitors: [
+    { homeAway: "home", score: "40", team: { id: "13", displayName: "Home Side", abbreviation: "HOM" } },
+    { homeAway: "away", score: "38", team: { id: "2", displayName: "Away Side", abbreviation: "AWY" } },
+  ] }] } };
+  rec.node.host.fetch = async (req) => {
+    if (!/summary\?event=/.test(req.url)) return { status: 404, statusText: "", headers: {}, url: req.url, body: "" };
+    hits++;
+    return up ? { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(summary) } : { status: 503, statusText: "Unavailable", headers: {}, url: req.url, body: "" };
+  };
+  const S = rec.engine.sports;
+  S.accept();
+  const side = (id, name, abbr) => ({ id, name, abbr, logo: "", score: "0", winner: false });
+  const game = { id: "401", league: "NBA", state: "in", detail: "Live", home: side("13", "Home Side", "HOM"), away: side("2", "Away Side", "AWY"), startMs: Date.now() - 3600000 };
+  const miss = await S.detail(game).catch(() => "threw");
+  up = true;
+  const again = await S.detail(game).catch(() => "threw");
+  const held = hits;
+  const third = await S.detail(game).catch(() => "threw");
+  r.ok("sports.detail: a failed summary is not cached, so Try again fetches at once; a summary is held for 25 s",
+    miss === null && again !== null && again !== "threw" && third === again && hits === held,
+    JSON.stringify({ miss, again: again && typeof again, hits, held }));
   rec.dispose();
 }
 
@@ -3808,8 +3849,8 @@ if (!OFFLINE) {
   r.ok("sports.page without wait reports busy while feeds load", quick.status.busy === true && Array.isArray(quick.rows), JSON.stringify(quick.status));
   const sdays = engine.sports.days();
   const fdays = engine.sports.days(null, "fr");
-  r.ok("sports.days: weekdays follow the UI language", fdays.length === 14 && fdays[3].label === "Today" && fdays[4].label !== sdays[4].label, JSON.stringify([sdays[4].label, fdays[4].label]));
-  r.ok("sports.days: 14 cells with Today at index 3", sdays.length === 14 && sdays[3].today && sdays[3].label === "Today", JSON.stringify(sdays.slice(2, 5)));
+  r.ok("sports.days: weekdays follow the UI language", fdays.length === 15 && fdays[7].label === "Today" && fdays[8].label !== sdays[8].label, JSON.stringify([sdays[8].label, fdays[8].label]));
+  r.ok("sports.days: 15 cells with Today at index 7", sdays.length === 15 && sdays[7].today && sdays[7].label === "Today", JSON.stringify(sdays.slice(6, 9)));
   const spg = await r.timed("sports.page(for-you)", () => engine.sports.page({ mode: "for-you", group: "all", wait: true }));
   r.ok("sports.page for-you returns groups, rows and a status", Array.isArray(spg.rows) && spg.groups.length > 3 && spg.status && typeof spg.status.failed === "boolean", JSON.stringify({ rows: spg.rows.map((x) => [x.key, x.games.length]), heroes: spg.heroes.length, note: spg.status.note, failed: spg.status.failedKeys.slice(0, 4) }));
   const anyGame = spg.rows.flatMap((x) => x.games)[0] ?? spg.heroes[0];
