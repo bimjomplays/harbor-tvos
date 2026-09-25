@@ -543,6 +543,8 @@ export const discoverRoom = {
   awardsInstalled: discoverBuilders.awardsInstalled,
   awards: discoverBuilders.awards,
   awardDetail: discoverBuilders.awardDetail,
+  awardPage: discoverBuilders.awardPage,
+  awardOpen: discoverBuilders.awardOpen,
   animeAwardSources: discoverBuilders.animeAwardSources,
   animeAward: discoverBuilders.animeAward,
   animeAwardOpen: discoverBuilders.animeAwardOpen,
@@ -737,6 +739,7 @@ export const sports = {
   toggleAttachedChannel: sportsGlue.toggleAttachedChannel,
   recordChannelWatch: sportsGlue.recordChannelWatch,
   clearAttachedStream: sportsGlue.clearAttachedStream,
+  searchChannels: sportsGlue.searchChannels,
   officialBroadcasts: sportsGlue.officialBroadcasts,
   // Event rows, where-to-watch, hero actions, reminders, api-sports key (engine/sportsEvent.ts).
   eventRows: sportsEventGlue.eventRows,
@@ -1030,6 +1033,8 @@ export const onboarding = {
   upvoted: onboardingGlue.upvoted,
   /** use-bp-onboard-facts + bp-done-flourish: counts for the recap and the five posters it deals. */
   facts: onboardingGlue.facts,
+  /** bp-step-tmdb verify(): "ok" | "rejected" | "unreachable" from TMDB's configuration endpoint. */
+  checkTmdbKey: onboardingGlue.checkTmdbKey,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

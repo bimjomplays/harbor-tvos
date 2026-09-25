@@ -427,7 +427,11 @@ final class DetailModel: ObservableObject {
                 Task { await loadAnimeSeasons() }
             }
         } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
-            meta = full
+            // The addon that served the title (bp-hero-notes' mark) comes with the meta that opened
+            // the page; Cinemeta's record never carries one.
+            var merged = full
+            if merged.addonOrigin == nil { merged.addonOrigin = meta.addonOrigin }
+            meta = merged
             fetched = true
         }
         metaFailed = !fetched

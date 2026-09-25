@@ -56,6 +56,8 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
+            // bp-onboarding-frame BpOnboardBackdrop: the drifting poster wall behind every step.
+            OnboardBackdropView().ignoresSafeArea()
             wizard
                 // The dialog is modal (aria-modal): nothing under it takes the ring.
                 .disabled(leaveOpen)

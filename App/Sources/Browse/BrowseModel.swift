@@ -46,6 +46,8 @@ final class BrowseModel: ObservableObject {
     @Published private(set) var cwResolved = false
     /// use-bp-anime `hero.slides` (the anime room's hero pool); empty elsewhere.
     @Published private(set) var heroSlides: [Meta] = []
+    /// A load has finished at least once (so an empty page is an answer, not a first frame).
+    @Published private(set) var settled = false
 
     let room: Room
     private let source: BrowseSource
@@ -102,6 +104,8 @@ final class BrowseModel: ObservableObject {
     /// Home itself, not a streaming-service page that reuses the Home room layout: only Home has
     /// the Live TV row and the band-owned bands (bp-home.tsx).
     var isHomePage: Bool { room == .home && source.cacheId == nil }
+    /// A streaming-service page (bp-service.tsx) over the Home layout.
+    var isServicePage: Bool { source is ServiceBrowseSource }
     /// The page shows a Continue Watching row (EngineBrowseSource: none on Movies or a service page).
     private var hasContinueWatchingRow: Bool {
         if source is FixtureBrowseSource { return true }
@@ -177,6 +181,7 @@ final class BrowseModel: ObservableObject {
             cwResolved = true
         }
         loading = false
+        settled = true
         if reloadPending { reloadPending = false; await load() }
     }
 

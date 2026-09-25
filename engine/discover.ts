@@ -191,6 +191,91 @@ export function awardDetail(type: AwardType) {
   };
 }
 
+// ------------------------------------------------------------------------ award page
+// bp-award.tsx BpAward: decade chips ("All years" + "{d}s") and category chips ("All categories" +
+// each category with the count its decade leaves), the header counts of what the filters show,
+// then the categories paged 90 winners at a time (PAGE, grown by useBpAutoPage). Each winner is
+// a poster tile (metahub by IMDb id when the bundle has one, else its year).
+import { bpAwardTint } from "@/views/big-picture/bp-award-mark";
+import { resolveBpAwardWork } from "@/views/big-picture/use-bp-award-work";
+
+const AWARD_PAGE = 90;
+const AWARD_TV_CATEGORY = /series|television|\btv\b|daytime|talk|host|reality|variety|game show|soap|miniseries|anthology/i;
+
+export type AwardPageWinner = { year: number; workTitle: string; recipients: string[]; imdb: string | null; poster: string | null };
+export type AwardPage = {
+  type: AwardType; title: string; shorthand: string; tint: string;
+  /** What the filters leave: "{n} winners", the year span, "{n} categories". */
+  wins: number; span: string; categoryCount: number;
+  /** Decade chips (only offered when there is more than one) and category chips (more than one category). */
+  decades: number[];
+  categories: Array<{ key: string; name: string; count: number }>;
+  groups: Array<{ key: string; name: string; preferTv: boolean; entries: AwardPageWinner[] }>;
+  /** Winners mounted so far, and whether the next page has more (the sentinel). */
+  mounted: number; more: boolean;
+};
+
+export function awardPage(type: AwardType, decade: number | null, categoryKey: string, limit = AWARD_PAGE): AwardPage {
+  const detail = bpAwardDetail(type);
+  const cat = typeof categoryKey === "string" && categoryKey ? categoryKey : "all";
+  const dec = typeof decade === "number" && Number.isFinite(decade) ? decade : null;
+  const byDecade = detail.groups.map((g) => ({
+    ...g,
+    entries: dec === null ? g.entries : g.entries.filter((e) => e.year >= dec && e.year < dec + 10),
+  }));
+  const groups = byDecade.filter((g) => (cat === "all" || g.category.key === cat) && g.entries.length > 0);
+  const max = Math.max(1, Math.floor(Number(limit) || AWARD_PAGE));
+  const paged: typeof groups = [];
+  let left = max;
+  for (const g of groups) {
+    if (left <= 0) break;
+    paged.push(left >= g.entries.length ? g : { ...g, entries: g.entries.slice(0, left) });
+    left -= g.entries.length;
+  }
+  const mounted = paged.reduce((n, g) => n + g.entries.length, 0);
+  let wins = 0, lo = Number.POSITIVE_INFINITY, hi = Number.NEGATIVE_INFINITY;
+  for (const g of groups) {
+    wins += g.entries.length;
+    for (const e of g.entries) { if (e.year < lo) lo = e.year; if (e.year > hi) hi = e.year; }
+  }
+  const span = wins === 0 ? "" : lo === hi ? String(lo) : `${lo} - ${hi}`;
+  return {
+    type, title: detail.meta.title, shorthand: detail.meta.shorthand, tint: bpAwardTint(type),
+    wins, span, categoryCount: groups.length,
+    decades: detail.decades.length > 1 ? detail.decades : [],
+    categories: detail.groups.length > 1
+      ? byDecade.filter((g) => g.entries.length > 0 || cat === g.category.key).map((g) => ({ key: g.category.key, name: g.category.name, count: g.entries.length }))
+      : [],
+    groups: paged.map((g) => ({
+      key: g.category.key, name: g.category.name, preferTv: AWARD_TV_CATEGORY.test(g.category.name),
+      entries: g.entries.map((e) => ({
+        year: e.year, workTitle: e.workTitle, recipients: e.recipients ?? [], imdb: e.imdb ?? null,
+        // BpAwardWinner: metahub's small poster for a winner with an IMDb id.
+        poster: e.imdb ? `https://images.metahub.space/poster/small/${e.imdb}/img` : null,
+      })),
+    })),
+    mounted, more: mounted < wins,
+  };
+}
+
+/**
+ * BpAwardWinner.activate: an IMDb id opens at once (series when the category is a TV one); with
+ * no key the press goes to Settings ("nokey"); otherwise resolveBpAwardWork scores TMDB's movie
+ * and tv answers by title, year and medium ("missing" when nothing fits: "No match found"). The
+ * TV opens titles by IMDb id, so a TMDB hit is turned into one when TMDB knows it.
+ */
+export async function awardOpen(workTitle: string, year: number, imdb: string | null, preferTv: boolean, profileId: string, linked: boolean): Promise<{ status: "open" | "nokey" | "missing"; meta: Meta | null }> {
+  const type = preferTv ? "series" : "movie";
+  if (imdb) return { status: "open", meta: { id: imdb, type, name: workTitle } as Meta };
+  const key = loadEffective(profileId, linked).tmdbKey;
+  if (!key) return { status: "nokey", meta: null };
+  const hit = await resolveBpAwardWork(key, workTitle, year, preferTv).catch(() => null);
+  if (!hit) return { status: "missing", meta: null };
+  const tmdbId = `tmdb:${hit.type}:${hit.id}`;
+  const resolved = await awardTmdbImdbId(key, tmdbId).catch(() => null);
+  return { status: "open", meta: { id: resolved ?? tmdbId, type: hit.type === "tv" ? "series" : "movie", name: workTitle } as Meta };
+}
+
 // ----------------------------------------------------------------- anime award overlay
 // bp-award-tiles.tsx BpAnimeAwardTile (after the classic tiles, past a divider) and
 // bp-anime-awards.tsx BpAnimeAward: one tile per bundled anime award source ("{n} winners"),
