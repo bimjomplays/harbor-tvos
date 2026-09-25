@@ -67,8 +67,11 @@ struct PinPadView: View {
         // (profiles device pass) bp-who-is-watching-pin re-seeds the first key when `cooling` flips.
         // The cool-down disables every key but Back, so the ring sat on Back when it ended and the
         // viewer's next Select (meaning to type) closed the keypad.
+        // (profiles focus pass) Both ways, as upstream's seed effect runs on every `cooling` change
+        // (the first key not disabled): the third miss disables the digit under the ring, and tvOS
+        // then moved the ring wherever it could, so it goes to Back, the one key left.
         .onChange(of: secondsLeft > 0) { _, cooling in
-            if !cooling { keyFocus = "1" }
+            keyFocus = cooling ? "‹" : "1"
         }
         .onExitCommand { finish(false) }
     }
