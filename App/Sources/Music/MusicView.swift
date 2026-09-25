@@ -22,6 +22,10 @@ struct MusicView: View {
                     mast
                     if player.radioStatus != nil { MusicRadioStatusNote().padding(.horizontal, BP.gutter) }
                     if model.failed { offline }
+                    // (device-flow pass) The first load (a network round per source) showed only the mast.
+                    if !model.loaded, !model.failed, model.bands.isEmpty {
+                        ProgressView().padding(.horizontal, BP.gutter)
+                    }
                     ForEach(model.bands) { band in
                         MusicBandView(band: band, onCard: { open($0, in: $1) })
                     }
@@ -44,6 +48,9 @@ struct MusicView: View {
         }
         // use-music-data.ts: harbor:music-library-changed reloads the shelves (liked, recents, queue).
         .onChange(of: player.libraryVersion) { _, _ in Task { await model.load(force: false) } }
+        // music-personal-bands.tsx queueBand reads the live queue: Add to queue, Play next, a
+        // removal or a radio top-up changes the Up next shelf too (it only followed track starts).
+        .onChange(of: player.upcoming.map(\.queueKey)) { _, _ in Task { await model.load(force: false) } }
         .onPlayPauseCommand { player.remoteToggle() }
         .fullScreenCover(item: $page) { target in MusicPageView(target: target) }
         .fullScreenCover(isPresented: $searchOpen) { MusicSearchView() }
@@ -100,7 +107,15 @@ struct MusicView: View {
     /// views/music.tsx openItem: a track plays with its shelf as the queue; anything else opens.
     private func open(_ card: MusicCard, in band: MusicBand) {
         if let track = card.track {
-            player.play(track, queue: band.cards.compactMap(\.track))
+            // music-personal-bands.tsx queueBand: an Up next pick plays inside the live queue
+            // (playTrack(track, player.queue)). (device-flow pass) It became a queue of the shelf
+            // alone, dropping the current track and history (Previous went nowhere) and the radio.
+            if band.key == "liked", band.numbered,
+               let at = player.queue.indices.first(where: { $0 > player.index && player.queue[$0].queueKey == track.queueKey }) {
+                player.jump(to: at)
+            } else {
+                player.play(track, queue: band.cards.compactMap(\.track))
+            }
         } else {
             page = MusicPageTarget(card: card)
         }
@@ -244,7 +259,7 @@ struct MusicTrackCell: View {
     var number: Int?
     @ObservedObject private var player = MusicPlayer.shared
 
-    private var playing: Bool { card.track.map { $0.queueKey == player.current?.queueKey } ?? false }
+    private var playing: Bool { player.isCurrent(card.track) }
 
     var body: some View {
         HStack(spacing: BP.px(10)) {
@@ -381,6 +396,40 @@ struct MusicDockView: View {
     }
 }
 
+/// The dock under the Music room's own layers (an album / artist / playlist page, search, the
+/// Spotify library). App.tsx mounts music-dock.tsx once over every view, so upstream's stays under
+/// a detail page or the search panel. (device-flow pass) A track started there showed nothing:
+/// no "Finding a source", no error when every source failed, and no way into Now Playing short of
+/// backing out to the room. A bottom inset, so the page scrolls above it rather than under it.
+struct MusicDockHost: ViewModifier {
+    @State private var nowPlayingOpen = false
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                MusicDockSlot(onExpand: { nowPlayingOpen = true })
+            }
+            .fullScreenCover(isPresented: $nowPlayingOpen) { MusicNowPlayingView() }
+    }
+}
+
+/// The dock while something is loaded, else nothing (the inset closes up). It sits on the bottom
+/// safe area, which already keeps it off the screen edge.
+private struct MusicDockSlot: View {
+    let onExpand: () -> Void
+    @ObservedObject private var player = MusicPlayer.shared
+    var body: some View {
+        if player.current != nil {
+            MusicDockView(onExpand: onExpand)
+                .padding(.horizontal, BP.gutter)
+                .padding(.top, BP.px(8))
+        }
+    }
+}
+
+extension View {
+    func musicDock() -> some View { modifier(MusicDockHost()) }
+}
+
 /// Elapsed / bar / length (music-dock.tsx time part).
 struct MusicProgressBar: View {
     @ObservedObject var clock: MusicClock
@@ -414,6 +463,8 @@ struct MusicProgressBar: View {
 /// Previous / play-pause / next / save, shared by the dock and the Now Playing screen.
 struct MusicTransportButtons: View {
     var compact = false
+    /// The screen's focus scope, when Play/Pause should take the focus as it opens (Now Playing).
+    var focusNamespace: Namespace.ID? = nil
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
 
@@ -423,6 +474,7 @@ struct MusicTransportButtons: View {
             icon(player.phase == .playing ? "pause.fill" : (player.phase == .error ? "arrow.clockwise" : "play.fill"),
                  player.phase == .playing ? copy("music.pause", "Pause") : copy("music.play", "Play"), big: true) { player.toggle() }
                 .accessibilityIdentifier("music-toggle")
+                .modifier(MusicPrefersFocus(namespace: focusNamespace))
             icon("forward.fill", copy("music.next", "Next track")) { player.next() }
             icon(player.isLiked(player.current) ? "heart.fill" : "heart",
                  player.isLiked(player.current) ? copy("music.unsaveTrack", "Remove from saved tracks") : copy("music.saveTrack", "Save track")) { player.toggleLiked() }
@@ -435,6 +487,18 @@ struct MusicTransportButtons: View {
         }
         .buttonStyle(MusicIconStyle(big: big && !compact))
         .accessibilityLabel(label)
+    }
+}
+
+/// prefersDefaultFocus in the given scope, or nothing without one.
+private struct MusicPrefersFocus: ViewModifier {
+    let namespace: Namespace.ID?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let namespace {
+            content.prefersDefaultFocus(true, in: namespace)
+        } else {
+            content
+        }
     }
 }
 

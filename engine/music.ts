@@ -40,6 +40,8 @@ const COPY_KEYS = [
   "music.card.startRadio", "music.radio.error", "music.now.next",
   // up-next.ts (upstream 770ca0bd): Now Playing's Up next while radio suggestions load
   "music.now.queueBuilding",
+  // music-queue.tsx row actions (Now Playing's queue: Move up / down, Remove)
+  "music.queue.moveUp", "music.queue.moveDown", "music.queue.remove",
   "Lyrics", "Lyric sync", "Lyrics earlier", "Lyrics later", "Finding lyrics", "No lyrics for this track",
   // Spotify (music.ts spotify + spotifySetup, spotify-setup.tsx, recovery.ts)
   "music.spotify.connect", "music.spotify.connectDetail", "music.spotify.connectAction", "music.spotify.connectedAs", "music.spotify.premium",

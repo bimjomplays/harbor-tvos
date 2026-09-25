@@ -54,6 +54,7 @@ struct MusicSpotifyLibraryView: View {
                 .padding(.top, BP.px(60))
             }
         }
+        .musicDock()
         // music-spotify-library.tsx back(): inside a playlist, Back returns to the list first.
         .onExitCommand { if selected != nil { selected = nil } else { dismiss() } }
         .onPlayPauseCommand { player.remoteToggle() }

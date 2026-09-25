@@ -15,6 +15,7 @@ struct MusicPageView: View {
     /// views/music.tsx releasesLoadingMore / releasesMoreError
     @State private var loadingMore = false
     @State private var moreError: String?
+    @State private var retrying = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -23,8 +24,23 @@ struct MusicPageView: View {
                 VStack(alignment: .leading, spacing: BP.px(26)) {
                     header
                     if player.radioStatus != nil { MusicRadioStatusNote().padding(.horizontal, BP.gutter) }
-                    if let error {
-                        BPNote(text: error, tone: BP.danger).padding(.horizontal, BP.gutter)
+                    if let error, data == nil {
+                        // music-detail.tsx: the error with Try sources again (onRetry). (device-flow
+                        // pass) The page had only the note: nothing to focus, no way to try again.
+                        VStack(alignment: .leading, spacing: BP.px(12)) {
+                            BPNote(text: error, tone: BP.danger)
+                            Button(copy("music.offline.retry", "Try sources again")) {
+                                guard !retrying else { return }
+                                Task {
+                                    retrying = true
+                                    await load()
+                                    retrying = false
+                                }
+                            }
+                            .buttonStyle(BPActionStyle(busy: retrying))
+                        }
+                        .padding(.horizontal, BP.gutter)
+                        .focusSection()
                     } else if data == nil {
                         ProgressView().padding(.horizontal, BP.gutter)
                     }
@@ -51,6 +67,7 @@ struct MusicPageView: View {
                 .padding(.top, BP.px(60))
             }
         }
+        .musicDock()
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
         // (bug pass 3) Once per page: `.task` runs again whenever a cover over it closes (an album
@@ -133,9 +150,10 @@ struct MusicPageView: View {
     }
 
     private func load() async {
-        error = nil
         do {
+            // The error stays up while a retry runs, so its button keeps the focus.
             data = try await HarborEngine.shared.call("music.open", [target.card.item])
+            error = nil
         } catch EngineError.js(let message) {
             error = MusicPlayer.cleanJSError(message)
         } catch {
@@ -154,7 +172,7 @@ struct MusicTrackLine: View {
     let track: MusicTrack
     let number: Int
     @ObservedObject private var player = MusicPlayer.shared
-    private var playing: Bool { player.current?.queueKey == track.queueKey }
+    private var playing: Bool { player.isCurrent(track) }
 
     var body: some View {
         HStack(spacing: BP.px(14)) {
@@ -215,7 +233,14 @@ struct MusicSearchView: View {
                     Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
                         .buttonStyle(BPActionStyle())
                     if model.searching { ProgressView() }
-                    if let error = model.error { BPNote(text: error, tone: BP.danger) }
+                    if let error = model.error {
+                        // music-search-panel.tsx MusicSectionError onRetry (on one line: the
+                        // keyboard column has to stay clear of the dock).
+                        HStack(spacing: BP.px(12)) {
+                            BPNote(text: error, tone: BP.danger)
+                            Button("Retry") { model.retry() }.buttonStyle(BPActionStyle())
+                        }
+                    }
                     if player.radioStatus != nil { MusicRadioStatusNote() }
                 }
                 .padding(.leading, BP.gutter)
@@ -224,7 +249,9 @@ struct MusicSearchView: View {
                 results
             }
         }
+        .musicDock()
         .onExitCommand { dismiss() }
+        .onPlayPauseCommand { player.remoteToggle() }
         .fullScreenCover(item: $page) { t in MusicPageView(target: t) }
         .musicSpotifyDestinationHost()
         .fullScreenCover(isPresented: $phoneOpen) {
@@ -316,6 +343,9 @@ struct MusicNowPlayingView: View {
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
     @State private var panel = "queue"
+    /// (device-flow pass) Play/Pause takes the focus when the screen opens: the top-most control,
+    /// the Up next tab, did before, a long way from the transport.
+    @Namespace private var focusNS
 
     var body: some View {
         ZStack {
@@ -352,7 +382,7 @@ struct MusicNowPlayingView: View {
                     MusicVolumeControl()
                         .focusSection()
                     HStack(spacing: BP.px(18)) {
-                        MusicTransportButtons()
+                        MusicTransportButtons(focusNamespace: focusNS)
                         Spacer()
                         Button { player.close(); dismiss() } label: { Label(copy("music.player.close", "Stop and close player"), systemImage: "xmark") }
                             .buttonStyle(BPActionStyle())
@@ -373,9 +403,14 @@ struct MusicNowPlayingView: View {
             .padding(.horizontal, BP.gutter)
             .padding(.top, BP.px(70))
         }
+        .focusScope(focusNS)
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
         .onChange(of: player.current == nil) { _, gone in if gone { dismiss() } }
+        // (device-flow pass) The Up next suggestions' track menu offers Add to playlist: without a
+        // host of its own the environment reached MusicView's, which cannot present while this
+        // screen is up, so the choice did nothing.
+        .musicSpotifyDestinationHost()
     }
 
     private func tab(_ id: String, _ title: String) -> some View {
@@ -552,7 +587,21 @@ struct MusicQueueList: View {
                             Button { player.jump(to: i) } label: { MusicTrackLine(track: track, number: i - player.index) }
                                 .buttonStyle(BPTileStyle(radius: BP.rSM))
                                 .contextMenu {
-                                    Button(role: .destructive) { player.remove(at: i) } label: { Label("Remove", systemImage: "minus.circle") }
+                                    // music-queue.tsx row actions: Play next, Move up / down, Remove.
+                                    if i > player.index + 1 {
+                                        Button { player.playQueuedNext(at: i) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
+                                        Button { player.move(from: i, to: i - 1) } label: {
+                                            Label(copy("music.queue.moveUp", "Move {title} up").replacingOccurrences(of: "{title}", with: track.title), systemImage: "arrow.up")
+                                        }
+                                    }
+                                    if i < player.queue.count - 1 {
+                                        Button { player.move(from: i, to: i + 1) } label: {
+                                            Label(copy("music.queue.moveDown", "Move {title} down").replacingOccurrences(of: "{title}", with: track.title), systemImage: "arrow.down")
+                                        }
+                                    }
+                                    Button(role: .destructive) { player.remove(at: i) } label: {
+                                        Label(copy("music.queue.remove", "Remove {title} from the queue").replacingOccurrences(of: "{title}", with: track.title), systemImage: "minus.circle")
+                                    }
                                     Button { player.toggleLiked(track) } label: {
                                         Label(player.isLiked(track) ? copy("music.unsaveTrack", "Remove from saved tracks") : copy("music.saveTrack", "Save track"),
                                               systemImage: player.isLiked(track) ? "heart.slash" : "heart")

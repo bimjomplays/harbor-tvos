@@ -998,6 +998,7 @@ r.ok("benchmark still works", (() => {
   const noSuggestions = await m.upNext({ ...seedTrack, id: "deezer:track:0", sourceId: "0", title: "Nothing Like It", artist: "Nobody At All" });
   r.eq("music.upNext is empty (not an error) when no station can be built", noSuggestions, []);
   r.eq("music.copy carries up-next.ts's loading line", m.copy()["music.now.queueBuilding"], "Building up next");
+  r.eq("music.copy carries music-queue.tsx's row actions (templates kept)", [m.copy()["music.queue.moveUp"], m.copy()["music.queue.moveDown"], m.copy()["music.queue.remove"]], ["Move {title} up", "Move {title} down", "Remove {title} from the queue"]);
 
   m.subsonicDisconnect();
   r.ok("music.subsonicDisconnect forgets the pairing", !store.has("harbor.subsonic.v1.token") && m.connections().find((c) => c.id === "subsonic").status === "disconnected");

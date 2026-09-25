@@ -53,6 +53,12 @@ final class MusicSearchModel: ObservableObject {
     @Published private(set) var error: String?
     private var task: Task<Void, Never>?
 
+    /// music-search-panel.tsx onRetry: the same query again. The error stays until the answer
+    /// comes, so the Retry button keeps the focus.
+    func retry() {
+        schedule()
+    }
+
     private func schedule() {
         task?.cancel()
         let q = query.trimmingCharacters(in: .whitespaces)

@@ -188,6 +188,8 @@ final class MusicPlayer: ObservableObject {
         if !q.contains(where: { $0.queueKey == track.queueKey }) { q.insert(track, at: 0) }
         let at = q.firstIndex { $0.queueKey == track.queueKey } ?? 0
         queue = q
+        // A new queue has no tracks added with Add to queue (they only line up within one queue).
+        manuallyQueued = []
         failed = []
         skipUnavailable = false
         start(at: at)
@@ -196,14 +198,56 @@ final class MusicPlayer: ObservableObject {
     /// Queue a track to play after the current one (music-track-menu "Play next").
     func playNext(_ track: MusicTrack) {
         guard current != nil, index >= 0 else { play(track); return }
+        // Already coming up: it moves forward (music-queue.tsx playNext) rather than playing twice.
+        if let at = queue.indices.first(where: { $0 > index && queue[$0].queueKey == track.queueKey }) {
+            playQueuedNext(at: at)
+            return
+        }
         queue.insert(track, at: min(index + 1, queue.count))
         dropPreloaded()
     }
 
-    /// player.ts enqueueMusic: at the end of the queue.
+    /// queue-insert.ts `manual`: queue keys added with Add to queue, so the next one lines up behind them.
+    private var manuallyQueued: Set<String> = []
+
+    /// player.ts enqueueMusic: "Queues after what is playing, ahead of the rest of the collection"
+    /// (queue-insert.ts queueInsertIndex: behind the tracks already added this way); a track that
+    /// is already in the queue is left where it is (insertIntoQueue).
+    /// (device-flow pass) It was appended after the whole album or playlist, so a song added while
+    /// track 2 of 12 played only came after track 12.
     func enqueue(_ track: MusicTrack) {
         guard current != nil else { play(track); return }
-        queue.append(track)
+        guard !queue.contains(where: { $0.queueKey == track.queueKey }) else { return }
+        var at = max(0, index + 1)
+        while at < queue.count, manuallyQueued.contains(queue[at].queueKey) { at += 1 }
+        manuallyQueued.insert(track.queueKey)
+        queue.insert(track, at: at)
+        dropPreloaded()
+    }
+
+    /// music-queue.tsx move(from, to): an upcoming entry moves within the upcoming part only.
+    func move(from: Int, to: Int) {
+        let first = max(0, index + 1)
+        guard from != to, from >= first, to >= first, queue.indices.contains(from), queue.indices.contains(to) else { return }
+        let track = queue.remove(at: from)
+        queue.insert(track, at: to)
+        // The entry after the current one may have changed: a preloaded item would play the old one.
+        dropPreloaded()
+    }
+
+    /// music-queue.tsx playNext(index): an upcoming entry moves to right after the current one.
+    func playQueuedNext(at i: Int) {
+        move(from: i, to: max(0, index + 1))
+    }
+
+    /// music-detail.tsx isCurrent: a row is the one playing when it is the current track or the
+    /// catalog entry that track was matched from (collectionOrigin). (device-flow pass) Comparing
+    /// queue keys alone lost the mark on album, shelf and search rows the moment a source was found.
+    func isCurrent(_ track: MusicTrack?) -> Bool {
+        guard let track, let current else { return false }
+        if current.id == track.id, current.connectorId == track.connectorId { return true }
+        if let origin = current.collectionOrigin, origin.id == track.id, origin.connectorId == track.connectorId { return true }
+        return false
     }
 
     func toggle() {
@@ -246,8 +290,16 @@ final class MusicPlayer: ObservableObject {
     }
 
     /// The remote's Play/Pause (a music screen's onPlayPauseCommand), through the gate above.
+    /// (device-flow pass) While a film holds the TV (PlaybackState: Music opened from the Picture in
+    /// Picture browse layer) the press is the film's, as the remote commands below already defer:
+    /// the Music room's handler shadowed the layer's own and started the paused music over the film.
     func remoteToggle() {
-        if mediaKeyGate() { toggle() }
+        guard mediaKeyGate() else { return }
+        if PlaybackState.shared.active {
+            if PiPBrowse.shared.filmInPiP { PiPBrowse.shared.togglePlayback() }
+            return
+        }
+        toggle()
     }
 
     func pause() {
@@ -327,6 +379,7 @@ final class MusicPlayer: ObservableObject {
         engine = .none
         current = nil
         queue = []
+        manuallyQueued = []
         index = -1
         position = 0
         duration = 0
