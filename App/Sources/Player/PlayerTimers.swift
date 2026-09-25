@@ -360,12 +360,17 @@ struct PlayerSpeedPanel: View {
                 .focused($focus, equals: "back")
             if !isLive {
                 // speed-menu.tsx onMakeDefault → update({ defaultPlaybackSpeed }).
-                Button { Task { try? await SettingsBridge.shared.patch(["defaultPlaybackSpeed": .number(rate)]) } } label: {
+                // (player pass 2) Dimmed, not disabled, once the rate is the default: pressing it
+                // disabled the button under the ring, which then jumped to Back or Cancel timer.
+                let isDefault: Bool = abs(rate - defaultSpeed) < 0.01
+                Button {
+                    if !isDefault { Task { try? await SettingsBridge.shared.patch(["defaultPlaybackSpeed": .number(rate)]) } }
+                } label: {
                     Label("Set as default speed", systemImage: "pin")
                 }
                 .buttonStyle(BPActionStyle())
+                .opacity(isDefault ? 0.45 : 1)
                 .focused($focus, equals: "make-default")
-                .disabled(abs(rate - defaultSpeed) < 0.01)
             }
             if sleep.isActive {
                 Button { sleep.clear(); onClose() } label: { Label("Cancel timer", systemImage: "xmark") }
