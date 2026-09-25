@@ -551,7 +551,6 @@ function locationLabel(loc: ParticipantLocation | undefined): string | null {
   }
 }
 
-/** Everything the TV screens read, as plain JSON. */
 /**
  * (player parity pass 2) use-bp-streams.ts hostSourceForMedia: the host's source descriptor when
  * this TV is in a joined room under someone else's host and that host is playing this title (and
@@ -565,6 +564,7 @@ export function hostSourceForMedia(mediaId: string, episode: { season: number; e
   return hostSourceMatchesMedia(hostSource, mediaId, episode) ? (hostSource?.descriptor ?? null) : null;
 }
 
+/** Everything the TV screens read, as plain JSON. (review 20: moved back above view().) */
 export function view() {
   ensureIdentity();
   const inSession = snapshot.state === "joined" && !!snapshot.room;
