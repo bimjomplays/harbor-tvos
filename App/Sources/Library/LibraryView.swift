@@ -86,6 +86,9 @@ final class LibraryModel: ObservableObject {
     func set(type t: String) { type = t; limit = 60; Task { await load() } }
     func set(sort s: String) {
         sort = s; sortKnown = true; limit = 60
+        // A feed already in flight (the first one asks with no sort and answers with the saved one)
+        // must not land after this pick: it set `sort` back, and the load below then asked for it.
+        generation += 1
         let p = profile
         Task { _ = try? await HarborEngine.shared.callJSON("libraryRoom.setSort", [.string(s), .string(p.id), .bool(p.linked)]); await load() }
     }
