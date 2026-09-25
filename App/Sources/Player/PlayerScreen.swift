@@ -480,6 +480,10 @@ struct PlayerScreen: View {
             SleepTimer.shared.unregister(nowPlayingId)
             skipHideTask?.cancel()
             seekCommit?.cancel()
+            // (review 25) The nudge it held goes with it: a player that comes back (the PiP browse
+            // layer) showed the uncommitted spot on the bar and counted the next nudge from it.
+            pendingSeek = nil
+            seekRun = 0
             // media-session.ts clearMediaControls before PlaybackState lets the music take Now Playing back.
             VideoNowPlaying.shared.end(nowPlayingId)
             // A player torn down while it owned the PiP browse layer (the tree rebuilt) takes it down.
@@ -716,7 +720,7 @@ struct PlayerScreen: View {
             if let ref { Task { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) } }
             return
         }
-        finish(natural: false, reopening: true)
+        finish(natural: false, reopening: true, sendingBack: true)
         Task { @MainActor in
             if let ref { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) }
             again(auto)
@@ -805,6 +809,8 @@ struct PlayerScreen: View {
         }
         // A pill that went away takes the ring back to the stage.
         if activeSkip == nil, focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
+        // (review 25) So does the up-next card (a seek back out of the lead, its outro's pill hidden).
+        if !showUpNextCard, focus == .chip("upnext-play") || focus == .chip("upnext-keep") { focus = .surface }
         // (P8) So does the duration-mismatch chip (the host changed files, the length arrived).
         let onMismatch: Bool = focus == DurationMismatch.entry || focus == DurationMismatch.dismissTarget
         if onMismatch, mismatchNow == nil { focus = .surface }
@@ -1656,7 +1662,10 @@ struct PlayerScreen: View {
             TorrentEngine.shared.playerOpened(url: next)
             TorrentEngine.shared.playerClosed(url: owned)
         }
-        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles, ref: ref, filename: hints?.filename)
+        // (review 25) A home-server quality keeps the release: switchMediaServerQuality spreads the
+        // PlayerSrc (its streamRef stays), so subtitleStreamKey and the release key do not move.
+        let nextFilename: String? = replacesSrc ? (switched?.filename ?? streamHints?.filename) : hints?.filename
+        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles, ref: ref, filename: nextFilename)
         if replacesSrc { replacedSrc = next }
         // (P8) use-host-source: nothing closes, so a Watch Together room keeps this player (no
         // host-leaving, no reopen); the room's source descriptor follows the new stream.
@@ -2087,7 +2096,13 @@ struct PlayerScreen: View {
         guard case .chip(let id)? = focus else { return false }
         let cards: [String] = ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry",
                                "mismatch-find", "mismatch-dismiss", "skip", "skip-dismiss", "upnext-play", "upnext-keep"]
-        return cards.contains(id)
+        guard cards.contains(id) else { return false }
+        // (review 25) Only while that cue is drawn: the pill turns into the up-next card inside the
+        // lead (and the card goes back to the pill on a seek out of it), so a ring left on the one
+        // that went is taken back to the stage by the hide, not kept on nothing.
+        if id == "skip" || id == "skip-dismiss" { return activeSkip != nil && !showUpNextCard }
+        if id == "upnext-play" || id == "upnext-keep" { return showUpNextCard }
+        return true
     }
 
     private func fmt(_ s: Double) -> String { PlayerClock.fmt(s) }
@@ -2483,7 +2498,9 @@ struct PlayerScreen: View {
     /// on to the next episode (defaults to `natural`, the way onClose always read).
     /// `reopening`: the caller opens another player right away, from its picker (another episode or
     /// source; defaults to an advance with a next episode).
-    private func finish(natural: Bool, advance: Bool? = nil, reopening: Bool? = nil) {
+    /// `sendingBack`: sendBackToPicker's close (onStubEject / the auto-next open the picker without
+    /// closePlayer), which takes no exit frame.
+    private func finish(natural: Bool, advance: Bool? = nil, reopening: Bool? = nil, sendingBack: Bool = false) {
         // "Play now" and the file's own end can both land in the last second; close once.
         guard !finishing else { return }
         finishing = true
@@ -2505,7 +2522,10 @@ struct PlayerScreen: View {
         // pick that failed): use-player-exit onStubEject and views/player.tsx's auto-next open the
         // picker without closePlayer, so no frame is taken; here a stub's placeholder picture
         // replaced the title's Continue Watching frame. A frame kept while it played stays.
-        if !isLive, !sentBack {
+        // (review 25) Keyed by this close, not by sentBack: a send-back refused past the fifth
+        // attempt (or with no stream ref to mark) keeps the player, and sentBack with it, so a
+        // stream that then played and was closed by hand took no frame either.
+        if !isLive, !sendingBack {
             let live: (position: Double, duration: Double, paused: Bool) = controller?.snapshot() ?? clock.snap
             exitSnapshot.captureOnExit(controller: controller, context: context, position: live.position, duration: live.duration)
         }

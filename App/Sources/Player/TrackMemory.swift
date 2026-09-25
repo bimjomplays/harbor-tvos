@@ -309,7 +309,8 @@ extension PlayerScreen {
                            genres: context.meta.genres ?? [],
                            // After an in-place switch the original release's filename no longer applies (review 26);
                            // (player regression pass) the source switcher's pick names its own (subtitleStreamKey
-                           // over activeMediaSrc.streamRef), the kid and quality switches none.
+                           // over activeMediaSrc.streamRef), a home-server quality keeps the release's (review 25),
+                           // the kid switcher none.
                            filename: switchedInPlace ? switchedFilename : streamHints?.filename)
     }
 }
