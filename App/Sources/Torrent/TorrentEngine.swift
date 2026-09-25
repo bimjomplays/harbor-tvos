@@ -158,7 +158,10 @@ final class TorrentEngine {
             let files: [AnyJSON] = added.files.map { .object(["idx": .number(Double($0.idx)), "name": .string($0.name), "length": .number($0.length)]) }
             let season: AnyJSON = plan.season.map { .number(Double($0)) } ?? .null
             let episode: AnyJSON = plan.episode.map { .number(Double($0)) } ?? .null
-            if let n = (try? await HarborEngine.shared.callJSON("streamsRoom.p2pFileIdx", [.array(files), season, episode]))?.number {
+            // (bug pass 2) Int(_:) traps on a non-integral-range Double (a huge or non-finite
+            // index from the engine); only a whole number that could be a file index is taken.
+            if let n = (try? await HarborEngine.shared.callJSON("streamsRoom.p2pFileIdx", [.array(files), season, episode]))?.number,
+               n.isFinite, n >= 0, n <= Double(Int32.max), n.rounded() == n {
                 let pick = Int(n)
                 if added.files.contains(where: { $0.idx == pick }) { idx = pick }
             }

@@ -182,9 +182,10 @@ drawListenersRef.current.add((e) => {
     const point = { x: e.x, y: e.y };
     const idx = strokes.findIndex((s) => s.id === e.strokeId);
     if (idx === -1) {
+      // (bug pass 2) A nameless draw event: nameColor(undefined) threw and stopped the view.
       strokes = [
         ...strokes,
-        { id: e.strokeId, authorId: e.from, authorName: e.name, color: e.color || nameColor(e.name), points: [point], bornAt: Date.now(), path: e.path },
+        { id: e.strokeId, authorId: e.from, authorName: typeof e.name === "string" ? e.name : "", color: e.color || nameColor(typeof e.name === "string" ? e.name : ""), points: [point], bornAt: Date.now(), path: e.path },
       ];
     } else if (strokes[idx].points.length < STROKE_MAX_POINTS) {
       const next = strokes.slice();
@@ -554,17 +555,21 @@ export function view() {
   ensureIdentity();
   const inSession = snapshot.state === "joined" && !!snapshot.room;
   const participants = snapshot.participants
-    .slice()
-    .sort((a, b) => a.joinedAt - b.joinedAt)
+    // (bug pass 2) A relay entry without an id is dropped and a missing / non-string name reads
+    // as "": nameColor(undefined) threw inside the emit timer, so one malformed participant
+    // stopped every harbor:together update and the Watch Together screen froze.
+    .filter((p) => p && typeof p.id === "string")
+    .sort((a, b) => (Number(a.joinedAt) || 0) - (Number(b.joinedAt) || 0))
     .map((p) => {
       const self = p.id === clientId;
+      const name = typeof p.name === "string" ? p.name : "";
       return {
         id: p.id,
-        name: p.name,
+        name,
         ready: !!p.ready,
         joinedAt: p.joinedAt,
         avatar: self ? selfAvatar : (p.avatar ?? null),
-        color: (self ? selfColor : (p.color ?? null)) || nameColor(p.name),
+        color: (self ? selfColor : (typeof p.color === "string" ? p.color : null)) || nameColor(name),
         isSelf: self,
         host: p.id === snapshot.hostClientId,
         activeAt: presenceMap.get(p.id) ?? null,

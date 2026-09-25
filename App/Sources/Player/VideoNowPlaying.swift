@@ -36,6 +36,9 @@ final class VideoNowPlaying {
     private var artworkFor: String?
     private var artwork: MPMediaItemArtwork?
     private var lastActionAt = Date.distantPast
+    /// (bug pass 2) Runs right after end() clears Now Playing: MusicPlayer writes its track back
+    /// if nothing holds playback any more, whichever order end() and PlaybackState.release run in.
+    var onEnded: (@MainActor () -> Void)?
 
     /// media-session.ts mediaKeyGate: one media action per 350 ms. The remote's own Play/Pause
     /// goes through it too, so a press that also arrives as a remote command toggles once.
@@ -124,6 +127,7 @@ final class VideoNowPlaying {
         c.skipForwardCommand.isEnabled = false
         c.stopCommand.isEnabled = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        onEnded?()
     }
 
     private func loadArtwork(_ raw: String?, for id: UUID) {

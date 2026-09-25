@@ -917,6 +917,14 @@ r.ok("benchmark still works", (() => {
   r.ok("music liked/recents store Navidrome cover art without u/t/s and sign it again for the room", rawRecents.includes("/rest/getCoverArt?") && !/[?&](u|t|s)=/.test(rawRecents) && !/[?&](u|t|s)=/.test(rawLiked) && !rawRecents.includes(store.get("harbor.subsonic.v1.token")) && new URL(shownArt).searchParams.get("t") === store.get("harbor.subsonic.v1.token") && new URL(shownArt).searchParams.get("u") === "alice" && new URL(shownArt).searchParams.get("id") === new URL(artTrack.artwork).searchParams.get("id") && new URL(artTrack.artwork).searchParams.get("t") !== null, JSON.stringify({ rawRecents: rawRecents.slice(0, 300), shownArt }));
   const p2 = await m.prepare(album.tracks[1], null, null);
   r.ok("Navidrome asks the server for MP3 when the file is Opus (AVPlayer cannot decode it)", new URL(p2.stream.url).searchParams.get("format") === "mp3" && new URL(p2.stream.url).searchParams.get("maxBitRate") === "320", p2.stream.url);
+  // (bug pass 2) A gapless preload resolves early but reports "now playing" only once it is heard.
+  const reportsBefore = scrobbles.length;
+  const p3 = await m.prepare(album.tracks[2], null, null, true);
+  await new Promise((res) => setTimeout(res, 5));
+  const preloadQuiet = !scrobbles.slice(reportsBefore).some((x) => x[1] === "false");
+  m.started(p3.track);
+  await new Promise((res) => setTimeout(res, 5));
+  r.ok("a preloaded Navidrome track reports now playing when it starts (music.started), not when it resolves", preloadQuiet && p3.stream.url.includes("id=c") && scrobbles.slice(reportsBefore).filter((x) => x[0] === "c" && x[1] === "false").length === 1, JSON.stringify(scrobbles.slice(reportsBefore)));
   const ns = await m.search("hysteria", "subsonic");
   r.ok("music.search scoped to Navidrome uses search3", ns.tracks[0] && ns.tracks[0].track.id === "subsonic:mf-1" && ns.tracks[0].track.durationLabel === "3:47", JSON.stringify(ns.tracks));
 
@@ -985,6 +993,7 @@ r.ok("benchmark still works", (() => {
   const forms = [];
   let meProduct = "premium";
   let tokenReply = null;
+  let tokenGate = null;
   const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
   const img = (w) => ({ url: `https://i.scdn.co/image/${w}`, width: w, height: w });
   const spTrack = (id, name, extra = {}) => ({ uri: `spotify:track:${id}`, name, duration_ms: 227000, explicit: false, artists: [{ name: "Muse" }], album: { name: "Absolution", images: [img(64), img(640)] }, ...extra });
@@ -1025,6 +1034,7 @@ r.ok("benchmark still works", (() => {
     if (u.host === "accounts.spotify.com" && u.pathname === "/api/token") {
       const form = Object.fromEntries(new URLSearchParams(req.body || ""));
       forms.push(form);
+      if (tokenGate) await tokenGate;
       if (tokenReply) return json(req, tokenReply.body, tokenReply.status);
       if (form.grant_type === "authorization_code") return json(req, { access_token: "web-1", token_type: "Bearer", expires_in: 3600, refresh_token: "refresh-1", scope: "streaming user-library-read user-top-read" });
       if (form.grant_type === "refresh_token") return json(req, { access_token: "web-2", token_type: "Bearer", expires_in: 3600, scope: "streaming" });
@@ -1184,6 +1194,22 @@ r.ok("benchmark still works", (() => {
   await Promise.all([m.search("muse", "spotify"), m.search("daft punk", "spotify"), m.search("air", "spotify")]);
   const spent = forms.slice(formsBefore).filter((f) => f.grant_type === "refresh_token");
   r.ok("concurrent Spotify calls share one token refresh (a rotated refresh token is never spent twice)", spent.length === 1 && spent[0].refresh_token === "refresh-once" && JSON.parse(store.get("harbor.spotify.v1.webToken")).accessToken === "web-2", JSON.stringify({ spent, stored: store.get("harbor.spotify.v1.webToken") }));
+  // (bug pass 2) A refresh still on the wire when Spotify is disconnected does not save its token.
+  await m.spotifyDisconnect();
+  store.set("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-late", expiresAt: 10, scopes: ["streaming"] }));
+  rec.engine.runtime.syncStorage("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-late", expiresAt: 10, scopes: ["streaming"] }));
+  await m.spotifySessionReady({ ...rust, credentials: null, accountType: "Premium", premium: true }, null);
+  let openGate;
+  tokenGate = new Promise((resolve) => { openGate = resolve; });
+  const lateBefore = forms.length;
+  const lateSearch = m.search("muse", "spotify").then(() => "ok", (e) => e.message);
+  for (let i = 0; i < 50 && !forms.slice(lateBefore).some((f) => f.refresh_token === "refresh-late"); i++) await new Promise((res) => setTimeout(res, 1));
+  const lateAsked = forms.slice(lateBefore).some((f) => f.refresh_token === "refresh-late");
+  await m.spotifyDisconnect();
+  tokenGate = null;
+  openGate();
+  const lateOutcome = await lateSearch;
+  r.ok("a Spotify token refresh that lands after Disconnect is dropped (the forgotten sign-in is not saved again)", lateAsked && !store.has("harbor.spotify.v1.webToken") && !m.spotifyStatus().connected, JSON.stringify({ lateAsked, lateOutcome, stored: store.get("harbor.spotify.v1.webToken") }));
   rec.dispose();
 }
 
@@ -2730,6 +2756,16 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const v2 = T.view();
   r.ok("chat, strokes, cursors and presence land in the view", v2.chat.length === 1 && v2.chat[0].text === "popcorn ready?" && v2.strokes.length === 1 && v2.strokes[0].points.length === 2 && v2.cursors.length === 1 && v2.participants[0].locationLabel === "Watching The Shawshank Redemption", JSON.stringify({ chat: v2.chat, strokes: v2.strokes, cursors: v2.cursors, loc: v2.participants[0].locationLabel }));
   r.ok("a room command reaches the host as harbor:together-sync", events.some(([t, d]) => t === "harbor:together-sync" && d.kind === "command" && d.command.action === "pause" && d.from === "host1"));
+  // (bug pass 2) A nameless participant (and a nameless draw) from the relay: nameColor(undefined)
+  // threw inside the emit timer, so harbor:together stopped and the TV's room screen froze.
+  wsEvent(sock, "message", JSON.stringify({ t: "participant-joined", participant: { id: "odd1", joinedAt: 3, ready: false } }));
+  wsEvent(sock, "message", JSON.stringify({ t: "draw", from: "odd1", strokeId: "s9", phase: "start", x: 0.1, y: 0.1, path: "player:tt0111161" }));
+  const evBefore = events.filter(([t]) => t === "harbor:together").length;
+  await wait(220);
+  let vOdd = null;
+  try { vOdd = T.view(); } catch (e) { vOdd = String(e); }
+  r.ok("a participant without a name still yields a view (name \"\", a colour) and the throttled event", vOdd && Array.isArray(vOdd.participants) && vOdd.participants.some((p) => p.id === "odd1" && p.name === "" && typeof p.color === "string") && vOdd.strokes.some((s) => s.id === "s9" && s.authorName === "") && events.filter(([t]) => t === "harbor:together").length > evBefore, JSON.stringify(vOdd).slice(0, 300));
+  wsEvent(sock, "message", JSON.stringify({ t: "participant-left", clientId: "odd1" }));
   T.sendChat("  hi all  ");
   T.sendCommand({ action: "seek", positionSeconds: 10 });
   T.sendCommand({ action: "seek", positionSeconds: 20 });

@@ -44,6 +44,10 @@ struct TogetherToastHost: View {
     /// The shell's host stays quiet while anything is presented over the shell (a page, the
     /// player, the account menu): it could not present the title, and the invite must survive.
     private var covered: Bool {
+        // (bug pass 2) The screensaver and the curfew lock live in ShellOverlay's own window, not
+        // as a cover on the main one: an invite arriving under the saver auto-joined (opened the
+        // title and started playback) with nobody watching, or behind the kid's curfew lock.
+        if ShellOverlay.shared.keyWindow != nil { return true }
         guard !inRoomScreen else { return opening != nil }
         guard let root = HarborOverlayWindow.mainWindow?.rootViewController else { return false }
         return root.presentedViewController != nil

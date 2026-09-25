@@ -59,6 +59,24 @@ final class ProfilesStore: ObservableObject {
     private struct Blob: Codable {
         var activeId: String?
         var profiles: [Profile]
+
+        init(activeId: String?, profiles: [Profile]) {
+            self.activeId = activeId
+            self.profiles = profiles
+        }
+
+        /// (bug pass 2) One profile the roster sync wrote with a missing or mistyped field failed
+        /// the whole blob: launch fell back to the old Prefs copy and every later roster reload
+        /// was ignored. A profile without an id is skipped; the rest decode (Profile's lenient
+        /// init below). A blob whose `profiles` is not an array still fails, as before.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: LenientKey.self)
+            guard let list: [Profile] = c.lossyArray("profiles") else {
+                throw DecodingError.keyNotFound(LenientKey("profiles"), .init(codingPath: c.codingPath, debugDescription: "profiles is not an array"))
+            }
+            activeId = c.lenient("activeId")
+            profiles = list
+        }
     }
 
     private init() {
@@ -93,6 +111,9 @@ final class ProfilesStore: ObservableObject {
         guard unsubscribe == nil else { return }
         unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
             guard type == "harbor:roster-applied" else { return }
+            // (bug pass 2) engine/sync.ts purges the dropped profiles' localStorage keys; the
+            // Swift-only ones (the curfew record in Prefs) are ours to drop.
+            for d in detail?["dropped"]?.array ?? [] { if let id = d.string { CurfewState.purge(profileId: id) } }
             self?.reloadFromStore()
         }
     }
@@ -142,6 +163,7 @@ final class ProfilesStore: ObservableObject {
         _ = try? await HarborEngine.shared.callJSON("sync.profileDeleted", [.string(id)])
         _ = try? await HarborEngine.shared.callJSON("profilesRoom.purge", [.string(id)])
         SecretStore.remove("harbor.auth.\(id)")
+        CurfewState.purge(profileId: id)   // (bug pass 2) Swift-only key, not in the engine's purge list
         profiles.removeAll { $0.id == id }
         for i in profiles.indices where profiles[i].shareStremioWith == id { profiles[i].shareStremioWith = nil }
         if activeId == id { activeId = profiles.first?.id }
@@ -249,5 +271,49 @@ final class ProfilesStore: ObservableObject {
     static func hashPin(_ pin: String) -> String {
         let digest = SHA256.hash(data: Data("harbor-profile-v1|\(pin)".utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// (bug pass 2) Lenient per-field decoding for roster entries written by profile sync / desktop
+// (lib/profiles.tsx Profile). Only `id` is required; the others fall back to what a fresh profile
+// has. In extensions so the memberwise inits (seedIfEmpty, create, ProfileEditorView) stay.
+extension ProfilesStore.Profile {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LenientKey.self)
+        guard let id: String = c.lenient("id"), !id.isEmpty else {
+            throw DecodingError.keyNotFound(LenientKey("id"), .init(codingPath: c.codingPath, debugDescription: "profile without an id"))
+        }
+        self.id = id
+        syncId = c.lenient("syncId")
+        name = c.lenient("name") ?? "Profile"
+        avatar = c.lenient("avatar")
+        color = c.lenient("color") ?? "#7dd3fc"   // ProfilesStore.colors[0] (main-actor static)
+        isPrimary = c.lenient("isPrimary") ?? false
+        // A kid entry that is present keeps kid mode even when one of its fields is off (Kid's
+        // own init never drops it for a bad age), so a stray value can't turn a kid profile adult.
+        kid = c.lenient("kid")
+        passwordHash = c.lenient("passwordHash")
+        createdAt = c.lenient("createdAt") ?? 0
+        settingsLinked = c.lenient("settingsLinked")
+        hideContent = c.lenient("hideContent")
+        lockedTabs = c.lenient("lockedTabs")
+        shareStremioWith = c.lenient("shareStremioWith")
+        bootstrap = c.lenient("bootstrap")
+    }
+}
+
+extension ProfilesStore.Profile.Kid {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LenientKey.self)
+        // lib/kids.ts KidConfig.age is a number; a fractional or out-of-range one is truncated
+        // rather than failing (Int(_:) of a non-finite Double would trap).
+        func int(_ key: String) -> Int? {
+            if let i: Int = c.lenient(key) { return i }
+            if let d: Double = c.lenient(key), d.isFinite, abs(d) < 1_000_000 { return Int(d) }
+            return nil
+        }
+        age = int("age") ?? 0
+        curfewMinutes = int("curfewMinutes")
+        parentPinHash = c.lenient("parentPinHash")
     }
 }
