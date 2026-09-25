@@ -26,7 +26,7 @@ import { loadPlaylist } from "@/lib/iptv/store";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
 import { recordChannelPlay } from "@/lib/iptv/channel-stats";
 import type { IptvChannel } from "@/lib/iptv/types";
-import { buildSportsChannelIndex, matchChannelsForGameAsync, type ChannelMatch, type SportsChannelIndex } from "@/lib/sports/iptv-match";
+import { buildSportsChannelIndex, leagueForTag, matchChannelsForGameAsync, searchSportsChannels, type ChannelMatch, type SportsChannelIndex } from "@/lib/sports/iptv-match";
 import { watchProviders } from "@/lib/sports/watch-providers";
 import { SPORTS_BROADCASTS } from "@/lib/sports/broadcasts";
 import { syncSportsReminders } from "@/lib/sports/reminders";
@@ -522,6 +522,10 @@ export async function watch(game: SportsGame, addons?: { matched: number; availa
   attachedStream: { url: string; title: string; page: string; kind: string; headers: Record<string, string> | null; poster: string } | null;
   sources: number;
   scanned: number;
+  /** bp-sports-broadcast-picker: canSearch (index.channels.length > 0), the league's pins and label. */
+  searchable: boolean;
+  attachedIds: string[];
+  leagueLabel: string;
 }> {
   const fixture = game.away.name ? `${game.away.name} v ${game.home.name}` : game.context?.name || game.home.name;
   const attachments = readAttachments();
@@ -563,7 +567,33 @@ export async function watch(game: SportsGame, addons?: { matched: number; availa
       headers: stream.headers && Object.keys(stream.headers).length ? stream.headers : null, poster: stream.poster ?? "",
     } : null,
     sources, scanned: index.scanned,
+    searchable: index.channels.length > 0, attachedIds: [...attachedIds], leagueLabel: pickerLeagueLabel(game.league),
   };
+}
+
+/** bp-sports-broadcast-picker leagueLabel: leagueForTag(league) → getLeagueLabel, else the tag. */
+function pickerLeagueLabel(league: string): string {
+  if (!league) return "";
+  const def = leagueForTag(league);
+  return def ? getLeagueLabel(def) : league;
+}
+
+/**
+ * bp-sports-broadcast-search.tsx: searchSportsChannels(index, query, 30) over the same index the
+ * picker matches against (every non-EPG playlist, sports-filtered), with the league's pins so the
+ * Pin square reads pressed. An empty query lists the first channels, as upstream's does.
+ */
+export type ChannelSearchRow = { channelId: string; name: string; logo: string | null; group: string | null; url: string; headers: Record<string, string> | null; attached: boolean };
+export async function searchChannels(query: string, leagueTag: string, limit = 30): Promise<{ searchable: boolean; league: string; leagueLabel: string; attachedIds: string[]; rows: ChannelSearchRow[] }> {
+  const { index } = await channelIndex();
+  const league = typeof leagueTag === "string" ? leagueTag : "";
+  const attachedIds = league ? (readAttachments().channels[league] ?? []) : [];
+  const attached = new Set(attachedIds);
+  const rows = searchSportsChannels(index, typeof query === "string" ? query : "", limit).map((p) => ({
+    channelId: p.channel.id, name: p.channel.name, logo: p.channel.logo || null, group: p.channel.group || null,
+    url: p.channel.url, headers: headersFromChannel(p.channel) ?? null, attached: attached.has(p.channel.id),
+  }));
+  return { searchable: index.channels.length > 0, league, leagueLabel: pickerLeagueLabel(league), attachedIds: [...attachedIds], rows };
 }
 
 /** Tuning a matched channel counts toward Live TV's "most watched" band too. */

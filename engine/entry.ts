@@ -543,6 +543,8 @@ export const discoverRoom = {
   awardsInstalled: discoverBuilders.awardsInstalled,
   awards: discoverBuilders.awards,
   awardDetail: discoverBuilders.awardDetail,
+  awardPage: discoverBuilders.awardPage,
+  awardOpen: discoverBuilders.awardOpen,
   animeAwardSources: discoverBuilders.animeAwardSources,
   animeAward: discoverBuilders.animeAward,
   animeAwardOpen: discoverBuilders.animeAwardOpen,
@@ -735,6 +737,7 @@ export const sports = {
   toggleAttachedChannel: sportsGlue.toggleAttachedChannel,
   recordChannelWatch: sportsGlue.recordChannelWatch,
   clearAttachedStream: sportsGlue.clearAttachedStream,
+  searchChannels: sportsGlue.searchChannels,
   officialBroadcasts: sportsGlue.officialBroadcasts,
   // Event rows, where-to-watch, hero actions, reminders, api-sports key (engine/sportsEvent.ts).
   eventRows: sportsEventGlue.eventRows,
