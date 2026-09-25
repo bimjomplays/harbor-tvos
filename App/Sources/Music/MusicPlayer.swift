@@ -262,9 +262,10 @@ final class MusicPlayer: ObservableObject {
     func upNext(_ count: Int) -> [Int] {
         guard current != nil, count > 0 else { return [] }
         let ahead: [Int] = order.upcoming(queue, index, modes, count: count)
-        guard repeatMode != .one, let pick = priorityNext else { return ahead }
+        // (review 13) Under shuffle only, and the copy after the current entry, as the advance takes it.
+        guard shuffle, repeatMode != .one, let pick = priorityNext else { return ahead }
         let pickKey: String = MusicQueueOrder.key(pick)
-        guard let at = queue.indices.first(where: { $0 != index && MusicQueueOrder.key(queue[$0]) == pickKey }) else { return ahead }
+        guard let at = MusicQueueOrder.pickIndex(of: pickKey, in: queue, current: index) else { return ahead }
         let rest: [Int] = ahead.filter { $0 != at }
         return Array(([at] + rest).prefix(count))
     }
@@ -324,7 +325,20 @@ final class MusicPlayer: ObservableObject {
     func playQueuedNext(at i: Int) {
         guard queue.indices.contains(i), i != index else { return }
         let track = queue[i]
-        move(from: i, to: max(0, index + 1))
+        if i < index {
+            // (review 13) A row before the current entry (Repeat all's wrap, or a shuffled row already
+            // behind it in the stored order): move() only moves upcoming entries, so Play next left it
+            // where it was. It comes out and goes in right after the current one (music-queue.tsx
+            // playNext(index)); the current entry and its bound items step back one place.
+            if i == 0 { disarmRadio() }
+            queue.remove(at: i)
+            index -= 1
+            for (key, bound) in items where bound.index > i { items[key] = (bound.track, bound.index - 1) }
+            if let bound = spotifyEntry, bound.index > i { spotifyEntry = (bound.track, bound.index - 1) }
+            queue.insert(track, at: min(index + 1, queue.count))
+        } else {
+            move(from: i, to: max(0, index + 1))
+        }
         priorityNext = track
         dropPreloaded()
     }
