@@ -295,6 +295,42 @@ final class TogetherModel: ObservableObject {
     func call(_ fn: String, _ args: [AnyJSON] = []) {
         Task { _ = try? await HarborEngine.shared.callJSON("together.\(fn)", args) }
     }
+
+    /// use-player-exit.ts closePlayer, a host's part: the room's media clears, the guests hear the
+    /// host left the video (the relay hands the host role on) and the invite goes.
+    func hostLeaving() {
+        publish(.object([
+            "mediaId": .null, "mediaTitle": .null, "episode": .null, "posterUrl": .null,
+            "positionSeconds": .number(0), "playing": .bool(false),
+        ]))
+        call("notifyHostLeaving")
+        call("clearInvite")
+    }
+
+    // MARK: a host's reopening close (TogetherPlayback.closing(reopening: true))
+
+    /// The room a host's player closed in to reopen from the picker (another episode or source),
+    /// kept the room and the host role for. Upstream's picker sits over the still-open player, and
+    /// leaving that player runs closePlayer; on the TV the player is already gone, so a host who
+    /// backed out of the picker left the guests paused under a host who wasn't watching.
+    /// Set by the reopening close; cleared when a picker hands over a pick or a player opens;
+    /// a picker dismissed while it is set sends closePlayer's host-leaving (abandonReopen).
+    private var reopenRoom: String?
+
+    /// A player closed: `reopening` and still host in a room marks the reopen pending; any other
+    /// close, a picker's pick or a player opening clears it.
+    func setReopenPending(_ reopening: Bool) {
+        reopenRoom = reopening && view.inRoom && view.isHost ? (view.room ?? "") : nil
+    }
+
+    /// A stream picker was dismissed. With no pick after a host's reopening close (Menu / Cancel /
+    /// Back on the picker), the host left the video: the room hears it as upstream's closePlayer.
+    func abandonReopen() {
+        guard let r = reopenRoom else { return }
+        reopenRoom = nil
+        guard view.inRoom, view.isHost, (view.room ?? "") == r else { return }
+        hostLeaving()
+    }
 }
 
 // (bug pass 2) The room view is built from relay data. One malformed participant (no `name`) or

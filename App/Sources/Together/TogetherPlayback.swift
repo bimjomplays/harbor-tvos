@@ -5,7 +5,8 @@ import UIKit
 /// The player's side of Watch Together: views/player/hooks/use-room-sync.ts, use-lobby-gate.ts
 /// and the guest/host control rules of use-playback-controls.ts, ported to the TV player.
 ///
-/// PlayerScreen owns one of these and talks to it through four calls only:
+/// PlayerScreen owns one of these and talks to it through five calls only:
+///   playerOpened()                      the player's first appearance (a pending reopen went through)
 ///   tick(controller:context:url:rate:)  every second (heartbeat, lobby, readiness, initial sync)
 ///   interceptToggle(controller)         Play/Pause; true when the room handled it
 ///   interceptSeek(to:controller)        a committed seek; true when the room handled it
@@ -221,15 +222,15 @@ final class TogetherPlayback: ObservableObject {
             if let s = controller?.snapshot(), s.duration > 0, s.position > 0 { at = s.position }
             publish(position: at, playing: false)
         }
-        if inRoom, isHost, !reopening {
-            room.publish(.object([
-                "mediaId": .null, "mediaTitle": .null, "episode": .null, "posterUrl": .null,
-                "positionSeconds": .number(0), "playing": .bool(false),
-            ]))
-            room.call("notifyHostLeaving")
-            room.call("clearInvite")
-        }
+        if inRoom, isHost, !reopening { room.hostLeaving() }
+        // A picker that then closes with no pick still tells the room the host left (abandonReopen).
+        room.setReopenPending(reopening)
         room.call("setLocation", [.null])
+    }
+
+    /// A player opened (its first appearance): a reopen that was pending went through.
+    func playerOpened() {
+        room.setReopenPending(false)
     }
 
     // MARK: lobby (use-lobby-gate.ts)
