@@ -119,6 +119,9 @@ struct NativeSubtitleOverlay: View {
     private func subtitleFont(_ look: Look) -> Font {
         let family: String = MPVPlayerController.subFont(settings.slice.subFontFamily)
         if family == "Switzer" { return .custom(look.bold ? "Switzer-Bold" : "Switzer-Regular", fixedSize: look.fontSize) }
+        // (review 18) The bundled serif goes by its PostScript cuts as Theme.swift names them; the
+        // bare family name may not resolve, and "Serif" then fell back to the system face.
+        if family == "Sentient" { return .custom(look.bold ? "Sentient-Bold" : "Sentient-Regular", fixedSize: look.fontSize) }
         let base: Font = .custom(family, fixedSize: look.fontSize)
         return look.bold ? base.weight(.bold) : base
     }

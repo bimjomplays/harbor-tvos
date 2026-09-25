@@ -194,7 +194,11 @@ final class AppModel: ObservableObject {
             self.stage = .whoIsWatching
         }.store(in: &bag)
         // use-bp-profile-reset resetBpViewState: another profile gets a fresh Search and Library.
-        profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in
+        // (review 18) Synchronously, not on the next run-loop turn: a pick on Who's watching sets
+        // the profile and the shell stage in one action, so the shell was built (Search open) on
+        // the previous profile's SearchModel before the reset landed, and the new profile saw the
+        // last one's query and results until the shell happened to redraw.
+        profiles.$activeId.dropFirst().removeDuplicates().sink { [weak self] _ in
             self?.views.reset()
         }.store(in: &bag)
         guard !isBrowseLayer else { return }
@@ -355,10 +359,20 @@ final class AppModel: ObservableObject {
     /// returns to it). Not over a film (leaving the shell would close the player) or setup.
     private func promptWhoOnReturn() async {
         guard stage == .shell, !Fixtures.active, profiles.active?.kid?.parentPinHash == nil,
-              !PlaybackState.shared.active, !PiPBrowse.shared.isUp else { return }
+              returnPromptClear else { return }
         guard let open: Bool = try? await HarborEngine.shared.call("profilesRoom.returnPicker", []), open else { return }
-        guard stage == .shell, !PlaybackState.shared.active, !PiPBrowse.shared.isUp else { return }
+        guard stage == .shell, returnPromptClear else { return }
         stage = .whoIsWatching
+    }
+
+    /// (review 18) Upstream's picker is a modal over whatever is open, and closing it returns there.
+    /// Here Who's watching replaces the shell, which tears down anything presented over it: a
+    /// Detail page, a Settings cover, a PIN pad mid-entry or a room's in-place layer were gone
+    /// after Back. A Watch Together room is left alone too (only the shell hosts its invites and
+    /// summons). So the return prompt only replaces a bare room.
+    private var returnPromptClear: Bool {
+        !PlaybackState.shared.active && !PiPBrowse.shared.isUp && HarborOverlayWindow.noCoverPresented
+            && !roomLayer && !TogetherModel.shared.view.inRoom
     }
 
     func finishOnboarding() {
