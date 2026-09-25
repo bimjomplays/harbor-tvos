@@ -77,7 +77,8 @@ struct HomeRowsPanel: View {
                     BPField(label: T("Rename %@", r.originalName), placeholder: r.originalName, text: $newName)
                     HStack(spacing: BP.px(8)) {
                         Button(T("Save")) { Task { await call("homeRowRename", [.string(r.key), .string(newName)]); renaming = nil } }.buttonStyle(BPActionStyle(primary: true))
-                        Button(T("Reset to original name"))   // row-controls.tsx { Task { await call("homeRowRename", [.string(r.key), .string("")]); renaming = nil } }.buttonStyle(BPActionStyle())
+                        // row-controls.tsx
+                        Button(T("Reset to original name")) { Task { await call("homeRowRename", [.string(r.key), .string("")]); renaming = nil } }.buttonStyle(BPActionStyle())
                         Button(T("Cancel")) { renaming = nil }.buttonStyle(BPActionStyle())
                     }
                 }
