@@ -55,7 +55,14 @@ struct PinPadView: View {
                 }
             }
         }
-        .onAppear { cooldownUntil = Self.cooldowns[profile.id] }
+        .onAppear {
+            cooldownUntil = Self.cooldowns[profile.id]
+            // (navigation UI test) bp-who-is-watching-pin autofocuses the first key. Nothing seeded
+            // it here: the tile that opened the pad is disabled under it, so the ring went nowhere
+            // and Menu reached Who's watching's Back instead of the pad's. Back during a cool-down.
+            let cooling: Bool = (cooldownUntil ?? Date()) > Date()
+            DispatchQueue.main.async { keyFocus = cooling ? "‹" : "1" }
+        }
         .onReceive(timer) { now = $0 }
         // (profiles device pass) bp-who-is-watching-pin re-seeds the first key when `cooling` flips.
         // The cool-down disables every key but Back, so the ring sat on Back when it ended and the
