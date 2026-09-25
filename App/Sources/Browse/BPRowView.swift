@@ -119,10 +119,16 @@ struct BPRailView<Lead: View>: View {
     /// a ~580 pt poster row's top ~250 pt higher than meant: its header and posters sat under the
     /// hero title and description, and in the rail's top fade. Each row now carries a marker
     /// `parkOffset` above its top; scrolling that marker to the top parks the row's top exactly.
-    private static func parkID(_ key: String) -> String { "bp-park:" + key }
+    private static func parkID(_ key: String) -> String { BPRail.parkID(key) }
 
     private func park(_ key: String, _ proxy: ScrollViewProxy) {
         proxy.scrollTo(Self.parkID(key), anchor: .top)
+    }
+
+    /// What a lead section needs to park itself like a row (BPRailLeadMark): the rows' park
+    /// offset, and the same focusedRow → park path the rows take.
+    private var parking: BPRailParking {
+        BPRailParking(offset: parkOffset, park: { key in focusedRow = key })
     }
 
     private func seeAllAction(_ row: BrowseRow) -> (() -> Void)? {
@@ -146,6 +152,7 @@ struct BPRailView<Lead: View>: View {
                     Color.clear.frame(height: topInset).id(Self.topID)
                     // Continue Watching / Live sit here: over the plain rows below them.
                     lead().id("lead").zIndex(1)
+                        .environment(\.bpRailParking, parking)
                     ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
                                   onSeeAll: seeAllAction(row), seeAllLabel: seeAllLabel?(row) ?? "See all", onQuick: onQuick,
@@ -201,6 +208,51 @@ struct BPRailView<Lead: View>: View {
     }
 }
 
+
+/// The rail's park marker id, for a row or a parkable lead section.
+enum BPRail {
+    static func parkID(_ key: String) -> String { "bp-park:" + key }
+}
+
+/// Handed by BPRailView to its lead: where a row's top parks, and the rail's own park request.
+struct BPRailParking {
+    var offset: CGFloat
+    var park: (String) -> Void
+}
+
+private struct BPRailParkingKey: EnvironmentKey { static let defaultValue: BPRailParking? = nil }
+extension EnvironmentValues {
+    var bpRailParking: BPRailParking? {
+        get { self[BPRailParkingKey.self] }
+        set { self[BPRailParkingKey.self] = newValue }
+    }
+}
+
+/// use-bp-rail parks every rail row, lead sections included (bp-discover's queue, awards, genres
+/// and people bands are rail rows upstream). A lead section wearing this carries the same park
+/// marker as a BPRailView row and parks when it takes the ring (`held` turns true), so Up from a
+/// parked row onto it puts its header just under the top bar instead of wherever tvOS's own
+/// scroll left it. Outside a BPRailView it does nothing.
+struct BPRailLeadMark: ViewModifier {
+    let key: String
+    let held: Bool
+    @Environment(\.bpRailParking) private var parking
+
+    func body(content: Content) -> some View {
+        let off: CGFloat = parking?.offset ?? 0
+        return content
+            .background(alignment: .top) {
+                Color.clear.frame(width: 1, height: 1)
+                    .alignmentGuide(.top) { _ in off }
+                    .id(BPRail.parkID(key))
+                    .accessibilityHidden(true)
+            }
+            .onChange(of: held) { _, now in
+                guard now, let rail = parking else { return }
+                rail.park(key)
+            }
+    }
+}
 
 /// Row header "See all" chip: semibold muted text, brightens when focused.
 struct BPSeeAllStyle: ButtonStyle {

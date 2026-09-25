@@ -13,6 +13,8 @@ struct DiscoverView: View {
     @State private var genrePage: BrowseRow?
     @State private var queueOpen = false
     @State private var voyageOpen = false
+    /// The lead band holding the ring ("queue", "people", "awards", "genres", "voyage").
+    @State private var leadHeld: String?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -48,32 +50,39 @@ struct DiscoverView: View {
                            // way in from a rail goes with it.
                            seeAllShown: { row in !parental.hides(Self.isSeries(row) ? Room.shows : Room.movies) },
                            topInset: BP.barHeight + BP.px(10)) {
-                    section("Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
-                        QueueBandView(queue: model.build?.queue) { queueOpen = true }
+                    // (browse open-items pass) Each lead section parks like a rail row when it takes the
+                    // ring (use-bp-rail; the bands are rail rows in bp-discover). Up from a parked rail
+                    // row left the scroll to tvOS, which only brought the focused tile into view: the
+                    // section's header stayed under the top bar. The lead is taller than the screen,
+                    // so scrolling back to the rail top would push the focused band off it instead.
+                    section("queue", "Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
+                        QueueBandView(queue: model.build?.queue, onOpen: { queueOpen = true }, onHold: { hold("queue", $0) })
                     }
                     if !model.people.isEmpty {
-                        section("Discover", "Top People", T("Top %lld, ranked by the work they left behind", model.people.count)) {
-                            PeopleBandView(people: model.people)
+                        section("people", "Discover", "Top People", T("Top %lld, ranked by the work they left behind", model.people.count)) {
+                            PeopleBandView(people: model.people, onHold: { hold("people", $0) })
                         }
                     }
                     if let aw = model.awards, !aw.summaries.isEmpty {
-                        section("Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : T("%lld awards, %lld winners, %@, all offline", aw.overview.bodies, aw.overview.wins, aw.overview.span)) {
+                        section("awards", "Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : T("%lld awards, %lld winners, %@, all offline", aw.overview.bodies, aw.overview.wins, aw.overview.span)) {
                             AwardsBandView(summaries: aw.summaries, anime: model.animeAwards,
-                                           onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 })
+                                           onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 },
+                                           onHold: { hold("awards", $0) })
                         }
                     }
                     // bp-discover.tsx t("{n} shelves, …", { n: BP_GENRES.length }): the literal "18 …"
                     // matched no catalog key and stayed English.
-                    section("Discover", "Genres", T("%lld shelves, one press into any of them", model.build?.genres.count ?? 18)) {
+                    section("genres", "Discover", "Genres", T("%lld shelves, one press into any of them", model.build?.genres.count ?? 18)) {
                         GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt, onOpen: { genre in
                             genrePage = BrowseRow(key: "genre:\(genre)", title: T(genre), metas: [])
-                        }) {
+                        }, onFocus: {
                             Task { await model.loadGenreArt() }
-                        }
+                        }, onHold: { hold("genres", $0) })
                     }
                     // discover.tsx: the Voyages banner follows the browse tiles, once its pool holds three.
                     if let pool = model.build?.voyagePool, pool.count >= 3 {
-                        VoyageBannerView(snapshot: model.voyage, pool: pool) { voyageOpen = true }
+                        VoyageBannerView(snapshot: model.voyage, pool: pool, onOpen: { voyageOpen = true }, onHold: { hold("voyage", $0) })
+                            .modifier(BPRailLeadMark(key: Self.leadKey("voyage"), held: leadHeld == "voyage"))
                     }
                 }
             }
@@ -90,7 +99,16 @@ struct DiscoverView: View {
     /// bp-discover.tsx `series = rail.metas[0]?.type === "series"`.
     private static func isSeries(_ row: BrowseRow) -> Bool { row.metas.first?.type == "series" }
 
-    private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
+    /// A lead section's park key; never the same as a rail row's key.
+    private static func leadKey(_ key: String) -> String { "discover-lead:" + key }
+
+    /// A band gained (true) or lost (false) the ring. Hand-offs between bands report the old
+    /// band's release and the new band's hold in either order.
+    private func hold(_ key: String, _ held: Bool) {
+        if held { leadHeld = key } else if leadHeld == key { leadHeld = nil }
+    }
+
+    private func section<C: View>(_ key: String, _ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             VStack(alignment: .leading, spacing: BP.px(2)) {
                 Text(T(eyebrow)).font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
@@ -100,6 +118,7 @@ struct DiscoverView: View {
             .padding(.horizontal, BP.gutter)
             content()
         }
+        .modifier(BPRailLeadMark(key: Self.leadKey(key), held: leadHeld == key))
     }
 }
 
@@ -107,6 +126,9 @@ struct DiscoverView: View {
 struct QueueBandView: View {
     let queue: DiscoverModel.Build.Queue?
     var onOpen: () -> Void = {}
+    /// The band gained (true) or lost (false) the ring (the rail parks it).
+    var onHold: ((Bool) -> Void)? = nil
+    @FocusState private var focused: Bool
     private let height = BP.px(150)
 
     var body: some View {
@@ -149,9 +171,11 @@ struct QueueBandView: View {
             .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge, lineWidth: 1))
         }
         .buttonStyle(BPTileStyle(radius: BP.rLG))
+        .focused($focused)
         .padding(.horizontal, BP.gutter)
         .padding(.vertical, BP.px(14))
         .accessibilityIdentifier("queue-band")
+        .onChange(of: focused) { _, held in onHold?(held) }
     }
 
     private var line: String {
@@ -172,6 +196,8 @@ struct GenresBandView: View {
     /// Fired the first time any genre tile takes focus (art is fetched lazily, as upstream does).
     var onOpen: (String) -> Void = { _ in }
     let onFocus: () -> Void
+    /// The band gained (true) or lost (false) the ring (the rail parks it).
+    var onHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedGenre: String?
     private let cell = BP.px(178)
 
@@ -206,6 +232,7 @@ struct GenresBandView: View {
         .scrollClipDisabled()
         .focusSection()
         .onChange(of: focusedGenre) { _, g in if g != nil { onFocus() } }
+        .onChange(of: focusedGenre != nil) { _, held in onHold?(held) }
     }
 
     private func tile(_ g: DiscoverModel.Build.Genre) -> some View {
@@ -243,6 +270,9 @@ struct AwardsBandView: View {
     var anime: [DiscoverModel.AnimeAwardTile] = []
     let onOpen: (DiscoverModel.Awards.Summary) -> Void
     var onOpenAnime: (DiscoverModel.AnimeAwardTile) -> Void = { _ in }
+    /// The band gained (true) or lost (false) the ring (the rail parks it).
+    var onHold: ((Bool) -> Void)? = nil
+    @FocusState private var focusedTile: String?
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -265,6 +295,7 @@ struct AwardsBandView: View {
                             .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
                         }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
+                        .focused($focusedTile, equals: "anime:" + a.id)
                         .accessibilityIdentifier("anime-award-\(a.id)")
                     }
                 }
@@ -282,12 +313,14 @@ struct AwardsBandView: View {
                         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge2, lineWidth: 1))
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rMD))
+                    .focused($focusedTile, equals: "lead:oscars")
                 }
             }
             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
         }
         .scrollClipDisabled()
         .focusSection()
+        .onChange(of: focusedTile != nil) { _, held in onHold?(held) }
     }
 
     private var awardTiles: some View {
@@ -305,6 +338,7 @@ struct AwardsBandView: View {
                 .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .top, endPoint: .bottom)))
             }
             .buttonStyle(BPTileStyle(radius: BP.rMD))
+            .focused($focusedTile, equals: "award:" + a.type)
             .accessibilityIdentifier("award-\(a.type)")
         }
     }
@@ -313,8 +347,11 @@ struct AwardsBandView: View {
 /// bp-people-band: portrait circles with rank and name.
 struct PeopleBandView: View {
     let people: [DiscoverModel.Person]
+    /// The band gained (true) or lost (false) the ring (the rail parks it).
+    var onHold: ((Bool) -> Void)? = nil
     /// bp-people-band: Select opens the person page (pushBigPicture kind "person").
     @State private var person: DiscoverModel.Person?
+    @FocusState private var focusedPerson: Int?
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: BP.trackGap) {
@@ -331,12 +368,14 @@ struct PeopleBandView: View {
                         .frame(width: BP.px(130))
                     }
                     .buttonStyle(BPTileStyle(radius: BP.px(55)))
+                    .focused($focusedPerson, equals: p.id)
                 }
             }
             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
         }
         .scrollClipDisabled()
         .focusSection()
+        .onChange(of: focusedPerson != nil) { _, held in onHold?(held) }
         .fullScreenCover(item: $person) { p in PersonView(personId: p.id, name: p.name) }
     }
 }

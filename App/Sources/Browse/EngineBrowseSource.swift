@@ -130,11 +130,7 @@ struct EngineBrowseSource: BrowseSource {
                 }
             }
         case .anime:
-            // use-bp-anime port: returns at once with whatever Jikan rows have landed; the room
-            // re-reads on `harbor:anime-updated`. Rows still loading carry no metas yet.
-            let anime: AnimeBuild = try await HarborEngine.shared.call("animeRoom.page", [p.id, p.linked, p.authKey])
-            if anime.failed { throw BrowseError.empty }
-            return anime.rows.filter { !$0.metas.isEmpty }.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
+            return try await animePage().rows
         default:
             return []
         }
@@ -145,6 +141,25 @@ struct EngineBrowseSource: BrowseSource {
     struct AnimeBuild: Decodable {
         struct Row: Decodable { var key: String; var name: String; @LossyArray var metas: [Meta]; var shape: String; var loading: Bool }
         @LossyArray var rows: [Row]; @LossyArray var hero: [Meta]; var loading: Bool; var ready: Int; var total: Int; var failed: Bool
+    }
+
+    /// The anime room reads its hero slides from the same build as its rows (bp-anime-hero `lead`).
+    func page(for room: Room) async throws -> BrowsePage {
+        guard room == .anime else {
+            let rows: [BrowseRow] = try await self.rows(for: room)
+            return BrowsePage(rows: rows, hero: [])
+        }
+        return try await animePage()
+    }
+
+    /// use-bp-anime port: returns at once with whatever Jikan rows have landed; the room re-reads
+    /// on `harbor:anime-updated`. Rows still loading carry no metas yet.
+    private func animePage() async throws -> BrowsePage {
+        let p = await profile
+        let anime: AnimeBuild = try await HarborEngine.shared.call("animeRoom.page", [p.id, p.linked, p.authKey])
+        if anime.failed { throw BrowseError.empty }
+        let rows: [BrowseRow] = anime.rows.filter { !$0.metas.isEmpty }.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
+        return BrowsePage(rows: rows, hero: anime.hero)
     }
 
     func continueWatching(for room: Room) async throws -> [ContinueItem] {

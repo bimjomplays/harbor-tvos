@@ -7,13 +7,26 @@ import UIKit
 /// `FixtureBrowseSource` feeds simulator screenshots without the network.
 protocol BrowseSource {
     func rows(for room: Room) async throws -> [BrowseRow]
+    /// The rows plus the hero slides the page's lead title comes from (the anime room's
+    /// use-bp-anime `hero.slides`); a room without such a list has none.
+    func page(for room: Room) async throws -> BrowsePage
     func continueWatching(for room: Room) async throws -> [ContinueItem]
     /// Distinct pages sharing a room kind (a streaming-service page) keep their own cache slot.
     var cacheId: String? { get }
 }
 
+struct BrowsePage {
+    var rows: [BrowseRow]
+    var hero: [Meta]
+}
+
 extension BrowseSource {
     var cacheId: String? { nil }
+
+    func page(for room: Room) async throws -> BrowsePage {
+        let rows: [BrowseRow] = try await self.rows(for: room)
+        return BrowsePage(rows: rows, hero: [])
+    }
 }
 
 @MainActor
@@ -31,6 +44,8 @@ final class BrowseModel: ObservableObject {
     /// bp-home cwReady: the first Continue Watching read has answered (or the load failed). The
     /// room seeds its first focus only once both it and the rows are in.
     @Published private(set) var cwResolved = false
+    /// use-bp-anime `hero.slides` (the anime room's hero pool); empty elsewhere.
+    @Published private(set) var heroSlides: [Meta] = []
 
     let room: Room
     private let source: BrowseSource
@@ -115,9 +130,11 @@ final class BrowseModel: ObservableObject {
         cwGeneration += 1
         let cwMine = cwGeneration
         do {
-            async let r = source.rows(for: room)
+            async let r = source.page(for: room)
             async let cw = source.continueWatching(for: room)
-            let live = try await r
+            let page: BrowsePage = try await r
+            let live: [BrowseRow] = page.rows
+            if page.hero != heroSlides { heroSlides = page.hero }
             // A re-read that built the same shelves (Home's harbor:home-updated, the anime bursts)
             // republishes nothing and rewrites nothing.
             if live != rows {
@@ -134,7 +151,14 @@ final class BrowseModel: ObservableObject {
             tileHeld = !heldRows.isEmpty
             // A stale spotlight (from the cache, or a title that fell off the rows) resets.
             let known = Set(live.flatMap { $0.metas.map(\.id) })
-            if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true { spotlight = live.first?.metas.first }
+            if room == .anime {
+                // bp-anime-hero seedBpMeta(lead): the hero opens on the lead title (the one Resume /
+                // More Info lock to), not the first Top Picks card, until a card takes the ring.
+                let seed: Meta? = heroLead ?? live.first?.metas.first
+                if !cardFocused, let seed, spotlight?.id != seed.id { spotlight = seed }
+            } else if !cardFocused, spotlight.map({ !known.contains($0.id) }) ?? true {
+                spotlight = live.first?.metas.first
+            }
             startHeroCycle()
             await CardMarksStore.shared.refresh(live.flatMap(\.metas))
         } catch {
@@ -168,6 +192,21 @@ final class BrowseModel: ObservableObject {
     func focus(_ meta: Meta) {
         cardFocused = true
         spotlight = meta
+    }
+
+    /// bp-anime-hero `lead`: heroSlide (the first hero slide with art and a logo, else with art),
+    /// else the Continue Watching card with art (else the first), else the first slide, else the
+    /// first Top Pick. The hero actions lock to it while they hold the ring (lockBpMeta(lead)).
+    var heroLead: Meta? {
+        let withLogo: Meta? = heroSlides.first { $0.background != nil && $0.logo != nil }
+        let withArt: Meta? = heroSlides.first { $0.background != nil }
+        if let slide = withLogo ?? withArt { return slide }
+        let cwArt: ContinueItem? = continueWatching.first { $0.background != nil }
+        if let item = cwArt ?? continueWatching.first { return Meta(continue: item) }
+        if let first = heroSlides.first { return first }
+        let picks: BrowseRow? = rows.first { $0.key == "anime-top-picks" }
+        // Not upstream (its lead is null then): the first card, so the actions never vanish.
+        return picks?.metas.first ?? rows.first?.metas.first
     }
 
     /// A row (keyed) gained or lost the focused tile. The cycle reads this on every tick the way

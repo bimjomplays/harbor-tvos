@@ -4,6 +4,8 @@ import SwiftUI
 struct RoomView: View {
     @StateObject private var model: BrowseModel
     @EnvironmentObject private var app: AppModel
+    /// A tab the profile's PIN locks (Profiles/ParentalGate.swift): the link that leads to it is not offered.
+    @ObservedObject private var parental = ParentalGate.shared
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
     @State private var quick: Meta?
@@ -85,17 +87,15 @@ struct RoomView: View {
                            restoreRoute: model.restoreKey, entry: model.entry,
                            onHold: { key, held in model.hold(key, held) },
                            leadHeld: cwHeld || animeActionsHeld || liveHot != nil) {
-                    if model.room == .anime, let hero = model.spotlight, hero.type != "service" {
-                        // bp-anime-hero-actions: the focused hero's Resume / Start Watching and More Info.
-                        AnimeHeroActionsView(meta: hero, resume: model.continueWatching.first { $0.id == hero.id },
-                                             onPlay: { play = $0 }, onInfo: { detail = $0 }, onHold: { animeActionsHeld = $0 })
-                            .padding(.horizontal, BP.gutter)
+                    if model.room == .anime, let lead = model.heroLead {
+                        animeActions(lead: lead)
                     }
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
                                         onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { openContinue($0) },
                                         onQuick: { item in BPSound.shared.open(); quickFromCw = true; quick = Meta(continue: item) },
-                                        onHold: { cwHeld = $0; model.hold("cw", $0) })
+                                        onHold: { cwHeld = $0; model.hold("cw", $0) },
+                                        onLibrary: libraryLink)
                             .onDisappear { cwHeld = false; model.hold("cw", false) }
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
@@ -188,6 +188,30 @@ struct RoomView: View {
         case .resumeMovie: cwPlay = CwPlay(meta: meta, hint: nil)
         case .resumeEpisode(let s, let e): cwPlay = CwPlay(meta: meta, hint: (season: s, episode: e))
         }
+    }
+
+    /// bp-anime-hero-actions: Resume / Start Watching and More Info act on `subject`, the title the
+    /// hero shows (useBpFocusedMeta() ?? lead). Taking the ring locks it to the lead title
+    /// (lockBpMeta(lead) on focus), so the buttons, their meta line and the hero copy above all
+    /// name the lead while the ring is on them, never the last card focused on the way up.
+    private func animeActions(lead: Meta) -> some View {
+        let subject: Meta = model.spotlight ?? lead
+        let resume: ContinueItem? = model.continueWatching.first { $0.id == subject.id }
+        return AnimeHeroActionsView(meta: subject, resume: resume,
+                                    onPlay: { play = $0 }, onInfo: { detail = $0 },
+                                    onHold: { held in
+                                        animeActionsHeld = held
+                                        if held { model.focus(lead) }
+                                    })
+            .padding(.horizontal, BP.gutter)
+    }
+
+    /// bp-home / bp-shows Continue Watching lead: the "Your library" see-all (tab "library").
+    /// A Library tab locked by the profile's PIN is off the bar, and its way in goes with it.
+    private var libraryLink: (() -> Void)? {
+        let onPage: Bool = model.isHomePage || model.room == .shows
+        guard onPage, !parental.hides(Room.library) else { return nil }
+        return { app.room = .library }
     }
 
     /// A rail tile took focus. On Home, a tile of a band-owned row (services, addons, collections)
