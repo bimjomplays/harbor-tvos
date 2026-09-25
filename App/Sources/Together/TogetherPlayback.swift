@@ -1,15 +1,17 @@
 import Foundation
 import Combine
+import UIKit
 
 /// The player's side of Watch Together: views/player/hooks/use-room-sync.ts, use-lobby-gate.ts
 /// and the guest/host control rules of use-playback-controls.ts, ported to the TV player.
 ///
 /// PlayerScreen owns one of these and talks to it through four calls only:
-///   tick(controller:context:url:)  every second (heartbeat, lobby, readiness, initial sync)
-///   interceptToggle(controller)    Play/Pause; true when the room handled it
-///   interceptSeek(to:controller)   a committed seek; true when the room handled it
-///   closing()                      the player is leaving (use-player-exit.ts)
-/// Incoming room state and commands arrive through TogetherModel's publishers.
+///   tick(controller:context:url:rate:)  every second (heartbeat, lobby, readiness, initial sync)
+///   interceptToggle(controller)         Play/Pause; true when the room handled it
+///   interceptSeek(to:controller)        a committed seek; true when the room handled it
+///   closing(reopening:)                 the player is leaving (use-player-exit.ts)
+/// Incoming room state and commands arrive through TogetherModel's publishers; the room's speed
+/// goes back to the player through `onRoomRate`.
 @MainActor
 final class TogetherPlayback: ObservableObject {
     // views/player/player-utils.ts
@@ -50,6 +52,11 @@ final class TogetherPlayback: ObservableObject {
     private var sourceAsked = false
     private var openedSent = false
     private var lastInRoom: Bool?
+    /// The player's playback speed (snap.rate upstream), published with every state.
+    private var rate: Double = 1
+    /// use-room-sync `b.setRate(state.speed)`: the player applies the room's speed (its own `rate`
+    /// state and the engine), without remembering it for the show.
+    var onRoomRate: ((Double) -> Void)?
 
     var inRoom: Bool { room.view.inRoom }
     var isHost: Bool { room.view.isHost }
@@ -82,12 +89,18 @@ final class TogetherPlayback: ObservableObject {
 
     // MARK: PlayerScreen hooks
 
-    func tick(controller c: (any PlayerEngineControlling)?, context ctx: PlaybackContext?, url u: URL) {
+    func tick(controller c: (any PlayerEngineControlling)?, context ctx: PlaybackContext?, url u: URL, rate r: Double = 1) {
         // The player's "Room" chip follows this (published at most once a second, not per room event).
         let session = room.view.inSession
         if session != inSession { inSession = session }
         guard let c, let ctx else { return }
         if !bound { bind(c, ctx, u) }
+        // (Together pass) The player's current engine: a reload (Try again, the dropped-connection
+        // reload, the move to mpv) makes a new controller, and incoming room state and a guest's
+        // commands went to the old one (weak, so usually nil): after any reload a guest stopped
+        // following the host and a host ignored its guests. use-room-sync reads bridgeRef.current.
+        if controller !== c { controller = c }
+        rate = r
         let snap = c.snapshot()
         let playing = !snap.paused
         let view = room.view
@@ -142,9 +155,11 @@ final class TogetherPlayback: ObservableObject {
             if guestEscapeReady { guestEscapeReady = false }
         }
         // Initial guest sync (use-room-sync): jump to the host's live position and play.
-        if inRoom, !isHost, hasStarted, !initialSyncDone, let state = view.syncState, !isDifferentMedia(state) {
+        // (Together pass) Not while Harbor is in the background (it waits for the return).
+        if inRoom, !isHost, hasStarted, !initialSyncDone, let state = view.syncState, !isDifferentMedia(state), !backgrounded(c) {
             initialSyncDone = true
             room.call("suppressOutgoingFor", [.number(Self.suppressMs)])
+            if let sp = state.speed { applyRoomRate(sp) }
             c.seek(to: target(for: state, duration: snap.duration))
             c.setPaused(false)
         }
@@ -186,10 +201,15 @@ final class TogetherPlayback: ObservableObject {
     }
 
     /// use-player-exit.ts closePlayer: a host leaving clears the room's media and says so.
-    func closing() {
+    /// (Together pass) Not when the player closes to open another episode or source from the picker:
+    /// upstream's goToEpisode / stream switch open the picker over the player and never run
+    /// closePlayer. The relay hands the host role to a guest on "host-leaving", so the TV host's
+    /// next episode opened under a foreign host (no invite for anyone, the host itself waiting in
+    /// the lobby) and every guest saw "{name} left the video" on each episode change.
+    func closing(reopening: Bool = false) {
         seekApply?.cancel()
         bag.removeAll()
-        if inRoom, isHost {
+        if inRoom, isHost, !reopening {
             room.publish(.object([
                 "mediaId": .null, "mediaTitle": .null, "episode": .null, "posterUrl": .null,
                 "positionSeconds": .number(0), "playing": .bool(false),
@@ -273,7 +293,9 @@ final class TogetherPlayback: ObservableObject {
             "posterUrl": ctx.meta.poster.map { .string($0) } ?? .null,
             "positionSeconds": .number(position),
             "playing": .bool(playing),
-            "speed": .number(1),
+            // (Together pass) use-room-sync publishes snap.rate: a host at 1.5x told the room 1x,
+            // and every guest drifted and was re-seeked every couple of seconds.
+            "speed": .number(rate),
         ]
         if let s = source, !s.isNull { state["source"] = s }
         if room.view.guestsPick { state["guestPick"] = .bool(true) }
@@ -297,14 +319,32 @@ final class TogetherPlayback: ObservableObject {
         return t
     }
 
+    /// (Together pass) Harbor is in the background with no Picture in Picture: the player paused
+    /// itself on leaving the app, and the host's next heartbeat (every second) started the film
+    /// again, sounding unseen behind the TV's Home screen (a host likewise obeyed a guest's play).
+    /// The room is followed again from the first state after the viewer comes back.
+    private func backgrounded(_ c: (any PlayerEngineControlling)?) -> Bool {
+        UIApplication.shared.applicationState == .background && c?.isPictureInPictureActive != true
+    }
+
+    /// use-room-sync `if (state.speed != null && Math.abs(state.speed - rate) > 0.01) b.setRate(…)`,
+    /// within the speeds the TV's players take (a 0 would stall AVPlayer).
+    private func applyRoomRate(_ speed: Double) {
+        guard speed.isFinite, speed >= 0.25, speed <= 4, abs(speed - rate) > 0.01 else { return }
+        rate = speed
+        onRoomRate?(speed)
+    }
+
     /// use-room-sync onIncomingState.
     private func applyIncoming(_ s: TogetherModel.SyncState) {
         guard inRoom, let c = controller else { return }
         if s.updatedBy == room.view.clientId { return }
+        if backgrounded(c) { return }
         if isDifferentMedia(s) { foreignNotice = ForeignNotice(title: s.mediaTitle, from: s.updatedBy); return }
         guard s.mediaId != nil else { return }
         if s.updatedAt < lastAppliedStateAt { return }
         lastAppliedStateAt = s.updatedAt
+        if let sp = s.speed { applyRoomRate(sp) }
         let snap = c.snapshot()
         let playing = !snap.paused
         let livePos = snap.position
@@ -332,7 +372,7 @@ final class TogetherPlayback: ObservableObject {
 
     /// use-room-sync onIncomingCommand: the host applies a guest's request (seeks debounced 120 ms).
     private func applyCommand(from: String, _ command: TogetherModel.RoomCommand) {
-        guard inRoom, isHost, let c = controller else { return }
+        guard inRoom, isHost, let c = controller, !backgrounded(c) else { return }
         switch command {
         case .play:
             flushPendingSeek()

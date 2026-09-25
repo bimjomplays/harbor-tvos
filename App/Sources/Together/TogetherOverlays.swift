@@ -35,8 +35,12 @@ struct TogetherToastHost: View {
         // changing and no chat toast ever showed again.
         .onChange(of: room.view.chat.last) { _, _ in showLatestChat() }
         .onChange(of: room.view.incomingParticipantLeft) { _, left in
-            guard left != nil else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { room.dismiss("participantLeft") }
+            guard let left else { return }
+            // together-participant-left-toast.tsx restarts its 4 s on every new toast: (Together pass)
+            // the first timer cut the next person's toast short when two people left close together.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                if room.view.incomingParticipantLeft == left { room.dismiss("participantLeft") }
+            }
         }
         .fullScreenCover(item: $opening) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
         .fullScreenCover(item: $summonDetail) { m in DetailView(meta: m) }
@@ -202,6 +206,12 @@ struct TogetherPlayerLayer: View {
             guard n != nil else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { if playback.foreignNotice == n { playback.foreignNotice = nil } }
         }
+        // together-host-leaving-prompt.tsx dismisses a "left the video" that lands outside playback,
+        // and Leave / Keep watching dismiss it. (Together pass) The banner's 10 s task dies with the
+        // player, and nothing else cleared it, so the notice from a host who left earlier (or before
+        // this player closed) came up again over the next video the room opened.
+        .onAppear { if room.view.incomingHostLeaving != nil { room.dismiss("hostLeaving") } }
+        .onDisappear { if room.view.incomingHostLeaving != nil { room.dismiss("hostLeaving") } }
     }
 
     private func roster(_ v: TogetherModel.Snapshot) -> some View {

@@ -376,6 +376,11 @@ struct PlayerScreen: View {
             SleepTimer.shared.playerOpened(url: url)
             // use-sleep-timer.ts registerSleepFireHandler: a minutes timer running out pauses this player.
             SleepTimer.shared.register(nowPlayingId) { sleepFired() }
+            // use-room-sync b.setRate(state.speed): the room's speed, not remembered for the show.
+            together.onRoomRate = { r in
+                rate = r
+                controller?.setRate(r)
+            }
             beginNowPlaying()
         }
         .onDisappear {
@@ -408,6 +413,10 @@ struct PlayerScreen: View {
             if let x = context?.explicitStartSec, x > 0 { sec = x }
             else if let h = context?.homeServer, h.resumeSec > 0 { sec = h.resumeSec }
             if sec <= 5 { sec = 0 }
+            // (Together pass) use-bridge-load guestInRoom: a Watch Together guest gets no resume prompt
+            // and no resume seek; the room puts it at the host's spot. A guest who had seen part of the
+            // episode got "Pick up where you left off?" over the room's lobby card.
+            if together.inRoom, !together.isHost { sec = 0 }
             // use-track-autoload.ts prefsAppliedRef: a title starts at the show's remembered rate
             // (player-prefs), else settings.defaultPlaybackSpeed (live has no speed).
             // Not for kid profiles: their transport has no speed control, and player-prefs is keyed by
@@ -461,7 +470,7 @@ struct PlayerScreen: View {
             // closing() had just cleared, pulling the guests back into it.
             if !finishing {
                 scrobbleTick()
-                together.tick(controller: controller, context: isLive ? nil : context, url: url)
+                together.tick(controller: controller, context: isLive ? nil : context, url: url, rate: rate)
             }
             // (player tracks pass) useSkipSegments also reads the file's chapters (mpv chapter-list).
             // The chapter list is read only when the (whole-second) duration changes: mpv fills it with
@@ -584,7 +593,7 @@ struct PlayerScreen: View {
             if let ref { Task { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) } }
             return
         }
-        finish(natural: false)
+        finish(natural: false, reopening: true)
         Task { @MainActor in
             if let ref { _ = try? await HarborEngine.shared.callJSON("deadStreams.markDead", [ref, .string("load-failed")]) }
             again(auto)
@@ -598,8 +607,17 @@ struct PlayerScreen: View {
         segments.first { snap.position >= $0.startSec && snap.position < $0.endSec - 0.75 }
     }
 
-    /// player.tsx hasNextEpisodeNow: there is an episode after this one ("Keep watching" aside).
-    private var hasNextEpisodeNow: Bool { upNext != nil && !isLive }
+    /// player.tsx canChangeEpisode = (series…) && (!inRoom || isHost): a Watch Together guest's
+    /// episode follows the host (use-episode-navigation goToEpisode returns for a room guest).
+    private var canChangeEpisode: Bool { !(together.inRoom && !together.isHost) }
+
+    /// player.tsx hasNextEpisodeNow (use-queue-nav: canChangeEpisode && adjacent.next): there is an
+    /// episode after this one ("Keep watching" aside). (Together pass) A room guest has none: its
+    /// transport's Next episode and the remote's next-track command closed its player and opened
+    /// the next episode by itself, out of the room's sync.
+    private var hasNextEpisodeNow: Bool { upNext != nil && !isLive && canChangeEpisode }
+    /// use-queue-nav hasPrevEpisodeNow = canChangeEpisode && adjacent.prev.
+    private var hasPrevEpisodeNow: Bool { onPreviousEpisode != nil && !isLive && canChangeEpisode }
 
     /// skip-pill-container syntheticOutro: inside the up-next lead, a title with no real outro gets
     /// one that runs to the end.
@@ -774,7 +792,11 @@ struct PlayerScreen: View {
     }
 
     /// use-episode-navigation goToEpisode: the caller opens the next episode's picker with instant play.
-    private func playNext() { StillWatching.reset(); finish(natural: false, advance: true) }
+    private func playNext() {
+        guard canChangeEpisode else { return }
+        StillWatching.reset()
+        finish(natural: false, advance: true)
+    }
 
     private func cancelAutoNext() {
         autoNextCancelled = true
@@ -1014,16 +1036,17 @@ struct PlayerScreen: View {
             // bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed
             // when there is none; VOD gets Back / Forward by the seek step.
             HStack(spacing: BP.px(10)) {
-                if !isLive, onPreviousEpisode != nil || upNext != nil {
-                    iconChip("prev", "backward.end.fill", label: T("Previous episode")) { let go = onPreviousEpisode; finish(natural: false); go?() }
-                        .disabled(onPreviousEpisode == nil)
+                // bp-player-controls `series = hasPrevEpisode || hasNextEpisode` (both gated by canChangeEpisode).
+                if hasPrevEpisodeNow || hasNextEpisodeNow {
+                    iconChip("prev", "backward.end.fill", label: T("Previous episode")) { previousEpisode() }
+                        .disabled(!hasPrevEpisodeNow)
                 }
                 if !isLive { iconChip("rewind", "gobackward", label: T("Back %llds", Int(prefs.seekBackStepSec))) { seekBy(-prefs.seekBackStepSec) } }
                 chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
                 if !isLive { iconChip("forward", "goforward", label: T("Forward %llds", Int(prefs.seekForwardStepSec))) { seekBy(prefs.seekForwardStepSec) } }
-                if !isLive, onPreviousEpisode != nil || upNext != nil {
+                if hasPrevEpisodeNow || hasNextEpisodeNow {
                     iconChip("next", "forward.end.fill", label: T("Next episode")) { playNext() }
-                        .disabled(upNext == nil)
+                        .disabled(!hasNextEpisodeNow)
                 }
                 Spacer()
             }
@@ -1042,7 +1065,7 @@ struct PlayerScreen: View {
                     chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
                 }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
-                if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false); go?(at) } }
+                if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false, reopening: true); go?(at) } }
                 // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
                 if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
@@ -1494,7 +1517,7 @@ struct PlayerScreen: View {
                 HStack(spacing: BP.px(10)) {
                     chip("Go back", "chevron.backward") { finish(natural: false) }
                     chip("Try again", "arrow.clockwise") { reloadSame() }
-                    if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; finish(natural: false); go?(snap.position) } }
+                    if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; finish(natural: false, reopening: true); go?(snap.position) } }
                 }
                 .focusSection()
                 .onAppear { focusLater(.chip("Go back")) }
@@ -1569,7 +1592,7 @@ struct PlayerScreen: View {
     /// media-session.ts / use-keyboard-shortcuts.ts media keys: what the system's commands do here.
     private func beginNowPlaying() {
         var previous: (() -> Void)? = nil
-        if !isLive, let go = onPreviousEpisode { previous = { finish(natural: false); go() } }
+        if hasPrevEpisodeNow { previous = { previousEpisode() } }
         var next: (() -> Void)? = nil
         if hasNextEpisodeNow { next = { playNext() } }
         let actions = VideoNowPlaying.Actions(
@@ -1842,7 +1865,7 @@ struct PlayerScreen: View {
             if let e = endedEarly ?? status.error { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
             HStack(spacing: BP.px(10)) {
                 if onChooseAnother != nil {
-                    chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false); go?() }
+                    chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false, reopening: true); go?() }
                 }
                 // (bug pass) Like the other retries: the connecting card's clock starts over (it
                 // otherwise came up at once with the first open's elapsed time and "Still looking"),
@@ -1956,9 +1979,18 @@ struct PlayerScreen: View {
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
 
+    /// use-queue-nav playPrev: the previous episode's picker opens once the player has closed.
+    private func previousEpisode() {
+        guard canChangeEpisode, let go = onPreviousEpisode else { return }
+        finish(natural: false, reopening: true)
+        go()
+    }
+
     /// `natural`: the file played to its end (saved as finished). `advance`: the caller should move
     /// on to the next episode (defaults to `natural`, the way onClose always read).
-    private func finish(natural: Bool, advance: Bool? = nil) {
+    /// `reopening`: the caller opens another player right away, from its picker (another episode or
+    /// source; defaults to an advance with a next episode).
+    private func finish(natural: Bool, advance: Bool? = nil, reopening: Bool? = nil) {
         // "Play now" and the file's own end can both land in the last second; close once.
         guard !finishing else { return }
         finishing = true
@@ -1966,7 +1998,10 @@ struct PlayerScreen: View {
         // the caller opens next (the next episode, the picker) is on screen. Closes that leave the
         // viewer browsing released the layer before this.
         PiPBrowse.shared.release(nowPlayingId, keepBrowsing: false)
-        together.closing()
+        // (Together pass) A Watch Together host moving to another episode or source is not leaving
+        // the video (upstream opens the picker over the player; closePlayer never runs).
+        let movingOn: Bool = reopening ?? ((advance ?? natural) && upNext != nil && !isLive)
+        together.closing(reopening: movingOn)
         if scrobbleState != nil {
             let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0
             sendScrobble(progress >= 90 ? "stop" : "pause")
