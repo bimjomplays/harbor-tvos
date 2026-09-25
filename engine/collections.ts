@@ -16,6 +16,8 @@ import { searchAll, searchCinemeta } from "@/lib/search";
 import { BP_COLLECTIONS_ALL, bpCatalogFor, bpMapLimit, bpStripCollectionSuffix, resolveBpCollection } from "@/views/big-picture/use-bp-collections";
 import { tmdbCollection, type TmdbCollection } from "@/lib/providers/tmdb/tmdb-collection";
 import { loadEffective } from "@/lib/settings/profile-store";
+import { currentAuthor } from "@/lib/theme-auth";
+import { t } from "@/lib/i18n";
 
 export type CollectionCard = {
   key: string;
@@ -26,6 +28,8 @@ export type CollectionCard = {
   handle?: string;
   /** community: already saved into this device's collections. */
   saved?: boolean;
+  /** community: the signed-in member's own collection (community-hub SaveButton isOwn: no Save). */
+  own?: boolean;
   name: string;
   image: string | null;
   /** null for a TVDB list until it is opened (bp-collection-card "TVDB list"). */
@@ -63,11 +67,17 @@ function isSaved(c: CommunityCollection, own: Collection[]): boolean {
   return own.some((x) => x.sourceHandle === c.handle && x.sourceId === c.id);
 }
 
+/** community-share-button useCurrentHandle, compared as community-hub's SaveButton does. */
+function isOwnHandle(handle: string): boolean {
+  const me = currentAuthor()?.handle;
+  return !!me && me.toLowerCase() === handle.toLowerCase();
+}
+
 export async function community(): Promise<CollectionCard[]> {
   const list: CommunityCollection[] = await fetchCommunityCollections();
   lastCommunity = list;
   const own = readCollections();
-  return list.map((c) => ({ ...card(c, "community", c.displayName || c.handle), handle: c.handle, saved: isSaved(c, own) }));
+  return list.map((c) => ({ ...card(c, "community", c.displayName || c.handle), handle: c.handle, saved: isSaved(c, own), own: isOwnHandle(c.handle) }));
 }
 
 export async function all(): Promise<{ mine: CollectionCard[]; community: CollectionCard[] }> {
@@ -228,7 +238,8 @@ export function mineCard(id: string): CollectionCard | null {
 
 /** community-hub "New collection"; null when the 24-collection cap is reached. */
 export function create(name: string): CollectionCard | null {
-  const id = createCollection(name.trim() || "Untitled collection");
+  // community-hub create: t("Untitled collection"), in the viewer's language (social pass).
+  const id = createCollection(name.trim() || t("Untitled collection"));
   return id ? mineCard(id) : null;
 }
 
@@ -258,7 +269,9 @@ export function removeItem(id: string, itemId: string): CollectionCard | null {
 /** community-hub "Save to my collections": copies it here once; returns the local copy. */
 export function saveCommunity(handle: string, id: string): CollectionCard | null {
   const c = lastCommunity.find((x) => x.handle === handle && x.id === id);
-  if (!c) return null;
+  // (social pass) community-hub SaveButton renders nothing for the member's own collection; the TV
+  // offered Save on it and copied the viewer's own shared collection into their collections.
+  if (!c || isOwnHandle(c.handle)) return null;
   const local = saveCommunityCollection({
     handle: c.handle, id: c.id, name: c.name, description: c.description, coverImage: c.coverImage,
     bgImage: c.bgImage, tags: c.tags, items: c.items,

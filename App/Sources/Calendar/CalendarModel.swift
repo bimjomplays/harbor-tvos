@@ -227,8 +227,10 @@ final class ReminderCenter: ObservableObject {
         (try? await HarborEngine.shared.call("calendar.reminders", [])) ?? []
     }
 
-    func remove(_ id: String) async -> [Row] {
-        let rows: [Row] = (try? await HarborEngine.shared.call("calendar.removeReminder", [id])) ?? []
+    /// nil when the answer could not be read: the caller keeps its rows (it used to get [] and show
+    /// "No reminders yet" over every other reminder).
+    func remove(_ id: String) async -> [Row]? {
+        let rows: [Row]? = try? await HarborEngine.shared.call("calendar.removeReminder", [id])
         await refresh()
         return rows
     }

@@ -60,10 +60,21 @@ final class SportsModel: ObservableObject {
     private var unsubscribe: (() -> Void)?
     private var reloadTask: Task<Void, Never>?
     private var poll: Task<Void, Never>?
+    /// (sports/addons pass 2) bp-view-state `sportsMode` (useBpPersistedState): the mode survives
+    /// leaving the tab for the rest of the session and resets when the profile changes
+    /// (use-bp-profile-reset). The room came back on For you after every visit to another tab.
+    private static var kept: (profile: String, mode: Mode)?
+    private var restored = false
 
     deinit { poll?.cancel(); reloadTask?.cancel(); unsubscribe?() }
 
     func start() async {
+        if !restored {
+            restored = true
+            // Before the consent read: nothing of the room is drawn yet, so no chip flips.
+            let who: String = ProfilesStore.shared.active?.id ?? ""
+            if let k = Self.kept, k.profile == who { mode = k.mode }
+        }
         consent = ((try? await HarborEngine.shared.call("sports.consent", [])) as Consent?)?.status ?? "unknown"
         guard consent == "accepted" else { return }
         // sports-reminder-loop: the engine's 30 s reminder timer (runs only while Harbor is open;
@@ -126,18 +137,43 @@ final class SportsModel: ObservableObject {
         let input: AnyJSON = .object(["mode": .string(mode.rawValue), "group": .string(group), "day": day.map { .string($0) } ?? .null,
                                       "browsing": .bool(browsing), "force": .bool(force), "locale": .string(L10n.language)])
         // Four callers can overlap (poll, event debounce, chip presses); only the newest reply lands.
-        if let p: Page = try? await HarborEngine.shared.call("sports.page", [input]), mine == generation { page = p }
+        if let p: Page = try? await HarborEngine.shared.call("sports.page", [input]), mine == generation {
+            let was: String? = page?.today
+            page = p
+            if let was, was != p.today { rollDay(from: was, to: p.today) }
+        }
+    }
+
+    /// (sports/addons pass 2) use-bp-sports.ts re-reads today every minute while the room is up: a
+    /// picked day that was today follows it, and the date band re-anchors on the new today. A
+    /// viewer left on Sports over midnight kept yesterday's "Today" cell and board.
+    private func rollDay(from was: String, to now: String) {
+        Task { [weak self] in
+            let fresh: [Day] = (try? await HarborEngine.shared.call("sports.days", [AnyJSON.null, AnyJSON.string(L10n.language)])) ?? []
+            guard !fresh.isEmpty else { return }
+            self?.days = fresh
+        }
+        if day == was {
+            day = now
+            Task { await reload() }
+        }
+    }
+
+    private func keep(_ m: Mode) {
+        let who: String = ProfilesStore.shared.active?.id ?? ""
+        Self.kept = (profile: who, mode: m)
     }
 
     func setMode(_ m: Mode) {
         mode = m
+        keep(m)
         if m != .schedule { day = nil }
         if m == .forYou || m == .live { group = "all"; browsing = false }
         Task { await reload() }
     }
 
     func setGroup(_ key: String) { group = key; browsing = false; Task { await reload() } }
-    func browse(_ key: String) { browsing = true; group = key; mode = .forYou; Task { await reload() } }
+    func browse(_ key: String) { browsing = true; group = key; mode = .forYou; keep(.forYou); Task { await reload() } }
     func setDay(_ key: String) { day = key; Task { await reload() } }
 
     func setLeagues(_ keys: [String]) async {

@@ -8,6 +8,7 @@ struct ListDialogView: View {
     @State private var lists: [ListSummary] = []
     @State private var naming = false
     @State private var newName = ""
+    @State private var creating = false
     @FocusState private var focus: String?
     struct ListSummary: Decodable, Identifiable { var id: String; var name: String; var count: Int; var contains: Bool }
 
@@ -30,7 +31,7 @@ struct ListDialogView: View {
                 if naming {
                     BPField(label: "New list", placeholder: "List name", text: $newName)
                     HStack(spacing: BP.px(8)) {
-                        Button("Create") { Task { await create() } }.buttonStyle(BPActionStyle(primary: true)).disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Create") { Task { await create() } }.buttonStyle(BPActionStyle(primary: true, busy: creating)).disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                         // (detail pass) Both buttons go with the naming row: the ring moves back to "New list"
                         // (or the new list) instead of falling off the dialog.
                         Button("Cancel") { naming = false; newName = ""; focus = "new" }.buttonStyle(BPActionStyle())
@@ -61,6 +62,10 @@ struct ListDialogView: View {
     }
 
     private func create() async {
+        // (social pass) One at a time: a double press on Create made two lists of the same name.
+        guard !creating else { return }
+        creating = true
+        defer { creating = false }
         let id: String? = try? await HarborEngine.shared.call("actions.newList", [newName]) as String
         if let id { let _: Bool? = try? await HarborEngine.shared.call("actions.toggleList", [id, meta]) as Bool }
         naming = false; newName = ""

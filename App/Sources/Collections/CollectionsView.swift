@@ -18,6 +18,8 @@ final class CollectionsModel: ObservableObject {
         /// The collection's own id (uuid for mine/community, TMDB/TVDB id otherwise).
         var ref: String
         var handle: String?; var saved: Bool?
+        /// community: the signed-in member's own collection (community-hub SaveButton: no Save).
+        var own: Bool?
         var name: String; var image: String?; var count: Int?; var byline: String?; var description: String?; @LossyArray var items: [Item]   // (bug pass 2) lossy
         var hidden: Int?
         var id: String { key }
@@ -208,6 +210,9 @@ struct CollectionsView: View {
     @State private var detail: Meta?
     @State private var naming = false
     @State private var nameDraft = ""
+    /// (social pass) One Create at a time: a double press made two collections.
+    @State private var creating = false
+    @FocusState private var focus: String?
 
     private static let sources: [(String, String)] = [("all", "All"), ("mine", "Mine"), ("community", "Community"), ("tmdb", "TMDB"), ("tvdb", "TVDB")]
     /// (layout pass) Six 404 pt cards (2 559 pt with the gaps) ran far off the 1 632 pt page.
@@ -242,10 +247,15 @@ struct CollectionsView: View {
                             Button { open = c } label: { CollectionCardView(card: c) }
                                 .onAppear { if c.key == model.cards.last?.key { Task { await model.more() } } }
                                 .buttonStyle(BPTileStyle())
+                                .focused($focus, equals: "card:" + c.key)
                                 .accessibilityIdentifier("collection-\(c.key)")
                         }
                         if model.showAllTvdb {
-                            Button { model.set(source: "tvdb") } label: { CollectionMoreCard(label: T("See every TVDB list")) }
+                            // bp-collections showAllTvdb: the card unmounts under the ring, which goes to the TVDB chip.
+                            Button {
+                                model.set(source: "tvdb")
+                                DispatchQueue.main.async { focus = "source:tvdb" }
+                            } label: { CollectionMoreCard(label: T("See every TVDB list")) }
                                 .buttonStyle(BPTileStyle())
                         }
                     }
@@ -265,13 +275,21 @@ struct CollectionsView: View {
                 .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // (social pass) The overlay is drawn over the room, not presented: the grid under it kept
+            // the ring (the pressed card stayed focused behind the overlay, and Select opened it
+            // again). bp-collection-items is a dialog; the room takes no focus while it is up.
+            .disabled(open != nil)
             if let c = open {
                 CollectionItemsOverlay(card: c, limits: model.limits, onClose: {
+                    let key = c.key
                     open = nil
-                    Task { await model.reloadMine() }
+                    Task {
+                        await model.reloadMine()
+                        restoreFocus(to: key)
+                    }
                 }, onChanged: { source in
                     Task { if source == "community" { await model.reloadCommunity() }; await model.reloadMine() }
-                }, onOpen: { item in detail = item.meta })
+                }, onOpen: { item in detail = item.meta }, topInset: BP.barHeight + BP.px(20))
                 .id(c.key)
                 .transition(.opacity)
             }
@@ -286,13 +304,16 @@ struct CollectionsView: View {
     private var sourceRow: some View {
         HStack(spacing: BP.px(8)) {
             ForEach(Self.sources, id: \.0) { key, label in
-                Button(T(label)) { model.set(source: key) }.buttonStyle(BPActionStyle(primary: model.source == key)).bpSelected(model.source == key)
+                Button(T(label)) { model.set(source: key) }
+                    .buttonStyle(BPActionStyle(primary: model.source == key)).bpSelected(model.source == key)
+                    .focused($focus, equals: "source:" + key)
             }
             if model.source == "all" || model.source == "mine" {
                 // community-hub.tsx: "New collection", with the "{n} / {max}" count beside it.
                 Button { nameDraft = ""; naming.toggle() } label: { Label("New collection", systemImage: "plus") }
                     .buttonStyle(BPActionStyle(primary: naming))
                     .disabled(model.mine.count >= model.limits.collections)
+                    .focused($focus, equals: "new")
                 Text("\(model.mine.count) / \(model.limits.collections)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
             Text("\(model.cards.count) collections").font(BP.sans(13)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(8))
@@ -305,15 +326,27 @@ struct CollectionsView: View {
             BPField(label: "Name", placeholder: "Name this collection", text: $nameDraft)
                 .frame(maxWidth: BP.px(520))
             Button("Create") {
+                guard !creating else { return }
+                creating = true
                 let name = nameDraft
                 Task {
-                    if let c = await model.create(name: name) { naming = false; open = c }
+                    let c = await model.create(name: name)
+                    creating = false
+                    if let c { naming = false; open = c }
                 }
             }
-            .buttonStyle(BPActionStyle(primary: true))
-            Button("Cancel") { naming = false }.buttonStyle(BPActionStyle())
+            .buttonStyle(BPActionStyle(primary: true, busy: creating))
+            // (social pass) The row goes with Cancel: the ring returns to "New collection" instead of falling off.
+            Button("Cancel") { naming = false; focus = "new" }.buttonStyle(BPActionStyle())
         }
         .focusSection()
+    }
+
+    /// bp-collection-items cleanup: the ring goes back to the card that opened the overlay, or to the
+    /// source chip when that card is gone (a deleted collection).
+    @MainActor private func restoreFocus(to key: String) {
+        let target: String = model.cards.contains(where: { $0.key == key }) ? "card:" + key : "source:" + model.source
+        DispatchQueue.main.async { focus = target }
     }
 }
 

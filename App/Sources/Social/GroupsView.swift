@@ -60,7 +60,7 @@ struct GroupsView: View {
         // The first load only: closing a group reloads through onDismiss (join/leave shows), and the
         // `.task` re-run on the same close raced it.
         .task { if data == nil { await load() } }
-        .fullScreenCover(item: $open, onDismiss: { Task { await load() } }) { g in GroupPageView(id: g.id) }
+        .fullScreenCover(item: $open, onDismiss: { Task { await reloadKeepingPages() } }) { g in GroupPageView(id: g.id) }
         .fullScreenCover(isPresented: $searching) {
             PhoneTypingSheet(label: "Search groups", placeholder: "Search groups by name or tag", text: $query,
                              purpose: "Scan this with your phone camera, then type what to look for.",
@@ -119,6 +119,25 @@ struct GroupsView: View {
         data = fresh
     }
 
+    /// (social pass) Closing a group re-reads the list so a Join, Leave or answered invite shows, but
+    /// a fresh first page dropped every page "Load more" had added (and the tile holding the ring,
+    /// when the group came from one of them), and a failed re-read offline swapped the list for the
+    /// error card. The first page is refreshed; later pages stay; a failure keeps what is shown.
+    private func reloadKeepingPages() async {
+        guard let old = data, old.phase != "error" else { await load(); return }
+        generation += 1
+        let mine = generation
+        let q: String? = query.isEmpty ? nil : query
+        let fresh: Social.GroupsPage? = try? await HarborEngine.shared.call("social.groups", [q, tag, String?.none])
+        guard mine == generation, var next = fresh, next.phase != "error" else { return }
+        if old.groups.count > next.groups.count {
+            let taken = Set(next.groups.map(\.id) + next.mine.map(\.id))
+            next.groups.append(contentsOf: old.groups.filter { !taken.contains($0.id) })
+            next.nextCursor = old.nextCursor
+        }
+        data = next
+    }
+
     private func more() async {
         guard let cursor = data?.nextCursor, !loadingMore else { return }
         let mine = generation
@@ -151,6 +170,7 @@ struct GroupPageView: View {
     @State private var draft = ""
     @State private var profile: Social.HandleRef?
     @State private var confirmLeave = false
+    @FocusState private var focus: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -199,12 +219,13 @@ struct GroupPageView: View {
                 Button("Accept") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true, busy: busy))
                 Button("Decline") { Task { await respond(false) } }.buttonStyle(BPActionStyle(busy: busy))
             } else if g.isMember || g.isOwner {
-                if g.can.post { Button { draft = ""; composing = true } label: { Label("Write a post", systemImage: "iphone") }.buttonStyle(BPActionStyle()) }
+                if g.can.post { Button { draft = ""; composing = true } label: { Label("Write a post", systemImage: "iphone") }.buttonStyle(BPActionStyle()).focused($focus, equals: "post") }
                 if !g.isOwner {
                     Button("Leave group") {
                         guard !busy else { return }
                         confirmLeave = true
                     }.buttonStyle(BPActionStyle(busy: busy))
+                    .focused($focus, equals: "leave")
                 }
             } else if g.visibility == "public", SocialCenter.shared.me.signedIn {
                 Button("Join group") { Task { await join() } }.buttonStyle(BPActionStyle(primary: true, busy: busy))
@@ -300,7 +321,16 @@ struct GroupPageView: View {
     private func join() async {
         guard !busy else { return }
         await run { group = try await HarborEngine.shared.call("social.groupJoin", [id]) }
+        focusMemberActions()
         await loadPosts()
+    }
+
+    /// (social pass) Join and the invite's Accept go away once they work, with the ring on them: it
+    /// moves to the member's actions (Write a post, else Leave group).
+    private func focusMemberActions() {
+        guard let g = group, g.isMember || g.isOwner else { return }
+        let target: String = g.can.post ? "post" : "leave"
+        DispatchQueue.main.async { focus = target }
     }
 
     private func leave() async {
@@ -318,7 +348,10 @@ struct GroupPageView: View {
             if accept, let g { group = g } else if !accept { dismiss() }
         }
         // A member now: the posts an invitee could not read (join() does the same).
-        if accept, group?.isMember == true || group?.isOwner == true { await loadPosts() }
+        if accept, group?.isMember == true || group?.isOwner == true {
+            focusMemberActions()
+            await loadPosts()
+        }
     }
 
     private func like(_ post: Social.Post) async {

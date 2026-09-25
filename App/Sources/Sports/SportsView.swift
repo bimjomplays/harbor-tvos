@@ -8,6 +8,8 @@ struct SportsView: View {
     @State private var event: SportsModel.Game?
     @State private var personalize = false
     @State private var heroIndex = 0
+    /// The key of the hero game on screen (the cycle keeps it across list refreshes).
+    @State private var heroShown: String?
     /// use-bp-sports-cycle cardFocused: the hero holds its game while it has the focus.
     @State private var heroFocused = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -46,7 +48,14 @@ struct SportsView: View {
                 // The stored answer is still being read: neither the notice nor the room yet.
                 Color.clear
             } else if model.consent != "accepted" {
-                SportsConsentView(accept: { Task { await model.accept() } }, decline: { Task { await model.decline() } })
+                SportsConsentView(accept: { Task { await model.accept() } }, decline: {
+                    Task {
+                        await model.decline()
+                        // (sports/addons pass 2) bp-sports-consent decline → goBigPictureTab("live"):
+                        // the shell's hidden-tab fallback took the viewer to Home instead.
+                        if model.consent == "declined" { app.room = .live }
+                    }
+                })
             } else {
                 room
             }
@@ -97,14 +106,21 @@ struct SportsView: View {
             // use-bp-sports-cycle.ts: next hero every 7 s, (device-flow pass) but not while the hero
             // has the focus (the game swapped under the viewer's finger, so Select opened another
             // one) nor with Reduce Motion on.
-            heroIndex = 0
-            let n = model.page?.heroes.count ?? 0
+            // (sports/addons pass 2) The game on screen stays when a refreshed list still has it
+            // (use-bp-sports-cycle only resets an index that ran past the list). Every score poll
+            // that added or dropped a hero put the first game back, under the viewer's focus too,
+            // and so did coming back from an event opened from the hero.
+            let keys: [String] = model.page?.heroes.map(\.key) ?? []
+            if let shown = heroShown, let at = keys.firstIndex(of: shown) { heroIndex = at } else if heroIndex >= keys.count { heroIndex = 0 }
+            heroShown = keys.indices.contains(heroIndex) ? keys[heroIndex] : nil
+            let n = keys.count
             guard n > 1, !reduceMotion else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(7))
                 guard !Task.isCancelled else { return }
                 if heroFocused { continue }
                 heroIndex = (heroIndex + 1) % n
+                heroShown = keys[heroIndex]
             }
         }
     }
@@ -242,7 +258,7 @@ struct SportsHeroView: View {
                     } else {
                         HStack(spacing: BP.px(18)) {
                             side(game.away)
-                            Text(game.state == "pre" ? "vs" : "\(game.away.score.isEmpty ? "0" : game.away.score) : \(game.home.score.isEmpty ? "0" : game.home.score)")
+                            Text(scored ? "\(game.away.score) : \(game.home.score)" : "vs")
                                 .font(BP.display(26)).foregroundStyle(BP.ink).monospacedDigit()
                             side(game.home)
                         }
@@ -276,6 +292,10 @@ struct SportsHeroView: View {
         .onDisappear { onFocus(false) }
         .focusSection()
     }
+
+    /// (sports/addons pass 2) bp-sports-hero `scored`: a score only once both sides have one, else
+    /// "vs". A postponed or cancelled game (post, no score) read "0 : 0" like a goalless final.
+    private var scored: Bool { game.state != "pre" && !game.home.score.isEmpty && !game.away.score.isEmpty }
 
     private var metaLine: String {
         var parts = [game.leagueLabel]
@@ -340,8 +360,8 @@ struct SportsGameCard: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                sideRow(game.away, lost: game.state == "post" && !game.away.winner && game.home.winner)
-                sideRow(game.home, lost: game.state == "post" && !game.home.winner && game.away.winner)
+                sideRow(game.away, lost: scored && game.state == "post" && !game.away.winner && game.home.winner)
+                sideRow(game.home, lost: scored && game.state == "post" && !game.home.winner && game.away.winner)
             }
             Text(game.quiet).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(1)
         }
@@ -356,9 +376,13 @@ struct SportsGameCard: View {
             if let r = s.rank { Text("#\(r)").font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
             Text(s.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
             Spacer()
-            Text(game.state == "pre" ? (s.record ?? "") : (s.score.isEmpty ? "0" : s.score))
-                .font(BP.sans(14, game.state == "pre" ? .regular : .bold)).foregroundStyle(game.state == "pre" ? BP.inkSubtle : BP.ink).monospacedDigit()
+            Text(scored ? (s.score.isEmpty ? "0" : s.score) : (s.record ?? ""))
+                .font(BP.sans(14, scored ? .bold : .regular)).foregroundStyle(scored ? BP.ink : BP.inkSubtle).monospacedDigit()
         }
         .opacity(lost ? 0.55 : 1)
     }
+
+    /// (sports/addons pass 2) bp-sports-card `scored = !stale && state !== "pre"`: a saved (stale)
+    /// game shows the records, not a score frozen from whenever it was saved.
+    private var scored: Bool { game.savedAt == nil && game.state != "pre" }
 }

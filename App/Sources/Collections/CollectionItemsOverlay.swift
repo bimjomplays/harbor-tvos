@@ -20,20 +20,29 @@ struct CollectionItemsOverlay: View {
     @State private var query = ""
     @State private var results: [Meta] = []
     @State private var searching = false
+    @State private var saving = false
+    @FocusState private var focus: String?
 
     enum Panel { case rename, add }
 
     private struct NewItem: Encodable { var id: String; var type: String; var name: String; var poster: String? }
     private struct TvdbDetail: Decodable { var name: String; var overview: String?; var image: String?; @LossyArray var items: [CollectionsModel.Item]; var failed: Bool }
 
+    /// Where the page starts. (social pass) In the Collections room the overlay sits under the shell's
+    /// top bar, which drew over its eyebrow and name at 60 pt; there it starts below the bar
+    /// (bp-collection-items pt-[var(--bp-page-top)]). Covers (Home, Search) have no bar.
+    let topInset: CGFloat
+
     init(card: CollectionsModel.Card, limits: CollectionsModel.Limits, onClose: @escaping () -> Void,
-         onChanged: @escaping (String) -> Void, onOpen: @escaping (CollectionsModel.Item) -> Void) {
+         onChanged: @escaping (String) -> Void, onOpen: @escaping (CollectionsModel.Item) -> Void,
+         topInset: CGFloat = BP.px(60)) {
         _card = State(initialValue: card)
         _loading = State(initialValue: card.source == "tvdb" && card.items.isEmpty)
         self.limits = limits
         self.onClose = onClose
         self.onChanged = onChanged
         self.onOpen = onOpen
+        self.topInset = topInset
     }
 
     /// (layout pass) Six 298 pt columns plus gaps (1 963 pt) overran the 1 632 pt page; five fit.
@@ -63,15 +72,24 @@ struct CollectionItemsOverlay: View {
                     grid
                     Color.clear.frame(height: BP.px(60))
                 }
-                .padding(.horizontal, BP.gutter).padding(.top, BP.px(60))
+                .padding(.horizontal, BP.gutter).padding(.top, topInset)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .task { if card.source == "tvdb" && card.items.isEmpty { await loadTvdb() } }
+        // (social pass) bp-collection-items seeds the ring on its first focusable (Close) and
+        // bp-collection-detail on its first tile; the overlay seeded nothing, so in the Collections
+        // room the ring stayed wherever tvOS left it.
+        .onAppear {
+            let seed: String = isDetail && !card.items.isEmpty ? "item:" + (card.items.first?.id ?? "") : "close"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if focus == nil { focus = seed } }
+        }
         .onExitCommand {
-            if panel != nil { panel = nil }
+            // (social pass) Closing a panel or the delete prompt puts the ring back on the button that
+            // opened it (the panel's own buttons went away under it).
+            if let p = panel { panel = nil; focus = p == .rename ? "rename" : "add" }
             else if editing { editing = false }
-            else if confirmDelete { confirmDelete = false }
+            else if confirmDelete { confirmDelete = false; DispatchQueue.main.async { focus = "delete" } }
             else { onClose() }
         }
     }
@@ -109,31 +127,39 @@ struct CollectionItemsOverlay: View {
 
     private var actions: some View {
         HStack(spacing: BP.px(8)) {
-            Button("Close", action: onClose).buttonStyle(BPActionStyle())
+            Button("Close", action: onClose).buttonStyle(BPActionStyle()).focused($focus, equals: "close")
             if isMine {
                 Button("Rename") { nameDraft = card.name; panel = panel == .rename ? nil : .rename }
                     .buttonStyle(BPActionStyle(primary: panel == .rename)).bpSelected(panel == .rename)
+                    .focused($focus, equals: "rename")
                 Button("Add titles") { panel = panel == .add ? nil : .add }
                     .buttonStyle(BPActionStyle(primary: panel == .add)).bpSelected(panel == .add)
                     .disabled(card.items.count >= limits.items && panel != .add)
+                    .focused($focus, equals: "add")
                 Button(editing ? "Done" : "Remove titles") { editing.toggle() }
                     .buttonStyle(BPActionStyle(primary: editing))
                     .disabled(card.items.isEmpty && !editing)
+                    .focused($focus, equals: "edit")
                 if confirmDelete {
                     Text("Delete this collection?").font(BP.sans(14, .semibold)).foregroundStyle(BP.danger)
                     Button("Delete") { Task { await deleteCollection() } }.buttonStyle(BPActionStyle(primary: true))
-                    Button("Cancel") { confirmDelete = false }.buttonStyle(BPActionStyle())
+                    Button("Cancel") { confirmDelete = false; DispatchQueue.main.async { focus = "delete" } }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "delete-cancel")
                 } else {
-                    Button("Delete") { confirmDelete = true }.buttonStyle(BPActionStyle())
+                    // (social pass) The pressed Delete is swapped for the prompt, which dropped the ring;
+                    // it lands on Cancel, so a double press cannot delete the collection.
+                    Button("Delete") { confirmDelete = true; DispatchQueue.main.async { focus = "delete-cancel" } }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "delete")
                 }
                 Text("\(card.items.count) / \(limits.items) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
-            } else if card.source == "community", let handle = card.handle {
+            } else if card.source == "community", let handle = card.handle, card.own != true {
+                // community-hub SaveButton: none on the member's own collection. Once saved it dims
+                // instead of disabling, so the ring stays on it (social pass).
                 Button { Task { await save(handle: handle) } } label: {
                     Label(card.saved == true ? "Saved to your collections" : "Save to my collections",
                           systemImage: card.saved == true ? "checkmark" : "bookmark")
                 }
-                .buttonStyle(BPActionStyle(primary: card.saved != true))
-                .disabled(card.saved == true)
+                .buttonStyle(BPActionStyle(primary: card.saved != true, busy: saving || card.saved == true))
             }
         }
         .focusSection()
@@ -213,6 +239,7 @@ struct CollectionItemsOverlay: View {
                         }
                     }
                     .buttonStyle(BPTileStyle())
+                    .focused($focus, equals: "item:" + item.id)
                     // Editing, a press removes the title: upstream's "Remove {name}".
                     .accessibilityLabel(Text(verbatim: editing ? T("Remove %@", item.meta.name) : item.meta.name))
                 }
@@ -241,14 +268,24 @@ struct CollectionItemsOverlay: View {
         let c: CollectionsModel.Card? = try? await HarborEngine.shared.call("collectionsRoom.rename", [card.ref, nameDraft])
         if let c { card = c; onChanged("mine") }
         panel = nil
+        focus = "rename"
     }
 
     @MainActor private func removeItem(_ item: CollectionsModel.Item) async {
+        let index: Int = card.items.uniquedById().firstIndex(where: { $0.id == item.id }) ?? 0
         let c: CollectionsModel.Card? = try? await HarborEngine.shared.call("collectionsRoom.removeItem", [card.ref, item.id])
         guard let c else { return }
         card = c
         onChanged("mine")
-        if c.items.isEmpty { editing = false }
+        // (social pass) The removed tile took the ring with it: it goes to the tile now in its place,
+        // or to "Add titles" once the collection is empty.
+        let left: [CollectionsModel.Item] = c.items.uniquedById()
+        if left.isEmpty {
+            editing = false
+            focus = "add"
+        } else {
+            focus = "item:" + left[min(index, left.count - 1)].id
+        }
     }
 
     @MainActor private func toggle(_ m: Meta) async {
@@ -277,6 +314,9 @@ struct CollectionItemsOverlay: View {
     }
 
     @MainActor private func save(handle: String) async {
+        guard !saving, card.saved != true else { return }
+        saving = true
+        defer { saving = false }
         let c: CollectionsModel.Card? = try? await HarborEngine.shared.call("collectionsRoom.saveCommunity", [handle, card.ref])
         if c != nil { card.saved = true; onChanged("community") }
     }

@@ -10,14 +10,29 @@ struct NotificationsView: View {
     @State private var group: Social.GroupRef?
     @State private var profile: Social.HandleRef?
     @State private var busy: String?
+    /// The first refresh has answered (or failed): offline, "Loading…" otherwise stayed up for good.
+    @State private var tried = false
+
+    private var noUnread: Bool { (center.notifications?.unread ?? 0) == 0 }
+    private var noItems: Bool { center.notifications?.items.isEmpty ?? true }
 
     var body: some View {
         SocialPage(eyebrow: "Account", title: T("Notifications")) {
+            // (social pass) Both used to disable themselves once they had done their job, throwing the
+            // ring off; after Clear all with no friend requests nothing on the page could take it.
+            // They dim and ignore the press instead.
             HStack(spacing: BP.px(10)) {
-                Button { Task { await center.markAllRead() } } label: { Label("Mark all read", systemImage: "checkmark.circle") }
-                    .buttonStyle(BPActionStyle()).disabled((center.notifications?.unread ?? 0) == 0)
-                Button { Task { await center.dismiss(center.notifications?.items.map(\.id) ?? [], markRead: true) } } label: { Label("Clear all", systemImage: "xmark.circle") }
-                    .buttonStyle(BPActionStyle()).disabled((center.notifications?.items.isEmpty ?? true))
+                Button {
+                    guard !noUnread else { return }
+                    Task { await center.markAllRead() }
+                } label: { Label("Mark all read", systemImage: "checkmark.circle") }
+                    .buttonStyle(BPActionStyle(busy: noUnread))
+                Button {
+                    guard !noItems else { return }
+                    let ids: [String] = center.notifications?.items.map(\.id) ?? []
+                    Task { await center.dismiss(ids, markRead: true) }
+                } label: { Label("Clear all", systemImage: "xmark.circle") }
+                    .buttonStyle(BPActionStyle(busy: noItems))
             }
             .focusSection()
             if let n = center.notifications {
@@ -37,11 +52,16 @@ struct NotificationsView: View {
                 }
             } else if !center.me.signedIn {
                 SocialEmpty(title: "Sign in to Harbor", message: "Notifications arrive once this TV is signed in to a Harbor account.")
-            } else {
+            } else if !tried {
                 HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.accessibilityElement(children: .combine).focusable()
+            } else {
+                SocialEmpty(title: "Notifications", message: "Check your connection and try again.", action: ("Try again", {
+                    tried = false
+                    Task { await center.refresh(); tried = true }
+                }))
             }
         }
-        .task { await center.refresh() }
+        .task { await center.refresh(); tried = true }
         .fullScreenCover(item: $group) { g in GroupPageView(id: g.id) }
         .fullScreenCover(item: $profile) { h in ProfilePageView(handle: h.handle) }
         .fullScreenCover(item: $detail) { n in NotificationDetailView(notif: n) }
@@ -129,8 +149,12 @@ struct NotificationDetailView: View {
                     if notif.target.open == "profile", let h = notif.target.id, let label = notif.target.label {
                         Button(label) { profile = Social.HandleRef(handle: h) }.buttonStyle(BPActionStyle(primary: true))
                     }
+                    // (social pass) Closes at once (the row goes optimistically); it waited for the
+                    // network refresh, so offline the press seemed to do nothing for a long while.
                     Button("Dismiss notification") {
-                        Task { await SocialCenter.shared.dismiss([notif.id], markRead: false); dismiss() }
+                        let id = notif.id
+                        Task { await SocialCenter.shared.dismiss([id], markRead: false) }
+                        dismiss()
                     }.buttonStyle(BPActionStyle())
                     Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
                 }

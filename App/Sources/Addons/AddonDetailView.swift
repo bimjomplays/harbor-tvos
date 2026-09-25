@@ -47,6 +47,14 @@ struct AddonDetailView: View {
     @State private var external: External?
     /// The id whose page `detail` holds (a re-read of it keeps the page's open sections).
     @State private var shownId: String?
+    /// (sports/addons pass 2) Cleared when the viewer closes the page. A Remove's re-read landing
+    /// after Back found nothing and "went back" again: that onClose shut the next addon's page the
+    /// viewer had opened meanwhile. A class, read after the wait (a gone view's @State isn't).
+    private final class Alive { var on = true }
+    @State private var alive = Alive()
+    /// (sports/addons pass 2) A new page opens on its action pill; the first focus took the star
+    /// count at the top left, whose Select opens the rating page's QR code.
+    @FocusState private var actionFocused: Bool
 
     private var currentId: String { stack.last ?? addonId }
 
@@ -80,7 +88,7 @@ struct AddonDetailView: View {
     private func back() {
         // (addons pass) Back to the previous addon: its page used to keep showing the one just
         // left (Install included, acting on that addon) until the previous one had loaded again.
-        if stack.count > 1 { detail = nil; shownId = nil; stack.removeLast() } else { onClose() }
+        if stack.count > 1 { detail = nil; shownId = nil; stack.removeLast() } else { alive.on = false; onClose() }
     }
 
     private func load() async {
@@ -92,10 +100,11 @@ struct AddonDetailView: View {
         // revealed URL; only a new addon starts folded.
         let again = shownId == asked && detail != nil
         if !again { revealed = false; docOpen = false }
+        let life = alive
         let d: Detail? = try? await HarborEngine.shared.call("addonsManager.detail", [asked, model.authKey, model.adultAllowed])
         // (bug pass) A related tile (or Back) changed the page while this loaded: the engine call is
         // not cancelled with the task, so a late answer would show (or, failing, pop) the wrong addon.
-        guard asked == currentId else { return }
+        guard life.on, asked == currentId else { return }
         // RemoteOrLocalDetail: nothing resolved → go back. Not on a re-read of a page already up
         // (a flaky read when a QR cover closed shut the page), except after a Remove: an addon
         // known only from its install has nothing left to show, as upstream.
@@ -105,6 +114,7 @@ struct AddonDetailView: View {
         }
         detail = d
         shownId = asked
+        if !again { DispatchQueue.main.async { actionFocused = true } }
     }
 
     private func open(_ c: AddonsModel.Card) {
@@ -186,6 +196,7 @@ struct AddonDetailView: View {
                 // when the addon had no stremio-addons.net links); one button now changes in place.
                 Button { primaryAction(d) } label: { primaryLabel(d) }
                     .buttonStyle(BPActionStyle(primary: busy == "install" || (busy == nil && !c.installed), busy: busy != nil))
+                    .focused($actionFocused)
                 if busy == nil && c.installed && d.configurable {
                     Button { configure = target(d, mode: .manage) } label: { Label(T("Reconfigure"), systemImage: "slider.horizontal.3") }
                         .buttonStyle(BPActionStyle())

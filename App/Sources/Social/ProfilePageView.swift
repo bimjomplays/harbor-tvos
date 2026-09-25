@@ -149,22 +149,26 @@ struct ProfilePageView: View {
                 confirmRemove = true
             } label: { Label(friendBusy ? "Removing..." : "Friends", systemImage: "checkmark") }
                 .buttonStyle(BPActionStyle(busy: friendBusy))
+                .focused($focus, equals: "friend")
         case "incoming":
             Button { Task { await friendAct("social.friendAccept", arg: s.friendEdgeId ?? "") } } label: {
                 Label(friendBusy ? "Accepting..." : "Accept request", systemImage: "checkmark")
             }
             .buttonStyle(BPActionStyle(primary: true, busy: friendBusy)).disabled(s.friendEdgeId == nil)
+            .focused($focus, equals: "friend")
         case "outgoing":
             Button { Task { await friendAct("social.friendRemove", arg: s.handle) } } label: {
                 Label(friendBusy ? "Canceling..." : "Cancel request", systemImage: "clock")
             }
             .buttonStyle(BPActionStyle(busy: friendBusy))
+            .focused($focus, equals: "friend")
         default:
             if SocialCenter.shared.me.signedIn {
                 Button { Task { await friendAct("social.friendRequest", arg: s.handle) } } label: {
                     Label(friendBusy ? "Sending..." : friendError ? "Try again" : "Add friend", systemImage: "person.badge.plus")
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: friendBusy))
+                .focused($focus, equals: "friend")
             }
         }
     }
@@ -176,6 +180,13 @@ struct ProfilePageView: View {
         do {
             let r: Social.FriendState = try await HarborEngine.shared.call(fn, [arg])
             friendStatus = r.friendStatus
+            // (social pass) Each state is its own button, so the one the viewer pressed went away
+            // with the ring on it (Add friend → Cancel request, Friends → Add friend after the
+            // alert): the ring follows to the new one.
+            DispatchQueue.main.async { focus = "friend" }
+            // An accepted request leaves the bell's badge and the notification center's list now,
+            // not at the next 60 s poll (where Accept would fail on the answered request).
+            if fn == "social.friendAccept" { await SocialCenter.shared.refresh() }
         } catch {
             friendError = true
         }
