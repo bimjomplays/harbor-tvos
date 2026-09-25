@@ -37,8 +37,13 @@ struct CalendarView: View {
             if !mounted {
                 mounted = true
                 fired = await reminders.takeUnseen()
+                await model.load()
+            } else {
+                // (device-flow pass 4) Back from a title, a day or the reminders: the month is read
+                // again (a watchlist change shows) without the loading state, which put the skeleton
+                // over an empty month's card for the length of the read after every cover closed.
+                await model.load(quiet: true)
             }
-            await model.load()
         }
         .onReceive(tick) { now = $0 }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }

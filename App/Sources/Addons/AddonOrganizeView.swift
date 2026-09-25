@@ -18,6 +18,10 @@ struct AddonOrganizeView: View {
     enum Section { case cloud, device }
 
     @State private var loading = true
+    /// (device-flow pass 4) The first read has answered. Reload list, Try again and Move all to
+    /// account read again: they swapped the whole page for the spinner, so the ring on the button
+    /// just pressed fell to the header (Cancel / Save order), and stayed there after the list came back.
+    @State private var settled = false
     @State private var loadError = false
     @State private var signedIn = false
     @State private var baselineCloud: [Row] = []
@@ -47,7 +51,7 @@ struct AddonOrganizeView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(24)) {
                     header
-                    if loading {
+                    if loading && !settled {
                         ProgressView().tint(BP.inkMuted)
                     } else if loadError {
                         loadErrorPanel
@@ -313,13 +317,17 @@ struct AddonOrganizeView: View {
 
     /// `reset`: a new visit (the backup-before-first-write starts over); Reload / Try again keep it.
     private func load(reset: Bool = false) async {
-        loading = true; defer { loading = false }
+        loading = true; defer { loading = false; settled = true }
         notice = nil; grabbed = nil
         guard let r: Loaded = try? await HarborEngine.shared.call("addonsManager.organizeLoad", [authKey, reset]) else { loadError = true; return }
         loadError = !r.ok
         signedIn = r.signedIn
         baselineCloud = r.cloud; cloud = r.cloud
         baselineDevice = r.device; device = r.device
+        // (device-flow pass 4) A re-read from a button that is gone now (Reload list and Try again
+        // leave with their panels, Move all to account with the emptied device section) hands the
+        // ring to the first row, as Restore does.
+        if !reset, r.ok, focusedRow == nil { focusedRow = (cloud.first ?? device.first)?.key }
         if backupsOpen || r.backups > 0 { await loadBackups() }
     }
 

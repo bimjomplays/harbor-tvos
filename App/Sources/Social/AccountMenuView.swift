@@ -156,6 +156,10 @@ struct AccountMenuView: View {
     /// The open cover is the notification center: closing it marks everything read.
     @State private var readOnClose = false
     @FocusState private var focus: String?
+    /// (device-flow pass 4) onAppear also runs when a page opened from here closes (Groups,
+    /// Notifications, Watch together…): the ring went back to its item, then 0.12 s later was
+    /// pulled up to "View my profile". The seed is placed once, when the menu opens.
+    @State private var seeded = false
 
     private var kid: Bool { profiles.active?.kid != nil }
 
@@ -190,7 +194,11 @@ struct AccountMenuView: View {
             .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge, lineWidth: 1))
         }
         .onExitCommand { dismiss() }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") } }
+        .onAppear {
+            guard !seeded else { return }
+            seeded = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") }
+        }
         .task {
             await center.refresh()
             // (social pass) The refresh can change which items exist (signed out elsewhere: "View my

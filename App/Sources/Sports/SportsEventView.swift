@@ -86,6 +86,26 @@ final class SportsEventModel: ObservableObject {
         }
     }
 
+    /// (device-flow pass 4) The page's `.task`s run again whenever a cover over it closes (the
+    /// player, the addon panel, a who page, the channel search): the summary read started over
+    /// ("Loading match details..." flashed, the Saved pill dropped) and every addon catalog was
+    /// asked again. use-match-detail and use-bp-sports-addon-sources read once per game; the
+    /// 30 s interval and Try again / Refresh ask again.
+    private var detailStarted = false
+    private var addonsStarted = false
+
+    func loadOnce(_ game: SportsModel.Game) async {
+        guard !detailStarted else { return }
+        detailStarted = true
+        await load(game)
+    }
+
+    func loadAddonsOnce(_ game: SportsModel.Game) async {
+        guard !addonsStarted else { return }
+        addonsStarted = true
+        await loadAddons(game)
+    }
+
     /// use-match-detail's effect (also its retry): the read starts over, loading, with nothing held.
     func load(_ game: SportsModel.Game) async {
         loading = true; defer { loading = false }
@@ -164,6 +184,13 @@ struct SportsEventView: View {
     @State private var searchOpen = false
     @State private var link: SportsLink?
     @State private var webhookSetup = false
+    /// (device-flow pass 4) bp-sports-broadcast-picker seeds the ring on its first entry (a
+    /// broadcast, else a channel match, else an action) and puts it back where it was when it closes.
+    /// The inline picker opened below its button with the ring left on the button, and Menu (or a
+    /// pick, once the player handed back) removed the rows under the ring, which fell to wherever
+    /// the focus engine chose. "opener" is the button that toggles the picker.
+    @FocusState private var pickSeat: String?
+    @State private var pickerReturn = false
 
     var body: some View {
         ZStack {
@@ -184,10 +211,10 @@ struct SportsEventView: View {
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(40)).padding(.bottom, BP.hintHeight + BP.px(40))
             }
         }
-        .task { await model.load(game) }
+        .task { await model.loadOnce(game) }
         .task { await model.loadWhoSides(game) }
         .task { await model.loadActions(game) }
-        .task { await model.loadAddons(game) }
+        .task { await model.loadAddonsOnce(game) }
         .task { if game.state != "post" { await model.resolveWatch(game) } }
         .task {
             // use-match-detail: a game in progress refreshes its summary every 30 s.
@@ -198,8 +225,21 @@ struct SportsEventView: View {
                 await model.refresh(game)
             }
         }
-        .onExitCommand { if picker { picker = false } else { dismiss() } }
-        .fullScreenCover(item: $playing) { opt in
+        .onExitCommand {
+            guard picker else { dismiss(); return }
+            let inPicker: Bool = pickSeat != nil
+            picker = false
+            if inPicker { DispatchQueue.main.async { pickSeat = "opener" } }
+        }
+        .onChange(of: picker) { _, open in
+            guard open, let w = model.watch, let seed = Self.pickerSeed(w) else { return }
+            DispatchQueue.main.async { pickSeat = seed }
+        }
+        .fullScreenCover(item: $playing, onDismiss: {
+            guard pickerReturn else { return }
+            pickerReturn = false
+            DispatchQueue.main.async { pickSeat = "opener" }
+        }) { opt in
             PlayerScreen(title: opt.name, subtitle: model.watch?.fixture ?? game.leagueLabel, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in playing = nil }
         }
         .fullScreenCover(item: $who) { t in SportsWhoView(game: game, side: t.id) }
@@ -258,8 +298,12 @@ struct SportsEventView: View {
                     // bp-sports-event heroActions: "Choose a channel" when there is more than one pick.
                     if (w.plan == "stream" || w.plan == "broadcast") && !w.channels.isEmpty {
                         Button("Choose a channel") { picker.toggle() }.buttonStyle(BPActionStyle())
+                            .focused($pickSeat, equals: "opener")
                     }
-                    if w.plan == "channel" && w.channels.count > 1 { Button("Other channels") { picker.toggle() }.buttonStyle(BPActionStyle()) }
+                    if w.plan == "channel" && w.channels.count > 1 {
+                        Button("Other channels") { picker.toggle() }.buttonStyle(BPActionStyle())
+                            .focused($pickSeat, equals: "opener")
+                    }
                     if w.plan != "addons" && (model.addons?.available ?? 0) > 0 {
                         Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle())
                     }
@@ -304,6 +348,7 @@ struct SportsEventView: View {
                 if w.channels.isEmpty && w.searchable == true { searchOpen = true } else { picker.toggle() }
             }
             .buttonStyle(BPActionStyle(primary: true))
+            .focused($pickSeat, equals: "opener")
         case "addons":
             Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle(primary: true))
         case "setup":
@@ -355,6 +400,7 @@ struct SportsEventView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(BPActionStyle())
+                .focused($pickSeat, equals: "b:" + b.id)
             }
             ForEach(w.channels) { opt in
                 HStack(spacing: BP.px(8)) {
@@ -371,7 +417,9 @@ struct SportsEventView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BPActionStyle())
+                    .focused($pickSeat, equals: "c:" + opt.channelId)
                     Button(opt.attached ? T("Unpin") : T("Always use for %@", game.leagueLabel)) { Task { await model.togglePin(game, opt) } }.buttonStyle(BPActionStyle(primary: opt.attached))
+                        .focused($pickSeat, equals: "p:" + opt.channelId)
                 }
             }
             if w.channels.isEmpty {
@@ -384,9 +432,16 @@ struct SportsEventView: View {
             HStack(spacing: BP.px(10)) {
                 if w.searchable == true {
                     Button { searchOpen = true } label: { Label("Search your channels", systemImage: "magnifyingglass") }.buttonStyle(BPActionStyle())
+                        .focused($pickSeat, equals: "search")
                 }
-                if (model.addons?.available ?? 0) > 0 { Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle()) }
-                if let openLive { Button(T("Set up Live TV")) { openLive() }.buttonStyle(BPActionStyle()) }
+                if (model.addons?.available ?? 0) > 0 {
+                    Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle())
+                        .focused($pickSeat, equals: "addons")
+                }
+                if let openLive {
+                    Button(T("Set up Live TV")) { openLive() }.buttonStyle(BPActionStyle())
+                        .focused($pickSeat, equals: "setup")
+                }
             }
             // attachedIds.length > 0: the pinned-channel note under the actions.
             if let pins = w.attachedIds, !pins.isEmpty {
@@ -434,8 +489,18 @@ struct SportsEventView: View {
         return copy + " · " + reasons.joined(separator: ", ")
     }
 
+    /// bp-sports-broadcast-picker seedAt: the first broadcast, else the first channel match, else
+    /// the first action (Search your channels).
+    private static func pickerSeed(_ w: SportsEventModel.Watch) -> String? {
+        if let b = w.broadcasts.first { return "b:" + b.id }
+        if let c = w.channels.first { return "c:" + c.channelId }
+        return w.searchable == true ? "search" : nil
+    }
+
     private func play(_ opt: SportsEventModel.WatchOption) {
-        // bp-sports-watch pick: setPicking(false) — the list is closed when the player hands back.
+        // bp-sports-watch pick: setPicking(false) — the list is closed when the player hands back,
+        // and the ring goes back to the button that opened it (the picker's focus restore).
+        if picker { pickerReturn = true }
         picker = false
         model.recordPlay(opt, game: game)
         playing = opt

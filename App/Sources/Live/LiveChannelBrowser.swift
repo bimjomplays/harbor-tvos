@@ -226,6 +226,7 @@ struct LivePlayerGuidePanel: View {
 
     @State private var group: String?
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     /// overlay.tsx defaultedGroupRef: open on the playing channel's group, else Favorites.
     /// (player/live device pass) Chosen before the first render: set in onAppear it came after the
@@ -265,7 +266,9 @@ struct LivePlayerGuidePanel: View {
             HStack(spacing: BP.px(12)) {
                 LiveSearchField(placeholder: searchPlaceholder, text: $query)
                     .frame(maxWidth: BP.px(620))
-                if !query.isEmpty { Button("Clear") { query = "" }.buttonStyle(BPActionStyle()) }
+                    .focused($searchFocused)
+                // (device-flow pass 4) Clear leaves with the query it clears: the ring goes to the field.
+                if !query.isEmpty { Button("Clear") { searchFocused = true; query = "" }.buttonStyle(BPActionStyle()) }
             }
             .focusSection()
             LiveChannelBrowser(channels: model.channels, groups: groupNames, guide: model.guide, currentId: current?.id,

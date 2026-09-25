@@ -11,6 +11,9 @@ struct GroupsView: View {
     @State private var tag: String?
     @State private var open: Social.GroupRef?
     @State private var searching = false
+    /// (device-flow pass 4) Clear goes away with the query it clears, under the ring: the ring
+    /// moves to the search button beside it instead of falling out of the row.
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         SocialPage(eyebrow: "Community", title: T("Groups"),
@@ -20,8 +23,9 @@ struct GroupsView: View {
                     Label(query.isEmpty ? T("Search groups by name or tag") : "“\(query)”", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(BPActionStyle())
+                .focused($searchFocused)
                 if !query.isEmpty {
-                    Button("Clear") { query = ""; Task { await load() } }.buttonStyle(BPActionStyle())
+                    Button("Clear") { searchFocused = true; query = ""; Task { await load() } }.buttonStyle(BPActionStyle())
                 }
             }
             .focusSection()

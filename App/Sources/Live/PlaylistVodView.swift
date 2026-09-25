@@ -50,10 +50,17 @@ final class PlaylistVodModel: ObservableObject {
     private var pageGeneration = 0
     private var loadGeneration = 0
     private var pagingInFlight = false
+    /// (device-flow pass 4) `.task` runs again whenever the player's cover closes: the whole library
+    /// load started over (the loading line came back) and the grid went back to its first 60, so
+    /// a title played from further down took the ring with it. Once per visit; Refresh and Try
+    /// again load again, and the player's close re-reads the rows on screen (`refreshShown`).
+    private var started = false
 
     var activeSource: Source? { sources.first { $0.id == activeId } }
 
     func start() async {
+        guard !started else { return }
+        started = true
         if let s: Sources = try? await HarborEngine.shared.call("liveVod.sources", []) {
             sources = s.sources
             activeId = s.activeId
@@ -113,6 +120,33 @@ final class PlaylistVodModel: ObservableObject {
         items = p.items
         total = p.total
         libraryTotal = p.libraryTotal
+    }
+
+    /// (device-flow pass 4) The rows on screen read again in place (a played movie's resume chip),
+    /// as many as are loaded, so the grid keeps its length and the ring its card.
+    func refreshShown() async {
+        guard let id = activeId else { return }
+        pageGeneration += 1
+        let mine = pageGeneration
+        let want: Int = max(Self.pageSize, items.count)
+        var fresh: [Item] = []
+        var seen = Set<String>()
+        var offset = 0
+        var newTotal = total
+        var newLibraryTotal = libraryTotal
+        while offset < want {
+            let ask: Int = min(200, want - offset)
+            guard let p: Page = try? await HarborEngine.shared.call("liveVod.page", [id, tab.rawValue, query, offset, ask]) else { return }
+            guard mine == pageGeneration else { return }
+            newTotal = p.total
+            newLibraryTotal = p.libraryTotal
+            fresh += p.items.filter { seen.insert($0.id).inserted }
+            offset += ask
+            if p.items.count < ask { break }
+        }
+        items = fresh
+        total = newTotal
+        libraryTotal = newLibraryTotal
     }
 
     /// playlist-vod.tsx loadMore: the next 60 once the ring nears the end of the grid.
@@ -215,6 +249,12 @@ struct PlaylistVodView: View {
     @StateObject private var model = PlaylistVodModel()
     @State private var playing: PlaylistVodModel.Playback?
     @State private var searchTask: Task<Void, Never>?
+    /// (device-flow pass 4) The grid's ring by item id. Leaving a series page rebuilt the grid from
+    /// the top with the ring on the header; it goes back to the show that was opened.
+    @FocusState private var gridFocus: String?
+    @State private var openedSeries: String?
+    @State private var returnTo: String?
+    @FocusState private var searchFocused: Bool
 
     private let columns = [GridItem(.adaptive(minimum: BP.px(150), maximum: BP.px(190)), spacing: BP.px(20), alignment: .top)]
 
@@ -224,7 +264,7 @@ struct PlaylistVodView: View {
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 if let s = model.selected {
                     VodSeriesDetail(series: s, loading: model.loadingSeries, error: model.seriesError,
-                                    onBack: { model.closeSeries() },
+                                    onBack: { closeSeries() },
                                     onPlay: { ep in Task { playing = await model.playback(series: s, episode: ep) } })
                 } else {
                     header
@@ -235,7 +275,7 @@ struct PlaylistVodView: View {
         }
         .task { await model.start() }
         .onExitCommand {
-            if model.selected != nil { model.closeSeries() } else { dismiss() }
+            if model.selected != nil { closeSeries() } else { dismiss() }
         }
         .onChange(of: model.query) { _, _ in
             // useDeferredValue: the grid follows the typing after it settles.
@@ -253,10 +293,15 @@ struct PlaylistVodView: View {
                 playing = nil
                 Task {
                     await model.refreshSelected()
-                    if model.selected == nil { await model.reloadPage() }
+                    if model.selected == nil { await model.refreshShown() }
                 }
             }
         }
+    }
+
+    private func closeSeries() {
+        returnTo = openedSeries
+        model.closeSeries()
     }
 
     // playlist-vod.tsx header: SourcePicker, the Movies / Shows tabs with counts, the search.
@@ -286,7 +331,9 @@ struct PlaylistVodView: View {
                 tabButton(.series, "Shows", "tv", model.status?.series ?? 0)
                 LiveSearchField(placeholder: model.tab == .movies ? "Search movies" : "Search shows", text: $model.query)
                     .frame(maxWidth: BP.px(620))
-                if !model.query.isEmpty { Button("Clear") { model.query = "" }.buttonStyle(BPActionStyle()) }
+                    .focused($searchFocused)
+                // (device-flow pass 4) Clear leaves with the query it clears: the ring goes to the field.
+                if !model.query.isEmpty { Button("Clear") { searchFocused = true; model.query = "" }.buttonStyle(BPActionStyle()) }
             }
             .focusSection()
         }
@@ -321,6 +368,7 @@ struct PlaylistVodView: View {
         } else if model.items.isEmpty {
             BPNote(text: model.emptyText).padding(.top, BP.px(20))
         } else {
+            ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(12)) {
                     if let e = model.tabError {
@@ -335,9 +383,11 @@ struct PlaylistVodView: View {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: BP.px(26)) {
                         ForEach(model.items) { item in
                             VodCard(item: item) {
-                                if item.kind == "series" { Task { await model.open(item) } }
+                                if item.kind == "series" { openedSeries = item.id; Task { await model.open(item) } }
                                 else { Task { playing = await model.playback(movie: item) } }
                             }
+                            .focused($gridFocus, equals: item.id)
+                            .id(item.id)
                             .onAppear {
                                 // The grid's last row is on screen: fetch the next page.
                                 if item.id == model.items.last?.id { Task { await model.loadMore() } }
@@ -349,6 +399,14 @@ struct PlaylistVodView: View {
                 .padding(.bottom, BP.px(60))
             }
             .focusSection()
+            .onAppear {
+                guard let id = returnTo else { return }
+                returnTo = nil
+                guard model.items.contains(where: { $0.id == id }) else { return }
+                proxy.scrollTo(id, anchor: .center)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { gridFocus = id }
+            }
+            }
         }
     }
 }

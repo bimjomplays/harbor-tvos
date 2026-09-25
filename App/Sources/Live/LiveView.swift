@@ -478,7 +478,7 @@ struct LiveView: View {
                     } else if model.visible.isEmpty {
                         emptyState
                     } else if grid && model.guideNote == nil {
-                        LiveGuideView(live: model, play: { ch in open(ch) }, star: { ch in Task { await model.toggleFavorite(ch) } },
+                        LiveGuideView(live: model, play: { ch in open(ch) }, star: { ch in star(ch) },
                                       replay: { ch, prog in Task { await startReplay(ch, prog) } },
                                       previewSuspended: playing != nil || replaying != nil || showSources || matching != nil || showMultiview || showVod,
                                       match: { ch in matching = ch })
@@ -537,6 +537,24 @@ struct LiveView: View {
         model.played(ch)
         openedChannel = ch.id
         playing = ch
+    }
+
+    /// (device-flow pass 4) Unstarring a channel on the Favorites chip takes its row out from under
+    /// the ring: the ring goes to the row now in its place (the next, else the one before), or to
+    /// the Favorites chip when that was the last one, instead of falling to the top bar. The grid
+    /// moves its own ring (LiveGuideView.starPressed); the list's is moved here.
+    private func star(_ ch: LiveModel.Channel) {
+        if model.category == LiveModel.favKey, ch.favorite, !grid || model.guideNote != nil {
+            let ids: [String] = model.visibleIds
+            if let i = ids.firstIndex(of: ch.id) {
+                if i + 1 < ids.count { listFocus = ids[i + 1] }
+                else if i > 0 { listFocus = ids[i - 1] }
+                else { bandFocus = "chip:" + LiveModel.favKey }
+            }
+        } else if model.category == LiveModel.favKey, ch.favorite, model.visibleIds == [ch.id] {
+            bandFocus = "chip:" + LiveModel.favKey
+        }
+        Task { await model.toggleFavorite(ch) }
     }
 
     private func startReplay(_ ch: LiveModel.Channel, _ prog: LiveModel.Program) async {
@@ -646,7 +664,7 @@ struct LiveView: View {
                     ForEach(model.visible) { ch in
                         LiveChannelRow(channel: ch, nowNext: model.guide[ch.id], focus: $listFocus,
                                        play: { open(ch) },
-                                       star: { Task { await model.toggleFavorite(ch) } },
+                                       star: { star(ch) },
                                        pin: { Task { await model.togglePin(ch) } },
                                        match: model.canMatchEpg(ch) ? { matching = ch } : nil)
                             .id(ch.id)
@@ -826,6 +844,10 @@ struct LiveSourcesSheet: View {
     /// source-picker.tsx confirmDialog('Remove playlist "{name}"?') before a source goes.
     @State private var removing: LiveModel.Playlist?
     @FocusState private var focus: String?
+    /// The source just removed and its neighbour: applied once the sources are read again (the
+    /// channels of the source shown next may still be loading, which can take a while).
+    private struct AfterRemove { let removed: String; let neighbour: String? }
+    @State private var afterRemove: AfterRemove?
 
     /// bp-live-setup complete(): what each kind needs before Add is offered.
     private var ready: Bool {
@@ -886,7 +908,7 @@ struct LiveSourcesSheet: View {
                             }
                         }
                         .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(!ready)
-                        if !firstRun { Button("Close") { dismiss() }.buttonStyle(BPActionStyle()) }
+                        if !firstRun { Button("Close") { dismiss() }.buttonStyle(BPActionStyle()).focused($focus, equals: "close") }
                     }
                     if let e = error ?? model.error { BPNote(text: e, tone: BP.danger) }
                 }
@@ -913,6 +935,7 @@ struct LiveSourcesSheet: View {
                                 .disabled(guideOnly)
                                 .focused($focus, equals: "src:\(pl.id)")
                                 Button("Remove") { removing = pl }.buttonStyle(BPActionStyle())
+                                    .focused($focus, equals: "rm:\(pl.id)")
                             }
                             Text(detail).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                         }
@@ -938,9 +961,23 @@ struct LiveSourcesSheet: View {
         .alert(T("Remove playlist \"%@\"?", removing?.name ?? ""), isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { pl in
             Button("Remove", role: .destructive) {
                 let id = pl.id
+                // (device-flow pass 4) The row goes with the Remove the alert hands the ring back to:
+                // it lands on the Remove of the source now in its place (the next, else the one
+                // before), or on Close when none is left, instead of wherever tvOS chose.
+                let list: [LiveModel.Playlist] = model.allSources
+                var neighbour: String?
+                if let i = list.firstIndex(where: { $0.id == id }) {
+                    if i + 1 < list.count { neighbour = list[i + 1].id } else if i > 0 { neighbour = list[i - 1].id }
+                }
+                afterRemove = AfterRemove(removed: id, neighbour: neighbour)
                 Task { await model.remove(id) }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: model.allSources.map(\.id)) { _, ids in
+            guard let after = afterRemove, !ids.contains(after.removed) else { return }
+            afterRemove = nil
+            if let n = after.neighbour, ids.contains(n) { focus = "rm:" + n } else if !firstRun { focus = "close" }
         }
         .task {
             guard !firstRun else { return }

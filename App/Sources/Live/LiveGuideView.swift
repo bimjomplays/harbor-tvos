@@ -392,7 +392,7 @@ struct LiveGuideView: View {
     private func row(_ ch: LiveModel.Channel) -> some View {
         HStack(spacing: 0) {
             // bp-guide-row: the only focusable in the column is the star (Left must mean "earlier").
-            Button { star(ch) } label: {
+            Button { starPressed(ch) } label: {
                 HStack(spacing: BP.px(10)) {
                     RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(64), height: BP.px(36))
                     Text(ch.shownName).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
@@ -494,6 +494,20 @@ struct LiveGuideView: View {
         .accessibilityLabel(Text(verbatim: "\(empty ? ch.shownName : p.title), \(LiveChannelRow.range(p))"))
         .onLongPressGesture(minimumDuration: 0.6) { requestMatch(ch) }
         .offset(x: x(cell.startMs), y: BP.px(5))
+    }
+
+    /// (device-flow pass 4) On the Favorites chip an unstarred channel's row leaves under the ring:
+    /// the ring moves first to the channel cell now in its place (the next row, else the one
+    /// before). The last favourite hands over to LiveView, which puts it on the Favorites chip.
+    private func starPressed(_ ch: LiveModel.Channel) {
+        if live.category == LiveModel.favKey, ch.favorite {
+            let ids: [String] = live.visibleIds
+            if let i = ids.firstIndex(of: ch.id), ids.count > 1 {
+                let next: String = i + 1 < ids.count ? ids[i + 1] : ids[i - 1]
+                focused = next + Self.starSuffix
+            }
+        }
+        star(ch)
     }
 
     /// Hold Select anywhere on a row opens the EPG match picker (the guide must list channels).
