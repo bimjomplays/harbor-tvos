@@ -80,7 +80,8 @@ struct RootView: View {
         .environmentObject(app.sync)
         .environmentObject(SettingsBridge.shared)
         .task { await app.boot() }
-        // While the PiP browse layer is up the app's own shell is hidden under it: the link opens in the layer.
+        // While the PiP browse layer is up the app's own shell is hidden under it: the link opens in the
+        // layer. Links wait in DeepLinkQueue until the shell on screen is clear (AppModel.handle).
         .onOpenURL { (PiPBrowse.shared.layerApp ?? app).handle(url: $0) }
         // lib/theme.ts applyTheme: data-theme-mode follows the canvas (MinUI and Kawaii are light).
         .preferredColorScheme(theme.state?.light == true ? .light : .dark)

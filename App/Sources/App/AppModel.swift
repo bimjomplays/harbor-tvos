@@ -7,7 +7,9 @@ import SwiftUI
 final class AppModel: ObservableObject {
     enum Stage: Equatable { case boot, onboarding, whoIsWatching, shell }
 
-    @Published var stage: Stage = .boot
+    @Published var stage: Stage = .boot {
+        didSet { if stage != .shell { clearShownLinks() } }
+    }
     @Published var room: Room = .home
     /// (review 12) A layer drawn in place over the room is up (the Collections room's collection
     /// overlay): bp-shell passes no onTab while a layer is up, and the layer holds the focus, so the
@@ -22,10 +24,16 @@ final class AppModel: ObservableObject {
     @Published var deepLinkList: Social.ListRef?
 
     /// parseHarborOpen / parseStremioOpen / emitDeepLinkInstall, as the TV receives them.
-    /// (lifecycle pass) A link that cold-launches the app arrives while `boot()` is still loading
-    /// settings, the theme and the account: it only records what to open, and boot's own
-    /// `goToWhoOrShell()` shows it. It used to jump to the shell mid-boot, which then rebuilt
-    /// under the opened title as the theme and language landed (and the intro wall rose over it).
+    /// (deep links over covers) A link is only recorded here, in DeepLinkQueue; the shell on screen
+    /// shows it (`showWaitingLink`) once nothing is presented over it. It used to be put straight
+    /// into the shell's cover binding: over a detail page, the player, a Settings or Addons cover, a
+    /// collection page or a page in the PiP browse layer, tvOS drops a second presentation from a
+    /// view that is already presenting, so the link never showed (and the binding stayed set).
+    /// The link also waits through boot (lifecycle pass: it no longer jumps to the shell mid-boot),
+    /// setup and Who's watching (review 6: the chooser opens over a profile that stays active, and a
+    /// link must not close it into that profile; upstream's picker layer stays up over it).
+    /// (review 15) The old showLinkTarget() is gone: its guard (setup up and already finished)
+    /// could never hold, so it never moved a stage.
     func handle(url: URL) {
         let raw = url.absoluteString
         let scheme = (url.scheme ?? "").lowercased()
@@ -33,14 +41,16 @@ final class AppModel: ObservableObject {
         let path = raw.dropFirst(scheme.count + 3)   // "scheme://"
         let parts = path.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }.filter { !$0.isEmpty }
         if parts.first == "detail", parts.count >= 3 {
-            deepLinkMeta = Meta(id: parts[2], type: parts[1], name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
-                                inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
-            showLinkTarget()
+            // lib/view.tsx openMeta: the title already on top is not opened again.
+            guard deepLinkMeta?.id != parts[2] else { return }
+            DeepLinkQueue.shared.add(.title(type: parts[1], id: parts[2]))
             return
         }
         if scheme == "harbor", parts.first == "list", parts.count >= 3, !parts[1].isEmpty, !parts[2].isEmpty {
-            deepLinkList = Social.ListRef(handle: parts[1], listId: parts[2])
-            showLinkTarget()
+            let ref = Social.ListRef(handle: parts[1], listId: parts[2])
+            // lib/view.tsx openList: the list already on top is not opened again.
+            guard deepLinkList != ref else { return }
+            DeepLinkQueue.shared.add(.list(ref))
             return
         }
         if scheme == "stremio", raw.hasSuffix("manifest.json") {
@@ -51,19 +61,41 @@ final class AppModel: ObservableObject {
             // the viewer, whatever sent the link and whichever profile (a kid's too) was active, and
             // a re-configured addon arrived as a second copy. ShellView shows it; like upstream's
             // pendingUrl it waits for the shell when the link lands earlier.
-            deepLinkInstall = DeepLinkInstall(url: raw)
-            showLinkTarget()
+            guard deepLinkInstall?.url != raw else { return }
+            DeepLinkQueue.shared.add(.install(raw))
         }
     }
 
-    /// A link that lands outside the shell shows once the shell is up. (review 6) Not over Who's
-    /// watching: since the profiles pass the chooser (the launch prompt, the top bar, a kid's
-    /// parent-PIN switch) opens over a profile that stays active, so goToWhoOrShell() here closed the
-    /// chooser into that profile the moment a link arrived. The link waits for the pick, as upstream's
-    /// picker layer stays up over it.
-    private func showLinkTarget() {
-        guard stage == .onboarding, onboardingDone, !profiles.profiles.isEmpty else { return }
-        goToWhoOrShell()
+    /// (deep links over covers) The shell on screen shows the newest waiting link it may show, once
+    /// `clear` says nothing is presented over it (the caller polls: covers are not observable). One
+    /// at a time: the next waits until this one's page closes, so no two presentations race and none
+    /// is dropped. Taking the link out of the queue and setting the binding happen together on the
+    /// main actor, so a link opens once. A kid's shell (`kidShell`) takes titles only; a shared list
+    /// or an addon install waits for an adult shell (App.tsx pins a kid to kids / meta pages, and a
+    /// kid never gets the install dialog).
+    @discardableResult
+    func showWaitingLink(kidShell: Bool, clear: Bool) -> Bool {
+        guard stage == .shell, clear, deepLinkMeta == nil, deepLinkList == nil, deepLinkInstall == nil,
+              let link = DeepLinkQueue.shared.take(kidShell: kidShell) else { return false }
+        switch link {
+        case .title(let type, let id):
+            deepLinkMeta = Meta(id: id, type: type, name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
+                                inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
+        case .list(let ref):
+            deepLinkList = ref
+        case .install(let raw):
+            deepLinkInstall = DeepLinkInstall(url: raw)
+        }
+        return true
+    }
+
+    /// The shell's deep-link covers go with the shell when the stage leaves it (Who's watching, setup):
+    /// the bindings are cleared, so a page the viewer never closed does not come back (or block the
+    /// next link) when a shell appears again.
+    private func clearShownLinks() {
+        if deepLinkMeta != nil { deepLinkMeta = nil }
+        if deepLinkList != nil { deepLinkList = nil }
+        if deepLinkInstall != nil { deepLinkInstall = nil }
     }
 
     /// lib/deep-link.ts emitDeepLinkInstall's pending URL, until ShellView's install dialog takes it.
@@ -72,6 +104,9 @@ final class AppModel: ObservableObject {
         let url: String
     }
     @Published var deepLinkInstall: DeepLinkInstall?
+
+    /// A link this shell may show is waiting (ShellView / KidsShellView poll while one is).
+    func hasWaitingLink(kidShell: Bool) -> Bool { DeepLinkQueue.shared.hasWaiting(kidShell: kidShell) }
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
     var browseSource: BrowseSource = (Fixtures.active && !Fixtures.liveRooms) ? FixtureBrowseSource() : EngineBrowseSource()
@@ -343,6 +378,55 @@ final class AppModel: ObservableObject {
     func signOutHarbor() {
         sync.stop()
         account.signOut()
+    }
+}
+
+/// (deep links over covers) lib/deep-link.ts links that have arrived and not been shown yet. One
+/// queue for the app: the PiP browse layer's model and the app's own both show from it, so a link
+/// still waiting when the layer goes down opens in the app's shell instead of going with the
+/// layer's model. Upstream pushes each link as a frame on its view stack (lib/view.tsx openMeta /
+/// openList) and Back walks down them; the newest is shown first here too, then the older ones as
+/// each page closes.
+@MainActor
+final class DeepLinkQueue: ObservableObject {
+    static let shared = DeepLinkQueue()
+
+    enum Link: Equatable {
+        /// parseHarborOpen / parseStremioOpen: a title page.
+        case title(type: String, id: String)
+        /// parseHarborList: a shared list.
+        case list(Social.ListRef)
+        /// emitDeepLinkInstall: a stremio://…/manifest.json install link.
+        case install(String)
+
+        /// A kid's shell shows titles only (as its kids detail page).
+        var kidSafe: Bool {
+            switch self {
+            case .title: return true
+            case .list, .install: return false
+            }
+        }
+    }
+
+    @Published private(set) var waiting: [Link] = []
+    /// A burst of links keeps its newest few.
+    private static let cap = 8
+
+    /// A link sent again moves up to newest instead of waiting twice.
+    func add(_ link: Link) {
+        waiting.removeAll { $0 == link }
+        waiting.append(link)
+        if waiting.count > Self.cap { waiting.removeFirst(waiting.count - Self.cap) }
+    }
+
+    func hasWaiting(kidShell: Bool) -> Bool {
+        waiting.contains { !kidShell || $0.kidSafe }
+    }
+
+    /// The newest link a shell may show, out of the queue.
+    func take(kidShell: Bool) -> Link? {
+        guard let i = waiting.lastIndex(where: { !kidShell || $0.kidSafe }) else { return nil }
+        return waiting.remove(at: i)
     }
 }
 
