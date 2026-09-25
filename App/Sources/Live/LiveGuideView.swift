@@ -279,6 +279,17 @@ struct LiveGuideView: View {
                 else if portal?.channel.id == id { portal = nil }
             }
         }
+        .onDisappear {
+            // (review 17) The grid can go while it holds the ring without `focused` turning nil (the
+            // last favorite unstarred into the empty state): the channel stayed recorded, and a guide
+            // note landing later pulled the ring off the band onto the list. A swap the note itself
+            // made (the note is up by now) keeps it for LiveView.
+            if live.guideNote == nil { live.guideFocusChannel = nil }
+        }
+        .onAppear {
+            // (review 17) Back under the ring after a cover (focus kept, so no onChange): record it again.
+            if let f = focused { live.guideFocusChannel = Self.channelOf(f) }
+        }
         .onChange(of: focused) { old, id in
             // (open-items sweep) Which channel holds the ring, for the grid → list swap (LiveView).
             live.guideFocusChannel = id.map { Self.channelOf($0) }
