@@ -69,8 +69,6 @@ struct PlayerScreen: View {
     @State private var audioDelay: Double = 0
     /// bp-player-rail mute chip.
     @State private var muted = false
-    /// bp-player-scrub: demuxer cache end, drawn as the buffered fill.
-    @State private var buffered: Double = 0
     /// bp-player-scrub nudge(): presses accumulate into one seek committed 420 ms after the last.
     @State private var pendingSeek: Double?
     @State private var seekRun = 0
@@ -125,9 +123,17 @@ struct PlayerScreen: View {
     /// closes, as use-bp-focus restores the route's last position (it was left on the stage).
     @State private var panelOpener: FocusTarget?
     @State private var lastSavedPos: Double = -10
-    /// The last spot the picture reached (duration and position both known), for Switch source.
-    @State private var lastGoodPos: Double = 0
-    @State private var snap: (position: Double, duration: Double, paused: Bool) = (0, 0, false)
+    /// (perf pass 4) The 1 s tick's snapshot, the buffered end and lastGoodPos (PlayerClock.swift).
+    /// A plain @State holding the object, not a @StateObject: this body never observes it; the
+    /// leaves that show time do (PlayerClockReader). Logic reads `clock.snap` directly.
+    @State private var clock = PlayerClock()
+    /// (perf pass 4) The pause flag for this body's layout (the Play/Pause chip, X-Ray, the hide
+    /// timer's onChange), written only when it changes (takeSnap).
+    @State private var isPaused = false
+    /// (perf pass 4) Bumped by the tick while a stream is loading: the connecting card's elapsed
+    /// time and its 2 s threshold are read off the clock, and nothing else redraws this body on
+    /// time alone now (the engines' 1 s status report is stored only on a change, applyStatus).
+    @State private var loadingBeat = 0
     @State private var panel: Panel?
     @State private var segments: [SkipSegment] = []
     /// What the skip segments were last asked for: the duration and the file's chapter count.
@@ -153,8 +159,8 @@ struct PlayerScreen: View {
     @State private var xrayOpen = false
     /// speed-menu.tsx rate (bridge setRate); a title starts at settings.defaultPlaybackSpeed.
     @State private var rate: Double = 1
-    /// use-sleep-timer.ts: the app-wide sleep timer, on the Speed & sleep control's face.
-    @ObservedObject private var sleepTimer = SleepTimer.shared
+    // use-sleep-timer.ts: the app-wide sleep timer is on the Speed & sleep control's face, which
+    // observes it itself (PlayerSleepReader): its countdown no longer redraws this body each second.
     /// lib/media-session.ts: this player's claim on Now Playing and the remote commands.
     @State private var nowPlayingId = UUID()
     /// views/player.tsx playbackStartedRef: a pause, a position or a picture was seen, so this stream
@@ -225,7 +231,7 @@ struct PlayerScreen: View {
                                  preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                                  trackMemory: trackMemory,
                                  seedSubtitles: playSeeds,
-                                 onStatus: { s in if engine == .native { status = s } },
+                                 onStatus: { s in if engine == .native { applyStatus(s) } },
                                  onEnded: { if engine == .native { endedNaturally() } },
                                  onUnsupported: { nativeUnsupported($0) },
                                  onReady: { [token = reloadToken] c in
@@ -250,7 +256,7 @@ struct PlayerScreen: View {
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               trackMemory: trackMemory,
                               seedSubtitles: playSeeds,
-                              onStatus: { status = $0 }, onEnded: { endedNaturally() },
+                              onStatus: { applyStatus($0) }, onEnded: { endedNaturally() },
                               onReady: { [token = reloadToken] c in
                                   // (bug pass 2) onReady lands a main-queue turn after the controller is
                                   // made: one replaced meanwhile (two reloads, the switch to AVPlayer) is
@@ -291,7 +297,8 @@ struct PlayerScreen: View {
                 // the surface is the scrubber the remote drives, so VoiceOver adjusts it the same way.
                 // A live channel has no timeline: bp-player-shell's t("Player controls").
                 .accessibilityLabel(Text(T(isLive ? "Player controls" : "Seek")))
-                .accessibilityValue(Text(verbatim: isLive ? "" : fmt(pendingSeek ?? snap.position)))
+                // (perf pass 4) Its value reads the clock inside PlayerSeekValue (PlayerClock.swift).
+                .modifier(PlayerSeekValue(clock: clock, isLive: isLive, pending: pendingSeek))
                 .accessibilityAdjustableAction { direction in
                     switch direction {
                     case .increment: if isLive { controller?.seek(10); wake() } else { nudgeSeek(ahead: true) }
@@ -325,13 +332,9 @@ struct PlayerScreen: View {
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, !failed {
                 noAudioCard.transition(.opacity)
             }
-            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !xrayOpen, !failed {
-                if showUpNextCard, let upNext {
-                    upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let seg = activeSkip {
-                    skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
+            // (perf pass 4) The up-next card and the skip pill follow the playhead: they are drawn in
+            // a leaf that observes the clock (cueLayer), not in this body.
+            PlayerClockReader(clock) { _ in cueLayer }
             // xray-overlay.tsx: X-Ray while paused (PlayerXRay.swift), when settings.xrayEnabled.
             if let meta = xrayMeta { PlayerXRayOverlay(meta: meta, open: $xrayOpen, focus: $focus).transition(.opacity) }
             // player.tsx StillWatchingPrompt: over everything but the Together room and PiP.
@@ -473,14 +476,21 @@ struct PlayerScreen: View {
             } catch {}
         }
         .onReceive(tick) { _ in
+            // (perf pass 4) The clock takes the snapshot and the buffered end (it keeps lastGoodPos);
+            // this body's own state is written only when it changes, so a tick redraws the leaves
+            // that show time and not the whole player.
             if let c = controller {
-                snap = c.snapshot()
-                if snap.duration > 0, snap.position > 0 { lastGoodPos = snap.position }
-                muted = c.isMuted()
+                takeSnap(c.snapshot())
+                let nowMuted: Bool = c.isMuted()
+                if nowMuted != muted { muted = nowMuted }
                 if pipActive, !c.isPictureInPictureActive { pipChanged(false) }
-                buffered = c.bufferedSec()
-                if isKid, chrome { kidSubs = c.tracks().filter { $0.type == "sub" } }
+                clock.updateBuffered(c.bufferedSec())
+                if isKid, chrome {
+                    let subs: [MPVPlayerController.Track] = c.tracks().filter { $0.type == "sub" }
+                    if subs != kidSubs { kidSubs = subs }
+                }
             }
+            if status.state == "loading" { loadingBeat &+= 1 }
             // Anime4K is an mpv shader chain (html5 bridge: setAnime4kShaders() {}).
             if !isLive, engine == .mpv, let c = controller, status.state != "loading" {
                 let w = c.videoWidth()
@@ -509,8 +519,8 @@ struct PlayerScreen: View {
             // The chapter list is read only when the (whole-second) duration changes: mpv fills it with
             // the duration at file open, and reading it every tick cost two mpv reads per chapter
             // each second. A live stream (its duration grows) has no skip segments to load.
-            if snap.duration > 0, !isLive, let c = controller {
-                let seconds = Int(snap.duration.rounded())
+            if clock.snap.duration > 0, !isLive, let c = controller {
+                let seconds = Int(clock.snap.duration.rounded())
                 if segmentsDuration != seconds {
                     segmentsDuration = seconds
                     let chapters = c.chapters()
@@ -541,7 +551,8 @@ struct PlayerScreen: View {
         // (player pass 2) use-bp-player-chrome restarts the idle wait when `playing` changes: the
         // wait that ran out while paused never came back, so a video started again without a press
         // here (the Watch Together host, the iPhone remote, PiP's own button) kept the chrome up.
-        .onChange(of: snap.paused) { _, paused in
+        // (perf pass 4) isPaused follows the clock's pause flag, written only when it changes (takeSnap).
+        .onChange(of: isPaused) { _, paused in
             if !paused, chromeShown { scheduleHide() }
         }
         // A retry or the switch to mpv starts the stall wait over (review 31).
@@ -576,7 +587,7 @@ struct PlayerScreen: View {
         // pausedAfterSwitch), which counted a stream that never connected as started and turned the
         // stall skip off. A pause counts once the engine reports the file open.
         let opened = status.state == "playing" || status.state == "buffering/paused"
-        if (snap.paused && opened) || snap.position > 0 || c.videoWidth() > 0 { playbackStarted = true }
+        if (clock.snap.paused && opened) || clock.snap.position > 0 || c.videoWidth() > 0 { playbackStarted = true }
     }
 
     /// views/player.tsx (opt-in autoNextStreamOnStall): an auto-picked stream that has not started
@@ -603,14 +614,14 @@ struct PlayerScreen: View {
     private func stubTick() {
         guard prefs.instantPlay, !stubChecked, onPickAgain != nil, !isLive, switched == nil, !sentBack, !finishing,
               let context,
-              snap.duration > 0, snap.duration < 180, status.state == "playing" else { return }
+              clock.snap.duration > 0, clock.snap.duration < 180, status.state == "playing" else { return }
         stubChecked = true
         struct StubInput: Encodable {
             var meta: Meta; var url: String; var title: String; var ref: AnyJSON?
             var durationSec: Double; var playing: Bool; var season: Int?; var episode: Int?
         }
         let input = StubInput(meta: context.meta, url: url.absoluteString, title: title, ref: pick?.streamRef,
-                              durationSec: snap.duration, playing: true, season: context.season, episode: context.episode)
+                              durationSec: clock.snap.duration, playing: true, season: context.season, episode: context.episode)
         let nextAttempt = (pick?.attempt ?? 0) + 1
         Task { @MainActor in
             let flagged: Bool = (try? await HarborEngine.shared.call("deadStreams.flagStub", [input])) ?? false
@@ -643,7 +654,7 @@ struct PlayerScreen: View {
 
     /// skip-intro/index.ts activeSegment: the segment the playhead is inside (realActiveSkip).
     private var realActiveSkip: SkipSegment? {
-        segments.first { snap.position >= $0.startSec && snap.position < $0.endSec - 0.75 }
+        segments.first { clock.snap.position >= $0.startSec && clock.snap.position < $0.endSec - 0.75 }
     }
 
     /// player.tsx canChangeEpisode = (series…) && (!inRoom || isHost): a Watch Together guest's
@@ -661,10 +672,10 @@ struct PlayerScreen: View {
     /// skip-pill-container syntheticOutro: inside the up-next lead, a title with no real outro gets
     /// one that runs to the end.
     private var syntheticOutro: SkipSegment? {
-        guard realActiveSkip == nil, hasNextEpisodeNow, snap.duration > 0, leadSec > 0 else { return nil }
-        let remaining = snap.duration - snap.position
+        guard realActiveSkip == nil, hasNextEpisodeNow, clock.snap.duration > 0, leadSec > 0 else { return nil }
+        let remaining = clock.snap.duration - clock.snap.position
         guard remaining <= leadSec, remaining >= 0.5, !segments.contains(where: { isOutro($0) }) else { return nil }
-        return SkipSegment(kind: "outro", startSec: max(0, snap.duration - leadSec), endSec: snap.duration, source: "chapters")
+        return SkipSegment(kind: "outro", startSec: max(0, clock.snap.duration - leadSec), endSec: clock.snap.duration, source: "chapters")
     }
 
     /// skip-pill-container buttonKey: the real segment the pill is showing, when showSkipButton is on.
@@ -725,15 +736,15 @@ struct PlayerScreen: View {
 
     /// player-overlay-layers onSkip = seekTo: through the Watch Together room when in one.
     private func skipTo(_ sec: Double) {
-        let target = snap.duration > 0 ? min(sec, snap.duration) : sec
+        let target = clock.snap.duration > 0 ? min(sec, clock.snap.duration) : sec
         if together.interceptSeek(to: target, controller: controller) { return }
         controller?.seek(to: target)
-        snap.position = target
+        clock.seeked(to: target)
     }
 
     /// AniSkip / SkipDB / TheIntroDB / IntroDB App / chapters through the engine (lib/skip-intro).
     private func loadSegments(chapters: [PlayerChapter]) async {
-        guard let context, !context.playlistVod, snap.duration > 0 else { return }
+        guard let context, !context.playlistVod, clock.snap.duration > 0 else { return }
         segmentsRun += 1
         let run = segmentsRun
         let p = ProfilesStore.shared.active
@@ -742,7 +753,7 @@ struct PlayerScreen: View {
                      "imdbId": context.imdbId.map { .string($0) } ?? .null,
                      "imdbSeason": .number(Double(s)), "imdbEpisode": .number(Double(context.episode ?? 1))])
         } ?? .null
-        let segs: [SkipSegment] = (try? await HarborEngine.shared.call("skip.segments", [p?.id ?? "default", p?.linked ?? true, context.meta, ep, snap.duration, chapters] as [any Encodable])) ?? []
+        let segs: [SkipSegment] = (try? await HarborEngine.shared.call("skip.segments", [p?.id ?? "default", p?.linked ?? true, context.meta, ep, clock.snap.duration, chapters] as [any Encodable])) ?? []
         guard run == segmentsRun else { return }
         // skip-pill-container: new segments start over (auto-skip memory, hidden pills).
         if segs.map(\.id) != segments.map(\.id) {
@@ -757,6 +768,18 @@ struct PlayerScreen: View {
 
     /// bp-skip-pill isOutroNext: an outro with an episode after it reads "Next Episode" and plays it.
     private func isOutroNext(_ seg: SkipSegment) -> Bool { isOutro(seg) && hasNextEp && leadSec > 0 }
+
+    /// The up-next card (inside the lead) or the skip pill, drawn by the clock's leaf in the body
+    /// (its gate stays in here, so each keeps its own transition when a panel or prompt opens).
+    @ViewBuilder private var cueLayer: some View {
+        if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !xrayOpen, !failed {
+            if showUpNextCard, let upNext {
+                upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let seg = activeSkip {
+                skipPill(seg).transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+    }
 
     private func skipPill(_ seg: SkipSegment) -> some View {
         let outroNext = isOutroNext(seg)
@@ -817,13 +840,13 @@ struct PlayerScreen: View {
     /// (canChangeEpisode = !inRoom || isHost): a Watch Together guest gets the plain skip pill, not
     /// the up-next card and its manual "Play now".
     private var hasNextEp: Bool { upNext != nil && !autoNextCancelled && !isLive && !(together.inRoom && !together.isHost) }
-    private var remainingSec: Double { max(0, snap.duration - snap.position) }
+    private var remainingSec: Double { max(0, clock.snap.duration - clock.snap.position) }
     /// skip-pill-container.tsx nextEpisodeLead: 0 = off, > 0 = fixed, -1 = 4 % of the runtime within 15–45 s.
     private var leadSec: Double {
         let setting = prefs.nextEpisodeLeadSec
         if setting == 0 { return 0 }
         if setting > 0 { return setting }
-        return min(45, max(15, (snap.duration * 0.04).rounded()))
+        return min(45, max(15, (clock.snap.duration * 0.04).rounded()))
     }
     private func isOutro(_ seg: SkipSegment) -> Bool { seg.kind == "outro" || seg.kind == "credits" }
 
@@ -910,7 +933,7 @@ struct PlayerScreen: View {
     /// Once the engine has failed the tick reads 0 from it, so the last saved spot stands in.
     private func reloadSame(from position: Double? = nil) {
         if !isLive {
-            let at = position ?? (snap.position > 0 ? snap.position : lastSavedPos)
+            let at = position ?? (clock.snap.position > 0 ? clock.snap.position : lastSavedPos)
             if at > 5 { startAt = at }
         }
         status = MPVPlayerController.Status()
@@ -923,8 +946,8 @@ struct PlayerScreen: View {
     /// reports 0 / 0 once its stream has died, so the error card's Switch source restarted the title
     /// at 0:00: the last spot the picture reached stands in, else the spot this player opened at.
     private var switchSpot: Double {
-        if snap.duration > 0, snap.position > 0 { return snap.position }
-        return lastGoodPos > 0 ? lastGoodPos : (startAt ?? 0)
+        if clock.snap.duration > 0, clock.snap.position > 0 { return clock.snap.position }
+        return clock.lastGoodPos > 0 ? clock.lastGoodPos : (startAt ?? 0)
     }
 
     /// The transport is on screen (the body's condition; Back puts it away first).
@@ -941,7 +964,10 @@ struct PlayerScreen: View {
 
     /// bp-connecting: a start that is taking a while (2 s on); a kid gets the sea loader instead.
     private var connectingShown: Bool {
-        status.state == "loading" && !isKid && !isLive && !roomOpen && !pipActive && resumePending == nil && panel == nil && !leaveConfirm
+        // (perf pass 4) Read so the tick's loadingBeat redraws the body while loading: the 2 s
+        // threshold and the card's elapsed seconds are wall-clock reads.
+        _ = loadingBeat
+        return status.state == "loading" && !isKid && !isLive && !roomOpen && !pipActive && resumePending == nil && panel == nil && !leaveConfirm
             && Date().timeIntervalSince(loadingSince) >= 2
     }
 
@@ -959,7 +985,7 @@ struct PlayerScreen: View {
         // notice); with none, or the sleep timer's end (use-queue-advance.ts), the player closes.
         let roomGuest = together.inRoom && !together.isHost
         if roomGuest, upNext != nil, !sleepStops { return }
-        let advance = !sleepStops && !roomGuest && upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
+        let advance = !sleepStops && !roomGuest && upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && clock.snap.duration >= 150
         // Ended in Picture in Picture: what follows (the next episode, Still watching) has to be on
         // screen, so the browse layer goes down and the picture comes home first; a title that just
         // ends leaves the viewer browsing (the player closes under the layer).
@@ -1081,8 +1107,9 @@ struct PlayerScreen: View {
                     .font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle)
             }
             if !isLive {
-                seekBar
-                scrubReadout
+                // (perf pass 4) Both observe the clock themselves.
+                PlayerClockReader(clock) { c in seekBar(c) }
+                PlayerClockReader(clock) { c in scrubReadout(c) }
             }
             // bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed
             // when there is none; VOD gets Back / Forward by the seek step.
@@ -1093,7 +1120,7 @@ struct PlayerScreen: View {
                         .disabled(!hasPrevEpisodeNow)
                 }
                 if !isLive { iconChip("rewind", "gobackward", label: T("Back %llds", Int(prefs.seekBackStepSec))) { seekBy(-prefs.seekBackStepSec) } }
-                chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
+                chip(isPaused ? "Play" : "Pause", isPaused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
                 if !isLive { iconChip("forward", "goforward", label: T("Forward %llds", Int(prefs.seekForwardStepSec))) { seekBy(prefs.seekForwardStepSec) } }
                 if hasPrevEpisodeNow || hasNextEpisodeNow {
                     iconChip("next", "forward.end.fill", label: T("Next episode")) { playNext() }
@@ -1108,8 +1135,8 @@ struct PlayerScreen: View {
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
                 // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
-                chip(speedChipLabel, sleepTimer.isActive ? "clock" : "speedometer", id: "speed",
-                     active: sleepTimer.isActive || (!isLive && abs(rate - 1) > 0.01)) { open(.speed) }
+                // (perf pass 4) The chip observes the sleep timer itself (PlayerSleepReader).
+                PlayerSleepReader { t in speedChip(t) }
                 // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
                 // mpv cannot, so the control is not there on that engine.
                 if controller?.supportsPictureInPicture == true {
@@ -1147,15 +1174,19 @@ struct PlayerScreen: View {
 
     /// bp-player-scrub.tsx: buffered fill under the played fill; while presses accumulate, a
     /// marker stays where playback really is.
-    private var seekBar: some View {
-        let shown = pendingSeek ?? snap.position
+    private func seekBar(_ c: PlayerClock) -> some View {
+        let at: Double = c.snap.position
+        let duration: Double = c.snap.duration
+        let shown: Double = pendingSeek ?? at
+        let bufferedEnd: Double = max(c.buffered, shown)
+        let marked: Bool = pendingSeek != nil
         return GeometryReader { g in
             ZStack(alignment: .leading) {
                 Capsule().fill(BP.edge2)
-                Capsule().fill(BP.ink.opacity(0.3)).frame(width: g.size.width * fraction(max(buffered, shown)))
-                Capsule().fill(BP.ink).frame(width: g.size.width * fraction(shown))
-                if pendingSeek != nil {
-                    Capsule().fill(BP.accent).frame(width: 3).offset(x: g.size.width * fraction(snap.position) - 1.5)
+                Capsule().fill(BP.ink.opacity(0.3)).frame(width: g.size.width * fraction(bufferedEnd, of: duration))
+                Capsule().fill(BP.ink).frame(width: g.size.width * fraction(shown, of: duration))
+                if marked {
+                    Capsule().fill(BP.accent).frame(width: 3).offset(x: g.size.width * fraction(at, of: duration) - 1.5)
                 }
             }
         }
@@ -1166,21 +1197,26 @@ struct PlayerScreen: View {
         .environment(\.layoutDirection, .leftToRight)
     }
 
-    private func fraction(_ sec: Double) -> CGFloat {
-        guard snap.duration > 0, sec.isFinite else { return 0 }
-        return CGFloat(min(1, max(0, sec / snap.duration)))
+    private func fraction(_ sec: Double, of duration: Double) -> CGFloat {
+        guard duration > 0, sec.isFinite else { return 0 }
+        return CGFloat(min(1, max(0, sec / duration)))
     }
 
     /// bp-player-scrub.tsx readout: position, "{time} left", "Ends {time}".
-    private var scrubReadout: some View {
-        let shown = pendingSeek ?? snap.position
-        let remaining = snap.duration > 0 ? max(0, snap.duration - shown) : 0
+    /// (perf pass 4) "Ends" follows the wall clock on its own (every minute), as it did when the
+    /// whole player redrew each second: a paused video's clock does not move.
+    private func scrubReadout(_ c: PlayerClock) -> some View {
+        let duration: Double = c.snap.duration
+        let shown: Double = pendingSeek ?? c.snap.position
+        let remaining: Double = duration > 0 ? max(0, duration - shown) : 0
         return HStack(spacing: BP.px(10)) {
             Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? BP.inkSubtle : BP.ink)
             Spacer()
-            if snap.duration > 0 {
+            if duration > 0 {
                 Text("\(fmt(remaining)) left").foregroundStyle(BP.inkSubtle)
-                Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(BP.inkMuted)
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(BP.inkMuted)
+                }
             }
         }
         .font(BP.sans(13, .semibold))
@@ -1195,8 +1231,8 @@ struct PlayerScreen: View {
         seekRun = run + 1
         let scale: Double = run < 10 ? 1 : (run < 26 ? 3 : 6)
         let delta = (ahead ? prefs.seekForwardStepSec : -prefs.seekBackStepSec) * scale
-        let base = pendingSeek ?? snap.position
-        let cap = snap.duration > 0 ? snap.duration - 1 : base + delta
+        let base = pendingSeek ?? clock.snap.position
+        let cap = clock.snap.duration > 0 ? clock.snap.duration - 1 : base + delta
         pendingSeek = max(0, min(cap, base + delta))
         wake()
         seekCommit?.cancel()
@@ -1206,7 +1242,7 @@ struct PlayerScreen: View {
             if let target = pendingSeek {
                 if !together.interceptSeek(to: target, controller: controller) {
                     controller?.seek(to: target)
-                    snap.position = target
+                    clock.seeked(to: target)
                 }
             }
             pendingSeek = nil
@@ -1222,11 +1258,11 @@ struct PlayerScreen: View {
 
     /// use-bp-playback seekBy: one step, clamped inside the file.
     private func seekBy(_ delta: Double) {
-        let target = snap.position + delta
-        let clamped = snap.duration > 0 ? min(snap.duration - 1, max(0, target)) : max(0, target)
+        let target = clock.snap.position + delta
+        let clamped = clock.snap.duration > 0 ? min(clock.snap.duration - 1, max(0, target)) : max(0, target)
         if together.interceptSeek(to: clamped, controller: controller) { return }
         controller?.seek(to: clamped)
-        snap.position = clamped
+        clock.seeked(to: clamped)
     }
 
     /// bp-player-controls.tsx BpControl: an icon-only transport button, named by its aria-label.
@@ -1335,8 +1371,8 @@ struct PlayerScreen: View {
             }
         case .homeServerQuality:
             if let h = context?.homeServer {
-                HomeServerQualityPanel(session: h, positionSec: snap.position, playing: !snap.paused,
-                                       onSwitched: { next, headers, subs in pausedAfterSwitch = snap.paused; switchStream(to: next, headers: headers, subtitles: subs) }, onClose: { closePanel() })
+                // (perf pass 4) The spot it switches from is read from the clock's leaf.
+                PlayerClockReader(clock) { c in homeServerQualityPanel(h, c) }
             }
         case .kidsSources:
             if let context {
@@ -1346,6 +1382,11 @@ struct PlayerScreen: View {
         case .speed:
             PlayerSpeedPanel(rate: rate, isLive: isLive, onRate: { setRate($0) }, onClose: { closePanel() })
         }
+    }
+
+    private func homeServerQualityPanel(_ h: HomeServerSession, _ c: PlayerClock) -> some View {
+        HomeServerQualityPanel(session: h, positionSec: c.snap.position, playing: !c.snap.paused,
+                               onSwitched: { next, headers, subs in pausedAfterSwitch = clock.snap.paused; switchStream(to: next, headers: headers, subtitles: subs) }, onClose: { closePanel() })
     }
 
     // MARK: kid profiles (transport-kids.tsx, kids-switcher.tsx, resume-prompt.tsx; useActiveKid)
@@ -1358,9 +1399,14 @@ struct PlayerScreen: View {
         return !context.playlistVod && context.homeServer == nil
     }
 
+    /// (perf pass 4) Drawn inside the clock's leaf: its time bar observes the clock, the body does not.
     private var kidsChrome: some View {
-        KidsPlayerTransport(title: shownTitle, resolution: resolutionLabel, isLive: isLive, position: pendingSeek ?? snap.position,
-                            duration: snap.duration, buffered: buffered, paused: snap.paused, muted: muted,
+        PlayerClockReader(clock) { c in kidsTransport(c) }
+    }
+
+    private func kidsTransport(_ c: PlayerClock) -> some View {
+        KidsPlayerTransport(title: shownTitle, resolution: resolutionLabel, isLive: isLive, position: pendingSeek ?? c.snap.position,
+                            duration: c.snap.duration, buffered: c.buffered, paused: c.snap.paused, muted: muted,
                             hasSubtitles: !kidSubs.isEmpty, subtitlesOn: kidSubs.contains { $0.selected }, canPickAnother: kidsCanSwitch,
                             focus: $focus,
                             onBack: { requestClose() },
@@ -1404,7 +1450,7 @@ struct PlayerScreen: View {
 
     private var kidsResumePrompt: some View {
         KidsResumePrompt(title: shownTitle, focus: $focus, onResume: { acknowledgeResume(true) }, onStartOver: { acknowledgeResume(false) })
-            .onAppear { controller?.setPaused(true); if let c = controller { snap = c.snapshot() } }
+            .onAppear { controller?.setPaused(true); if let c = controller { takeSnap(c.snapshot()) } }
     }
 
     /// resolution-label.ts realQualityLabel from the decoded picture ("w h codec…" in status).
@@ -1441,7 +1487,7 @@ struct PlayerScreen: View {
     /// (use-bridge-load hasExplicitStart), through the engine rule again; a torrent stays owned by
     /// the player while it plays (use-player-media).
     private func switchStream(to next: URL, headers nextHeaders: [String: String], subtitles nextSubtitles: [SeedSubtitle] = []) {
-        let at = snap.position > 5 ? snap.position : 0
+        let at = clock.snap.position > 5 ? clock.snap.position : 0
         let owned = switched?.url ?? url
         if next != owned {
             TorrentEngine.shared.playerOpened(url: next)
@@ -1603,6 +1649,22 @@ struct PlayerScreen: View {
 
     // MARK: behaviour
 
+    /// (perf pass 4) Every snapshot goes through here: the clock stores it (its leaves redraw only
+    /// on a change) and this body's `isPaused` follows only a real change of the pause flag.
+    private func takeSnap(_ s: (position: Double, duration: Double, paused: Bool)) {
+        clock.update(s)
+        if isPaused != s.paused { isPaused = s.paused }
+    }
+
+    /// (perf pass 4) Both engines report their status every second, with a position / cache readout
+    /// (fps, dropped) this screen never shows: storing each report redrew the whole player every
+    /// second. It is stored when something the player reads changes (state, picture, error, log).
+    private func applyStatus(_ s: MPVPlayerController.Status) {
+        let same: Bool = s.state == status.state && s.videoParams == status.videoParams && s.error == status.error
+            && s.log == status.log && s.hwdec == status.hwdec
+        if !same { status = s }
+    }
+
     /// The remote's Play/Pause (and the system's play / pause commands).
     /// (player pass 2) Under the resume fork it takes the ring's choice (Resume unless the ring is on
     /// Start over), under "Leave the show?" it is Keep watching, playing: it toggled the video under
@@ -1630,9 +1692,9 @@ struct PlayerScreen: View {
         // In a Watch Together room the lobby, or the host, may own the press (use-playback-controls).
         if together.interceptToggle(controller) { wake(); return }
         controller?.togglePause()
-        if let c = controller { snap = c.snapshot() }
+        if let c = controller { takeSnap(c.snapshot()) }
         // X-Ray lives while paused: playing again closes its browser / person page.
-        if !snap.paused { xrayOpen = false }
+        if !clock.snap.paused { xrayOpen = false }
         wake()
     }
 
@@ -1641,7 +1703,7 @@ struct PlayerScreen: View {
     /// room. Kids get it too (upstream does not gate it), when their profile turned it on.
     private var xrayMeta: Meta? {
         // Not for kid profiles: X-Ray opens person pages with unfiltered filmographies (review 34; upstream doesn't gate it).
-        guard SettingsBridge.shared.slice.xrayEnabled ?? false, !isKid, snap.paused, chrome || xrayOpen, let meta = context?.meta,
+        guard SettingsBridge.shared.slice.xrayEnabled ?? false, !isKid, isPaused, chrome || xrayOpen, let meta = context?.meta,
               panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !kidsLoading,
               !failed else { return nil }
         return meta
@@ -1669,9 +1731,16 @@ struct PlayerScreen: View {
         if let m = trackMemory { TrackPlanner.send("player.rememberRate", [m, value]) }
     }
 
+    /// speed-menu.tsx "Speed & sleep" control, drawn inside PlayerSleepReader.
+    private func speedChip(_ timer: SleepTimer) -> some View {
+        let changedRate: Bool = !isLive && abs(rate - 1) > 0.01
+        return chip(speedChipLabel(timer), timer.isActive ? "clock" : "speedometer", id: "speed",
+                    active: timer.isActive || changedRate) { open(.speed) }
+    }
+
     /// speed-menu.tsx trigger face: the sleep countdown while a timer is armed, else a changed rate.
-    private var speedChipLabel: String {
-        if let face = sleepTimer.faceLabel { return face }
+    private func speedChipLabel(_ timer: SleepTimer) -> String {
+        if let face = timer.faceLabel { return face }
         if !isLive, abs(rate - 1) > 0.01 { return PlayerSpeedPanel.rateLabel(rate) }
         return isLive ? "Sleep timer" : "Speed & sleep"
     }
@@ -1680,7 +1749,7 @@ struct PlayerScreen: View {
     private func sleepFired() {
         // A Watch Together room pauses for everyone, as a press would (review 28).
         if let c = controller, !c.snapshot().paused, !together.interceptToggle(c) { c.setPaused(true) }
-        if let c = controller { snap = c.snapshot() }
+        if let c = controller { takeSnap(c.snapshot()) }
         chrome = true
         scheduleHide()
     }
@@ -1695,7 +1764,7 @@ struct PlayerScreen: View {
             isPlaying: { controller.map { !$0.snapshot().paused } ?? false },
             toggle: { playPausePressed() },
             seekStep: { delta in if isLive { controller?.seek(delta) } else { seekBy(delta) } },
-            seekTo: { sec in if !isLive { seekBy(sec - snap.position) } },
+            seekTo: { sec in if !isLive { seekBy(sec - clock.snap.position) } },
             next: next,
             previous: previous)
         VideoNowPlaying.shared.begin(nowPlayingId, actions: actions, seekBack: prefs.seekBackStepSec, seekForward: prefs.seekForwardStepSec)
@@ -1704,11 +1773,11 @@ struct PlayerScreen: View {
     /// player.tsx updateMediaControls: title, "S1 E2 · name", art (backdrop, else poster; a
     /// channel's logo), duration, position and whether it is playing.
     private func nowPlayingTick() {
-        let playing = status.state == "playing" && (isLive || snap.position > 0.3)
+        let playing = status.state == "playing" && (isLive || clock.snap.position > 0.3)
         let meta = context?.meta
         let art = isLive ? currentChannel?.logo : (meta?.background ?? meta?.poster)
         VideoNowPlaying.shared.update(nowPlayingId, playing: playing, title: shownTitle, subtitle: shownSubtitle, artURL: art,
-                                      durationSec: snap.duration, positionSec: snap.position, rate: rate, isLive: isLive)
+                                      durationSec: clock.snap.duration, positionSec: clock.snap.position, rate: rate, isLive: isLive)
     }
 
     private func scheduleHide() {
@@ -1718,7 +1787,7 @@ struct PlayerScreen: View {
             // (player/live device pass) Not under a fork, a prompt or an error card (upstream's
             // `pinned`): the ring was pulled off "Keep watching" / "Leave" and the error card's
             // choices onto the stage (a disabled one under the prompts), after any press woke it.
-            guard !Task.isCancelled, panel == nil, !roomOpen, !pipActive, !snap.paused,
+            guard !Task.isCancelled, panel == nil, !roomOpen, !pipActive, !clock.snap.paused,
                   resumePending == nil, !leaveConfirm, !stillPrompt, !failed else { return }
             chrome = false
             // A card that stays up without the chrome (connecting, no audio, the kid loader) keeps its ring.
@@ -1732,17 +1801,13 @@ struct PlayerScreen: View {
         return ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry"].contains(id)
     }
 
-    private func fmt(_ s: Double) -> String {
-        guard s.isFinite, s > 0 else { return "0:00" }
-        let t = Int(s)
-        return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
-    }
+    private func fmt(_ s: Double) -> String { PlayerClock.fmt(s) }
 
     /// lib/trakt/scrobble-hook.ts: "start" when playing, "pause" on pause, "stop" at the end.
     private func scrobbleTick() {
-        guard let context, !context.playlistVod, !isLive, snap.duration > 150 else { return }
-        let paused = snap.paused
-        if scrobbleState == nil, !paused, snap.position > 1 { sendScrobble("start") }
+        guard let context, !context.playlistVod, !isLive, clock.snap.duration > 150 else { return }
+        let paused = clock.snap.paused
+        if scrobbleState == nil, !paused, clock.snap.position > 1 { sendScrobble("start") }
         else if scrobbleState == "start", paused, !lastScrobblePaused { sendScrobble("pause") }
         else if scrobbleState == "pause", !paused { sendScrobble("start") }
         lastScrobblePaused = paused
@@ -1752,7 +1817,7 @@ struct PlayerScreen: View {
     private func sendScrobble(_ action: String) {
         guard let context else { return }
         scrobbleState = action
-        let progress = snap.duration > 0 ? snap.position / snap.duration * 100 : 0
+        let progress = clock.snap.duration > 0 ? clock.snap.position / clock.snap.duration * 100 : 0
         let ep: AnyJSON = context.season.map { s in
             .object(["season": .number(Double(s)), "episode": .number(Double(context.episode ?? 1)),
                      "imdbId": context.imdbId.map { .string($0) } ?? .null,
@@ -1815,7 +1880,7 @@ struct PlayerScreen: View {
             leaveResumes = wasPlaying && !roomGuest
             leaveConfirm = true
             if !roomGuest { controller?.setPaused(true) }
-            if let c = controller { snap = c.snapshot() }
+            if let c = controller { takeSnap(c.snapshot()) }
             hideTask?.cancel()
             focusLater(.chip("Keep watching"))
         } else {
@@ -1828,7 +1893,7 @@ struct PlayerScreen: View {
     private func keepWatching() {
         leaveConfirm = false
         if leaveResumes { controller?.setPaused(false) }
-        if let c = controller { snap = c.snapshot() }
+        if let c = controller { takeSnap(c.snapshot()) }
         focus = .surface
         wake()
     }
@@ -1848,17 +1913,23 @@ struct PlayerScreen: View {
     }
 
     /// bp-resume-prompt.tsx: a fork over the paused first frame; the ring lands on Resume.
+    /// (perf pass 4) Drawn inside the clock's leaf: the file's duration can arrive under the fork.
     private func resumePrompt(_ sec: Double) -> some View {
+        PlayerClockReader(clock) { c in resumeFork(sec, duration: c.snap.duration) }
+            .onAppear { controller?.setPaused(true); if let c = controller { takeSnap(c.snapshot()) } }
+    }
+
+    private func resumeFork(_ sec: Double, duration: Double) -> some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             Spacer()
             Text("Pick up where you left off").font(BP.display(34)).foregroundStyle(BP.ink)
-            Text("\(title)\(subtitle.map { " · \($0)" } ?? "") · \(fmt(sec))\(snap.duration > 0 ? " of \(fmt(snap.duration))" : "")")
+            Text("\(title)\(subtitle.map { " · \($0)" } ?? "") · \(fmt(sec))\(duration > 0 ? " of \(fmt(duration))" : "")")
                 .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineLimit(1)
-            if snap.duration > 0 {
+            if duration > 0 {
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         Capsule().fill(BP.on)
-                        Capsule().fill(BP.accent).frame(width: g.size.width * min(1, max(0, sec / snap.duration)))
+                        Capsule().fill(BP.accent).frame(width: g.size.width * min(1, max(0, sec / duration)))
                     }
                 }.frame(width: BP.px(420), height: BP.px(6))
             }
@@ -1871,7 +1942,6 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(BP.gutter).padding(.bottom, BP.px(20))
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
-        .onAppear { controller?.setPaused(true); if let c = controller { snap = c.snapshot() } }
     }
 
     // MARK: Picture in Picture (use-pip-mode.ts)
@@ -2036,7 +2106,7 @@ struct PlayerScreen: View {
 
     /// Hands the stream to mpv where the native player left it (or where it was to start).
     private func switchToMpv() {
-        let at = snap.position > 5 ? snap.position : (startAt ?? 0)
+        let at = clock.snap.position > 5 ? clock.snap.position : (startAt ?? 0)
         noAudioWarning = false
         controller = nil
         status = MPVPlayerController.Status()
@@ -2117,7 +2187,7 @@ struct PlayerScreen: View {
         let movingOn: Bool = reopening ?? ((advance ?? natural) && upNext != nil && !isLive)
         together.closing(reopening: movingOn)
         if scrobbleState != nil {
-            let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0
+            let progress = clock.snap.duration > 0 ? (natural ? 100 : clock.snap.position / clock.snap.duration * 100) : 0
             sendScrobble(progress >= 90 ? "stop" : "pause")
         }
         // (player pass 2) Nothing plays on under a closing player (Next episode, Play now, Sources

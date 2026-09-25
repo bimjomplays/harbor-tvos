@@ -263,7 +263,13 @@ struct DetailView: View {
                 Task { await model.loadWatchedState() }
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode, let next = model.airedNext(season: s, episode: e) {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; pickerPref = false; picker = (model.meta, next.playEpisode) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        // (review 9) followRoomInvite runs on the same return, 0.4 s later too: a room's
+                        // invite to the next episode may have opened the picker already (with the
+                        // room's guest-pick rule), and this replaced its episode and autoplay under it.
+                        guard picker == nil else { return }
+                        pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; pickerPref = false; picker = (model.meta, next.playEpisode)
+                    }
                 }
             }
         }
