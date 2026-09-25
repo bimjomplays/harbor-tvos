@@ -28,6 +28,8 @@ struct RoomView: View {
     /// A lead row of the rail holds focus: Continue Watching, or the anime hero's actions (Live is liveHot).
     @State private var cwHeld = false
     @State private var animeActionsHeld = false
+    /// bp-home seedRowRef: the first focus has been placed (once per visit).
+    @State private var seeded = false
     @Environment(\.shellFocusNamespace) private var shellNS
     @Namespace private var localNS
 
@@ -51,6 +53,11 @@ struct RoomView: View {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load this room.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
                     BPNote(text: failed)
+                    // (home device pass) The failure had nothing to press: Home stayed empty until the
+                    // app was restarted (Back at Home closes it), another room until the tab was left.
+                    Button("Try again") { Task { await model.load() } }
+                        .buttonStyle(BPActionStyle(primary: true))
+                        .padding(.top, BP.px(6))
                 }
                 .padding(.top, BP.px(300)).padding(.horizontal, BP.gutter)
             } else if model.loading && model.rows.isEmpty {
@@ -89,7 +96,7 @@ struct RoomView: View {
                                         onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { openContinue($0) },
                                         onQuick: { item in BPSound.shared.open(); quickFromCw = true; quick = Meta(continue: item) },
                                         onHold: { cwHeld = $0; model.hold("cw", $0) })
-                            .onDisappear { cwHeld = false }
+                            .onDisappear { cwHeld = false; model.hold("cw", false) }
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
                     if model.isHomePage {
@@ -114,10 +121,25 @@ struct RoomView: View {
         .task { await model.load() }
         // Rows arrive after first render; pull focus into them so Select acts on a tile,
         // not on the tab the bar was left on (upstream autofocuses the first row too).
-        .onChange(of: model.rows.isEmpty) { _, empty in
-            // A restored position needs its row parked and its track scrolled (both lazy) first.
-            let wait = model.entry == nil ? 0.05 : 0.3
-            if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + wait) { ShellFocus.shared.requestDefault() } }
+        // (home device pass) bp-home seeds the first focus only once Continue Watching and the
+        // catalogs have both answered ("emitting a seed before both have settled hands autofocus
+        // from one row to another mid-flight"). Last session's rows show at once while the library
+        // read takes a few seconds, so Home opened on the first catalog row and Jump back in then
+        // appeared above the ring. The seed waits for both (at most 3 s after the rows).
+        .onChange(of: seedReady) { _, ready in if ready { seedFocus() } }
+        .task(id: model.rows.isEmpty) {
+            guard !model.rows.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            seedFocus()
+        }
+        // (home device pass) A page over the room closed (detail and its player, the quick panel,
+        // a See all or band page): Continue Watching re-reads, so a card removed in the quick panel
+        // leaves and a title just watched shows where it now resumes. After the ring is back on the
+        // card it left from, so the row's hand-off (ContinueRowView) finds it there.
+        .onChange(of: pageUp) { _, up in
+            guard !up else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.reloadContinueWatching() }
         }
         // (focus pass) The last Continue Watching card removed (quick panel) takes the whole row away
         // from under the ring: focus goes back into the rail (its default, like a first load)
@@ -209,8 +231,32 @@ struct RoomView: View {
 
     /// bp-live-hero `mountVideo`: never while this row's player or any page over Home is up.
     private var previewSuspended: Bool {
-        livePlaying || detail != nil || quick != nil || seeAll != nil || service != nil || addonPage != nil || play != nil || cwPlay != nil
-            || collection != nil || app.room != .home
+        livePlaying || pageUp || app.room != .home
+    }
+
+    /// A page is up over the room (full-screen covers).
+    private var pageUp: Bool {
+        let titlePage: Bool = detail != nil || quick != nil || play != nil || cwPlay != nil
+        let otherPage: Bool = seeAll != nil || service != nil || addonPage != nil || collection != nil
+        return titlePage || otherPage
+    }
+
+    /// The first Continue Watching read is in, and the room has something to focus.
+    private var seedReady: Bool { hasCards && model.cwResolved }
+
+    private var hasCards: Bool { !model.rows.isEmpty || !model.continueWatching.isEmpty }
+
+    /// Puts the ring on the room's first card (Continue Watching when it has one), once. A viewer
+    /// who already went down into the room keeps the ring where they put it.
+    private func seedFocus() {
+        guard !seeded, hasCards else { return }
+        seeded = true
+        // A restored position needs its row parked and its track scrolled (both lazy) first.
+        let wait = model.entry == nil ? 0.05 : 0.3
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+            guard !model.tileHeld, !animeActionsHeld else { return }
+            ShellFocus.shared.requestDefault()
+        }
     }
 
     /// Home hero box: clamp(260px, 34vh, 380px) − 56px give (bp-tokens.ts:227-228, 172-175).

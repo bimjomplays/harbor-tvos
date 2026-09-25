@@ -148,6 +148,9 @@ struct EngineBrowseSource: BrowseSource {
     }
 
     func continueWatching(for room: Room) async throws -> [ContinueItem] {
+        // (home device pass) bp-movies has no Continue Watching row; the port showed Home's whole
+        // row on Movies (series and anime included) and delayed that page's first focus for it.
+        if room == .movies { return [] }
         let p = await profile
         // Cloud library (when signed in to Stremio) merged with this TV's own resume entries;
         // the anime room gets upstream's anime-only Continue Watching (one per franchise).
@@ -162,7 +165,7 @@ struct EngineBrowseSource: BrowseSource {
         }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return items.map { i in
+        let mapped: [ContinueItem] = items.map { i in
             let off = i.state?.timeOffset ?? 0, dur = i.state?.duration ?? 0
             var season = i.state?.season, episode = i.state?.episode
             if (episode ?? 0) == 0, let vid = i.state?.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: i._id) { season = parsed.season; episode = parsed.episode }
@@ -174,6 +177,17 @@ struct EngineBrowseSource: BrowseSource {
                                 watched: i._cw?.watched ?? false, newEpisode: i._cw?.newEpisode ?? 0, upNext: i._cw?.upNext ?? false,
                                 waitingForAir: i._cw?.waitingForAir ?? false, nextAirDate: i._cw?.nextAirDate, watcher: i._cw?.watcher, external: i._cw?.external,
                                 anime: room == .anime || (i._cw?.anime ?? false))
+        }
+        switch room {
+        case .shows:
+            // (home device pass) bp-shows: series only, anime episodes left to the Anime tab's own row
+            // (`i.type === "series" && !isAnimeCwItem(i)`, CW_LIMIT 16 of a pool of 40).
+            return Array(mapped.filter { $0.type == "series" && !$0.anime }.prefix(16))
+        case .home:
+            // bp-home useMobileCw(16).
+            return Array(mapped.prefix(16))
+        default:
+            return mapped
         }
     }
 
