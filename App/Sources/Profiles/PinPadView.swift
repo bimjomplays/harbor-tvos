@@ -13,6 +13,7 @@ struct PinPadView: View {
     @State private var shake = 0
     @State private var cooldownUntil: Date?
     @State private var now = Date()
+    @FocusState private var keyFocus: String?
 
     private static var tries: [String: Int] = [:]
     private static var cooldowns: [String: Date] = [:]
@@ -46,6 +47,7 @@ struct PinPadView: View {
                         }
                         .buttonStyle(BPTileStyle(radius: BP.rSM))
                         .disabled(secondsLeft > 0 && key != "‹")
+                        .focused($keyFocus, equals: key)
                         .accessibilityIdentifier("pin-key-\(key)")
                         // bp-who-is-watching-pin.tsx aria-label t("Delete") / t("common.back") (English "Back").
                         .accessibilityLabel(Text(verbatim: key == "⌫" ? T("Delete") : (key == "‹" ? T("Back") : key)))
@@ -55,6 +57,12 @@ struct PinPadView: View {
         }
         .onAppear { cooldownUntil = Self.cooldowns[profile.id] }
         .onReceive(timer) { now = $0 }
+        // (profiles device pass) bp-who-is-watching-pin re-seeds the first key when `cooling` flips.
+        // The cool-down disables every key but Back, so the ring sat on Back when it ended and the
+        // viewer's next Select (meaning to type) closed the keypad.
+        .onChange(of: secondsLeft > 0) { _, cooling in
+            if !cooling { keyFocus = "1" }
+        }
         .onExitCommand { finish(false) }
     }
 

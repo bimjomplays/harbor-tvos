@@ -65,3 +65,88 @@ export function purge(localId: string): void {
     try { localStorage.removeItem(`${prefix}${localId}`); } catch { /* ignore */ }
   }
 }
+
+// ---------------------------------------------------------------- Who's watching at launch
+// (profiles device pass) lib/profiles.tsx decides whether the chooser opens at launch
+// (pickerOpen's initial state, which bp-who-is-watching-layer reads) and which profile a
+// "Start as" default opens (launchDefault). Neither is exported, so they are mirrored here.
+// The TV asked only when no profile was active, so a household of several profiles always
+// woke up in whoever used it last. Swift stamps `harbor.profile.lastSelectAt` on every pick
+// (markProfileSelectedNow).
+
+const PROFILES_KEY = "harbor.profiles.v1";
+const SETTINGS_KEY = "harbor.settings";
+const SHARED_SETTINGS_KEY = "harbor.settings.shared";
+const LAST_SELECT_KEY = "harbor.profile.lastSelectAt";
+
+type PromptInterval = "launch" | "15m" | "30m" | "never";
+
+function readJSON(key: string): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** lib/profiles.tsx readLaunchSettingsRaw: the shared blob first, else the active mirror. */
+function readLaunchSettings(): Record<string, unknown> {
+  try {
+    if (localStorage.getItem(SHARED_SETTINGS_KEY) != null) return readJSON(SHARED_SETTINGS_KEY);
+  } catch {
+    return {};
+  }
+  return readJSON(SETTINGS_KEY);
+}
+
+/** lib/profiles.tsx readProfilePromptInterval. */
+function promptInterval(s: Record<string, unknown>): PromptInterval {
+  const v = s.profilePromptInterval;
+  if (v === "launch" || v === "15m" || v === "30m" || v === "never") return v;
+  return s.skipProfileScreen === true ? "never" : "launch";
+}
+
+function intervalMinutes(i: PromptInterval): number {
+  return i === "15m" ? 15 : i === "30m" ? 30 : 0;
+}
+
+function lastSelectAt(): number {
+  try {
+    return Number(localStorage.getItem(LAST_SELECT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+type LaunchProfile = { id: string; passwordHash?: unknown };
+
+function isLocked(p: LaunchProfile): boolean {
+  return typeof p.passwordHash === "string" && p.passwordHash.length > 0;
+}
+
+/**
+ * Once per process, at launch: `defaultId` is the "Start as" profile to open (never one with a
+ * PIN; launchDefault), and `open` says whether Who's watching comes up (pickerOpen's initial
+ * state: always with no active profile; never for a one-profile household or with a default;
+ * else per profilePromptInterval, "launch" by default).
+ */
+export function launchPicker(): { open: boolean; defaultId: string | null } {
+  const blob = readJSON(PROFILES_KEY);
+  const list: unknown[] = Array.isArray(blob.profiles) ? blob.profiles : [];
+  const profiles = list.filter(
+    (p): p is LaunchProfile => !!p && typeof p === "object" && typeof (p as { id?: unknown }).id === "string",
+  );
+  const settings = readLaunchSettings();
+  const wanted = typeof settings.defaultProfileId === "string" ? settings.defaultProfileId : "";
+  const def = wanted ? profiles.find((p) => p.id === wanted && !isLocked(p)) : undefined;
+  const activeId = def ? def.id : typeof blob.activeId === "string" ? blob.activeId : null;
+  if (!activeId || !profiles.some((p) => p.id === activeId)) return { open: true, defaultId: null };
+  if (def) return { open: false, defaultId: def.id };
+  if (profiles.length <= 1) return { open: false, defaultId: null };
+  const interval = promptInterval(settings);
+  if (interval === "never") return { open: false, defaultId: null };
+  if (interval === "launch") return { open: true, defaultId: null };
+  return { open: Date.now() - lastSelectAt() >= intervalMinutes(interval) * 60000, defaultId: null };
+}

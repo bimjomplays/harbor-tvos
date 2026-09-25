@@ -32,15 +32,39 @@ final class LiveModel: ObservableObject {
     @Published private(set) var playlists: [Playlist] = []
     /// Every stored source, guide-only ones included (the Sources sheet lists and removes them).
     @Published private(set) var allSources: [Playlist] = []
-    @Published private(set) var channels: [Channel] = []
+    /// (live sources device pass) The sources have been read once. Before that `playlists` is
+    /// empty for everyone, and Live TV drew the first-run setup form for a frame on every visit
+    /// (the ring could land in it and fall to the top bar as it vanished). use-bp-live reads
+    /// hasPlaylists synchronously from settings.
+    @Published private(set) var sourcesRead = false
+    @Published private(set) var channels: [Channel] = [] { didSet { visibleCache = nil; favoriteCountCache = nil } }
     @Published private(set) var groups: [Group] = []
     @Published private(set) var guide: [String: NowNext] = [:]
     @Published private(set) var guideNote: String?
     @Published private(set) var loading = false
     @Published private(set) var error: String?
     @Published var selectedPlaylist: String?
-    @Published var category: String = LiveModel.allKey
-    @Published private(set) var extraCategories: [Category] = []
+    @Published var category: String = LiveModel.allKey { didSet { if category != oldValue { visibleCache = nil } } }
+    @Published private(set) var extraCategories: [Category] = [] { didSet { visibleCache = nil } }
+    /// (live sources device pass) Settings' Live TV row opens the Sources sheet over its own model:
+    /// it reads and edits the sources but never downloads a playlist nobody is looking at.
+    let sourcesOnly: Bool
+    /// The channel the player showed last (the player's TV Guide tunes through `played`), and a
+    /// request for the guide or list to put the ring on a channel's row (returning from the player).
+    private(set) var lastPlayedId: String?
+    struct FocusRequest: Equatable { let channelId: String; let token = UUID() }
+    @Published var focusRequest: FocusRequest?
+
+    init(sourcesOnly: Bool = false) { self.sourcesOnly = sourcesOnly }
+
+    /// (live sources device pass) The chosen category's channels and ids, built once per change of
+    /// channels / chip / rails instead of on every render: a group chip re-filtered the whole
+    /// source (6,000 channels) for each body pass, and the guide's `.task(id:)` mapped every id
+    /// on each now/next merge. The ids array is kept so that id compares by storage, not by value.
+    private var visibleCache: (list: [Channel], ids: [String])?
+    private var favoriteCountCache: Int?
+    /// The source whose channels are on screen (a pick of another one clears them first).
+    private var shownPlaylist: String?
     /// How many channels the loaded guide covers (0 = nothing to match against).
     @Published private(set) var guideChannelCount = 0
     /// Bumped after a manual EPG match changes; `lastRemapped` names the channel.
@@ -67,6 +91,13 @@ final class LiveModel: ObservableObject {
     }
 
     func load() async {
+        await loadSources()
+        if sourcesOnly { return }
+        await loadChannels()
+    }
+
+    /// The stored sources and the one to show; no channels.
+    func loadSources() async {
         let all: [Playlist] = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
         allSources = all
         playlists = all.filter { ($0.kind ?? "m3u") != "epg" }
@@ -75,13 +106,14 @@ final class LiveModel: ObservableObject {
             let remembered: String? = try? await HarborEngine.shared.call("live.activeSource", [])
             selectedPlaylist = playlists.first(where: { $0.id == remembered })?.id ?? playlists.first?.id
         }
-        await loadChannels()
+        sourcesRead = true
     }
 
     /// use-bp-live setActiveId: the picked source is remembered (next launch, the Home live row).
     func select(_ id: String) async {
         selectedPlaylist = id
         _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(id)])
+        if sourcesOnly { return }
         await loadChannels()
     }
 
@@ -90,7 +122,15 @@ final class LiveModel: ObservableObject {
         let generation = loadGeneration
         guard let id = selectedPlaylist else {
             setChannels([]); groups = []; extraCategories = []; guide = [:]; guideNote = nil; guideChannelCount = 0; loading = false
+            shownPlaylist = nil
             return
+        }
+        if shownPlaylist != id {
+            // (live sources device pass) use-bp-live: another source starts from the loading state.
+            // The old source's channels, guide note and now/next stayed up under the new source's
+            // name until its playlist arrived, and could be tuned and starred meanwhile.
+            setChannels([]); groups = []; extraCategories = []; guide = [:]; guideNote = nil; guideChannelCount = 0
+            shownPlaylist = id
         }
         loading = true
         error = nil
@@ -235,11 +275,19 @@ final class LiveModel: ObservableObject {
     /// countries, top groups); 30 chips at most.
     var categories: [(key: String, label: String, count: Int, flag: String?)] {
         var out: [(key: String, label: String, count: Int, flag: String?)] = [
-            (key: Self.favKey, label: T("Favorites"), count: channels.filter(\.favorite).count, flag: nil),
+            (key: Self.favKey, label: T("Favorites"), count: favoriteCount, flag: nil),
             (key: Self.allKey, label: T("All"), count: channels.count, flag: nil),
         ]
         for c in extraCategories.prefix(Self.maxCategories - 2) { out.append((key: c.key, label: c.label, count: c.count, flag: c.flag)) }
         return out
+    }
+
+    var favoriteCount: Int {
+        if let n = favoriteCountCache { return n }
+        var n = 0
+        for ch in channels where ch.favorite { n += 1 }
+        favoriteCountCache = n
+        return n
     }
 
     /// The group behind the chosen chip, when it is a group rail.
@@ -247,6 +295,26 @@ final class LiveModel: ObservableObject {
 
     /// Channels of the chosen category, in guide order (favorites, pins, most watched, networks, rest).
     var visible: [Channel] {
+        if let held = visibleCache { return held.list }
+        let list = buildVisible()
+        let ids: [String] = list.map(\.id)
+        visibleCache = (list: list, ids: ids)
+        return list
+    }
+
+    /// The ids of `visible`, in order (the guide keys its lane seeding on them).
+    var visibleIds: [String] {
+        if visibleCache == nil { _ = visible }
+        return visibleCache?.ids ?? []
+    }
+
+    /// A loaded channel by id.
+    func channel(_ id: String) -> Channel? {
+        guard let i = indexById[id], i < channels.count else { return nil }
+        return channels[i]
+    }
+
+    private func buildVisible() -> [Channel] {
         switch category {
         case Self.favKey: return channels.filter(\.favorite)
         case Self.allKey: return channels
@@ -309,10 +377,11 @@ final class LiveModel: ObservableObject {
 
     func toggleFavorite(_ ch: Channel) async {
         let on: Bool = (try? await HarborEngine.shared.call("live.toggleFavorite", [ch])) ?? !ch.favorite
-        if let i = channels.firstIndex(where: { $0.id == ch.id }) { channels[i].favorite = on }
+        if let i = indexById[ch.id], i < channels.count, channels[i].id == ch.id { channels[i].favorite = on }
     }
 
     func played(_ ch: Channel) {
+        lastPlayedId = ch.id
         guard let id = selectedPlaylist else { return }
         // The player's subtitle and channel card read `guide`; a grid row past the first ones may not be in it yet.
         askNowNext(ch.id)
@@ -324,10 +393,7 @@ final class LiveModel: ObservableObject {
         struct Added: Decodable { var id: String }
         do {
             let a: Added = try await HarborEngine.shared.call("live.addStructured", [kind, name, url, epgUrl, server, username, password])
-            // bp-live onAdded setActiveId (the engine ignores a guide-only source).
-            _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(a.id)])
-            selectedPlaylist = a.id
-            await load()
+            await added(a.id)
             return nil
         } catch { return error.localizedDescription }
     }
@@ -336,12 +402,24 @@ final class LiveModel: ObservableObject {
         struct Added: Decodable { var id: String }
         do {
             let a: Added = try await HarborEngine.shared.call("live.addPlaylist", [name, url, epgUrl])
-            // bp-live onAdded setActiveId (the engine ignores a guide-only source).
-            _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(a.id)])
-            selectedPlaylist = a.id
-            await load()
+            await added(a.id)
             return nil
         } catch { return error.localizedDescription }
+    }
+
+    /// bp-live onAdded setActiveId (the engine ignores a guide-only source), then bp-live-setup
+    /// onDone: the sheet closes at once and the playlist loads behind it.
+    /// (live sources device pass) "Adding…" used to wait for the whole playlist download (a big
+    /// list or a dead server held the sheet for the length of a network timeout).
+    private func added(_ id: String) async {
+        _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(id)])
+        selectedPlaylist = id
+        // The spinner from the start: between the sources arriving and loadChannels running, a
+        // frame drew the empty state ("Add a playlist") and the ring could land on it.
+        if !sourcesOnly { loading = true }
+        await loadSources()
+        if sourcesOnly { return }
+        Task { [weak self] in await self?.loadChannels() }
     }
 
     func setEpgUrl(_ url: String) async {
@@ -377,9 +455,17 @@ struct LiveView: View {
     /// nav "Playlists" (views/playlist-vod.tsx): the source's movies and shows.
     @State private var showVod = false
 
+    /// The channel the viewer opened the player on (the player's TV Guide may tune others).
+    @State private var openedChannel: String?
+    @FocusState private var listFocus: String?
+    @FocusState private var bandFocus: String?
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if model.playlists.isEmpty && !model.loading {
+            if !model.sourcesRead {
+                // (live sources device pass) Nothing until the sources are known (see sourcesRead).
+                Color.clear
+            } else if model.playlists.isEmpty && !model.loading {
                 LiveSourcesSheet(model: model, firstRun: true, dismiss: {})
             } else {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
@@ -387,12 +473,9 @@ struct LiveView: View {
                     if model.loading && model.channels.isEmpty {
                         ProgressView().tint(BP.inkMuted).frame(maxWidth: .infinity, alignment: .center).padding(.top, BP.px(60))
                     } else if model.visible.isEmpty {
-                        BPNote(text: model.category == LiveModel.favKey
-                                   ? T("No favorites yet") + ". " + T("Press the star on any channel to keep it at the top of the guide.")
-                                   : (model.error ?? "No channels here"), tone: model.error == nil ? BP.inkMuted : BP.danger)
-                            .padding(.top, BP.px(20))
+                        emptyState
                     } else if grid && model.guideNote == nil {
-                        LiveGuideView(live: model, play: { ch in model.played(ch); playing = ch }, star: { ch in Task { await model.toggleFavorite(ch) } },
+                        LiveGuideView(live: model, play: { ch in open(ch) }, star: { ch in Task { await model.toggleFavorite(ch) } },
                                       replay: { ch, prog in Task { await startReplay(ch, prog) } },
                                       previewSuspended: playing != nil || replaying != nil || showSources || matching != nil || showMultiview || showVod,
                                       match: { ch in matching = ch })
@@ -405,6 +488,10 @@ struct LiveView: View {
         }
         .task { await model.appear() }
         .fullScreenCover(item: $playing, onDismiss: {
+            // (live sources device pass) Back from the player puts the ring on the channel that was
+            // playing: after zapping in the player's TV Guide it stayed on the first channel's row.
+            if let last = model.lastPlayedId, last != openedChannel, pendingMultiview == nil { model.focusRequest = LiveModel.FocusRequest(channelId: last) }
+            openedChannel = nil
             guard let ch = pendingMultiview else { return }
             pendingMultiview = nil
             multiviewSeed = ch
@@ -431,12 +518,21 @@ struct LiveView: View {
         }
     }
 
+    private func open(_ ch: LiveModel.Channel) {
+        // (live sources device pass) A second Select while the cover is still coming up is ignored.
+        guard playing == nil, replaying == nil else { return }
+        model.played(ch)
+        openedChannel = ch.id
+        playing = ch
+    }
+
     private func startReplay(_ ch: LiveModel.Channel, _ prog: LiveModel.Program) async {
         struct Out: Decodable { var url: String; var headers: [String: String]? }
         guard let id = model.selectedPlaylist,
               let out: Out? = try? await HarborEngine.shared.call("live.catchupUrl", [id, ch.id, prog.startMs, prog.endMs]), let out else {
-            model.played(ch); playing = ch; return
+            open(ch); return
         }
+        guard playing == nil, replaying == nil else { return }
         model.played(ch)
         replaying = Replay(channel: ch, program: prog, url: out.url, headers: out.headers ?? [:])
     }
@@ -451,6 +547,11 @@ struct LiveView: View {
                     HStack(spacing: BP.px(6)) {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                         Text(model.playlists.first { $0.id == model.selectedPlaylist }?.name ?? "Sources")
+                        if model.loading && !model.channels.isEmpty {
+                            // (live sources device pass) Refresh now closes Sources at once: the
+                            // reload shows here while the current channels stay up.
+                            ProgressView().scaleEffect(0.5).frame(width: BP.px(16), height: BP.px(16))
+                        }
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
@@ -486,17 +587,31 @@ struct LiveView: View {
                         }
                     }
                     .buttonStyle(BPActionStyle(primary: model.category == c.key)).bpSelected(model.category == c.key)
+                    .focused($bandFocus, equals: "chip:" + c.key)
                 }
+                // (live sources device pass) Hide group and Show … leave the band under the ring; the
+                // ring is moved first (to All, or to the hidden-groups toggle while some remain)
+                // instead of falling out of the band to the top bar.
                 if let group = model.currentGroup {
-                    Button("Hide group") { Task { await model.toggleGroupHidden(group) } }.buttonStyle(BPActionStyle())
+                    Button("Hide group") {
+                        bandFocus = "chip:" + LiveModel.allKey
+                        model.category = LiveModel.allKey
+                        Task { await model.toggleGroupHidden(group) }
+                    }
+                    .buttonStyle(BPActionStyle())
                 }
                 if showHidden {
                     ForEach(model.groups.filter { $0.hidden == true }) { g in
-                        Button("Show \(g.name)") { Task { await model.toggleGroupHidden(g.name) } }.buttonStyle(BPActionStyle())
+                        Button("Show \(g.name)") {
+                            bandFocus = model.hiddenGroupCount > 1 ? "hidden" : "chip:" + LiveModel.allKey
+                            Task { await model.toggleGroupHidden(g.name) }
+                        }
+                        .buttonStyle(BPActionStyle())
                     }
                 }
                 if model.hiddenGroupCount > 0 {
                     Button("\(model.hiddenGroupCount) hidden") { showHidden.toggle() }.buttonStyle(BPActionStyle(primary: showHidden))
+                        .focused($bandFocus, equals: "hidden")
                 }
                 if model.guideNote == nil {
                     Button(grid ? "List" : "Guide") { grid.toggle() }.buttonStyle(BPActionStyle())
@@ -512,24 +627,62 @@ struct LiveView: View {
     }
 
     private var guideList: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: BP.px(6)) {
-                ForEach(model.visible) { ch in
-                    LiveChannelRow(channel: ch, nowNext: model.guide[ch.id],
-                                   play: { model.played(ch); playing = ch },
-                                   star: { Task { await model.toggleFavorite(ch) } },
-                                   pin: { Task { await model.togglePin(ch) } },
-                                   match: model.canMatchEpg(ch) ? { matching = ch } : nil)
-                        .onAppear { model.askNowNext(ch.id) }
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: BP.px(6)) {
+                    ForEach(model.visible) { ch in
+                        LiveChannelRow(channel: ch, nowNext: model.guide[ch.id], focus: $listFocus,
+                                       play: { open(ch) },
+                                       star: { Task { await model.toggleFavorite(ch) } },
+                                       pin: { Task { await model.togglePin(ch) } },
+                                       match: model.canMatchEpg(ch) ? { matching = ch } : nil)
+                            .id(ch.id)
+                            .onAppear { model.askNowNext(ch.id) }
+                    }
                 }
+                .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))
+                .padding(.horizontal, Self.listHeadroom)
             }
-            .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))
-            .padding(.horizontal, Self.listHeadroom)
+            // (layout pass) The rows fill the scroller edge to edge: a focused row (~1 310 pt wide, 1.03
+            // lift) reaches ~29 pt past its sides with the ring, and the clip cut the ring's left side
+            // (and the right side of the last cell). bp-grid's HEADROOM: pad inside, pull out as much.
+            .padding(.horizontal, -Self.listHeadroom)
+            .focusSection()
+            .onChange(of: model.focusRequest) { _, request in
+                guard let id = request?.channelId else { return }
+                model.focusRequest = nil
+                guard model.visibleIds.contains(id) else { return }
+                proxy.scrollTo(id, anchor: .center)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { listFocus = id }
+            }
         }
-        // (layout pass) The rows fill the scroller edge to edge: a focused row (~1 310 pt wide, 1.03
-        // lift) reaches ~29 pt past its sides with the ring, and the clip cut the ring's left side
-        // (and the right side of the last cell). bp-grid's HEADROOM: pad inside, pull out as much.
-        .padding(.horizontal, -Self.listHeadroom)
+    }
+
+    /// bp-live.tsx BpLiveEmpty: a title, a line and one action, so the ring has somewhere to go
+    /// below the band. (live sources device pass) It was a bare note: a playlist that failed to
+    /// load could only be retried from Sources, and an empty Favorites had no way back to All.
+    private var emptyState: some View {
+        let failed = model.error != nil
+        let favorites = model.category == LiveModel.favKey
+        let title: String = failed ? T("Couldn't load this playlist") : (favorites ? T("No favorites yet") : T("No channels here"))
+        let line: String = failed
+            ? (model.error ?? "")
+            : (favorites ? T("Press the star on any channel to keep it at the top of the guide.") : T("This playlist came back without any live channels."))
+        let action: String = failed ? T("Try again") : (favorites ? T("Show all channels") : T("Add a playlist"))
+        return VStack(spacing: BP.px(10)) {
+            Text(title).font(BP.display(30)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
+            Text(line).font(BP.sans(16, .medium)).foregroundStyle(BP.inkSubtle).multilineTextAlignment(.center).lineLimit(4)
+                .frame(maxWidth: BP.px(620))
+            Button(action) {
+                if failed { Task { await model.loadChannels(force: true) } }
+                else if favorites { model.category = LiveModel.allKey }
+                else { showSources = true }
+            }
+            .buttonStyle(BPActionStyle(primary: true, busy: failed && model.loading))
+            .padding(.top, BP.px(8))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, BP.px(60))
         .focusSection()
     }
 
@@ -540,6 +693,8 @@ struct LiveView: View {
 struct LiveChannelRow: View {
     let channel: LiveModel.Channel
     let nowNext: LiveModel.NowNext?
+    /// The list's ring, keyed by channel id on the row's main button (restored after the player).
+    let focus: FocusState<String?>.Binding
     let play: () -> Void
     let star: () -> Void
     var pin: (() -> Void)? = nil
@@ -595,6 +750,7 @@ struct LiveChannelRow: View {
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .focused(focus, equals: channel.id)
             Button(action: star) {
                 Image(systemName: channel.favorite ? "star.fill" : "star")
                     .font(.system(size: BP.px(16), weight: .bold))
@@ -642,6 +798,9 @@ struct LiveSourcesSheet: View {
     @ObservedObject var model: LiveModel
     let firstRun: Bool
     let dismiss: () -> Void
+    /// bp-live-sources seeds the ring on the active source; Settings opens on the form (bp-settings
+    /// renders BpLiveSetup itself).
+    var seedActive = true
     @State private var name = ""
     @State private var url = ""
     @State private var epg = ""
@@ -651,6 +810,18 @@ struct LiveSourcesSheet: View {
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?
+    /// source-picker.tsx confirmDialog('Remove playlist "{name}"?') before a source goes.
+    @State private var removing: LiveModel.Playlist?
+    @FocusState private var focus: String?
+
+    /// bp-live-setup complete(): what each kind needs before Add is offered.
+    private var ready: Bool {
+        switch kind {
+        case "xtream": return server.trimmingCharacters(in: .whitespaces).count >= 4 && !username.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty
+        case "epg": return epg.trimmingCharacters(in: .whitespaces).count >= 8
+        default: return url.trimmingCharacters(in: .whitespaces).count >= 8
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -662,7 +833,7 @@ struct LiveSourcesSheet: View {
                     // bp-live-setup kind picker: M3U link, Xtream Codes login, or guide data only.
                     HStack(spacing: BP.px(8)) {
                         ForEach([("m3u", "M3U playlist"), ("xtream", "Xtream Codes"), ("epg", "Guide data only")], id: \.0) { k, label in
-                            Button(T(label)) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k)).bpSelected(kind == k)
+                            Button(T(label)) { kind = k; error = nil }.buttonStyle(BPActionStyle(primary: kind == k)).bpSelected(kind == k)
                         }
                     }
                     BPField(label: "Name", placeholder: "My provider", text: $name)
@@ -678,17 +849,30 @@ struct LiveSourcesSheet: View {
                     }
                     HStack(spacing: BP.px(12)) {
                         Button(busy ? "Adding…" : "Add source") {
-                            guard !busy else { return }
+                            guard !busy, ready else { return }
                             busy = true
                             Task {
-                                error = kind == "m3u" && !url.isEmpty && server.isEmpty
+                                // (live sources device pass) An M3U always goes through addPlaylist
+                                // (detectProviderShape: http(s) check, Xtream login URLs, middleware).
+                                // A server typed under Xtream before switching to M3U sent it through
+                                // the unchecked structured path instead.
+                                let failure: String? = kind == "m3u"
                                     ? await model.add(name: name, url: url, epgUrl: epg)
                                     : await model.add(kind: kind, name: name, url: url, epgUrl: epg, server: server, username: username, password: password)
-                                busy = false
-                                if error == nil { name = ""; url = ""; epg = ""; dismiss() }
+                                error = failure
+                                if failure == nil {
+                                    // busy stays on while the sheet goes (a second press added the source
+                                    // twice). First run has no sheet to close: a channel source has already
+                                    // replaced the form (the sources were re-read), a guide-only one keeps it.
+                                    name = ""; url = ""; epg = ""; server = ""; username = ""; password = ""
+                                    if firstRun { busy = false }
+                                    dismiss()
+                                } else {
+                                    busy = false
+                                }
                             }
                         }
-                        .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(kind == "m3u" ? url.count < 8 : kind == "xtream" ? (server.count < 8 || username.isEmpty) : epg.count < 8)
+                        .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(!ready)
                         if !firstRun { Button("Close") { dismiss() }.buttonStyle(BPActionStyle()) }
                     }
                     if let e = error ?? model.error { BPNote(text: e, tone: BP.danger) }
@@ -705,20 +889,31 @@ struct LiveSourcesSheet: View {
                             HStack(spacing: BP.px(8)) {
                                 // A guide-only source has no channels to show: it backs every source's guide.
                                 Button(pl.name) {
-                                    Task { await model.select(pl.id); dismiss() }
+                                    // bp-live-sources onPick + onClose: the sheet closes now and the
+                                    // source loads behind it. (live sources device pass) It waited for the
+                                    // whole playlist, and a late close shut a Sources sheet opened again.
+                                    let id = pl.id
+                                    dismiss()
+                                    Task { await model.select(id) }
                                 }
                                 .buttonStyle(BPActionStyle(primary: model.selectedPlaylist == pl.id)).bpSelected(model.selectedPlaylist == pl.id)
                                 .disabled(guideOnly)
-                                Button("Remove") { Task { await model.remove(pl.id) } }.buttonStyle(BPActionStyle())
+                                .focused($focus, equals: "src:\(pl.id)")
+                                Button("Remove") { removing = pl }.buttonStyle(BPActionStyle())
                             }
                             Text(detail).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                         }
                         if model.selectedPlaylist != nil {
                             Button("Use the EPG URL above for the selected source") {
-                                Task { await model.setEpgUrl(epg); epg = "" }
+                                let value = epg
+                                Task { await model.setEpgUrl(value); epg = "" }
                             }
-                            .buttonStyle(BPActionStyle()).disabled(epg.count < 8)
-                            Button("Refresh channels and guide") { Task { await model.loadChannels(force: true); dismiss() } }.buttonStyle(BPActionStyle())
+                            .buttonStyle(BPActionStyle()).disabled(kind == "xtream" || epg.count < 8)
+                            Button("Refresh channels and guide") {
+                                dismiss()
+                                Task { await model.loadChannels(force: true) }
+                            }
+                            .buttonStyle(BPActionStyle())
                         }
                     }
                     .frame(maxWidth: BP.px(520))
@@ -727,5 +922,32 @@ struct LiveSourcesSheet: View {
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
         }
         .focusSection()
+        .alert(T("Remove playlist \"%@\"?", removing?.name ?? ""), isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { pl in
+            Button("Remove", role: .destructive) {
+                let id = pl.id
+                Task { await model.remove(id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .task {
+            guard !firstRun else { return }
+            if !model.sourcesRead { await model.load() }
+            // bp-live-sources: the ring starts on the active source (it started on the kind picker).
+            guard seedActive, let id = model.selectedPlaylist else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            if focus == nil { focus = "src:\(id)" }
+        }
+    }
+}
+
+/// Settings' Live TV row (bp-settings.tsx pane "live" renders BpLiveSetup in place): the Sources
+/// sheet over its own model. (live sources device pass) The row used to leave Settings for the
+/// Live TV tab, where a viewer with sources landed on the guide, not on the form.
+struct LiveSourcesCover: View {
+    let dismiss: () -> Void
+    @StateObject private var model = LiveModel(sourcesOnly: true)
+
+    var body: some View {
+        LiveSourcesSheet(model: model, firstRun: false, dismiss: dismiss, seedActive: false)
     }
 }

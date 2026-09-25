@@ -53,6 +53,7 @@ final class ProfilesStore: ObservableObject {
     private static let profilesKey = "harbor.profiles.v1"
     private static let activeKey = "harbor.active-profile"
     private static let idMapKey = "harbor.sync.idmap"
+    private static let lastSelectKey = "harbor.profile.lastSelectAt"
 
     /// Upstream's `harbor.profiles.v1` shape (`{ activeId, profiles: [...] }`, lib/profiles.tsx),
     /// so the bundled modules that read it (addon store, settings, resume) see the same profiles.
@@ -180,6 +181,11 @@ final class ProfilesStore: ObservableObject {
         if unlocked { sessionUnlockedIds.insert(id) }
         if id != activeId { parentalUnlockedFor = nil }
         activeId = id
+        // (profiles device pass) profiles.tsx markProfileSelectedNow: the 15/30-minute launch prompt
+        // (engine profilesRoom.launchPicker) counts from the last pick.
+        let stamp = String(Int(Date().timeIntervalSince1970 * 1000))
+        try? KeyValueStore.shared.set(stamp, for: Self.lastSelectKey)
+        HarborEngine.loaded?.syncStorage(key: Self.lastSelectKey, value: stamp)
         persist()
         HarborEngine.loaded?.emitEvent("harbor:active-profile-changed", detail: .object(["id": .string(id)]))
     }

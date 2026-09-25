@@ -1606,6 +1606,7 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("sync.status before start", rec.engine.sync.status().phase, "off");
   const pulled = await rec.engine.sync.pullNow();
   r.ok("sync.pullNow succeeds on a first pull", pulled.ok === true && pulled.firstPull === true, JSON.stringify(pulled));
+  r.ok("(profiles device pass) a pull before sync.start tells the host it is the first pull", events.some(([t, d]) => t === "harbor:sync-status" && d && d.phase === "first-pull" && d.armed === true), JSON.stringify(events.filter(([t]) => t === "harbor:sync-status").map(([, d]) => d && d.phase)));
   const blob = JSON.parse(rec.node.storage.get("harbor.profiles.v1"));
   r.ok("roster adopted into harbor.profiles.v1 (2 profiles, local id kept, PIN kept)", blob.profiles.length === 2 && blob.profiles[0].id === "p_local1" && blob.profiles[0].passwordHash === "abc" && blob.profiles[1].name === "Kiddo" && blob.profiles[1].settingsLinked === false, JSON.stringify(blob));
   r.ok("bootstrap profile dropped and its per-profile keys purged", !blob.profiles.some((p) => p.id === "p_guest") && !rec.node.storage.has("harbor.auth.p_guest"), JSON.stringify([...rec.node.storage.keys()].filter((k) => k.includes("p_guest"))));
@@ -1644,6 +1645,47 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   await new Promise((res) => setTimeout(res, 200));
   r.ok("(lifecycle) going to the background pushes the queued change without waiting for the debounce", pushes.slice(pushedBefore).flatMap((p) => p.writes).some((w) => w.key === "s_aaa:home" && w.value && w.value.order[0] === "new"), JSON.stringify(pushes.slice(pushedBefore)));
   r.eq("(lifecycle) runtime.setVisibility(true) reports a change, a repeat does not", [rec.engine.runtime.setVisibility(true), rec.engine.runtime.setVisibility(true)], [true, false]);
+  rec.engine.sync.stop();
+  rec.engine.account.stop();
+  rec.dispose();
+}
+
+// (profiles device pass) Sign-in: the host's awaited pull and the scheduler that `sync.start`
+// fires run one at a time, never side by side.
+{
+  const seededSession = JSON.stringify({ token: "tok_one", refresh: "ref_one", refreshedAt: Date.now(), user: { id: "u_one", username: "one" } });
+  const rec = loadEngine({
+    storage: new Map([
+      ["harbor.profiles.v1", JSON.stringify({ activeId: "p_one", profiles: [{ id: "p_one", name: "One", avatar: null, color: "#60a5fa", isPrimary: true, kid: null, passwordHash: null, createdAt: 1000, settingsLinked: true }] })],
+      ["harbor.theme-session.p_one", seededSession],
+    ]),
+  });
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let stateGets = 0;
+  rec.node.host.fetch = async (req) => {
+    const json = (body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/sync/v1/state")) {
+      stateGets++;
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((res) => setTimeout(res, 40));
+      inFlight--;
+      return json({ rev: 1, serverTime: new Date().toISOString(), docs: [] });
+    }
+    if (req.url.endsWith("/sync/v1/push")) {
+      const body = JSON.parse(req.body || "{}");
+      return json({ serverTime: new Date().toISOString(), results: (body.writes || []).map((w, i) => ({ key: w.key, ok: true, rev: 2 + i })) });
+    }
+    return json({ error: "not_found" }, 404);
+  };
+  const first = rec.engine.sync.pullNow();
+  const second = rec.engine.sync.pullNow();
+  rec.engine.sync.start();
+  const [a, b] = await Promise.all([first, second]);
+  await new Promise((res) => setTimeout(res, 150));
+  r.ok("(profiles device pass) two pullNow calls share one first pull", a.ok && b.ok && a.firstPull === true && b.firstPull === true, JSON.stringify([a, b]));
+  r.ok("(profiles device pass) sync.start during a pullNow waits for it: never two pulls at once", maxInFlight === 1 && stateGets >= 2, JSON.stringify({ maxInFlight, stateGets }));
   rec.engine.sync.stop();
   rec.engine.account.stop();
   rec.dispose();
@@ -1944,6 +1986,18 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const xt = engine.live.addStructured("xtream", "Smoke Xtream", "", "", "http://xt.example.invalid", "user", "pass");
   r.ok("live.addStructured builds an Xtream playlist", xt.kind === "xtream" && /get\.php/.test(xt.url) && xt.xtream.username === "user", JSON.stringify(xt));
   engine.live.removePlaylist(xt.id);
+  // (live sources device pass) A server typed without a scheme gets http://; a login missing a field is refused.
+  const xt2 = engine.live.addStructured("xtream", "Smoke Xtream 2", "", "", "xt.example.invalid:8080/", "user", "pass");
+  r.ok("live.addStructured gives a bare Xtream server http://", xt2.url.startsWith("http://xt.example.invalid:8080/get.php?") && xt2.xtream.server === "http://xt.example.invalid:8080", JSON.stringify(xt2));
+  engine.live.removePlaylist(xt2.id);
+  let refused = "";
+  try { engine.live.addStructured("xtream", "Half", "", "", "http://xt.example.invalid", "user", ""); } catch (e) { refused = String(e.message ?? e); }
+  r.ok("live.addStructured refuses an Xtream login without a password", /incomplete/.test(refused) && !engine.live.playlists().some((p) => p.name === "Half"), refused);
+  const firstAdd = engine.live.addPlaylist("Same list", "https://same.example.invalid/list.m3u", null);
+  const againAdd = engine.live.addPlaylist("Same list renamed", "https://same.example.invalid/list.m3u", null);
+  const sameRows = engine.live.playlists().filter((p) => p.url === "https://same.example.invalid/list.m3u");
+  r.ok("live.addPlaylist of a known address keeps its id (favourites and pins stay filed)", againAdd.id === firstAdd.id && sameRows.length === 1 && sameRows[0].name === "Same list renamed", JSON.stringify(sameRows));
+  engine.live.removePlaylist(firstAdd.id);
   const aw2 = await engine.detailRoom.awards({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop", releaseInfo: "1998" });
   r.ok("detailRoom.awards answers without an imdb id", aw2 && Array.isArray(aw2.groups) && Array.isArray(aw2.entries), JSON.stringify(aw2.groups));
   r.ok("sports.teamLeagues keeps team sports only", engine.sports.teamLeagues(["nba", "ufc"]).every((l) => l.key !== "ufc"), JSON.stringify(engine.sports.teamLeagues(["nba", "ufc"])));
@@ -2461,6 +2515,32 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     engine.runtime.syncStorage("harbor.settings.p_keep", null);
   }
   r.ok("profilesRoom.colors + pickColor", engine.profilesRoom.colors().length >= 6 && engine.profilesRoom.pickColor([engine.profilesRoom.colors()[0]]) === engine.profilesRoom.colors()[1]);
+}
+{
+  // (profiles device pass) lib/profiles.tsx pickerOpen / launchDefault at launch.
+  const roster = (activeId, n = 2) => JSON.stringify({ activeId, profiles: [
+    { id: "p_a", name: "A", passwordHash: null },
+    { id: "p_b", name: "B", passwordHash: "hash" },
+    { id: "p_c", name: "C", passwordHash: null },
+  ].slice(0, n) });
+  const at = (entries) => {
+    const rec = loadEngine({ storage: new Map(entries) });
+    const out = rec.engine.profilesRoom.launchPicker();
+    rec.dispose();
+    return out;
+  };
+  r.eq("(profiles device pass) launchPicker: no active profile opens the chooser", at([["harbor.profiles.v1", roster(null)]]), { open: true, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: an active id no longer in the roster opens it", at([["harbor.profiles.v1", roster("p_gone")]]), { open: true, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: a one-profile household is never asked", at([["harbor.profiles.v1", roster("p_a", 1)]]), { open: false, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: several profiles are asked every launch by default", at([["harbor.profiles.v1", roster("p_a")]]), { open: true, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: profilePromptInterval never", at([["harbor.profiles.v1", roster("p_a")], ["harbor.settings", JSON.stringify({ profilePromptInterval: "never" })]]), { open: false, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: legacy skipProfileScreen", at([["harbor.profiles.v1", roster("p_a")], ["harbor.settings", JSON.stringify({ skipProfileScreen: true })]]), { open: false, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: the shared settings blob wins over the mirror", at([["harbor.profiles.v1", roster("p_a")], ["harbor.settings.shared", JSON.stringify({ profilePromptInterval: "never" })], ["harbor.settings", JSON.stringify({ profilePromptInterval: "launch" })]]), { open: false, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: 30m, picked a minute ago", at([["harbor.profiles.v1", roster("p_a")], ["harbor.settings", JSON.stringify({ profilePromptInterval: "30m" })], ["harbor.profile.lastSelectAt", String(Date.now() - 60000)]]), { open: false, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: 15m, picked an hour ago", at([["harbor.profiles.v1", roster("p_a")], ["harbor.settings", JSON.stringify({ profilePromptInterval: "15m" })], ["harbor.profile.lastSelectAt", String(Date.now() - 3600000)]]), { open: true, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: a Start as default opens without asking", at([["harbor.profiles.v1", roster("p_a", 3)], ["harbor.settings", JSON.stringify({ defaultProfileId: "p_c" })]]), { open: false, defaultId: "p_c" });
+  r.eq("(profiles device pass) launchPicker: a default with a PIN is ignored", at([["harbor.profiles.v1", roster("p_a", 3)], ["harbor.settings", JSON.stringify({ defaultProfileId: "p_b" })]]), { open: true, defaultId: null });
+  r.eq("(profiles device pass) launchPicker: a default applies with no active profile", at([["harbor.profiles.v1", roster(null, 3)], ["harbor.settings", JSON.stringify({ defaultProfileId: "p_c" })]]), { open: false, defaultId: "p_c" });
 }
 
 // ------------------------------------------------------------------ settings room

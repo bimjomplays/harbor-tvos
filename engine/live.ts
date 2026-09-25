@@ -113,7 +113,11 @@ export function setActiveSource(id: string): string | null {
  */
 export function addPlaylist(name: string, url: string, epgUrl?: string | null): StoredPlaylist {
   const trimmed = url.trim();
-  const id = `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  // (live sources device pass) Adding an address that is already a source replaces that entry;
+  // it keeps its id, so the favourites, pins, stats and EPG matches filed under it still apply
+  // (a new id orphaned them all, and the remembered active source pointed at nothing).
+  const existing = readPlaylists().find((p) => p.url === trimmed);
+  const id = existing?.id ?? `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const probe = detectProviderShape({ id, name: name.trim() || trimmed, url: trimmed });
   if (probe.kind === "invalid") throw new Error(probe.reason);
   const entry: StoredPlaylist = { id, name: name.trim() || trimmed, url: trimmed, kind: probe.kind === "xtream" ? "xtream" : probe.kind === "epg" ? "epg" : "m3u" };
@@ -130,9 +134,18 @@ export function addPlaylist(name: string, url: string, epgUrl?: string | null): 
  */
 export function addStructured(kind: "m3u" | "xtream" | "epg", name: string, url: string, epgUrl: string, server: string, username: string, password: string): StoredPlaylist {
   const id = newPlaylistId();
+  // (live sources device pass) bp-live-setup complete(): an Xtream login needs all three fields.
+  // A server typed on the TV keyboard without a scheme ("host:8080") was stored as a relative
+  // get.php address that could never load; it gets http:// like the field's placeholder shows.
+  let host = server.trim();
+  if (kind === "xtream") {
+    if (!host || !username.trim() || !password) throw new Error("Xtream credentials are incomplete. Check the server URL, username, and password.");
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) host = `http://${host}`;
+  }
+  if (kind === "epg" && !epgUrl.trim()) throw new Error("EPG source has no URL.");
   const entry = materializePlaylistEntry(id, {
     kind, name: name.trim() || "My playlist", url: url.trim(), epgUrl: epgUrl.trim(),
-    xtream: { server: server.trim(), username: username.trim(), password: password.trim() },
+    xtream: { server: host, username: username.trim(), password: password.trim() },
   } as Parameters<typeof materializePlaylistEntry>[1]);
   const list = readPlaylists();
   writePlaylists([...list, entry]);

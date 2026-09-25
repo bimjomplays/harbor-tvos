@@ -24,6 +24,7 @@ struct ProfileEditorView: View {
     @State private var pinToUnlock = false
     /// (profiles bug pass) A second Select on Create while the lock value was fetched made a second profile.
     @State private var saving = false
+    @State private var deleting = false
 
     var body: some View {
         ZStack {
@@ -79,9 +80,16 @@ struct ProfileEditorView: View {
                         Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
                         if let e = editing, !e.isPrimary {
                             Button(confirmDelete ? "Delete for real" : "Delete profile") {
-                                if confirmDelete { Task { await profiles.delete(e.id); dismiss() } } else { confirmDelete = true }
+                                // (profiles device pass) The delete awaits two engine calls before the
+                                // profile leaves the roster: a second Select meanwhile ran it again
+                                // (a second tombstone and purge) and Save could still write to it.
+                                if confirmDelete {
+                                    guard !deleting else { return }
+                                    deleting = true
+                                    Task { await profiles.delete(e.id); dismiss() }
+                                } else { confirmDelete = true }
                             }
-                            .buttonStyle(BPActionStyle())
+                            .buttonStyle(BPActionStyle(busy: deleting))
                         }
                     }
                     .focusSection()
