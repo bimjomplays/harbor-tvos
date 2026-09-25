@@ -91,7 +91,7 @@ struct HomeBand: Equatable {
 }
 
 /// bp-ambient.tsx for a band that owns the backdrop: void, the services wash in the brand hue, the
-/// stage mosaic (bp-mosaic variant "stage", 32 %) when fourteen posters are in, a still in the art
+/// stage mosaic (BPStageMosaic, 32 %) when fourteen posters are in, a still in the art
 /// envelope (the right 76 %, feathered on the lead edge), under the same scrims as title art.
 struct HomeBandBackdrop: View {
     let band: HomeBand
@@ -102,9 +102,9 @@ struct HomeBandBackdrop: View {
             if let hex = band.tint, let tint = Color(css: hex) {
                 RadialGradient(colors: [tint.opacity(0.36), tint.opacity(0.1), .clear], center: .topTrailing, startRadius: 0, endRadius: 1500)
             }
-            if band.mosaic, band.posters.count >= HomeBand.mosaicMin, SettingsBridge.shared.slice.bigPictureMosaic ?? true {
-                BPMosaicView(posters: band.posters, stage: true).opacity(0.32).id(band.key).transition(.opacity)
-            }
+            // Up for every band (this void covers the page), so RootView's ambient mosaic stands
+            // down under any band and at most this one runs, as upstream's single BpAmbient.
+            BPStageMosaic(posters: band.mosaic && band.posters.count >= HomeBand.mosaicMin ? band.posters : [], key: band.key)
             if let still = band.still, !still.isEmpty {
                 GeometryReader { g in
                     RemoteImage(url: still)

@@ -38,6 +38,8 @@ struct SearchView: View {
                 results
             }
         }
+        // bp-search: the page, its own stage mosaic and the washes (RootView's mosaic is off here).
+        .background(SearchStageBackdrop(idle: model.status == .idle))
         .onAppear {
             if let q = Fixtures.query, model.query.isEmpty { model.query = q }
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
@@ -472,5 +474,31 @@ struct SearchCollectionView: View {
             loaded = true
         }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+    }
+}
+
+/// bp-search.tsx behind the room: the page (--bp-page, the canvas), the stage mosaic, the idle
+/// wash, and over it the results wash, which fades in once there is a query: the mosaic sinks
+/// under results rather than leaving, so it neither pops nor rebuilds on the next empty field.
+/// Upstream fills it from the Home catalog rows; the port uses the hero feed, as the ambient
+/// mosaic and the idle "Suggested" row do.
+struct SearchStageBackdrop: View {
+    var idle: Bool
+    @ObservedObject private var pool = AmbientPool.shared
+
+    var body: some View {
+        ZStack {
+            BP.canvas
+            BPStageMosaic(posters: pool.posters, key: "search")
+            LinearGradient(stops: [.init(color: BP.canvas.opacity(0.74), location: 0), .init(color: BP.canvas.opacity(0.82), location: 0.46),
+                                   .init(color: BP.canvas.opacity(0.92), location: 1)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(stops: [.init(color: BP.canvas.opacity(0.92), location: 0), .init(color: BP.canvas.opacity(0.95), location: 0.46),
+                                   .init(color: BP.canvas.opacity(0.98), location: 1)], startPoint: .top, endPoint: .bottom)
+                .opacity(idle ? 0 : 1)
+        }
+        .animation(BP.easeSlow, value: idle)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .task { await pool.load() }
     }
 }

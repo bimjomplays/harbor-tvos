@@ -203,7 +203,7 @@ struct PiPBrowseRoot: View {
 
     var body: some View {
         ZStack {
-            BPAmbientBackground(root: true)
+            PiPBrowseAmbient()
             ShellView()
         }
         .id("\(theme.revision)|\(language)")
@@ -214,5 +214,16 @@ struct PiPBrowseRoot: View {
         .onPlayPauseCommand { PiPBrowse.shared.togglePlayback() }
         // lib/theme.ts applyTheme: data-theme-mode follows the canvas (MinUI and Kawaii are light).
         .preferredColorScheme(theme.state?.light == true ? .light : .dark)
+    }
+}
+
+/// The layer's root background, whose mosaic follows the layer's own room as RootView's does
+/// (bp-shell skips BpAmbient on search, live and sports). Its own view, so a room change
+/// re-renders only this and not the layer's whole tree.
+private struct PiPBrowseAmbient: View {
+    @EnvironmentObject private var app: AppModel
+
+    var body: some View {
+        BPAmbientBackground(mosaic: BPAmbientBackground.shellDrawsMosaic(in: app.room), root: true)
     }
 }
