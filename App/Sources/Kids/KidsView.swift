@@ -28,6 +28,11 @@ struct KidsView: View {
                             Text("Couldn't load this room.").font(KidsTheme.font(20)).foregroundStyle(KidsTheme.deep)
                             Text("No catalog rows came back. Check the connection, or add a TMDB key in Settings.")
                                 .font(KidsTheme.font(15, .semibold)).foregroundStyle(KidsTheme.inkMuted)
+                            // (kids device pass) A kid has no Settings and no other room: with the page
+                            // empty (offline at launch) nothing on it could load it again.
+                            Button("Try again") { Task { await model.load() } }
+                                .buttonStyle(KidsPillStyle(fill: KidsTheme.teal, ink: .white))
+                                .padding(.top, BP.px(6))
                         }
                         .padding(.horizontal, BP.gutter)
                     }

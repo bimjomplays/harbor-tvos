@@ -106,6 +106,13 @@ struct KidsGameArcade: View {
             guard now == nil, let old else { return }
             DispatchQueue.main.async { focus = old.scratchId }
         }
+        // (kids device pass) Opening Games removed the Play Zone card under the ring, and tvOS put it
+        // on the header's Back: the first game takes it.
+        .onAppear {
+            guard playing == nil else { return }
+            let first = shown.first?.scratchId
+            DispatchQueue.main.async { focus = first }
+        }
     }
 
     private var arcade: some View {
