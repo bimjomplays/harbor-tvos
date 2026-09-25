@@ -76,6 +76,12 @@ struct PlayerScreen: View {
     @State private var liveReloadTimes: [Date] = []
     /// The pending reload (or close) after a live channel ran out.
     @State private var liveEndTask: Task<Void, Never>?
+    /// (player/live device pass) use-auto-retry.ts truncatedReloadedRef: this source already came
+    /// back once after ending well before its length (a dropped connection).
+    @State private var truncatedReloaded = false
+    /// A second early end of the same source: the source error card says so, instead of a frozen
+    /// last frame with nothing to press (use-auto-retry triggerAutoRetry's sourceError).
+    @State private var endedEarly: String?
 
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
@@ -273,7 +279,7 @@ struct PlayerScreen: View {
                     }
                 }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
-            if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, !stillPrompt, !xrayOpen, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
+            if chromeShown {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport
                 // (`kid && !pipMode`; TransportKids has no PiP control, so a kid never leaves for PiP).
                 Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
@@ -286,15 +292,19 @@ struct PlayerScreen: View {
             // card: each card's onAppear takes the ring, which went to a chip hidden behind the
             // Subtitles / Audio dialog when the stream failed (or kept connecting) while it was open.
             // The card comes up once the dialog closes.
-            if status.state == "error", !isLive, !roomOpen, !pipActive, panel == nil { sourceErrorCard.transition(.opacity) }
-            if status.state == "error", isLive, liveGuide != nil, panel == nil, !roomOpen, !pipActive { liveErrorCard.transition(.opacity) }
-            if status.state == "loading", !isKid, !isLive, !roomOpen, !pipActive, resumePending == nil, panel == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            // (player/live device pass) Not under the resume fork or "Leave the show?" either: both
+            // sit on the same bottom band, and the card's onAppear pulled the ring out of the fork.
+            if failed, !isLive, !roomOpen, !pipActive, panel == nil, resumePending == nil, !leaveConfirm { sourceErrorCard.transition(.opacity) }
+            // live-channel-error.tsx: every live channel (the Home row, Search, Sports links too, where
+            // only the bare transport showed); "Browse channels" only with a guide to browse.
+            if status.state == "error", isLive, panel == nil, !roomOpen, !pipActive { liveErrorCard.transition(.opacity) }
+            if connectingShown { connectingCard.transition(.opacity) }
             // cinematic-player-loader.tsx: a kid gets the sea loader over everything until the first frame.
             if kidsLoading { kidsLoader.transition(.opacity) }
-            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, status.state != "error" {
+            if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, !failed {
                 noAudioCard.transition(.opacity)
             }
-            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !xrayOpen {
+            if panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !xrayOpen, !failed {
                 if showUpNextCard, let upNext {
                     upNextCard(upNext).transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if let seg = activeSkip {
@@ -339,10 +349,15 @@ struct PlayerScreen: View {
             else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
             else if panel != nil { closePanel() }
             else if kidsLoading { finish(natural: false) }                   // the kid loader's Cancel (onCancel closes, no leave dialog)
-            else if noAudioWarning, engine == .native { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
-            else if showUpNextCard { cancelAutoNext() }                     // bp-up-next: Back is "Keep watching"
+            // (player/live device pass) bp-connecting pushBpBack(onCancel): Back on a slow start is its
+            // "Go back", not a chrome step and then "Leave the show?" over the card.
+            else if connectingShown { finish(natural: false) }
+            else if noAudioWarning, engine == .native, !failed { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
+            else if showUpNextCard, !failed { cancelAutoNext() }            // bp-up-next: Back is "Keep watching"
             else if focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
-            else if chrome { chrome = false }
+            // (player/live device pass) Only a transport that is on screen: behind an error card the
+            // flag could still be up, so the first Back did nothing the viewer could see.
+            else if chromeShown { chrome = false }
             else { requestClose() }
         }
         // use-player-media: a torrent served by the TV's engine belongs to this player while it is
@@ -471,9 +486,19 @@ struct PlayerScreen: View {
             if state == "error" { autoNextOnError() }
             // (bug pass 2) use-auto-end-exit.ts: a live channel's end reloads it.
             if state == "ended", isLive { liveEnded() }
+            // (player/live device pass) use-auto-retry.ts premature EOF.
+            if state == "ended", !isLive { truncatedEnd() }
+        }
+        // use-bp-player-chrome.ts: every keypress restarts the idle wait while the chrome is up
+        // ("without it the chrome walks out from under someone who is still pressing buttons").
+        // (player/live device pass) Moving the ring along the transport or the rail is a press too;
+        // only Select and the stage's arrows restarted it, so the chrome vanished mid-navigation.
+        .onChange(of: focus) { _, target in
+            if case .chip(_)? = target, chromeShown { scheduleHide() }
         }
         // A retry or the switch to mpv starts the stall wait over (review 31).
         .onChange(of: reloadToken) { _, _ in
+            endedEarly = nil
             openedAt = Date()
             // (player tracks pass) The new mpv starts with no shaders: the tick keyed the chain to the
             // picture's width only, so a Try again (or a live-style reload) at the same width never
@@ -794,6 +819,57 @@ struct PlayerScreen: View {
             guard !Task.isCancelled, !finishing, token == reloadToken, status.state == "ended" else { return }
             finish(natural: false)
         }
+    }
+
+    /// (player/live device pass) use-auto-retry.ts premature EOF (isTruncatedEnd): a stream that
+    /// ends well short of its length (the connection dropped and mpv played out its cache, or
+    /// AVPlayer's item ran out) sat frozen on its last frame with nothing on screen to press. It is
+    /// loaded once more, from where it stopped (reloadSource's resumeAt); a second early end shows
+    /// the source error card. Local files and live channels are left alone, as upstream does.
+    private func truncatedEnd() {
+        guard !isLive, !finishing, !playURL.isFileURL, let c = controller else { return }
+        let s = c.snapshot()
+        guard !PlaybackEnd.isNatural(position: s.position, duration: s.duration) else { return }
+        if !truncatedReloaded {
+            truncatedReloaded = true
+            reloadSame(from: s.position)
+            return
+        }
+        endedEarly = "The stream stopped before the end of the file."
+        hideTask?.cancel()
+    }
+
+    /// views/player.tsx reloadSource: the same source again from where it was (resumeAt > 5), a
+    /// live channel from its edge. (player/live device pass) Every Try again restarted at the
+    /// opening spot (0, or the resume point), so a film that failed an hour in began again.
+    /// Once the engine has failed the tick reads 0 from it, so the last saved spot stands in.
+    private func reloadSame(from position: Double? = nil) {
+        if !isLive {
+            let at = position ?? (snap.position > 0 ? snap.position : lastSavedPos)
+            if at > 5 { startAt = at }
+        }
+        status = MPVPlayerController.Status()
+        loadingSince = Date()
+        controller = nil
+        reloadToken += 1
+    }
+
+    /// The transport is on screen (the body's condition; Back puts it away first).
+    /// (player/live device pass) Not under the connecting card either: bp-connecting is an overlay
+    /// over the shell, and both drew on the same bottom band (title and transport showing through
+    /// "Connecting…", their chips focusable under it) from 2 s until the chrome timed out.
+    private var chromeShown: Bool {
+        chrome && !pipActive && !roomOpen && resumePending == nil && !leaveConfirm && !kidsLoading && !stillPrompt && !xrayOpen
+            && (panel == nil || panel == .anime4k) && !failed && !connectingShown
+    }
+
+    /// The stream failed: the engine's error, or a second early end (truncatedEnd).
+    private var failed: Bool { status.state == "error" || endedEarly != nil }
+
+    /// bp-connecting: a start that is taking a while (2 s on); a kid gets the sea loader instead.
+    private var connectingShown: Bool {
+        status.state == "loading" && !isKid && !isLive && !roomOpen && !pipActive && resumePending == nil && panel == nil && !leaveConfirm
+            && Date().timeIntervalSince(loadingSince) >= 2
     }
 
     /// use-auto-next-episode.ts: at a natural end the next episode follows unless the viewer chose
@@ -1237,11 +1313,11 @@ struct PlayerScreen: View {
                                 isLocalFile: playURL.isFileURL, focus: $focus,
                                 onCancel: { finish(natural: false) },
                                 // The connecting card's Try again (player.tsx onLoaderRetry reloads the same URL).
-                                onRetry: { status = MPVPlayerController.Status(); loadingSince = Date(); reloadToken += 1 })
+                                onRetry: { reloadSame() })
             .onAppear { focusLater(.chip("kids-cancel")) }
             // The ring goes back to the stage once the picture is up (the resume fork and the error
             // card seed their own).
-            .onDisappear { if resumePending == nil, status.state != "error", panel == nil, !finishing { focusLater(.surface) } }
+            .onDisappear { if resumePending == nil, !failed, panel == nil, !finishing { focusLater(.surface) } }
     }
 
     /// The loader's `S{season} · E{02}{ · name}` line.
@@ -1298,6 +1374,8 @@ struct PlayerScreen: View {
             TorrentEngine.shared.playerClosed(url: owned)
         }
         switched = SwitchedStream(url: next, headers: nextHeaders)
+        // use-auto-retry.ts resets its early-end reload per source.
+        truncatedReloaded = false
         status = MPVPlayerController.Status()
         loadingSince = Date()
         controller = nil
@@ -1375,15 +1453,15 @@ struct PlayerScreen: View {
                 .font(BP.sans(16)).foregroundStyle(BP.inkMuted).frame(maxWidth: BP.px(900), alignment: .leading)
             HStack(spacing: BP.px(10)) {
                 chip("Back", "chevron.backward", id: "live-back") { finish(natural: false) }
-                chip("Try again", "arrow.clockwise", id: "live-retry") { status = MPVPlayerController.Status(); loadingSince = Date(); controller = nil; reloadToken += 1 }
-                chip("Browse channels", "list.bullet.rectangle", id: "live-browse") { open(.channels) }
+                chip("Try again", "arrow.clockwise", id: "live-retry") { reloadSame() }
+                if liveGuide != nil { chip("Browse channels", "list.bullet.rectangle", id: "live-browse") { open(.channels) } }
             }
             .focusSection()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(BP.gutter).padding(.bottom, BP.px(20))
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.6), BP.void_.opacity(0.95)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
-        .onAppear { hideTask?.cancel(); focusLater(.chip("live-browse")) }
+        .onAppear { hideTask?.cancel(); focusLater(.chip(liveGuide != nil ? "live-browse" : "live-retry")) }
     }
 
     private func open(_ p: Panel) {
@@ -1415,7 +1493,7 @@ struct PlayerScreen: View {
             if elapsed >= 8 {
                 HStack(spacing: BP.px(10)) {
                     chip("Go back", "chevron.backward") { finish(natural: false) }
-                    chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); loadingSince = Date(); reloadToken += 1 }
+                    chip("Try again", "arrow.clockwise") { reloadSame() }
                     if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; finish(natural: false); go?(snap.position) } }
                 }
                 .focusSection()
@@ -1446,7 +1524,7 @@ struct PlayerScreen: View {
         // Not for kid profiles: X-Ray opens person pages with unfiltered filmographies (review 34; upstream doesn't gate it).
         guard SettingsBridge.shared.slice.xrayEnabled ?? false, !isKid, snap.paused, chrome || xrayOpen, let meta = context?.meta,
               panel == nil, !leaveConfirm, !roomOpen, resumePending == nil, !pipActive, !stillPrompt, !kidsLoading,
-              status.state != "error" else { return nil }
+              !failed else { return nil }
         return meta
     }
 
@@ -1518,8 +1596,21 @@ struct PlayerScreen: View {
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(Self.hideAfter))
-            if !Task.isCancelled, panel == nil, !roomOpen, !pipActive, !snap.paused { chrome = false; focus = .surface }
+            // (player/live device pass) Not under a fork, a prompt or an error card (upstream's
+            // `pinned`): the ring was pulled off "Keep watching" / "Leave" and the error card's
+            // choices onto the stage (a disabled one under the prompts), after any press woke it.
+            guard !Task.isCancelled, panel == nil, !roomOpen, !pipActive, !snap.paused,
+                  resumePending == nil, !leaveConfirm, !stillPrompt, !failed else { return }
+            chrome = false
+            // A card that stays up without the chrome (connecting, no audio, the kid loader) keeps its ring.
+            if !ringOnCard { focus = .surface }
         }
+    }
+
+    /// The ring is on a card that outlives the chrome.
+    private var ringOnCard: Bool {
+        guard case .chip(let id)? = focus else { return false }
+        return ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry"].contains(id)
     }
 
     private func fmt(_ s: Double) -> String {
@@ -1608,7 +1699,12 @@ struct PlayerScreen: View {
     private func acknowledgeResume(_ resume: Bool) {
         guard let sec = resumePending else { return }
         resumePending = nil
-        if resume, sec > 0 { controller?.seek(to: sec) }
+        if resume, sec > 0 {
+            controller?.seek(to: sec)
+            // (player/live device pass) The engine opened at 0 under the fork: a Try again, the move
+            // to mpv or an early-end reload started from there instead of the spot just resumed.
+            startAt = sec
+        }
         controller?.setPaused(false)
         focus = .surface
         scheduleHide()
@@ -1743,7 +1839,7 @@ struct PlayerScreen: View {
                 Text("Harbor couldn't play this source").font(BP.display(30)).foregroundStyle(BP.ink)
             }
             Text("The source responded but the stream would not open. Try a different one.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
-            if let e = status.error { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+            if let e = endedEarly ?? status.error { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
             HStack(spacing: BP.px(10)) {
                 if onChooseAnother != nil {
                     chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false); go?() }
@@ -1751,7 +1847,7 @@ struct PlayerScreen: View {
                 // (bug pass) Like the other retries: the connecting card's clock starts over (it
                 // otherwise came up at once with the first open's elapsed time and "Still looking"),
                 // and the torn-down engine is no longer read by the tick until the new one is ready.
-                chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); loadingSince = Date(); controller = nil; reloadToken += 1 }
+                chip("Try again", "arrow.clockwise") { reloadSame() }
                 // header-warning.tsx onUseMpv: the forced native engine could not open it; mpv can try.
                 if engine == .native { chip("Use mpv engine", "play.rectangle") { useMpvEngine() } }
                 chip("Back", "chevron.backward") { finish(natural: false) }

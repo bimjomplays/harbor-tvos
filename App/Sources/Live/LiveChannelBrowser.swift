@@ -199,7 +199,22 @@ struct LivePlayerGuidePanel: View {
 
     @State private var group: String?
     @State private var query = ""
-    @State private var defaulted = false
+
+    /// overlay.tsx defaultedGroupRef: open on the playing channel's group, else Favorites.
+    /// (player/live device pass) Chosen before the first render: set in onAppear it came after the
+    /// list had already scrolled to the playing channel in All channels and asked for its ring, so
+    /// the swap to the group's list left the ring short of the playing channel (or off the list).
+    @MainActor
+    init(model: LiveModel, current: LiveModel.Channel?, onPick: @escaping (LiveModel.Channel) -> Void, onClose: @escaping () -> Void) {
+        _model = ObservedObject(wrappedValue: model)
+        self.current = current
+        self.onPick = onPick
+        self.onClose = onClose
+        var start: String? = nil
+        if let g = current?.group, model.groups.contains(where: { $0.name == g }) { start = g }
+        else if model.channels.contains(where: \.favorite) { start = LiveChannelBrowser.favKey }
+        _group = State(initialValue: start)
+    }
 
     private var groupNames: [String] { model.groups.map(\.name) }
 
@@ -233,13 +248,6 @@ struct LivePlayerGuidePanel: View {
         .padding(.horizontal, BP.gutter).padding(.top, BP.px(40))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(BP.canvas.opacity(0.95).ignoresSafeArea())
-        .onAppear {
-            // overlay.tsx defaultedGroupRef: open on the playing channel's group, else Favorites.
-            guard !defaulted else { return }
-            defaulted = true
-            if let g = current?.group, groupNames.contains(g) { group = g }
-            else if model.channels.contains(where: \.favorite) { group = LiveChannelBrowser.favKey }
-        }
     }
 }
 
