@@ -47,6 +47,10 @@ final class LibraryModel: ObservableObject {
     /// (device-flow pass 6) Starts true: the page's first frame (before `.task` starts the first
     /// read) shows the spinner, so a first read that fails can say so instead of leaving a blank page.
     @Published private(set) var loading = true
+    /// (open-items sweep 2) The read running is a Refresh (force), which bp-library's reload shows
+    /// as loading again (first = status "loading" with no entries). Other re-reads (a cover closing
+    /// runs `.task` again, a filter pick) keep the tab's empty copy: it flashed "Loading…" each time.
+    @Published private(set) var refreshing = false
     @Published var tab = "library"
     @Published var type = "all"
     @Published var sort = "recent"
@@ -128,7 +132,13 @@ final class LibraryModel: ObservableObject {
         generation += 1
         let mine = generation
         loading = true
-        defer { if mine == generation { loading = false } }
+        refreshing = force
+        defer {
+            if mine == generation {
+                loading = false
+                refreshing = false
+            }
+        }
         let p = profile
         var fields: [String: AnyJSON] = [
             "tab": .string(tab), "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,
@@ -788,7 +798,9 @@ struct LibraryView: View {
     // of an empty-tab line under the error.
     private func emptyState(_ f: LibraryModel.Feed) -> some View {
         let text: String
-        if model.loading { text = "Loading…" }
+        // (open-items sweep 2) bp-library `first`: only a read the viewer asked for (Refresh) says
+        // Loading over an empty tab; the first read of a tab has no feed yet and shows the spinner.
+        if model.loading && model.refreshing { text = "Loading…" }
         else if f.status == "error" { text = errorText }
         else if f.total > 0 || !model.query.isEmpty || narrowed { text = "No matches for these filters." }
         else {

@@ -7,6 +7,10 @@ struct KidsFranchiseView: View {
     @StateObject private var model: KidsFranchiseModel
     @State private var detail: Meta?
     @Environment(\.dismiss) private var dismiss
+    /// (open-items sweep 2) The card under the ring, and the last one it was on, so a dock that goes
+    /// from under the ring (Stop and close player) hands it back to the grid.
+    @FocusState private var cardFocus: String?
+    @State private var lastCard: String?
 
     init(franchise: KidsModel.Franchise) {
         _model = StateObject(wrappedValue: KidsFranchiseModel(franchise: franchise))
@@ -25,7 +29,7 @@ struct KidsFranchiseView: View {
         }
         // App.tsx's music-dock.tsx is over the kids "grid" view too (KidsDetailView carries the
         // same dock): this cover hides the shell's.
-        .musicDock()
+        .musicDock(ringTo: { cardFocus = lastCard ?? model.metas.first?.id })
         .background(KidsTheme.canvas.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .task { await model.start() }
@@ -85,9 +89,11 @@ struct KidsFranchiseView: View {
                         .buttonStyle(KidsCardStyle(radius: BP.px(18), onFocus: {
                             if !model.done, i >= model.metas.count - Self.columns * 2 { Task { await model.more() } }
                         }))
+                        .focused($cardFocus, equals: m.id)
                 }
             }
             .focusSection()
+            .onChange(of: cardFocus) { _, id in if let id { lastCard = id } }
         }
     }
 }

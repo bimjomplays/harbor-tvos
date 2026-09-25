@@ -150,7 +150,8 @@ struct ShellView: View {
         case .calendar:
             CalendarView()
         case .live:
-            LiveView()
+            // bp-view-state liveCategory: the chip picked last is where Live TV opens again.
+            LiveView(views: app.views)
         case .collections:
             CollectionsView()
         case .sports:

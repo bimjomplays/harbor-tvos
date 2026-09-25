@@ -58,7 +58,12 @@ final class LiveModel: ObservableObject {
     /// a guide note that lands late swaps the grid for the list under the ring, and the list rings it.
     var guideFocusChannel: String?
 
-    init(sourcesOnly: Bool = false) { self.sourcesOnly = sourcesOnly }
+    /// `category`: the chip to open on (ShellViewState.liveCategory, bp-view-state); a key the
+    /// source's channels do not carry falls back to All when they load.
+    init(sourcesOnly: Bool = false, category: String = LiveModel.allKey) {
+        self.sourcesOnly = sourcesOnly
+        self.category = category
+    }
 
     /// (live sources device pass) The chosen category's channels and ids, built once per change of
     /// channels / chip / rails instead of on every render: a group chip re-filtered the whole
@@ -439,7 +444,16 @@ final class LiveModel: ObservableObject {
 }
 
 struct LiveView: View {
-    @StateObject private var model = LiveModel()
+    @StateObject private var model: LiveModel
+    /// (open-items sweep 2) The shell's store: bp-view-state's liveCategory (bp-live.tsx
+    /// useBpPersistedState("liveCategory")). The room is built afresh on every tab switch, so the
+    /// chip came back on All after every visit to another tab.
+    private let views: ShellViewState
+
+    init(views: ShellViewState) {
+        self.views = views
+        _model = StateObject(wrappedValue: LiveModel(category: views.liveCategory))
+    }
     @State private var playing: LiveModel.Channel?
     @State private var replaying: Replay?
     struct Replay: Identifiable { var id: String { url }; var channel: LiveModel.Channel; var program: LiveModel.Program; var url: String; var headers: [String: String] }
@@ -531,6 +545,12 @@ struct LiveView: View {
         }
     }
 
+    /// bp-live setKey (useBpPersistedState): a chip the viewer picks is kept for the next visit.
+    private func pick(_ key: String) {
+        model.category = key
+        views.liveCategory = key
+    }
+
     private func open(_ ch: LiveModel.Channel) {
         // (live sources device pass) A second Select while the cover is still coming up is ignored.
         guard playing == nil, replaying == nil else { return }
@@ -599,7 +619,7 @@ struct LiveView: View {
                 // bp-live-filters: star on Favorites, a flag on country groups, no count at zero.
                 ForEach(model.categories, id: \.key) { c in
                     Button {
-                        model.category = c.key
+                        pick(c.key)
                         Task { await model.refreshNowNext() }
                     } label: {
                         HStack(spacing: BP.px(6)) {
@@ -626,7 +646,7 @@ struct LiveView: View {
                 if let group = model.currentGroup {
                     Button("Hide group") {
                         bandFocus = "chip:" + LiveModel.allKey
-                        model.category = LiveModel.allKey
+                        pick(LiveModel.allKey)
                         Task { await model.toggleGroupHidden(group) }
                     }
                     .buttonStyle(BPActionStyle())
@@ -706,7 +726,7 @@ struct LiveView: View {
                 .frame(maxWidth: BP.px(620))
             Button(action) {
                 if failed { Task { await model.loadChannels(force: true) } }
-                else if favorites { model.category = LiveModel.allKey }
+                else if favorites { pick(LiveModel.allKey) }
                 else { showSources = true }
             }
             .buttonStyle(BPActionStyle(primary: true, busy: failed && model.loading))

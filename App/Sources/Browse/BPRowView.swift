@@ -20,6 +20,10 @@ struct BPRowView: View {
     /// use-bp-focus toNav: Left at the start of the row (Right under RTL) takes the ring to the top
     /// bar. Only rail rows pass it (a room's rows, where the bar is right above); nil does nothing.
     var onNavEdge: (() -> Void)? = nil
+    /// (open-items sweep 2) The row's See all chip gained (true) or lost (false) the ring. It counts
+    /// in onHold (the row holds the ring) but is not a tile: use-bp-hero-cycle cardFocused() holds
+    /// the hero only on a [data-bp-tile], so Home's cycle keeps turning on See all.
+    var onSeeAllHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var seeAllFocused: Bool
     /// Bumped to bring the last cell into existence (the track is lazy) before the ring goes there.
@@ -131,6 +135,7 @@ struct BPRowView: View {
         // ring there: Home's band let go (the spotlight crossfaded back in over a services or addons
         // row) and the rail dropped the row's zIndex, then both came back on Left.
         .onChange(of: focusedId != nil || seeAllFocused) { _, held in onHold?(held) }
+        .onChange(of: seeAllFocused) { _, on in onSeeAllHold?(on) }
     }
 }
 
@@ -151,6 +156,8 @@ struct BPRailView<Lead: View>: View {
     var restoreRoute: String? = nil
     var entry: BPRestore.Position? = nil
     var onHold: ((String, Bool) -> Void)? = nil
+    /// (open-items sweep 2) A row's See all chip gained or lost the ring (BPRowView onSeeAllHold).
+    var onSeeAllHold: ((String, Bool) -> Void)? = nil
     /// A lead row (Continue Watching, Live, the anime hero actions) holds focus.
     var leadHeld = false
     /// bp-row data-bp-row-tab: the tab a row belongs to, where Left at its start lands the ring
@@ -220,7 +227,8 @@ struct BPRailView<Lead: View>: View {
                                       if held { heldRow = row.key } else if heldRow == row.key { heldRow = nil }
                                       onHold?(row.key, held)
                                   },
-                                  onNavEdge: navEdge(row))
+                                  onNavEdge: navEdge(row),
+                                  onSeeAllHold: { on in onSeeAllHold?(row.key, on) })
                             .id(row.key)
                             .background(alignment: .top) {
                                 // The park marker: parkOffset above the row's top edge.

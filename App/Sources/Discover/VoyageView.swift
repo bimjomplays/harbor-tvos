@@ -14,6 +14,9 @@ struct VoyageView: View {
     @State private var playing: PlayTarget?
     @FocusState private var focus: String?
     @State private var retrying = false
+    /// (open-items sweep 2) The control the ring was on when a film was started (a route slot, Play),
+    /// so Back from it returns there (bp-restore: the cell the route was left from).
+    @State private var playedFrom: String?
     struct PlayTarget: Identifiable { var meta: Meta; var autoPlay: Bool; var id: String { meta.id } }
 
     private var accent: Color { model.active.flatMap { Color(oklch: $0.accent) } ?? BP.accent }
@@ -57,7 +60,11 @@ struct VoyageView: View {
             // (The pick itself settles focus as soon as it shows, before the refinement lands; review 33.)
             if let f = focus, f.hasPrefix("heading-"), !ids.contains(String(f.dropFirst(8))) { settleFocus() }
         }
-        .fullScreenCover(item: $playing, onDismiss: { Task { await model.refresh(); settleFocus() } }) { t in
+        .fullScreenCover(item: $playing, onDismiss: {
+            let from: String? = playedFrom
+            playedFrom = nil
+            Task { await model.refresh(); settleFocus(keep: from) }
+        }) { t in
             DetailView(meta: t.meta, autoPlay: t.autoPlay)
         }
     }
@@ -324,6 +331,7 @@ struct VoyageView: View {
     /// voyage-route.tsx play(): a movie opens on its title page and starts (openPicker autoPlay +
     /// resume); anything else opens its title page.
     private func play(_ meta: Meta) {
+        playedFrom = focus
         playing = PlayTarget(meta: meta, autoPlay: meta.type == "movie")
     }
 
@@ -334,10 +342,15 @@ struct VoyageView: View {
         if let first { play(first) }
     }
 
-    /// Lands focus on the panel's main control after the state moved on.
-    private func settleFocus() {
+    /// Lands focus on the panel's main control after the state moved on. `keep`: (open-items sweep 2)
+    /// the route slot a film was started from, which takes the ring back while it is still a
+    /// playable slot (Back from a slot's film put the ring on Play).
+    private func settleFocus(keep: String? = nil) {
         let target: String?
-        if let a = model.active {
+        let slots: [VoyageModel.Slot] = (model.active?.sailing ?? false) ? (model.active?.slots ?? []) : []
+        if let keep, keep.hasPrefix("slot-"), slots.contains(where: { "slot-\($0.index)" == keep && $0.meta != nil }) {
+            target = keep
+        } else if let a = model.active {
             if a.sailing { target = a.next != nil ? "play-next" : "start-another" }
             else if a.ready { target = "start-voyage" }
             else if a.stuck { target = a.picked > 0 ? "start-these" : "wrap-up" }

@@ -178,6 +178,14 @@ final class CollectionsModel: ObservableObject {
 
     func set(category c: String) { category = c; Task { await loadTmdb(reset: true) } }
 
+    /// (open-items sweep 2) bp-view-state collectionSource / collectionCategory: the chips picked
+    /// on the last visit (ShellViewState), set before the first load so it walks them.
+    func restore(source s: String, category c: String) {
+        guard !loaded, !loading else { return }
+        source = s
+        category = c
+    }
+
     /// (collections offline pass) use-bp-collection-feed's sentinel: a pull that added nothing
     /// leaves the sentinel in view, so the feed pulls again (at most AUTO_PULLS more times). The TV
     /// pulls when the last card appears, and a pull that added nothing makes no new last card, so
@@ -358,7 +366,16 @@ struct CollectionsView: View {
         }
         // (bug pass) `.task` re-runs whenever a title's cover closes (and on every return to the
         // tab): a full load reset the TMDB / TVDB grid each time. Later passes refresh "Mine" only.
-        .task { if model.loaded || model.loading { await model.reloadMine() } else { await model.load() } }
+        .task {
+            if model.loaded || model.loading { await model.reloadMine(); return }
+            // (open-items sweep 2) bp-collections useBpPersistedState("collectionSource" /
+            // "collectionCategory"): the room is built afresh on every tab switch and came back on
+            // All each time.
+            model.restore(source: app.views.collectionSource, category: app.views.collectionCategory)
+            await model.load()
+        }
+        .onChange(of: model.source) { _, s in app.views.collectionSource = s }
+        .onChange(of: model.category) { _, c in app.views.collectionCategory = c }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .animation(BP.easeFast, value: open?.key)
         // (review 12) The overlay keeps the focus while it is up: the shell's bar takes none and LB/RB

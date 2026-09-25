@@ -29,7 +29,9 @@ struct KidsShellView: View {
             // a kid keeps its dock and Now Playing here. The shell ignores the safe area, so the dock
             // keeps the TV's bottom inset itself.
             KidsView(openPlay: openPlay)
-                .musicDock(bottomPadding: BP.px(60))
+                // (open-items sweep 2) Stop and close player took the dock from under the ring: the
+                // page's default (KidsView's rail) takes it, not tvOS's reset.
+                .musicDock(bottomPadding: BP.px(60), ringTo: { ShellFocus.shared.requestDefault() })
                 .disabled(pinUp)
             KidsTopBar(onPlay: openPlay, onSwitch: requestSwitch, chipFocus: $chipFocused)
                 .disabled(pinUp)

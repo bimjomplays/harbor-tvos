@@ -98,6 +98,7 @@ struct RoomView: View {
                            }, topInset: heroHeight,
                            restoreRoute: model.restoreKey, entry: model.entry,
                            onHold: { key, held in model.hold(key, held) },
+                           onSeeAllHold: { key, on in model.seeAllHold(key, on) },
                            leadHeld: cwHeld || animeActionsHeld || liveHot != nil,
                            rowTab: { row in Self.navTab(for: row, home: model.isHomePage) }) {
                     if model.room == .anime, let lead = model.heroLead {

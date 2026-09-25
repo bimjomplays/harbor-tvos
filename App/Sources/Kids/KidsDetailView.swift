@@ -174,7 +174,8 @@ struct KidsDetailView: View {
         // (KidsDetailView under a kid): the dock stays while a track is loaded (music-dock.tsx
         // visible unless the top is the player or the picker). This page is a cover over the kids
         // shell, whose dock it hides, so it carries its own; the canvas is laid under both.
-        .musicDock()
+        // (open-items sweep 2) Stop and close player took the dock from under the ring: Play takes it.
+        .musicDock(ringTo: { playFocused = true })
         .background(KidsTheme.canvas.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .task {

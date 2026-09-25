@@ -25,6 +25,11 @@ struct TogetherToastHost: View {
     @State private var opening: TogetherOpen?
     @State private var chatShown: TogetherModel.ChatMessage?
     @State private var summonDetail: Meta?
+    /// (open-items sweep 2) The ring is on the invite card's buttons (TogetherInviteCard onRing).
+    @State private var inviteRing = false
+    /// (open-items sweep 2) A title page opened from the toast while it held the ring (Join, Sure,
+    /// or the 4 s running out under it): the room takes the ring back when that page closes.
+    @State private var ringInCover = false
 
     // together-invite-toast.tsx AUTO_JOIN_MS / together-chat-toast.tsx VISIBLE_MS
     private static let autoJoinS = 4.0
@@ -55,8 +60,28 @@ struct TogetherToastHost: View {
             }
         }
         .onChange(of: opening != nil || summonDetail != nil) { _, up in onCover?(up) }
-        .fullScreenCover(item: $opening) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
-        .fullScreenCover(item: $summonDetail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $opening, onDismiss: { coverClosed() }) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
+        .fullScreenCover(item: $summonDetail, onDismiss: { coverClosed() }) { m in DetailView(meta: m) }
+    }
+
+    // MARK: ring
+
+    /// (open-items sweep 2) The toast held the ring and went (Dismiss, or a title page it opened
+    /// closed): the button under the ring was gone and tvOS dropped it wherever it resets focus.
+    /// Upstream's toasts sit outside the Big Picture focus scope, so the ring mark never leaves the
+    /// room, and use-bp-focus's focusout recovery (bp-focus-core recoverBpFocus: the marked cell,
+    /// else the scope's autofocus seed) puts it back there. The TV hands it to the room's default,
+    /// as a room's own first-focus seed does (ShellFocus.requestDefault). The room screen's host
+    /// keeps its own hand-offs.
+    private func handRingToRoom() {
+        guard !inRoomScreen else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ShellFocus.shared.requestDefault() }
+    }
+
+    private func coverClosed() {
+        guard ringInCover else { return }
+        ringInCover = false
+        handRingToRoom()
     }
 
     // MARK: invite
@@ -87,12 +112,14 @@ struct TogetherToastHost: View {
         let start = inviteStarted ?? now
         if inviteStarted == nil { inviteStarted = start }
         progress = min(1, (now - start) / Self.autoJoinS)
-        if progress >= 1 { join(inv) }
+        if progress >= 1 { join(inv, pressed: false) }
     }
 
-    private func join(_ inv: TogetherModel.IncomingInvite) {
+    private func join(_ inv: TogetherModel.IncomingInvite, pressed: Bool) {
         handledInviteAt = inv.at
         inviteStarted = nil
+        if pressed || inviteRing { ringInCover = true }
+        inviteRing = false
         let i = inv.invite
         let meta = Meta(id: i.mediaId, type: i.mediaType, name: i.mediaTitle, poster: i.posterUrl, background: i.backgroundUrl, logo: i.logoUrl, releaseInfo: i.releaseInfo)
         opening = TogetherOpen(meta: meta, episode: i.episode, guestPick: i.guestPick == true)
@@ -100,8 +127,14 @@ struct TogetherToastHost: View {
     }
 
     private func inviteToast(_ inv: TogetherModel.IncomingInvite) -> some View {
-        TogetherInviteCard(invite: inv, progress: progress, onJoin: { join(inv) },
-                           onDismiss: { handledInviteAt = inv.at; room.dismiss("invite") })
+        TogetherInviteCard(invite: inv, progress: progress, onJoin: { join(inv, pressed: true) },
+                           onDismiss: {
+                               handledInviteAt = inv.at
+                               room.dismiss("invite")
+                               inviteRing = false
+                               handRingToRoom()
+                           },
+                           onRing: { inviteRing = $0 })
     }
 
     // MARK: summon (together-summon-toast.tsx)
@@ -114,10 +147,14 @@ struct TogetherToastHost: View {
             if let id = s.target.mediaId {
                 Button("Sure") {
                     summonDetail = Meta(id: id, type: s.target.mediaType ?? "movie", name: s.target.mediaTitle ?? "", poster: s.target.posterUrl, background: s.target.backgroundUrl)
+                    ringInCover = true
                     room.dismiss("summon")
                 }.buttonStyle(BPActionStyle(primary: true))
             }
-            Button("Dismiss") { room.dismiss("summon") }.buttonStyle(BPActionStyle())
+            Button("Dismiss") {
+                room.dismiss("summon")
+                handRingToRoom()
+            }.buttonStyle(BPActionStyle())
         }
         .padding(BP.px(12))
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
@@ -181,6 +218,10 @@ struct TogetherInviteCard: View {
     let progress: Double
     let onJoin: () -> Void
     let onDismiss: () -> Void
+    /// (open-items sweep 2) Told when the ring comes onto the card's buttons or leaves them (the
+    /// shell's host hands the ring back to the room when the card goes from under it).
+    var onRing: ((Bool) -> Void)? = nil
+    @FocusState private var ring: Int?
 
     var body: some View {
         let i: TogetherModel.PlayInvite = invite.invite
@@ -197,7 +238,9 @@ struct TogetherInviteCard: View {
                     if let ep { Text(ep).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
                 }
                 Button { onJoin() } label: { Image(systemName: "arrow.forward") }.buttonStyle(BPActionStyle(primary: true)).accessibilityLabel(joinLabel)
+                    .focused($ring, equals: 0)
                 Button { onDismiss() } label: { Image(systemName: "xmark") }.buttonStyle(BPActionStyle()).accessibilityLabel(T("Dismiss"))
+                    .focused($ring, equals: 1)
             }
             .padding(BP.px(12))
             GeometryReader { g in Rectangle().fill(BP.accent).frame(width: g.size.width * progress) }.frame(height: BP.px(3))
@@ -206,6 +249,7 @@ struct TogetherInviteCard: View {
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
         .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
         .focusSection()
+        .onChange(of: ring) { _, r in onRing?(r != nil) }
     }
 }
 

@@ -54,6 +54,8 @@ final class BrowseModel: ObservableObject {
     private var heroTask: Task<Void, Never>?
     private var cardFocused = false
     private var heldRows: Set<String> = []
+    /// (open-items sweep 2) Rows whose See all chip holds the ring (seeAllHold).
+    private var seeAllRows: Set<String> = []
 
     private var unsubscribe: (() -> Void)?
     private var refreshTask: Task<Void, Never>?
@@ -169,6 +171,7 @@ final class BrowseModel: ObservableObject {
             let keys = Set(live.map(\.key))
             let cwShown = !continueWatching.isEmpty
             heldRows = heldRows.filter { $0 == "cw" ? cwShown : keys.contains($0) }
+            seeAllRows = seeAllRows.filter { keys.contains($0) }
             tileHeld = !heldRows.isEmpty
             // A stale spotlight (from the cache, or a title that fell off the rows) resets.
             let known = Set(live.flatMap { $0.metas.map(\.id) })
@@ -239,6 +242,13 @@ final class BrowseModel: ObservableObject {
         if tileHeld != !heldRows.isEmpty { tileHeld = !heldRows.isEmpty }
     }
 
+    /// (open-items sweep 2) A row's See all chip holds the ring. The row still counts as held (the
+    /// band and the rail follow it), but the cycle turns on: use-bp-hero-cycle cardFocused() asks
+    /// for a [data-bp-tile] under the ring, and See all is not one (the hero paused there).
+    func seeAllHold(_ rowKey: String, _ held: Bool) {
+        if held { seeAllRows.insert(rowKey) } else { seeAllRows.remove(rowKey) }
+    }
+
     /// Home is hidden: the saver or the curfew lock is up, the app is in the background, or a
     /// cover (the player, a Detail page, the account menu) is presented over the main window.
     /// Not while PiP browsing (PiPBrowse): the layer runs its own Home above the player's cover,
@@ -270,7 +280,8 @@ final class BrowseModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(7))
                 guard let self, !Task.isCancelled else { return }
                 if UIAccessibility.isReduceMotionEnabled { self.heroCount = 0; return }
-                guard self.heldRows.isEmpty else { continue }
+                // (open-items sweep 2) A row held by its See all chip alone does not hold the cycle.
+                guard self.heldRows.subtracting(self.seeAllRows).isEmpty else { continue }
                 // (perf/memory pass) Nobody sees Home under the player, a Detail page or any other
                 // cover, the screensaver or the curfew lock: each turn there re-rendered Home and
                 // decoded a new 1920 px backdrop behind the video. It picks up again on return.

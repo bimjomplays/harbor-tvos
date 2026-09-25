@@ -407,13 +407,24 @@ struct MusicDockView: View {
 struct MusicDockHost: ViewModifier {
     /// Extra room under the dock where the host ignores the safe area (the kids shell).
     var bottomPadding: CGFloat = 0
+    /// (open-items sweep 2) Where the ring goes when the dock went from under it: Now Playing's
+    /// "Stop and close player" (MusicPlayer.close, the only way the loaded track goes) closes the
+    /// dock the ring opened it from, and tvOS dropped the ring wherever it resets focus. Upstream's
+    /// use-bp-focus recovers into the page (bp-focus-core recoverBpFocus: the marked cell, else the
+    /// page's autofocus seed); each host names its neighbour (nil: tvOS's default, as before).
+    var ringTo: (() -> Void)? = nil
     @State private var nowPlayingOpen = false
     func body(content: Content) -> some View {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 MusicDockSlot(bottomPadding: bottomPadding, onExpand: { nowPlayingOpen = true })
             }
-            .fullScreenCover(isPresented: $nowPlayingOpen) { MusicNowPlayingView() }
+            .fullScreenCover(isPresented: $nowPlayingOpen, onDismiss: { dockClosed() }) { MusicNowPlayingView() }
+    }
+
+    private func dockClosed() {
+        guard MusicPlayer.shared.current == nil, let hand = ringTo else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { hand() }
     }
 }
 
@@ -434,7 +445,9 @@ private struct MusicDockSlot: View {
 }
 
 extension View {
-    func musicDock(bottomPadding: CGFloat = 0) -> some View { modifier(MusicDockHost(bottomPadding: bottomPadding)) }
+    func musicDock(bottomPadding: CGFloat = 0, ringTo: (() -> Void)? = nil) -> some View {
+        modifier(MusicDockHost(bottomPadding: bottomPadding, ringTo: ringTo))
+    }
 }
 
 /// Elapsed / bar / length (music-dock.tsx time part).

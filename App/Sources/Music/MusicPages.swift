@@ -76,7 +76,8 @@ struct MusicPageView: View {
                 .padding(.top, BP.px(60))
             }
         }
-        .musicDock()
+        // (open-items sweep 2) Stop and close player took the dock from under the ring: Play takes it.
+        .musicDock(ringTo: { if data?.tracks.isEmpty == false { playFocused = true } })
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
         // (bug pass 3) Once per page: `.task` runs again whenever a cover over it closes (an album
@@ -229,6 +230,8 @@ struct MusicSearchView: View {
     @ObservedObject private var copy = MusicCopy.shared
     @State private var page: MusicPageTarget?
     @State private var phoneOpen = false
+    /// (open-items sweep 2) "Type on your phone", the keyboard column's last stop above the dock.
+    @FocusState private var phoneFocused: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -247,6 +250,7 @@ struct MusicSearchView: View {
                                    onClear: { model.query = "" })
                     Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
                         .buttonStyle(BPActionStyle())
+                        .focused($phoneFocused)
                     if model.searching { ProgressView() }
                     if let error = model.error {
                         // music-search-panel.tsx MusicSectionError onRetry (on one line: the
@@ -264,7 +268,9 @@ struct MusicSearchView: View {
                 results
             }
         }
-        .musicDock()
+        // (open-items sweep 2) Stop and close player took the dock from under the ring: the keyboard
+        // column's stop above the dock takes it.
+        .musicDock(ringTo: { phoneFocused = true })
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
         .fullScreenCover(item: $page) { t in MusicPageView(target: t) }
