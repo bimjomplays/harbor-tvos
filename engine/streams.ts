@@ -27,6 +27,7 @@ import { hasUncachedMarker } from "@/lib/streams/cached";
 import { persistEffective } from "@/lib/settings/profile-store";
 import { markSettingsPatched } from "./sync";
 import { titleTokensPresent } from "@/lib/streams/trust";
+import { isAddonRanked } from "@/lib/streams/addon-detect";
 import { isStreamDead } from "@/lib/dead-streams";
 import { readPlayback, savePlayback, streamMatchesEntry, streamMatchesSource } from "@/lib/playback-history";
 import { readSeasonLock, saveSeasonLock } from "@/lib/season-lock";
@@ -107,6 +108,8 @@ export type StreamSearch = {
   debridCount?: number;
   /** use-bp-stream-play seasonLock: same-source retries also run during auto-fire. */
   seasonLock?: boolean;
+  /** bp-stream-filters sortForced (anyAddonRanked): an AIOStreams-style addon ranks its own list. */
+  addonRanked?: boolean;
   result: PipelineResult | null;
   error?: string;
 };
@@ -147,7 +150,7 @@ export async function search(
       (partial) => {
         if (ac.signal.aborted || partial.picker.all.length === 0) return;
         stampAddonOrder(partial.picker.all, partial.raw.addon);
-        stampPickerRows(partial.picker.all, settings, meta, episode);
+        stampPickerRows(partial.picker.all, settings, meta, episode, input.debrids);
         lastResults.set(token, partial);
         shims.events.emit("harbor-tvos:streams", { token, phase: "partial", picker: partial.picker, rejected: partial.rejected.length, debridErrors: partial.debridErrors ?? [] });
       },
@@ -161,10 +164,10 @@ export async function search(
     // search's lastResults: resolve / deadRef / autoCandidates index into them.
     if (ac.signal.aborted) return { token, imdb, streamIds, addonCount: addons.length, result: null, error: "aborted" };
     stampAddonOrder(result.picker.all, result.raw.addon);
-    stampPickerRows(result.picker.all, settings, meta, episode);
+    stampPickerRows(result.picker.all, settings, meta, episode, input.debrids);
     lastResults.set(token, result);
     const seasonLock = !!settings.seasonSourceLock && (meta.type === "series" || /^(kitsu|mal|anilist|anidb):/.test(meta.id));
-    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock };
+    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock, addonRanked: addons.some((a) => isAddonRanked(a)) };
   } catch (e) {
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {
@@ -221,12 +224,22 @@ export type SavedStreamFilter = { id: string; name: string; empty: boolean };
  * bp-stream-filters.ts customFilters / activeFilterId: the saved filters (synced from the desktop's
  * Stream filters panel) and the active one. `activeId` is null unless it names a saved filter.
  */
-export function streamFilters(profileId: string, linked: boolean): { filters: SavedStreamFilter[]; activeId: string | null } {
+export function streamFilters(profileId: string, linked: boolean): { filters: SavedStreamFilter[]; activeId: string | null; sort: "harbor" | "addon" } {
   const s = loadEffective(profileId, linked);
   const list = Array.isArray(s.customStreamFilters) ? s.customStreamFilters : [];
   const filters = list.map((f) => ({ id: f.id, name: (f.name ?? "").trim(), empty: isFilterEmpty(f) }));
   const activeId = filters.some((f) => f.id === s.activeStreamFilterId) ? s.activeStreamFilterId : null;
-  return { filters, activeId };
+  // settings.streamSort (defaults.ts "addon"; load.ts moves an old "harbor" to "addon" once).
+  return { filters, activeId, sort: s.streamSort === "harbor" ? "harbor" : "addon" };
+}
+
+/** bp-stream-filters setSort: update({ streamSort }). */
+export function setStreamSort(profileId: string, linked: boolean, sort: string): "harbor" | "addon" {
+  const s = loadEffective(profileId, linked);
+  const next: "harbor" | "addon" = sort === "harbor" ? "harbor" : "addon";
+  persistEffective({ ...s, streamSort: next }, profileId, linked);
+  markSettingsPatched(["streamSort"]);
+  return next;
 }
 
 /** bp-stream-filters setActiveFilterId: update({ activeStreamFilterId: id }). */
@@ -243,13 +256,19 @@ export function setActiveStreamFilter(profileId: string, linked: boolean, id: st
  * (pickerRowText) and `tvFilters`, the ids of the saved filters the stream passes
  * (matchesCustomFilter; an empty filter passes everything, as bp-stream-filters ignores it).
  * The picker narrows by the active id with upstream's fallback when nothing passes.
+ * (Bug pass) `tvCached` is use-bp-streams isCached (picker-utils streamIsCached): a debrid-resolved
+ * link from Torrentio+RD, Comet, MediaFusion or AIOStreams has no `cached` entry (only hashes are
+ * cache-checked), so the TV's own "any cached[] true" read left those unbadged, sorted behind
+ * torrents, and hidden by the Cached chip. `tvSort` carries the flags bp-stream-filters sorts by.
  */
-export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: Meta, episode: PlayEpisode | null): void {
+export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: Meta, episode: PlayEpisode | null, debrids: DebridStore[] = debridsFor(settings)): void {
   const filters = Array.isArray(settings.customStreamFilters) ? settings.customStreamFilters : [];
   for (const s of all) {
-    const out = s as ScoredStream & { tvRow?: PickerRowText; tvFilters?: string[] };
+    const out = s as ScoredStream & { tvRow?: PickerRowText; tvFilters?: string[]; tvCached?: boolean; tvSort?: { watchHub: boolean; needsDownload: boolean; instant: boolean } };
     out.tvRow = pickerRowText(s, meta.name, episode);
     out.tvFilters = filters.filter((f) => isFilterEmpty(f) || matchesCustomFilter(s, f)).map((f) => f.id);
+    out.tvCached = streamIsCached(s, debrids);
+    out.tvSort = { watchHub: isWatchHub(s), needsDownload: needsDownload(s), instant: hasInstantMarker(s) };
   }
 }
 

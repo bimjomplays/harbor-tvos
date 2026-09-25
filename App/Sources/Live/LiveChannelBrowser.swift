@@ -26,6 +26,8 @@ struct LiveChannelBrowser: View {
     /// channel-picker.tsx RENDER_CAP; the player guide virtualises instead, so it shows every row.
     private static let renderCap = 240
     @FocusState private var focused: String?
+    /// Channels whose now/next was asked for by a row coming on screen.
+    @State private var asked: Set<String> = []
 
     private var favoriteCount: Int { channels.filter(\.favorite).count }
 
@@ -59,7 +61,11 @@ struct LiveChannelBrowser: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVStack(alignment: .leading, spacing: BP.px(6)) {
-                                ForEach(shown) { ch in row(ch).id(ch.id) }
+                                ForEach(Array(shown.enumerated()), id: \.element.id) { i, ch in
+                                    // (bug pass) Only the first 120 rows were ever asked for now/next;
+                                    // a row further down (the playing channel, a scroll) said "Live".
+                                    row(ch).id(ch.id).onAppear { askGuide(shown, from: i) }
+                                }
                                 if shown.count < all.count {
                                     // channel-picker.tsx: the cap note under the list.
                                     BPNote(text: T("Showing %lld of %lld. Refine the search to see more.", shown.count, all.count))
@@ -89,6 +95,14 @@ struct LiveChannelBrowser: View {
             if Task.isCancelled { return }
             await loadGuide?(shown.prefix(120).map(\.id))
         }
+    }
+
+    /// Now/next for a row that came on screen without it, and the rows after it (40 per ask).
+    private func askGuide(_ list: [LiveModel.Channel], from i: Int) {
+        guard let loadGuide, i >= 0, i < list.count, guide[list[i].id] == nil, !asked.contains(list[i].id) else { return }
+        let ids = list[i..<min(list.count, i + 40)].map(\.id).filter { guide[$0] == nil && !asked.contains($0) }
+        asked.formUnion(ids)
+        Task { await loadGuide(ids) }
     }
 
     private var emptyText: String {

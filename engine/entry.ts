@@ -585,6 +585,8 @@ export const streamsRoom = {
   p2pFileIdx: streamGlue.p2pFileIdx,
   streamFilters: streamGlue.streamFilters,
   setActiveStreamFilter: streamGlue.setActiveStreamFilter,
+  /** bp-stream-filters setSort: settings.streamSort ("addon" | "harbor"). */
+  setStreamSort: streamGlue.setStreamSort,
   pickerRowText: streamGlue.pickerRowText,
   deadRef: streamGlue.deadRef,
 };
@@ -1017,6 +1019,9 @@ export const skip = { segments: skipGlue.segments };
 /** Live TV: M3U / Xtream / middleware sources, favorites, guide order, XMLTV now/next. */
 export const live = {
   playlists: liveGlue.playlists,
+  /** use-bp-live readActiveId / setActiveId: the source Live TV and the Home row open on. */
+  activeSource: liveGlue.activeSource,
+  setActiveSource: liveGlue.setActiveSource,
   addPlaylist: liveGlue.addPlaylist,
   addStructured: liveGlue.addStructured,
   setEpgUrl: liveGlue.setEpgUrl,

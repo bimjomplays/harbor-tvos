@@ -410,8 +410,9 @@ struct PlayPickerView: View {
         },
     ]
     @State private var facet: [String: String] = [:]
-    /// bp-stream-filters sort: "harbor" (score order) or "addon" (each addon's own order, addons in install order).
-    @State private var sortByAddon = false
+    /// bp-stream-filters addonOrderMode: settings.streamSort === "addon" (the default) or an addon
+    /// that ranks its own list; else the Harbor order.
+    private var sortByAddon: Bool { model.addonRanked || model.streamSort == "addon" }
 
     private func matchesFacets(_ s: ScoredStream, except: String? = nil) -> Bool {
         for f in Self.facets where f.key != except {
@@ -477,7 +478,25 @@ struct PlayPickerView: View {
                 return na != nb ? na < nb : a.index < b.index
             }
         } else {
-            sorted = filtered.sorted { a, b in a.isCached != b.isCached ? a.isCached : a.index < b.index }
+            // bp-stream-filters: cached first (base); with every addon shown, the Harbor order puts
+            // WatchHub and still-downloading links last, then addons in installed order, then instant
+            // markers first; ties keep the cached-first score order.
+            var rank: [String: Int] = [:]
+            for (i, url) in model.addonOrder.enumerated() where rank[url] == nil { rank[url] = i }
+            let everyAddon = addonFilter == nil
+            sorted = filtered.sorted { a, b in
+                if everyAddon {
+                    let wa = a.tvSort?.watchHub == true, wb = b.tvSort?.watchHub == true
+                    if wa != wb { return wb }
+                    let da = a.tvSort?.needsDownload == true, db = b.tvSort?.needsDownload == true
+                    if da != db { return db }
+                    let ra = a.addonUrl.flatMap { rank[$0] } ?? 9999, rb = b.addonUrl.flatMap { rank[$0] } ?? 9999
+                    if ra != rb { return ra < rb }
+                    let ia = a.tvSort?.instant == true, ib = b.tvSort?.instant == true
+                    if ia != ib { return ia }
+                }
+                return a.isCached != b.isCached ? a.isCached : a.index < b.index
+            }
         }
         return pinnedFirst(sorted)
     }
@@ -539,7 +558,12 @@ struct PlayPickerView: View {
                         .buttonStyle(BPActionStyle(primary: model.activeFilterId != nil))
                 }
                 Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(24))
-                Button(sortByAddon ? "Sort: addon order" : "Sort: Harbor") { sortByAddon.toggle() }.buttonStyle(BPActionStyle())
+                Button(sortByAddon ? "Sort: addon order" : "Sort: Harbor") {
+                    let next = sortByAddon ? "harbor" : "addon"
+                    Task { await model.setStreamSort(next) }
+                }
+                .buttonStyle(BPActionStyle())
+                .disabled(model.addonRanked)
                 if filtered {
                     Button("Clear filters") { quality = "All"; cachedOnly = false; addonFilter = nil; facet = [:] }.buttonStyle(BPActionStyle())
                 }

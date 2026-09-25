@@ -24,9 +24,9 @@ import { materializePlaylistEntry, newPlaylistId } from "@/lib/iptv/playlist-ent
 import { buildBpGuide } from "@/views/big-picture/use-bp-live";
 import { bpChannelLabel, bpGroupLabel } from "@/views/big-picture/bp-guide-title";
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
-import type { EpgIndex, EpgProgram, IptvChannel } from "@/lib/iptv/types";
+import type { EpgChannelMeta, EpgIndex, EpgProgram, IptvChannel, XmltvParseResult } from "@/lib/iptv/types";
 import { loadStoredSettings } from "@/lib/settings/load";
-import { gunzipSync } from "fflate";
+import { Gunzip } from "fflate";
 import { clearVodCache } from "./liveVod";
 
 export type LiveChannel = {
@@ -77,6 +77,33 @@ export type ProgramView = { title: string; description: string | null; startMs: 
 
 export function playlists(): StoredPlaylist[] {
   return readPlaylists();
+}
+
+/** use-bp-live.ts sources: every playlist but the "Guide data only" ones. */
+function channelSources(): StoredPlaylist[] {
+  return readPlaylists().filter((p) => (p.kind ?? "m3u") !== "epg");
+}
+
+// use-bp-live.ts readActiveId / writeActiveId: the source Live TV (and the Home live row) opens on.
+const ACTIVE_KEY = "harbor.iptv.active";
+
+function readActiveSource(): string | null {
+  try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
+}
+
+/** use-bp-live activeSource: the remembered source when it still has channels, else the first. */
+export function activeSource(): string | null {
+  const list = channelSources();
+  const stored = readActiveSource();
+  return list.find((p) => p.id === stored)?.id ?? list[0]?.id ?? null;
+}
+
+/** use-bp-live setActiveId (a guide-only source is not a channel source and is ignored). */
+export function setActiveSource(id: string): string | null {
+  if (channelSources().some((p) => p.id === id)) {
+    try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* ignore */ }
+  }
+  return activeSource();
 }
 
 /**
@@ -389,35 +416,179 @@ export function recordPlay(playlistId: string, channelId: string): void {
 // ---------------------------------------------------------------------------------- EPG
 
 const EPG_TTL_MS = 60 * 60 * 1000;
+/** xmltv.ts MAX_BYTES: a guide bigger than this (as downloaded) is refused. */
+const EPG_MAX_BYTES = 200 * 1024 * 1024;
+/** How much of the download is inflated / decoded / parsed at a time. */
+const EPG_PIECE_BYTES = 1 << 20;
+/** `url` is the guide addresses joined with "|" (epg-store.ts sourceSignature). */
 const epgCache = new Map<string, { index: EpgIndex; url: string; loading: Promise<EpgIndex> | null }>();
 
-async function fetchXmltv(url: string): Promise<EpgIndex> {
-  const res = await fetch(url, { headers: { "User-Agent": "VLC/3.0.20 LibVLC/3.0.20", Accept: "application/xml, text/xml, application/octet-stream, */*" } });
-  if (!res.ok) throw new Error(`EPG fetch failed: ${res.status}`);
-  let bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.length > 1 && bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes);
-  const text = new TextDecoder().decode(bytes);
-  const parsed = parseXmltv(text);
-  return { byChannel: indexProgramsByChannel(parsed.programs), channelMeta: parsed.channelMeta, fetchedAt: Date.now() };
+/**
+ * xmltv.ts fetchAndParseXmltv reads the guide as a stream: drainBlocks runs on each network
+ * chunk, so its buffer is never more than a chunk. The host hands the engine whole bodies, and
+ * drainBlocks over a whole guide looks for the next `<channel ` in everything that is left after
+ * every programme (quadratic: a 4 MB guide took 25 s, a normal 50 MB one never finished and held
+ * the engine thread). This walks the text once with the same block rules and hands each block to
+ * upstream's parseXmltv, so every programme and channel is read by upstream's own code.
+ */
+class XmltvReader {
+  readonly programs: EpgProgram[] = [];
+  readonly channelMeta = new Map<string, EpgChannelMeta>();
+  private rest = "";
+
+  push(text: string, final: boolean): void {
+    const buf = this.rest + text;
+    let pos = 0;
+    let ch = buf.indexOf("<channel ");
+    let pr = buf.indexOf("<programme");
+    for (;;) {
+      if (ch >= 0 && ch < pos) ch = buf.indexOf("<channel ", pos);
+      if (pr >= 0 && pr < pos) pr = buf.indexOf("<programme", pos);
+      // drainBlocks/trimLeftover: no block starts here; keep a tail a split tag could begin in.
+      if (ch < 0 && pr < 0) { pos = Math.max(pos, buf.length - 64); break; }
+      const channelFirst = ch >= 0 && (pr < 0 || ch < pr);
+      const start = channelFirst ? ch : pr;
+      const closeTag = channelFirst ? "</channel>" : "</programme>";
+      const close = buf.indexOf(closeTag, start);
+      if (close < 0) { pos = start; break; }
+      const end = close + closeTag.length;
+      this.take(buf.slice(start, end));
+      pos = end;
+    }
+    this.rest = final ? "" : buf.slice(pos);
+  }
+
+  private take(block: string): void {
+    const one = parseXmltv(block);
+    for (const p of one.programs) this.programs.push(p);
+    // parseChannel: a repeated channel without a name or icon keeps the first one's.
+    for (const [id, meta] of one.channelMeta) {
+      if (this.channelMeta.has(id) && !meta.displayName && !meta.icon) continue;
+      this.channelMeta.set(id, meta);
+    }
+  }
+}
+
+/** The end of the last whole UTF-8 character in b[0..<end] (a split one waits for the next piece). */
+function utf8Cut(b: Uint8Array, end: number): number {
+  let i = end;
+  let tail = 0;
+  while (i > 0 && tail < 4 && (b[i - 1] & 0xc0) === 0x80) { i--; tail++; }
+  if (i === 0) return end;
+  const lead = b[i - 1];
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  return tail + 1 >= need ? end : i - 1;
+}
+
+/** Inflates (gzip or not), decodes and parses a downloaded guide a piece at a time. */
+export function parseXmltvBytes(raw: Uint8Array): XmltvParseResult {
+  const reader = new XmltvReader();
+  const decoder = new TextDecoder("utf-8");
+  let carry: Uint8Array | null = null;
+  const feed = (chunk: Uint8Array) => {
+    let bytes = chunk;
+    if (carry) {
+      const joined = new Uint8Array(carry.length + chunk.length);
+      joined.set(carry);
+      joined.set(chunk, carry.length);
+      bytes = joined;
+      carry = null;
+    }
+    let at = 0;
+    while (at < bytes.length) {
+      const end = Math.min(bytes.length, at + EPG_PIECE_BYTES);
+      const cut = utf8Cut(bytes, end);
+      const stop = cut > at ? cut : end;
+      reader.push(decoder.decode(bytes.subarray(at, stop)), false);
+      // A character split at the end of this chunk waits for the next one.
+      if (end === bytes.length && stop < end) { carry = bytes.slice(stop, end); break; }
+      at = stop;
+    }
+  };
+  if (raw.length > 1 && raw[0] === 0x1f && raw[1] === 0x8b) {
+    const gz = new Gunzip((data) => feed(data));
+    for (let at = 0; at < raw.length; at += EPG_PIECE_BYTES) {
+      const end = Math.min(raw.length, at + EPG_PIECE_BYTES);
+      gz.push(raw.subarray(at, end), end === raw.length);
+    }
+  } else {
+    feed(raw);
+  }
+  const left: Uint8Array | null = carry;
+  reader.push(left ? decoder.decode(left) : "", true);
+  return { programs: reader.programs, channelMeta: reader.channelMeta };
+}
+
+async function fetchXmltv(url: string): Promise<XmltvParseResult> {
+  // Bytes, not text: a .xml.gz guide served without Content-Encoding is binary, and the host's
+  // text path decodes as (lossy) UTF-8, which wrecked the gzip header and every guide behind it.
+  const res = await fetch(url, {
+    headers: { "User-Agent": "VLC/3.0.20 LibVLC/3.0.20", Accept: "application/xml, text/xml, application/octet-stream, */*" },
+    harborResponseType: "base64",
+  } as RequestInit);
+  if (!res.ok) throw new Error(`EPG fetch failed: ${res.status} ${res.statusText}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length > EPG_MAX_BYTES) throw new Error("EPG exceeds 200MB limit");
+  return parseXmltvBytes(bytes);
+}
+
+/**
+ * epg-store.ts doFetchWithFallback: each address in turn; one that fails or lists no programmes
+ * passes to the next; if none has programmes, the channel list of the last one that had any.
+ */
+async function fetchEpgWithFallback(urls: string[]): Promise<EpgIndex> {
+  if (urls.length === 0) throw new Error("No EPG URL available for this playlist");
+  let lastErr: unknown = null;
+  let lastMeta: Map<string, EpgChannelMeta> | undefined;
+  for (const url of urls) {
+    try {
+      const { programs, channelMeta } = await fetchXmltv(url);
+      if (channelMeta.size > 0) lastMeta = channelMeta;
+      if (programs.length === 0) {
+        lastErr = new Error("EPG endpoint returned no programs");
+        continue;
+      }
+      return { byChannel: indexProgramsByChannel(programs), channelMeta, fetchedAt: Date.now() };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastMeta && lastMeta.size > 0) return { byChannel: new Map(), channelMeta: lastMeta, fetchedAt: Date.now() };
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/**
+ * use-epg.ts + use-bp-live.ts: the source's own guide (its EPG URL, else the two Xtream
+ * addresses deriveEpgUrls builds), then every "Guide data only" source's address.
+ */
+export function epgUrlsFor(pl: StoredPlaylist): string[] {
+  const own = pl.epgUrl ? [pl.epgUrl] : deriveEpgUrls(pl.url);
+  const epgOnly = readPlaylists().filter((s) => s.kind === "epg").map((s) => s.epgUrl || s.url);
+  return [...new Set([...own, ...epgOnly].filter(Boolean))];
 }
 
 /** Loads the playlist's guide (once an hour); returns how many channels it covers. */
 export async function loadEpg(playlistId: string, force = false): Promise<{ channels: number; programs: number; url: string | null }> {
   const pl = readPlaylists().find((p) => p.id === playlistId);
   if (!pl) throw new Error("playlist not found");
-  const url = pl.epgUrl ?? (pl.kind === "xtream" || /get\.php|player_api\.php/.test(pl.url) ? deriveEpgUrls(pl.url)[0] ?? null : null);
-  if (!url) return { channels: 0, programs: 0, url: null };
+  const urls = epgUrlsFor(pl);
+  if (urls.length === 0) return { channels: 0, programs: 0, url: null };
+  const url = urls[0];
+  const signature = urls.join("|");
   const held = epgCache.get(playlistId);
-  if (held && held.url === url && !force && Date.now() - held.index.fetchedAt < EPG_TTL_MS) return summarize(held.index, url);
-  if (held?.loading) return summarize(await held.loading, url);
-  const loading = fetchXmltv(url);
-  epgCache.set(playlistId, { index: held?.index ?? { byChannel: new Map(), fetchedAt: 0 }, url, loading });
+  if (held && held.url === signature && !force && Date.now() - held.index.fetchedAt < EPG_TTL_MS) return summarize(held.index, url);
+  if (held?.loading && held.url === signature) return summarize(await held.loading, url);
+  const loading = fetchEpgWithFallback(urls);
+  const previous = held?.index ?? { byChannel: new Map(), fetchedAt: 0 };
+  epgCache.set(playlistId, { index: previous, url: signature, loading });
+  // A newer load (another address list, or a forced refresh) owns the entry once it starts.
+  const mine = () => epgCache.get(playlistId)?.loading === loading;
   try {
     const index = await loading;
-    epgCache.set(playlistId, { index, url, loading: null });
+    if (mine()) epgCache.set(playlistId, { index, url: signature, loading: null });
     return summarize(index, url);
   } catch (e) {
-    epgCache.set(playlistId, { index: held?.index ?? { byChannel: new Map(), fetchedAt: 0 }, url, loading: null });
+    if (mine()) epgCache.set(playlistId, { index: previous, url: signature, loading: null });
     throw e;
   }
 }
@@ -453,12 +624,22 @@ function view(p: EpgProgram): ProgramView {
   return { title: p.title, description: p.description, startMs: p.startMs, endMs: p.endMs, category: p.category, iconUrl: p.iconUrl ?? null };
 }
 
+// The guide asks per screenful (and the grid per 40 rows): the id map and tvg-id counts over a
+// 6,000-channel list are built once per loaded list, not on every ask.
+const channelIndexes = new WeakMap<IptvChannel[], { byId: Map<string, IptvChannel>; counts: ReturnType<typeof computeTvgIdCounts> }>();
+function channelIndex(all: IptvChannel[]): { byId: Map<string, IptvChannel>; counts: ReturnType<typeof computeTvgIdCounts> } {
+  const held = channelIndexes.get(all);
+  if (held) return held;
+  const built = { byId: new Map(all.map((c) => [c.id, c] as [string, IptvChannel])), counts: computeTvgIdCounts(all) };
+  channelIndexes.set(all, built);
+  return built;
+}
+
 /** Now/next for a screenful of channels (epg-resolver matching, tvg-shift + offset applied). */
 export function nowNext(playlistId: string, channelIds: string[], nowMs = Date.now()): NowNext[] {
   const all = loaded.get(playlistId) ?? [];
   const epg = epgCache.get(playlistId)?.index ?? null;
-  const byId = new Map(all.map((c) => [c.id, c]));
-  const counts = computeTvgIdCounts(all);
+  const { byId, counts } = channelIndex(all);
   const offset = epgOffsetHoursPref();
   return channelIds.map((id) => {
     const ch = byId.get(id);
@@ -507,8 +688,7 @@ function buildLane(programs: readonly EpgProgram[], windowStart: number, windowE
 export function lanes(playlistId: string, channelIds: string[], windowStart: number, windowEnd: number): Array<{ id: string; catchup: boolean; cells: LaneCell[] }> {
   const all = loaded.get(playlistId) ?? [];
   const epg = epgCache.get(playlistId)?.index ?? null;
-  const byId = new Map(all.map((c) => [c.id, c]));
-  const counts = computeTvgIdCounts(all);
+  const { byId, counts } = channelIndex(all);
   const offset = epgOffsetHoursPref();
   return channelIds.map((id) => {
     const ch = byId.get(id);
@@ -590,10 +770,10 @@ export function setEpgMatch(channelId: string, tvgId?: string | null): string | 
 export type HomeLiveCell = { playlistId: string; channel: LiveChannel; now: ProgramView | null; next: ProgramView | null; progress: number | null };
 
 export async function homeRow(): Promise<{ playlistId: string | null; cells: HomeLiveCell[] }> {
-  const lists = readPlaylists();
+  // use-bp-live.ts sources: a "Guide data only" entry has no channels (it feeds the guide).
+  const lists = channelSources();
   if (lists.length === 0) return { playlistId: null, cells: [] };
-  let activeId: string | null = null;
-  try { activeId = localStorage.getItem("harbor.iptv.active"); } catch { activeId = null; }
+  const activeId = readActiveSource();
   const pl = lists.find((p) => p.id === activeId) ?? lists[0];
   if (!loaded.has(pl.id)) await Promise.race([channels(pl.id).catch(() => undefined), new Promise((r) => setTimeout(r, 12000))]);
   const all = loaded.get(pl.id) ?? [];
