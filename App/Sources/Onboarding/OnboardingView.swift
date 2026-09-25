@@ -43,7 +43,7 @@ struct OnboardingView: View {
         // reaches the shell while setup is up; there was no handler, so Menu on any step closed the
         // app. On the first screen the press stays the system's (upstream asks whether to leave
         // setup there; on the TV that is leaving the app).
-        .onExitCommand(perform: step == .language ? nil : { back() })
+        .onExitCommand(perform: exitAction)
         .onChange(of: step) { _, s in
             syncHandoff(s)
             if s == .done { Task { await loadFacts() } }
@@ -205,6 +205,12 @@ struct OnboardingView: View {
         var next = Step(rawValue: step.rawValue + 1) ?? .done
         while let h = Self.handoffStep(next), handoff.done.contains(h), let after = Step(rawValue: next.rawValue + 1) { next = after }
         withAnimation(BP.easeSlow) { step = next }
+    }
+
+    /// Menu on a step past the first: back(). nil on the first screen leaves the press to the system.
+    private var exitAction: (() -> Void)? {
+        if step == .language { return nil }
+        return { back() }
     }
 
     /// bp-onboarding.tsx Back: `setIndex(i - 1)`, passing over the steps the phone delivered as
