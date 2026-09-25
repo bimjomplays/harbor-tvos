@@ -16,6 +16,8 @@ struct KidsShellView: View {
     @State private var playOpen = false
     /// account-menu requestSwitch: leaving a kid profile that has a parent PIN asks for it first.
     @State private var parentPin = false
+    /// (pass 3) The profile chip, so a cancelled parent PIN hands the ring back to it.
+    @FocusState private var chipFocused: Bool
     /// Deep links waiting to be shown (AppModel.showWaitingLink): titles only here.
     @ObservedObject private var links = DeepLinkQueue.shared
 
@@ -29,7 +31,7 @@ struct KidsShellView: View {
             KidsView(openPlay: openPlay)
                 .musicDock(bottomPadding: BP.px(60))
                 .disabled(pinUp)
-            KidsTopBar(onPlay: openPlay, onSwitch: requestSwitch)
+            KidsTopBar(onPlay: openPlay, onSwitch: requestSwitch, chipFocus: $chipFocused)
                 .disabled(pinUp)
             if parentPin, let p = profiles.active, let hash = p.kid?.parentPinHash {
                 ZStack {
@@ -38,7 +40,7 @@ struct KidsShellView: View {
                     // own PIN still unlocks itself on Who's watching.
                     PinPadView(profile: p, finish: { ok in
                         parentPin = false
-                        if ok { app.switchProfile() }
+                        if ok { app.switchProfile() } else { returnRingToChip() }
                     }, hashOverride: hash, title: "Parent PIN")
                 }
                 .transition(.opacity)
@@ -81,6 +83,15 @@ struct KidsShellView: View {
         }
     }
 
+    /// (pass 3) Back or ‹ on the parent PIN: the ring goes back to the profile chip that opened it.
+    /// The rows and the bar were disabled under the pad, so tvOS put it on the first hero card at
+    /// the top of the page instead. Set again once the pad's fade has ended (Who's watching's PIN
+    /// tile does the same).
+    private func returnRingToChip() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if !parentPin { chipFocused = true } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { if !parentPin { chipFocused = true } }
+    }
+
     /// use-account-menu.ts requestSwitch: a kid profile with a parent PIN needs it to switch away.
     private func requestSwitch() {
         if profiles.active?.kid?.parentPinHash != nil { parentPin = true } else { app.switchProfile() }
@@ -99,6 +110,8 @@ struct KidsShellView: View {
 struct KidsTopBar: View {
     let onPlay: () -> Void
     let onSwitch: () -> Void
+    /// (pass 3) The profile chip's focus (KidsShellView returns the ring to it after the parent PIN).
+    let chipFocus: FocusState<Bool>.Binding
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var profiles: ProfilesStore
 
@@ -137,6 +150,7 @@ struct KidsTopBar: View {
                     .frame(height: BP.tabItem)
                 }
                 .buttonStyle(KidsNavStyle(active: false))
+                .focused(chipFocus)
                 .accessibilityIdentifier("profile-chip")
             }
             KidsClock().padding(.leading, BP.px(6))

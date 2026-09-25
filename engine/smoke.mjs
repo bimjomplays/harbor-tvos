@@ -2556,6 +2556,16 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("kidsRoom.franchisePage for an unknown franchise", await tm.engine.kidsRoom.franchisePage("k1", true, "nope", 1), []);
   const det = await tm.engine.kidsRoom.detail({ id: "tmdb:movie:5", type: "movie", name: "Film 5", releaseInfo: "2010", poster: "https://img.invalid/p.jpg" }, "k1", true);
   r.ok("kidsRoom.detail falls back to the meta when TMDB and Cinemeta have nothing", det.name === "Film 5" && det.backdrop === "https://img.invalid/p.jpg" && det.year === "2010" && det.tvId === null && det.recs.length === 0 && det.collection === null, JSON.stringify(det));
+  // (pass 3) A season's episodes carry TMDB's air_date, so the TV's next episode skips unaired ones (airedNext).
+  tm.node.host.fetch = async (req) => req.url.includes("api.themoviedb.org/3/tv/7/season/2")
+    ? json(req.url, { episodes: [
+        { id: 71, episode_number: 1, season_number: 2, name: "Aired", still_path: "/s.jpg", air_date: "2020-01-01", vote_average: 7.25 },
+        { id: 72, episode_number: 2, season_number: 2, name: "Soon", still_path: null, air_date: "2999-01-01", vote_average: 0 },
+        { id: 73, episode_number: 3, season_number: 2, name: "Undated", still_path: null, vote_average: 0 },
+      ] })
+    : { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  const s2 = await tm.engine.kidsRoom.episodes(7, 2, "k1", true);
+  r.eq("kidsRoom.episodes passes each episode's airDate (null when TMDB has none)", s2.map((e) => [e.season, e.episode, e.airDate, e.rating]), [[2, 1, "2020-01-01", "7.3"], [2, 2, "2999-01-01", null], [2, 3, null, null]]);
   tm.dispose();
 }
 
