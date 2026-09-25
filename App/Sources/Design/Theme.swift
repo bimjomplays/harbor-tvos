@@ -139,6 +139,10 @@ struct BPAmbientBackground: View {
     @ObservedObject private var pool = AmbientPool.shared
     /// (perf pass 2) Only one mosaic in the app runs: see AmbientCoverage.
     @ObservedObject private var coverage = AmbientCoverage.shared
+    /// (pass 3) Observed, not read in passing: Settings → Picture → Animated backdrop (or the quick
+    /// panel's row) turned off left the mosaic drifting behind the Settings page, because nothing
+    /// this view watches changed until the next cover or room switch.
+    @ObservedObject private var settings = SettingsBridge.shared
     @State private var id = UUID()
     var body: some View {
         // `mosaic` can change while the instance stays up (RootView's follows the stage and the
@@ -147,7 +151,7 @@ struct BPAmbientBackground: View {
         ZStack {
             // --bp-void, or the theme's own backdrop (Stage 9); plain void on Harbor default.
             BPThemeBackdrop()
-            if on, SettingsBridge.shared.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
+            if on, settings.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
                 BPMosaicView(posters: pool.posters).opacity(0.13).transition(.opacity)
             }
             RadialGradient(colors: [BP.accent.opacity(0.10), .clear], center: .topTrailing, startRadius: 0, endRadius: 1300)

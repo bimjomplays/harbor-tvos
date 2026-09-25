@@ -243,7 +243,9 @@ export async function detail(meta: Meta, profileId: string, linked: boolean): Pr
 
 // kids-episodes.tsx STILL.
 const STILL = "https://image.tmdb.org/t/p/w300";
-export type KidsEpisode = { id: number; season: number; episode: number; name: string; still: string | null; rating: string | null };
+// (pass 3) airDate rides along so the TV's next episode follows views/player.tsx airedNext
+// (isNextAired): an unaired next episode gets no up-next and no auto-advance.
+export type KidsEpisode = { id: number; season: number; episode: number; name: string; still: string | null; rating: string | null; airDate: string | null };
 
 /** kids-episodes.tsx: one season's episodes from TMDB; rating shows as one decimal when above 0. */
 export async function episodes(tvId: number, season: number, profileId: string, linked: boolean): Promise<KidsEpisode[]> {
@@ -257,5 +259,6 @@ export async function episodes(tvId: number, season: number, profileId: string, 
     name: ep.name,
     still: ep.stillPath ? `${STILL}${ep.stillPath}` : null,
     rating: ep.voteAverage && ep.voteAverage > 0 ? ep.voteAverage.toFixed(1) : null,
+    airDate: ep.airDate ?? null,
   }));
 }

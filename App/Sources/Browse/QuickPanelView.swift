@@ -51,11 +51,22 @@ struct QuickPanelView: View {
                 // bp-quick-panel: "Interface sounds" (Off ↔ Glass) and "Animated backdrop" (On / Off).
                 settingRow("Interface sounds", soundOn ? "speaker.wave.2" : "speaker.slash", detail: soundDetail, key: "sounds") {
                     let next: String = soundOn ? "none" : "glass"
-                    Task { try? await settings.patch(["bigPictureSound": .string(next)]) }
+                    // (pass 3) The row flips from the value just asked for: a second press before the
+                    // first save answered read the old slice and wrote the same value again, so a
+                    // double press turned the sounds off instead of off and back on.
+                    pendingSound = next
+                    Task {
+                        try? await settings.patch(["bigPictureSound": .string(next)])
+                        if pendingSound == next { pendingSound = nil }
+                    }
                 }
                 settingRow("Animated backdrop", "photo.on.rectangle", detail: T(mosaicOn ? "On" : "Off"), key: "backdrop") {
                     let next: Bool = !mosaicOn
-                    Task { try? await settings.patch(["bigPictureMosaic": .bool(next)]) }
+                    pendingMosaic = next
+                    Task {
+                        try? await settings.patch(["bigPictureMosaic": .bool(next)])
+                        if pendingMosaic == next { pendingMosaic = nil }
+                    }
                 }
                 if let note { BPNote(text: note, tone: BP.inkMuted) }
                 Spacer()
@@ -81,14 +92,18 @@ struct QuickPanelView: View {
             .focused($focus, equals: key ?? label)
     }
 
+    /// (pass 3) A value the rows asked for whose save has not answered yet (see the rows).
+    @State private var pendingSound: String?
+    @State private var pendingMosaic: Bool?
+
     /// bp-quick-panel `soundOn = settings.bigPictureSound !== "none"`.
-    private var soundOn: Bool { (settings.slice.bigPictureSound ?? "cinematic") != "none" }
-    private var mosaicOn: Bool { settings.slice.bigPictureMosaic ?? true }
+    private var soundOn: Bool { (pendingSound ?? settings.slice.bigPictureSound ?? "cinematic") != "none" }
+    private var mosaicOn: Bool { pendingMosaic ?? settings.slice.bigPictureMosaic ?? true }
 
     /// t("Sound pack: {name}", { name: bpSoundLabel(t, …) }), or t("Off").
     private var soundDetail: String {
         guard soundOn else { return T("Off") }
-        let pack: String = settings.slice.bigPictureSound ?? "cinematic"
+        let pack: String = pendingSound ?? settings.slice.bigPictureSound ?? "cinematic"
         return T("Sound pack: %@", T(Self.soundLabels[pack] ?? "Off"))
     }
 

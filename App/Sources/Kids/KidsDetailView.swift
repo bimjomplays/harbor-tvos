@@ -27,6 +27,18 @@ final class KidsDetailModel: ObservableObject {
         var name: String
         var still: String?
         var rating: String?
+        /// (pass 3) TMDB's air_date (engine kidsRoom.episodes), for the next episode's aired check.
+        var airDate: String?
+
+        /// (pass 3) cw-resurface.ts isNextAired(false, airDate), as views/player.tsx airedNext reads it:
+        /// no date (or one that does not parse) counts as aired.
+        var aired: Bool {
+            guard let d = airDate, !d.isEmpty else { return true }
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withFullDate]
+            guard let t = f.date(from: String(d.prefix(10))) else { return true }
+            return t <= Date()
+        }
     }
 
     let meta: Meta
@@ -80,6 +92,25 @@ final class KidsDetailModel: ObservableObject {
         if !list.isEmpty { seasonEpisodes[s] = list }
     }
 
+    /// (pass 3) The season after `s` in the page's season list. Specials (season 0) never lead
+    /// into a season or follow one, as the adult page's airedNext.
+    func seasonAfter(_ s: Int) -> Int? {
+        guard s > 0, let list = detail?.seasons, let i = list.firstIndex(where: { $0.seasonNumber == s }), i + 1 < list.count else { return nil }
+        let n: Int = list[i + 1].seasonNumber
+        return n > 0 ? n : nil
+    }
+
+    /// (pass 3) Reads the season an episode plays in and, when that episode ends it, the next
+    /// season, while the picker is up. views/player.tsx takes the next episode from
+    /// fetchAdjacentEpisodes, which crosses seasons; the kids page looked in the playing season
+    /// only, so the last episode of a season had no up-next and never auto-advanced.
+    func prefetch(season s: Int, episode e: Int) async {
+        await ensureSeason(s)
+        guard let list = seasonEpisodes[s], let last = list.last, last.season == s, last.episode == e,
+              let n = seasonAfter(s) else { return }
+        await ensureSeason(n)
+    }
+
     private func loadEpisodes() async {
         guard let tvId = detail?.tvId else { return }
         let p = profile
@@ -107,6 +138,8 @@ struct KidsDetailView: View {
     @State private var seasonGrid = false
     @Environment(\.dismiss) private var dismiss
     @FocusState private var playFocused: Bool
+    /// (pass 3) The stepper's centre pill, which the season grid hands the ring back to.
+    @FocusState private var seasonPillFocused: Bool
 
     init(meta: Meta, episodeHint: (season: Int, episode: Int)? = nil) {
         _model = StateObject(wrappedValue: KidsDetailModel(meta: meta))
@@ -152,7 +185,7 @@ struct KidsDetailView: View {
             await model.load()
         }
         .onExitCommand {
-            if seasonGrid { seasonGrid = false } else { dismiss() }
+            if seasonGrid { closeSeasonGrid() } else { dismiss() }
         }
         .fullScreenCover(item: $related) { m in KidsDetailView(meta: m) }
         // A Watch Together host's reopen (Pick another source, a send-back, the next episode) left with no pick: TogetherModel.abandonReopen.
@@ -302,9 +335,12 @@ struct KidsDetailView: View {
             let idx = seasons.firstIndex { $0.seasonNumber == model.season } ?? 0
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 HStack(spacing: BP.px(8)) {
+                    // (pass 3) The end steps dim (Step's disabled:opacity-30) but stay focusable: a
+                    // disabled step under the ring (Previous pressed down to the first season) threw
+                    // the ring off the stepper, as the focus pass found for the app's other steppers.
                     Button { if idx > 0 { model.choose(seasons[idx - 1].seasonNumber) } } label: { Image(systemName: "chevron.backward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))
-                        .disabled(idx <= 0)
+                        .opacity(idx <= 0 ? 0.3 : 1)
                         .accessibilityLabel(Text(T("Previous")))
                     Button { seasonGrid.toggle() } label: {
                         HStack(spacing: BP.px(8)) {
@@ -314,16 +350,17 @@ struct KidsDetailView: View {
                         .frame(minWidth: BP.px(150))
                     }
                     .buttonStyle(KidsPillStyle(fill: KidsTheme.teal, ink: .white))
+                    .focused($seasonPillFocused)
                     Button { if idx < seasons.count - 1 { model.choose(seasons[idx + 1].seasonNumber) } } label: { Image(systemName: "chevron.forward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))
-                        .disabled(idx >= seasons.count - 1)
+                        .opacity(idx >= seasons.count - 1 ? 0.3 : 1)
                         .accessibilityLabel(Text(T("Next")))
                 }
                 if seasonGrid {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(58)), spacing: BP.px(8)), count: 5), alignment: .leading, spacing: BP.px(8)) {
                         ForEach(seasons, id: \.seasonNumber) { s in
                             let on = s.seasonNumber == model.season
-                            Button { model.choose(s.seasonNumber); seasonGrid = false } label: { Text("\(s.seasonNumber)") }
+                            Button { model.choose(s.seasonNumber); closeSeasonGrid() } label: { Text("\(s.seasonNumber)") }
                                 .buttonStyle(KidsPillStyle(fill: on ? KidsTheme.teal : Color(hex: 0xeaf6f5), ink: on ? .white : KidsTheme.deep))
                                 .accessibilityLabel(Text(T("Season %lld", s.seasonNumber)))
                                 .bpSelected(on)
@@ -339,6 +376,14 @@ struct KidsDetailView: View {
         }
     }
 
+    /// (pass 3) A pick in the season grid or Back closes it: the grid went away under the ring, which
+    /// tvOS moved to whatever was nearest (the episode cards or the page's rows below); it returns
+    /// to the "Season n" pill that opened the grid.
+    private func closeSeasonGrid() {
+        seasonGrid = false
+        DispatchQueue.main.async { seasonPillFocused = true }
+    }
+
     // MARK: play
 
     /// kids-detail.tsx onPlay: openPicker(meta, episodeHint ?? S1E1 for a series, { autoPlay: true, resume: true }).
@@ -347,7 +392,8 @@ struct KidsDetailView: View {
         if isSeries {
             let hint = episodeHint ?? (season: 1, episode: 1)
             // (open-items sweep) The season that plays may not be the one on screen (nextEpisode).
-            Task { await model.ensureSeason(hint.season) }
+            // (pass 3) And the season after it when this episode is its last.
+            Task { await model.prefetch(season: hint.season, episode: hint.episode) }
             picker = KidsPickerTarget(meta: meta, episode: .object(["season": .number(Double(hint.season)), "episode": .number(Double(hint.episode))]))
         } else {
             picker = KidsPickerTarget(meta: meta, episode: nil)
@@ -357,6 +403,8 @@ struct KidsDetailView: View {
     /// kids-episodes.tsx play(ep): openPicker(meta, {season, episode}, { autoPlay: settings.instantPlay }).
     private func play(_ ep: KidsDetailModel.Episode, auto: Bool) {
         pickerAuto = auto
+        // (pass 3) The last episode of a season needs the next season for its up-next (nextEpisode).
+        Task { await model.prefetch(season: ep.season, episode: ep.episode) }
         picker = KidsPickerTarget(meta: meta, episode: .object(["season": .number(Double(ep.season)), "episode": .number(Double(ep.episode)), "name": .string(ep.name)]))
     }
 
@@ -371,8 +419,20 @@ struct KidsDetailView: View {
         guard let s = ctx.season, let e = ctx.episode else { return nil }
         // (open-items sweep) The season that played, not only the one on screen.
         let list: [KidsDetailModel.Episode] = model.seasonEpisodes[s] ?? model.episodes
-        guard let idx = list.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < list.count else { return nil }
-        return list[idx + 1]
+        guard let idx = list.firstIndex(where: { $0.season == s && $0.episode == e }) else { return nil }
+        // (pass 3) views/player.tsx airedNext: fetchAdjacentEpisodes crosses into the next season
+        // (read ahead by prefetch), and an episode that has not aired yet is no next episode (it
+        // opened a picker with no streams).
+        let candidate: KidsDetailModel.Episode?
+        if idx + 1 < list.count {
+            candidate = list[idx + 1]
+        } else if let n = model.seasonAfter(s) {
+            candidate = model.seasonEpisodes[n]?.first
+        } else {
+            candidate = nil
+        }
+        guard let found = candidate, found.aired else { return nil }
+        return found
     }
 }
 
