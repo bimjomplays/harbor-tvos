@@ -1335,13 +1335,22 @@ async function plexDiscover(): Promise<PlexConfig | null> {
   }
   return null;
 }
-/** Probed once per connection set for five minutes, like upstream's stored plex.json. */
+/**
+ * Probed once per connection set for five minutes, like upstream's stored plex.json. (bug pass 3)
+ * Only a server that answered is kept: session.rs stores a discovered config and discovers again
+ * when there is none, so a server that was asleep (or a network not up yet) at the first probe was
+ * "Connect Plex" for five minutes on the TV — no Plex search, and every Plex song failed over.
+ */
 function plexConfig(): Promise<PlexConfig | null> {
   const key = mediaServerConnections().filter((c) => c.provider === "plex" && c.enabled !== false).map((c) => `${c.id}@${c.origin}`).join("|");
   if (!key) return Promise.resolve(null);
   if (plexProbe && plexProbe.key === key && Date.now() - plexProbe.at < 5 * 60_000) return plexProbe.config;
-  plexProbe = { key, at: Date.now(), config: plexDiscover() };
-  return plexProbe.config;
+  const config = plexDiscover();
+  plexProbe = { key, at: Date.now(), config };
+  void config.then((found) => {
+    if (!found && plexProbe?.config === config) plexProbe = null;
+  });
+  return config;
 }
 const plexEncode = (v: string) => encodeURIComponent(v);
 function plexSafeKey(raw: string): string {

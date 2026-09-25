@@ -53,7 +53,10 @@ struct MusicPageView: View {
         }
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
-        .task { await load() }
+        // (bug pass 3) Once per page: `.task` runs again whenever a cover over it closes (an album
+        // opened from this artist, the Spotify playlist picker), and each re-run fetched the whole
+        // page again from the server and dropped the albums "Load more" had added.
+        .task { if data == nil { await load() } }
         .fullScreenCover(item: $child) { t in MusicPageView(target: t) }
         .musicSpotifyDestinationHost()
     }
@@ -130,6 +133,7 @@ struct MusicPageView: View {
     }
 
     private func load() async {
+        error = nil
         do {
             data = try await HarborEngine.shared.call("music.open", [target.card.item])
         } catch EngineError.js(let message) {

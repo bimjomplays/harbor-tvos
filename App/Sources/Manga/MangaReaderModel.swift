@@ -35,6 +35,7 @@ final class MangaReaderModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var pendingSave: (() async -> Void)?
     private var loadSeq = 0
+    private var prefetchTask: Task<Void, Never>?
     let pid: String
 
     init(launch: MangaReaderLaunch) {
@@ -93,6 +94,8 @@ final class MangaReaderModel: ObservableObject {
         loadSeq += 1
         let seq = loadSeq
         flushSave()
+        prefetchTask?.cancel()
+        prefetchTask = nil
         loading = true
         failed = false
         settled = false
@@ -147,15 +150,46 @@ final class MangaReaderModel: ObservableObject {
     /// The page width the long strip and prefetch decode for (reader-prefs longStyle, 880 × zoom).
     var longWidth: CGFloat { min(1920, 880 * CGFloat(prefs.zoom)) }
 
-    /// Warm the next few pages (paged: the next spread or two; long: just below the fold).
+    private static let screen = CGSize(width: 1920, height: 1080)
+    private static let defaultAspect = 1.4
+
+    /// reader-prefs pageStyle / doublePageStyle at a 1920 × 1080 screen: the size a paged page is
+    /// drawn at. The view and the prefetch both use it, so a warmed page is the decode the view asks for.
+    func pageSize(_ i: Int, double: Bool) -> CGSize {
+        let z = CGFloat(prefs.zoom)
+        let a = CGFloat(aspects[i] ?? Self.defaultAspect)
+        let W = double ? Self.screen.width / 2 : Self.screen.width
+        switch prefs.fit {
+        case "height":
+            var h = Self.screen.height * (double ? 0.92 : 0.94) * z
+            var w = h / a
+            if w > W && z <= 1 { w = W; h = w * a }
+            return CGSize(width: w, height: h)
+        case "original":
+            let w = W * z
+            return CGSize(width: w, height: w * a)
+        default:
+            let w = min(W * max(1, z), (double ? 440 : 880) * z)
+            return CGSize(width: w, height: w * a)
+        }
+    }
+
+    /// (bug pass 3) Warm the next few pages (paged: the next spread or two; long: just below the
+    /// fold) at the width each is drawn at. The prefetch used to decode paged pages for a full
+    /// 1920-wide screen (2400 px, ~32 MB each at the 8 MP cap) while the view asked for 880 × 1.5:
+    /// a different cache key, so every warmed page was decoded twice and the unused copies filled
+    /// the page cache. A newer turn, a chapter change or closing the reader cancels the warm-up.
     func prefetch() {
+        prefetchTask?.cancel()
+        prefetchTask = nil
         guard total > 0 else { return }
         let from = min(total, currentPage + 1)
         let to = min(total, from + (double ? 4 : 3))
         guard from < to else { return }
-        let next = Array(pages[from..<to])
-        let width: CGFloat = paged ? (double ? 960 : 1920) : longWidth
-        Task.detached(priority: .utility) { await MangaPageCache.shared.prefetch(next, maxWidth: min(2400, width * 1.5)) }
+        let jobs: [(page: MangaPage, width: CGFloat)] = (from..<to).map { i in
+            (pages[i], paged ? pageSize(i, double: double).width : longWidth)
+        }
+        prefetchTask = Task.detached(priority: .utility) { await MangaPageCache.shared.prefetch(jobs) }
     }
 
     // MARK: paging (use-reader-paging.ts, paged modes)
@@ -258,6 +292,8 @@ final class MangaReaderModel: ObservableObject {
 
     func close() {
         flushSave()
+        prefetchTask?.cancel()
+        prefetchTask = nil
         Task {
             try? await Task.sleep(for: .milliseconds(50))
             let _: Bool? = try? await HarborEngine.shared.call("manga.closeReader")

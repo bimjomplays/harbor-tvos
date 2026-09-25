@@ -186,25 +186,9 @@ struct MangaReaderView: View {
 
     private func aspect(_ i: Int) -> CGFloat { CGFloat(model.aspects[i] ?? Self.defaultAspect) }
 
-    /// reader-prefs pageStyle / doublePageStyle at a 1920 × 1080 screen.
-    private func pageSize(_ i: Int, double: Bool) -> CGSize {
-        let z = CGFloat(model.prefs.zoom)
-        let a = aspect(i)
-        let W = double ? Self.screen.width / 2 : Self.screen.width
-        switch model.prefs.fit {
-        case "height":
-            var h = Self.screen.height * (double ? 0.92 : 0.94) * z
-            var w = h / a
-            if w > W && z <= 1 { w = W; h = w * a }
-            return CGSize(width: w, height: h)
-        case "original":
-            let w = W * z
-            return CGSize(width: w, height: w * a)
-        default:
-            let w = min(W * max(1, z), (double ? 440 : 880) * z)
-            return CGSize(width: w, height: w * a)
-        }
-    }
+    /// reader-prefs pageStyle / doublePageStyle at a 1920 × 1080 screen (the model's, which the
+    /// prefetch decodes for too).
+    private func pageSize(_ i: Int, double: Bool) -> CGSize { model.pageSize(i, double: double) }
 
     private var spread: [Int] {
         guard !model.complete else { return [] }

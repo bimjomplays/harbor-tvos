@@ -224,11 +224,18 @@ function homeConnections() {
  */
 export async function home(force: boolean, upcoming: MusicTrack[] | null): Promise<{ bands: MusicBand[]; errors: Array<{ source: string; message: string }>; failed: boolean }> {
   const key = connectionsKey();
+  let loaded: { rows: MusicCatalogRow[]; errors: Array<{ source: string; message: string }> };
   if (force || !homeCache || homeCache.key !== key || Date.now() - homeCache.at > HOME_TTL) {
-    const loaded = await src.browseHome();
-    homeCache = { at: Date.now(), key, rows: loaded.rows, errors: loaded.errors };
+    loaded = await src.browseHome();
+    // (bug pass 3) catalog_commands.rs music_browse_home stores rows only when there are some,
+    // and serves the cache only when it is not empty. Caching an empty answer (the Apple TV
+    // opened Music before its network was up) kept the home empty for six hours: a listener
+    // with history saw only Recents, with no offline card and no retry.
+    homeCache = loaded.rows.length ? { at: Date.now(), key, rows: loaded.rows, errors: loaded.errors } : null;
+  } else {
+    loaded = homeCache;
   }
-  const { rows, errors } = homeCache;
+  const { rows, errors } = loaded;
   const slots: Record<string, MusicCatalogRow[]> = { newReleases: [], charts: [], stations: [], server: [], scrobble: [], extra: [] };
   const connections = homeConnections();
   for (const row of rows) slots[classifyHomeRow(row, connections)]!.push(row);

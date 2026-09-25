@@ -105,9 +105,17 @@ actor MangaPageCache {
         return tallest >= 2.2
     }
 
-    /// Warm the next pages: bytes into the disk cache and a decode into memory.
-    func prefetch(_ pages: [MangaPage], maxWidth: CGFloat) async {
-        for p in pages { _ = await image(p, maxWidth: maxWidth) }
+    /// The decode width for a page drawn `drawn` points wide: up to 1.5× for a sharper zoom.
+    /// MangaPageImage and the prefetch share it so a warmed page is the one the view asks for.
+    static func decodeWidth(_ drawn: CGFloat) -> CGFloat { min(2400, drawn * 1.5) }
+
+    /// Warm the next pages, each at the width it is drawn at: bytes into the disk cache and a
+    /// decode into memory. Stops between pages once the warm-up is cancelled.
+    func prefetch(_ jobs: [(page: MangaPage, width: CGFloat)]) async {
+        for job in jobs {
+            if Task.isCancelled { return }
+            _ = await image(job.page, maxWidth: Self.decodeWidth(job.width))
+        }
     }
 
     /// The reader closed: drop every decoded page (the disk cache stays for next time).
@@ -145,7 +153,7 @@ struct MangaPageImage: View {
         }
         .task(id: "\(page.url)|\(Int(width))|\(attempt)") {
             failed = false
-            let img = await MangaPageCache.shared.image(page, maxWidth: min(2400, width * 1.5))
+            let img = await MangaPageCache.shared.image(page, maxWidth: MangaPageCache.decodeWidth(width))
             guard !Task.isCancelled else { return }
             image = img
             failed = img == nil

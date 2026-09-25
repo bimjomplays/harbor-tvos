@@ -33,15 +33,22 @@ final class MangaRoomModel: ObservableObject {
     /// views/manga.tsx featured: the first six popular titles that have a cover.
     var featured: [MangaSummary] { Array(popular.filter { $0.cover != nil }.prefix(6)) }
 
+    /// (bug pass 3) views/manga.tsx drops a featured answer once the source changed (`cancelled`).
+    /// A slow merged popular feed from the server switched away from could land after the new
+    /// server's and replace its hero, rail and source chips.
+    private var loadGeneration = 0
+
     func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         popularFailed = false
-        do {
-            popular = try await HarborEngine.shared.call("manga.popular", [0, Optional<String>.none])
-        } catch {
-            popular = []
-            popularFailed = true
-        }
-        tags = (try? await HarborEngine.shared.call("manga.tags")) ?? []
+        let fetched: [MangaSummary]? = try? await HarborEngine.shared.call("manga.popular", [0, Optional<String>.none])
+        guard generation == loadGeneration else { return }
+        popular = fetched ?? []
+        popularFailed = fetched == nil
+        let fetchedTags: [Tag] = (try? await HarborEngine.shared.call("manga.tags")) ?? []
+        guard generation == loadGeneration else { return }
+        tags = fetchedTags
         reloadBrowse()
     }
 

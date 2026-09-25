@@ -754,6 +754,7 @@ r.ok("benchmark still works", (() => {
   ]) });
   const hits = [];
   let jellyfinOn = false;
+  let musicOffline = false;
   const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
   const chartTrack = { id: 3135556, title: "Harder, Better, Faster, Stronger", duration: 224, explicit_lyrics: false, artist: { id: 27, name: "Daft Punk" }, album: { title: "Discovery", cover_big: "https://cdn.example.invalid/discovery.jpg" } };
   const scTrack = (id, title, user, ms) => ({ id, title, duration: ms, full_duration: ms, policy: "ALLOW", streamable: true, user: { id: 9, username: user, avatar_url: "https://i1.sndcdn.com/avatars-large.jpg" }, artwork_url: "https://i1.sndcdn.com/art-large.jpg",
@@ -763,6 +764,7 @@ r.ok("benchmark still works", (() => {
     ] }, track_authorization: "auth-token" });
   rec.node.host.fetch = async (req) => {
     hits.push(`${req.method} ${req.url}`);
+    if (musicOffline) return { status: 503, statusText: "Service Unavailable", headers: {}, url: req.url, body: "" };
     const u = new URL(req.url);
     if (u.host === "api.deezer.com") {
       if (u.pathname === "/chart/0/tracks") return json(req, { data: [chartTrack] });
@@ -803,6 +805,13 @@ r.ok("benchmark still works", (() => {
   r.eq("music.copy carries the dock's volume copy", [m.copy()["music.volume"], m.copy()["music.mute"], m.copy()["music.unmute"]], ["Music volume", "Mute", "Unmute"]);
   const conns = m.connections();
   r.ok("music.connections lists catalog, Jellyfin, Plex, Navidrome, SoundCloud, Spotify and Last.fm; SoundCloud waits for consent, Spotify for a sign-in", conns.map((c) => c.id).join(",") === "catalog,jellyfin,plex,subsonic,soundcloud,spotify,lastfm" && conns.find((c) => c.id === "soundcloud").status === "disconnected" && conns.find((c) => c.id === "spotify").status === "disconnected" && conns.find((c) => c.id === "spotify").detail === "Bring your own Spotify app" && conns.find((c) => c.id === "catalog").status === "connected", JSON.stringify(conns.map((c) => [c.id, c.status])));
+  // (bug pass 3) catalog_commands.rs: an empty answer is never cached, so a home opened before the
+  // network was up loads its rows on the next visit instead of staying empty for six hours.
+  musicOffline = true;
+  const hOff = await m.home(false, null);
+  musicOffline = false;
+  const hBack = await m.home(false, null);
+  r.ok("music.home: an empty (offline) answer is not cached; the next visit loads the rows", !hOff.bands.some((b) => b.key === "fresh") && hBack.bands.some((b) => b.key === "fresh"), JSON.stringify({ off: hOff.bands.map((b) => b.key), back: hBack.bands.map((b) => b.key) }));
   const h = await m.home(true, null);
   const keys = h.bands.map((b) => b.key);
   r.ok("music.home: server notice, charts stand in for fresh (numbered), artists, catalog extras", keys[0] === "server" && h.bands[0].notice && keys.includes("fresh") && h.bands.find((b) => b.key === "fresh").numbered && h.bands.find((b) => b.key === "fresh").cards[0].track.connectorId === "catalog" && keys.includes("home:catalog:charting-artists") && keys.includes("home:catalog:charts") && !hits.some((x) => x.includes("soundcloud")), JSON.stringify({ keys, errors: h.errors }));
@@ -996,6 +1005,28 @@ r.ok("benchmark still works", (() => {
   const legacy = m.library();
   const rawLegacy = store.get("harbor.music.liked.v1") ?? "";
   r.ok("music: an older liked list with X-Plex-Token is scrubbed in storage; without the Plex server it shows no art", !rawLegacy.includes("secret1") && rawLegacy.includes("/photo/:/transcode") && rawLegacy.includes("thumb") && legacy.liked[0].artwork === "" && legacy.likedIds[0] === "plex:7", rawLegacy);
+  // (bug pass 3) A Plex server that missed the first probe (asleep, network not up yet) is probed
+  // again on the next call instead of reading as not connected for five minutes.
+  const px = "http://plex.example.invalid:32400";
+  let plexUp = false;
+  const musicFetch = rec.node.host.fetch;
+  rec.node.host.fetch = async (req) => {
+    const u = new URL(req.url);
+    if (u.origin === px) {
+      if (!plexUp) return { status: 503, statusText: "Service Unavailable", headers: {}, url: req.url, body: "" };
+      if (u.pathname === "/library/sections") return json(req, { MediaContainer: { Directory: [{ key: "3", type: "artist", title: "Music" }] } });
+      if (u.pathname === "/hubs/search") return json(req, { MediaContainer: { Hub: [{ type: "track", Metadata: [{ ratingKey: "71", title: "Starlight", grandparentTitle: "Muse", parentTitle: "Black Holes", duration: 240000 }] }] } });
+    }
+    return musicFetch(req);
+  };
+  for (const [k, v] of [["harbor.media-server.connections.v1", JSON.stringify([{ id: "ms2", profileId: "default", provider: "plex", name: "Plex · den", origin: px, enabled: true }])], ["harbor.media-server.token.v1.default.ms2", "ptok"]]) {
+    rec.node.storage.set(k, v);
+    rec.engine.runtime.syncStorage(k, v);
+  }
+  const plexDown = await m.search("starlight", "plex").then(() => "found", (e) => e.message);
+  plexUp = true;
+  const plexBack = await m.search("starlight", "plex").catch((e) => ({ tracks: [], error: e.message }));
+  r.ok("music: a Plex server that missed the first probe is probed again (no five-minute blackout)", plexDown !== "found" && plexBack.tracks[0]?.title === "Starlight" && plexBack.tracks[0]?.track.connectorId === "plex", JSON.stringify({ plexDown, plexBack }));
   rec.dispose();
 }
 

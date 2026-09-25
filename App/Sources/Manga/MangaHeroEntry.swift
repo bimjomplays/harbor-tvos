@@ -13,6 +13,7 @@ struct MangaHeroEntry: View {
     @State private var openEBook: EBookOpen?
     @State private var busy = false
     @State private var missing = false
+    @State private var loadedFor: String?
     @ObservedObject private var settings = SettingsBridge.shared
     @AppStorage(EBookGate.key) private var ebookOn = false
 
@@ -48,8 +49,15 @@ struct MangaHeroEntry: View {
             }
         }
         .task(id: meta.id) {
+            // (bug pass 3) Once per title: `.task` runs again when the manga or eBook page opened from
+            // here closes, and clearing `source` first took the focused button away under the remote
+            // (focus jumped elsewhere on the page) while AniList was asked again.
+            guard loadedFor != meta.id else { return }
             source = nil
-            source = try? await HarborEngine.shared.call("manga.animeSource", [meta.id, meta.name])
+            let found: Source? = try? await HarborEngine.shared.call("manga.animeSource", [meta.id, meta.name])
+            guard !Task.isCancelled else { return }
+            source = found
+            loadedFor = meta.id
         }
         .fullScreenCover(item: $open) { o in MangaDetailView(mangaId: o.id) }
         .fullScreenCover(item: $openEBook) { o in EBookDetailView(open: o) }

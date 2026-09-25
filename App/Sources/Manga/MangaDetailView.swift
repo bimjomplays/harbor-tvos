@@ -27,6 +27,17 @@ final class MangaDetailModel: ObservableObject {
     private var pid: String { MangaStore.shared.pid }
     var ref: MangaRef { MangaRef(id: mangaId, title: detail?.title ?? "", cover: detail?.cover) }
 
+    /// (bug pass 3) The detail answered once. The page's `.task` runs again whenever a cover over it
+    /// closes (the reader), and a full reload there re-fetched every chapter chunk and put the
+    /// language back to the default: a viewer reading the Japanese chapters came back to English.
+    private var loadedOnce = false
+
+    /// The first load of this page; later appearances keep what the viewer picked (Try again reloads).
+    func loadIfNeeded() async {
+        guard !loadedOnce else { return }
+        await load()
+    }
+
     func load() async {
         pending = true
         // Opened from Search or an anime page: the servers' image auth may not be known yet.
@@ -37,6 +48,7 @@ final class MangaDetailModel: ObservableObject {
             langs = r.langs
             extName = r.extName
             if selectedLang != r.defaultLang { selectedLang = r.defaultLang }
+            loadedOnce = r.detail != nil || !r.chapters.isEmpty
         }
         pending = false
         await refreshMarks()
@@ -131,7 +143,7 @@ struct MangaDetailView: View {
             }
         }
         .ignoresSafeArea()
-        .task { await model.load() }
+        .task { await model.loadIfNeeded() }
         .fullScreenCover(item: $reader, onDismiss: { Task { await model.refreshMarks() } }) { l in
             MangaReaderView(launch: l) { reader = nil }
         }
