@@ -448,6 +448,44 @@ struct MusicNowPlayingView: View {
     }
 }
 
+/// (perf pass 5) MusicLyricsPanel's line list, compared by value (`.equatable()`): the panel's
+/// body runs on every 0.5 s clock tick, the list only when the sung line or the lines change.
+private struct MusicLyricsLines: View, Equatable {
+    let lines: [MusicLyrics.Line]
+    let active: Int
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: BP.px(14)) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                        Text(line.text.isEmpty ? "♪" : line.text)
+                            .font(BP.sans(i == active ? 26 : 22, i == active ? .bold : .semibold))
+                            .foregroundStyle(i == active ? BP.ink : (i < active ? BP.inkSubtle : BP.inkMuted))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .id(i)
+                    }
+                }
+                .padding(.vertical, BP.px(140))
+                .animation(.easeOut(duration: 0.25), value: active)
+            }
+            .onChange(of: active) { _, now in
+                guard now >= 0 else { return }
+                withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(now, anchor: .center) }
+            }
+            // (kids/music pass 2) music-now-playing.tsx scrolls on [panel, activeLyric,
+            // lyricsState], so also when the tab opens or the lines arrive: lyrics opened
+            // mid-song showed the first lines, the sung one off screen, until the next line
+            // changed (a long instrumental break kept it there).
+            .onAppear {
+                guard active >= 0 else { return }
+                let at: Int = active
+                DispatchQueue.main.async { proxy.scrollTo(at, anchor: .center) }
+            }
+        }
+    }
+}
+
 /// music-now-playing.tsx lyrics panel: LRCLIB's synced lines (lyrics.ts), the active line kept
 /// in the middle as it plays (karaoke-scroll.ts anchor 0.5), and the per-track Lyric sync nudge
 /// (lyric-offset.ts, ±0.25 s). Upstream makes each line a seek button; on the TV the lines are
@@ -477,34 +515,12 @@ struct MusicLyricsPanel: View {
                         .accessibilityLabel(copy("Lyrics later", "Lyrics later"))
                 }
                 .focusSection()
-                let active = Self.index(lines, at: max(0, clock.position - offset))
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: BP.px(14)) {
-                            ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                                Text(line.text.isEmpty ? "♪" : line.text)
-                                    .font(BP.sans(i == active ? 26 : 22, i == active ? .bold : .semibold))
-                                    .foregroundStyle(i == active ? BP.ink : (i < active ? BP.inkSubtle : BP.inkMuted))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .id(i)
-                            }
-                        }
-                        .padding(.vertical, BP.px(140))
-                        .animation(.easeOut(duration: 0.25), value: active)
-                    }
-                    .onChange(of: active) { _, now in
-                        guard now >= 0 else { return }
-                        withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(now, anchor: .center) }
-                    }
-                    // (kids/music pass 2) music-now-playing.tsx scrolls on [panel, activeLyric,
-                    // lyricsState], so also when the tab opens or the lines arrive: lyrics opened
-                    // mid-song showed the first lines, the sung one off screen, until the next line
-                    // changed (a long instrumental break kept it there).
-                    .onAppear {
-                        guard active >= 0 else { return }
-                        DispatchQueue.main.async { proxy.scrollTo(active, anchor: .center) }
-                    }
-                }
+                // (perf pass 5) The clock ticks twice a second; only the sung line's index goes to
+                // the list, which redraws when that index (or the lines) change instead of laying
+                // out every line of the song on each tick.
+                let active: Int = Self.index(lines, at: max(0, clock.position - offset))
+                MusicLyricsLines(lines: lines, active: active)
+                    .equatable()
             } else {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
                     Image(systemName: "music.mic").font(.system(size: BP.px(26))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)

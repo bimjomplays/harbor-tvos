@@ -572,6 +572,56 @@ struct PlayPickerView: View {
     /// nothing is skipped; a saved filter that matched nothing, or a pool left empty, brings every
     /// stream back and the banner says so (filterFellBack).
     private var filterPool: (streams: [ScoredStream], fellBack: Bool) {
+        let key: PoolKey = poolKey
+        if let have = memo.poolKey, have == key { return memo.pool }
+        let built: (streams: [ScoredStream], fellBack: Bool) = computeFilterPool()
+        memo.poolKey = key
+        memo.pool = built
+        return built
+    }
+
+    /// (perf pass 5) bp-stream-filters keeps `base` and `visible` in useMemo; here `pool` and
+    /// `visible` were computed properties that each body pass ran about twenty times over (every
+    /// quality chip's count, the addon chip, four facet menus, the header counts, the list, the
+    /// empty state), each a few filters and a sort over every listed stream, a large struct copied
+    /// per kept element. Kept until an input changes; an unchanged `streams` array compares by
+    /// storage in O(1).
+    private final class PoolMemo {
+        var poolKey: PoolKey?
+        var pool: (streams: [ScoredStream], fellBack: Bool) = ([], false)
+        var visibleKey: VisibleKey?
+        var visible: [ScoredStream] = []
+    }
+    struct PoolKey: Equatable {
+        var streams: [ScoredStream]
+        var mode: String
+        var langFilter: Bool
+        var langs: [String]
+        var cachedOnly: Bool
+        var filterId: String?
+        var hostMatch: Bool
+    }
+    struct VisibleKey: Equatable {
+        var pool: PoolKey
+        var quality: String
+        var addonFilter: String?
+        var facet: [String: String]
+        var sortByAddon: Bool
+        var addonOrder: [String]
+        var hostScores: [String: Double]?
+        var rememberedIndex: Int?
+        var switching: PlayerSourcesPanel.Current?
+    }
+    @State private var memo = PoolMemo()
+
+    /// Everything `computeFilterPool` reads.
+    private var poolKey: PoolKey {
+        PoolKey(streams: model.streams, mode: model.streamMode, langFilter: langFilter,
+                langs: model.setup?.preferredLangs ?? [], cachedOnly: cachedOnly,
+                filterId: model.activeFilterId, hostMatch: model.hostScores != nil)
+    }
+
+    private func computeFilterPool() -> (streams: [ScoredStream], fellBack: Bool) {
         let candidates: [ScoredStream] = model.streams
         guard !candidates.isEmpty else { return (candidates, false) }
         var all: [ScoredStream] = candidates
@@ -659,6 +709,18 @@ struct PlayPickerView: View {
     }
 
     private var visible: [ScoredStream] {
+        // Everything `computeVisible` reads.
+        let key = VisibleKey(pool: poolKey, quality: quality, addonFilter: addonFilter, facet: facet,
+                             sortByAddon: sortByAddon, addonOrder: model.addonOrder, hostScores: model.hostScores,
+                             rememberedIndex: model.rememberedIndex, switching: switching)
+        if let have = memo.visibleKey, have == key { return memo.visible }
+        let built: [ScoredStream] = computeVisible()
+        memo.visibleKey = key
+        memo.visible = built
+        return built
+    }
+
+    private func computeVisible() -> [ScoredStream] {
         let wanted = Self.qualities.first { $0.0 == quality }?.1 ?? []
         let filtered = pool.filter { s in
             (wanted.isEmpty || wanted.contains(s.resolution ?? "")) &&

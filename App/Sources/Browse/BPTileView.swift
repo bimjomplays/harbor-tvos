@@ -134,11 +134,14 @@ struct BPTileView: View {
     }
 
     private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false, chain: Bool = false) -> some View {
+        // (perf pass 5) The settings slice read once: each read of `slice` copies the whole
+        // ~140-field struct out of its @Published wrapper, and this runs for every tile on each redraw.
+        let settings: SettingsBridge.Slice = SettingsBridge.shared.slice
         // bp-tile.tsx showTitle = !settings.hidePosterTitles: no title on the plate or under the ring.
-        let showTitle: Bool = SettingsBridge.shared.slice.hidePosterTitles != true
+        let showTitle: Bool = settings.hidePosterTitles != true
         // components/poster.tsx: the art is asked for at the card's size × posterQuality.
         let sized: String? = PosterSizing.sized(url, width: max(size.width, size.height * 2 / 3), scale: displayScale,
-                                                quality: SettingsBridge.shared.slice.posterQuality)
+                                                quality: settings.posterQuality)
         // (parity pass 3, H4) bp-poster-chain useBpPosterChain: a poster-shaped tile asks the viewer's
         // poster service first (never resized), and falls back to the sized poster when it fails.
         let override: String? = chain ? PosterChain.override(for: meta) : nil
