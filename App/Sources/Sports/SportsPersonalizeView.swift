@@ -75,12 +75,13 @@ struct SportsPersonalizeView: View {
                                     RemoteImage(url: team.logo.isEmpty ? nil : team.logo, contentMode: .fit).frame(width: BP.px(28), height: BP.px(28))
                                     Text(team.name).font(BP.sans(13, on ? .bold : .semibold)).foregroundStyle(on ? BP.ink : BP.inkMuted).lineLimit(1)
                                     Spacer(minLength: 0)
-                                    if on { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink) }
+                                    if on { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink).accessibilityHidden(true) }
                                 }
                                 .padding(.horizontal, BP.px(12)).frame(width: BP.px(185), height: BP.px(50), alignment: .leading)
                                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(on ? BP.on : BP.panel))
                             }
                             .buttonStyle(BPTileStyle(radius: BP.rSM))
+                            .bpSelected(on)
                         }
                     }
                     .focusSection()
@@ -189,13 +190,14 @@ struct SportsPersonalizeView: View {
                                     RemoteImage(url: l.logo.isEmpty ? nil : l.logo, contentMode: .fit).frame(width: BP.px(22), height: BP.px(22))
                                     Text(l.label).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                     Spacer()
-                                    if leagues.contains(l.key) { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink) }
+                                    if leagues.contains(l.key) { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink).accessibilityHidden(true) }
                                 }
                                 .padding(.horizontal, BP.px(10))
                                 .frame(width: BP.px(185), height: BP.px(44), alignment: .leading)
                                 .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(leagues.contains(l.key) ? BP.on : BP.panel2))
                             }
                             .buttonStyle(BPTileStyle())
+                            .bpSelected(leagues.contains(l.key))
                         }
                     }
                 }

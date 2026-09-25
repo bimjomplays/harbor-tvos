@@ -207,7 +207,7 @@ struct MusicTrackLine: View {
             if let album = track.album {
                 Text(album).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).lineLimit(1).frame(width: BP.px(260), alignment: .leading)
             }
-            if player.isLiked(track) { Image(systemName: "heart.fill").font(.system(size: BP.px(12))).foregroundStyle(BP.inkMuted) }
+            if player.isLiked(track) { Image(systemName: "heart.fill").font(.system(size: BP.px(12))).foregroundStyle(BP.inkMuted).accessibilityLabel(Text(verbatim: MusicCopy.shared("music.saved", "Saved"))) }
             Text(track.seconds > 0 ? (track.durationLabel ?? MusicProgressBar.stamp(track.seconds)) : "")
                 .font(BP.sans(13)).monospacedDigit().foregroundStyle(BP.inkSubtle).frame(width: BP.px(56), alignment: .trailing)
         }
@@ -235,7 +235,7 @@ struct MusicSearchView: View {
             HStack(alignment: .top, spacing: BP.px(36)) {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
                     HStack(spacing: BP.px(8)) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(BP.inkMuted)
+                        Image(systemName: "magnifyingglass").foregroundStyle(BP.inkMuted).accessibilityHidden(true)
                         Text(model.query.isEmpty ? copy("music.searchPlaceholder", "Search songs, albums, artists") : model.query)
                             .font(BP.sans(22, .semibold)).foregroundStyle(model.query.isEmpty ? BP.inkSubtle : BP.ink).lineLimit(1)
                         Rectangle().fill(BP.ink).frame(width: 2, height: BP.px(26)).opacity(0.8)
@@ -497,7 +497,7 @@ struct MusicLyricsPanel: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
-                    Image(systemName: "music.mic").font(.system(size: BP.px(26))).foregroundStyle(BP.inkSubtle)
+                    Image(systemName: "music.mic").font(.system(size: BP.px(26))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
                     BPNote(text: state == "loading" ? copy("Finding lyrics", "Finding lyrics") : copy("No lyrics for this track", "No lyrics for this track"))
                 }
                 .padding(.top, BP.px(20))

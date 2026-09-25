@@ -279,10 +279,12 @@ struct SportsEventView: View {
                     }
                 } label: { Label(r.label, systemImage: r.active ? "bell.and.waves.left.and.right.fill" : "bell") }
                 .buttonStyle(BPActionStyle(primary: r.active))
+                .bpSelected(r.active)
             }
             ForEach(a.follow) { f in
                 Button { Task { await model.toggleFollow(game, f.key) } } label: { Label(f.label, systemImage: f.on ? "heart.fill" : "heart") }
                     .buttonStyle(BPActionStyle(primary: f.on))
+                    .bpSelected(f.on)
             }
             if let url = a.opendota {
                 Button { link = SportsLink(title: T("View match statistics"), url: url) } label: { Label("View match statistics", systemImage: "arrow.up.right.square") }
@@ -297,7 +299,7 @@ struct SportsEventView: View {
             ForEach(w.broadcasts) { b in
                 Button { link = broadcastLink(b) } label: {
                     HStack(spacing: BP.px(10)) {
-                        Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(BP.inkMuted).frame(width: BP.px(48))
+                        Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(BP.inkMuted).frame(width: BP.px(48)).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(b.title).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                             Text(T(b.platformLabel)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)

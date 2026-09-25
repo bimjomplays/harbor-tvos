@@ -24,7 +24,7 @@ struct AgeGateView: View {
             BP.void_.opacity(0.85).ignoresSafeArea()
             if verified {
                 VStack(spacing: BP.px(28)) {
-                    Image(systemName: "checkmark.circle").font(.system(size: BP.px(84), weight: .light)).foregroundStyle(BP.live)
+                    Image(systemName: "checkmark.circle").font(.system(size: BP.px(84), weight: .light)).foregroundStyle(BP.live).accessibilityHidden(true)
                     Text(T("You're verified")).font(BP.display(26, .medium)).foregroundStyle(BP.ink)
                 }
                 .padding(.horizontal, BP.px(60)).padding(.vertical, BP.px(56))
@@ -97,7 +97,7 @@ struct AgeGateView: View {
             picks[qi] = oi
         } label: {
             HStack(spacing: BP.px(12)) {
-                Image(systemName: picked ? "largecircle.fill.circle" : "circle").foregroundStyle(picked ? BP.ink : BP.inkSubtle)
+                Image(systemName: picked ? "largecircle.fill.circle" : "circle").foregroundStyle(picked ? BP.ink : BP.inkSubtle).accessibilityHidden(true)
                 Text(text).font(BP.sans(14)).foregroundStyle(wasWrong ? BP.danger : (picked ? BP.ink : BP.inkMuted)).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -106,6 +106,7 @@ struct AgeGateView: View {
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(wasWrong ? BP.danger.opacity(0.5) : (picked ? BP.ink : BP.edge), lineWidth: 1))
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .bpSelected(picked)
     }
 
     private func deal() async {

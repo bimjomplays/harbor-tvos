@@ -21,7 +21,7 @@ struct ContinueCardView: View {
                 }
                 HStack(spacing: BP.px(6)) {
                     HStack(spacing: BP.px(4)) {
-                        Image(systemName: item.external == "trakt" ? "checkmark.circle" : item.external == "simkl" ? "circle.dotted" : item.waitingForAir ? "clock" : "play.fill").font(.system(size: BP.px(8), weight: .bold))
+                        Image(systemName: item.external == "trakt" ? "checkmark.circle" : item.external == "simkl" ? "circle.dotted" : item.waitingForAir ? "clock" : "play.fill").accessibilityHidden(true).font(.system(size: BP.px(8), weight: .bold))
                         Text(statusText)
                     }
                     .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink)

@@ -65,7 +65,7 @@ struct VoyageView: View {
         HStack(alignment: .center, spacing: BP.px(10)) {
             if let s = model.snapshot?.streak, s > 1 {
                 HStack(alignment: .firstTextBaseline, spacing: BP.px(5)) {
-                    Image(systemName: "flame.fill").font(.system(size: BP.px(13), weight: .semibold)).foregroundStyle(BP.accent)
+                    Image(systemName: "flame.fill").font(.system(size: BP.px(13), weight: .semibold)).foregroundStyle(BP.accent).accessibilityHidden(true)
                     Text(verbatim: "\(s)").font(BP.sans(12, .semibold)).monospacedDigit().foregroundStyle(BP.inkMuted)
                     Text(T("day streak")).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkSubtle)
                 }
@@ -195,6 +195,7 @@ struct VoyageView: View {
             Image(systemName: "play.fill").font(.system(size: BP.px(22), weight: .semibold)).foregroundStyle(accent)
                 .frame(width: BP.px(56), height: BP.px(56))
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(accent.opacity(0.12)))
+                .accessibilityHidden(true)
             Text(T("Your voyage is ready")).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
             HStack(spacing: BP.px(10)) {
                 Button { Task { await sail() } } label: { Label(T("Start voyage"), systemImage: "play.fill") }
@@ -233,6 +234,7 @@ struct VoyageView: View {
             Image(systemName: "film").font(.system(size: BP.px(24), weight: .semibold)).foregroundStyle(BP.accent)
                 .frame(width: BP.px(56), height: BP.px(56))
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.accent.opacity(0.12)))
+                .accessibilityHidden(true)
             Text(T("Voyage complete")).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
             Text(verbatim: "\(T("You saw the whole run through.")) \(a.slots.count) \(T("films, start to finish. Start another whenever you like."))")
                 .font(BP.sans(13)).foregroundStyle(BP.inkSubtle).multilineTextAlignment(.center).frame(maxWidth: BP.px(420))
@@ -421,6 +423,8 @@ struct VoyageRouteRail: View {
                 .buttonStyle(BPTileStyle())
                 .focused(focus, equals: "slot-\(slot.index)")
                 .accessibilityLabel(Text(verbatim: "\(T("Play")) \(m.name)"))
+                // The slot's tick and bar: "Watched", or "{n}% watched".
+                .accessibilityValue(Text(verbatim: slotValue(slot)))
         } else if let m = slot.meta {
             poster(slot, m)
         } else {
@@ -429,6 +433,12 @@ struct VoyageRouteRail: View {
                 .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.panel))
                 .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(BP.edge.opacity(0.4), lineWidth: 1))
         }
+    }
+
+    private func slotValue(_ slot: VoyageModel.Slot) -> String {
+        if slot.done { return T("Watched") }
+        let pct = Int((slot.progress * 100).rounded())
+        return pct >= 1 && pct <= 99 ? T("%lld%% watched", pct) : ""
     }
 
     private func poster(_ slot: VoyageModel.Slot, _ m: Meta) -> some View {

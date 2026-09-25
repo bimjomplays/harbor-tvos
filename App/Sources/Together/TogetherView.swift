@@ -190,7 +190,7 @@ struct TogetherView: View {
                 HStack(spacing: BP.px(6)) {
                     Text(p.isSelf ? p.name + T(" (you)") : p.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
                     if p.host { Text("Host").textCase(.uppercase).font(BP.sans(9, .bold)).tracking(1).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(5)).padding(.vertical, BP.px(1)).background(Capsule().fill(BP.accent)) }
-                    if p.ready { Image(systemName: "checkmark.circle.fill").foregroundStyle(BP.live).font(.system(size: BP.px(12))) }
+                    if p.ready { Image(systemName: "checkmark.circle.fill").foregroundStyle(BP.live).font(.system(size: BP.px(12))).accessibilityLabel(Text(T("Ready"))) }
                 }
                 if let loc = p.locationLabel, !p.isSelf { Text(loc).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1) }
             }

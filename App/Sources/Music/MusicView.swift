@@ -197,7 +197,7 @@ struct MusicMoreTile: View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             ZStack {
                 BP.panel2
-                Image(systemName: "ellipsis").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.inkMuted)
+                Image(systemName: "ellipsis").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.inkMuted).accessibilityHidden(true)
             }
             .frame(width: BP.px(150), height: BP.px(150))
             .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
@@ -224,6 +224,7 @@ struct MusicCoverCell: View {
                         Image(systemName: "dot.radiowaves.left.and.right")
                             .font(.system(size: BP.px(12), weight: .bold)).foregroundStyle(BP.ink)
                             .padding(BP.px(6)).background(Circle().fill(BP.void_.opacity(0.7))).padding(BP.px(6))
+                            .accessibilityLabel(Text(verbatim: MusicCopy.shared("music.row.stationBadge", "Radio")))
                     }
                 }
             VStack(alignment: card.circle ? .center : .leading, spacing: BP.px(2)) {
@@ -247,7 +248,7 @@ struct MusicCoverCell: View {
         } else {
             ZStack {
                 BP.panel2
-                Image(systemName: card.circle ? "person.fill" : "music.note").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle)
+                Image(systemName: card.circle ? "person.fill" : "music.note").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             }
         }
     }
@@ -271,6 +272,7 @@ struct MusicTrackCell: View {
                 if playing {
                     BP.void_.opacity(0.55)
                     Image(systemName: "waveform").font(.system(size: BP.px(16), weight: .bold)).foregroundStyle(BP.ink)
+                        .accessibilityLabel(Text(verbatim: MusicCopy.shared("music.nowPlaying", "Now playing")))
                 }
             }
             .frame(width: BP.px(46), height: BP.px(46))
@@ -282,6 +284,7 @@ struct MusicTrackCell: View {
             Spacer(minLength: BP.px(6))
             if player.isLiked(card.track) {
                 Image(systemName: "heart.fill").font(.system(size: BP.px(11))).foregroundStyle(BP.inkMuted)
+                    .accessibilityLabel(Text(verbatim: MusicCopy.shared("music.saved", "Saved")))
             }
             if let label = card.track?.durationLabel, (card.track?.seconds ?? 0) > 0 {
                 Text(label).font(BP.sans(12.5)).monospacedDigit().foregroundStyle(BP.inkSubtle)
@@ -448,6 +451,10 @@ struct MusicProgressBar: View {
             Text(Self.stamp(duration)).font(BP.sans(12.5)).monospacedDigit().foregroundStyle(BP.inkSubtle)
         }
         .frame(maxWidth: .infinity)
+        // music-dock.tsx aria-label={t("music.position")}: one element, "1:02 of 3:45".
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: MusicCopy.shared("music.position", "Track position")))
+        .accessibilityValue(Text(verbatim: T("%@ of %@", Self.stamp(position), Self.stamp(duration))))
     }
 
     /// music.rs duration_label (m:ss), with hours for long mixes.

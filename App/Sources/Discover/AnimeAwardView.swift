@@ -73,7 +73,7 @@ struct AnimeAwardView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             HStack(spacing: BP.px(6)) {
-                Image(systemName: "trophy").font(.system(size: BP.px(11), weight: .bold))
+                Image(systemName: "trophy").font(.system(size: BP.px(11), weight: .bold)).accessibilityHidden(true)
                 Text("Anime award").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(BP.px(2))
             }
             .foregroundStyle(BP.inkSubtle)

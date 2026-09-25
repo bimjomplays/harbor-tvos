@@ -165,7 +165,7 @@ struct MangaView: View {
     /// views/manga.tsx EnableGate.
     private var enableGate: some View {
         VStack(alignment: .leading, spacing: BP.px(16)) {
-            Image(systemName: "book").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.ink)
+            Image(systemName: "book").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.ink).accessibilityHidden(true)
             Text("Read manga in Harbor").font(BP.display(36)).foregroundStyle(BP.ink)
             BPNote(text: "Harbor does not host any manga. Add a source plugin from a repository you trust, connect your own server, or open a local folder. You can turn this off anytime in Settings.")
                 .frame(maxWidth: BP.px(620), alignment: .leading)
@@ -433,7 +433,7 @@ struct MangaSourcesView: View {
                 // The source a server feeds carries its host (credentials never reach the UI).
                 let source = s.sources.first { $0.kind == "suwayomi" && $0.host == server.host }
                 HStack(spacing: BP.px(12)) {
-                    Image(systemName: server.hasAuth ? "lock.fill" : "server.rack").foregroundStyle(BP.inkMuted)
+                    Image(systemName: server.hasAuth ? "lock.fill" : "server.rack").foregroundStyle(BP.inkMuted).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(server.name).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                         Text(server.host).font(BP.sans(13)).foregroundStyle(BP.inkMuted)

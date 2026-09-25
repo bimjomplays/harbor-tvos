@@ -163,6 +163,7 @@ struct AddonOrganizeView: View {
             } label: {
                 HStack(spacing: BP.px(14)) {
                     Image(systemName: isGrabbed ? "arrow.up.and.down" : "line.3.horizontal").foregroundStyle(isGrabbed ? BP.accent : BP.inkSubtle)
+                        .accessibilityLabel(Text(T("Drag to reorder")))
                     Text("\(i + 1)").font(BP.sans(16, .bold)).monospacedDigit().foregroundStyle(BP.inkSubtle).frame(minWidth: BP.px(28))
                     AddonLogoView(url: row.logo, name: row.name, side: BP.px(40))
                     VStack(alignment: .leading, spacing: BP.px(2)) {
@@ -177,6 +178,8 @@ struct AddonOrganizeView: View {
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
             .focused($focusedRow, equals: row.key)
+            // A grabbed row (Up/Down move it) reads as selected.
+            .bpSelected(isGrabbed)
             .onMoveCommand { dir in
                 guard isGrabbed else { return }
                 switch dir {

@@ -280,7 +280,7 @@ struct TogetherPlayerLayer: View {
             HStack(spacing: BP.px(14)) {
                 ForEach(v.participants) { p in
                     HStack(spacing: BP.px(6)) {
-                        Image(systemName: p.ready ? "checkmark.circle.fill" : "circle.dotted").foregroundStyle(p.ready ? BP.live : BP.inkSubtle)
+                        Image(systemName: p.ready ? "checkmark.circle.fill" : "circle.dotted").foregroundStyle(p.ready ? BP.live : BP.inkSubtle).accessibilityHidden(true)
                         Text(p.name + (p.isSelf ? T(" (you)") : "") + (p.ready ? "" : T(" · still loading"))).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                     }
                 }
@@ -311,7 +311,7 @@ struct TogetherPlayerLayer: View {
                 if v.shareCursors {
                     ForEach(v.cursors.filter { $0.path == path }, id: \.from) { c in
                         HStack(spacing: BP.px(4)) {
-                            Image(systemName: "cursorarrow").font(.system(size: BP.px(18), weight: .bold))
+                            Image(systemName: "cursorarrow").font(.system(size: BP.px(18), weight: .bold)).accessibilityHidden(true)
                             Text(c.name).font(BP.sans(11, .semibold))
                         }
                         .foregroundStyle(Color.room(v.participants.first(where: { $0.id == c.from })?.color) ?? BP.accent)

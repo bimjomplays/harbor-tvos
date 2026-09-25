@@ -162,7 +162,7 @@ struct ProfileEditorView: View {
     @ViewBuilder private var security: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             HStack(spacing: BP.px(10)) {
-                Image(systemName: hasPin ? "lock.fill" : "lock.open").foregroundStyle(hasPin ? BP.live : BP.inkMuted)
+                Image(systemName: hasPin ? "lock.fill" : "lock.open").foregroundStyle(hasPin ? BP.live : BP.inkMuted).accessibilityHidden(true)
                 Text("PIN & sidebar locks").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text(securityLine).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
             }
@@ -184,13 +184,15 @@ struct ProfileEditorView: View {
                         let on = draftLocks[tab.key] ?? false
                         Button { draftLocks[tab.key] = !on } label: {
                             HStack(spacing: BP.px(8)) {
-                                Image(systemName: on ? "lock.fill" : "lock.open")
+                                Image(systemName: on ? "lock.fill" : "lock.open").accessibilityHidden(true)
                                 Text(tab.label).lineLimit(1)
                             }
                             .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(BPActionStyle(primary: on))
                         .accessibilityIdentifier("lock-tab-\(tab.key)")
+                        // The padlock: a locked tab reads as selected.
+                        .bpSelected(on)
                     }
                 }
                 BPNote(text: lockedCount == 0 ? "No tabs selected" : (hasPin ? "\(lockedCount) selected · locked tabs disappear until this profile's PIN is entered." : "\(lockedCount) selected · Locks only activate once a PIN is set."))

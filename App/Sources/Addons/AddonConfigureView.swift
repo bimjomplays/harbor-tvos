@@ -199,7 +199,7 @@ struct AddonConfigureView: View {
 
     private func doneCard(replaced: Bool, name: String, logo: String?) -> some View {
         VStack(spacing: BP.px(16)) {
-            Image(systemName: "checkmark.circle").font(.system(size: BP.px(64), weight: .light)).foregroundStyle(BP.live)
+            Image(systemName: "checkmark.circle").font(.system(size: BP.px(64), weight: .light)).foregroundStyle(BP.live).accessibilityHidden(true)
             AddonLogoView(url: logo, name: name, side: BP.px(56))
             Text(replaced ? T("Updated") : T("Installed")).font(BP.display(28)).foregroundStyle(BP.ink)
             Text(verbatim: "\(name) \(replaced ? T("is now using your new configuration.") : T("is ready. Open Discover or hit Play on a title to use it."))")

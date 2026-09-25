@@ -60,7 +60,7 @@ struct SharedListView: View {
                 Button { Task { await toggleLike(list) } } label: {
                     Label("\(Int(list.likeCount))", systemImage: list.liked ? "heart.fill" : "heart")
                 }
-                .buttonStyle(BPActionStyle(primary: list.liked, busy: busy)).disabled(!canLike)
+                .buttonStyle(BPActionStyle(primary: list.liked, busy: busy)).disabled(!canLike).bpSelected(list.liked)
                 if canLike {
                     Button { Task { await save() } } label: { Label("Save to my lists", systemImage: "square.and.arrow.down") }
                         .buttonStyle(BPActionStyle(busy: busy))
@@ -84,7 +84,7 @@ struct SharedListView: View {
                 }
             }
         } else if loading {
-            HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading list…").foregroundStyle(BP.inkMuted) }.focusable()
+            HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading list…").foregroundStyle(BP.inkMuted) }.accessibilityElement(children: .combine).focusable()
         } else if data?.state == "missing" {
             // shared-list-states.tsx
             SocialEmpty(title: "This list is gone", message: "The link may be old, or the list is no longer shared.", action: ("Back", { dismiss() }))

@@ -66,6 +66,9 @@ struct LightboxView: View {
                     if dir == .left { index = (index - 1 + images.count) % images.count }
                     else if dir == .right { index = (index + 1) % images.count }
                 }
+                // The invisible surface is the viewer's only focus stop: upstream's "Image {n}", not an empty button.
+                .accessibilityLabel(Text(verbatim: T("Image %lld", index + 1)))
+                .accessibilityValue(Text(verbatim: "\(index + 1) / \(images.count)"))
         }
         .animation(.easeInOut(duration: 0.2), value: index)
         .onExitCommand { dismiss() }

@@ -20,11 +20,12 @@ struct ListDialogView: View {
                 if lists.isEmpty && !naming { BPNote(text: "No lists yet") }
                 ForEach(lists) { l in
                     Button { Task { await toggle(l) } } label: {
-                        HStack { Text(l.name); Spacer(); Text("\(l.count)").foregroundStyle(BP.inkSubtle); if l.contains { Image(systemName: "checkmark") } }
+                        HStack { Text(l.name); Spacer(); Text("\(l.count)").foregroundStyle(BP.inkSubtle); if l.contains { Image(systemName: "checkmark").accessibilityHidden(true) } }
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(BPActionStyle(primary: l.contains))
                     .focused($focus, equals: l.id)
+                    .bpSelected(l.contains)
                 }
                 if naming {
                     BPField(label: "New list", placeholder: "List name", text: $newName)
@@ -88,6 +89,8 @@ struct RateDialogView: View {
                         Button("\(n)") { Task { await rate(n) } }
                             .buttonStyle(BPActionStyle(primary: n <= score && score > 0))
                             .focused($focus, equals: n)
+                            // The filled run of numbers is drawn; the rating given reads as selected.
+                            .bpSelected(n == score)
                     }
                 }
                 .focusSection()

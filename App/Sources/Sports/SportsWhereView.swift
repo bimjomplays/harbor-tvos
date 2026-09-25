@@ -47,7 +47,7 @@ struct SportsWhereRowView: View {
                                     if !m.note.isEmpty { Text(T(m.note)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
                                 }
                                 Spacer(minLength: 0)
-                                Image(systemName: "arrow.up.right.square").font(.system(size: BP.px(16))).foregroundStyle(BP.inkSubtle)
+                                Image(systemName: "arrow.up.right.square").font(.system(size: BP.px(16))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
                             }
                             .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(14))
                             .frame(width: BP.px(380), alignment: .leading)
@@ -158,12 +158,13 @@ struct SportsBroadcastsView: View {
                                     Image(systemName: b.platform == "youtube" ? "play.rectangle.fill" : b.platform == "twitch" ? "tv.fill" : "dot.radiowaves.left.and.right")
                                         .font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.inkMuted)
                                         .frame(width: BP.px(44), height: BP.px(44)).background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
+                                        .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(b.title).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                         Text(T(b.platformLabel)).font(BP.sans(11)).foregroundStyle(BP.inkMuted)
                                     }
                                     Spacer(minLength: 0)
-                                    Image(systemName: b.app != nil ? "arrow.up.forward.app" : "qrcode").foregroundStyle(BP.inkSubtle)
+                                    Image(systemName: b.app != nil ? "arrow.up.forward.app" : "qrcode").foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
                                 }
                                 .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(12))
                                 .frame(width: BP.px(760), alignment: .leading)

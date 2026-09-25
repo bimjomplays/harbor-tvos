@@ -12,7 +12,7 @@ struct SportsAddonTile: View {
                 if let logo, !logo.isEmpty {
                     RemoteImage(url: logo, contentMode: .fit)
                 } else {
-                    Image(systemName: icon).font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.inkMuted)
+                    Image(systemName: icon).font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.inkMuted).accessibilityHidden(true)
                 }
             }
             .frame(width: BP.px(44), height: BP.px(44))
@@ -170,7 +170,7 @@ struct SportsAddonPanelView: View {
                     Button { play(row, st) } label: {
                         HStack(spacing: BP.px(12)) {
                             if playing == st.index { ProgressView().tint(BP.inkMuted) }
-                            else { Image(systemName: st.external ? "arrow.up.right.square" : "play.fill").foregroundStyle(BP.inkMuted) }
+                            else { Image(systemName: st.external ? "arrow.up.right.square" : "play.fill").foregroundStyle(BP.inkMuted).accessibilityHidden(true) }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(st.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                 if !st.title.isEmpty { Text(st.title).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2) }

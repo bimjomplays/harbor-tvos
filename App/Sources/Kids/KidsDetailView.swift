@@ -215,6 +215,7 @@ struct KidsDetailView: View {
                             .font(.system(size: BP.px(22), weight: .bold))
                             .frame(width: BP.px(44), height: BP.px(44))
                             .background(Circle().fill(.white.opacity(0.25)))
+                            .accessibilityHidden(true)
                         Text("Play").font(KidsTheme.font(22, .heavy))
                     }
                     .foregroundStyle(.white)
@@ -247,7 +248,7 @@ struct KidsDetailView: View {
     private func episodes(_ d: KidsDetailModel.Detail) -> some View {
         VStack(alignment: .leading, spacing: BP.px(16)) {
             HStack(spacing: BP.px(10)) {
-                Image(systemName: "tv").font(.system(size: BP.px(24), weight: .bold)).foregroundStyle(KidsTheme.teal)
+                Image(systemName: "tv").font(.system(size: BP.px(24), weight: .bold)).foregroundStyle(KidsTheme.teal).accessibilityHidden(true)
                 Text("Episodes").font(KidsTheme.font(26, .heavy)).foregroundStyle(KidsTheme.deep)
             }
             .padding(.horizontal, BP.gutter)
@@ -408,12 +409,16 @@ struct KidsEpisodeCard: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(BP.px(6))
+                    // The star badge reads "Rating, 7.8" rather than "Star, 7.8".
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: "\(T("Rating")), \(rating)"))
                 }
                 if focused {
                     Image(systemName: "play.fill")
                         .font(.system(size: BP.px(24), weight: .bold)).foregroundStyle(KidsTheme.teal)
                         .frame(width: BP.px(56), height: BP.px(56))
                         .background(Circle().fill(.white.opacity(0.9)))
+                        .accessibilityHidden(true)
                 }
             }
             .aspectRatio(16 / 9, contentMode: .fit)

@@ -146,6 +146,8 @@ struct EBookReaderView: View {
             Text(T("%@ of %@", String(model.index + 1), String(model.chapters.count))).foregroundStyle(Color(hex: paper.muted))
             if model.speaking {
                 Image(systemName: model.narrationPaused ? "pause.fill" : "speaker.wave.2.fill")
+                    .accessibilityLabel(Text(T("Paused")))
+                    .accessibilityHidden(!model.narrationPaused)
                 Text(model.voiceLabel).foregroundStyle(Color(hex: paper.muted))
             }
             if let note = model.narrationNotice { Text(T(note)).foregroundStyle(Color(hex: paper.muted)) }
@@ -264,6 +266,7 @@ struct EBookReaderView: View {
             .buttonStyle(BPActionStyle(primary: active))
             .disabled(!enabled)
             .focused($focus, equals: .bar(id))
+            .bpSelected(active)
     }
 
     // MARK: panels
@@ -403,6 +406,7 @@ struct EBookReaderView: View {
         Button(T(label), action: run)
             .buttonStyle(BPActionStyle(primary: on))
             .focused($focus, equals: .item(id))
+            .bpSelected(on)
     }
 
     private func stepper(_ label: String, value: Double, format: String, step: Double, range: ClosedRange<Double>, key: String) -> some View {

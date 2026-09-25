@@ -397,8 +397,8 @@ struct MangaDetailView: View {
             }
             Spacer(minLength: BP.px(10))
             if !meta.isEmpty { Text(meta).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
-            if c.downloaded == true { Image(systemName: "server.rack").font(.system(size: BP.px(13))).foregroundStyle(BP.inkSubtle) }
-            Image(systemName: "book").font(.system(size: BP.px(15))).foregroundStyle(BP.inkSubtle)
+            if c.downloaded == true { Image(systemName: "server.rack").font(.system(size: BP.px(13))).foregroundStyle(BP.inkSubtle).accessibilityLabel(Text(T("Saved on your server"))) }
+            Image(systemName: "book").font(.system(size: BP.px(15))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
         }
         .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(11))
         .frame(maxWidth: .infinity, alignment: .leading)

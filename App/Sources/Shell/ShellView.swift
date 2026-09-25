@@ -477,6 +477,7 @@ struct RoomPlaceholderView: View {
         }
         .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
         .focusable()
     }
 }

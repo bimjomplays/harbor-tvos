@@ -490,7 +490,7 @@ struct SportsLineupsRowView: View {
                     HStack(spacing: BP.px(8)) {
                         Group {
                             if let img = row.image, !img.isEmpty { RemoteImage(url: img) }
-                            else { Image(systemName: "person.fill").font(.system(size: BP.px(13))).foregroundStyle(BP.inkSubtle) }
+                            else { Image(systemName: "person.fill").font(.system(size: BP.px(13))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
                         }
                         .frame(width: BP.px(30), height: BP.px(30)).background(Circle().fill(BP.void_.opacity(0.7))).clipShape(Circle())
                         Text(row.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)

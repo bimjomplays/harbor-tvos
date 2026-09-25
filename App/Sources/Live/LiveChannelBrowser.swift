@@ -162,7 +162,7 @@ struct LiveChannelBrowser: View {
             group = key
         } label: {
             HStack(spacing: BP.px(8)) {
-                if star { Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star") }
+                if star { Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star").accessibilityHidden(true) }
                 Text(label).lineLimit(1)
                 Spacer(minLength: 0)
                 if let count, count > 0 { Text("\(count)").opacity(0.55) }
@@ -170,6 +170,7 @@ struct LiveChannelBrowser: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(BPActionStyle(primary: active))
+        .bpSelected(active)
     }
 
     private func row(_ ch: LiveModel.Channel) -> some View {
@@ -182,7 +183,7 @@ struct LiveChannelBrowser: View {
                     .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     HStack(spacing: BP.px(6)) {
-                        if ch.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(10))).foregroundStyle(BP.inkMuted) }
+                        if ch.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(10))).foregroundStyle(BP.inkMuted).accessibilityLabel(Text(T("Favorite"))) }
                         Text(ch.shownName).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                         if let b = ch.badge {
                             Text(b).font(BP.sans(9, .bold)).foregroundStyle(BP.inkMuted)
@@ -201,7 +202,7 @@ struct LiveChannelBrowser: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if isCurrent {
-                    Image(systemName: "speaker.wave.2.fill").foregroundStyle(BP.accent)
+                    Image(systemName: "speaker.wave.2.fill").foregroundStyle(BP.accent).accessibilityLabel(Text(T("Now playing")))
                 }
             }
             .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(8))
@@ -320,7 +321,7 @@ struct LiveSearchField: View {
 
     var body: some View {
         HStack(spacing: BP.px(10)) {
-            Image(systemName: "magnifyingglass").foregroundStyle(BP.inkSubtle)
+            Image(systemName: "magnifyingglass").foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             TextField(T(placeholder), text: $text)
                 .font(BP.sans(17))
                 .textInputAutocapitalization(.never)

@@ -72,7 +72,7 @@ struct VoyageBannerView: View {
                 Text(T("Harbor Voyages")).font(BP.sans(10.5, .bold)).textCase(.uppercase).tracking(BP.px(2.2)).foregroundStyle(accent)
                 if let s = snapshot?.streak, s > 1 {
                     HStack(alignment: .firstTextBaseline, spacing: BP.px(3)) {
-                        Image(systemName: "flame.fill").font(.system(size: BP.px(11), weight: .semibold)).foregroundStyle(accent)
+                        Image(systemName: "flame.fill").font(.system(size: BP.px(11), weight: .semibold)).foregroundStyle(accent).accessibilityHidden(true)
                         Text(verbatim: "\(s)").font(BP.sans(10.5, .bold)).monospacedDigit().foregroundStyle(BP.ink)
                     }
                     .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(2))

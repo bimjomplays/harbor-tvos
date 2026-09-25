@@ -186,6 +186,7 @@ struct LibraryView: View {
                                         }
                                         .buttonStyle(BPTileStyle())
                                         .focused($focusedKey, equals: e.key)
+                                        .bpProgressValue(e.progress)
                                         // The lifted tile, ring and shadow draw over the next grid row.
                                         .zIndex(focusedKey == e.key ? 1 : 0)
                                     }

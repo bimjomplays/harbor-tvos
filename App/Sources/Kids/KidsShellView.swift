@@ -100,6 +100,7 @@ struct KidsTopBar: View {
             Button {} label: { label("Watch", icon: "popcorn.fill") }
                 .buttonStyle(KidsNavStyle(active: true))
                 .accessibilityIdentifier("tab-kids")
+                .bpSelected(true)
             Button(action: onPlay) { label("Play", icon: "play.circle.fill") }
                 .buttonStyle(KidsNavStyle(active: false))
                 .accessibilityIdentifier("tab-kids-play")
@@ -129,7 +130,7 @@ struct KidsTopBar: View {
 
     private func label(_ text: String, icon: String) -> some View {
         HStack(spacing: BP.px(8)) {
-            Image(systemName: icon).font(.system(size: BP.px(18), weight: .bold))
+            Image(systemName: icon).font(.system(size: BP.px(18), weight: .bold)).accessibilityHidden(true)
             Text(T(text)).font(KidsTheme.font(16, .bold))
         }
         .padding(.horizontal, BP.px(14))

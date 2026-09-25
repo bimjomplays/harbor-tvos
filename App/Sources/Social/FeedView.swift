@@ -17,7 +17,7 @@ struct FeedView: View {
             if !watching.isEmpty { strip }
             switch phase {
             case "loading":
-                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.focusable()
+                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.accessibilityElement(children: .combine).focusable()
             case "error":
                 SocialEmpty(title: "Could not load activity", message: "Check your connection and try again.", action: ("Try again", { Task { await load() } }))
             default:

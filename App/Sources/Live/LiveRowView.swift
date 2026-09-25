@@ -86,7 +86,7 @@ struct LiveRowView: View {
                 Text(c.channel.shownName).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 if let b = c.channel.badge { Text(b).font(BP.sans(8, .bold)).foregroundStyle(BP.inkMuted) }
                 Spacer(minLength: 0)
-                if c.channel.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(9))).foregroundStyle(BP.ink) }
+                if c.channel.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(9))).foregroundStyle(BP.ink).accessibilityLabel(Text(T("Favorite"))) }
             }
             Text(c.now?.title ?? T(c.next == nil ? "Live" : "No program info")).font(BP.sans(13, .bold)).foregroundStyle(BP.ink).lineLimit(1)
             if let p = c.progress {

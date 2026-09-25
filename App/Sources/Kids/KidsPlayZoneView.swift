@@ -102,7 +102,7 @@ struct KidsPlayZoneView: View {
         HStack(spacing: BP.px(16)) {
             Button(action: goBack) {
                 HStack(spacing: BP.px(10)) {
-                    Image(systemName: "arrow.backward")
+                    Image(systemName: "arrow.backward").accessibilityHidden(true)
                     Text("Back")
                 }
             }
@@ -133,6 +133,7 @@ struct KidsPlayZoneView: View {
                                     .font(.system(size: BP.px(15), weight: .bold)).foregroundStyle(.white)
                                     .frame(width: BP.px(32), height: BP.px(32))
                                     .background(Circle().fill(a.chip))
+                                    .accessibilityHidden(true)
                                 Text(T(a.name)).font(KidsTheme.font(24, .medium)).foregroundStyle(KidsTheme.sea)
                             }
                             Text(T(a.blurb)).font(KidsTheme.font(15, .semibold)).foregroundStyle(KidsTheme.seaMuted)
@@ -260,7 +261,7 @@ struct KidsMemoryMatch: View {
                         .padding(.horizontal, BP.px(20)).padding(.vertical, BP.px(8))
                         .background(Capsule().fill(.white.opacity(0.2)))
                     Button(action: reset) {
-                        HStack(spacing: BP.px(8)) { Image(systemName: "arrow.counterclockwise"); Text("Shuffle") }
+                        HStack(spacing: BP.px(8)) { Image(systemName: "arrow.counterclockwise").accessibilityHidden(true); Text("Shuffle") }
                     }
                     .buttonStyle(KidsPillStyle())
                 }
@@ -345,11 +346,11 @@ struct KidsMemoryMatch: View {
         ZStack {
             Color(hex: 0x0a2a3f).opacity(0.75).ignoresSafeArea()
             VStack(spacing: BP.px(16)) {
-                Image(systemName: "party.popper.fill").font(.system(size: BP.px(44))).foregroundStyle(Color(hex: 0xe08900))
+                Image(systemName: "party.popper.fill").font(.system(size: BP.px(44))).foregroundStyle(Color(hex: 0xe08900)).accessibilityHidden(true)
                 Text("You found them all!").font(KidsTheme.font(30, .medium)).foregroundStyle(KidsTheme.sea)
                 Text("\(moves) moves. Amazing memory!").font(KidsTheme.font(16, .semibold)).foregroundStyle(KidsTheme.seaMuted)
                 Button(action: reset) {
-                    HStack(spacing: BP.px(8)) { Image(systemName: "arrow.counterclockwise"); Text("Play again") }
+                    HStack(spacing: BP.px(8)) { Image(systemName: "arrow.counterclockwise").accessibilityHidden(true); Text("Play again") }
                 }
                 .buttonStyle(KidsPillStyle(fill: KidsTheme.sunny, ink: KidsTheme.sunnyInk, height: BP.px(56)))
                 .prefersDefaultFocus(true, in: winNS)
@@ -483,7 +484,7 @@ struct KidsBubblePop: View {
         ZStack {
             Color(hex: 0x0a2a3f).opacity(0.6).ignoresSafeArea()
             VStack(spacing: BP.px(16)) {
-                Image(systemName: "party.popper.fill").font(.system(size: BP.px(44))).foregroundStyle(Color(hex: 0xe08900))
+                Image(systemName: "party.popper.fill").font(.system(size: BP.px(44))).foregroundStyle(Color(hex: 0xe08900)).accessibilityHidden(true)
                 Text("You counted to \(count)!").font(KidsTheme.font(30, .medium)).foregroundStyle(KidsTheme.sea)
                 HStack(spacing: BP.px(12)) {
                     Button("Again") { startLevel(levelIdx) }
@@ -603,7 +604,7 @@ struct KidsOceanFacts: View {
             .id(idx)
             .transition(.opacity)
             Button { idx += 1 } label: {
-                HStack(spacing: BP.px(12)) { Image(systemName: "sparkles"); Text("Another one!") }
+                HStack(spacing: BP.px(12)) { Image(systemName: "sparkles").accessibilityHidden(true); Text("Another one!") }
             }
             .buttonStyle(KidsPillStyle(fill: KidsTheme.sunny, ink: KidsTheme.sunnyInk, height: BP.px(64)))
             .focused($nextFocused)

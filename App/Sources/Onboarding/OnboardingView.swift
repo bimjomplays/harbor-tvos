@@ -31,7 +31,8 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ProgressBar(fraction: Double(step.rawValue + 1) / Double(Step.allCases.count))
+            ProgressBar(fraction: Double(step.rawValue + 1) / Double(Step.allCases.count),
+                        valueText: T("%lld of %lld", step.rawValue + 1, Step.allCases.count))
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(28))
             HStack(alignment: .top, spacing: BP.px(60)) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -302,6 +303,8 @@ struct OnboardFacts: Decodable {
 
 struct ProgressBar: View {
     let fraction: Double
+    /// bp-onboarding-frame.tsx aria-valuenow / aria-valuemax, read as "3 of 10".
+    var valueText = ""
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .leading) {
@@ -311,7 +314,9 @@ struct ProgressBar: View {
         }
         .frame(height: BP.px(4))
         .animation(BP.easeSlow, value: fraction)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Setup progress")
+        .accessibilityValue(Text(verbatim: valueText))
     }
 }
 
@@ -324,7 +329,7 @@ struct StepConfirmed: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(18)) {
             HStack(alignment: .top, spacing: BP.px(14)) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.live)
+                Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.live).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     Text(verbatim: title).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -597,7 +602,7 @@ struct TasteStep: View {
                                     RemoteImage(url: m.poster).frame(width: BP.px(76), height: BP.px(114))
                                         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
                                         .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(on ? BP.accent : .clear, lineWidth: 3))
-                                    if on { Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(22))).foregroundStyle(BP.accent).padding(BP.px(6)) }
+                                    if on { Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(22))).foregroundStyle(BP.accent).padding(BP.px(6)).accessibilityHidden(true) }
                                 }
                                 .offset(y: bump == m.id ? -6 : 0)
                             }

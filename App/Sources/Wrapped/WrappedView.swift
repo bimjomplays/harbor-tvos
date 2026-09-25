@@ -229,6 +229,7 @@ struct WrappedView: View {
     private func highlight(_ icon: String, _ title: String, _ body: String) -> some View {
         HStack(alignment: .top, spacing: BP.px(14)) {
             Image(systemName: icon).font(.system(size: BP.px(16), weight: .semibold)).foregroundStyle(BP.accent)
+                .accessibilityHidden(true)
                 .frame(width: BP.px(36), height: BP.px(36))
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.canvas.opacity(0.6)))
             VStack(alignment: .leading, spacing: 2) {
@@ -251,7 +252,7 @@ struct WrappedView: View {
             label("What you watched")
             ForEach(rows) { r in
                 HStack(spacing: BP.px(12)) {
-                    Image(systemName: r.icon).foregroundStyle(BP.inkMuted).frame(width: BP.px(22))
+                    Image(systemName: r.icon).foregroundStyle(BP.inkMuted).frame(width: BP.px(22)).accessibilityHidden(true)
                     Text(T(r.label)).font(BP.sans(13.5)).foregroundStyle(BP.inkMuted).frame(width: BP.px(70), alignment: .leading)
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
@@ -382,7 +383,7 @@ struct WrappedView: View {
     // WrappedEmpty
     private var empty: some View {
         VStack(spacing: BP.px(12)) {
-            Image(systemName: "chart.bar").font(.system(size: BP.px(24))).foregroundStyle(BP.inkSubtle)
+            Image(systemName: "chart.bar").font(.system(size: BP.px(24))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             Text("Nothing to show yet").font(BP.display(22, .medium)).foregroundStyle(BP.ink)
             Text("Connect Trakt or Simkl, or start watching, and your stats will build themselves.")
                 .font(BP.sans(13.5)).foregroundStyle(BP.inkMuted).multilineTextAlignment(.center).frame(maxWidth: BP.px(380))

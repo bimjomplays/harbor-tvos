@@ -27,6 +27,14 @@ struct BPTileView: View {
         face
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: meta.name))
+            // The mark chips it ignores: pick-card.tsx aria-label t("In watchlist"), and the watched check.
+            .accessibilityValue(Text(verbatim: markText))
+    }
+
+    private var markText: String {
+        let m = marks.byId[meta.id]
+        let parts: [String] = [m?.watched != nil ? T("Watched") : "", m?.bookmark != nil ? T("In watchlist") : ""]
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     @ViewBuilder private var face: some View {

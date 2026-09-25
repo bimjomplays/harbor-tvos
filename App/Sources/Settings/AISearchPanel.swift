@@ -61,6 +61,7 @@ struct AISearchPanel: View {
                     }
                     .buttonStyle(BPActionStyle(primary: (state?.tab ?? "openrouter") == tab))
                     .accessibilityIdentifier("ai-provider-\(tab)")
+                    .bpSelected((state?.tab ?? "openrouter") == tab)
                 }
             }
         }
@@ -112,6 +113,7 @@ struct AISearchPanel: View {
                 ForEach(tabModels) { m in
                     Button { Task { await setModel(m.id) } } label: { modelCell(m, on: m.id == state?.model) }
                         .buttonStyle(BPTileStyle(radius: BP.rSM))
+                        .bpSelected(m.id == state?.model)
                 }
             }
         }
@@ -129,7 +131,7 @@ struct AISearchPanel: View {
                 }
             }
             Spacer(minLength: 0)
-            if on { Image(systemName: "checkmark").font(.system(size: BP.px(14), weight: .bold)).foregroundStyle(BP.accent) }
+            if on { Image(systemName: "checkmark").font(.system(size: BP.px(14), weight: .bold)).foregroundStyle(BP.accent).accessibilityHidden(true) }
         }
         .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
         .frame(maxWidth: .infinity, alignment: .leading)

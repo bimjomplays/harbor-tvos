@@ -73,7 +73,7 @@ struct AppearancePanel: View {
                 .padding(BP.px(12))
                 Circle().fill(ink)
                     .frame(width: BP.px(24), height: BP.px(24))
-                    .overlay { if active { Image(systemName: "checkmark").font(.system(size: BP.px(12), weight: .heavy)).foregroundStyle(base) } }
+                    .overlay { if active { Image(systemName: "checkmark").font(.system(size: BP.px(12), weight: .heavy)).foregroundStyle(base).accessibilityHidden(true) } }
                     .padding(BP.px(10))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
@@ -83,7 +83,9 @@ struct AppearancePanel: View {
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
         .focused($focus, equals: "theme:\(p.id)")
-        .accessibilityLabel("\(p.name)\(active ? ", current" : "")")
+        // The ring and tick on the theme in use read as selected (", current" was English only).
+        .accessibilityLabel(Text(verbatim: p.name))
+        .bpSelected(active)
     }
 
     /// font-grid.tsx tile: the name, "Harbor" in the display face, the pangram in the body face.
@@ -98,7 +100,7 @@ struct AppearancePanel: View {
                 HStack {
                     Text(f.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     Spacer()
-                    if active { Image(systemName: "checkmark").font(.system(size: BP.px(13), weight: .bold)).foregroundStyle(BP.accent) }
+                    if active { Image(systemName: "checkmark").font(.system(size: BP.px(13), weight: .bold)).foregroundStyle(BP.accent).accessibilityHidden(true) }
                 }
                 Text("Harbor").font(BP.display(24, .medium, face: display)).foregroundStyle(BP.ink)
                 Text("The quick brown fox jumps over the lazy dog").font(BP.sans(12, .regular, face: sans)).foregroundStyle(BP.inkMuted).lineLimit(1)
@@ -111,5 +113,8 @@ struct AppearancePanel: View {
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
         .focused($focus, equals: "font:\(f.id)")
+        // The name and blurb, not the "Harbor" and pangram samples drawn in the faces.
+        .accessibilityLabel(Text(verbatim: "\(f.name), \(f.blurb)"))
+        .bpSelected(active)
     }
 }

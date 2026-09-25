@@ -110,7 +110,7 @@ struct PickerAutoStep: View {
                 }
                 Button(action: onCancel) {
                     HStack(spacing: BP.px(7)) {
-                        Image(systemName: "xmark").font(.system(size: BP.px(15), weight: .bold))
+                        Image(systemName: "xmark").font(.system(size: BP.px(15), weight: .bold)).accessibilityHidden(true)
                         Text("Choose a source instead")
                     }
                 }
@@ -197,7 +197,7 @@ struct PickerAutoStep: View {
                 // kids pill so the ring reads on the sea plate, as KidsPlayerLoader's.
                 Button(action: onCancel) {
                     HStack(spacing: BP.px(10)) {
-                        Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy))
+                        Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy)).accessibilityHidden(true)
                         Text(T(p2pStage == 2 ? "Choose another source" : "Cancel")).font(KidsTheme.font(18, .heavy))
                     }
                 }

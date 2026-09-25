@@ -233,7 +233,7 @@ struct KidsGameHandoff: View {
                 }
                 .frame(width: BP.px(300), alignment: .leading)
                 Button(action: onBack) {
-                    HStack(spacing: BP.px(8)) { Image(systemName: "gamecontroller.fill"); Text("Pick another") }
+                    HStack(spacing: BP.px(8)) { Image(systemName: "gamecontroller.fill").accessibilityHidden(true); Text("Pick another") }
                 }
                 .buttonStyle(KidsPillStyle(fill: KidsTheme.sunny, ink: KidsTheme.sunnyInk, height: BP.px(52)))
                 .focused($pickFocused)

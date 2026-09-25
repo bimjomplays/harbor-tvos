@@ -50,7 +50,7 @@ struct KidsPlayerTransport: View {
         HStack(spacing: BP.px(12)) {
             Button(action: onBack) {
                 HStack(spacing: BP.px(10)) {
-                    Image(systemName: "arrow.backward").font(.system(size: BP.px(22), weight: .heavy))
+                    Image(systemName: "arrow.backward").font(.system(size: BP.px(22), weight: .heavy)).accessibilityHidden(true)
                     Text("Back").font(KidsTheme.font(18, .heavy))
                 }
             }
@@ -93,6 +93,9 @@ struct KidsPlayerTransport: View {
                 .font(.system(size: BP.px(17), weight: .bold, design: .monospaced))
                 .foregroundStyle(.white)
                 .monospacedDigit()
+                // One reading ("1:02 of 22:00") instead of two stamps and an unnamed bar.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: T("%@ of %@", Self.fmt(position), Self.fmt(duration))))
             }
             HStack(spacing: BP.px(16)) {
                 // KidsVolume: the mute half (VolumeX / Volume2).
@@ -140,7 +143,7 @@ struct KidsPlayerTransport: View {
                     if canPickAnother {
                         Button(action: onPickAnother) {
                             HStack(spacing: BP.px(8)) {
-                                Image(systemName: "shuffle").font(.system(size: BP.px(22), weight: .bold))
+                                Image(systemName: "shuffle").font(.system(size: BP.px(22), weight: .bold)).accessibilityHidden(true)
                                 Text("Switch").font(KidsTheme.font(16, .heavy))
                             }
                         }
@@ -477,7 +480,7 @@ struct KidsPlayerLoader: View {
                     // The loader's Cancel: in the kids pill so the ring reads on the sea plate.
                     Button(action: onCancel) {
                         HStack(spacing: BP.px(10)) {
-                            Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy))
+                            Image(systemName: "xmark").font(.system(size: BP.px(18), weight: .heavy)).accessibilityHidden(true)
                             Text("Cancel").font(KidsTheme.font(18, .heavy))
                         }
                     }
@@ -524,7 +527,7 @@ struct KidsPlayerLoader: View {
                     onRetry()
                 } label: {
                     HStack(spacing: BP.px(10)) {
-                        Image(systemName: "arrow.counterclockwise").font(.system(size: BP.px(18), weight: .heavy))
+                        Image(systemName: "arrow.counterclockwise").font(.system(size: BP.px(18), weight: .heavy)).accessibilityHidden(true)
                         Text("Try again").font(KidsTheme.font(18, .heavy))
                     }
                 }
@@ -561,7 +564,7 @@ struct KidsResumePrompt: View {
                 HStack(spacing: BP.px(20)) {
                     Button(action: onResume) {
                         HStack(spacing: BP.px(12)) {
-                            Image(systemName: "play.fill").font(.system(size: BP.px(28), weight: .black))
+                            Image(systemName: "play.fill").font(.system(size: BP.px(28), weight: .black)).accessibilityHidden(true)
                             Text("Keep Watching").font(KidsTheme.font(24, .heavy))
                         }
                         .frame(minWidth: BP.px(232))
@@ -570,7 +573,7 @@ struct KidsResumePrompt: View {
                     .focused(focus, equals: .chip("Pick up where you left off"))
                     Button(action: onStartOver) {
                         HStack(spacing: BP.px(12)) {
-                            Image(systemName: "arrow.counterclockwise").font(.system(size: BP.px(26), weight: .heavy))
+                            Image(systemName: "arrow.counterclockwise").font(.system(size: BP.px(26), weight: .heavy)).accessibilityHidden(true)
                             Text("Start Over").font(KidsTheme.font(24, .heavy))
                         }
                         .frame(minWidth: BP.px(172))
@@ -701,7 +704,7 @@ struct KidsStreamSwitcher: View {
                 Spacer(minLength: 0)
                 Group {
                     if busy { ProgressView().tint(.white) }
-                    else { Image(systemName: "play.fill").font(.system(size: BP.px(22), weight: .black)) }
+                    else { Image(systemName: "play.fill").font(.system(size: BP.px(22), weight: .black)).accessibilityHidden(true) }
                 }
                 .foregroundStyle(.white)
                 .frame(width: BP.px(48), height: BP.px(48))

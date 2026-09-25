@@ -519,6 +519,8 @@ struct DetailView: View {
                 .buttonStyle(BPActionStyle(primary: true))
                 .focused($heroFocus, equals: "play")
                 .accessibilityIdentifier("detail-play")
+                // The resume bar under Play, read as "{n}% watched" when it is drawn.
+                .bpProgressValue(model.resumeIsPlayTarget ? model.resume?.progress : nil)
                 // bp-detail-actions BpSecondaryAction: icon cells; the line under the row names the focused one.
                 ForEach(heroActions) { a in
                     Button { a.run() } label: {
@@ -825,6 +827,7 @@ struct DetailView: View {
                         }
                             .buttonStyle(BPTileStyle())
                             .focused($stripFocus, equals: ep.id)
+                            .bpProgressValue(model.progress(for: ep))
                             // episode-watched-menu.tsx on hold-Select, plus use-mark-season's season toggle.
                             .contextMenu { episodeWatchedMenu(ep) }
                             .id(ep.id)
@@ -975,7 +978,7 @@ struct TrackerDialogView: View {
                             HStack {
                                 Text(T(c.label))
                                 Spacer()
-                                if c.id == tracker.status { Image(systemName: "checkmark") }
+                                if c.id == tracker.status { Image(systemName: "checkmark").accessibilityHidden(true) }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }

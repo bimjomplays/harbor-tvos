@@ -545,7 +545,7 @@ struct LiveView: View {
                     showSources = true
                 } label: {
                     HStack(spacing: BP.px(6)) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
+                        Image(systemName: "antenna.radiowaves.left.and.right").accessibilityHidden(true)
                         Text(model.playlists.first { $0.id == model.selectedPlaylist }?.name ?? T("Sources"))
                         if model.loading && !model.channels.isEmpty {
                             // (live sources device pass) Refresh now closes Sources at once: the
@@ -573,7 +573,7 @@ struct LiveView: View {
                     } label: {
                         HStack(spacing: BP.px(6)) {
                             if c.key == LiveModel.favKey {
-                                Image(systemName: c.count > 0 ? "star.fill" : "star")
+                                Image(systemName: c.count > 0 ? "star.fill" : "star").accessibilityHidden(true)
                             }
                             if let flag = c.flag {
                                 RemoteImage(url: flag, contentMode: .fill)

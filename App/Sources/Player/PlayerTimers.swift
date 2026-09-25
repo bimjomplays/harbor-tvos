@@ -303,6 +303,7 @@ struct PlayerSpeedPanel: View {
                         }
                         .buttonStyle(PlayerLineStyle(on: selected))
                         .focused($focus, equals: "speed-\(i)")
+                        .bpSelected(selected)
                     }
                 }
                 .padding(BP.px(6))
@@ -325,6 +326,7 @@ struct PlayerSpeedPanel: View {
                         }
                         .buttonStyle(PlayerLineStyle(on: selected))
                         .focused($focus, equals: "sleep-\(i)")
+                        .bpSelected(selected)
                     }
                 }
                 .padding(BP.px(6))

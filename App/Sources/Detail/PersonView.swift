@@ -146,7 +146,7 @@ struct PersonView: View {
         HStack(alignment: .top, spacing: BP.px(24)) {
             ZStack {
                 Circle().fill(BP.panel2)
-                if let p = model.page?.person?.portrait { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").font(.system(size: BP.px(48))).foregroundStyle(BP.inkSubtle) }
+                if let p = model.page?.person?.portrait { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").accessibilityHidden(true).font(.system(size: BP.px(48))).foregroundStyle(BP.inkSubtle) }
             }
             .frame(width: BP.px(160), height: BP.px(160))
             VStack(alignment: .leading, spacing: BP.px(8)) {
@@ -190,7 +190,7 @@ struct PersonView: View {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {
                                     Circle().fill(BP.panel2)
-                                    if let p = c.portrait { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle) }
+                                    if let p = c.portrait { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").accessibilityHidden(true).font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle) }
                                 }
                                 .frame(width: BP.px(110), height: BP.px(110))
                                 Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
