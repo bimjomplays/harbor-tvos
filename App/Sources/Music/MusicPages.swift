@@ -46,7 +46,11 @@ struct MusicPageView: View {
                         ProgressView().padding(.horizontal, BP.gutter)
                     }
                     if let data {
-                        VStack(alignment: .leading, spacing: BP.px(6)) {
+                        // (perf/memory pass) Lazy: an album or playlist can list hundreds of tracks
+                        // (iTunes 200, Deezer pages to the end, Spotify playlists), and each line is
+                        // an artwork load plus a MusicPlayer observer. All of them were built, fetched
+                        // and re-rendered on every track change, not just the dozen on screen.
+                        LazyVStack(alignment: .leading, spacing: BP.px(6)) {
                             ForEach(Array(data.tracks.enumerated()), id: \.offset) { i, track in
                                 Button { player.play(track, queue: data.tracks) } label: { MusicTrackLine(track: track, number: i + 1) }
                                     .buttonStyle(BPTileStyle(radius: BP.rSM))

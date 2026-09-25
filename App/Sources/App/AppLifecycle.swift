@@ -40,7 +40,23 @@ final class AppLifecycle {
             .removeDuplicates()
             .sink { online in HarborEngine.loaded?.setOnline(online) }
             .store(in: &bag)
+        center.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
+            .sink { [weak self] _ in self?.memoryWarning() }
+            .store(in: &bag)
         if UIApplication.shared.applicationState == .background { setVisible(false) }
+    }
+
+    /// (perf/memory pass) tvOS warns before it kills an app over its memory limit, and nothing
+    /// listened: every cache kept its full budget (posters and backdrops up to 160 MB decoded, the
+    /// manga reader's pages up to 160 MB, the kids art, the blurred heroes) and the JS heap waited
+    /// for its own next collection. Each cache drops its RAM copy; the disk caches stay, and views
+    /// keep the images they are drawing, so nothing on screen changes.
+    private func memoryWarning() {
+        Task { await ImageLoader.shared.purgeMemory() }
+        Task { await MangaPageCache.shared.purgeDecoded() }
+        HeroBlur.shared.purge()
+        KidsTheme.purgeArt()
+        HarborEngine.loaded?.collectGarbage()
     }
 
     private func setVisible(_ visible: Bool) {

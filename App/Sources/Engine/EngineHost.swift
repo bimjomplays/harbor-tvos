@@ -420,6 +420,16 @@ final class HarborEngine {
         }
     }
 
+    /// (perf/memory pass) tvOS sent a memory warning: collect the JavaScript heap now instead of
+    /// whenever JSC next decides to (parsed playlists, guides and catalog pages the bundle has
+    /// dropped). On the engine queue, like every other touch of the context.
+    func collectGarbage() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            JSGarbageCollect(self.context.jsGlobalContextRef)
+        }
+    }
+
     /// Observe every event the bundle dispatches on `window`. Handlers run on the main queue.
     /// Returns an unsubscribe; call it when the observer goes away.
     @discardableResult

@@ -244,6 +244,11 @@ final class HeroBlur: @unchecked Sendable {
         cache.countLimit = 48
     }
 
+    /// (perf/memory pass) A memory warning drops the blurred bitmaps (the one on screen stays drawn).
+    func purge() {
+        cache.removeAllObjects()
+    }
+
     func blurred(_ image: UIImage, key: String) async -> UIImage? {
         if let hit = cache.object(forKey: key as NSString) { return hit }
         let out = await Task.detached(priority: .userInitiated) { [self] in

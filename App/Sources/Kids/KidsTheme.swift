@@ -48,6 +48,12 @@ enum KidsTheme {
         return img
     }
 
+    /// (perf/memory pass) A memory warning: let go of the cached art (kidsbg.png alone is 2608 × 1600,
+    /// ~17 MB once drawn). Art on screen stays drawn; the next read comes from the bundle again.
+    static func purgeArt() {
+        cache.removeAllObjects()
+    }
+
     /// `/kids/doodles/<name>.png`.
     static func doodle(_ name: String) -> UIImage? { art("/kids/doodles/\(name).png") }
 }

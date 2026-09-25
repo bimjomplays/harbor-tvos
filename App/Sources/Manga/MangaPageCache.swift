@@ -123,6 +123,12 @@ actor MangaPageCache {
         memory.removeAllObjects()
         sizes.removeAll()
     }
+
+    /// (perf/memory pass) A memory warning: drop the decoded pages (up to 160 MB) but keep the
+    /// measured sizes, so an open reader's layout does not move. Pages on screen stay drawn.
+    func purgeDecoded() {
+        memory.removeAllObjects()
+    }
 }
 
 /// One reader page (page-image.tsx): the loading plate until the bytes arrive, a retry on failure.

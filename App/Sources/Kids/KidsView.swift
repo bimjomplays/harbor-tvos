@@ -171,6 +171,9 @@ struct KidsLogoImage: View {
         .task(id: url) {
             guard let u = URL(string: url) else { return }
             let img = await ImageLoader.shared.image(for: u)
+            // (perf/memory pass) A cancelled load now comes back empty (ImageLoader drops fetches
+            // nobody waits for): an art change must not blank the art on screen.
+            guard !Task.isCancelled else { return }
             withAnimation(BP.easeFast) { image = img }
         }
     }

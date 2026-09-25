@@ -227,6 +227,17 @@ final class BrowseModel: ObservableObject {
         if tileHeld != !heldRows.isEmpty { tileHeld = !heldRows.isEmpty }
     }
 
+    /// Home is hidden: the saver or the curfew lock is up, the app is in the background, or a
+    /// cover (the player, a Detail page, the account menu) is presented over the main window.
+    /// Not while PiP browsing (PiPBrowse): the layer runs its own Home above the player's cover,
+    /// and that one is on screen. (PreviewGate is stricter: it also stops previews under PiP.)
+    private static var outOfSight: Bool {
+        if ScreensaverModel.shared.active || CurfewState.shared.locked { return true }
+        if UIApplication.shared.applicationState == .background { return true }
+        if PiPBrowse.shared.isUp { return false }
+        return !HarborOverlayWindow.noCoverPresented
+    }
+
     /// use-bp-hero-cycle.ts: every 7 s (HOLD_MS) advance through the first row's first 8 items;
     /// a tick that finds a card focused just waits another hold. Never under Reduce Motion
     /// (`prefers-reduced-motion: reduce` returns before the first timer).
@@ -248,6 +259,10 @@ final class BrowseModel: ObservableObject {
                 guard let self, !Task.isCancelled else { return }
                 if UIAccessibility.isReduceMotionEnabled { self.heroCount = 0; return }
                 guard self.heldRows.isEmpty else { continue }
+                // (perf/memory pass) Nobody sees Home under the player, a Detail page or any other
+                // cover, the screensaver or the curfew lock: each turn there re-rendered Home and
+                // decoded a new 1920 px backdrop behind the video. It picks up again on return.
+                guard !Self.outOfSight else { continue }
                 self.heroIndex = (self.heroIndex + 1) % pool.count
                 self.spotlight = pool[self.heroIndex]
             }
