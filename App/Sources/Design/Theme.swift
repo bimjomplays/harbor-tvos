@@ -167,6 +167,10 @@ struct BPAmbientBackground: View {
     static func shellDrawsMosaic(in room: Room) -> Bool {
         switch room {
         case .search, .live, .sports: return false
+        // RoomView and DiscoverView paint SpotlightView's opaque backdrop over the whole screen, so a
+        // root mosaic there drifted unseen (upstream's BpAmbient shows the title art there, never
+        // the "ambient" mosaic variant). Discover only showed it for the moment before its spotlight.
+        case .home, .movies, .shows, .anime, .discover: return false
         default: return true
         }
     }
