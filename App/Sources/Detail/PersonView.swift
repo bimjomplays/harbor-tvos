@@ -17,7 +17,8 @@ final class PersonModel: ObservableObject {
 
     let personId: Int
     @Published private(set) var page: Page?
-    @Published private(set) var loading = false
+    /// Starts true: the first frame (before `.task` runs) shows the spinner, not the failed-load card.
+    @Published private(set) var loading = true
     @Published var sort = "popularity"
     @Published var minRating = 0
     private var unsubscribe: (() -> Void)?
