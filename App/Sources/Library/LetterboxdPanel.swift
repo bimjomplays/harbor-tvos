@@ -64,8 +64,15 @@ struct LetterboxdPanel: View {
             if let s = model.status, s.active {
                 Text("Connected as \(s.username)").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Your watchlist shows in the Library, and your Letterboxd rows on Movies.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                Button("Disconnect") { Task { await model.disable(); refocus() } }.buttonStyle(BPActionStyle())
-                    .focused($lead)
+                Button("Disconnect") {
+                    Task {
+                        await model.disable()
+                        // (review 8) Only while the ring is still on this step (see Connect).
+                        if lead { refocus() }
+                    }
+                }
+                .buttonStyle(BPActionStyle())
+                .focused($lead)
             } else {
                 Text("Letterboxd username").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("The handle in your profile address, letterboxd.com/your-name.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
@@ -78,7 +85,12 @@ struct LetterboxdPanel: View {
                         guard !empty else { return }
                         Task {
                             await model.connect(username)
-                            if model.status?.active == true { refocus() }
+                            // (review 8) The Stremboxd check can take seconds: a viewer who walked
+                            // on to another Settings section meanwhile was pulled back to
+                            // Disconnect. Read before the swap re-renders: the ring still on
+                            // Connect (lead) is the only case to follow.
+                            let stillHere: Bool = lead
+                            if model.status?.active == true, stillHere { refocus() }
                         }
                     }
                         .buttonStyle(BPActionStyle(primary: true, busy: model.busy || empty))

@@ -1614,7 +1614,10 @@ struct PlayerScreen: View {
             let startOver: Bool = focus == .chip("Start over")
             acknowledgeResume(!startOver)
         } else if leaveConfirm {
-            leaveResumes = true
+            // (review 8) In a Watch Together room the video follows the room (togglePause asks it
+            // through interceptToggle): Play/Pause here closes the dialog as Back does, leaving the
+            // video as it was. Forcing play started a guest alone under a paused room.
+            if !together.inRoom { leaveResumes = true }
             keepWatching()
         } else {
             togglePause()
