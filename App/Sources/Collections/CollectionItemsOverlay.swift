@@ -111,9 +111,9 @@ struct CollectionItemsOverlay: View {
             Button("Close", action: onClose).buttonStyle(BPActionStyle())
             if isMine {
                 Button("Rename") { nameDraft = card.name; panel = panel == .rename ? nil : .rename }
-                    .buttonStyle(BPActionStyle(primary: panel == .rename))
+                    .buttonStyle(BPActionStyle(primary: panel == .rename)).bpSelected(panel == .rename)
                 Button("Add titles") { panel = panel == .add ? nil : .add }
-                    .buttonStyle(BPActionStyle(primary: panel == .add))
+                    .buttonStyle(BPActionStyle(primary: panel == .add)).bpSelected(panel == .add)
                     .disabled(card.items.count >= limits.items && panel != .add)
                 Button(editing ? "Done" : "Remove titles") { editing.toggle() }
                     .buttonStyle(BPActionStyle(primary: editing))

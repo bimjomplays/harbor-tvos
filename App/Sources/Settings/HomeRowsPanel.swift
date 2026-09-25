@@ -56,7 +56,7 @@ struct HomeRowsPanel: View {
                         Button(T("Hide")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("hide")]) } }
                             .buttonStyle(BPActionStyle(primary: cw.animeCwEnd != "timer"))
                         Button(T("Timer")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("timer")]) } }
-                            .buttonStyle(BPActionStyle(primary: cw.animeCwEnd == "timer"))
+                            .buttonStyle(BPActionStyle(primary: cw.animeCwEnd == "timer")).bpSelected(cw.animeCwEnd == "timer")
                     }
                 }
                 Text(T("Rows")).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
@@ -66,8 +66,8 @@ struct HomeRowsPanel: View {
                 ForEach(Array(s.rows.enumerated()), id: \.element.key) { i, r in
                     HStack(spacing: BP.px(8)) {
                         Text(r.name).font(BP.sans(14, r.hidden ? .regular : .semibold)).foregroundStyle(r.hidden ? BP.inkSubtle : BP.ink).lineLimit(1).frame(width: BP.px(340), alignment: .leading)
-                        Button { Task { await call("homeRowMove", [.string(r.key), .number(-1)]) } } label: { Image(systemName: "arrow.up") }.buttonStyle(BPActionStyle()).disabled(i == 0)
-                        Button { Task { await call("homeRowMove", [.string(r.key), .number(1)]) } } label: { Image(systemName: "arrow.down") }.buttonStyle(BPActionStyle()).disabled(i == s.rows.count - 1)
+                        Button { Task { await call("homeRowMove", [.string(r.key), .number(-1)]) } } label: { Image(systemName: "arrow.up") }.buttonStyle(BPActionStyle()).disabled(i == 0).accessibilityLabel(T("Move up"))
+                        Button { Task { await call("homeRowMove", [.string(r.key), .number(1)]) } } label: { Image(systemName: "arrow.down") }.buttonStyle(BPActionStyle()).disabled(i == s.rows.count - 1).accessibilityLabel(T("Move down"))
                         Button(r.hidden ? T("Show") : T("Hide")) { Task { await call("homeRowToggleHidden", [.string(r.key)]) } }.buttonStyle(BPActionStyle(primary: r.hidden))
                         Button(T("Rename")) { renaming = r; newName = r.name }.buttonStyle(BPActionStyle())
                         Button(r.numerals ? T("Numbers: On") : T("Numbers: Off")) { Task { await call("homeRowToggleNumerals", [.string(r.key)]) } }.buttonStyle(BPActionStyle(primary: r.numerals))

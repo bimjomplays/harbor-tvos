@@ -223,7 +223,7 @@ struct CollectionsView: View {
                         // bp-collection-steps categories: Sagas, Superheroes, Action…
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: BP.px(8)) {
-                                ForEach(model.categories, id: \.self) { c in Button(c) { model.set(category: c) }.buttonStyle(BPActionStyle(primary: model.category == c)) }
+                                ForEach(model.categories, id: \.self) { c in Button(c) { model.set(category: c) }.buttonStyle(BPActionStyle(primary: model.category == c)).bpSelected(model.category == c) }
                             }
                             .padding(.vertical, BP.px(4))
                         }
@@ -282,7 +282,7 @@ struct CollectionsView: View {
     private var sourceRow: some View {
         HStack(spacing: BP.px(8)) {
             ForEach(Self.sources, id: \.0) { key, label in
-                Button(T(label)) { model.set(source: key) }.buttonStyle(BPActionStyle(primary: model.source == key))
+                Button(T(label)) { model.set(source: key) }.buttonStyle(BPActionStyle(primary: model.source == key)).bpSelected(model.source == key)
             }
             if model.source == "all" || model.source == "mine" {
                 // community-hub.tsx: "New collection", with the "{n} / {max}" count beside it.

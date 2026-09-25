@@ -27,8 +27,8 @@ struct AnimeRowsPanel: View {
             ForEach(Array(rows.enumerated()), id: \.element.key) { i, r in
                 HStack(spacing: BP.px(8)) {
                     Text(r.name).font(BP.sans(14, r.hidden ? .regular : .semibold)).foregroundStyle(r.hidden ? BP.inkSubtle : BP.ink).lineLimit(1).frame(width: BP.px(340), alignment: .leading)
-                    Button { Task { await call("animeRowMove", [.string(r.key), .number(-1)]) } } label: { Image(systemName: "arrow.up") }.buttonStyle(BPActionStyle()).disabled(i == 0)
-                    Button { Task { await call("animeRowMove", [.string(r.key), .number(1)]) } } label: { Image(systemName: "arrow.down") }.buttonStyle(BPActionStyle()).disabled(i == rows.count - 1)
+                    Button { Task { await call("animeRowMove", [.string(r.key), .number(-1)]) } } label: { Image(systemName: "arrow.up") }.buttonStyle(BPActionStyle()).disabled(i == 0).accessibilityLabel(T("Move up"))
+                    Button { Task { await call("animeRowMove", [.string(r.key), .number(1)]) } } label: { Image(systemName: "arrow.down") }.buttonStyle(BPActionStyle()).disabled(i == rows.count - 1).accessibilityLabel(T("Move down"))
                     Button(r.hidden ? "Show" : "Hide") { Task { await call("animeRowToggleHidden", [.string(r.key)]) } }.buttonStyle(BPActionStyle(primary: r.hidden))
                     Button("Rename") { renaming = r; newName = r.name }.buttonStyle(BPActionStyle())
                 }

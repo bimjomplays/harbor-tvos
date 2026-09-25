@@ -29,6 +29,9 @@ struct SpotlightView: View {
                 if let logo = meta?.logo, !logo.isEmpty {
                     RemoteImage(url: logo, contentMode: .fit)
                         .frame(maxWidth: BP.px(300), maxHeight: BP.px(90), alignment: .leading)
+                        // The title logo reads as the name it draws.
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(verbatim: meta?.name ?? ""))
                 } else {
                     Text(meta?.name ?? " ")
                         .font(BP.display(36)).foregroundStyle(BP.ink)
@@ -86,6 +89,8 @@ struct SpotlightView: View {
                 .flipsForRightToLeftLayoutDirection(true)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.3), BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom)
         }
+        // bp-ambient-layers.tsx: the art stage is aria-hidden.
+        .accessibilityHidden(true)
     }
 
     private func scoreChip(_ label: String, _ value: String) -> some View {
@@ -196,6 +201,7 @@ struct BPBlurredHeroBackdrop: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(BP.easeSlow, value: shown?.url)
+        .accessibilityHidden(true)
         .task(id: url ?? "") { await commit() }
     }
 
@@ -322,9 +328,9 @@ struct HeroAwardsCornerView: View {
         let tint = c.kind == "anime" ? BP.accent : (Color(css: c.tint) ?? BP.accent)
         if c.won {
             HStack(spacing: BP.px(2)) {
-                Image(systemName: "laurel.leading").font(.system(size: BP.px(30), weight: .regular))
+                Image(systemName: "laurel.leading").font(.system(size: BP.px(30), weight: .regular)).accessibilityHidden(true)
                 Text(c.mark).font(BP.sans(12, .bold)).lineLimit(1)
-                Image(systemName: "laurel.trailing").font(.system(size: BP.px(30), weight: .regular))
+                Image(systemName: "laurel.trailing").font(.system(size: BP.px(30), weight: .regular)).accessibilityHidden(true)
             }
             .foregroundStyle(tint)
         } else {

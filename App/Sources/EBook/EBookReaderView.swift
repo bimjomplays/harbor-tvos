@@ -50,6 +50,8 @@ struct EBookReaderView: View {
                 .disabled(menuOpen || panel != nil)
                 .focused($focus, equals: .surface)
                 .onMoveCommand(perform: move)
+                // The page is the only focus stop: VoiceOver names the book instead of an empty button.
+                .accessibilityLabel(Text(verbatim: model.book.title))
             if menuOpen { readerBar.transition(.opacity) }
             if let panel { panelView(panel).transition(.move(edge: .trailing).combined(with: .opacity)) }
         }
@@ -189,7 +191,7 @@ struct EBookReaderView: View {
     private var readerBar: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: BP.px(4)) {
-                Text(model.book.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+                Text(model.book.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1).accessibilityAddTraits(.isHeader)
                 Text(model.chapter.label == model.chapter.title ? model.chapter.title : "\(model.chapter.label) · \(model.chapter.title)")
                     .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
             }
@@ -272,7 +274,7 @@ struct EBookReaderView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(BPActionStyle(primary: i == model.index))
+            .buttonStyle(BPActionStyle(primary: i == model.index)).bpSelected(i == model.index)
             .focused($focus, equals: .item("ch-\(i)"))
         }
     }
@@ -344,7 +346,7 @@ struct EBookReaderView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(BPActionStyle(primary: model.prefs.narrationVoice == v.id))
+            .buttonStyle(BPActionStyle(primary: model.prefs.narrationVoice == v.id)).bpSelected(model.prefs.narrationVoice == v.id)
             .focused($focus, equals: .item("voice-\(v.id)"))
         }
     }
@@ -367,12 +369,17 @@ struct EBookReaderView: View {
                 .buttonStyle(BPActionStyle())
                 .disabled(value <= range.lowerBound + 0.0001)
                 .focused($focus, equals: .item("\(key)-minus"))
+                // upstream steppers: aria-label t("Decrease {name}") / t("Increase {name}"), the value between.
+                .accessibilityLabel(Text(T("Decrease %@", T(label))))
+                .accessibilityValue(Text(verbatim: String(format: format, value)))
             Text(String(format: format, value)).font(BP.sans(14, .semibold)).monospacedDigit().foregroundStyle(BP.ink)
                 .frame(minWidth: BP.px(56))
             Button { set(key, value + step, range) } label: { Image(systemName: "plus") }
                 .buttonStyle(BPActionStyle())
                 .disabled(value >= range.upperBound - 0.0001)
                 .focused($focus, equals: .item("\(key)-plus"))
+                .accessibilityLabel(Text(T("Increase %@", T(label))))
+                .accessibilityValue(Text(verbatim: String(format: format, value)))
         }
         .padding(.top, BP.px(4))
     }

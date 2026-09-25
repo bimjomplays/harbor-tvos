@@ -95,6 +95,7 @@ struct SettingsView: View {
                     row("Read eBooks in Harbor", detail: "Adds the eBook tab. Apple TV reads Project Gutenberg's public-domain library, with read aloud.")
                     let title: String = "\(T("eBook")): \(T(ebookOn ? "On" : "Off"))"
                     Button(title) { ebookOn.toggle() }.buttonStyle(BPActionStyle(primary: ebookOn))
+                        .bpSelected(ebookOn)
                 }
                 // settings/webhooks-panel.tsx (sports reminders) and sports-api-setting.tsx.
                 section("Where alerts go") { SportsWebhooksPanel() }
@@ -213,7 +214,7 @@ struct SettingsView: View {
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             content()
         }
         .padding(BP.px(22))
@@ -231,6 +232,7 @@ struct SettingsView: View {
         // "%@: %@" and borrow an unrelated catalog entry (review 20).
         let title: String = "\(T(label)): \(T(on ? "On" : "Off"))"
         return Button(title) { Task { try? await settings.patch([key: .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
+            .bpSelected(on)
     }
 
     private func row(_ title: String, detail: String) -> some View {
@@ -273,6 +275,7 @@ struct SubtitleLanguageGrid: View {
                     Task { try? await settings.patch(["preferredSubLangs": .array(list.map { .string($0) })]) }
                 }
                 .buttonStyle(BPActionStyle(primary: idx != nil))
+                .bpSelected(idx != nil)
             }
         }
         .focusSection()

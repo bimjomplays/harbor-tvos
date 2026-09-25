@@ -393,7 +393,7 @@ struct AddonsView: View {
                             .background(Capsule().fill(model.tab == .installed ? BP.canvas.opacity(0.15) : BP.edge))
                     }
                 }
-                .buttonStyle(BPActionStyle(primary: model.tab == .installed))
+                .buttonStyle(BPActionStyle(primary: model.tab == .installed)).bpSelected(model.tab == .installed)
                 Spacer(minLength: BP.px(24))
                 Button { configure = AddonsModel.ConfigureTarget(mode: .url, name: T("Add from URL")) } label: {
                     Label(T("Add from URL"), systemImage: "link")
@@ -428,7 +428,7 @@ struct AddonsView: View {
     }
 
     private func tabButton(_ t: AddonsModel.Tab, _ title: String) -> some View {
-        Button(title) { model.select(t) }.buttonStyle(BPActionStyle(primary: model.tab == t))
+        Button(title) { model.select(t) }.buttonStyle(BPActionStyle(primary: model.tab == t)).bpSelected(model.tab == t)
     }
 
     // MARK: Discover (discover-pane.tsx)
@@ -508,7 +508,7 @@ struct AddonsView: View {
                 Spacer()
                 HStack(spacing: BP.px(8)) {
                     ForEach(AddonsModel.RailMode.allCases, id: \.self) { m in
-                        Button(T(railLabel(m))) { Task { await model.setRailMode(m) } }.buttonStyle(BPActionStyle(primary: model.railMode == m))
+                        Button(T(railLabel(m))) { Task { await model.setRailMode(m) } }.buttonStyle(BPActionStyle(primary: model.railMode == m)).bpSelected(model.railMode == m)
                     }
                 }
                 .focusSection()
@@ -592,14 +592,14 @@ struct AddonsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
                     let searching = !model.query.trimmingCharacters(in: .whitespaces).isEmpty
-                    Button(T("All")) { model.setCategory(nil) }.buttonStyle(BPActionStyle(primary: model.category == nil || searching))
+                    Button(T("All")) { model.setCategory(nil) }.buttonStyle(BPActionStyle(primary: model.category == nil || searching)).bpSelected(model.category == nil || searching)
                     ForEach(model.categories.filter { adult || $0.slug != "nsfw" }) { c in
-                        Button(c.name) { model.setCategory(c.slug) }.buttonStyle(BPActionStyle(primary: model.category == c.slug && !searching))
+                        Button(c.name) { model.setCategory(c.slug) }.buttonStyle(BPActionStyle(primary: model.category == c.slug && !searching)).bpSelected(model.category == c.slug && !searching)
                     }
                     Rectangle().fill(BP.edge).frame(width: 1, height: BP.px(26)).padding(.horizontal, BP.px(4))
                     ForEach(AddonsModel.BrowseMode.allCases, id: \.self) { m in
                         Button { model.setMode(m) } label: { Label(T(modeLabel(m).label), systemImage: modeLabel(m).icon) }
-                            .buttonStyle(BPActionStyle(primary: model.mode == m))
+                            .buttonStyle(BPActionStyle(primary: model.mode == m)).bpSelected(model.mode == m)
                     }
                 }
                 .padding(.vertical, BP.px(8))

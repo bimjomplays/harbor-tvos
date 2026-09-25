@@ -299,8 +299,13 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             if let logo = model.meta.logo, !logo.isEmpty {
                 RemoteImage(url: logo, contentMode: .fit).frame(maxWidth: BP.px(380), maxHeight: BP.px(140), alignment: .leading)
+                    // The title logo is the page's heading: VoiceOver reads the name it draws.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: model.meta.name))
+                    .accessibilityAddTraits(.isHeader)
             } else {
                 Text(model.meta.name).font(BP.display(52)).foregroundStyle(BP.ink).lineLimit(2).frame(maxWidth: BP.px(700), alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
             }
             HStack(spacing: BP.px(12)) {
                 // bp-detail: every provider the detail settings allow (use-bp-card-badges "detail").
@@ -341,6 +346,7 @@ struct DetailView: View {
                     .buttonStyle(DetailIconActionStyle(active: a.active))
                     .focused($heroFocus, equals: a.key)
                     .accessibilityLabel(T(a.label))
+                    .bpSelected(a.active)
                     .accessibilityIdentifier("detail-action-\(a.key)")
                 }
             }
@@ -368,6 +374,7 @@ struct DetailView: View {
             Text("Watch on").font(BP.sans(11, .bold)).tracking(1).foregroundStyle(BP.inkSubtle)
             ForEach(providers.prefix(8)) { p in
                 RemoteImage(url: p.logo, contentMode: .fit).frame(width: BP.px(28), height: BP.px(28)).clipShape(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous))
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(p.name)
             }
         }
@@ -391,7 +398,7 @@ struct DetailView: View {
     // detail/bp-videos-row: 16:9 YouTube thumbnails, kind over name; Select opens the trailer overlay.
     private func videosRow(_ clips: [DetailModel.Extras.Video]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Videos").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Videos").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(clips) { c in
@@ -431,7 +438,7 @@ struct DetailView: View {
     // detail/bp-awards-row: one cell per award body; Select opens the categories and years.
     private func awardsRow(_ a: DetailModel.TitleAwards) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Awards & Recognition").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Awards & Recognition").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.px(10)) {
                     ForEach(a.groups) { g in
@@ -457,7 +464,7 @@ struct DetailView: View {
     // bp-anime-characters: AniList characters, distinct from the cast row.
     private var charactersRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Characters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Characters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(model.characters.prefix(20)) { c in
@@ -468,6 +475,8 @@ struct DetailView: View {
                         }
                         .frame(width: BP.px(130))
                         .focusable()
+                        // bp-anime-characters.tsx aria-label `${character.name}, ${role}`: one focus stop reads both.
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
@@ -480,7 +489,7 @@ struct DetailView: View {
     // bp-cast-row: round portraits, name over character, up to 20.
     private func castRow(_ cast: [DetailModel.Extras.Cast]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Cast").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Cast").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     // (bug pass) TMDB lists an actor once per role (same person id): unique ids for ForEach.
@@ -489,7 +498,7 @@ struct DetailView: View {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {
                                     Circle().fill(BP.panel2)
-                                    if let p = person.profile { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle) }
+                                    if let p = person.profile { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
                                 }
                                 .frame(width: BP.px(110), height: BP.px(110))
                                 Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -510,7 +519,7 @@ struct DetailView: View {
     // bp-facts: a preview card of the first rows.
     private func factsCard(_ facts: [DetailModel.Extras.Fact]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
-            Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             ForEach(facts.prefix(8)) { f in
                 HStack(alignment: .top, spacing: BP.px(8)) {
                     Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
@@ -577,6 +586,7 @@ struct DetailView: View {
                     ForEach(model.seasons.prefix(8), id: \.self) { s in
                         Button(s == 0 ? "Specials" : "Season \(s)") { model.pickKitsuSeason(s) }
                             .buttonStyle(BPActionStyle(primary: model.season == s))
+                            .bpSelected(model.season == s)
                             .focused($seasonFocus, equals: "kitsu-\(s)")
                     }
                     // bp-season-menu: long runs open the scrollable list instead of a chip wall.
@@ -656,6 +666,7 @@ struct DetailView: View {
                                     .buttonStyle(AnimeSeasonChipStyle(selected: c.key == model.animeSeasonKey))
                                     .focused($seasonFocus, equals: "chip-\(c.key)")
                                     .accessibilityIdentifier("anime-season-\(c.key)")
+                                    .bpSelected(c.key == model.animeSeasonKey)
                             }
                         }
                         if hasSeasons && hasOrders { AnimeChipDivider() }
@@ -666,6 +677,7 @@ struct DetailView: View {
                                 Button(o.short) { Task { await model.setAnimeOrder(o.value) } }
                                     .buttonStyle(PlayerChipStyle(on: o.value == model.animeOrderType))
                                     .accessibilityIdentifier("anime-order-\(o.value)")
+                                    .bpSelected(o.value == model.animeOrderType)
                             }
                         }
                     }
@@ -739,7 +751,7 @@ struct TrackerDialogView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(BPActionStyle(primary: c.id == tracker.status))
+                        .buttonStyle(BPActionStyle(primary: c.id == tracker.status)).bpSelected(c.id == tracker.status)
                         .focused($focus, equals: c.id)
                     }
                 }
@@ -779,7 +791,7 @@ struct EpisodeStill: View {
         ZStack {
             BP.panel2
             if let image {
-                Image(uiImage: image).resizable().aspectRatio(contentMode: .fill).transition(.opacity)
+                Image(uiImage: image).resizable().aspectRatio(contentMode: .fill).transition(.opacity).accessibilityHidden(true)
             } else if exhausted {
                 if let backdrop {
                     RemoteImage(url: backdrop).opacity(0.25).saturation(0.6)
@@ -899,6 +911,7 @@ struct EpisodeCell: View {
                 }
                 if watched {
                     Image(systemName: "checkmark").font(.system(size: BP.px(10), weight: .bold)).foregroundStyle(BP.canvas)
+                        .accessibilityLabel(Text(T("Watched")))
                         .frame(width: BP.px(21), height: BP.px(21)).background(Circle().fill(BP.ink))
                         .padding(BP.px(7)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }

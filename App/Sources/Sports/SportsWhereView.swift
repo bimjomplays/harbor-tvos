@@ -107,7 +107,7 @@ struct SportsLinkView: View {
                 .frame(maxWidth: BP.px(620), alignment: .leading)
                 VStack(spacing: BP.px(10)) {
                     if let qr = QRCode.image(link.url) {
-                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(220), height: BP.px(220))
+                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(220), height: BP.px(220)).accessibilityLabel(Text(T("QR code")))
                             .padding(BP.px(10)).background(Color.white).clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                     }
                     Text("Scan to open on your phone").font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)

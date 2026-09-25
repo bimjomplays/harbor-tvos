@@ -171,7 +171,7 @@ struct AISearchPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(BPActionStyle(primary: state?.webSearch == true))
+            .buttonStyle(BPActionStyle(primary: state?.webSearch == true)).bpSelected(state?.webSearch == true)
             BPField(label: "Jina API key (optional)", placeholder: "jina_...", text: $jinaDraft, secure: true, phone: true)
             HStack(spacing: BP.px(10)) {
                 Button(T("Save")) { Task { await saveKey("jina", jinaDraft) } }

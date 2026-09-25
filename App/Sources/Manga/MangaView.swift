@@ -264,7 +264,7 @@ struct MangaView: View {
                 if let s = store.state, s.sources.count > 1 {
                     ForEach(s.sources) { src in
                         Button(src.name) { Task { await store.setActive(src.id) } }
-                            .buttonStyle(BPActionStyle(primary: s.activeId == src.id))
+                            .buttonStyle(BPActionStyle(primary: s.activeId == src.id)).bpSelected(s.activeId == src.id)
                     }
                 }
                 Button { sourcesOpen = true } label: { Label("Sources", systemImage: "server.rack") }
@@ -280,7 +280,7 @@ struct MangaView: View {
     /// resumes in the reader; holding Select offers Remove.
     private var continueRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Continue Reading").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Continue Reading").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: BP.trackGap) {
                     ForEach(store.progress) { e in
@@ -351,7 +351,7 @@ struct MangaView: View {
                     HStack(spacing: BP.px(8)) {
                         Button("All sources") { model.tagId = "" }.buttonStyle(BPActionStyle(primary: model.tagId.isEmpty))
                         ForEach(model.tags) { t in
-                            Button(t.name) { model.tagId = t.id }.buttonStyle(BPActionStyle(primary: model.tagId == t.id))
+                            Button(t.name) { model.tagId = t.id }.buttonStyle(BPActionStyle(primary: model.tagId == t.id)).bpSelected(model.tagId == t.id)
                         }
                     }
                     .padding(.vertical, BP.px(6))
@@ -428,7 +428,7 @@ struct MangaSourcesView: View {
 
     private func serverList(_ s: MangaState) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Servers").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text("Servers").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             ForEach(s.servers) { server in
                 // The source a server feeds carries its host (credentials never reach the UI).
                 let source = s.sources.first { $0.kind == "suwayomi" && $0.host == server.host }
@@ -454,7 +454,7 @@ struct MangaSourcesView: View {
             }
             if s.sources.contains(where: { $0.id == "all" }) {
                 Button("All servers") { Task { await store.setActive("all") } }
-                    .buttonStyle(BPActionStyle(primary: s.activeId == "all"))
+                    .buttonStyle(BPActionStyle(primary: s.activeId == "all")).bpSelected(s.activeId == "all")
             }
         }
         .frame(maxWidth: BP.px(900), alignment: .leading)
@@ -462,7 +462,7 @@ struct MangaSourcesView: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
-            Text("Connect a Suwayomi server").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text("Connect a Suwayomi server").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             BPField(label: "Server address", placeholder: "http://192.168.1.20:4567", text: $address, keyboard: .URL)
             BPField(label: "Name (optional)", placeholder: "My Server", text: $name)
             HStack(spacing: BP.px(12)) {

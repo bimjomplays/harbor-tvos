@@ -156,7 +156,7 @@ struct PlayerSubtitlesPanel: View {
 
     private func laneChip(_ id: Lane, _ label: String, _ icon: String) -> some View {
         Button { lane = id } label: { Label(T(label), systemImage: icon) }
-            .buttonStyle(PlayerChipStyle(on: lane == id))
+            .buttonStyle(PlayerChipStyle(on: lane == id)).bpSelected(lane == id)
             .focused($focus, equals: "lane-\(label)")
     }
 

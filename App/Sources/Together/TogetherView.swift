@@ -156,7 +156,7 @@ struct TogetherView: View {
                 .frame(maxWidth: BP.px(560), alignment: .leading)
                 if let link = v.inviteUrl, let qr = QRCode.image(link) {
                     VStack(alignment: .leading, spacing: BP.px(8)) {
-                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(170), height: BP.px(170))
+                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(170), height: BP.px(170)).accessibilityLabel(Text(T("QR code")))
                             .padding(BP.px(10)).background(RoundedRectangle(cornerRadius: BP.rSM).fill(.white))
                         Text("Invite link").font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)
                         Text("Scan to join, or share code \(v.room ?? "")").font(BP.sans(12)).foregroundStyle(BP.inkMuted)

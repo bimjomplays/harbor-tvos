@@ -280,16 +280,16 @@ struct MangaDetailView: View {
                         if model.langs.count > 1 {
                             ForEach(model.langs) { l in
                                 Button(MangaLanguage.name(l.code) + " (\(l.count))") { model.selectedLang = l.code }
-                                    .buttonStyle(BPActionStyle(primary: model.selectedLang == l.code))
+                                    .buttonStyle(BPActionStyle(primary: model.selectedLang == l.code)).bpSelected(model.selectedLang == l.code)
                             }
                             Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(26))
                         }
                         Button(model.newestFirst ? "Newest first" : "Oldest first") { model.newestFirst.toggle() }
                             .buttonStyle(BPActionStyle())
                         if model.showPager {
-                            Button("All") { model.range = nil }.buttonStyle(BPActionStyle(primary: model.range == nil))
+                            Button("All") { model.range = nil }.buttonStyle(BPActionStyle(primary: model.range == nil)).bpSelected(model.range == nil)
                             ForEach(model.ranges) { r in
-                                Button("\(r.lo)–\(r.hi)") { model.range = r.b }.buttonStyle(BPActionStyle(primary: model.range == r.b))
+                                Button("\(r.lo)–\(r.hi)") { model.range = r.b }.buttonStyle(BPActionStyle(primary: model.range == r.b)).bpSelected(model.range == r.b)
                             }
                         }
                     }

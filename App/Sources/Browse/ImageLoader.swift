@@ -181,7 +181,10 @@ struct RemoteImage: View {
         ZStack {
             BP.ink.opacity(0.07)
             if let image {
+                // (accessibility pass) Art is decoration: VoiceOver said "image" on every poster and
+                // backdrop. A caller that names the picture wraps it in its own labelled element.
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode).transition(.opacity)
+                    .accessibilityHidden(true)
             }
         }
         .background(GeometryReader { g in

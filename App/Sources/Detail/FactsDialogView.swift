@@ -10,7 +10,7 @@ struct FactsDialogView: View {
         ZStack(alignment: .trailing) {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(10)) {
-                Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                 Text(title).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: BP.px(8)) {

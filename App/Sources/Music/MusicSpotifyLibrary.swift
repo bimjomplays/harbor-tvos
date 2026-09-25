@@ -114,10 +114,10 @@ struct MusicSpotifyLibraryView: View {
         if selected == nil {
             HStack(spacing: BP.px(12)) {
                 Button { kind = "playlists" } label: { Label(text("music.spotifyLibrary.playlists"), systemImage: "music.note.list") }
-                    .buttonStyle(BPActionStyle(primary: kind == "playlists"))
+                    .buttonStyle(BPActionStyle(primary: kind == "playlists")).bpSelected(kind == "playlists")
                     .accessibilityIdentifier("music-spotify-library-playlists")
                 Button { kind = "liked" } label: { Label(text("music.spotifyLibrary.liked"), systemImage: "heart") }
-                    .buttonStyle(BPActionStyle(primary: kind == "liked"))
+                    .buttonStyle(BPActionStyle(primary: kind == "liked")).bpSelected(kind == "liked")
                     .accessibilityIdentifier("music-spotify-library-liked")
             }
             .focusSection()
@@ -366,7 +366,7 @@ struct MusicSpotifyWebLinkView: View {
                 Text(MusicSpotifyCopy.text("music.spotifyLibrary.open")).font(BP.sans(24, .bold)).foregroundStyle(BP.ink)
                 HStack(alignment: .top, spacing: BP.px(18)) {
                     if let qr = QRCode.image(link.url) {
-                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(190), height: BP.px(190))
+                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(190), height: BP.px(190)).accessibilityLabel(Text(T("QR code")))
                             .padding(BP.px(8)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
                     }
                     VStack(alignment: .leading, spacing: BP.px(8)) {

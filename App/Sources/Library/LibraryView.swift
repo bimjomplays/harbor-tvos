@@ -158,7 +158,7 @@ struct LibraryView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: BP.px(8)) {
                 ForEach(model.tabs) { t in
-                    Button(T(t.label)) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id))
+                    Button(T(t.label)) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id)).bpSelected(model.tab == t.id)
                 }
                 Divider().frame(height: BP.px(24)).overlay(BP.edge2)
                 Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }.buttonStyle(BPActionStyle(primary: model.showFilters))
@@ -194,7 +194,7 @@ struct LibraryView: View {
         HStack(spacing: BP.px(8)) {
             Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
             ForEach(options, id: \.0) { o in
-                Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0))
+                Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)).bpSelected(active == o.0)
             }
         }
         .focusSection()

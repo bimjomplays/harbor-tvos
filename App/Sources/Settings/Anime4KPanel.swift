@@ -26,11 +26,11 @@ struct Anime4KPanel: View {
             HStack(spacing: BP.px(8)) {
                 Text("Mode").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
                 ForEach(modes, id: \.self) { m in
-                    Button(m.count == 2 ? "\(m.prefix(1))+\(m.suffix(1))" : m) { patch(["playerAnime4kMode": .string(m)]) }.buttonStyle(BPActionStyle(primary: mode == m))
+                    Button(m.count == 2 ? "\(m.prefix(1))+\(m.suffix(1))" : m) { patch(["playerAnime4kMode": .string(m)]) }.buttonStyle(BPActionStyle(primary: mode == m)).bpSelected(mode == m)
                 }
                 Text("Tier").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(10))
-                Button("HQ") { patch(["playerAnime4kTier": .string("hq")]) }.buttonStyle(BPActionStyle(primary: tier == "hq"))
-                Button("Fast") { patch(["playerAnime4kTier": .string("fast")]) }.buttonStyle(BPActionStyle(primary: tier == "fast"))
+                Button("HQ") { patch(["playerAnime4kTier": .string("hq")]) }.buttonStyle(BPActionStyle(primary: tier == "hq")).bpSelected(tier == "hq")
+                Button("Fast") { patch(["playerAnime4kTier": .string("fast")]) }.buttonStyle(BPActionStyle(primary: tier == "fast")).bpSelected(tier == "fast")
             }
             HStack(spacing: BP.px(8)) {
                 Button(store.busy ? "Downloading…" : (store.installed ? "Re-download shaders" : "Download shaders")) { Task { await store.ensure(force: store.installed) } }

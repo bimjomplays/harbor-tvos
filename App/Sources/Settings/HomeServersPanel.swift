@@ -178,8 +178,8 @@ struct HomeServersPanel: View {
                 }
             } else if showForm {
                 HStack(spacing: BP.px(8)) {
-                    Button("Jellyfin") { provider = "jellyfin" }.buttonStyle(BPActionStyle(primary: provider == "jellyfin"))
-                    Button("Emby") { provider = "emby" }.buttonStyle(BPActionStyle(primary: provider == "emby"))
+                    Button("Jellyfin") { provider = "jellyfin" }.buttonStyle(BPActionStyle(primary: provider == "jellyfin")).bpSelected(provider == "jellyfin")
+                    Button("Emby") { provider = "emby" }.buttonStyle(BPActionStyle(primary: provider == "emby")).bpSelected(provider == "emby")
                 }
                 BPField(label: "Server address", placeholder: "192.168.1.20:8096 or https://media.example.com", text: $address, keyboard: .URL)
                 BPField(label: "Username", placeholder: "Username", text: $username)

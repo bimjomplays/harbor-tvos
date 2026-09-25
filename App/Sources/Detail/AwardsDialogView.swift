@@ -12,7 +12,7 @@ struct AwardsDialogView: View {
         ZStack(alignment: .trailing) {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(10)) {
-                Text(group.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text(group.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: BP.px(12)) {
                         if !wins.isEmpty { section(TCount(wins.count, one: "%lld win", "%lld wins"), wins) }

@@ -140,7 +140,7 @@ struct CalendarView: View {
             HStack(spacing: BP.px(6)) {
                 ForEach(model.data?.sources ?? []) { s in
                     Button { model.set(source: s.id) } label: { Label(s.label, systemImage: s.icon) }
-                        .buttonStyle(BPActionStyle(primary: model.data?.source == s.id))
+                        .buttonStyle(BPActionStyle(primary: model.data?.source == s.id)).bpSelected(model.data?.source == s.id)
                         .accessibilityHint(s.hint)
                 }
             }
@@ -160,7 +160,7 @@ struct CalendarView: View {
                     Button("Start week on Monday") { model.toggleWeekStart() }.buttonStyle(BPActionStyle(primary: d.weekStartsMonday))
                     // CALENDAR_POSTER_SIZES
                     Button("Default") { model.set(posterSize: "default") }.buttonStyle(BPActionStyle(primary: d.posterSize != "large"))
-                    Button("Large") { model.set(posterSize: "large") }.buttonStyle(BPActionStyle(primary: d.posterSize == "large"))
+                    Button("Large") { model.set(posterSize: "large") }.buttonStyle(BPActionStyle(primary: d.posterSize == "large")).bpSelected(d.posterSize == "large")
                     if let custom = d.custom {
                         Button { showRail = true } label: {
                             HStack(spacing: BP.px(6)) {
@@ -184,7 +184,7 @@ struct CalendarView: View {
                                     Text("\(f.count)").font(BP.sans(11)).opacity(0.65)
                                 }
                             }
-                            .buttonStyle(BPActionStyle(primary: d.filter == f.id))
+                            .buttonStyle(BPActionStyle(primary: d.filter == f.id)).bpSelected(d.filter == f.id)
                         }
                     }
                     if d.watchlistToggle {

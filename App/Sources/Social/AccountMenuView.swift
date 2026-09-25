@@ -107,10 +107,14 @@ struct AccountMenuButton: View {
                     .background(Capsule().fill(BP.accent))
                     .offset(x: BP.px(4), y: -BP.px(4))
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
         .accessibilityIdentifier("account-menu")
-        .accessibilityLabel(center.badge > 0 ? "Account and notifications, \(center.badge) new" : "Account and notifications")
+        // notification-center.tsx aria-label t("Notifications"), after the account menu it opens; the
+        // badge count follows. (The English-only "Account and notifications" had no catalog key.)
+        .accessibilityLabel(Text(verbatim: "\(T("Account")), \(T("Notifications"))"))
+        .accessibilityValue(Text(verbatim: center.badge > 0 ? "\(center.badge)" : ""))
         .fullScreenCover(isPresented: $open) { AccountMenuView() }
         .task { center.start() }
     }

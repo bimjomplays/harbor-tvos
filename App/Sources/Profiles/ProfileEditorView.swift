@@ -43,6 +43,9 @@ struct ProfileEditorView: View {
                                     .overlay(Circle().strokeBorder(BP.ink, lineWidth: color == c ? 3 : 0))
                             }
                             .buttonStyle(.plain)
+                            // A swatch has no words: "Color 3", selected when it is the profile's.
+                            .accessibilityLabel(Text(verbatim: "\(T("Color")) \((colors.firstIndex(of: c) ?? 0) + 1)"))
+                            .bpSelected(color == c)
                         }
                     }
                     .focusSection()
@@ -63,6 +66,7 @@ struct ProfileEditorView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityLabel(item.name)
+                                    .bpSelected(avatar == item.path)
                                 }
                             }
                         }

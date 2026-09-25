@@ -146,6 +146,9 @@ struct KidsHeroView: View {
         }
         .frame(width: Self.cardSize.width, height: Self.cardSize.height)
         .background(KidsTheme.surface)
+        // A logo card has no text of its own: the title for VoiceOver either way.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: m.name))
     }
 
     /// kids-hero.tsx upsizeCard: TMDB w780 backdrops drop to w500 at card size.
@@ -158,7 +161,7 @@ struct KidsLogoImage: View {
     @State private var image: UIImage?
     var body: some View {
         ZStack {
-            if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).transition(.opacity) }
+            if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).transition(.opacity).accessibilityHidden(true) }
         }
         .task(id: url) {
             guard let u = URL(string: url) else { return }
@@ -217,6 +220,9 @@ struct KidsPosterCard: View {
             }
         }
         .frame(width: width, height: (width * 1.5).rounded())
+        // The name shows only when there is no art; VoiceOver always reads it (bp-tile aria-label).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: meta.name))
     }
 }
 

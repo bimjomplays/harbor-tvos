@@ -520,10 +520,12 @@ struct PlayPickerView: View {
                     if n > 0 || q.0 == "All" {
                         // A String, not a literal: "%@ %lld" is a catalog entry some languages re-order (review 20).
                         Button(T(q.0) + " \(n)") { quality = q.0 }.buttonStyle(BPActionStyle(primary: quality == q.0))
+                            .bpSelected(quality == q.0)
                     }
                 }
                 if pool.contains(where: \.isCached) {
                     Button("Cached") { cachedOnly.toggle() }.buttonStyle(BPActionStyle(primary: cachedOnly))
+                        .bpSelected(cachedOnly)
                 }
                 if addons.count > 1 {
                     Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(24))

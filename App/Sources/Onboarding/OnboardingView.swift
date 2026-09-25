@@ -424,6 +424,9 @@ struct TasteStep: View {
                                 .offset(y: bump == m.id ? -6 : 0)
                             }
                             .buttonStyle(BPTileStyle(radius: BP.rXS))
+                            // A poster with no caption: the title, selected once it is picked.
+                            .accessibilityLabel(Text(verbatim: m.name))
+                            .bpSelected(on)
                         }
                     }
                     .padding(.vertical, BP.px(10))

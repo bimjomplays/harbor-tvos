@@ -29,8 +29,12 @@ struct BPKeyboardView: View {
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-backspace")
                 Button(action: onClear) { Label("Clear", systemImage: "xmark").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 1.8, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-clear")
+                    // bp-keyboard.tsx aria={t("Clear search")}.
+                    .accessibilityLabel(Text(T("Clear search")))
                 Button { symbols.toggle() } label: { Text(symbols ? "abc" : "?#+").font(BP.sans(13, .semibold)).frame(width: keySize * 1.4, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-toggle")
+                    // bp-keyboard.tsx aria={symbols ? t("Letters") : t("Symbols")}: "abc" / "?#+" say nothing.
+                    .accessibilityLabel(Text(T(symbols ? "Letters" : "Symbols")))
             }
         }
         .focusSection()

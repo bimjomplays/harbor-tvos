@@ -46,6 +46,18 @@ struct ContinueCardView: View {
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+        // bp-cw-row.tsx aria-label={bpCwCardLabel(…)}: name, state, badges as one phrase (the logo
+        // art carries no name of its own).
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: accessibilityText))
+    }
+
+    /// bp-cw-card-meta.tsx bpCwCardLabel.
+    private var accessibilityText: String {
+        let fresh = item.newEpisode <= 0 ? "" : (item.newEpisode == 1 ? T("1 new episode since you last watched") : T("%lld new episodes since you last watched", item.newEpisode))
+        return [item.name, statusText, item.watched ? T("Watched on Trakt") : "", fresh, item.watcher.map { T("Watched by %@", $0) } ?? ""]
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 
     private var statusText: String {
