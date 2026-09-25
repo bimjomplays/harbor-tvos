@@ -51,6 +51,11 @@ protocol PlayerEngineControlling: AnyObject {
     /// bridge.ts requestPiP / exitPiP.
     func startPictureInPicture()
     func stopPictureInPicture()
+    /// (P11) use-exit-snapshot grabFrame (snapshots.ts captureFrame on html5, captureMpvFrame on
+    /// mpv): the picture on screen now as a small JPEG (Player/ExitSnapshot.swift FrameGrab), nil
+    /// when there is none. The frame is taken at once; the scale and encode run off the main
+    /// thread and `done` is called on the main queue.
+    func grabFrame(fullQuality: Bool, done: @escaping (Data?) -> Void)
 }
 
 extension MPVPlayerController: PlayerEngineControlling {

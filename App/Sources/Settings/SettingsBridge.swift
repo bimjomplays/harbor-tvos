@@ -143,6 +143,10 @@ final class SettingsBridge: ObservableObject {
         /// launch and return prompts read them in the engine (profilesRoom.launchPicker / returnPicker).
         var profilePromptInterval: String? = "launch"
         var defaultProfileId: String? = ""
+        /// (P11) use-exit-snapshot.ts: settings.cwSnapshotRetentionDays (30; 0 = no frames) and
+        /// settings.cwSnapshotFullQuality (off), set on desktop (Player/ExitSnapshot.swift reads them).
+        var cwSnapshotRetentionDays: Double? = 30
+        var cwSnapshotFullQuality: Bool? = false
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates

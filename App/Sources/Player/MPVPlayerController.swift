@@ -698,6 +698,21 @@ final class MPVPlayerController: UIViewController {
         }
     }
 
+    /// (P11) snapshots.ts captureMpvFrame (mpv.rs mpv_screenshot_data_url): the frame on screen,
+    /// through `screenshot-raw` on this player's serial mpv queue, so a close right after it (the
+    /// exit grab runs just before the player is torn down) destroys the handle only once the
+    /// screenshot has returned. Previews and Multiview tiles take none.
+    func grabFrame(fullQuality: Bool, done: @escaping (Data?) -> Void) {
+        guard let handle = mpv, !tornDown, ownsDisplay, fileLoaded else {
+            done(nil)
+            return
+        }
+        queue.async {
+            let data: Data? = FrameGrab.mpvFrame(handle, fullQuality: fullQuality)
+            DispatchQueue.main.async { done(data) }
+        }
+    }
+
     func setPaused(_ paused: Bool) {
         guard let mpv else { return }
         var v: Int32 = paused ? 1 : 0

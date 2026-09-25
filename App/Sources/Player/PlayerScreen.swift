@@ -18,6 +18,7 @@ struct PlayerScreen: View {
     var streamHints: PlayerStreamHints? = nil
     /// `true` when the file played to its end (next-episode logic keys off this).
     /// source-error-card "Pick another source": the caller reopens the picker after this closes.
+    /// (review 22 follow-up) Only where the in-place switcher cannot swap (canSwitchInPlace).
     var onChooseAnother: (() -> Void)? = nil
     /// bp-player-sources "Switch source": reopen the picker and resume the new stream here.
     /// (P8) Only where the switcher cannot swap in place (canSwitchInPlace: a home-server copy).
@@ -144,6 +145,9 @@ struct PlayerScreen: View {
     /// A plain @State holding the object, not a @StateObject: this body never observes it; the
     /// leaves that show time do (PlayerClockReader). Logic reads `clock.snap` directly.
     @State private var clock = PlayerClock()
+    /// (P11) use-exit-snapshot.ts: the frame kept for the Continue Watching card (ExitSnapshot.swift).
+    /// A plain @State holding the object, like the clock: nothing draws from it.
+    @State private var exitSnapshot = ExitSnapshotter()
     /// (perf pass 4) The pause flag for this body's layout (the Play/Pause chip, X-Ray, the hide
     /// timer's onChange), written only when it changes (takeSnap).
     @State private var isPaused = false
@@ -434,6 +438,8 @@ struct PlayerScreen: View {
                 // A Watch Together host's reopen (another episode or source) went through: the
                 // picker's dismissal no longer means the host left the video.
                 together.playerOpened()
+                // (P11) settings.tsx setSnapshotRetentionDays: expired frames go (all of them at 0 days).
+                ExitSnapshotStore.pruneSoon(retentionDays: ExitSnapshotSettings.current.days)
             }
             // (bug pass) The stream playing now, as onDisappear releases it: after a kid / quality
             // switch, a re-appear used to re-own the original torrent and leave the playing one to
@@ -547,6 +553,9 @@ struct PlayerScreen: View {
             if !finishing {
                 scrobbleTick()
                 together.tick(controller: controller, context: isLive ? nil : context, url: playURL, rate: rate)
+                // (P11) use-exit-snapshot's playing tick: the last good frame for the exit.
+                exitSnapshot.tick(controller: controller, context: isLive ? nil : context, playing: status.state == "playing",
+                                  position: clock.snap.position, duration: clock.snap.duration)
             }
             // (player tracks pass) useSkipSegments also reads the file's chapters (mpv chapter-list).
             // The chapter list is read only when the (whole-second) duration changes: mpv fills it with
@@ -571,6 +580,9 @@ struct PlayerScreen: View {
         // views/player.tsx: an auto pick that fails before it ever played goes on to the next source.
         .onChange(of: status.state) { _, state in
             if state == "error" { autoNextOnError() }
+            // (review 22 follow-up) A room host's stream swapped in place would not open: the room's
+            // hold on the swap spot is let go (TogetherPlayback.sourceFailed).
+            if state == "error", !isLive { together.sourceFailed() }
             // (player parity pass) use-auto-retry.ts: a live channel's error reconnects on its own first.
             if state == "error", isLive { liveErrored() }
             // (bug pass 2) use-auto-end-exit.ts: a live channel's end reloads it.
@@ -1809,7 +1821,12 @@ struct PlayerScreen: View {
 
     private func open(_ p: Panel) {
         // (player pass 2) The chip pressed to open it, when it sits on the transport.
-        if case .chip(_)? = focus, chromeShown { panelOpener = focus } else { panelOpener = nil }
+        // (review 22 follow-up) Not the duration-mismatch chip's buttons: the chip is a soft target
+        // that never takes the ring on its own (DurationMismatchChip), so closing the switcher its
+        // "Find closer match" opened gives the ring to the stage, as Menu from the chip does, and
+        // Select means pause again rather than opening the switcher a second time.
+        let soft: Bool = focus == DurationMismatch.entry || focus == DurationMismatch.dismissTarget
+        if case .chip(_)? = focus, chromeShown, !soft { panelOpener = focus } else { panelOpener = nil }
         panel = p
         hideTask?.cancel()
         // The Subtitles and Audio dialogs seed their own ring; Anime4K lands on its first option.
@@ -2264,8 +2281,8 @@ struct PlayerScreen: View {
             Text("The source responded but the stream would not open. Try a different one.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
             if let e = endedEarly ?? status.error { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
             HStack(spacing: BP.px(10)) {
-                if onChooseAnother != nil {
-                    chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false, reopening: true); go?() }
+                if canPickAnother {
+                    chip("Pick another source", "list.bullet") { pickAnotherSource() }
                 }
                 // (bug pass) Like the other retries: the connecting card's clock starts over (it
                 // otherwise came up at once with the first open's elapsed time and "Still looking"),
@@ -2280,7 +2297,27 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(BP.gutter).padding(.bottom, BP.px(20))
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.6), BP.void_.opacity(0.95)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
-        .onAppear { hideTask?.cancel(); focusLater(.chip(onChooseAnother != nil ? "Pick another source" : "Try again")) }
+        .onAppear { hideTask?.cancel(); focusLater(.chip(canPickAnother ? "Pick another source" : "Try again")) }
+    }
+
+    /// source-error-card "Pick another source" has somewhere to go: the in-place switcher, or a
+    /// caller that reopens the picker.
+    private var canPickAnother: Bool { canSwitchInPlace || onChooseAnother != nil }
+
+    /// (review 22 follow-up) source-error-card onPickAnother = player.tsx pickAnotherOrGuide →
+    /// use-stream-switcher pickAnother: "Always open the in-place switcher overlay. NEVER navigate to
+    /// the full picker from here" (the player stays, and the swap resumes at the last good spot).
+    /// The card steps aside while the switcher is open and comes back if it closes with no swap.
+    /// Where the switcher cannot swap (canSwitchInPlace: a home-server copy, a playlist item, a kid
+    /// profile), the player closes and the caller reopens the picker, as before.
+    private func pickAnotherSource() {
+        if canSwitchInPlace {
+            open(.sources)
+            return
+        }
+        guard let go = onChooseAnother else { return }
+        finish(natural: false, reopening: true)
+        go()
     }
 
     // MARK: engines (use-player-bridge.ts, header-warning.tsx)
@@ -2405,6 +2442,12 @@ struct PlayerScreen: View {
         if scrobbleState != nil {
             let progress = clock.snap.duration > 0 ? (natural ? 100 : clock.snap.position / clock.snap.duration * 100) : 0
             sendScrobble(progress >= 90 ? "stop" : "pause")
+        }
+        // (P11) use-player-exit.ts closePlayer → captureExitSnapshot, first: the frame is taken now,
+        // while the engine is still up, and saved off the main thread; the close never waits for it.
+        if !isLive {
+            let live: (position: Double, duration: Double, paused: Bool) = controller?.snapshot() ?? clock.snap
+            exitSnapshot.captureOnExit(controller: controller, context: context, position: live.position, duration: live.duration)
         }
         // (player pass 2) Nothing plays on under a closing player (Next episode, Play now, Sources
         // and a Back without the leave dialog kept the film and its sound going through the close).

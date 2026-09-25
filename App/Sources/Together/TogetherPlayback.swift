@@ -12,6 +12,7 @@ import UIKit
 ///   interceptSeek(to:controller)        a committed seek; true when the room handled it
 ///   closing(reopening:)                 the player is leaving (use-player-exit.ts)
 ///   sourceSwitched(url:ref:at:)         a stream swapped in place (use-stream-switcher, P8)
+///   sourceFailed()                      that stream would not open (the source error card)
 /// Incoming room state and commands arrive through TogetherModel's publishers; the room's speed
 /// goes back to the player through `onRoomRate`.
 @MainActor
@@ -57,6 +58,10 @@ final class TogetherPlayback: ObservableObject {
     private var switchRef: AnyJSON?
     private var switchedAt = Date.distantPast
     private var sourceGen = 0
+    /// (review 22 follow-up) The spot a started host's swap in place holds the room at, and whether
+    /// the room was playing before it; cleared once the new stream plays (the heartbeat publishes)
+    /// or the hold is let go (sourceFailed, closing).
+    private var swapHold: (at: Double, playing: Bool)?
     private var openedSent = false
     private var lastInRoom: Bool?
     /// The player's playback speed (snap.rate upstream), published with every state.
@@ -232,6 +237,7 @@ final class TogetherPlayback: ObservableObject {
         if inRoom, isHost, hasStarted, snap.duration > 0, snap.position > 0, !stalled,
            Date().timeIntervalSince(lastHeartbeat) >= Self.heartbeatS - 0.05 {
             lastHeartbeat = Date()
+            swapHold = nil
             publish(position: snap.position, playing: playing)
         }
     }
@@ -274,6 +280,7 @@ final class TogetherPlayback: ObservableObject {
     func closing(reopening: Bool = false) {
         seekApply?.cancel()
         bag.removeAll()
+        swapHold = nil
         // Opening the next episode or another source keeps the room (and the host role), but the
         // guests should not play on unseen while the host picks: the room holds at this spot.
         if inRoom, isHost, reopening {
@@ -313,11 +320,27 @@ final class TogetherPlayback: ObservableObject {
             return
         }
         if hasStarted {
+            // The room's play state before this swap (the host's last heartbeat), for sourceFailed.
+            let wasPlaying: Bool = swapHold?.playing ?? room.view.syncState?.playing ?? lastTickPlaying
+            swapHold = (at, wasPlaying)
             publish(position: at, playing: false)
         } else {
             lobbySeeded = false
         }
         if let ref { describe(ref, duration: nil, gen: gen) }
+    }
+
+    /// (review 22 follow-up) The stream a started host swapped in place would not open. Upstream
+    /// never holds the room for a swap (use-stream-switcher loads the new stream; use-room-sync's
+    /// heartbeat only goes quiet while the host's status is not playing or paused), so its guests
+    /// play on while the host sits on the source error card. The TV's hold is let go here: the room
+    /// plays again from the spot it held, when it was playing before the swap. The host's next
+    /// stream (Try again, another source) holds it again or pulls the guests back with its heartbeat.
+    func sourceFailed() {
+        guard let hold = swapHold else { return }
+        swapHold = nil
+        guard inRoom, isHost, hasStarted, hold.playing else { return }
+        publish(position: hold.at, playing: true)
     }
 
     /// source-descriptor.ts buildSourceDescriptor through the engine (together.sourceDescriptor);

@@ -85,6 +85,11 @@ final class NativePlayerController: UIViewController {
     private var embeddedTimeline: [EmbeddedChange] = []
     /// How far ahead the output reports: enough for a negative (early) offset to show on time.
     private static let legibleLead: Double = 5
+    /// (P11) snapshots.ts captureFrame(video): the decoded pictures, for use-exit-snapshot's grab.
+    /// It works for HLS and progressive files alike (AVAssetImageGenerator reads no HLS and would
+    /// fetch the file again). No pixel format is asked for, so no frame is converted until one is
+    /// copied. Attached only while the Continue Watching frames are on (cwSnapshotRetentionDays > 0).
+    private var frameOutput: AVPlayerItemVideoOutput?
 
     // Picture in Picture (bridge.ts requestPiP / exitPiP, capabilities().pictureInPicture). The
     // AVPlayerViewController above stays for display matching; PiP lifts a plain AVPlayerLayer of
@@ -194,6 +199,7 @@ final class NativePlayerController: UIViewController {
         onPictureInPictureClosed = nil
         subtitleOutput?.setDelegate(nil, queue: nil)
         subtitleOutput = nil
+        frameOutput = nil
         observations.forEach { $0.invalidate() }
         observations = []
         notes.forEach { NotificationCenter.default.removeObserver($0) }
@@ -236,6 +242,12 @@ final class NativePlayerController: UIViewController {
         item.add(output)
         subtitleOutput = output
         embeddedTimeline = []
+        frameOutput = nil
+        if ExitSnapshotSettings.current.days > 0 {
+            let frames = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+            item.add(frames)
+            frameOutput = frames
+        }
         // KVO and notification blocks may arrive off the main thread; everything hops back to it.
         observations.append(item.observe(\.status, options: [.new]) { [weak self] _, _ in
             guard let self else { return }
@@ -957,6 +969,27 @@ final class NativePlayerController: UIViewController {
 
 extension NativePlayerController: PlayerEngineControlling {
     var engineKind: PlayerEngineKind { .native }
+
+    /// (P11) snapshots.ts captureFrame(video): the picture showing now, copied from the item's
+    /// video output on the main thread (a retained buffer, no conversion) and scaled and encoded
+    /// off it (FrameGrab). A paused picture that was already copied once is not vended again; the
+    /// item's current time is tried after the display clock's.
+    func grabFrame(fullQuality: Bool, done: @escaping (Data?) -> Void) {
+        guard !tornDown, let output = frameOutput, player.currentItem != nil else {
+            done(nil)
+            return
+        }
+        let shown: CMTime = output.itemTime(forHostTime: CACurrentMediaTime())
+        var buffer: CVPixelBuffer? = output.copyPixelBuffer(forItemTime: shown, itemTimeForDisplay: nil)
+        if buffer == nil, let now = player.currentItem?.currentTime(), now.isValid {
+            buffer = output.copyPixelBuffer(forItemTime: now, itemTimeForDisplay: nil)
+        }
+        guard let buffer else {
+            done(nil)
+            return
+        }
+        FrameGrab.encode(pixelBuffer: buffer, fullQuality: fullQuality, done: done)
+    }
 }
 
 /// The legible output reports on the main queue; the hop keeps the controller's state on the main actor.
