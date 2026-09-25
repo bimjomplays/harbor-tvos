@@ -592,6 +592,8 @@ export const streamsRoom = {
   setStreamSort: streamGlue.setStreamSort,
   pickerRowText: streamGlue.pickerRowText,
   deadRef: streamGlue.deadRef,
+  /** Smoke only: hold partial results until the returned function lets them land. */
+  holdPartials: streamGlue.holdPartials,
 };
 export type { StreamSearch } from "./streams";
 
