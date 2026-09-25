@@ -347,7 +347,9 @@ struct StreamingServicesStep: View {
             if items.isEmpty {
                 if loaded { BPNote(text: "No services to choose from on this profile.") } else { ProgressView().tint(BP.inkMuted) }
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(150)), spacing: BP.px(6)), count: 6), spacing: BP.px(6)) {
+                // (layout pass) Six 253 pt cells (1 568 pt) overran the 891 pt step column (1 632 less the
+                // 640 pt aside and the 101 pt gap) and ran off the screen. bp-step-streaming PER_ROW = 4.
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(127)), spacing: BP.px(6)), count: 4), spacing: BP.px(6)) {
                     ForEach(items) { i in
                         Button { Task { await toggle(i) } } label: {
                             HStack(spacing: BP.px(6)) {
@@ -356,7 +358,7 @@ struct StreamingServicesStep: View {
                                 if !i.on { Text("Off").font(BP.sans(9, .bold)).foregroundStyle(BP.inkSubtle) }
                             }
                             .foregroundStyle(i.on ? BP.ink : BP.inkSubtle)
-                            .padding(.horizontal, BP.px(12)).frame(width: BP.px(150), height: BP.px(46))
+                            .padding(.horizontal, BP.px(12)).frame(width: BP.px(127), height: BP.px(46))
                             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(i.on ? BP.panel2 : BP.panel))
                             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).strokeBorder(i.on ? BP.edge2 : BP.edge, lineWidth: 1))
                             .opacity(i.on ? 1 : 0.55)
@@ -401,7 +403,10 @@ struct TasteStep: View {
     @State private var loaded = false
     @State private var bump: String?
     private static let max = 5
-    private static let columns = Array(repeating: GridItem(.fixed(BP.px(150)), spacing: BP.px(10)), count: 6)
+    /// (layout pass) Six 253 pt posters (1 603 pt) overran the 891 pt step column, and the scroller
+    /// centred and clipped them. bp-step-taste keeps PER_ROW = 6 at the column's width: 6 × px(76)
+    /// + gaps = 853 pt, with headroom inside the scroller for the focus ring (887 pt).
+    private static let columns = Array(repeating: GridItem(.fixed(BP.px(76)), spacing: BP.px(10)), count: 6)
 
     private var onScreen: Int { items.filter { picked.contains($0.id) }.count }
 
@@ -416,7 +421,7 @@ struct TasteStep: View {
                             let on = picked.contains(m.id)
                             Button { Task { await toggle(m) } } label: {
                                 ZStack(alignment: .topTrailing) {
-                                    RemoteImage(url: m.poster).frame(width: BP.px(150), height: BP.px(225))
+                                    RemoteImage(url: m.poster).frame(width: BP.px(76), height: BP.px(114))
                                         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
                                         .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(on ? BP.accent : .clear, lineWidth: 3))
                                     if on { Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(22))).foregroundStyle(BP.accent).padding(BP.px(6)) }
@@ -429,7 +434,7 @@ struct TasteStep: View {
                             .bpSelected(on)
                         }
                     }
-                    .padding(.vertical, BP.px(10))
+                    .padding(.vertical, BP.px(10)).padding(.horizontal, BP.px(10))
                 }
                 .frame(height: BP.px(500))
                 .focusSection()

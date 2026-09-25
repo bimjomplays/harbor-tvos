@@ -48,6 +48,9 @@ struct LiveRowView: View {
                                 Button { model.played(c); playing = c } label: { cell(c) }
                                     .buttonStyle(BPTileStyle(radius: BP.rSM))
                                     .focused($focusedId, equals: c.id)
+                                    // (layout pass) As the rail tiles and CW cards: the lifted cell's shadow
+                                    // and ring draw over the opaque cell after it.
+                                    .zIndex(focusedId == c.id ? 1 : 0)
                             }
                         }
                         .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))

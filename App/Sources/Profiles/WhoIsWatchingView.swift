@@ -69,6 +69,7 @@ struct WhoIsWatchingView: View {
             VStack(spacing: BP.px(12)) {
                 ZStack(alignment: .bottomTrailing) {
                     ProfileFace(profile: p, size: faceSize)
+                        .modifier(WhoFaceRing())
                     if p.passwordHash != nil {
                         Image(systemName: "lock.fill")
                             .font(.system(size: faceSize * 0.13, weight: .bold))
@@ -82,7 +83,7 @@ struct WhoIsWatchingView: View {
             }
             .frame(width: faceSize * 1.42)
         }
-        .buttonStyle(BPTileStyle(radius: faceSize * 0.71))
+        .buttonStyle(WhoTileStyle())
         .accessibilityIdentifier("who-tile-\(p.id)")
         // bp-who-is-watching-tile.tsx aria-label t("Switch to {name}"); the lock badge adds "PIN".
         .accessibilityLabel(Text(verbatim: p.passwordHash != nil ? "\(T("Switch to %@", p.name)), \(T("PIN"))" : T("Switch to %@", p.name)))
@@ -111,6 +112,38 @@ struct WhoIsWatchingView: View {
                 app.attachPendingStremio()
             }.buttonStyle(BPActionStyle(primary: true))
         }
+    }
+}
+
+/// bp-who-is-watching-style.ts: the whole tile lifts ([data-bp-who-tile] scale --bp-focus-lift) but
+/// the ring and shadow sit on the round face ([data-bp-who-face] box-shadow), never around the name.
+/// (layout pass) BPTileStyle drew its rounded-rect ring around face and name together: a wide pill
+/// enclosing the caption instead of a circle hugging the avatar.
+struct WhoTileStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        BPFocusReader { focused in
+            configuration.label
+                .scaleEffect(focused ? (configuration.isPressed ? BP.focusLift * BP.press : BP.focusLift) : 1)
+                .animation(configuration.isPressed ? .timingCurve(0.5, 0, 0.75, 0, duration: 0.09) : BP.ease, value: focused)
+                .animation(.timingCurve(0.5, 0, 0.75, 0, duration: 0.09), value: configuration.isPressed)
+        }
+    }
+}
+
+/// The face half of WhoTileStyle: BPFocusModifier's ring geometry (void gap, then the stroke) as
+/// circles, and the contact shadow, while the tile's button holds focus.
+struct WhoFaceRing: ViewModifier {
+    @Environment(\.isFocused) private var focused
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if focused {
+                    Circle().inset(by: -3).stroke(BP.void_, lineWidth: 3)
+                    Circle().inset(by: -7).stroke(BP.focusStroke, lineWidth: 5)
+                }
+            }
+            .shadow(color: .black.opacity(focused ? 0.8 : 0), radius: focused ? 34 : 0, y: focused ? 26 : 0)
     }
 }
 

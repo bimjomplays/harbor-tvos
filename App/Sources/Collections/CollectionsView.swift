@@ -210,7 +210,11 @@ struct CollectionsView: View {
     @State private var nameDraft = ""
 
     private static let sources: [(String, String)] = [("all", "All"), ("mine", "Mine"), ("community", "Community"), ("tmdb", "TMDB"), ("tvdb", "TVDB")]
-    private static let columns = Array(repeating: GridItem(.fixed(BP.px(240)), spacing: BP.px(16)), count: 6)
+    /// (layout pass) Six 404 pt cards (2 559 pt with the gaps) ran far off the 1 632 pt page.
+    /// bp-collections GRID_COLUMNS (minmax(196px, 1fr), gap 11.4) lays four ~234 px columns across
+    /// the 969 px page: four cards of px(230) = 387 pt, 1 629 pt with the gaps.
+    static let cardWidth = BP.px(230)
+    private static let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: BP.px(16)), count: 4)
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -343,7 +347,7 @@ struct CollectionCardView: View {
                 }
                 .padding(BP.px(10))
             }
-            .frame(width: BP.px(240), height: BP.px(135))
+            .frame(width: CollectionsView.cardWidth, height: (CollectionsView.cardWidth * 9 / 16).rounded())
             .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
         }
     }
@@ -361,6 +365,6 @@ struct CollectionMoreCard: View {
             }
             .padding(BP.px(12))
         }
-        .frame(width: BP.px(240), height: BP.px(135))
+        .frame(width: CollectionsView.cardWidth, height: (CollectionsView.cardWidth * 9 / 16).rounded())
     }
 }

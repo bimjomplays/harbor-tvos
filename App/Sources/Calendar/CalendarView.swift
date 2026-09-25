@@ -125,6 +125,7 @@ struct CalendarView: View {
                     Button("Dismiss") { withAnimation(BP.easeFast) { fired = [] } }.buttonStyle(BPActionStyle())
                 }
             }
+            .scrollClipDisabled()
         }
         .padding(BP.px(14))
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.accent.opacity(0.08)))
@@ -145,6 +146,8 @@ struct CalendarView: View {
                 }
             }
         }
+        // (layout pass) A chip track with no padding: the clip cut the focused chip's ring (9.5 pt out).
+        .scrollClipDisabled()
         .focusSection()
     }
 
@@ -200,6 +203,8 @@ struct CalendarView: View {
                 }
             }
         }
+        // (layout pass) A chip track with no padding: the clip cut the focused chip's ring (9.5 pt out).
+        .scrollClipDisabled()
         .focusSection()
     }
 

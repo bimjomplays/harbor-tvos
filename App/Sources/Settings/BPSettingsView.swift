@@ -179,6 +179,11 @@ struct BPSettingsView: View {
         return { BPSound.shared.audition = value }
     }
 
+    /// (layout pass) A cell track starts flush with the column, so the scroll view's clip took the
+    /// left side of the first cell's ring (9.5 pt out, plus the lift) and the right side of a cell
+    /// scrolled to the end. bp-grid's HEADROOM pattern: pad the track, pull the scroller out as much.
+    private static let trackHeadroom = BP.px(10)
+
     @ViewBuilder private func controlRow(_ c: BPSettingsModel.Control, first: Bool) -> some View {
         switch c.kind {
         case "options":
@@ -201,7 +206,9 @@ struct BPSettingsView: View {
                             }
                         }
                         .padding(.vertical, BP.px(8))
+                        .padding(.horizontal, Self.trackHeadroom)
                     }
+                    .padding(.horizontal, -Self.trackHeadroom)
                 }
             }
         case "multi":
@@ -234,7 +241,9 @@ struct BPSettingsView: View {
                         }
                     }
                     .padding(.vertical, BP.px(8))
+                    .padding(.horizontal, Self.trackHeadroom)
                 }
+                .padding(.horizontal, -Self.trackHeadroom)
             }
         case "push":
             Button {

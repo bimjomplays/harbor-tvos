@@ -106,6 +106,8 @@ struct SportsView: View {
                     Text(statusLine).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8))
                 }
             }
+            // (layout pass) Chip tracks with no padding: the clip cut the focused chip's ring (9.5 pt out).
+            .scrollClipDisabled()
             .focusSection()
             if let p = model.page, p.showGroups {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -117,6 +119,7 @@ struct SportsView: View {
                         Button("All sports") { model.setMode(.explore) }.buttonStyle(BPActionStyle())
                     }
                 }
+                .scrollClipDisabled()
                 .focusSection()
             }
         }
@@ -145,18 +148,21 @@ struct SportsView: View {
                 }
             }
         }
+        .scrollClipDisabled()
         .focusSection()
     }
 
+    /// (layout pass) Seven 337 pt tiles (2 479 pt) overran the 1 632 pt page. bp-sports-explore
+    /// COLUMNS (minmax(138px, 1fr)) fits six across: 6 × px(150) + gaps = 1 618 pt.
     private func explore(_ p: SportsModel.Page) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(200)), spacing: BP.px(12)), count: 7), spacing: BP.px(12)) {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(150)), spacing: BP.px(12)), count: 6), spacing: BP.px(12)) {
             ForEach(p.explore) { g in
                 Button { model.browse(g.key) } label: {
                     VStack(spacing: BP.px(8)) {
                         Text(g.icon ?? "").font(.system(size: BP.px(30)))
                         Text(g.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     }
-                    .frame(width: BP.px(200), height: BP.px(110))
+                    .frame(width: BP.px(150), height: BP.px(110))
                     .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
                 }
                 .buttonStyle(BPTileStyle(radius: BP.rSM))
@@ -277,6 +283,8 @@ struct SportsRowView: View {
                 }
                 .padding(.vertical, BP.px(6))
             }
+            // (layout pass) 10 pt of track padding against the card's ring and lift: shaved at the clip.
+            .scrollClipDisabled()
         }
         .focusSection()
     }

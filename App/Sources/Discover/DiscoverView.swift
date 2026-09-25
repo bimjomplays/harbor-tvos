@@ -13,7 +13,11 @@ struct DiscoverView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            SpotlightView(meta: model.spotlight, boxHeight: BP.px(160) + BP.barHeight)
+            // (layout pass) The art only. The rail parks a focused row just under the top bar (topInset
+            // below), right where the spotlight's title, chips and overview were bottom-anchored, and
+            // it draws after them: the focused title's copy sat behind that row's header and posters.
+            // bp-discover has no title copy over its rail either (its header names the band).
+            SpotlightView(meta: model.spotlight, boxHeight: BP.px(160) + BP.barHeight, layer: .backdrop)
                 .opacity(model.spotlight == nil ? 0 : 1)
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {

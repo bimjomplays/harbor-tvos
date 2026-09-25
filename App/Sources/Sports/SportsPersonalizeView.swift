@@ -67,7 +67,7 @@ struct SportsPersonalizeView: View {
                     Button("Retry") { Task { await loadTeams(teamLeague, force: true) } }.buttonStyle(BPActionStyle())
                 } else {
                     if t.partial { BPNote(text: "This source provides a partial team list.") }
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(280)), spacing: BP.px(10)), count: 5), spacing: BP.px(10)) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(185)), spacing: BP.px(10)), count: 5), spacing: BP.px(10)) {
                         ForEach(t.teams) { team in
                             let on = t.followed.contains(team.id)
                             Button { Task { await toggle(team) } } label: {
@@ -77,7 +77,7 @@ struct SportsPersonalizeView: View {
                                     Spacer(minLength: 0)
                                     if on { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink) }
                                 }
-                                .padding(.horizontal, BP.px(12)).frame(width: BP.px(280), height: BP.px(50), alignment: .leading)
+                                .padding(.horizontal, BP.px(12)).frame(width: BP.px(185), height: BP.px(50), alignment: .leading)
                                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(on ? BP.on : BP.panel))
                             }
                             .buttonStyle(BPTileStyle(radius: BP.rSM))
@@ -142,8 +142,11 @@ struct SportsPersonalizeView: View {
         .onExitCommand { dismiss() }
     }
 
+    /// (layout pass) The sport grid (7 × 337 pt) and the league / team grids (5 × 472 pt) ran far
+    /// past the 1 632 pt page. bp-sports-personalize SPORT_COLUMNS / LIST_COLUMNS are auto-fill
+    /// grids that fit it: six sports of px(150), five leagues or teams of px(185) (≤ 1 628 pt).
     private func groupGrid(_ c: Catalog) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(200)), spacing: BP.px(12)), count: 7), spacing: BP.px(12)) {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(150)), spacing: BP.px(12)), count: 6), spacing: BP.px(12)) {
             ForEach(c.groups) { g in
                 Button {
                     if groups.contains(g.key) {
@@ -159,7 +162,7 @@ struct SportsPersonalizeView: View {
                         Text(g.icon ?? "").font(.system(size: BP.px(28)))
                         Text(g.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     }
-                    .frame(width: BP.px(200), height: BP.px(100))
+                    .frame(width: BP.px(150), height: BP.px(100))
                     .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(groups.contains(g.key) ? BP.on : BP.panel2))
                     .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).strokeBorder(groups.contains(g.key) ? BP.ink : BP.edge2, lineWidth: 1))
                 }
@@ -174,7 +177,7 @@ struct SportsPersonalizeView: View {
             ForEach(c.groups.filter { groups.contains($0.key) }) { g in
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Text(g.label).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(280)), spacing: BP.px(10)), count: 5), spacing: BP.px(10)) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(185)), spacing: BP.px(10)), count: 5), spacing: BP.px(10)) {
                         ForEach(c.leagues.filter { $0.group == g.key }) { l in
                             Button {
                                 if leagues.contains(l.key) { leagues.remove(l.key) } else { leagues.insert(l.key) }
@@ -186,7 +189,7 @@ struct SportsPersonalizeView: View {
                                     if leagues.contains(l.key) { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink) }
                                 }
                                 .padding(.horizontal, BP.px(10))
-                                .frame(width: BP.px(280), height: BP.px(44), alignment: .leading)
+                                .frame(width: BP.px(185), height: BP.px(44), alignment: .leading)
                                 .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(leagues.contains(l.key) ? BP.on : BP.panel2))
                             }
                             .buttonStyle(BPTileStyle())

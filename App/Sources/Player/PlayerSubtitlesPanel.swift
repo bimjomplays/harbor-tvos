@@ -103,9 +103,13 @@ struct PlayerSubtitlesPanel: View {
                         case .style: lookLane
                         }
                     }
-                    .padding(.horizontal, BP.px(6))
-                    .padding(.top, BP.px(6)).padding(.bottom, BP.px(24))
+                    .padding(.horizontal, BP.px(12))
+                    .padding(.top, BP.px(8)).padding(.bottom, BP.px(24))
                 }
+                // (layout pass) A full-width line (1.01 lift on ~1 640 pt, ring 9.5 pt out) reaches ~18 pt
+                // past its sides; 10 pt of padding let the scroller's clip cut both sides of the ring.
+                // More headroom inside, the scroller pulled out by the difference: the rows stay put.
+                .padding(.horizontal, -BP.px(6))
                 .focusSection()
             }
             .padding(.horizontal, BP.px(30))

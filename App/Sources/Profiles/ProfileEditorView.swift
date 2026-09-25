@@ -53,7 +53,8 @@ struct ProfileEditorView: View {
                     ForEach(groups) { g in
                         VStack(alignment: .leading, spacing: BP.px(6)) {
                             Text(g.group).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
-                            LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(72)), spacing: BP.px(8)), count: 14), spacing: BP.px(8)) {
+                            // (layout pass) 14 faces (1 863 pt) overran the 1 632 pt page; 12 fit (1 595 pt).
+                            LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(72)), spacing: BP.px(8)), count: 12), spacing: BP.px(8)) {
                                 ForEach(g.items) { item in
                                     Button { avatar = item.path } label: {
                                         ZStack {

@@ -93,7 +93,11 @@ struct LibraryView: View {
     @State private var statsEnabled = false
     @State private var showStats = false
 
-    private let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(14)), count: 9)
+    /// (layout pass) Nine fixed 298 pt columns asked for 2 874 pt on a 1 632 pt page (1 920 less both
+    /// gutters): the grid, and with it the whole page, ran off both sides of the screen. bp-library's
+    /// auto-fill grid fits the page, so the column count is what fits: 5 × 298 + 4 × 24 = 1 586.
+    private let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(14)), count: 5)
+    @FocusState private var focusedKey: String?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -119,16 +123,20 @@ struct LibraryView: View {
                                     ForEach(s.items) { e in
                                         Button { detail = e.meta } label: {
                                             ZStack(alignment: .bottom) {
-                                                BPTileView(meta: e.meta, shape: .poster)
+                                                BPTileView(meta: e.meta, shape: .poster, focused: focusedKey == e.key)
                                                 if let p = e.progress, p > 0, p < 1 {
-                                                    // history-episode-card: the watched fraction under the poster.
+                                                    // history-episode-card: the watched fraction at the poster's foot
+                                                    // (the tile ends at the art now; the caption sits inside it).
                                                     Capsule().fill(BP.ink).frame(width: BPTileView.posterWidth * CGFloat(p), height: BP.px(4))
                                                         .frame(width: BPTileView.posterWidth, alignment: .leading)
-                                                        .offset(y: -BP.px(22))
+                                                        .offset(y: -BP.px(3))
                                                 }
                                             }
                                         }
                                         .buttonStyle(BPTileStyle())
+                                        .focused($focusedKey, equals: e.key)
+                                        // The lifted tile, ring and shadow draw over the next grid row.
+                                        .zIndex(focusedKey == e.key ? 1 : 0)
                                     }
                                 }
                             }
@@ -172,6 +180,9 @@ struct LibraryView: View {
                 if let f = model.feed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
             }
         }
+        // (layout pass) The track is exactly one chip tall: the focused chip's ring (9.5 pt out) lost
+        // its top, bottom and, on the first chip, its left side to the scroll view's clip.
+        .scrollClipDisabled()
         .focusSection()
     }
 

@@ -505,6 +505,9 @@ struct LiveView: View {
             }
             .padding(.vertical, BP.px(4))
         }
+        // (layout pass) 7 pt of track padding against a ring 9.5 pt out: the clip shaved the top and
+        // bottom of the focused chip's ring and the whole left side of the first chip's.
+        .scrollClipDisabled()
         .focusSection()
     }
 
@@ -521,9 +524,16 @@ struct LiveView: View {
                 }
             }
             .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))
+            .padding(.horizontal, Self.listHeadroom)
         }
+        // (layout pass) The rows fill the scroller edge to edge: a focused row (~1 310 pt wide, 1.03
+        // lift) reaches ~29 pt past its sides with the ring, and the clip cut the ring's left side
+        // (and the right side of the last cell). bp-grid's HEADROOM: pad inside, pull out as much.
+        .padding(.horizontal, -Self.listHeadroom)
         .focusSection()
     }
+
+    private static let listHeadroom = BP.px(18)
 }
 
 /// One guide row: logo, name, what's on now (with a live progress bar), what's next, a star.

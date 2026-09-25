@@ -14,7 +14,14 @@ struct CatalogPageView: View {
     @State private var detail: Meta?
     @FocusState private var focusedId: String?
 
-    private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21), alignment: .top), count: 6)
+    /// (layout pass) Six fixed 298 pt columns and five 35 pt gaps are 1 963 pt, wider than the
+    /// 1 632 pt between the gutters (wider than the screen, even): the grid ran off both edges.
+    /// Five fit (1 630 pt), as bp-grid's auto-fill columns always fit the page.
+    private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21), alignment: .top), count: 5)
+    /// The hero box the grid scrolls under (bp-catalog-page: the hero, z-20, then the rail below it).
+    private static var heroBox: CGFloat { BP.px(200) + BP.barHeight }
+    /// bp-grid HEADROOM pt-[14px]: room above the viewport for the focused tile's lift and ring.
+    private static var headroom: CGFloat { BP.px(14) }
 
     init(room: Room, row: BrowseRow) {
         self.room = room
@@ -26,7 +33,13 @@ struct CatalogPageView: View {
     var body: some View {
         ZStack(alignment: .top) {
             BPAmbientBackground()
-            SpotlightView(meta: spotlight, boxHeight: BP.px(200) + BP.barHeight).opacity(spotlight == nil ? 0 : 1)
+            SpotlightView(meta: spotlight, boxHeight: Self.heroBox).opacity(spotlight == nil ? 0 : 1)
+            // (layout pass) The grid used to scroll the whole screen with the hero copy drawn under
+            // it: once focus moved down a row, the rows above it covered the focused title's name,
+            // chips and overview. As bp-catalog-page, the scroller now starts under the hero box, so
+            // focus scrolling keeps the focused row below the copy; the clip is lifted and replaced
+            // by a mask `headroom` above the viewport, so the ring of a row scrolled flush with the
+            // top still shows while nothing reaches the copy.
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(columns: Self.columns, alignment: .leading, spacing: BP.px(24)) {
                     ForEach(Array(metas.enumerated()), id: \.element.id) { i, meta in
@@ -40,7 +53,7 @@ struct CatalogPageView: View {
                     }
                 }
                 .padding(.horizontal, BP.gutter)
-                .padding(.top, BP.px(200) + BP.barHeight)
+                .padding(.top, Self.headroom)
                 .padding(.bottom, BP.hintHeight + BP.px(40))
                 if loading { ProgressView().tint(BP.inkMuted).padding() }
                 if let emptyNote, metas.isEmpty, !loading {
@@ -51,6 +64,14 @@ struct CatalogPageView: View {
                     .padding(.horizontal, BP.gutter)
                 }
             }
+            .scrollClipDisabled()
+            .padding(.top, Self.heroBox)
+            .mask(
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: Self.heroBox - Self.headroom)
+                    Color.black
+                }
+            )
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 Text(row.title).font(BP.display(30)).foregroundStyle(BP.ink)
                 Text("\(metas.count) titles").font(BP.sans(13)).foregroundStyle(BP.inkMuted)

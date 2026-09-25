@@ -19,15 +19,23 @@ struct AddonPageView: View {
     @FocusState private var focusedId: String?
     struct Catalog: Decodable, Identifiable { var key: String; var name: String; var type: String; var cursor: AnyJSON; var id: String { key } }
 
-    private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21), alignment: .top), count: 6)
+    /// (layout pass) Six fixed 298 pt columns (1 963 pt with the gaps) overran the 1 632 pt page;
+    /// five fit (1 630 pt), like bp-addon's auto-fill grid.
+    private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21), alignment: .top), count: 5)
+    /// The hero box over the scroller (bp-addon: header first, the grid scroller below it).
+    private static var heroBox: CGFloat { BP.px(200) + BP.barHeight }
+    /// bp-grid HEADROOM pt-[14px]: room above the viewport for the focused tile's lift and ring.
+    private static var headroom: CGFloat { BP.px(14) }
 
     var body: some View {
         ZStack(alignment: .top) {
             BPAmbientBackground()
-            SpotlightView(meta: spotlight, boxHeight: BP.px(200) + BP.barHeight).opacity(spotlight == nil ? 0 : 1)
+            SpotlightView(meta: spotlight, boxHeight: Self.heroBox).opacity(spotlight == nil ? 0 : 1)
+            // (layout pass) Rows scrolling up covered the hero copy drawn under them (the focused
+            // title's name and overview). The scroller now starts under the hero box, as
+            // CatalogPageView's; a mask keeps `headroom` above it for the focused ring.
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
-                    Color.clear.frame(height: BP.px(200) + BP.barHeight)
                     if !catalogs.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: BP.px(8)) {
@@ -59,7 +67,16 @@ struct AddonPageView: View {
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }
+                .padding(.top, Self.headroom)
             }
+            .scrollClipDisabled()
+            .padding(.top, Self.heroBox)
+            .mask(
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: Self.heroBox - Self.headroom)
+                    Color.black
+                }
+            )
             HStack(spacing: BP.px(14)) {
                 if let logo, !logo.isEmpty { RemoteImage(url: logo, contentMode: .fit).frame(width: BP.px(48), height: BP.px(48)).clipShape(RoundedRectangle(cornerRadius: BP.px(10))) }
                 VStack(alignment: .leading, spacing: BP.px(4)) {

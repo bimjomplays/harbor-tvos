@@ -39,15 +39,11 @@ struct BPTileView: View {
         }
     }
 
+    /// (layout pass) bp-tile.tsx: "Big Picture prints the title inside the art". The caption used to
+    /// hang under the poster, so the focus ring framed an extra caption strip, and a row parked
+    /// under the hero put that caption under the hint bar (use-bp-rail's floor is the art's edge).
     private var poster: some View {
-        VStack(alignment: .leading, spacing: BP.px(6)) {
-            art(url: meta.poster ?? meta.background, size: Self.posterSize)
-            Text(meta.name)
-                .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                .opacity(focused ? 1 : 0)
-                .animation(.easeOut(duration: 0.26), value: focused)
-        }
-        .frame(width: Self.posterWidth, alignment: .leading)
+        art(url: meta.poster ?? meta.background, size: Self.posterSize, caption: true)
     }
 
     private var wide: some View {
@@ -117,7 +113,7 @@ struct BPTileView: View {
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
     }
 
-    private func art(url: String?, size: CGSize, plateText: Bool = true) -> some View {
+    private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false) -> some View {
         ZStack(alignment: .topLeading) {
             // components/poster.tsx: the art is asked for at the card's size × posterQuality.
             RemoteImage(url: PosterSizing.sized(url, width: max(size.width, size.height * 2 / 3), scale: displayScale,
@@ -126,6 +122,24 @@ struct BPTileView: View {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))
                     .frame(width: size.width, height: size.height)
+            }
+            if caption && url != nil {
+                // bp-tile.tsx: --bp-scrim-up over the lower half, then the title (line-clamp-2,
+                // px-2.5 pb-2), both only on focus; the marks draw after them, unwashed.
+                LinearGradient(stops: [.init(color: BP.void_, location: 0), .init(color: BP.void_.opacity(0.88), location: 0.18),
+                                       .init(color: BP.void_.opacity(0.62), location: 0.34), .init(color: BP.void_.opacity(0.3), location: 0.52),
+                                       .init(color: BP.void_.opacity(0.1), location: 0.68), .init(color: .clear, location: 0.82)],
+                               startPoint: .bottom, endPoint: .top)
+                    .frame(width: size.width, height: size.height / 2)
+                    .frame(width: size.width, height: size.height, alignment: .bottom)
+                    .opacity(focused ? 1 : 0)
+                    .animation(.easeOut(duration: 0.26), value: focused)
+                Text(meta.name)
+                    .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.leading)
+                    .padding(.horizontal, BP.px(10)).padding(.bottom, BP.px(8))
+                    .frame(width: size.width, height: size.height, alignment: .bottomLeading)
+                    .opacity(focused ? 1 : 0)
+                    .animation(.easeOut(duration: 0.26), value: focused)
             }
             CardMarksOverlay(marks: marks.byId[meta.id], fallbackChip: marks.byId[meta.id] == nil ? CardMark.identity(for: meta) : nil, size: size)
         }

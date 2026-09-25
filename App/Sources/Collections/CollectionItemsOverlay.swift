@@ -36,7 +36,8 @@ struct CollectionItemsOverlay: View {
         self.onOpen = onOpen
     }
 
-    private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21)), count: 6)
+    /// (layout pass) Six 298 pt columns plus gaps (1 963 pt) overran the 1 632 pt page; five fit.
+    private static let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(21)), count: 5)
     private var isMine: Bool { card.source == "mine" }
     private var isDetail: Bool { card.source == "tmdb" || card.source == "tvdb" }
 

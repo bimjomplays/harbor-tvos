@@ -189,6 +189,8 @@ struct LiveGuideView: View {
     }
 
     // bp-guide-geometry.ts at 1920×1080 (w×0.155 col clamp 220–340, h×0.155 rows 88–128, slot w×0.14 clamp 150–232).
+    /// Room inside the list scroller for the channel cell's focus ring (BPTileStyle: 9.5 pt + lift).
+    private static let headroom = BP.px(14)
     private let colPx = BP.px(300)
     private let rowPx = BP.px(84)
     private let rulerPx = BP.px(40)
@@ -209,7 +211,14 @@ struct LiveGuideView: View {
                     }
                 }
                 .padding(.bottom, BP.px(150) + BP.hintHeight)
+                .padding(.top, BP.px(4))
+                .padding(.horizontal, Self.headroom)
             }
+            // (layout pass) The channel cells sit flush with the scroller's left edge, so its clip cut
+            // the focused cell's ring and lift (~17 pt out) off its whole left side, and the top of
+            // the first row's. bp-grid's HEADROOM: pad inside, pull the scroller out as much; the
+            // rows stay where they were.
+            .padding(.horizontal, -Self.headroom)
             .coordinateSpace(name: "guideList")
             .background(GeometryReader { g in
                 Color.clear
@@ -220,7 +229,7 @@ struct LiveGuideView: View {
             .overlay(alignment: .bottomTrailing) {
                 if let portal, !portalHidden {
                     GuidePortalView(channel: portal.channel, program: portal.cell.program, startMs: portal.cell.startMs, endMs: portal.cell.endMs, now: now, suspended: previewSuspended)
-                        .padding(.trailing, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(12))
+                        .padding(.trailing, BP.px(8) + Self.headroom).padding(.bottom, BP.hintHeight + BP.px(12))
                 }
             }
         }

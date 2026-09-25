@@ -104,12 +104,25 @@ struct BPRailView<Lead: View>: View {
     /// The row that holds focus right now (focusedRow keeps the last one after focus moves on).
     @State private var heldRow: String?
     private static var topID: String { "bp-rail-top" }
-    /// Where the focused row parks: just under the spotlight copy (bp rail "resting floor").
-    private var parkAnchor: CGFloat { (topInset + BP.px(6)) / 1080 }
+    /// Where the focused row's top parks: just under the spotlight copy (use-bp-rail shifts the
+    /// active row's top to the rail's top edge, right under the hero).
+    private var parkOffset: CGFloat { topInset + BP.px(6) }
+    /// (layout pass) scrollTo(id, anchor: UnitPoint(y: a)) lines up the point at `a` of the ROW's
+    /// own height with the point at `a` of the viewport, so the old `parkOffset / 1080` anchor put
+    /// a ~580 pt poster row's top ~250 pt higher than meant: its header and posters sat under the
+    /// hero title and description, and in the rail's top fade. Each row now carries a marker
+    /// `parkOffset` above its top; scrolling that marker to the top parks the row's top exactly.
+    private static func parkID(_ key: String) -> String { "bp-park:" + key }
+
+    private func park(_ key: String, _ proxy: ScrollViewProxy) {
+        proxy.scrollTo(Self.parkID(key), anchor: .top)
+    }
 
     private func parkEntry(_ proxy: ScrollViewProxy) {
         guard focusedRow == nil, let e = entry, rows.contains(where: { $0.key == e.row }) else { return }
-        proxy.scrollTo(e.row, anchor: UnitPoint(x: 0, y: parkAnchor))
+        // The rail is lazy: bring the row into existence by its own id, then park it by its marker.
+        proxy.scrollTo(e.row, anchor: .top)
+        DispatchQueue.main.async { park(e.row, proxy) }
     }
 
     var body: some View {
@@ -128,6 +141,13 @@ struct BPRailView<Lead: View>: View {
                                       onHold?(row.key, held)
                                   })
                             .id(row.key)
+                            .background(alignment: .top) {
+                                // The park marker: parkOffset above the row's top edge.
+                                Color.clear.frame(width: 1, height: 1)
+                                    .alignmentGuide(.top) { _ in parkOffset }
+                                    .id(Self.parkID(row.key))
+                                    .accessibilityHidden(true)
+                            }
                             // The row holding focus draws its lifted tile and caption over the row below.
                             .zIndex(heldRow == row.key ? 2 : 0)
                     }
@@ -143,7 +163,7 @@ struct BPRailView<Lead: View>: View {
             )
             .onChange(of: focusedRow) { _, key in
                 guard let key else { return }
-                withAnimation(BP.easeSlow) { proxy.scrollTo(key, anchor: UnitPoint(x: 0, y: parkAnchor)) }
+                withAnimation(BP.easeSlow) { park(key, proxy) }
             }
             // use-bp-rail parks every rail row, the lead ones too. Up from a parked row onto
             // Continue Watching, Live or the anime actions left them where they were: in the top
