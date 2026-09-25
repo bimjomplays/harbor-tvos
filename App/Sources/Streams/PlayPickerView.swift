@@ -444,6 +444,10 @@ struct PlayPickerView: View {
 
     /// bp-streams s.loading: the pipeline is still running and nothing has passed the filters yet.
     private var listLoading: Bool {
+        // (review 18) On the Media servers list only the home-server copies are drawn: until they
+        // are in it is still looking. A finished stream search there read "No sources match these
+        // filters" (with the loosen ladder when no addon answered) over a copy about to arrive.
+        if sourceKind == "media-server", !model.copiesLoaded { return true }
         let running: Bool = model.phase == .searching || model.phase == .idle
         return running && pool.isEmpty
     }

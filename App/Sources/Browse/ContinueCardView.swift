@@ -99,7 +99,11 @@ struct ContinueCardView: View {
     /// duration and offset; nothing without a duration or for a Trakt / Simkl entry.
     private var remainingText: String {
         guard item.durationMs > 0, !isExternal else { return "" }
-        let mins: Int = max(0, Int(((item.durationMs - item.timeOffsetMs) / 60000).rounded()))
+        // (review 18) Synced library values: a stray huge duration made Int() trap, crashing the app
+        // on Home. Clamped before the conversion.
+        let rawMins: Double = (item.durationMs - item.timeOffsetMs) / 60000
+        guard rawMins.isFinite else { return "" }
+        let mins: Int = Int(min(max(rawMins, 0), 100_000).rounded())
         if mins < 1 { return T("Almost done") }
         if mins < 60 { return T("%lldm left", mins) }
         return T("%lldh %lldm left", mins / 60, mins % 60)

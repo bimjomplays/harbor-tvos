@@ -619,6 +619,11 @@ struct DetailView: View {
             .onChange(of: text) { _, _ in
                 synopsisExpanded = false
                 synopsisCanExpand = false
+                // (review 18) A new overview that measures the same as the last one (both past the
+                // clamp, same line count) fires neither height onChange, so Read more never came
+                // back: re-measure from the kept heights once the new text has laid out (a height
+                // that did change has been stored by its own onChange by then).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { measureSynopsis() }
             }
     }
 
