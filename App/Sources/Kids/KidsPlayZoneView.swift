@@ -108,7 +108,7 @@ struct KidsPlayZoneView: View {
             }
             .buttonStyle(KidsPillStyle(height: BP.px(56)))
             VStack(alignment: .leading, spacing: BP.px(2)) {
-                Text(activity?.name ?? T("Play Zone"))
+                Text(activity.map { T($0.name) } ?? T("Play Zone"))
                     .font(KidsTheme.font(34, .medium)).foregroundStyle(.white)
                     .shadow(color: Color(hex: 0x001428).opacity(0.5), radius: 14, y: 2)
                 if activity == nil {
@@ -133,9 +133,9 @@ struct KidsPlayZoneView: View {
                                     .font(.system(size: BP.px(15), weight: .bold)).foregroundStyle(.white)
                                     .frame(width: BP.px(32), height: BP.px(32))
                                     .background(Circle().fill(a.chip))
-                                Text(a.name).font(KidsTheme.font(24, .medium)).foregroundStyle(KidsTheme.sea)
+                                Text(T(a.name)).font(KidsTheme.font(24, .medium)).foregroundStyle(KidsTheme.sea)
                             }
-                            Text(a.blurb).font(KidsTheme.font(15, .semibold)).foregroundStyle(KidsTheme.seaMuted)
+                            Text(T(a.blurb)).font(KidsTheme.font(15, .semibold)).foregroundStyle(KidsTheme.seaMuted)
                         }
                         Spacer(minLength: 0)
                     }

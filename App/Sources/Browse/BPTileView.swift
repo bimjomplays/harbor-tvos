@@ -102,7 +102,7 @@ struct BPTileView: View {
             LinearGradient(stops: [.init(color: BP.void_.opacity(0.92), location: 0), .init(color: BP.void_.opacity(0.44), location: 0.54),
                                    .init(color: .clear, location: 1)], startPoint: .bottom, endPoint: .top)
             VStack(alignment: .leading, spacing: BP.px(4)) {
-                Text(meta.description ?? "Collection")
+                Text(meta.description ?? T("Collection"))
                     .font(BP.sans(12, .bold)).textCase(.uppercase).tracking(BP.px(1.2)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                 Text(meta.name).font(BP.sans(12.5, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.leading)
             }

@@ -636,7 +636,7 @@ struct EPUBBook {
                 }
             }
             let words = doc?.documentElement.map { collapse($0.textContent) } ?? ""
-            return Scanned(path: item.path, title: heading ?? "Chapter \(index + 1)", readable: words.utf16.count > 24, document: doc)
+            return Scanned(path: item.path, title: heading ?? T("Chapter %lld", index + 1), readable: words.utf16.count > 24, document: doc)
         }
         func resolveTargets(_ links: [Link]) -> [Target] {
             var seen = Set<ObjectIdentifier>()

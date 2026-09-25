@@ -103,7 +103,7 @@ struct KidsHeroView: View {
                 .frame(height: Self.height * 0.4)
             VStack(spacing: BP.px(20)) {
                 VStack(spacing: BP.px(4)) {
-                    Text("Just for kids".uppercased())
+                    Text(T("Just for kids").uppercased())
                         .font(KidsTheme.font(12, .bold)).tracking(BP.px(5)).foregroundStyle(KidsTheme.inkMuted)
                     Text("What should we watch?")
                         .font(KidsTheme.font(52, .bold)).foregroundStyle(KidsTheme.ink)
