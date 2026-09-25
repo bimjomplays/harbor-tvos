@@ -1692,6 +1692,8 @@ struct PlayerScreen: View {
     /// off a stream still opening (the clock holds the last file's length until the new one ticks).
     private var mismatchAllowed: Bool {
         guard canFindCloser, !isLive, !failed, status.state != "loading", status.state != "idle" else { return false }
+        // (review 22) Nor under the no-audio card, which owns the same bottom band with its own chips.
+        if noAudioWarning, engine == .native { return false }
         return panel == nil && !leaveConfirm && !roomOpen && resumePending == nil && !pipActive && !stillPrompt && !xrayOpen && !kidsLoading
     }
 
