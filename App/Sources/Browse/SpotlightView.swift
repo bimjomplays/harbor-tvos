@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreImage
 
 /// bp-spotlight.tsx: a pure display surface mirroring the focused (or hero-cycled) title.
 struct SpotlightView: View {
@@ -105,6 +106,8 @@ struct SpotlightView: View {
 /// pruned to one after 1.2 s, and each layer drifts (bp-kenburns) unless Reduce Motion is on.
 /// A focused title with no art at all leaves the last art up, as upstream does.
 struct BPTitleArt: View {
+    /// bp-backdrop-commit.ts BP_META_SETTLE_MS: how long focus rests before the hero art follows.
+    static let settle: Duration = .milliseconds(200)
     let meta: Meta?
     var drift = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -141,7 +144,7 @@ struct BPTitleArt: View {
     private func commit() async {
         let list = candidates
         guard !list.isEmpty else { return }
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: Self.settle)
         guard !Task.isCancelled else { return }
         for wide in [true, false] {
             for c in list where !(wide && c.portrait) {
@@ -165,6 +168,83 @@ struct BPTitleArt: View {
             try? await Task.sleep(for: .milliseconds(1200))
             if layers.last?.id == id, layers.count > 1 { layers = Array(layers.suffix(1)) }
         }
+    }
+}
+
+/// The Manga and eBook heroes' backdrop (views/manga.tsx, views/ebook.tsx): the focused title's
+/// cover, blurred and faded, behind the hero copy. (perf pass 2) It used to follow every focus
+/// move at once, and `.blur(radius: 36)` on a full-width image is a live Gaussian redone every
+/// frame of each cross-fade (two of them mid-swap). The art now follows focus only once it
+/// settles (BPTitleArt.settle, as Home's hero does), an unchanged cover is never swapped, and
+/// each cover is blurred once, off the main thread, from a small decode into a bitmap that is
+/// only stretched on screen (HeroBlur, cached per URL).
+struct BPBlurredHeroBackdrop: View {
+    let url: String?
+    @State private var shown: Shown?
+    private struct Shown { var url: String; var image: UIImage }
+
+    var body: some View {
+        ZStack {
+            if let s = shown {
+                Image(uiImage: s.image).resizable().scaledToFill()
+                    .scaleEffect(1.2).opacity(0.4)
+                    .frame(maxWidth: .infinity).frame(height: BP.px(520)).clipped()
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .id(s.url)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(BP.easeSlow, value: shown?.url)
+        .task(id: url ?? "") { await commit() }
+    }
+
+    private func commit() async {
+        if url == shown?.url { return }
+        try? await Task.sleep(for: BPTitleArt.settle)
+        guard !Task.isCancelled else { return }
+        guard let url, let u = URL(string: url) else {
+            shown = nil
+            return
+        }
+        let small = await ImageLoader.shared.image(for: u, target: HeroBlur.target)
+        guard !Task.isCancelled, let small else { return }
+        let blurred = await HeroBlur.shared.blurred(small, key: url)
+        guard !Task.isCancelled, let blurred else { return }
+        shown = Shown(url: url, image: blurred)
+    }
+}
+
+/// One pre-blurred bitmap per cover URL for BPBlurredHeroBackdrop.
+final class HeroBlur: @unchecked Sendable {
+    static let shared = HeroBlur()
+    /// 240 px wide, an eighth of the 1920 pt the backdrop spans: a blur this heavy leaves nothing
+    /// a bigger decode would add, and stretching it back up costs a plain texture draw.
+    static let target = ImageLoader.Target(width: 240, height: 1)
+    private let cache = NSCache<NSString, UIImage>()
+    private let context = CIContext(options: [.cacheIntermediates: false])
+
+    init() {
+        cache.countLimit = 48
+    }
+
+    func blurred(_ image: UIImage, key: String) async -> UIImage? {
+        if let hit = cache.object(forKey: key as NSString) { return hit }
+        let out = await Task.detached(priority: .userInitiated) { [self] in
+            self.render(image)
+        }.value
+        if let out { cache.setObject(out, forKey: key as NSString) }
+        return out
+    }
+
+    private func render(_ image: UIImage) -> UIImage? {
+        guard let cg = image.cgImage, cg.width > 0 else { return nil }
+        let input = CIImage(cgImage: cg)
+        // The old .blur(radius: 36) was taken across the 1920 pt the image is drawn at.
+        let sigma = 36 * Double(cg.width) / 1920
+        let blurred = input.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: input.extent)
+        guard let out = context.createCGImage(blurred, from: input.extent) else { return nil }
+        return UIImage(cgImage: out)
     }
 }
 

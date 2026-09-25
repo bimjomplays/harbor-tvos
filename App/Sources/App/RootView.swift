@@ -22,7 +22,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            BPAmbientBackground()
+            BPAmbientBackground(root: true)
             Group {
                 switch app.stage {
                 case .boot: BootSplashView()

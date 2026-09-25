@@ -179,6 +179,16 @@ final class SettingsBridge: ObservableObject {
     /// newer than any load already in flight as far as the slice goes.
     private var loadGen = 0
     private var sliceGen = 0
+    /// (perf pass 2) A burst of harbor:settings-updated (a profile-sync apply writes several
+    /// sections) ran this whole load, four engine calls, once per event and side by side, when
+    /// only the newest result was ever kept. Loads now run one at a time: at most one in flight
+    /// and one pending, and every call made while one is pending joins it (it has not started
+    /// yet, so it still reads whatever that caller just wrote). Queueing a load retires the one
+    /// in flight at its next await, as the newest-wins rule above always did. With nothing in
+    /// flight a load starts at once, so the first one at boot is not delayed; `patch` never queues.
+    private var currentLoad: Task<Void, Never>?
+    private var pendingLoad: Task<Void, Never>?
+    private var runGen = 0
 
     func load() async {
         if unsubscribe == nil {
@@ -188,6 +198,38 @@ final class SettingsBridge: ObservableObject {
                 Task { await self?.load() }
             }
         }
+        if let pending = pendingLoad {
+            await pending.value
+            return
+        }
+        let prior = currentLoad
+        if prior != nil {
+            // The run in flight is stale now: it stops applying at its next await.
+            loadGen &+= 1
+        }
+        runGen &+= 1
+        let run = runGen
+        let task = Task { @MainActor [weak self] in
+            if let prior {
+                await prior.value
+            }
+            guard let self else { return }
+            if prior != nil {
+                self.pendingLoad = nil
+            }
+            await self.runLoad()
+            if self.runGen == run {
+                self.currentLoad = nil
+            }
+        }
+        currentLoad = task
+        if prior != nil {
+            pendingLoad = task
+        }
+        await task.value
+    }
+
+    private func runLoad() async {
         loadGen &+= 1
         sliceGen &+= 1
         let gen = loadGen
@@ -214,6 +256,8 @@ final class SettingsBridge: ObservableObject {
             if slice != s { slice = s }
             if !loaded { loaded = true }
         }
+        // (perf pass 2) A newer load is queued behind this one and reads both of these again.
+        guard gen == loadGen else { return }
         // (bug pass) The Sports tab gate was only set by the Settings page: at launch a declined
         // notice still showed the tab until Settings was opened. Read the stored consent here.
         struct Consent: Decodable { var status: String }

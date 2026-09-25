@@ -263,17 +263,11 @@ struct EBookView: View {
     private var heroBackdrop: some View {
         ZStack {
             BP.void_
-            if let cover = hero?.banner ?? hero?.cover {
-                RemoteImage(url: cover).blur(radius: 36).scaleEffect(1.2).opacity(0.4)
-                    .frame(maxWidth: .infinity).frame(height: BP.px(520)).clipped()
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .id(cover)
-                    .transition(.opacity)
-            }
+            // (perf pass 2) Follows focus once it settles, pre-blurred once per cover.
+            BPBlurredHeroBackdrop(url: hero?.banner ?? hero?.cover)
             LinearGradient(colors: [BP.void_.opacity(0.2), BP.void_.opacity(0.8), BP.void_], startPoint: .top, endPoint: .init(x: 0.5, y: 0.55))
         }
         .ignoresSafeArea()
-        .animation(BP.easeSlow, value: hero?.id)
     }
 
     /// EBookLibraryHero, still: the focused (or first featured) book, its author and blurb.

@@ -203,7 +203,7 @@ struct PiPBrowseRoot: View {
 
     var body: some View {
         ZStack {
-            BPAmbientBackground()
+            BPAmbientBackground(root: true)
             ShellView()
         }
         .id("\(theme.revision)|\(language)")
