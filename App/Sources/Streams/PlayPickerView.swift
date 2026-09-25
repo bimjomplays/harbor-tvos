@@ -121,6 +121,8 @@ struct PlayPickerView: View {
             while !Task.isCancelled {
                 if autoState == .cancelled || autoState == .exhausted { return }
                 try? await Task.sleep(for: .milliseconds(400))
+                // A cancelled sleep returns at once: no last tick (and resolve) once the view has gone.
+                if Task.isCancelled { return }
                 await autoTick(done: false)
             }
         }
