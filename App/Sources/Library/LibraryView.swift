@@ -455,6 +455,7 @@ struct LibraryView: View {
                 ForEach(model.tabs) { t in
                     Button(T(t.label)) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id)).bpSelected(model.tab == t.id)
                         .focused($focusedChip, equals: "tab:" + t.id)
+                        .accessibilityIdentifier("library-tab-" + t.id)
                 }
                 Divider().frame(height: BP.px(24)).overlay(BP.edge2)
                 // bp-library chips print their own state (the Filters chip is selected while a type
@@ -463,15 +464,19 @@ struct LibraryView: View {
                 Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }
                     .buttonStyle(BPActionStyle(primary: filtersLit))
                     .focused($focusedChip, equals: "filters")
+                    .accessibilityIdentifier("library-filters")
                 Button { model.showSearch.toggle() } label: {
                     Label { Text(model.query.isEmpty ? T("Search") : model.query).lineLimit(1) } icon: { Image(systemName: "magnifyingglass") }
                 }
                 .buttonStyle(BPActionStyle(primary: model.showSearch || !model.query.isEmpty))
                 .focused($focusedChip, equals: "search")
+                .accessibilityIdentifier("library-search")
                 Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.buttonStyle(BPActionStyle())
+                    .accessibilityIdentifier("library-refresh")
                 // library-repair-rows.tsx lives in desktop Settings → Advanced; the TV keeps it beside the library.
                 Button { model.showRepair.toggle() } label: { Label("Repair library", systemImage: "wrench.and.screwdriver") }.buttonStyle(BPActionStyle(primary: model.showRepair))
                     .focused($focusedChip, equals: "repair")
+                    .accessibilityIdentifier("library-repair")
                 if statsEnabled {
                     Button { showStats = true } label: { Label("Stats", systemImage: "chart.bar") }.buttonStyle(BPActionStyle())
                 }
@@ -753,6 +758,7 @@ struct LibraryView: View {
             .bpSelected(on)
             .opacity(dim ? 0.45 : 1)
             .focused($focusedChip, equals: "filter:" + key + ":" + o.id)
+            .accessibilityIdentifier("library-filter-" + key + "-" + o.id)
     }
 
     private var searchRow: some View {

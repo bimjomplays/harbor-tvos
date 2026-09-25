@@ -287,6 +287,35 @@ struct FixtureBrowseSource: BrowseSource {
     /// `--fixtures roomfail`: every room's rows fail, after a beat like a real read, so the failure
     /// card and its Try again (RoomView) can be driven offline (NavigationTests2).
     static let failRooms: Bool = ProcessInfo.processInfo.arguments.contains("roomfail")
+    /// `--fixtures calfail`: every Calendar month read fails after a beat (CalendarModel.load), for
+    /// its error card's Try again (NavigationTests3).
+    static let failCalendar: Bool = scenario("calfail")
+    /// `--fixtures kidsfail`: the kids page build fails after a beat and no cached page is shown
+    /// (KidsModel.load), for its Try again (NavigationTests3).
+    static let failKids: Bool = scenario("kidsfail")
+    /// `--fixtures detail`: series titles carry one season of six episodes, and DetailModel takes
+    /// that list as the full meta instead of asking Cinemeta for an id it has never heard of
+    /// (NavigationTests3). Every other scenario keeps its titles without videos.
+    static let withEpisodes: Bool = scenario("detail")
+
+    /// The launch named this fixture scenario (`--fixtures <name>`), and only then.
+    private static func scenario(_ name: String) -> Bool {
+        let args: [String] = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--fixtures"), i + 1 < args.count else { return false }
+        return args[i + 1] == name
+    }
+
+    /// One season of six episodes for a fixture series (Cinemeta's `videos` shape).
+    static func fixtureVideos(_ id: String) -> [AnyJSON] {
+        let numbers: [Int] = [1, 2, 3, 4, 5, 6]
+        return numbers.map { n -> AnyJSON in
+            let fields: [String: AnyJSON] = [
+                "id": .string("\(id):1:\(n)"), "season": .number(1), "episode": .number(Double(n)),
+                "name": .string("Episode \(n)"), "released": .string("2024-01-0\(n)T00:00:00.000Z"),
+            ]
+            return AnyJSON.object(fields)
+        }
+    }
 
     func rows(for room: Room) async throws -> [BrowseRow] {
         if Self.failRooms {
@@ -295,11 +324,13 @@ struct FixtureBrowseSource: BrowseSource {
         }
         let titles = ["Dune: Part Two", "Oppenheimer", "The Bear", "Severance", "Poor Things", "Shōgun", "Past Lives", "Fallout", "The Holdovers", "Anatomy of a Fall", "Civil War", "Ripley"]
         func metas(_ prefix: String, _ type: String) -> [Meta] {
-            titles.enumerated().map { i, t in
-                Meta(id: "\(prefix)-\(i)", type: type, name: t, poster: nil, background: nil, logo: nil,
+            titles.enumerated().map { i, t -> Meta in
+                let episodes: Bool = Self.withEpisodes && type == "series"
+                let videos: [AnyJSON]? = episodes ? Self.fixtureVideos("\(prefix)-\(i)") : nil
+                return Meta(id: "\(prefix)-\(i)", type: type, name: t, poster: nil, background: nil, logo: nil,
                      description: "A placeholder synopsis for \(t), long enough to wrap onto a second line so the two-line clamp in the spotlight can be checked.",
                      releaseInfo: "202\(i % 5)", releaseDate: nil, inTheaters: nil, imdbRating: "8.\(i % 10)", tmdbScore: 7.0 + Double(i % 3),
-                     runtime: "1h \(40 + i)m", genres: ["Drama", "Thriller"], adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
+                     runtime: "1h \(40 + i)m", genres: ["Drama", "Thriller"], adult: nil, isCollection: nil, providerBadge: nil, videos: videos)
             }
         }
         switch room {

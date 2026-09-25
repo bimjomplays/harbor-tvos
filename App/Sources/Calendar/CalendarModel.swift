@@ -111,7 +111,14 @@ final class CalendarModel: ObservableObject {
             "year": .number(Double(year)), "month": .number(Double(month)),
             "filter": .string(filter), "watchlistOnly": .bool(watchlistOnly), "animeDub": .bool(animeDub),
         ])
-        let out: Month? = try? await HarborEngine.shared.call("calendar.month", [input])
+        var out: Month? = nil
+        if FixtureBrowseSource.failCalendar {
+            // `--fixtures calfail` (NavigationTests3): every read fails, after a beat like a real one.
+            try? await Task.sleep(for: .seconds(2))
+        } else {
+            let read: Month? = try? await HarborEngine.shared.call("calendar.month", [input])
+            out = read
+        }
         // A newer request (month flipped again) owns the screen.
         guard mine == generation else { return }
         failed = out == nil

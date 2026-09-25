@@ -453,6 +453,10 @@ final class DetailModel: ObservableObject {
                 // then (or when it never resolves) the strip groups by Kitsu season.
                 Task { await loadAnimeSeasons() }
             }
+        } else if FixtureBrowseSource.withEpisodes, meta.videos != nil {
+            // `--fixtures detail` (NavigationTests3): the fixture title already carries its episode
+            // list; Cinemeta has never heard of its id.
+            fetched = true
         } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
             // The addon that served the title (bp-hero-notes' mark) comes with the meta that opened
             // the page; Cinemeta's record never carries one.

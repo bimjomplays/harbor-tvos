@@ -289,7 +289,9 @@ struct CalendarView: View {
                     retrying = false
                 }
             }
-            .buttonStyle(BPActionStyle(primary: true, busy: retrying)).padding(.top, BP.px(4))
+            .buttonStyle(BPActionStyle(primary: true, busy: retrying))
+            .accessibilityIdentifier("calendar-try-again")
+            .padding(.top, BP.px(4))
         }
         .frame(maxWidth: .infinity).padding(.vertical, BP.px(40))
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(hex: 0xfb7185).opacity(0.06)))

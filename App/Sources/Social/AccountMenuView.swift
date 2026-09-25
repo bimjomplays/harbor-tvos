@@ -290,5 +290,6 @@ struct AccountMenuView: View {
         }
         .buttonStyle(BPActionStyle())
         .focused($focus, equals: key)
+        .accessibilityIdentifier("account-item-" + key)
     }
 }

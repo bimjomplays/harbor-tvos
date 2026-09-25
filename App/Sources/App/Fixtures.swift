@@ -2,7 +2,10 @@ import Foundation
 
 /// Fake data for simulator screenshots: `--fixtures <stage>` where stage is onboarding|who|shell.
 /// Nothing here touches the network. `roomfail` is the shell with every room's rows failing
-/// (FixtureBrowseSource), for the failure card's Try again.
+/// (FixtureBrowseSource), for the failure card's Try again. `calfail` is the shell with every
+/// Calendar month read failing, `detail` the shell whose series titles carry a one-season episode
+/// list (DetailModel reads it instead of Cinemeta), and `kidsfail` is Who's watching with the kids
+/// page failing to build (NavigationTests3).
 @MainActor
 enum Fixtures {
     static var active: Bool { ProcessInfo.processInfo.arguments.contains("--fixtures") }
@@ -11,8 +14,8 @@ enum Fixtures {
         guard let i = args.firstIndex(of: "--fixtures"), i + 1 < args.count else { return nil }
         switch args[i + 1] {
         case "onboarding": return .onboarding
-        case "who": return .whoIsWatching
-        case "shell", "spikes", "live", "roomfail": return .shell
+        case "who", "kidsfail": return .whoIsWatching
+        case "shell", "spikes", "live", "roomfail", "calfail", "detail": return .shell
         default: return nil
         }
     }

@@ -60,6 +60,13 @@ final class KidsModel: ObservableObject {
         guard !loading else { return }
         loading = true
         defer { loading = false }
+        if FixtureBrowseSource.failKids {
+            // `--fixtures kidsfail` (NavigationTests3): the build fails after a beat, and last
+            // session's shelves (an earlier test run's) are not shown, so the Try again is up.
+            try? await Task.sleep(for: .seconds(2))
+            failed = rows.isEmpty
+            return
+        }
         let p = profile
         // Last session's shelves first, like the other rooms (bp-home-cache).
         // (perf pass) Read, decoded and written back off the main thread (see BrowseModel.load).
