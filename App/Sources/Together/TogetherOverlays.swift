@@ -64,7 +64,11 @@ struct TogetherToastHost: View {
         // as a cover on the main one: an invite arriving under the saver auto-joined (opened the
         // title and started playback) with nobody watching, or behind the kid's curfew lock.
         if ShellOverlay.shared.keyWindow != nil { return true }
-        guard !inRoomScreen else { return opening != nil || screenCovered }
+        // (review 10) The room screen's host also presents a summon's title page (Sure) itself:
+        // under it the invite auto-joined unseen, its present from a view already presenting was
+        // dropped and the invite was spent, and an invite to that page's title also showed the
+        // page's own toast (two joins). It waits like under the screen's other covers.
+        guard !inRoomScreen else { return opening != nil || summonDetail != nil || screenCovered }
         if inBrowseLayer { return !PiPBrowse.shared.noCoverPresented }
         guard let root = HarborOverlayWindow.mainWindow?.rootViewController else { return false }
         return root.presentedViewController != nil
