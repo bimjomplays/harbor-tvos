@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var pinDraft = ""
     @State private var tmdbTesting = false
     @State private var tmdbTestNote: String?
+    /// Whether tmdbTestNote reports a success (tinted live); set with it, like LetterboxdPanel.
+    @State private var tmdbTestOk = false
     /// Sync → Pull now is running (settings pass 2).
     @State private var pulling = false
     /// Counts closed covers, so the column above re-reads what a sign-in or key change did.
@@ -89,13 +91,14 @@ struct SettingsView: View {
                                         tmdbLead = true
                                     } catch {
                                         tmdbTestNote = T("Failed: %@", error.localizedDescription)
+                                        tmdbTestOk = false
                                     }
                                 }
                             }
                             .buttonStyle(BPActionStyle())
                         }
                     }
-                    if let tmdbTestNote { BPNote(text: tmdbTestNote, tone: tmdbTestNote.hasPrefix("OK") ? BP.live : BP.danger) }
+                    if let tmdbTestNote { BPNote(text: tmdbTestNote, tone: tmdbTestOk ? BP.live : BP.danger) }
                 }
                 section("Playback") {
                     row("Subtitle languages: \(settings.slice.preferredSubLangs.joined(separator: ", "))", detail: "First match wins when searching online subtitles")
@@ -240,6 +243,7 @@ struct SettingsView: View {
         tmdbTesting = true; defer { tmdbTesting = false }
         let r = await settings.verifyTmdb(key: settings.slice.tmdbKey)
         tmdbTestNote = r.ok ? "OK: TMDB accepted the saved key." : "Rejected. TMDB said: \(r.reason ?? "no details")"
+        tmdbTestOk = r.ok
     }
 
     private var syncLine: String {
