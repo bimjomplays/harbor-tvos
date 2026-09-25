@@ -29,17 +29,42 @@ struct LiveChannelBrowser: View {
     /// Channels whose now/next was asked for by a row coming on screen.
     @State private var asked: Set<String> = []
 
-    private var favoriteCount: Int { channels.filter(\.favorite).count }
+    /// (live sources device pass) use-channel-filter is a useMemo over (channels, group, query). Here
+    /// the whole source was filtered again, every name lowercased, on each render, and the list
+    /// renders on every now/next merge as rows scroll in (6,000 channels, a few times a second).
+    /// The result is kept until one of the three changes; an unchanged `channels` array compares
+    /// by storage in O(1).
+    private final class FilterMemo {
+        var channels: [LiveModel.Channel] = []
+        var group: String?
+        var query = ""
+        var built = false
+        var result: [LiveModel.Channel] = []
+        var favorites = 0
+    }
+    @State private var memo = FilterMemo()
+
+    private var favoriteCount: Int { _ = filtered; return memo.favorites }
 
     /// use-channel-filter / channel-picker filtered: the rail choice, then the query on name or group.
     private var filtered: [LiveModel.Channel] {
+        if memo.built, memo.group == group, memo.query == query, memo.channels == channels { return memo.result }
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return channels.filter { c in
+        let out: [LiveModel.Channel] = channels.filter { c in
             if group == Self.favKey && !c.favorite { return false }
             if let g = group, g != Self.favKey, (c.group ?? "Uncategorized") != g { return false }
             if !q.isEmpty && !c.name.lowercased().contains(q) && !(c.group ?? "").lowercased().contains(q) { return false }
             return true
         }
+        var favorites = 0
+        for c in channels where c.favorite { favorites += 1 }
+        memo.channels = channels
+        memo.group = group
+        memo.query = query
+        memo.result = out
+        memo.favorites = favorites
+        memo.built = true
+        return out
     }
 
     var body: some View {
@@ -221,7 +246,7 @@ struct LivePlayerGuidePanel: View {
     // overlay.tsx search placeholder: the favourites count in Favorites, else the source's channels.
     private var searchPlaceholder: String {
         if group == LiveChannelBrowser.favKey {
-            let n = model.channels.filter(\.favorite).count
+            let n = model.favoriteCount
             return n == 1 ? T("Search %lld favorite", n) : T("Search %lld favorites", n)
         }
         return T("Search %lld channels", model.channels.count)
