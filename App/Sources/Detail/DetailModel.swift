@@ -666,13 +666,16 @@ final class DetailModel: ObservableObject {
         guard isSeries, let videos = meta.videos else { return }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // (perf pass) One fallback formatter for the whole list, not a new one per episode whose date
+        // has no fractional seconds (a long anime built a thousand of them on the main thread).
+        let isoPlain = ISO8601DateFormatter()
         var out: [Episode] = []
         for v in videos {
             guard let s = v["season"]?.number, let e = (v["episode"] ?? v["number"])?.number else { continue }
             let id = v["id"]?.string ?? "\(meta.id):\(Int(s)):\(Int(e))"
             let title = v["name"]?.string ?? v["title"]?.string ?? "Episode \(Int(e))"
             let rel = (v["released"] ?? v["firstAired"])?.string
-            let date = rel.flatMap { iso.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) }
+            let date = rel.flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) }
             let play: AnyJSON = .object([
                 "season": .number(s), "episode": .number(e), "name": .string(title), "videoId": .string(id),
                 "imdbId": meta.id.hasPrefix("tt") ? .string(meta.id) : .null,

@@ -366,6 +366,9 @@ struct PlayerScreen: View {
         // playing in Picture in Picture, which is how it keeps going over other apps.
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
             if controller?.isPictureInPictureActive != true { controller?.setPaused(true) }
+            // (perf pass) use-resume-autosave / use-stremio-sync on pagehide: the spot is written now,
+            // not left to a tick that may never run once the app is suspended.
+            if !finishing { Task { await saveTick(flush: true) } }
         }
         .task {
             // use-player-bridge.ts / player-utils.ts pickBridge: settle the engine before anything loads.
@@ -1537,15 +1540,27 @@ struct PlayerScreen: View {
         }
     }
 
-    /// use-resume-autosave.ts: every 4 s while playing, only if moved ≥ 1.5 s since the last save.
+    /// use-resume-autosave.ts: every 4 s (TICK_MS) while playing, only if moved ≥ 1.5 s since the last save.
+    /// (perf pass) The 4 s was never enforced: the 1 s tick saved whenever the position had moved
+    /// 1.5 s, so every other second, and each save rewrote the whole `harbor.resume` map and the local
+    /// Continue Watching list (both through to disk) and, signed in to Stremio, did a library GET + PUT.
+    /// A pause saves at once and counts as a flush (use-resume-autosave persistNow(true) and
+    /// use-stremio-sync's write on "paused"); the engine keeps the cloud write to its 30 s tick otherwise.
     private func saveTick(flush: Bool) async {
         guard let c = controller, let context else { return }
         let s = c.snapshot()
-        guard s.duration > 0, flush || (!s.paused && abs(s.position - lastSavedPos) >= 1.5) else { return }
+        let pausedNow = s.paused && !lastSavePaused
+        lastSavePaused = s.paused
+        let due = Date().timeIntervalSince(lastSaveAt) >= 4
+        let flushing = flush || (pausedNow && s.position > 0)
+        guard s.duration > 0, flushing || (!s.paused && due && abs(s.position - lastSavedPos) >= 1.5) else { return }
         lastSavedPos = s.position
-        _ = await context.save(positionSec: s.position, durationSec: s.duration, flush: flush)
+        lastSaveAt = Date()
+        _ = await context.save(positionSec: s.position, durationSec: s.duration, flush: flushing)
         homeServerTick(s, flush: flush)
     }
+    @State private var lastSaveAt = Date.distantPast
+    @State private var lastSavePaused = false
 
     @State private var lastHomeReport: Double = 0
     @State private var lastHomePaused = false

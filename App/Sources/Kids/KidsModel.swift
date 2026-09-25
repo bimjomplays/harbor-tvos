@@ -62,13 +62,16 @@ final class KidsModel: ObservableObject {
         defer { loading = false }
         let p = profile
         // Last session's shelves first, like the other rooms (bp-home-cache).
-        if rows.isEmpty, let cached = CacheStore.shared.get(Page.self, for: cacheKey) {
-            apply(cached)
+        // (perf pass) Read, decoded and written back off the main thread (see BrowseModel.load).
+        let key = cacheKey
+        if rows.isEmpty {
+            let cached = await Task.detached(priority: .userInitiated) { CacheStore.shared.get(Page.self, for: key) }.value
+            if rows.isEmpty, let cached { apply(cached) }
         }
         do {
             let page: Page = try await HarborEngine.shared.call("kidsRoom.page", [p.id, p.linked])
             apply(page)
-            if !page.failed { try? CacheStore.shared.set(page, for: cacheKey); loadedOnce = true }
+            if !page.failed { Task.detached(priority: .utility) { try? CacheStore.shared.set(page, for: key) }; loadedOnce = true }
             failed = page.failed && rows.isEmpty
         } catch {
             failed = rows.isEmpty

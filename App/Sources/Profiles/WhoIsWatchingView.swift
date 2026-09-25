@@ -118,8 +118,20 @@ struct ProfileFace: View {
 
     private var art: UIImage? {
         guard let path = profile.avatar, path.hasPrefix("/") else { return nil }
+        return Self.bundledArt(path)
+    }
+
+    /// (perf pass) The bundled avatars (65 small WebP files, ~1 MB in all) are read once: `art` ran in
+    /// `body`, so every redraw of the top bar's chip, Who's watching and the editor's 65-tile picker
+    /// read each file from disk again and handed SwiftUI a new image, decoded again at its first draw.
+    private static let artCache = NSCache<NSString, UIImage>()
+
+    static func bundledArt(_ path: String) -> UIImage? {
+        if let hit = artCache.object(forKey: path as NSString) { return hit }
         let url = Bundle.main.bundleURL.appendingPathComponent(String(path.dropFirst()))
-        return UIImage(contentsOfFile: url.path)
+        guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        artCache.setObject(image, forKey: path as NSString)
+        return image
     }
 
     var body: some View {

@@ -267,9 +267,11 @@ final class StreamsModel: ObservableObject {
     func remember(_ stream: ScoredStream, meta: Meta, episode: AnyJSON?, url: String?) async {
         let p = ProfilesStore.shared.active
         let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
-        _ = try? await HarborEngine.shared.callJSON("streamsRoom.rememberPlayback", [.string(token), .string(p?.id ?? "default"), .bool(p?.linked ?? true),
-            (try? JSONDecoder().decode(AnyJSON.self, from: JSONEncoder().encode(meta))) ?? .null, .number(Double(stream.index)), url.map { .string($0) } ?? .null,
-            season.map { .number(Double($0)) } ?? .null, ep.map { .number(Double($0)) } ?? .null])
+        // (perf pass) The meta crosses as itself (encoded off the main thread by `call`), not through a
+        // JSONEncoder → AnyJSON round trip on main: a series' meta carries its whole episode list, and
+        // this runs just as the player starts.
+        let args: [any Encodable] = [token, p?.id ?? "default", p?.linked ?? true, meta, stream.index, url, season, ep]
+        let _: AnyJSON? = try? await HarborEngine.shared.call("streamsRoom.rememberPlayback", args)
     }
 
     func resolve(_ stream: ScoredStream, forceP2p: Bool = false) async -> Resolved {

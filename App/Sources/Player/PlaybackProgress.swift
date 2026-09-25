@@ -62,8 +62,15 @@ struct PlaybackContext {
 
     @MainActor func save(positionSec: Double, durationSec: Double, flush: Bool) async -> Saved? {
         let p = profile
+        // (perf pass) Only what player.saveProgress / liveVod.saveProgress read (id, type, name, poster,
+        // background). The whole meta went through JSONEncoder and the AnyJSON decoder on the main
+        // thread at every save, and a series' meta carries its full episode list (a long anime's is
+        // hundreds of KB), which the engine then parsed again, all to read five fields.
+        var slim: [String: AnyJSON] = ["id": .string(meta.id), "type": .string(meta.type), "name": .string(meta.name)]
+        if let poster = meta.poster { slim["poster"] = .string(poster) }
+        if let background = meta.background { slim["background"] = .string(background) }
         var input: [String: AnyJSON] = [
-            "meta": (try? JSONDecoder().decode(AnyJSON.self, from: JSONEncoder().encode(meta))) ?? .null,
+            "meta": .object(slim),
             "positionMs": .number((positionSec * 1000).rounded()),
             "durationMs": .number((durationSec * 1000).rounded()),
             "flush": .bool(flush),

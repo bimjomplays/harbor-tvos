@@ -144,7 +144,9 @@ final class LiveModel: ObservableObject {
         await refreshNowNext()
         // use-xtream-epg-fallback: an Xtream source with no usable XMLTV asks get_short_epg per channel.
         let xtream = playlists.first { $0.id == id }?.kind == "xtream"
-        if xtream, covered == 0 || !visible.isEmpty && visible.allSatisfy({ guide[$0.id]?.known != true }) {
+        // (perf pass) Judged on the rows asked so far (the first screenfuls), not the whole category.
+        let asked = visible.compactMap { guide[$0.id] }
+        if xtream, covered == 0 || !asked.isEmpty && asked.allSatisfy({ $0.known != true }) {
             struct Hydrated: Decodable { var hydrated: Int }
             let ids = visible.map(\.id)
             if let h: Hydrated = try? await HarborEngine.shared.call("live.loadShortEpg", [id, ids]), h.hydrated > 0, selectedPlaylist == id {
@@ -156,13 +158,23 @@ final class LiveModel: ObservableObject {
         }
     }
 
+    /// (perf pass) Now/next for the rows someone can see, not the whole category: "All" on a
+    /// 6,000-channel source sent every id on each 30 s tick and got ~2.7 MB of JSON back (≈50 ms of
+    /// engine time in node, far more in JavaScriptCore on an Apple TV HD, then the decode and a
+    /// republish of the whole map), also under the grid, which draws its own lanes. The first
+    /// `nowNextLead` rows are asked up front, rows ask for themselves as they appear (`askNowNext`),
+    /// and a refresh re-asks only the rows already in `guide`.
+    private static let nowNextLead = 60
+    private var nowNextPending: [String] = []
+    private var nowNextPendingSet: Set<String> = []
+    private var nowNextFlush: Task<Void, Never>?
+
     func refreshNowNext() async {
         guard let id = selectedPlaylist, !visible.isEmpty else { guide = [:]; return }
-        let ids = visible.map(\.id)
+        var ids: [String] = []
+        for (i, ch) in visible.enumerated() where i < Self.nowNextLead || guide[ch.id] != nil { ids.append(ch.id) }
         if let list: [NowNext] = try? await HarborEngine.shared.call("live.nowNext", [id, ids]) {
-            var next = guide
-            for n in list { next[n.id] = n }
-            guide = next
+            merge(list)
         }
     }
 
@@ -172,10 +184,37 @@ final class LiveModel: ObservableObject {
         guard let id = selectedPlaylist, !ids.isEmpty else { return }
         let ask = Array(ids.prefix(400))
         if let list: [NowNext] = try? await HarborEngine.shared.call("live.nowNext", [id, ask]) {
-            var next = guide
-            for n in list { next[n.id] = n }
-            guide = next
+            merge(list)
         }
+    }
+
+    /// A row came on screen: its now/next is asked with the others that appear in the same moment.
+    func askNowNext(_ channelId: String) {
+        guard guide[channelId] == nil, nowNextPendingSet.insert(channelId).inserted else { return }
+        nowNextPending.append(channelId)
+        guard nowNextFlush == nil else { return }
+        nowNextFlush = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard let self else { return }
+            let ids = self.nowNextPending
+            self.nowNextPending = []
+            self.nowNextPendingSet = []
+            self.nowNextFlush = nil
+            var start = 0
+            while start < ids.count {
+                await self.refreshNowNext(ids: Array(ids[start..<min(ids.count, start + 400)]))
+                start += 400
+            }
+        }
+    }
+
+    /// Only entries that changed are written, and the map is republished only when one did (a 30 s
+    /// tick where nothing rolled over redraws nothing).
+    private func merge(_ list: [NowNext]) {
+        var next = guide
+        var changed = false
+        for n in list where next[n.id] != n { next[n.id] = n; changed = true }
+        if changed { guide = next }
     }
 
     /// bp-live-tick: recompute "now" every 30 s so progress bars and now/next roll over.
@@ -272,6 +311,8 @@ final class LiveModel: ObservableObject {
 
     func played(_ ch: Channel) {
         guard let id = selectedPlaylist else { return }
+        // The player's subtitle and channel card read `guide`; a grid row past the first ones may not be in it yet.
+        askNowNext(ch.id)
         Task { _ = try? await HarborEngine.shared.callJSON("live.recordPlay", [.string(id), .string(ch.id)]) }
     }
 
@@ -473,6 +514,7 @@ struct LiveView: View {
                                    star: { Task { await model.toggleFavorite(ch) } },
                                    pin: { Task { await model.togglePin(ch) } },
                                    match: model.canMatchEpg(ch) ? { matching = ch } : nil)
+                        .onAppear { model.askNowNext(ch.id) }
                 }
             }
             .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))

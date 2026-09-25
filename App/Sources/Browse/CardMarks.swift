@@ -32,9 +32,12 @@ final class CardMarksStore: ObservableObject {
         lastMetas = metas
         let p = ProfilesStore.shared.active
         guard let list: [CardMarks] = try? await HarborEngine.shared.call("cards.marks", [metas.map(CardMeta.init), p?.id ?? "default", p?.linked ?? true]) else { return }
+        // (perf pass) Every BPTileView observes this store: republishing an unchanged table (each room
+        // load, Home's re-reads, every cover close via remark()) redrew every tile on screen.
         var next = byId
-        for m in list { next[m.id] = m }
-        byId = next
+        var changed = false
+        for m in list where next[m.id] != m { next[m.id] = m; changed = true }
+        if changed { byId = next }
     }
 
     /// Re-read the Stremio library into the watchlist aggregate, then re-mark the last screen.

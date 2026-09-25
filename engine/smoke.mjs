@@ -2432,6 +2432,30 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("intro.poolSave keeps 96, poolLoad reads them back", [engine.intro.poolSave(urls), engine.intro.poolLoad()[95]], [96, "https://x/95.jpg"]);
 }
 
+// ------------------------------------- playback saves: cloud cadence (perf pass, recorded host)
+{
+  // use-stremio-sync.ts: the Stremio library entry is written on a 30 s tick and at once on
+  // pause / end / exit (flush); the local resume spot is written on every save.
+  const rec = loadEngine({});
+  const calls = [];
+  rec.node.host.fetch = async (req) => {
+    calls.push(req.url.replace(/^.*\/api\//, ""));
+    const body = req.url.endsWith("/datastoreGet") ? { result: [] } : { result: { success: true } };
+    return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) };
+  };
+  const P = rec.engine.player;
+  const meta = { id: "tt0111161", type: "movie", name: "The Shawshank Redemption" };
+  const save = (ms, flush) => P.saveProgress({ meta, positionMs: ms, durationMs: 8500000, authKey: "k", flush });
+  const first = await save(600000, false);
+  const n1 = calls.length;
+  const second = await save(604000, false);
+  const n2 = calls.length;
+  const flushed = await save(608000, true);
+  r.eq("player.saveProgress: the cloud write follows a 30 s tick, a flush always writes", [first.cloud, n1, second.cloud, n2, flushed.cloud, calls.length], ["written", 2, "skipped", 2, "written", 4]);
+  r.eq("player.saveProgress: a skipped cloud write still moves the local spot", P.localResume("tt0111161", null, null).ms, 608000);
+  rec.dispose();
+}
+
 // ------------------------------------------------------------- live EPG (recorded host)
 {
   const now = Date.now();

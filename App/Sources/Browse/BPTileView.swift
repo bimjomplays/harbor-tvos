@@ -136,7 +136,7 @@ enum CardMark {
         let inCinema = meta.type == "movie" && meta.inTheaters == true
         if !inCinema, meta.releaseInfo == String(year) { return "New" }
         if inCinema {
-            if let d = meta.releaseDate, let released = ISO8601DateFormatter().date(from: d) ?? Self.dayFormatter.date(from: d),
+            if let d = meta.releaseDate, let released = Self.isoFormatter.date(from: d) ?? Self.dayFormatter.date(from: d),
                Date().timeIntervalSince(released) / (60 * 60 * 24 * 30.44) > 9 {
                 return meta.releaseInfo.map { "Rerun · \($0)" } ?? "Rerun"
             }
@@ -144,6 +144,10 @@ enum CardMark {
         }
         return nil
     }
+
+    /// (perf pass) Made once: this runs in every tile's body (the fallback chip before the engine's
+    /// marks land), and a formatter per in-cinema tile per redraw is expensive on an Apple TV HD.
+    private static let isoFormatter = ISO8601DateFormatter()
 
     private static let dayFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); return f

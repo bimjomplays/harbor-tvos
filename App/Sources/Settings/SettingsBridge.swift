@@ -162,7 +162,7 @@ final class SettingsBridge: ObservableObject {
         args.append(p?.id ?? "default")
         args.append(p?.linked ?? true)
         let next: NavLayout? = try? await HarborEngine.shared.call(fn, args)
-        if let next { navLayout = next }
+        if let next, next != navLayout { navLayout = next }
     }
 
     /// The Sports tab hides when the viewer declined the notice (bp-top-bar useBpTabGate).
@@ -207,14 +207,20 @@ final class SettingsBridge: ObservableObject {
         guard gen == loadGen else { return }
         if let lang = lang ?? s?.uiLanguage { await L10n.installEngineCatalog(lang) }
         guard gen == loadGen else { return }
+        // (perf pass) Published only when something changed: RootView and every screen holding this
+        // object redraw on each publish, and harbor:settings-updated (every profile-sync apply, every
+        // engine settings write) re-reads an unchanged slice most of the time.
         if let s, sgen == sliceGen {
-            slice = s
-            loaded = true
+            if slice != s { slice = s }
+            if !loaded { loaded = true }
         }
         // (bug pass) The Sports tab gate was only set by the Settings page: at launch a declined
         // notice still showed the tab until Settings was opened. Read the stored consent here.
         struct Consent: Decodable { var status: String }
-        if let c: Consent = try? await HarborEngine.shared.call("sports.consent", []) { sportsDeclined = c.status == "declined" }
+        if let c: Consent = try? await HarborEngine.shared.call("sports.consent", []) {
+            let declined = c.status == "declined"
+            if sportsDeclined != declined { sportsDeclined = declined }
+        }
         await loadNavLayout()
     }
 

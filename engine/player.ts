@@ -63,6 +63,9 @@ const WATCHED_RATIO = 0.85;      // use-resume-autosave.ts:33 / playback-end.ts:
 const CREDITS_RATIO = 0.9;       // use-stremio-sync.ts:19 (cloud flaggedWatched)
 const MIN_POSITION_SEC = 5;      // use-resume-autosave.ts:30
 const STUB_MAX_SEC = 150;        // use-resume-autosave.ts:34
+const CLOUD_TICK_MS = 30_000;    // use-stremio-sync.ts:16 TICK_MS
+/** When each title's Stremio library entry was last written this session (per account). */
+const lastCloudWrite = new Map<string, number>();
 
 export type ProgressInput = {
   meta: Meta;
@@ -119,6 +122,11 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
   }
 
   if (!p.authKey || posSec < 6) return { watched, cloud: "none" };
+  // (perf pass) use-stremio-sync.ts writes the library entry on its own 30 s tick (TICK_MS) and at
+  // once on pause, end and exit (sent here as `flush`); every local save used to do a GET + PUT.
+  const cloudKey = `${p.authKey}\u0000${p.meta.id}`;
+  if (!p.flush && t - (lastCloudWrite.get(cloudKey) ?? 0) < CLOUD_TICK_MS) return { watched, cloud: "skipped" };
+  lastCloudWrite.set(cloudKey, t);
   try {
     const cid = p.meta.id;
     const videoId = p.videoId ?? (isEpisode ? `${cid}:${s}:${e}` : cid);

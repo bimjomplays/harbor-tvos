@@ -174,11 +174,18 @@ struct LiveGuideView: View {
     /// guide-view.tsx "Match EPG" (hold Select on a row): pick the guide channel by hand.
     var match: ((LiveModel.Channel) -> Void)? = nil
     /// bp-guide dimmed: the portal hides while the focused row sits under it.
-    @State private var focusedRowMaxY: CGFloat?
+    /// (perf pass) Only the hidden/shown answer is view state. The focused row's edge moves on every
+    /// frame of a scroll, and keeping it in @State redrew the whole guide (every row of the category
+    /// through ForEach) once per frame; it now sits in a box that redraws nothing.
+    @State private var portalHidden = false
+    @State private var rowEdge = RowEdge()
     @State private var listHeight: CGFloat = 0
-    private var portalHidden: Bool {
-        guard let y = focusedRowMaxY, listHeight > 0 else { return false }
-        return y > listHeight - GuidePortalView.height - BP.hintHeight - BP.px(24)
+    private final class RowEdge { var maxY: CGFloat? }
+
+    private func updatePortalHidden() {
+        var hide = false
+        if let y = rowEdge.maxY, listHeight > 0 { hide = y > listHeight - GuidePortalView.height - BP.hintHeight - BP.px(24) }
+        if hide != portalHidden { portalHidden = hide }
     }
 
     // bp-guide-geometry.ts at 1920×1080 (w×0.155 col clamp 220–340, h×0.155 rows 88–128, slot w×0.14 clamp 150–232).
@@ -204,8 +211,12 @@ struct LiveGuideView: View {
                 .padding(.bottom, BP.px(150) + BP.hintHeight)
             }
             .coordinateSpace(name: "guideList")
-            .background(GeometryReader { g in Color.clear.onAppear { listHeight = g.size.height }.onChange(of: g.size.height) { _, h in listHeight = h } })
-            .onPreferenceChange(GuideFocusRowKey.self) { focusedRowMaxY = $0 }
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { listHeight = g.size.height; updatePortalHidden() }
+                    .onChange(of: g.size.height) { _, h in listHeight = h; updatePortalHidden() }
+            })
+            .onPreferenceChange(GuideFocusRowKey.self) { y in MainActor.assumeIsolated { rowEdge.maxY = y; updatePortalHidden() } }
             .overlay(alignment: .bottomTrailing) {
                 if let portal, !portalHidden {
                     GuidePortalView(channel: portal.channel, program: portal.cell.program, startMs: portal.cell.startMs, endMs: portal.cell.endMs, now: now, suspended: previewSuspended)

@@ -219,6 +219,7 @@ struct ProfileEditorView: View {
     }
 
     private static func bundled(_ path: String) -> UIImage? {
-        UIImage(contentsOfFile: Bundle.main.bundleURL.appendingPathComponent(String(path.dropFirst())).path)
+        // (perf pass) Cached: this grid of 65 avatars re-read every file on each keystroke and pick.
+        ProfileFace.bundledArt(path)
     }
 }

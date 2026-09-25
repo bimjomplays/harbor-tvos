@@ -67,13 +67,19 @@ final class SyncReader: ObservableObject {
     }
 
     private func apply(_ s: Status) {
-        status = s
-        lastPull = s.lastPullAt > 0 ? Date(timeIntervalSince1970: s.lastPullAt / 1000) : nil
+        // (perf pass) Each field is published only when it changed: a push cycle sends several
+        // status events, and every one redrew the top bar's status glyphs (and Settings / Who's
+        // watching when up) three times over.
+        if status != s { status = s }
+        let pulled = s.lastPullAt > 0 ? Date(timeIntervalSince1970: s.lastPullAt / 1000) : nil
+        if lastPull != pulled { lastPull = pulled }
+        let next: Phase
         switch s.phase {
-        case "pulling", "first-pull", "pushing": phase = .pulling
-        case "first-pull-failed": phase = .failed(Self.describe(s.lastError))
-        default: phase = s.lastError != nil ? .failed(Self.describe(s.lastError)) : .idle
+        case "pulling", "first-pull", "pushing": next = .pulling
+        case "first-pull-failed": next = .failed(Self.describe(s.lastError))
+        default: next = s.lastError != nil ? .failed(Self.describe(s.lastError)) : .idle
         }
+        if phase != next { phase = next }
     }
 
     private static func describe(_ reason: String?) -> String {

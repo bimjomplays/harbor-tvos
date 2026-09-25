@@ -89,16 +89,26 @@ final class BrowseModel: ObservableObject {
         loading = true; failed = nil
         // Last session's shelves first (bp-home-cache): a TV kills the process between
         // sessions and nobody should watch an empty screen while the live build runs.
-        if cacheable, rows.isEmpty, let cached = CacheStore.shared.get([BrowseRow].self, for: cacheKey), !cached.isEmpty {
-            rows = cached
-            if spotlight == nil { spotlight = cached.first?.metas.first }
+        // (perf pass) The cached shelves (a few hundred KB of JSON) are read and decoded off the main
+        // thread, and written back off it too; both ran on main at every room open and every reload.
+        let key = cacheKey
+        if cacheable, rows.isEmpty {
+            let cached = await Task.detached(priority: .userInitiated) { CacheStore.shared.get([BrowseRow].self, for: key) }.value
+            if rows.isEmpty, let cached, !cached.isEmpty {
+                rows = cached
+                if spotlight == nil { spotlight = cached.first?.metas.first }
+            }
         }
         do {
             async let r = source.rows(for: room)
             async let cw = source.continueWatching(for: room)
             let live = try await r
-            rows = live
-            if cacheable { try? CacheStore.shared.set(live, for: cacheKey) }
+            // A re-read that built the same shelves (Home's harbor:home-updated, the anime bursts)
+            // republishes nothing and rewrites nothing.
+            if live != rows {
+                rows = live
+                if cacheable { Task.detached(priority: .utility) { try? CacheStore.shared.set(live, for: key) } }
+            }
             continueWatching = (try? await cw) ?? []
             // A row that left while holding focus never reports losing it.
             let keys = Set(live.map(\.key))

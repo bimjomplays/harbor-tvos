@@ -82,12 +82,27 @@ final class DiscoverModel: ObservableObject {
 /// Hands the bundled awards.json (4 MB, copied from upstream at build time) to the engine once.
 enum AwardsCatalog {
     private static var installed = false
+    /// (perf pass) The install under way. The Home hero asks on every settled focus, and while the first
+    /// install was still crossing (read, JSON-encoded, parsed twice by the engine: a second or more on
+    /// an Apple TV HD) each of those asks read and sent the 4 MB again. They now wait for that one.
+    @MainActor private static var running: Task<Void, Never>?
+
     @MainActor static func installIfNeeded() async {
         guard !installed else { return }
-        if let already: Bool = try? await HarborEngine.shared.call("discoverRoom.awardsInstalled", []), already { installed = true; return }
-        guard let url = Bundle.main.url(forResource: "awards", withExtension: "json"),
-              let raw = try? String(contentsOf: url, encoding: .utf8) else { return }
-        let _: Int? = try? await HarborEngine.shared.call("discoverRoom.installAwards", [raw])
-        installed = true
+        if let running { await running.value; return }
+        let task = Task { @MainActor in
+            if let already: Bool = try? await HarborEngine.shared.call("discoverRoom.awardsInstalled", []), already { installed = true; return }
+            // (perf pass) Read off the main thread: 4 MB of UTF-8 held the UI while it was read and validated.
+            let raw: String? = await Task.detached(priority: .utility) { () -> String? in
+                guard let url = Bundle.main.url(forResource: "awards", withExtension: "json") else { return nil }
+                return try? String(contentsOf: url, encoding: .utf8)
+            }.value
+            guard let raw else { return }
+            let _: Int? = try? await HarborEngine.shared.call("discoverRoom.installAwards", [raw])
+            installed = true
+        }
+        running = task
+        await task.value
+        running = nil
     }
 }
