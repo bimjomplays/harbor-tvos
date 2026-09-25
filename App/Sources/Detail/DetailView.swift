@@ -44,6 +44,8 @@ struct DetailView: View {
     @FocusState private var characterFocus: Int?
     /// When a Kitsu season button last lost focus by vanishing (the TVDB chips replacing it).
     @State private var kitsuFocusLostAt: Date?
+    /// (review 27) Set by "Try again" while its load runs: the ring goes to Play when the message leaves.
+    @State private var retryHandsPlay = false
     @Environment(\.dismiss) private var dismiss
     /// (bug pass) Every fullScreenCover over this page (the picker, the player, a dialog) makes it
     /// disappear and re-appear, which re-runs `.task`. The reload is kept (resume and marks refresh
@@ -928,11 +930,13 @@ struct DetailView: View {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
                     BPNote(text: "Couldn't load this title.")
                     Button("Try again") {
+                        // (device-flow pass 6) The button leaves with the message once the meta is
+                        // in: the ring goes to Play instead of wherever tvOS drops it (see the
+                        // onChange below; load() itself runs on through extras and art for seconds).
+                        retryHandsPlay = true
                         Task {
                             await model.load()
-                            // (device-flow pass 6) The button leaves with the message once the
-                            // episodes are in: the ring goes to Play instead of wherever tvOS drops it.
-                            if !model.episodes.isEmpty { heroFocus = "play" }
+                            retryHandsPlay = false
                         }
                     }
                     .buttonStyle(BPActionStyle())
@@ -1012,6 +1016,14 @@ struct DetailView: View {
         // focus lands on the chip that opened (seeded from the viewer's Kitsu pick) and stays in the row.
         .onChange(of: seasonFocus) { old, new in
             if new == nil, old?.hasPrefix("kitsu-") == true { kitsuFocusLostAt = Date() }
+        }
+        // (review 27) Try again hands the ring to Play the moment its message goes, not when the
+        // whole load returns: that waited on extras and episode art, and took the ring back from a
+        // viewer who had moved on meanwhile.
+        .onChange(of: model.metaFailed && model.episodes.isEmpty) { _, failing in
+            guard !failing, retryHandsPlay else { return }
+            retryHandsPlay = false
+            heroFocus = "play"
         }
         .onChange(of: model.animeSeasonKey) { old, new in
             guard old == nil, let new, model.animeHasChips, model.animeChips.count > 1 else { return }
