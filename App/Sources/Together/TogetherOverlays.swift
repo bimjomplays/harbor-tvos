@@ -15,6 +15,9 @@ struct TogetherToastHost: View {
     /// own window: the main window always has the player presented, so the layer never showed an
     /// invite (ShellView hosts the toasts there so a guest browsing during PiP can follow).
     var inBrowseLayer = false
+    /// (review 28) Told when this host's own title page (an invite's or a summon's) opens or
+    /// closes, so the room screen under it holds its ring hand-offs.
+    var onCover: ((Bool) -> Void)? = nil
     @ObservedObject private var room = TogetherModel.shared
     @State private var inviteStarted: Double?
     @State private var progress: Double = 0
@@ -51,6 +54,7 @@ struct TogetherToastHost: View {
                 if room.view.incomingParticipantLeft == left { room.dismiss("participantLeft") }
             }
         }
+        .onChange(of: opening != nil || summonDetail != nil) { _, up in onCover?(up) }
         .fullScreenCover(item: $opening) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
         .fullScreenCover(item: $summonDetail) { m in DetailView(meta: m) }
     }

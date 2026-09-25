@@ -9,6 +9,9 @@ struct TrailerView: View {
     var clipName: String? = nil
     let onClose: () -> Void
     @State private var note: String?
+    /// (review 28) The QR image, drawn once per clip: building it in `body` ran Core Image's QR
+    /// generator on every pass (each note, each focus move).
+    @State private var qr: (id: String, image: UIImage?)?
 
     private var watchURL: String { "https://www.youtube.com/watch?v=\(ytId)" }
 
@@ -31,9 +34,12 @@ struct TrailerView: View {
                     if let n = note { BPNote(text: n) }
                 }
                 VStack(spacing: BP.px(10)) {
-                    if let qr = QRCode.image(watchURL) {
-                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(220), height: BP.px(220)).accessibilityLabel(Text(T("QR code")))
+                    if let code = qr, code.id == ytId, let image = code.image {
+                        Image(uiImage: image).interpolation(.none).resizable().frame(width: BP.px(220), height: BP.px(220)).accessibilityLabel(Text(T("QR code")))
                             .padding(BP.px(10)).background(Color.white).clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+                    } else {
+                        // The code's place while it is drawn (one frame), so the page does not shift.
+                        Color.clear.frame(width: BP.px(240), height: BP.px(240))
                     }
                     Text("Scan to watch on your phone").font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)
                     Text(watchURL.replacingOccurrences(of: "https://www.", with: "")).font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
@@ -42,6 +48,7 @@ struct TrailerView: View {
             .padding(BP.gutter)
         }
         .onExitCommand { onClose() }
+        .task(id: ytId) { if qr?.id != ytId { qr = (ytId, QRCode.image(watchURL)) } }
     }
 
     // The YouTube tvOS app answers its own scheme; a universal link is the second try.

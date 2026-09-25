@@ -20,6 +20,12 @@ struct AgeGateView: View {
     /// it found. And the gate opened with the ring on Cancel, the only control until the questions
     /// arrived. Each round now starts on the first answer of the first question.
     @FocusState private var ring: String?
+    /// (review 28) The wrong round's re-deal, cancelled when the gate closes (Cancel or Back in the
+    /// 1.4 s): it read the engine again and seeded the ring on a gate that was gone.
+    @State private var redeal: Task<Void, Never>?
+    /// (review 28) The engine gave no questions (upstream's bank is compiled in, so it has no
+    /// empty state): the card says so and offers Try again instead of an empty list.
+    @State private var dealFailed = false
 
     private var allAnswered: Bool { !questions.isEmpty && picks.prefix(questions.count).allSatisfy { $0 != nil } }
     private var allCorrect: Bool { questions.enumerated().allSatisfy { i, q in picks[i] == q.correct } }
@@ -41,6 +47,7 @@ struct AgeGateView: View {
         .ignoresSafeArea()
         .onExitCommand { if !verified { onClose() } }
         .task { await deal() }
+        .onDisappear { redeal?.cancel() }
     }
 
     private var card: some View {
@@ -54,6 +61,16 @@ struct AgeGateView: View {
             Divider().overlay(BP.edge)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(26)) {
+                    if dealFailed && questions.isEmpty {
+                        VStack(alignment: .leading, spacing: BP.px(10)) {
+                            Text(T("Failed to load")).font(BP.sans(14, .medium)).foregroundStyle(BP.danger)
+                            Button(T("Try again")) { redeal?.cancel(); redeal = Task { await deal() } }
+                                .buttonStyle(BPActionStyle())
+                                .focused($ring, equals: "retry")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .focusSection()
+                    }
                     ForEach(Array(questions.enumerated()), id: \.offset) { qi, q in
                         VStack(alignment: .leading, spacing: BP.px(10)) {
                             HStack(alignment: .top, spacing: BP.px(12)) {
@@ -117,11 +134,14 @@ struct AgeGateView: View {
 
     private func deal() async {
         let r: Round? = try? await HarborEngine.shared.call("addonsManager.ageGate", [L10n.language])
+        // (review 28) The gate closed while the engine answered: nothing to deal or seed.
+        guard !Task.isCancelled else { return }
         questions = Array((r?.questions ?? []).prefix(3))
         picks = [nil, nil, nil]
         submitted = false
-        guard !questions.isEmpty else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if !verified { ring = "0-0" } }
+        dealFailed = questions.isEmpty
+        let first: String = questions.isEmpty ? "retry" : "0-0"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if !verified { ring = first } }
     }
 
     private func submit() {
@@ -136,8 +156,9 @@ struct AgeGateView: View {
             }
             return
         }
-        Task {
+        redeal = Task {
             try? await Task.sleep(nanoseconds: 1_400_000_000)
+            guard !Task.isCancelled else { return }
             await deal()
         }
     }
