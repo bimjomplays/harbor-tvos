@@ -367,6 +367,14 @@ r.ok("benchmark still works", (() => {
   r.ok("its arrival raises harbor:home-updated", events.length >= 1, JSON.stringify(events));
   const late = await E.rooms.homeFor("default", true, null);
   r.ok("the next read has it in its upstream slot", late.rows[1] && late.rows[1].key === "pinned:pin1", JSON.stringify(late.rows.map((x) => x.key).slice(0, 4)));
+  // (addons pass) home.tsx rebuilds on harbor:addons-changed: the kept catalog rows go with it.
+  const cmHits = () => hits.filter((u) => u.startsWith("https://v3-cinemeta.strem.io/catalog/")).length;
+  const cm0 = cmHits();
+  await E.rooms.homeFor("default", true, null);
+  const cm1 = cmHits();
+  E.runtime.emitEvent("harbor:addons-changed", { id: "org.example.x", installed: true });
+  await E.rooms.homeFor("default", true, null);
+  r.ok("an addon change drops the catalog rows Home keeps after harbor:home-updated", cm1 === cm0 && cmHits() > cm1, JSON.stringify([cm0, cm1, cmHits()]));
   rec.dispose();
 }
 
@@ -3378,6 +3386,8 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     { transportUrl: "https://two.example.invalid/manifest.json", transportName: "", manifest: mk("org.example.two", "Two"), flags: { official: false, protected: false } },
   ];
   const hits = [];
+  /** (addons pass) While set, the account list answers with what it held when asked, once this settles. */
+  let holdCollection = null;
   const rec = loadEngine({ storage: new Map([
     ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
   ]) });
@@ -3404,7 +3414,11 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
       return hit ? json(req, { ...hit, instances: [], documentation: "## Setup\nPick a **debrid** service." }) : json(req, {}, 404);
     }
     if (u.host === "v3-cinemeta.strem.io" || req.url === "https://api.strem.io/addonsofficialcollection.json") return json(req, { addons: [] });
-    if (req.url === "https://api.strem.io/api/addonCollectionGet") return json(req, { result: { addons: cloud } });
+    if (req.url === "https://api.strem.io/api/addonCollectionGet") {
+      const snap = cloud;
+      if (holdCollection) await holdCollection;
+      return json(req, { result: { addons: snap } });
+    }
     if (req.url === "https://api.strem.io/api/addonCollectionSet") {
       const body = JSON.parse(req.body || "{}");
       cloud = body.addons;
@@ -3477,6 +3491,26 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("addonsManager.organizeMoveAll puts device-only addons on the account", moved.ok && cloud.length === 5 && /Moved 2 addons/.test(moved.text), JSON.stringify({ moved, n: cloud.length }));
   const rm = await am.uninstall(plain.id, plainUrl);
   r.ok("addonsManager.uninstall removes the install", rm.ok && rm.toast === "Removed" && !rec.engine.addonStore.loadInstalled().some((a) => a.transportUrl === plainUrl), JSON.stringify(rm));
+  // (addons pass) The kept catalog says so (the TV re-reads it, like addons.tsx on every visit),
+  // and a fresh read (after an install) is never handed an older build still in flight.
+  const c0 = await am.load("auth-2", false);
+  const c1 = await am.load("auth-2", false);
+  r.ok("addonsManager.load says when the kept catalog answered (the TV re-reads it)", c0.cached === false && c1.cached === true, JSON.stringify([c0.cached, c1.cached]));
+  let releaseCollection = () => {};
+  holdCollection = new Promise((res) => { releaseCollection = res; });
+  const olderLoad = am.load("auth-3", false);
+  await new Promise((res) => setTimeout(res, 50));
+  holdCollection = null;
+  cloud = [...cloud, { transportUrl: "https://four.example.invalid/manifest.json", transportName: "", manifest: mk("org.example.four", "Four"), flags: { official: false, protected: false } }];
+  const releaseTimer = setTimeout(() => releaseCollection(), 1500);
+  const newerLoad = await am.load("auth-3", false, true);
+  releaseCollection();
+  clearTimeout(releaseTimer);
+  const olderAnswer = await olderLoad;
+  const keptAfter = await am.load("auth-3", false);
+  r.ok("addonsManager.load(fresh) reads the account again during an older build, whose late answer doesn't replace it",
+    newerLoad.installed.some((c) => c.id === "org.example.four") && keptAfter.cached && keptAfter.installed.some((c) => c.id === "org.example.four"),
+    JSON.stringify({ newer: newerLoad.installed.map((c) => c.id), older: olderAnswer.installed.map((c) => c.id), kept: keptAfter.installed.map((c) => c.id) }));
   // Age gate: upstream's banks, read from the component source.
   const src = (await import("node:fs")).readFileSync(new URL("../reference/harbor/src/components/age-gate-modal.tsx", import.meta.url), "utf8");
   const arStart = src.indexOf("AR_QUESTION_BANK");

@@ -64,6 +64,13 @@ struct AddonPageView: View {
                                ? "This addon provides streams only. It has no catalog to browse, but it still works behind every title you open."
                                : "This catalog came back empty. Try another one, or check the addon in Settings.")
                             .padding(.horizontal, BP.gutter)
+                        // (addons pass) bp-addon.tsx: a stream-only addon has no chips and no grid,
+                        // and a page with nothing to focus is a dead end; its Back is the one control.
+                        if catalogs.isEmpty {
+                            Button(T("Back")) { BPSound.shared.click(); dismiss() }
+                                .buttonStyle(BPActionStyle())
+                                .padding(.horizontal, BP.gutter)
+                        }
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }

@@ -55,10 +55,18 @@ final class BrowseModel: ObservableObject {
         // Home: use-bp-extra-rows' async rows (Trakt, Simkl, anime, pinned…) that missed the
         // build's grace, and Settings → Home rows edits (engine/homeExtras.ts); the engine reuses
         // the catalog rows it just built for that re-read.
-        let reloadEvent: String? = room == .anime ? "harbor:anime-updated" : (room == .home && source.cacheId == nil ? "harbor:home-updated" : nil)
-        if let reloadEvent, !(source is FixtureBrowseSource) {
+        // (addons pass) home.tsx also rebuilds on harbor:addons-changed: an addon installed from a
+        // stremio:// link while Home is up (or switched off / reordered) changes its rows now.
+        var events: Set<String> = []
+        if room == .anime {
+            events = ["harbor:anime-updated"]
+        } else if room == .home && source.cacheId == nil {
+            events = ["harbor:home-updated", "harbor:addons-changed"]
+        }
+        let reloadEvents = events
+        if !reloadEvents.isEmpty, !(source is FixtureBrowseSource) {
             unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
-                guard type == reloadEvent else { return }
+                guard reloadEvents.contains(type) else { return }
                 self?.refreshTask?.cancel()
                 self?.refreshTask = Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(400))

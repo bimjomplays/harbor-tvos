@@ -197,6 +197,8 @@ function normalizeAddonName(name: string | undefined): string {
 type CatalogState = { at: number; sig: string; byId: Map<string, ResolvedAddon>; installedIds: Set<string> };
 let catalogState: CatalogState | null = null;
 let catalogInflight: { sig: string; p: Promise<CatalogState> } | null = null;
+/** (addons pass) Numbers each build: only the newest one may become catalogState. */
+let catalogSeq = 0;
 
 async function buildCatalog(authKey: string | null, adultsAllowed: boolean): Promise<CatalogState> {
   const local = cleanAddons(await fetchInstalledAddons().catch(() => [] as Addon[]));
@@ -326,11 +328,21 @@ async function buildCatalog(authKey: string | null, adultsAllowed: boolean): Pro
 async function catalogFor(authKey: string | null, adultsAllowed: boolean, fresh = false): Promise<CatalogState> {
   const sig = `${authKey ?? ""}|${adultsAllowed ? 1 : 0}`;
   if (!fresh && catalogState && catalogState.sig === sig) return catalogState;
-  if (catalogInflight && catalogInflight.sig === sig) return catalogInflight.p;
-  const p = buildCatalog(authKey, adultsAllowed)
+  // (addons pass) store.ts: a refetch cancels the run before it. A fresh read (after an install,
+  // a remove or a reorder) used to be handed the build already in flight, which had read the
+  // installs before the change, so the Installed tab missed the addon just installed (or kept the
+  // one just removed); and a build that finished late replaced the newer catalog.
+  if (!fresh && catalogInflight && catalogInflight.sig === sig) return catalogInflight.p;
+  const seq = ++catalogSeq;
+  const p: Promise<CatalogState> = buildCatalog(authKey, adultsAllowed)
     .then((s) => {
-      catalogState = s;
-      return s;
+      if (seq === catalogSeq) {
+        catalogState = s;
+        return s;
+      }
+      // A newer build for the same account is running: its answer is the one to show.
+      if (catalogInflight && catalogInflight.sig === sig && catalogInflight.p !== p) return catalogInflight.p;
+      return catalogState && catalogState.sig === sig ? catalogState : s;
     })
     .finally(() => {
       if (catalogInflight?.p === p) catalogInflight = null;
@@ -420,7 +432,11 @@ function cardFromSA(a: SAAddon, installedIds: Set<string>, extra: Partial<AddonC
  * addons.tsx: the catalog load behind all three tabs, and the Installed tab's list in upstream's
  * order (saved display order first, then the local install order), with each row's switch state.
  */
-export async function load(authKey: string | null, adultsAllowed: boolean, fresh = false): Promise<{ installed: AddonCard[]; installedCount: number; total: number }> {
+export async function load(authKey: string | null, adultsAllowed: boolean, fresh = false): Promise<{ installed: AddonCard[]; installedCount: number; total: number; cached: boolean }> {
+  // (addons pass) The kept catalog answered: the TV re-reads it after showing it (addons.tsx
+  // builds the catalog on every visit), so an addon installed or removed on another Stremio app
+  // shows up here too, not only after a relaunch.
+  const cached = !fresh && catalogState?.sig === `${authKey ?? ""}|${adultsAllowed ? 1 : 0}`;
   const s = await catalogFor(authKey, adultsAllowed, fresh);
   void ensureCommunityIndex().catch(() => undefined);
   const seq = [...loadDisplayOrder(), ...loadInstalled().map((e) => e.transportUrl)];
@@ -435,6 +451,7 @@ export async function load(authKey: string | null, adultsAllowed: boolean, fresh
     installed: installed.map((r, i) => cardFromResolved(r, s.installedIds, i + 1)),
     installedCount: s.installedIds.size,
     total: s.byId.size,
+    cached,
   };
 }
 

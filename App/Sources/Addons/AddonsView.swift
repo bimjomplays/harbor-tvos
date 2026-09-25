@@ -80,6 +80,7 @@ final class AddonsModel: ObservableObject {
 
     private var page = 1
     private var browseGeneration = 0
+    private var catalogGeneration = 0
     private var lastQuery = ""
     private var started = false
     private var toastTask: Task<Void, Never>?
@@ -99,12 +100,24 @@ final class AddonsModel: ObservableObject {
 
     /// useAddonsCatalog + the Installed tab's order (addons.tsx `installed`).
     func loadCatalog(fresh: Bool = false) async {
-        catalogLoading = true; defer { catalogLoading = false; catalogLoaded = true }
-        struct Loaded: Decodable { @LossyArray var installed: [Card]; var installedCount: Int; var total: Int }   // (bug pass 2) lossy
-        if let r: Loaded = try? await HarborEngine.shared.call("addonsManager.load", [authKey, adultAllowed, fresh]) {
+        // (addons pass) Numbered: the first visit's slow catalog read finishing after an install's
+        // fresh one put the list from before the install back on the Installed tab.
+        catalogGeneration += 1
+        let gen = catalogGeneration
+        catalogLoading = true
+        struct Loaded: Decodable { @LossyArray var installed: [Card]; var installedCount: Int; var total: Int; var cached: Bool? }   // (bug pass 2) lossy
+        let r: Loaded? = try? await HarborEngine.shared.call("addonsManager.load", [authKey, adultAllowed, fresh])
+        guard gen == catalogGeneration else { return }
+        if let r {
             installed = r.installed
             installedCount = r.installedCount
         }
+        catalogLoading = false
+        catalogLoaded = true
+        // (addons pass) addons.tsx builds the catalog on every visit: the kept one is shown at once,
+        // then read again, so an addon added or removed on another Stremio app (or the account
+        // list changed elsewhere) appears here without a relaunch.
+        if r?.cached == true { await loadCatalog(fresh: true) }
     }
 
     func loadCategories() async {
@@ -728,23 +741,25 @@ struct AddonsView: View {
                 .opacity(busy ? 0.6 : 1)
             }
             .buttonStyle(BPTileStyle(radius: BP.rMD))
-            if !busy {
-                Button { Task { await model.setEnabled(c, !c.enabled) } } label: {
-                    Label(c.enabled ? T("Enabled") : T("Disabled"), systemImage: c.enabled ? "togglepower" : "poweroff")
-                }
-                .buttonStyle(BPActionStyle(primary: c.enabled))
-                .accessibilityLabel(c.enabled ? T("Turn %@ off", c.name) : T("Turn %@ on", c.name))
-                if c.configurable {
-                    Button {
-                        configure = AddonsModel.ConfigureTarget(mode: .manage, name: c.name, logo: c.logo, configureUrl: c.configureUrl, manageId: c.addonId)
-                    } label: { Label(T("Manage"), systemImage: "slider.horizontal.3") }
-                    .buttonStyle(BPActionStyle())
-                }
-                Button { Task { await model.uninstall(c) } } label: { Label(T("Remove"), systemImage: "trash") }
-                    .buttonStyle(BPActionStyle())
-            } else {
-                ProgressView().tint(BP.inkMuted)
+            // (addons pass) The row's buttons stay while Remove runs (installed-pane.tsx shows
+            // "Uninstalling" on the button itself): swapping them for a spinner threw the focus
+            // ring off the Remove the viewer had just pressed, onto the row's tile.
+            Button { guard !busy else { return }; Task { await model.setEnabled(c, !c.enabled) } } label: {
+                Label(c.enabled ? T("Enabled") : T("Disabled"), systemImage: c.enabled ? "togglepower" : "poweroff")
             }
+            .buttonStyle(BPActionStyle(primary: c.enabled, busy: busy))
+            .accessibilityLabel(c.enabled ? T("Turn %@ off", c.name) : T("Turn %@ on", c.name))
+            if c.configurable {
+                Button {
+                    guard !busy else { return }
+                    configure = AddonsModel.ConfigureTarget(mode: .manage, name: c.name, logo: c.logo, configureUrl: c.configureUrl, manageId: c.addonId)
+                } label: { Label(T("Manage"), systemImage: "slider.horizontal.3") }
+                .buttonStyle(BPActionStyle(busy: busy))
+            }
+            Button { Task { await model.uninstall(c) } } label: {
+                Label(busy ? T("Uninstalling") : T("Remove"), systemImage: busy ? "hourglass" : "trash")
+            }
+            .buttonStyle(BPActionStyle(busy: busy))
         }
         .focusSection()
     }

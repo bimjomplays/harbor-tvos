@@ -32,6 +32,8 @@ struct AddonConfigureView: View {
     @State private var error: String?
     @State private var phoneOpen = false
     @FocusState private var primaryFocused: Bool
+    @FocusState private var installFocused: Bool
+    @FocusState private var doneFocused: Bool
 
     private var hasSetupPage: Bool { target.mode != .url && (target.configureUrl?.isEmpty == false) }
     private var busy: Bool {
@@ -135,7 +137,10 @@ struct AddonConfigureView: View {
             }
             .focusSection()
             if let error { BPNote(text: error, tone: BP.danger) }
-            if case .resolved(let m) = phase { resolvedCard(m) }
+            // (addons pass) One card for Resolved and Installing: the Install / Update the viewer
+            // pressed stays (busy) instead of vanishing with the focus on it, which left nothing
+            // focused until the success card.
+            if let m = cardMatch { resolvedCard(m) }
             if case .installing(let m) = phase {
                 HStack(spacing: BP.px(12)) {
                     ProgressView().tint(BP.inkMuted)
@@ -152,6 +157,12 @@ struct AddonConfigureView: View {
     }
 
     private var hasResolved: Bool { if case .resolved = phase { return true }; return false }
+    private var cardMatch: Match? {
+        switch phase {
+        case .resolved(let m), .installing(let m): return m
+        default: return nil
+        }
+    }
     private var isReading: Bool { if case .reading = phase { return true }; return false }
 
     /// install-modal.tsx: the manifest it found, the re-configure notice, Install / Update.
@@ -170,9 +181,17 @@ struct AddonConfigureView: View {
             if m.matchKind == "hostname-match", let old = m.replaceName {
                 BPNote(text: T("Looks like a re-configure of %@. We'll replace the existing entry so you don't end up with two copies.", old))
             }
-            Button(m.matchKind == "fresh" ? T("Install") : T("Update")) { Task { await install(m) } }
-                .buttonStyle(BPActionStyle(primary: true))
-                .focusSection()
+            Button(m.matchKind == "fresh" ? T("Install") : T("Update")) {
+                guard !isInstalling else { return }
+                Task { await install(m) }
+            }
+            .buttonStyle(BPActionStyle(primary: true, busy: isInstalling))
+            .focused($installFocused)
+            // (addons pass) install-modal.tsx's footer button turns from Continue into Install /
+            // Update where it is. Here the card appears below: focus moves onto it, so a link sent
+            // from the phone (or a stremio:// deep link) is one press from installed.
+            .onAppear { installFocused = true }
+            .focusSection()
         }
         .padding(BP.px(18))
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2))
@@ -186,6 +205,8 @@ struct AddonConfigureView: View {
             Text(verbatim: "\(name) \(replaced ? T("is now using your new configuration.") : T("is ready. Open Discover or hit Play on a title to use it."))")
                 .font(BP.sans(15)).foregroundStyle(BP.inkMuted).multilineTextAlignment(.center)
             Button(T("Done")) { onClose() }.buttonStyle(BPActionStyle(primary: true))
+                .focused($doneFocused)
+                .onAppear { doneFocused = true }
         }
         .frame(maxWidth: .infinity)
         .padding(BP.px(30))

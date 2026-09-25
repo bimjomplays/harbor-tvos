@@ -107,6 +107,10 @@ const EXTRA_GRACE_MS = 1500;
 /** A re-read that `harbor:home-updated` asked for reuses the catalog rows built this recently. */
 const BASE_REUSE_MS = 60_000;
 let lastBase: { key: string; at: number; merged: HomeRow[]; hero: Meta[] } | null = null;
+// (addons pass) home.tsx rebuilds on harbor:addons-changed. An install, remove, switch or reorder
+// made within a minute of a harbor:home-updated used to get the kept catalog rows back, so Home
+// still showed the removed addon's rows (and not the new one's) in the old order.
+if (typeof window !== "undefined") window.addEventListener("harbor:addons-changed", () => { lastBase = null; });
 
 function activeProfileId(): string {
   try {

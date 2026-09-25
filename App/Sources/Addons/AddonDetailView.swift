@@ -45,6 +45,8 @@ struct AddonDetailView: View {
     @State private var docOpen = false
     @State private var configure: AddonsModel.ConfigureTarget?
     @State private var external: External?
+    /// The id whose page `detail` holds (a re-read of it keeps the page's open sections).
+    @State private var shownId: String?
 
     private var currentId: String { stack.last ?? addonId }
 
@@ -55,6 +57,15 @@ struct AddonDetailView: View {
                 content(d)
             } else if loading {
                 ProgressView().tint(BP.inkMuted)
+            }
+            // (addons pass) RemoteOrLocalDetail renders the toaster too: Install / Remove report
+            // through the Addons screen's toast, which was drawn under this cover, so a failed
+            // install or remove said nothing at all.
+            if let t = model.toast {
+                AddonToastView(toast: t)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, BP.px(40))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .ignoresSafeArea()
@@ -67,26 +78,39 @@ struct AddonDetailView: View {
     }
 
     private func back() {
-        if stack.count > 1 { stack.removeLast() } else { onClose() }
+        // (addons pass) Back to the previous addon: its page used to keep showing the one just
+        // left (Install included, acting on that addon) until the previous one had loaded again.
+        if stack.count > 1 { detail = nil; shownId = nil; stack.removeLast() } else { onClose() }
     }
 
     private func load() async {
         if stack.isEmpty { stack = [addonId] }
         loading = true; defer { loading = false }
-        revealed = false; docOpen = false
         let asked = currentId
+        // (addons pass) A re-read of the page on screen (after Install / Remove / a setup, or when
+        // a QR cover closes and `.task` runs again) keeps the expanded documentation and the
+        // revealed URL; only a new addon starts folded.
+        let again = shownId == asked && detail != nil
+        if !again { revealed = false; docOpen = false }
         let d: Detail? = try? await HarborEngine.shared.call("addonsManager.detail", [asked, model.authKey, model.adultAllowed])
         // (bug pass) A related tile (or Back) changed the page while this loaded: the engine call is
         // not cancelled with the task, so a late answer would show (or, failing, pop) the wrong addon.
         guard asked == currentId else { return }
-        // RemoteOrLocalDetail: nothing resolved → go back.
-        guard let d else { back(); return }
+        // RemoteOrLocalDetail: nothing resolved → go back. Not on a re-read of a page already up
+        // (a flaky read when a QR cover closed shut the page), except after a Remove: an addon
+        // known only from its install has nothing left to show, as upstream.
+        guard let d else {
+            if !again || busy == "remove" { back() }
+            return
+        }
         detail = d
+        shownId = asked
     }
 
     private func open(_ c: AddonsModel.Card) {
         guard c.addonId != currentId else { return }
         detail = nil
+        shownId = nil
         stack.append(c.addonId)
     }
 
@@ -152,29 +176,24 @@ struct AddonDetailView: View {
         let c = d.card
         VStack(alignment: .leading, spacing: BP.px(12)) {
             HStack(spacing: BP.px(12)) {
-                if busy == "remove" {
-                    Label(T("Removing"), systemImage: "hourglass").font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
-                } else if busy == "install" {
-                    Label(T("Installing"), systemImage: "hourglass").font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
-                } else if c.installed {
+                if c.installed && busy == nil {
                     Label(T("Installed"), systemImage: "checkmark").font(BP.sans(15, .semibold)).foregroundStyle(BP.accent)
                         .padding(.horizontal, BP.px(16)).frame(minHeight: BP.tabItem).background(Capsule().fill(BP.accent.opacity(0.15)))
-                    Button { Task { await remove(c) } } label: { Label(T("Remove"), systemImage: "trash") }.buttonStyle(BPActionStyle())
-                    if d.configurable {
-                        Button { configure = target(d, mode: .manage) } label: { Label(T("Reconfigure"), systemImage: "slider.horizontal.3") }
-                            .buttonStyle(BPActionStyle())
-                    }
-                } else if d.configurable {
-                    Button { configure = target(d, mode: .configure) } label: { Label(T("Configure & install"), systemImage: "slider.horizontal.3") }
-                        .buttonStyle(BPActionStyle(primary: true))
-                    // addon-detail.tsx shows Install default beside it on the desktop app. An addon
-                    // that requires configuration has nothing sensible to install by default.
-                    if !d.configurationRequired {
-                        Button(T("Install default")) { Task { await install(c, useDefault: true) } }.buttonStyle(BPActionStyle())
-                    }
-                } else {
-                    Button { Task { await install(c, useDefault: false) } } label: { Label(T("Install"), systemImage: "plus") }
-                        .buttonStyle(BPActionStyle(primary: true))
+                }
+                // (addons pass) addon-detail.tsx keeps one pill in this place through Install →
+                // Installing → Installed/Remove and back. The TV swapped the pressed button for a
+                // plain label, so the focus ring jumped off it (down to Reveal, scrolling the page,
+                // when the addon had no stremio-addons.net links); one button now changes in place.
+                Button { primaryAction(d) } label: { primaryLabel(d) }
+                    .buttonStyle(BPActionStyle(primary: busy == "install" || (busy == nil && !c.installed), busy: busy != nil))
+                if busy == nil && c.installed && d.configurable {
+                    Button { configure = target(d, mode: .manage) } label: { Label(T("Reconfigure"), systemImage: "slider.horizontal.3") }
+                        .buttonStyle(BPActionStyle())
+                }
+                // addon-detail.tsx shows Install default beside Configure & install on the desktop
+                // app. An addon that requires configuration has nothing sensible to install by default.
+                if busy == nil && !c.installed && d.configurable && !d.configurationRequired {
+                    Button(T("Install default")) { Task { await install(c, useDefault: true) } }.buttonStyle(BPActionStyle())
                 }
             }
             .focusSection()
@@ -195,18 +214,46 @@ struct AddonDetailView: View {
                                     manageId: mode == .manage ? d.card.addonId : nil)
     }
 
+    /// The action pill: Remove when installed, else Configure & install / Install; nothing while busy.
+    private func primaryAction(_ d: Detail) {
+        guard busy == nil else { return }
+        let c = d.card
+        if c.installed { Task { await remove(c) } }
+        else if d.configurable { configure = target(d, mode: .configure) }
+        else { Task { await install(c, useDefault: false) } }
+    }
+
+    @ViewBuilder private func primaryLabel(_ d: Detail) -> some View {
+        if busy == "remove" {
+            Label(T("Removing"), systemImage: "hourglass")
+        } else if busy == "install" {
+            Label(T("Installing"), systemImage: "hourglass")
+        } else if d.card.installed {
+            Label(T("Remove"), systemImage: "trash")
+        } else if d.configurable {
+            Label(T("Configure & install"), systemImage: "slider.horizontal.3")
+        } else {
+            Label(T("Install"), systemImage: "plus")
+        }
+    }
+
+    // (addons pass) Busy until the page has read the addon again: clearing it first showed the
+    // old Install (or Remove) again, pressable, for as long as that read took.
     private func install(_ c: AddonsModel.Card, useDefault: Bool) async {
+        guard busy == nil else { return }
         busy = "install"
         let setup = await model.install(c, useDefault: useDefault)
+        if let setup { busy = nil; configure = setup; return }
+        await load()
         busy = nil
-        if let setup { configure = setup } else { await load() }
     }
 
     private func remove(_ c: AddonsModel.Card) async {
+        guard busy == nil else { return }
         busy = "remove"
         await model.uninstall(c)
-        busy = nil
         await load()
+        busy = nil
     }
 
     // MARK: documentation, project information
