@@ -12,6 +12,9 @@ struct TrackMemory: Encodable, Equatable {
     var episode: Int?
     var genres: [String]
     var filename: String?
+    /// (S4) view.ts PlayerSrc.subtitlePreselect: the subtitle step's choice (Streams/SubtitleStep.swift),
+    /// which player.trackPlan puts on instead of the automatic choice and the remembered subtitle.
+    var preselect: SubtitlePreselect? = nil
 }
 
 /// view.ts PlayerSrc.subtitles: a subtitle the resolved stream came with, handed to the player
@@ -311,6 +314,9 @@ extension PlayerScreen {
                            // (player regression pass) the source switcher's pick names its own (subtitleStreamKey
                            // over activeMediaSrc.streamRef), a home-server quality keeps the release's (review 25),
                            // the kid switcher none.
-                           filename: switchedInPlace ? switchedFilename : streamHints?.filename)
+                           filename: switchedInPlace ? switchedFilename : streamHints?.filename,
+                           // (S4) The step chose for the stream it opened; a stream swapped in place
+                           // gets the plan's own choice.
+                           preselect: switchedInPlace ? nil : subtitlePreselect)
     }
 }

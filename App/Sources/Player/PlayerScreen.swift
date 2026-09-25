@@ -51,6 +51,8 @@ struct PlayerScreen: View {
     /// (P8) The PlayEpisode the picker searched with (view.ts PlayerSrc.episode): the in-player
     /// switcher searches with it again. nil builds one from the context.
     var pickEpisode: AnyJSON? = nil
+    /// (S4) view.ts PlayerSrc.subtitlePreselect: the picker's subtitle step chose this (TrackMemory.preselect).
+    var subtitlePreselect: SubtitlePreselect? = nil
     /// use-live-channel-overlay switchChannel: the channel tuned in place (nil = the one opened).
     @State private var tuned: LiveModel.Channel?
     /// goPrevChannel: the channels tuned before, newest last, 12 at most.

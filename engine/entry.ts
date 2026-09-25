@@ -1103,6 +1103,8 @@ export const subtitles = {
   titleTarget: subtitleGlue.titleTarget,
   /** bp-subtitle-tune BpSubtitleLook presets. */
   presets: subtitleGlue.presets,
+  /** (S4) bp-subtitle-step / use-subtitle-choices: the "Choose subtitles" step's list. */
+  choices: subtitleGlue.choices,
 };
 
 /** Playback progress: where to start, and the 4-second progress write (local + Stremio). */

@@ -24,6 +24,13 @@ import { gatherStreamAddons } from "./streams";
 import { isSafeProviderSubtitleUrl } from "@/lib/subtitles/provider-url";
 import { subtitleTrackDownloadHeaders } from "@/lib/subtitles/provider-auth";
 import { t } from "@/lib/i18n";
+import type { Addon } from "@/lib/addons";
+import type { PlayEpisode } from "@/lib/view";
+import { buildStreamIds } from "@/lib/streams/stream-ids";
+import { resolveAnimeSearchCoords } from "@/lib/subtitles/anime-numbering";
+import { subtitleStreamDescriptor } from "@/lib/subtitles/provider-label";
+import { rankSubtitleCandidates } from "@/lib/subtitles/search";
+import { flagEmoji } from "./settingsRoom";
 
 function langCodes(names: string[] | undefined): string[] {
   const out = (names ?? ["English"]).map((n) => normalizeLang(n)).filter(Boolean);
@@ -352,4 +359,172 @@ export async function titleTarget(query: string, current: SubtitleTarget): Promi
 /** bp-subtitle-tune.tsx BpSubtitleLook "Presets" (lib/player/sub-presets loadSubPresets). */
 export function presets() {
   return loadSubPresets();
+}
+
+// ------------------------------------------------------------------ S4: the subtitle step
+// bp-subtitle-step.tsx + views/play-picker/hooks/use-subtitle-choices.ts: with
+// settings.subtitlePreselect on, "Choose subtitles" between the stream pick and the player.
+
+/** view.ts PlayerSrc, the parts use-subtitle-choices reads. */
+export type SubtitleStepSrc = {
+  meta: Meta;
+  episode?: PlayEpisode | null;
+  imdbId?: string | null;
+  imdbIdVerified?: boolean | null;
+  /** PlayerStreamRef (the picker's streamsRoom.deadRef), or null (a home-server copy). */
+  streamRef?: Record<string, unknown> | null;
+  /** The resolved link's file name: use-pick-handler streamRef.resolvedFilename. */
+  filename?: string | null;
+};
+
+export type SubtitleChoice = {
+  id: string;
+  url: string;
+  lang: string;
+  /** The language group this result is in (languageName(lang), use-subtitle-choices groups). */
+  langKey: string;
+  /** BpTrackRow label: r.title || languageName(r.lang). */
+  label: string;
+  /** bp-subtitle-step trackDetail: source · FORMAT · the compact classification labels. */
+  detail: string;
+  /** `<Flag language={languageName(r.lang)}>` as settingsRoom.flagEmoji's emoji (null: no flag). */
+  flag: string | null;
+};
+
+export type SubtitleChoices = {
+  error: boolean;
+  results: SubtitleChoice[];
+  groups: { langKey: string; langDisplay: string; count: number }[];
+  bestId: string | null;
+};
+
+function isAnimeStepSrc(src: SubtitleStepSrc): boolean {
+  return (
+    !!src.meta?.id?.startsWith("kitsu:") ||
+    !!src.meta?.id?.startsWith("mal:") ||
+    (src.meta?.genres ?? []).some((g) => g.toLowerCase() === "anime")
+  );
+}
+
+function isJapaneseLang(lang: string): boolean {
+  const l = lang.trim().toLowerCase();
+  return l === "ja" || l === "jpn" || l === "jp" || l === "japanese";
+}
+
+type StepStreamRef = {
+  title?: string | null;
+  parsedTitle?: string | null;
+  source?: string | null;
+  resolution?: string | null;
+  quality?: string | null;
+  releaseGroup?: string | null;
+  resolvedFilename?: string | null;
+};
+
+/**
+ * use-subtitle-choices.ts as one call: the subtitle addons (gatherSubtitleAddons), the picked
+ * stream's ids (buildStreamIds), the anime search coordinates (resolveAnimeSearchCoords), then
+ * searchSubtitles with the same query and options; `groups` by languageName in result order and
+ * `bestId` = rankSubtitleCandidates(results, preferredLangs, stream hints)[0]. A failed search is
+ * `error: true` with no results (the step's "Couldn't load subtitles" line).
+ */
+export async function choices(profileId: string, linked: boolean, authKey: string | null, src: SubtitleStepSrc): Promise<SubtitleChoices> {
+  const settings = loadEffective(profileId, linked) as Settings;
+  const primary = settings.preferredSubLangs?.length ? settings.preferredSubLangs : (settings.preferredLanguages ?? []);
+  const base = primary.length > 0 ? primary : ["English"];
+  const preferredLangs = isAnimeStepSrc(src) ? base : base.filter((l) => !isJapaneseLang(l));
+  const episode = src.episode ?? undefined;
+  const metaId = src.meta?.id ?? "";
+  const ref = (src.streamRef ?? {}) as StepStreamRef;
+  // use-pick-handler: streamRef.resolvedFilename = r.data.filename ?? the stream's hinted file name.
+  const streamRef: StepStreamRef = { ...ref, resolvedFilename: src.filename ?? ref.resolvedFilename ?? null };
+  let addons: Addon[] = [];
+  try {
+    addons = await gatherSubtitleAddons(authKey);
+  } catch {
+    addons = [];
+  }
+  const enabled = (settings.subProvidersEnabled ?? {}) as { wyzie?: boolean; addons?: boolean; opensubtitles?: boolean; subdl?: boolean; subsource?: boolean };
+  const candidateIds = buildStreamIds(metaId, episode, src.imdbId ?? null, src.meta?.behaviorHints?.defaultVideoId ?? null);
+  const animeIds = candidateIds.some((i) => i.startsWith("kitsu:") || i.startsWith("mal:"));
+  const imdbEpAligned = !animeIds || episode?.imdbEpisode == null || episode.episode === episode.imdbEpisode;
+  const imdbId = src.imdbId ?? (metaId.startsWith("tt") ? metaId : undefined);
+  const hints = {
+    release: streamRef.title ?? streamRef.parsedTitle ?? null,
+    source: streamRef.source ?? null,
+    resolution: streamRef.resolution ?? null,
+  };
+  let results: SubResult[];
+  try {
+    const coords = await resolveAnimeSearchCoords({
+      isAnime: isAnimeStepSrc(src),
+      metaId,
+      imdbId,
+      imdbVerified: src.imdbIdVerified === true || metaId.startsWith("tt"),
+      episode,
+    });
+    results = await searchSubtitles(
+      {
+        imdbId,
+        stremioId: metaId,
+        candidateIds,
+        type: src.meta?.type === "series" ? "series" : "movie",
+        season: coords ? coords.season : imdbEpAligned ? (episode?.imdbSeason ?? episode?.season) : episode?.season,
+        episode: coords ? coords.episode : imdbEpAligned ? (episode?.imdbEpisode ?? episode?.episode) : episode?.episode,
+        langs: preferredLangs,
+        filename: subtitleStreamDescriptor(streamRef),
+      },
+      {
+        timeoutMs: 7_000,
+        providers: {
+          wyzie: enabled.wyzie === true,
+          addons: enabled.addons !== false,
+          opensubtitles: enabled.opensubtitles !== false,
+        },
+        addons,
+        preferredLangs,
+        streamHints: hints,
+        extra: {
+          userAgent: "Harbor",
+          netAllowed: true,
+          subdlApiKey: settings.subdlApiKey || null,
+          subsourceApiKey: settings.subsourceApiKey || null,
+          enabled: { subdl: enabled.subdl === true, subsource: enabled.subsource === true },
+        } as never,
+      },
+    );
+  } catch {
+    return { error: true, results: [], groups: [], bestId: null };
+  }
+  const groups = new Map<string, number>();
+  for (const r of results) {
+    const key = languageName(r.lang);
+    groups.set(key, (groups.get(key) ?? 0) + 1);
+  }
+  const ranked = results.length
+    ? rankSubtitleCandidates(results, preferredLangs, {
+        ...hints,
+        season: episode?.imdbSeason ?? episode?.season ?? null,
+        episode: episode?.imdbEpisode ?? episode?.episode ?? null,
+      })
+    : [];
+  return {
+    error: false,
+    results: results.map((r) => {
+      const parts: string[] = [r.source];
+      if (r.format) parts.push(r.format.toUpperCase());
+      parts.push(...subtitleClassificationLabels(r, t, "compact").map(({ label }) => label));
+      return {
+        id: r.id,
+        url: r.url,
+        lang: r.lang,
+        langKey: languageName(r.lang),
+        label: r.title || languageName(r.lang),
+        detail: parts.filter(Boolean).join(" · "),
+        flag: flagEmoji(languageName(r.lang)),
+      };
+    }),
+    groups: [...groups.entries()].map(([langDisplay, count]) => ({ langKey: langDisplay, langDisplay, count })),
+    bestId: ranked[0]?.id ?? null,
+  };
 }

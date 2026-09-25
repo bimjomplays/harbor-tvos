@@ -411,6 +411,12 @@ export type TrackMemoryKey = {
   genres?: string[] | null;
   /** The stream's release file name: subtitle-memory's streamKey (subtitleStreamKey). */
   filename?: string | null;
+  /**
+   * (S4) view.ts PlayerSrc.subtitlePreselect: what the subtitle step (bp-subtitle-step.tsx) chose
+   * before playback, `off` or a result's URL / language / title. Absent when the step did not run
+   * ("Skip, let Harbor choose", the setting off, auto play).
+   */
+  preselect?: { off: boolean; url?: string | null; lang?: string | null; title?: string | null } | null;
 };
 
 /** A track as Swift reads it (MPVPlayerController.Track); ids are only unique per type. */
@@ -547,8 +553,9 @@ export type TrackPlan = {
 };
 
 /**
- * One pass of use-track-autoload's track effect for a freshly opened file (no user pick yet, no
- * subtitle preselect), plus its subtitle-memory restore effect and use-secondary-sub's auto pick.
+ * One pass of use-track-autoload's track effect for a freshly opened file (no user pick yet; a
+ * subtitle preselect, key.preselect, stands in for the subtitle choice), plus its subtitle-memory
+ * restore effect and use-secondary-sub's auto pick.
  * External tracks are only auto-selected when flagged `autoSelectionEligible` (the stream's own
  * seed subtitles, mpv.ts addSeedSubtitles): upstream auto-picks prepared, eligible tracks only.
  */
@@ -592,7 +599,29 @@ export function planTracks(settings: Settings, key: TrackMemoryKey | null, track
   let restore: TrackPlan["restore"] = null;
   const remembered: RememberedSub | null = key && metaId ? readRememberedSub(mediaKeyOf(key)) : null;
   const rememberedApplies = rememberedSubAppliesToStream(remembered, streamRefOf(key));
-  if (subsOffFor(prefs, settings)) {
+  // (S4) use-track-autoload preselect effect: the subtitle step's choice (PlayerSrc.subtitlePreselect)
+  // replaces the automatic choice and the remembered restore (both skip under `src.subtitlePreselect`):
+  // off → setSubtitleTrack(null); a result → addSubtitle(url, lang, title, select), here the restore
+  // path (or the track already listed for that URL).
+  const preselect = key?.preselect ?? null;
+  if (preselect && (preselect.off || preselect.url)) {
+    if (preselect.off) {
+      sub = "off";
+      notes.push("subs: off (chosen before playback)");
+    } else if (preselect.url) {
+      const source = preselect.url;
+      const existing = subtitleTracks.find((t) => t.externalFilename != null &&
+        (t.externalFilename === source || lookupSubtitleOrigin(t.externalFilename) === source ||
+          lookupSubtitleOrigin(baseName(t.externalFilename)) === source));
+      if (existing) {
+        sub = "select";
+        subId = existing.id;
+      } else {
+        restore = { source, lang: preselect.lang ?? null, title: preselect.title ?? null };
+      }
+      notes.push(`subs: ${preselect.title ?? preselect.lang ?? "chosen"} (chosen before playback)`);
+    }
+  } else if (subsOffFor(prefs, settings)) {
     sub = "off";
     notes.push(prefs?.subsOff === true ? "subs: off (remembered)" : "subs: off by default");
   } else if (remembered && rememberedApplies) {

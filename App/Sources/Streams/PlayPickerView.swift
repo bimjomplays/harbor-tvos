@@ -18,6 +18,9 @@ struct PlayPickerView: View {
     var switching: PlayerSourcesPanel.Current? = nil
     /// The switcher's onClose (the player's closePanel); the picker dismisses its own cover instead.
     var onClose: (() -> Void)? = nil
+    /// (S4) use-bp-stream-play openPlayerGated: this caller hands `Resolved.subtitlePreselect` to its
+    /// PlayerScreen, so the subtitle step may stand between a pick and the player (Detail, Kids).
+    var subtitleStep = false
     @StateObject private var model = StreamsModel()
     /// bp-stream-chips BpSourceKind, the kinds the TV has: "all", "media-server" or "online" (the
     /// source chip's Direct/debrid only and P2P only; no Local Library on a TV).
@@ -70,6 +73,14 @@ struct PlayPickerView: View {
     @State private var seedAfterSwap = false
     /// (review 30) This picker's claim on the screensaver's suppression (use-bp-screensaver `!!picker`).
     @State private var saverKey = UUID().uuidString
+    /// (S4) use-bp-stream-play `preselect`: the resolved pick waiting on the subtitle step.
+    @State private var preselect: PendingPreselect?
+    struct PendingPreselect {
+        var stream: ScoredStream?
+        var resolved: StreamsModel.Resolved
+        /// The row that was picked: Back puts the ring on it again (the step's focus restore).
+        var focusKey: String
+    }
 
     enum PickerDialog: Identifiable {
         case p2p(ScoredStream), debridDown, noSources, exhausted(Int)
@@ -195,9 +206,15 @@ struct PlayPickerView: View {
         return $dialog
     }
 
-    /// The picker's own page: the auto step, or the list beside the title's column.
+    /// The picker's own page: the subtitle step, the auto step, or the list beside the title's column.
     @ViewBuilder private var pickerSurface: some View {
-        if showAutoStep {
+        if let pending = preselect {
+            // bp-streams.tsx: `if (play.preselect)` BpSubtitleStep stands in for the panel.
+            SubtitleStepView(meta: meta, episode: episode, imdbId: model.imdb?.id, imdbVerified: model.imdb?.verified ?? false,
+                             streamRef: pending.resolved.streamRef, filename: pending.resolved.data?.filename,
+                             onStart: { choice in startPreselect(choice) }, onCancel: { cancelPreselect() })
+                .transition(.opacity)
+        } else if showAutoStep {
             // bp-streams.tsx: while auto is busy BpAutoStep stands in for the panel (a kid
             // profile's is auto-play-transition.tsx's kid branch).
             PickerAutoStep(meta: meta, episode: episode, attemptIdx: autoTried, resolving: autoFiring,
@@ -288,7 +305,7 @@ struct PlayPickerView: View {
 
     /// use-bp-focus seed pass: the first row takes the ring while the viewer has not moved it.
     private func seedRing() {
-        guard !showAutoStep, dialog == nil, resolving == nil, let key = firstRowKey, key != rowFocus,
+        guard preselect == nil, !showAutoStep, dialog == nil, resolving == nil, let key = firstRowKey, key != rowFocus,
               Date().timeIntervalSince(seedFrom) < 6 else { return }
         let from = seededKey
         // Untouched: the first seed while the ring is on the "All" chip (where the cover lands) or
@@ -1256,7 +1273,7 @@ struct PlayPickerView: View {
         resolving = copy.key; resolveError = nil
         let r = await model.play(copy: copy, meta: meta)
         resolving = nil
-        if r.ok, let ready = Self.playable(r) { onPlay(nil, ready) }
+        if r.ok, let ready = Self.playable(r) { openGated(nil, ready, focusKey: "copy:" + copy.key) }
         else if r.ok, r.data != nil { resolveError = Self.badLinkMessage }   // (bug pass 2)
         else { resolveError = "This server couldn't start playback (\(r.code ?? "unknown"))." }
     }
@@ -1297,7 +1314,7 @@ struct PlayPickerView: View {
             var handed = ready
             handed.autoPicked = false
             handed.streamRef = await model.deadRef(s)
-            onPlay(s, handed)
+            openGated(s, handed, focusKey: "stream:" + s.id)
         } else if r.ok, r.data != nil {
             // (bug pass 2) The addon answered with a link no URL can be made of: say so (the call
             // sites used to drop it on `URL(string:)` and the picker just sat there).
@@ -1311,6 +1328,44 @@ struct PlayPickerView: View {
     }
 
     static let badLinkMessage = "This stream's link isn't a valid address. Try another stream."
+
+    // MARK: (S4) the subtitle step (use-bp-stream-play openPlayerGated / startPreselect / cancelPreselect)
+
+    /// openPlayerGated: with settings.subtitlePreselect on, a pick by hand of a movie, series or
+    /// anime stream waits on "Choose subtitles" before the player opens. Never in a Watch Together
+    /// session, never for an auto-fired stream (instant play keeps its onPlay), a live or iptv
+    /// source, nor in the in-player switcher (mode "switch" owns playback through onPick, which
+    /// never reaches openPlayerGated). Kid profiles are not exempt upstream either.
+    private func openGated(_ s: ScoredStream?, _ r: StreamsModel.Resolved, focusKey: String) {
+        guard subtitleStepApplies(r) else { onPlay(s, r); return }
+        preselect = PendingPreselect(stream: s, resolved: r, focusKey: focusKey)
+    }
+
+    private func subtitleStepApplies(_ r: StreamsModel.Resolved) -> Bool {
+        guard subtitleStep, switching == nil, SettingsBridge.shared.slice.subtitlePreselect == true else { return false }
+        guard !TogetherModel.shared.view.inSession, r.autoPicked != true else { return false }
+        guard !meta.id.hasPrefix("iptv:") else { return false }
+        let kinds: [String] = ["movie", "series", "anime"]
+        return kinds.contains(meta.type)
+    }
+
+    /// startPreselect(finalSrc): the step closes and the player opens with its choice (nil: Skip,
+    /// the src unchanged).
+    private func startPreselect(_ choice: SubtitlePreselect?) {
+        guard let pending = preselect else { return }
+        preselect = nil
+        var handed = pending.resolved
+        handed.subtitlePreselect = choice
+        onPlay(pending.stream, handed)
+    }
+
+    /// cancelPreselect: back to the stream list, the ring on the row that was picked.
+    private func cancelPreselect() {
+        guard let pending = preselect else { return }
+        preselect = nil
+        let key = pending.focusKey
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { rowFocus = key }
+    }
 
     /// (bug pass 2) The resolved result with its link as the player will open it (PlayableURL), or
     /// nil when there is no link or no URL can be made of it.

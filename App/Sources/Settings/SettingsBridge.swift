@@ -60,6 +60,9 @@ final class SettingsBridge: ObservableObject {
         // Player forks (settings/defaults.ts): resume automatically, ask first, confirm on Back.
         // Instant play (use-bp-stream-play): Play fires the best source; "Sources" forces the list.
         var instantPlay: Bool? = true
+        /// (S4) settings/defaults.ts subtitlePreselect (a desktop setting, off by default): the
+        /// "Choose subtitles" step between the stream pick and the player (bp-subtitle-step.tsx).
+        var subtitlePreselect: Bool? = false
         /// use-bp-streams strictMode: "strict" starts narrow; "Search wider" / "Show everything" loosen.
         var streamFilterLevel: String? = "strict"
         var rememberLastStream: Bool? = true
@@ -397,6 +400,7 @@ extension SettingsBridge.Slice {
         simklScrobbleEnabled = c.lenient("simklScrobbleEnabled")
         showAdultAddons = c.lenient("showAdultAddons")
         instantPlay = c.lenient("instantPlay")
+        subtitlePreselect = c.lenient("subtitlePreselect")
         streamFilterLevel = c.lenient("streamFilterLevel")
         rememberLastStream = c.lenient("rememberLastStream")
         seasonSourceLock = c.lenient("seasonSourceLock")
