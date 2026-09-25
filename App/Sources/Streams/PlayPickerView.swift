@@ -627,7 +627,10 @@ struct PlayPickerView: View {
             // markers first; ties keep the cached-first score order.
             var rank: [String: Int] = [:]
             for (i, url) in model.addonOrder.enumerated() where rank[url] == nil { rank[url] = i }
-            let everyAddon = addonFilter == nil
+            // (review 20) bp-stream-filters `if (addonOrderMode || hostMatch) return visible`: under
+            // a room host's match the Harbor order is skipped, so rows the match ties keep the
+            // cached-first order (the host-match sort below is stable over it), as upstream.
+            let everyAddon = addonFilter == nil && model.hostScores == nil
             sorted = filtered.sorted { a, b in
                 if everyAddon {
                     let wa = a.tvSort?.watchHub == true, wb = b.tvSort?.watchHub == true
