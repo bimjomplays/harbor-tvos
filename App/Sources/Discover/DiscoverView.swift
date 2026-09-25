@@ -289,7 +289,7 @@ struct PeopleBandView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: BP.trackGap) {
-                ForEach(people) { p in
+                ForEach(people.uniquedById()) { p in   // (bug pass) TMDB pages can repeat a person
                     Button { person = p } label: {
                         VStack(spacing: BP.px(8)) {
                             ZStack(alignment: .bottomLeading) {
@@ -337,7 +337,9 @@ struct AwardDetailView: View {
                     Text("\(summary.wins) winners · \(summary.span)").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                     Button("Back") { dismiss() }.buttonStyle(BPActionStyle())
                     if let detail {
-                        ForEach(detail.groups) { g in
+                        // (bug pass) Group.id falls back to a fresh UUID on every read (and labels can
+                        // repeat): unstable ids for ForEach. The catalog's order is stable, so key by position.
+                        ForEach(Array(detail.groups.enumerated()), id: \.offset) { _, g in
                             VStack(alignment: .leading, spacing: BP.px(6)) {
                                 Text(g.category.label ?? g.category.name ?? g.category.id ?? "Category").font(BP.sans(17, .bold)).foregroundStyle(BP.ink)
                                 ForEach(Array(g.entries.prefix(12).enumerated()), id: \.offset) { _, e in

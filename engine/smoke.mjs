@@ -520,6 +520,11 @@ r.ok("benchmark still works", (() => {
   r.eq("animeRoom watched filter: Simkl episodes, Simkl completed, AniList progress count; empty sets and watching don't",
     ["kitsu:1", "kitsu:2", "mal:3", "mal:4", "anilist:5", "kitsu:9"].map(isW), [true, false, true, false, true, false]);
   r.eq("animeRoom watched filter: missing maps read as nothing watched", E.animeRoom.watchedFrom({})("kitsu:1"), false);
+  // Bug pass: late hero / picks ids are per profile and LRU-evicted at the cap (not frozen).
+  E.animeRoom.lateIds("pA", ["kitsu:1", "mal:2", "tt123", "anilist:3"], 3);
+  r.eq("animeRoom late ids: anime ids only, per profile", [E.animeRoom.lateIds("pA", [], 3), E.animeRoom.lateIds("pB", [], 3)], [["kitsu:1", "mal:2", "anilist:3"], []]);
+  E.animeRoom.lateIds("pA", ["kitsu:1"], 3); // touch: kitsu:1 becomes newest
+  r.eq("animeRoom late ids: the oldest id is evicted at the cap, a re-seen id is kept", E.animeRoom.lateIds("pA", ["kitsu:4"], 3), ["anilist:3", "kitsu:1", "kitsu:4"]);
   rec.dispose();
 
   // A later session: the cached picks show at once as the room's first row.
@@ -1548,6 +1553,25 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("streamsRoom.search stamps each row's text (pictographs gone, first title line as filename)", stamped?.tvRow?.filename === "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP" && stamped.tvRow.description.split("\n")[1] === "42 2.1 GB" && stamped.tvRow.detail.includes("42 2.1 GB"), JSON.stringify(stamped?.tvRow));
   r.eq("streamsRoom.search stamps the saved filters each stream passes", stamped?.tvFilters, ["hd"]);
   e.settings.patch({ customStreamFilters: [] });
+  // Bug pass: a search superseded on the same token answers "aborted" and leaves the newer
+  // search's results (which resolve / deadRef index into) alone.
+  {
+    let calls = 0;
+    const prev = rec.node.host.fetch;
+    rec.node.host.fetch = async (req) => {
+      if (req.url.startsWith(`${base}/stream/movie/tt0111161`)) {
+        calls += 1;
+        if (calls === 1) await new Promise((res) => setTimeout(res, 300));
+      }
+      return prev(req);
+    };
+    const older = e.streamsRoom.search("race", "default", true, null, film, null);
+    await new Promise((res) => setTimeout(res, 20));
+    const newer = await e.streamsRoom.search("race", "default", true, null, film, null, { strictMode: false });
+    const old = await older;
+    r.ok("streamsRoom.search: the superseded search answers aborted, the newer keeps the token's results", old.error === "aborted" && old.result === null && newer.result?.picker.all.length > 0 && e.streamsRoom.deadRef("race", 0) !== null, JSON.stringify({ old: old.error, newer: newer.result?.picker.all.length }));
+    rec.node.host.fetch = prev;
+  }
   const files = [{ idx: 0, name: "sample.mkv", length: 10 }, { idx: 1, name: "Show.S01E02.1080p.mkv", length: 900 }, { idx: 2, name: "Show.S01E03.1080p.mkv", length: 1000 }, { idx: 3, name: "info.nfo", length: 5000 }];
   r.eq("P2P: p2pFileIdx picks the episode's file, else the largest video", [e.streamsRoom.p2pFileIdx(files, 1, 2), e.streamsRoom.p2pFileIdx(files, null, null), e.streamsRoom.p2pFileIdx([{ idx: 0, name: "a.nfo", length: 3 }], 1, 1)], [1, 2, 0]);
   rec.dispose();
@@ -1746,6 +1770,28 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
 
 // ------------------------------------------------------------------------ person room
 r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "default", true), { hasKey: false, person: null });
+// Bug pass: a collaborators run whose title credits all fail must not re-fire forever (the page
+// re-reads on harbor:person-updated; an unwritten or empty list used to start another run).
+{
+  const pr = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const creditHits = [];
+  pr.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (/\/3\/person\/287\b/.test(req.url)) return json({ id: 287, name: "Brad Pitt", known_for_department: "Acting", biography: "", combined_credits: {
+      cast: [1, 2, 3].map((n) => ({ id: 500 + n, media_type: "movie", title: `Film ${n}`, character: "Lead", popularity: 10 - n, vote_average: 7, vote_count: 900, release_date: "2001-01-01", order: 0 })), crew: [] } });
+    if (/\/credits/.test(req.url)) creditHits.push(req.url);
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  pr.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, pr.engine.settings.sourceKeyFor("default", true));
+  const pings = [];
+  pr.engine.runtime.onEvent((type) => { if (type === "harbor:person-updated") pings.push(type); });
+  const first = await pr.engine.personRoom.page(287, "default", true);
+  for (let i = 0; i < 120 && pings.length === 0; i++) await new Promise((res) => setTimeout(res, 25));
+  const second = await pr.engine.personRoom.page(287, "default", true);
+  await new Promise((res) => setTimeout(res, 200));
+  r.ok("personRoom: a failed collaborators run answers once and the re-read does not fetch again", first.person?.name === "Brad Pitt" && pings.length === 1 && Array.isArray(second.collaborators) && second.collaborators.length === 0 && creditHits.length > 0 && creditHits.length <= 3, JSON.stringify({ pings: pings.length, hits: creditHits.length }));
+  pr.dispose();
+}
 
 // --------------------------------------------------------------------- anilist / mal
 {

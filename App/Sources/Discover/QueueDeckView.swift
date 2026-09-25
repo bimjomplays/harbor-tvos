@@ -20,7 +20,13 @@ final class QueueDeckModel: ObservableObject {
         return (p?.id ?? "default", p?.linked ?? true, p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey })
     }
 
+    /// (bug pass) The view's `.task` runs again whenever a Details / Play now cover closes; the deck
+    /// opened again then, back on its first card with a fresh fetch.
+    private var opened = false
+
     func open() async {
+        guard !opened else { return }
+        opened = true
         let p = profile
         if let d: Deck = try? await HarborEngine.shared.call("discoverRoom.queueOpen", [p.id, p.linked]) {
             entries = d.entries; status = d.status
@@ -50,7 +56,10 @@ final class QueueDeckModel: ObservableObject {
     private func remove(_ fn: String) async {
         guard let c = current else { return }
         _ = try? await HarborEngine.shared.callJSON("discoverRoom.\(fn)", [.string(c.id)])
-        entries.remove(at: index)
+        // (bug pass) Left / Right may have moved the deck while the engine answered: drop that pick by id.
+        guard let at = entries.firstIndex(where: { $0.id == c.id }) else { return }
+        entries.remove(at: at)
+        if at < index { index -= 1 }
         if index >= entries.count { index = max(0, entries.count - 1) }
         if entries.isEmpty { status = "empty" }
         if entries.count - index - 1 <= 6 { await extend() }

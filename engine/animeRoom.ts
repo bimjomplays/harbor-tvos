@@ -178,19 +178,39 @@ function withCardExtras(items: LibraryItem[]): Array<LibraryItem & { _cw: Record
 
 // ------------------------------------------------------------------- watched filter
 const ANIME_WATCH_ID = /^(kitsu|mal|anilist):/;
-/** use-bp-anime.ts lateRef: hero and picks ids seen so far (capped; ids never leave). */
-const lateAnimeIds = new Set<string>();
+/** use-bp-anime.ts lateRef: hero and picks ids seen so far. (bug pass) Keyed by profile (one
+ *  profile's hero ids never feed another's AniList / Simkl lookups) and LRU-bounded: at the cap
+ *  the oldest id is evicted instead of the set freezing, so later passes' ids still join. A Map
+ *  keeps insertion order; re-seeing an id moves it to the newest end. */
+const lateAnimeIdsByProfile = new Map<string, Map<string, true>>();
 const LATE_IDS_CAP = 400;
 
-function noteLateAnimeIds(metas: Meta[]): boolean {
+function lateAnimeIds(profileId: string): string[] {
+  return [...(lateAnimeIdsByProfile.get(profileId)?.keys() ?? [])];
+}
+
+function noteLateAnimeIds(profileId: string, metas: Meta[], cap = LATE_IDS_CAP): boolean {
+  let ids = lateAnimeIdsByProfile.get(profileId);
+  if (!ids) { ids = new Map(); lateAnimeIdsByProfile.set(profileId, ids); }
   let grew = false;
   for (const m of metas) {
-    if (lateAnimeIds.size >= LATE_IDS_CAP) break;
-    if (!ANIME_WATCH_ID.test(m.id) || lateAnimeIds.has(m.id)) continue;
-    lateAnimeIds.add(m.id);
+    if (!m || typeof m.id !== "string" || !ANIME_WATCH_ID.test(m.id)) continue;
+    if (ids.has(m.id)) { ids.delete(m.id); ids.set(m.id, true); continue; }
+    ids.set(m.id, true);
     grew = true;
+    while (ids.size > cap) {
+      const oldest = ids.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      ids.delete(oldest);
+    }
   }
   return grew;
+}
+
+/** Tests: note ids for a profile (optional small cap) and read that profile's set back. */
+export function lateIdsForTest(profileId: string, ids: string[], cap?: number): string[] {
+  noteLateAnimeIds(profileId, ids.map((id) => ({ id } as Meta)), cap);
+  return lateAnimeIds(profileId);
 }
 
 /** use-bp-anime-watched.ts isAnimeWatched: Simkl completed or any Simkl / AniList watched episode. */
@@ -229,7 +249,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   // also feed the "Hide anime I've already watched" filter; watchedIds is CW plus the hero and
   // picks ids of earlier passes (review 32: the filter read local flags only).
   const sources = conf.enabled || hideWatched
-    ? await cwWatchedSources(cwRaw, false, hideWatched ? [...lateAnimeIds] : []).catch(() => null)
+    ? await cwWatchedSources(cwRaw, false, hideWatched ? lateAnimeIds(profileId) : []).catch(() => null)
     : null;
   const filterOpts: AnimeFilterOpts = { excludeOrigins: s.animeExcludeOrigins ?? [], hideWatched, isWatched: sources ? animeWatchedFrom(sources) : undefined };
   const cw = conf.enabled
@@ -249,7 +269,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   const specRows = filterSpecRows(rowsByKey, topPicks);
   // use-bp-anime.ts lateIds: hero and picks ids join watchedIds for the next pass (AniList only
   // answers for ids it was asked about), and that pass re-reads when the list grew.
-  if (hideWatched && noteLateAnimeIds([...hero.metas, ...picked]) && anilistConnectedNow()) setTimeout(notify, 0);
+  if (hideWatched && noteLateAnimeIds(profileId, [...hero.metas, ...picked]) && anilistConnectedNow()) setTimeout(notify, 0);
 
   // use-bp-anime auto-fill: a row the dedupe left short pulls its next page, up to a budget.
   if (filled.size < AUTO_FILL_BUDGET) {

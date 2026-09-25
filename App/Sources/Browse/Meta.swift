@@ -44,6 +44,64 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
     }
 }
 
+/// (bug pass) Addon catalogs reach Swift as the addon wrote them: `imdbRating` or `releaseInfo` as a
+/// number, `genres` / `cast` as objects, `tmdbScore` as a string. With the synthesized decoder one
+/// such meta failed the whole `[Meta]` and so the whole room ("Couldn't load this room"). This
+/// decoder takes numbers as strings and the reverse, and drops a field it cannot read instead.
+/// It lives in an extension so the memberwise initializer stays; encoding stays synthesized.
+extension Meta {
+    private enum LenientKeys: String, CodingKey {
+        case id, type, name, poster, background, logo, description, releaseInfo, releaseDate, inTheaters, imdbRating, tmdbScore
+        case runtime, genres, adult, isCollection, providerBadge, videos, cast, director, writer, trailerStreams
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LenientKeys.self)
+        func str(_ k: LenientKeys) -> String? {
+            if let s = try? c.decodeIfPresent(String.self, forKey: k) { return s }
+            if let n = try? c.decodeIfPresent(Double.self, forKey: k), n.isFinite {
+                return n == n.rounded() && abs(n) < 1e15 ? String(Int64(n)) : String(n)
+            }
+            return nil
+        }
+        func strings(_ k: LenientKeys) -> [String]? {
+            if let list = try? c.decodeIfPresent([AnyJSON].self, forKey: k) {
+                return list.compactMap { v -> String? in
+                    if case .string(let s) = v { return s }
+                    if case .object(let o) = v, case .string(let s)? = o["name"] { return s }
+                    return nil
+                }
+            }
+            return nil
+        }
+        guard let id = str(.id), !id.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: LenientKeys.id, in: c, debugDescription: "meta without an id")
+        }
+        self.init(id: id, type: str(.type) ?? "", name: str(.name) ?? "",
+                  poster: str(.poster), background: str(.background), logo: str(.logo), description: str(.description),
+                  releaseInfo: str(.releaseInfo), releaseDate: str(.releaseDate),
+                  inTheaters: try? c.decodeIfPresent(Bool.self, forKey: .inTheaters),
+                  imdbRating: str(.imdbRating),
+                  tmdbScore: (try? c.decodeIfPresent(Double.self, forKey: .tmdbScore)) ?? str(.tmdbScore).flatMap { Double($0) },
+                  runtime: str(.runtime), genres: strings(.genres),
+                  adult: try? c.decodeIfPresent(Bool.self, forKey: .adult),
+                  isCollection: try? c.decodeIfPresent(Bool.self, forKey: .isCollection),
+                  providerBadge: try? c.decodeIfPresent(ProviderBadge.self, forKey: .providerBadge),
+                  videos: try? c.decodeIfPresent([AnyJSON].self, forKey: .videos),
+                  cast: strings(.cast), director: strings(.director), writer: strings(.writer),
+                  trailerStreams: try? c.decodeIfPresent([TrailerStream].self, forKey: .trailerStreams))
+    }
+}
+
+extension Array where Element: Identifiable {
+    /// (bug pass) First occurrence of each id. ForEach and `.focused(equals:)` need unique ids;
+    /// addon catalogs, TMDB credits and Cinemeta videos all repeat entries now and then.
+    func uniquedById() -> [Element] {
+        var seen = Set<Element.ID>()
+        return filter { seen.insert($0.id).inserted }
+    }
+}
+
 /// `collection`: bp-collection-card's 16:9 plate (Home "Collections" row).
 enum TileShape: String, Codable { case poster, wide, rank, brand, collection }
 

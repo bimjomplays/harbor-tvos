@@ -237,7 +237,7 @@ final class DetailModel: ObservableObject {
         // A newer order toggle's reply wins; an empty one leaves the current order on screen (review 31).
         guard gen == animeSeasonsGen, w.source != "none", !w.groups.isEmpty else { return }
         var groups: [String: [Episode]] = [:]
-        for g in w.groups { groups[g.key] = g.episodes.map { animeEpisode($0, showSeason: g.showSeason) } }
+        for g in w.groups { groups[g.key] = g.episodes.map { animeEpisode($0, showSeason: g.showSeason) }.uniquedById() }   // (bug pass)
         animeGroups = groups
         animeChips = w.seasons
         if !w.orderTypes.isEmpty { animeOrders = w.orderTypes }
@@ -334,7 +334,7 @@ final class DetailModel: ObservableObject {
                 if let y = a.detail.year { m.releaseInfo = y }
                 if !a.detail.genres.isEmpty { m.genres = a.detail.genres }
                 meta = m
-                episodes = a.episodes.map { animeEpisode($0, showSeason: false) }
+                episodes = a.episodes.map { animeEpisode($0, showSeason: false) }.uniquedById()   // (bug pass)
                 seasons = Array(Set(episodes.map(\.season))).sorted()
                 if let first = seasons.first, !seasons.contains(season) { season = first }
                 characters = a.characters
@@ -417,10 +417,12 @@ final class DetailModel: ObservableObject {
         let p = ProfilesStore.shared.active
         // An anime chip of the TVDB order mixes Kitsu seasons: started / next-up / masks follow the strip itself.
         let chip = animeSeasonKey
+        let asked = season
         let shown: [String]? = chip == nil ? nil : seasonEpisodes.map { "\($0.season):\($0.episode)" }
-        guard let s: WatchedState = try? await HarborEngine.shared.call("episodeWatched.state", [meta.id, episodeRefs, season, p?.id ?? "default", p?.linked ?? true, shown]) else { return }
+        guard let s: WatchedState = try? await HarborEngine.shared.call("episodeWatched.state", [meta.id, episodeRefs, asked, p?.id ?? "default", p?.linked ?? true, shown]) else { return }
         // A chip change (or the TVDB order landing) started its own read; this one is stale.
-        guard chip == animeSeasonKey else { return }
+        // (bug pass) So is a read for a season the viewer already left: started / masks are per season.
+        guard chip == animeSeasonKey, asked == season else { return }
         watched = Set(s.watched)
         started = Set(s.started)
         spoilerMasks = s.masks
@@ -571,7 +573,8 @@ final class DetailModel: ObservableObject {
                                thumbnail: v["thumbnail"]?.string, released: date, playEpisode: play))
         }
         out.sort { ($0.season, $0.episode) < ($1.season, $1.episode) }
-        episodes = out
+        // (bug pass) Cinemeta / addon video lists can repeat an id; the strip's ForEach needs unique ones.
+        episodes = out.uniquedById()
         let all = Array(Set(out.map(\.season))).sorted()
         // Specials (season 0) go last, like upstream.
         seasons = all.filter { $0 > 0 } + all.filter { $0 == 0 }
