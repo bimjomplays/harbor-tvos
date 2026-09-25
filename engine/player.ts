@@ -28,6 +28,10 @@ import { isAutoSelectableSubtitleTrack, pickDesiredSubtitleTrack } from "@/lib/s
 import type { Settings } from "@/lib/settings";
 import type { PlayerStreamRef } from "@/lib/view";
 import { stallWaitSec } from "@/lib/player/stall-wait";
+import { harborImdbMpaRating, harborImdbParental } from "@/lib/providers/harbor-imdb";
+import { isAdvisoryIgnored } from "@/lib/player/content-advisory-ignore";
+import { tmdbImdbId } from "@/lib/providers/tmdb/tmdb-imdb-resolve";
+import { t } from "@/lib/i18n";
 
 /**
  * The playback settings the Big Picture chrome reads (settings/defaults.ts): the up-next lead
@@ -733,4 +737,59 @@ export function noteSubtitleSource(file: string, source: string): boolean {
 export function trackMemory(key: TrackMemoryKey | null) {
   if (!key?.metaId) return { prefs: null, subtitle: null };
   return { prefs: readPlayerPrefs(key.metaId), subtitle: readRememberedSub(mediaKeyOf(key)) };
+}
+
+/**
+ * (player parity pass 2) use-content-advisory.ts + content-advisory-toast.tsx: with
+ * settings.contentAdvisoryToast on (off by default), the IMDb parental-guide categories and the
+ * MPA rating of the title that is playing, for the toast the player shows when playback starts.
+ * The imdb id is resolved as use-track-autoload does (the stream's, a tt meta id, else TMDB's).
+ * null when the setting is off, there is no id, the title's advisory is ignored on this device,
+ * or there is nothing to show (content-advisory-toast hasContent). Rows are the toast's `rated`:
+ * known severities other than None, highest first, with metaFor's label and icon through t().
+ */
+export type AdvisoryRow = { kind: string; label: string; severity: string; severityLabel: string; rank: number };
+export type ContentAdvisory = { imdbId: string; mpaRating: string | null; rows: AdvisoryRow[]; monochrome: boolean; title: string };
+
+const ADVISORY_SEV_RANK: Record<string, number> = { None: 0, Mild: 1, Moderate: 2, Severe: 3 };
+
+function advisoryMetaFor(category: string): { kind: string; label: string } {
+  const normalized = category.toLowerCase();
+  if (normalized.includes("sex") || normalized.includes("nudity")) return { kind: "sex", label: "Sex & Nudity" };
+  if (normalized.includes("violence") || normalized.includes("gore")) return { kind: "violence", label: "Violence & Gore" };
+  if (normalized.includes("profanity") || normalized.includes("language")) return { kind: "profanity", label: "Profanity" };
+  if (normalized.includes("alcohol") || normalized.includes("drug") || normalized.includes("smoking")) {
+    return { kind: "substances", label: "Alcohol, Drugs & Smoking" };
+  }
+  if (normalized.includes("frighten") || normalized.includes("intense")) return { kind: "frightening", label: "Frightening & Intense Scenes" };
+  return { kind: "other", label: category };
+}
+
+export function advisoryRows(categories: Array<{ category: string; severity: string }>): AdvisoryRow[] {
+  return (categories ?? [])
+    .filter((c) => ADVISORY_SEV_RANK[c.severity] !== undefined && c.severity !== "None")
+    .sort((a, b) => (ADVISORY_SEV_RANK[b.severity] ?? 0) - (ADVISORY_SEV_RANK[a.severity] ?? 0))
+    .map((c) => {
+      const m = advisoryMetaFor(c.category);
+      return { kind: m.kind, label: t(m.label), severity: c.severity, severityLabel: t(c.severity), rank: ADVISORY_SEV_RANK[c.severity] ?? 1 };
+    });
+}
+
+export async function contentAdvisory(
+  profileId: string,
+  linked: boolean,
+  imdbId: string | null,
+  metaId: string | null,
+): Promise<ContentAdvisory | null> {
+  const settings = loadEffective(profileId, linked) as Settings;
+  if (!settings.contentAdvisoryToast) return null;
+  let id: string | null = imdbId || null;
+  if (!id && metaId && metaId.startsWith("tt")) id = metaId;
+  if (!id && metaId && settings.tmdbKey) id = await tmdbImdbId(settings.tmdbKey, metaId).catch(() => null);
+  if (!id || isAdvisoryIgnored(id)) return null;
+  const categories = await harborImdbParental(id).catch(() => []);
+  const mpaRating = harborImdbMpaRating(id);
+  const rows = advisoryRows(categories);
+  if (rows.length === 0 && !mpaRating) return null;
+  return { imdbId: id, mpaRating, rows, monochrome: settings.contentAdvisoryTheme === "monochrome", title: t("Content advisory") };
 }

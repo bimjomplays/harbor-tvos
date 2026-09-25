@@ -42,6 +42,11 @@ final class SettingsBridge: ObservableObject {
         /// settings.audioProfile ("off" | "bass" | "voice" | "bass-reduce" | "night"), mpv only.
         var audioNormalize: Bool? = false
         var audioProfile: String? = "off"
+        /// (player parity pass 2) use-video-fill.ts settings.cropMode ("fit" | "fill" | "stretch" |
+        /// "zoom" | "16:9" | "4:3" | "21:9" | "1.85:1" | "original") and use-live-picture-eq.ts
+        /// settings.mpvTweaks (its picture keys), both set on desktop and applied by the players.
+        var cropMode: String? = "fit"
+        var mpvTweaks: [String: String]? = nil
         // Anime4K (settings/defaults.ts:235-261), applied by the player through the engine's gates.
         var playerAnime4k: Bool? = false
         var playerAnime4kAnimeOnly: Bool? = true
@@ -356,6 +361,17 @@ extension SettingsBridge.Slice {
         subAssOverride = c.lenient("subAssOverride")
         audioNormalize = c.lenient("audioNormalize")
         audioProfile = c.lenient("audioProfile")
+        cropMode = c.lenient("cropMode")
+        // mpvTweaks is Record<string, string> upstream; a value synced as a number still counts
+        // (use-live-picture-eq parseFloat), and anything else is dropped on its own.
+        if let raw = c.lenient("mpvTweaks", as: [String: AnyJSON].self) {
+            var tweaks: [String: String] = [:]
+            for (key, value) in raw {
+                if let text = value.string { tweaks[key] = text }
+                else if let n = value.number { tweaks[key] = String(n) }
+            }
+            mpvTweaks = tweaks
+        }
         playerAnime4k = c.lenient("playerAnime4k")
         playerAnime4kAnimeOnly = c.lenient("playerAnime4kAnimeOnly")
         playerAnime4kIndicator = c.lenient("playerAnime4kIndicator")

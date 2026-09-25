@@ -122,6 +122,14 @@ final class NativePlayerController: UIViewController {
         // hidden transport has no PiP button, and AVPlayerViewController has no call to start one.
         host.allowsPictureInPicturePlayback = false
         host.view.backgroundColor = .black
+        // (player parity pass 2) use-video-fill.ts on the html5 bridge: Fill is object-fit cover,
+        // Stretch is fill, everything else contain (its aspect override and zoom do nothing there).
+        let crop: PictureFill.Mode = PictureFill.mode(SettingsBridge.shared.slice.cropMode)
+        if crop.stretch {
+            host.videoGravity = .resize
+        } else if crop.panscan > 0 {
+            host.videoGravity = .resizeAspectFill
+        }
         host.view.isUserInteractionEnabled = false
         addChild(host)
         host.view.frame = view.bounds

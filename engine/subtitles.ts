@@ -23,6 +23,7 @@ import { loadSubPresets } from "@/lib/player/sub-presets";
 import { gatherStreamAddons } from "./streams";
 import { isSafeProviderSubtitleUrl } from "@/lib/subtitles/provider-url";
 import { subtitleTrackDownloadHeaders } from "@/lib/subtitles/provider-auth";
+import { t } from "@/lib/i18n";
 
 function langCodes(names: string[] | undefined): string[] {
   const out = (names ?? ["English"]).map((n) => normalizeLang(n)).filter(Boolean);
@@ -158,7 +159,8 @@ function trackDetail(track: TrackInfo): string {
 function resultDetail(r: SubResult): string {
   const parts = [providerLabel(r)];
   if (r.format) parts.push(r.format.toUpperCase());
-  if (typeof r.downloads === "number" && r.downloads > 0) parts.push(`${r.downloads} dl`);
+  // bp-subtitle-parts.tsx resultDetail: t("{count} dl", { count }) (player parity pass 2).
+  if (typeof r.downloads === "number" && r.downloads > 0) parts.push(t("{count} dl", { count: r.downloads }));
   const rel = releaseOf(r);
   if (rel) parts.push(rel);
   return parts.join(" · ");

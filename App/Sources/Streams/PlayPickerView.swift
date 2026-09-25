@@ -537,7 +537,8 @@ struct PlayPickerView: View {
             if !cached.isEmpty { all = cached }
         }
         var fellBack = false
-        if let id = model.activeFilterId {
+        // `activeStreamFilter && !hostMatch`: a room host's match overrides the saved filter.
+        if let id = model.activeFilterId, model.hostScores == nil {
             let matched = all.filter { $0.tvFilters?.contains(id) ?? true }
             if matched.isEmpty { fellBack = true } else { all = matched }
         }
@@ -577,9 +578,9 @@ struct PlayPickerView: View {
         let next: String = ids[(at + 1) % ids.count]
         if next == "addons" || next == "p2p" {
             sourceKind = "online"
-            Task { await model.setStreamMode(next) }
+            model.setStreamMode(next)
         } else {
-            if model.streamMode != "both" { Task { await model.setStreamMode("both") } }
+            if model.streamMode != "both" { model.setStreamMode("both") }
             sourceKind = next
         }
     }
@@ -641,7 +642,22 @@ struct PlayPickerView: View {
                 return a.isCached != b.isCached ? a.isCached : a.index < b.index
             }
         }
+        // (player parity pass 2) bp-stream-filters displayStreams: under a room host playing this
+        // title the host match leads (a stable sort), in place of the remembered pick.
+        if let scores = model.hostScores { return hostMatchFirst(sorted, scores) }
         return pinnedFirst(sorted)
+    }
+
+    /// bp-stream-filters `ordered.slice().sort((a, b) => hostMatch(b) - hostMatch(a))`, stable.
+    private func hostMatchFirst(_ list: [ScoredStream], _ scores: [String: Double]) -> [ScoredStream] {
+        let ranked: [(offset: Int, element: ScoredStream)] = Array(list.enumerated())
+        let sorted: [(offset: Int, element: ScoredStream)] = ranked.sorted { a, b in
+            let sa: Double = a.element.tvKey.flatMap { scores[$0] } ?? 0
+            let sb: Double = b.element.tvKey.flatMap { scores[$0] } ?? 0
+            if sa != sb { return sa > sb }
+            return a.offset < b.offset
+        }
+        return sorted.map { $0.element }
     }
 
     /// bp-stream-filters `pinned`: the remembered stream leads the list whenever the filters keep it.
@@ -900,8 +916,12 @@ struct PlayPickerView: View {
             }
             Text(verbatim: s.addonName).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1.2).foregroundStyle(BP.inkMuted)
                 .lineLimit(1).frame(maxWidth: BP.px(240), alignment: .leading)
+            if let match = model.hostMatchBadge(s) { hostMatchChip(match) }
             if showDub, let kind = labels.dubSub { dubSubPill(kind) }
-            if showQuality {
+            if showQuality, let formats = labels.formats {
+                // (player parity pass 2) bp-stream-row `badges.map(FormatBadge)`: the badge images.
+                ForEach(formats, id: \.kind) { b in formatBadge(b) }
+            } else if showQuality {
                 ForEach(labels.badges, id: \.self) { b in
                     Text(verbatim: b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4).foregroundStyle(BP.ink).lineLimit(1)
                         .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
@@ -914,6 +934,41 @@ struct PlayPickerView: View {
                     .background(Capsule().fill(BP.glass))
             }
         }
+    }
+
+    /// (player parity pass 2) format-badge.tsx FormatBadge size "md": the image at 80% of MAX_HEIGHT
+    /// (40), no wider than 1.8 x WIDTH (42), with its two drop shadows; the badge's name when the
+    /// image is missing from the bundle.
+    @ViewBuilder private func formatBadge(_ b: ScoredStream.Labels.Format) -> some View {
+        if let art = StreamBadgeArt.image(b.file) {
+            let height: CGFloat = BP.px(32)
+            let aspect: CGFloat = art.size.height > 0 ? art.size.width / art.size.height : 1
+            let width: CGFloat = min(BP.px(75.6), height * aspect)
+            Image(uiImage: art).resizable().scaledToFit()
+                .frame(width: width, height: height)
+                .shadow(color: Color.black.opacity(0.55), radius: 1)
+                .shadow(color: Color.black.opacity(0.4), radius: 2, y: 1)
+                .accessibilityLabel(Text(verbatim: b.text))
+        } else {
+            Text(verbatim: b.text).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4).foregroundStyle(BP.ink).lineLimit(1)
+                .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
+                .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.on))
+        }
+    }
+
+    /// (player parity pass 2) components/host-match-chip.tsx (short form): "Same file" in the accent,
+    /// "Close match" quiet.
+    private func hostMatchChip(_ match: String) -> some View {
+        let same: Bool = match == "same"
+        let fg: Color = same ? BP.accent : BP.inkMuted
+        let bg: Color = same ? BP.accent.opacity(0.15) : BP.raised
+        let ring: Color = same ? BP.accent.opacity(0.3) : BP.edge
+        let label: String = same ? T("Same file") : T("Close match")
+        return Text(verbatim: label).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1)
+            .foregroundStyle(fg).lineLimit(1)
+            .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(2))
+            .background(RoundedRectangle(cornerRadius: BP.px(6)).fill(bg))
+            .overlay(RoundedRectangle(cornerRadius: BP.px(6)).stroke(ring, lineWidth: 1))
     }
 
     /// components/dub-sub-pill.tsx: SUB quiet, DUB in the accent, DUAL in emerald.

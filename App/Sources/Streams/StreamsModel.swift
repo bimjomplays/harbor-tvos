@@ -49,6 +49,10 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
         var quality: String
         var confidence: String
         var badges: [String]
+        /// (player parity pass 2) FormatBadge: each streamBadges kind with its image under badges/
+        /// (tools/sync_upstream_assets.sh) and the name written when the image cannot be drawn.
+        struct Format: Decodable, Equatable { var kind: String; var file: String; var text: String }
+        var formats: [Format]?
         var dubSub: String?
         var edition: String?
         var cached: Bool
@@ -194,15 +198,19 @@ final class StreamsModel: ObservableObject {
         lastMeta = meta; lastEpisode = episode
         phase = .searching
         streams = []; primary = nil; progress = (0, 0); rememberedIndex = nil
+        hostMatchRun += 1
+        hostScores = nil
         subscribeOnce()
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
         struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String?; var sort: String?; var streamMode: String? }
+        let modeGen: Int = streamModeGen
         if let f: Filters = try? await HarborEngine.shared.call("streamsRoom.streamFilters", [p?.id ?? "default", p?.linked ?? true]), gen == searchGen {
             savedFilters = f.filters
             activeFilterId = f.activeId
             streamSort = f.sort ?? "addon"
-            streamMode = f.streamMode ?? "both"
+            // A source-chip press made while this read was on its way stays.
+            if modeGen == streamModeGen { streamMode = f.streamMode ?? "both" }
         }
         Task { [weak self] in
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
@@ -247,13 +255,28 @@ final class StreamsModel: ObservableObject {
     }
 
     /// bp-stream-filters setStreamMode: update({ streamMode }), so it sticks for next time.
-    func setStreamMode(_ mode: String) async {
+    /// (player parity pass 2; review 18 open item) The mode changes at once, in the press (the
+    /// source chip stepped from a value a Task had not written yet, so a quick double press made
+    /// one step), the saves run one after another, and only the newest press's answer lands (an
+    /// older answer arriving between two presses put the chip back a step and the next press
+    /// skipped one).
+    func setStreamMode(_ mode: String) {
         streamMode = mode
+        streamModeGen += 1
+        let gen: Int = streamModeGen
+        let previous: Task<Void, Never>? = streamModeSave
         let p = ProfilesStore.shared.active
-        if let saved: String = try? await HarborEngine.shared.call("streamsRoom.setStreamMode", [p?.id ?? "default", p?.linked ?? true, mode]) {
-            streamMode = saved
+        let args: [any Encodable] = [p?.id ?? "default", p?.linked ?? true, mode]
+        streamModeSave = Task { [weak self] in
+            await previous?.value
+            let saved: String? = try? await HarborEngine.shared.call("streamsRoom.setStreamMode", args)
+            guard let self, let saved, gen == self.streamModeGen else { return }
+            self.streamMode = saved
         }
     }
+    /// The newest source-chip press, and the save chain it waits on.
+    private var streamModeGen = 0
+    private var streamModeSave: Task<Void, Never>?
 
     /// bp-stream-chips Refresh (use-pipeline-result refresh): the same search again.
     func refresh() async {
@@ -272,6 +295,7 @@ final class StreamsModel: ObservableObject {
 
     func cancel() {
         unsubscribe?(); unsubscribe = nil; subscribed = false
+        togetherSub = nil
         Task { _ = try? await HarborEngine.shared.callJSON("streamsRoom.cancelSearch", [.string(token)]) }
     }
 
@@ -411,9 +435,65 @@ final class StreamsModel: ObservableObject {
         }
         streams = all
         primary = picker.primary.flatMap { prim in all.first { $0.url == prim.url && $0.infoHash == prim.infoHash && $0.addonId == prim.addonId } } ?? all.first
+        scheduleHostMatch()
+    }
+
+    // MARK: Watch Together host match (use-bp-streams hostMatch, source-match.ts)
+
+    /// (player parity pass 2) use-bp-streams hostMatch: a guest in a room whose host is playing this
+    /// title gets each row's scoreSourceMatch against the host's source (engine streamsRoom.hostMatch,
+    /// keyed by tvKey). nil outside that case. The picker draws "Same file" / "Close match" from it
+    /// and lets it lead the order (bp-stream-filters displayStreams).
+    @Published private(set) var hostScores: [String: Double]?
+    private var hostMatchRun = 0
+    private var togetherSub: AnyCancellable?
+
+    /// What the host match depends on in the room (use-bp-streams hostSourceForMedia's inputs).
+    private struct HostMatchKey: Equatable {
+        var state: String
+        var hostClientId: String?
+        var clientId: String
+        var hostSource: TogetherModel.HostSource?
+    }
+
+    private func watchTogether() {
+        guard togetherSub == nil else { return }
+        togetherSub = TogetherModel.shared.$view
+            .map { v in HostMatchKey(state: v.state, hostClientId: v.hostClientId, clientId: v.clientId, hostSource: v.hostSource) }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in self?.scheduleHostMatch() }
+    }
+
+    private func scheduleHostMatch() {
+        hostMatchRun += 1
+        let run: Int = hostMatchRun
+        let room = TogetherModel.shared.view
+        let foreignHost: Bool = (room.hostClientId ?? "").isEmpty == false && room.hostClientId != room.clientId
+        guard let meta = lastMeta, room.state == "joined", foreignHost, room.hostSource != nil, !streams.isEmpty else {
+            if hostScores != nil { hostScores = nil }
+            return
+        }
+        let season: Int? = lastEpisode?["season"]?.number.map { Int($0) }
+        let ep: Int? = lastEpisode?["episode"]?.number.map { Int($0) }
+        let args: [any Encodable] = [token, meta.id, season, ep]
+        Task { [weak self] in
+            let scores: [String: Double]? = try? await HarborEngine.shared.call("streamsRoom.hostMatch", args)
+            guard let self, run == self.hostMatchRun else { return }
+            if scores != self.hostScores { self.hostScores = scores }
+        }
+    }
+
+    /// source-match.ts matchBadge: "same" from MATCH_SAME_FILE (1000), "close" from MATCH_CLOSE (300).
+    func hostMatchBadge(_ s: ScoredStream) -> String? {
+        guard let scores = hostScores, let key = s.tvKey, let score = scores[key] else { return nil }
+        if score >= 1000 { return "same" }
+        if score >= 300 { return "close" }
+        return nil
     }
 
     private func subscribeOnce() {
+        watchTogether()
         guard !subscribed else { return }
         subscribed = true
         unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in

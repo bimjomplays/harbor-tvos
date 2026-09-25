@@ -43,6 +43,9 @@ targets:
       - path: App/Upstream/marks
         type: folder
         buildPhase: resources
+      - path: App/Upstream/badges
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MPVKit
         product: MPVKit

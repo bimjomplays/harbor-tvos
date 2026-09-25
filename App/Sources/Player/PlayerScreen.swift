@@ -96,6 +96,10 @@ struct PlayerScreen: View {
     /// A second early end of the same source: the source error card says so, instead of a frozen
     /// last frame with nothing to press (use-auto-retry triggerAutoRetry's sourceError).
     @State private var endedEarly: String?
+    /// use-started-near-end.ts: the stream the first playing reading was taken for, and whether
+    /// that reading was at 80% or later (NEAR_END_RATIO). Keyed by the URL, as upstream's src.url.
+    @State private var nearEndCapturedFor: URL?
+    @State private var startedNearEnd = false
 
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
@@ -284,6 +288,11 @@ struct PlayerScreen: View {
             }
             // Watch Together: roster, lobby, room chat lines, drawings/cursors (view-only, no focus).
             TogetherPlayerLayer(playback: together)
+            // (player parity pass 2) stage-overlays.tsx ContentAdvisoryToast (contentAdvisoryToast, off by default).
+            if !isLive, let context {
+                ContentAdvisoryLayer(imdbId: context.imdbId, metaId: context.meta.id, playKey: playURL,
+                                     playing: status.state == "playing", hidden: pipActive, clock: clock)
+            }
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
@@ -538,6 +547,7 @@ struct PlayerScreen: View {
             skipTick()
             nowPlayingTick()
             noteLivePlayed()
+            noteStartedNearEnd()
             stallTick()
             stubTick()
         }
@@ -951,6 +961,23 @@ struct PlayerScreen: View {
         if progress { livePlayed = true }
     }
 
+    /// use-started-near-end.ts: the first reading while playing, with a length and a position, says
+    /// whether this stream started at 80% or later (re-watching an ending). Such a stream does not
+    /// auto-advance, go on through the queue or close by itself at its end (use-auto-next-episode,
+    /// use-queue-advance, use-auto-end-exit). A new URL (a source swapped in place) takes a new reading.
+    private func noteStartedNearEnd() {
+        let src: URL = playURL
+        guard nearEndCapturedFor != src, status.state == "playing" else { return }
+        let dur: Double = clock.snap.duration
+        let pos: Double = clock.snap.position
+        guard dur > 0, pos > 0 else { return }
+        nearEndCapturedFor = src
+        startedNearEnd = pos / dur >= 0.8
+    }
+
+    /// startedNearEndRef.current for the stream on screen (false until its reading is taken).
+    private var startedNearEndNow: Bool { nearEndCapturedFor == playURL && startedNearEnd }
+
     /// (player/live device pass) use-auto-retry.ts premature EOF (isTruncatedEnd): a stream that
     /// ends well short of its length (the connection dropped and mpv played out its cache, or
     /// AVPlayer's item ran out) sat frozen on its last frame with nothing on screen to press. It is
@@ -1021,6 +1048,10 @@ struct PlayerScreen: View {
         guard !isLive else { return }
         // use-sleep-timer.ts: "End of episode" (or the last of "End of next episode") stops here.
         let sleepStops = SleepTimer.shared.episodeEnded()
+        // (player parity pass 2) use-started-near-end.ts: a stream started at 80% or later stays on
+        // its end: no next episode, no Still watching, no close (the sleep count above still runs,
+        // as use-sleep-timer does not read the guard).
+        if startedNearEndNow { return }
         // (bug pass 2) player.tsx canChangeEpisode = !inRoom || isHost: a Watch Together guest never
         // moves on by itself. use-auto-end-exit.ts `(canChangeEpisode || roomGuest) && nextEp`: with
         // a next episode the guest stays on the end for the host's pick (the room's "Now watching"

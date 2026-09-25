@@ -6,6 +6,7 @@ import { mediaServerConnections, saveMediaServerConnection, removeMediaServerCon
 import { discoverAndAuthenticate } from "@/lib/media-server/discovery";
 import { synchronizeMediaServer, subscribeMediaServerSyncProgress, mediaServerAdapter } from "@/lib/media-server/sync";
 import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries, mediaServerMetadata, putMediaServerMetadata, pruneMediaServerMetadata, identityMatches } from "@/lib/media-server/index-store";
+import { mediaServerIndexVersion } from "./media/index-store";
 import { hydrateLibraryMeta } from "@/views/library/hydrate-meta";
 import { createRequestScheduler } from "@/lib/request-scheduler";
 import { matchingServerItems, serverPlayableCopies, groupMediaServerTitles } from "@/lib/media-server/selectors";
@@ -426,6 +427,22 @@ function providerName(provider: MediaServerProvider): string {
 export type TitleServer = { id: string; name: string; provider: MediaServerProvider; providerName: string };
 
 /**
+ * (player parity pass 2; review 18 open item) groupMediaServerTitles over the enabled connections'
+ * items, kept until the index changes (mediaServerIndexVersion) or another set of connections is
+ * enabled. Every Detail page grouped the whole index again for its "Available in" marks. The
+ * version is read before the items: a write landing meanwhile leaves this grouping stale-keyed,
+ * so the next page groups again.
+ */
+let titleGroupsMemo: { key: string; titles: MediaServerTitle[] } | null = null;
+async function enabledTitleGroups(enabled: Set<string>): Promise<MediaServerTitle[]> {
+  const key = `${mediaServerIndexVersion()}|${[...enabled].sort().join(",")}`;
+  if (titleGroupsMemo && titleGroupsMemo.key === key) return titleGroupsMemo.titles;
+  const titles = groupMediaServerTitles((await mediaServerItems()).filter((item) => enabled.has(item.connectionId)));
+  titleGroupsMemo = { key, titles };
+  return titles;
+}
+
+/**
  * hooks/use-title-media-servers.ts: the enabled connections whose index holds this title, for
  * detail/bp-hero-notes.tsx BpHeroMarks ("Available in {name}" per server).
  */
@@ -436,7 +453,7 @@ export async function titleServers(metaId: string, imdbId: string | null): Promi
   const conns = mediaServerConnections().filter((c) => c.enabled);
   if (conns.length === 0) return [];
   const enabled = new Set(conns.map((c) => c.id));
-  const titles = groupMediaServerTitles((await mediaServerItems()).filter((item) => enabled.has(item.connectionId)));
+  const titles = await enabledTitleGroups(enabled);
   const ids = new Set(titles.filter((t) => identityMatches(t.identity, identity)).flatMap((t) => t.connectionIds));
   return conns.filter((c) => ids.has(c.id)).map((c) => ({ id: c.id, name: c.name, provider: c.provider, providerName: providerName(c.provider) }));
 }

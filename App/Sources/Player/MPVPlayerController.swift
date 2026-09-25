@@ -209,6 +209,19 @@ final class MPVPlayerController: UIViewController {
             let slice = SettingsBridge.shared.slice
             let af: String = Self.audioFilter(normalize: slice.audioNormalize ?? false, profile: slice.audioProfile)
             if !af.isEmpty { check(mpv_set_option_string(handle, "af", af)) }
+            // (player parity pass 2) use-video-fill.ts apply(): the synced crop mode for each new
+            // stream (zoom starts at 0 per stream). Fit is mpv's own default, so nothing is set for it.
+            let crop: PictureFill.Mode = PictureFill.mode(slice.cropMode)
+            if crop.id != "fit" {
+                check(mpv_set_option_string(handle, "panscan", crop.panscan > 0 ? "1" : "0"))
+                check(mpv_set_option_string(handle, "video-aspect-override", crop.aspect))
+                check(mpv_set_option_string(handle, "keepaspect", crop.stretch ? "no" : "yes"))
+            }
+            // use-live-picture-eq.ts: the desktop's picture look (mpvTweaks brightness, contrast,
+            // saturation, gamma, sharpen).
+            for eq in PictureFill.pictureEq(slice.mpvTweaks) {
+                check(mpv_set_option_string(handle, eq.key, eq.value))
+            }
         }
         check(mpv_set_option_string(handle, "subs-fallback", "yes"))
         check(mpv_set_option_string(handle, "keep-open", "yes"))

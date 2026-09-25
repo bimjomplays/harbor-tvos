@@ -592,6 +592,8 @@ export const streamsRoom = {
   setStreamSort: streamGlue.setStreamSort,
   /** bp-stream-filters setStreamMode: settings.streamMode ("both" | "addons" | "p2p"). */
   setStreamMode: streamGlue.setStreamMode,
+  /** (player parity pass 2) use-bp-streams hostMatch: scoreSourceMatch per row against the room host's source. */
+  hostMatch: streamGlue.hostMatch,
   pickerRowLabels: streamGlue.pickerRowLabels,
   preferredStreamLangs: streamGlue.preferredStreamLangs,
   pickerRowText: streamGlue.pickerRowText,
@@ -1123,6 +1125,9 @@ export const player = {
   startRate: playerGlue.startRate,
   noteSubtitleSource: playerGlue.noteSubtitleSource,
   trackMemory: playerGlue.trackMemory,
+  /** (player parity pass 2) use-content-advisory.ts: the toast's rows when contentAdvisoryToast is on. */
+  contentAdvisory: playerGlue.contentAdvisory,
+  advisoryRows: playerGlue.advisoryRows,
 };
 
 /** Calendar room (views/calendar.tsx): one month per call, header prefs, the Custom rail, reminders. */
@@ -1290,6 +1295,8 @@ export const together = {
   wasInvitedTo: togetherGlue.wasInvitedTo,
   playerOpened: togetherGlue.playerOpened,
   sourceDescriptor: togetherGlue.sourceDescriptor,
+  /** (player parity pass 2) use-bp-streams hostSourceForMedia (the picker's host match reads it). */
+  hostSourceForMedia: togetherGlue.hostSourceForMedia,
   inviteUrl: togetherGlue.inviteUrl,
   view: togetherGlue.view,
   reset: togetherGlue.reset,

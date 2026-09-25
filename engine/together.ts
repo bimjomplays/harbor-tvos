@@ -33,7 +33,8 @@ import type {
   PartialSyncState,
   RemoteCursor,
 } from "@/lib/together/provider-types";
-import { deriveHostSource, deriveRoomGuestPick, type LastInviteMeta } from "@/lib/together/room-derive";
+import { deriveHostSource, deriveRoomGuestPick, hostSourceMatchesMedia, type LastInviteMeta } from "@/lib/together/room-derive";
+import type { SourceDescriptor } from "@/lib/together/protocol";
 import { HARBOR_PUBLIC_RELAY, isPublicRelay, relayOutdated } from "@/lib/together/relay-version";
 import { buildInviteUrl, WEB_JOIN_BASE } from "@/lib/together/invite";
 import { buildPlayInvite } from "@/lib/together/build-invite";
@@ -551,6 +552,19 @@ function locationLabel(loc: ParticipantLocation | undefined): string | null {
 }
 
 /** Everything the TV screens read, as plain JSON. */
+/**
+ * (player parity pass 2) use-bp-streams.ts hostSourceForMedia: the host's source descriptor when
+ * this TV is in a joined room under someone else's host and that host is playing this title (and
+ * this episode). null otherwise, as upstream's hook returns.
+ */
+export function hostSourceForMedia(mediaId: string, episode: { season: number; episode: number } | null): SourceDescriptor | null {
+  ensureIdentity();
+  const foreignHost = Boolean(snapshot.hostClientId) && snapshot.hostClientId !== clientId;
+  if (snapshot.state !== "joined" || !foreignHost) return null;
+  const hostSource = deriveHostSource(snapshot);
+  return hostSourceMatchesMedia(hostSource, mediaId, episode) ? (hostSource?.descriptor ?? null) : null;
+}
+
 export function view() {
   ensureIdentity();
   const inSession = snapshot.state === "joined" && !!snapshot.room;

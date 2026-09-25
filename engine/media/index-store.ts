@@ -19,9 +19,18 @@ function writeJson(key: string, value: unknown): void {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
 }
 function connectionIds(): string[] { return readJson<string[]>(CONNS, []); }
+
+/**
+ * (player parity pass 2) Bumped by every write to the items or the manual mappings (the only
+ * writers are the functions below), so a reader can keep what it built from mediaServerItems()
+ * until the index changes (homeServers.titleServers' grouping, once per Detail page).
+ */
+let indexVersion = 0;
+export function mediaServerIndexVersion(): number { return indexVersion; }
 function itemsOf(connectionId: string): MediaServerItem[] { return readJson<MediaServerItem[]>(ITEMS + connectionId, []); }
 
 export async function putMediaServerItems(items: MediaServerItem[], deletedIds: string[] = [], connectionId?: string): Promise<void> {
+  indexVersion++;
   const touched = new Set<string>(items.map((i) => i.connectionId));
   if (connectionId) touched.add(connectionId);
   for (const cid of touched) {
@@ -46,6 +55,7 @@ export async function mediaServerItems(connectionId?: string): Promise<MediaServ
 }
 
 export async function removeMediaServerItems(connectionId: string): Promise<void> {
+  indexVersion++;
   try { localStorage.removeItem(ITEMS + connectionId); } catch { /* ignore */ }
   writeJson(CONNS, connectionIds().filter((id) => id !== connectionId));
 }
@@ -54,6 +64,7 @@ export async function setManualMapping(connectionId: string, itemId: string, ide
   const list = (await manualMappings()).filter((m) => !(m.connectionId === connectionId && m.itemId === itemId));
   list.push({ connectionId, itemId, identity });
   writeJson(MAPPINGS, list);
+  indexVersion++;
 }
 
 export async function manualMappings(): Promise<Array<{ connectionId: string; itemId: string; identity: MediaIdentity }>> {

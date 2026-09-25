@@ -658,6 +658,39 @@ r.ok("benchmark still works", (() => {
   again.dispose();
 }
 
+// --------------------------- (player parity pass 2) content advisory toast (use-content-advisory.ts), fixtures
+{
+  const adv = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.advisory.ignored.v1", JSON.stringify(["tt0000002"])],
+  ]) });
+  const asked = [];
+  adv.node.host.fetch = async (req) => {
+    asked.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === "https://harbor.site/api/imdb/parental/tt0000001") return json({ mpaRating: "R", categories: [
+      { category: "Profanity", severity: "Mild" },
+      { category: "Sex & Nudity", severity: "None" },
+      { category: "Violence & Gore", severity: "Severe" },
+      { category: "Frightening & Intense Scenes", severity: "Moderate" },
+      { category: "Odd", severity: "Weird" },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const AE = adv.engine;
+  r.eq("player.contentAdvisory: off by default (settings.contentAdvisoryToast), nothing fetched", [await AE.player.contentAdvisory("default", true, "tt0000001", null), asked.length], [null, 0]);
+  AE.settings.patchFor({ contentAdvisoryToast: true }, "default", true);
+  const a1 = await AE.player.contentAdvisory("default", true, null, "tt0000001");
+  r.eq("player.contentAdvisory: the toast's rated rows (no None, unknown severities out, highest first) and the MPA rating", a1 && [a1.imdbId, a1.mpaRating, a1.title, a1.monochrome, a1.rows.map((x) => [x.kind, x.label, x.severity, x.severityLabel, x.rank])], ["tt0000001", "R", "Content advisory", false, [["violence", "Violence & Gore", "Severe", "Severe", 3], ["frightening", "Frightening & Intense Scenes", "Moderate", "Moderate", 2], ["profanity", "Profanity", "Mild", "Mild", 1]]]);
+  r.eq("player.contentAdvisory: an ignored title (harbor.advisory.ignored.v1) is not fetched", [await AE.player.contentAdvisory("default", true, "tt0000002", null), asked.some((u) => u.includes("tt0000002"))], [null, false]);
+  r.eq("player.contentAdvisory: no guide and no rating → nothing to show", await AE.player.contentAdvisory("default", true, "tt0000003", null), null);
+  r.eq("player.contentAdvisory: no imdb id and no TMDB key → null", await AE.player.contentAdvisory("default", true, null, "tmdb:603"), null);
+  AE.settings.patchFor({ contentAdvisoryTheme: "monochrome" }, "default", true);
+  r.eq("player.contentAdvisory: contentAdvisoryTheme monochrome", (await AE.player.contentAdvisory("default", true, "tt0000001", null)).monochrome, true);
+  r.eq("player.advisoryRows: metaFor keeps an unknown category's own name", AE.player.advisoryRows([{ category: "Spiders", severity: "Mild" }]).map((x) => [x.kind, x.label]), [["other", "Spiders"]]);
+  adv.dispose();
+}
+
 // --------------------------- X-Ray while paused (components/player/xray, use-xray-cast.ts), fixtures
 {
   const TMDB = "https://api.themoviedb.org/3";
@@ -1979,6 +2012,9 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
     const guessed = labels({ resolution: "4K", source: "Other", size: undefined, reasons: [] });
     r.eq("(picker parity) qualityConfidence: nothing detected reads No Label, a bare 4K claim Unverified (the pill says it, no duplicate badge)", [bare.quality, bare.badges, guessed.quality, guessed.confidence, guessed.badges.includes("Quality unverified")], ["No Label", [], "Unverified", "unverified", false]);
     r.eq("(picker parity) streamDubSub on anime only: English + Japanese DUAL, English DUB, Japanese SUB", [labels({ audioLanguages: ["English", "Japanese"] }, true).dubSub, labels({ audioLanguages: ["English"] }, true).dubSub, labels({ audioLanguages: ["jpn"] }, true).dubSub, labels({ audioLanguages: ["English"] }, false).dubSub], ["dual", "dub", "sub", null]);
+    // (player parity pass 2) FormatBadge images: every streamBadges kind (the resolution too), with its badges/ file.
+    r.eq("(picker parity 2) formats: FormatBadge kinds with their image files, the lead resolution included", torrent?.tvLabels?.formats, [{ kind: "1080p", file: "1080p_fhd.webp", text: "1080p" }, { kind: "bluray", file: "bluray.png", text: "Blu-ray" }]);
+    r.eq("(picker parity 2) formats: a bare 4K claim keeps upstream's Quality unverified image beside the Unverified pill", guessed.formats.map((b) => [b.kind, b.file]), [["unknown", "unknown.png"]]);
     r.eq("(picker parity) an external-only stream reads External, a url-less hash-less one Cache", [labels({ infoHash: undefined, url: undefined, externalUrl: "https://example.invalid/watch" }).availability, labels({ infoHash: undefined, url: undefined }).availability], ["external", "cache"]);
     r.eq("(picker parity) bp-stream-filters preferredLangs: Japanese only for an anime request, one per code", [e.streamsRoom.preferredStreamLangs({ preferredLanguages: ["English", "en"], preferredAudioLangs: ["Japanese"] }, false), e.streamsRoom.preferredStreamLangs({ preferredLanguages: ["English"], preferredAudioLangs: [] }, true)], [["English"], ["English", "Japanese"]]);
     r.eq("(picker parity) streamsRoom.setStreamMode persists settings.streamMode; an unknown mode reads both", [e.streamsRoom.setStreamMode("default", true, "p2p"), e.settings.load().streamMode, e.streamsRoom.streamFilters("default", true).streamMode, e.streamsRoom.setStreamMode("default", true, "bogus")], ["p2p", "p2p", "p2p", "both"]);
@@ -2549,6 +2585,23 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   // use-title-media-servers: the Detail hero's "Available in {name}" marks, per server holding the title.
   r.eq("(picker parity) homeServers.titleServers: every enabled server that holds the title", (await ms.engine.homeServers.titleServers("tmdb:movie:11", null)).map((c) => [c.id, c.name, c.providerName]), [["msA", "Den", "Jellyfin"], ["msB", "Attic", "Jellyfin"]]);
   r.eq("(picker parity) homeServers.titleServers by IMDb id; none for an unknown title or no identity", [(await ms.engine.homeServers.titleServers("tt0000002", null)).map((c) => c.id), await ms.engine.homeServers.titleServers("tt9999999", null), await ms.engine.homeServers.titleServers("kitsu:1", null)], [["msA"], [], []]);
+  {
+    // (player parity pass 2) titleServers keeps its grouping until the index or the enabled servers change.
+    const memo = loadEngine({ storage: seedMs([
+      item("msA", "a1", "L1", "Movies", "movie", "Star Film", { tmdbId: 11 }, 100),
+      item("msB", "b1", "L9", "Films", "movie", "Star Film", { tmdbId: 11 }, 90),
+    ], [conn("msA", "Den"), conn("msB", "Attic")]) });
+    const ts = async () => (await memo.engine.homeServers.titleServers("tmdb:movie:11", null)).map((c) => c.id);
+    const before = [await ts(), await ts()];
+    memo.engine.homeServers.update("msB", { enabled: false });
+    const off = await ts();
+    memo.engine.homeServers.update("msB", { enabled: true });
+    const on = await ts();
+    memo.engine.homeServers.remove("msA");
+    const gone = await ts();
+    r.eq("homeServers.titleServers (memoized per index version): a disabled, re-enabled or removed server is not served from the kept grouping", [before, off, on, gone], [[["msA", "msB"], ["msA", "msB"]], ["msA"], ["msA", "msB"], ["msB"]]);
+    memo.dispose();
+  }
   const hits = [];
   ms.node.host.fetch = async (req) => {
     hits.push(req.url);
@@ -3802,6 +3855,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   await wait(220);
   const v1 = T.view();
   r.ok("joined: in a room of two as a guest, host's source derived", v1.state === "joined" && v1.inRoom && !v1.isHost && v1.participants[0].name === "Ana" && v1.participants[0].host && v1.hostSource && v1.hostSource.descriptor.resolution === "1080p", JSON.stringify(v1).slice(0, 400));
+  // (player parity pass 2) use-bp-streams hostSourceForMedia / hostMatch: the picker matches rows only to a foreign host playing this title.
+  r.eq("together.hostSourceForMedia: the host's descriptor for its title; null for another title or an episode of it", [T.hostSourceForMedia("tt0111161", null), T.hostSourceForMedia("tt0000001", null), T.hostSourceForMedia("tt0111161", { season: 1, episode: 1 })], [{ resolution: "1080p", infoHash: "0123456789abcdef0123456789abcdef01234567" }, null, null]);
+  r.eq("streamsRoom.hostMatch: scores (none for a token with no rows) under a matching host, null for another title", [rec.engine.streamsRoom.hostMatch("no-such-token", "tt0111161", null, null), rec.engine.streamsRoom.hostMatch("no-such-token", "tt0000001", null, null)], [{}, null]);
   r.ok("joined with media playing turns into an invite (client.ts joined → invite)", v1.incomingInvite && v1.incomingInvite.invite.mediaId === "tt0111161" && v1.incomingInvite.name === "Ana" && T.wasInvitedTo("tt0111161||"), JSON.stringify(v1.incomingInvite));
   r.ok("incoming state reaches the host as harbor:together-sync at once", events.some(([t, d]) => t === "harbor:together-sync" && d.kind === "state" && d.state.mediaId === "tt0111161"), JSON.stringify(events.map(([t, d]) => [t, d && d.kind])));
   r.ok("the view reaches the host as a throttled harbor:together event", events.some(([t, d]) => t === "harbor:together" && d && d.state === "joined"));

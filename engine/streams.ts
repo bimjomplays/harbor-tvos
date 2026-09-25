@@ -20,6 +20,9 @@ import type { ScoredStream } from "@/lib/streams/types";
 import type { PlayEpisode } from "@/lib/view";
 import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure, displayTitle, torrentFilename, streamSummaryParts, contributorLabel, streamIdentity, anyStreamCached, abbreviateLanguages, normalizeLangCode } from "@/views/play-picker/picker-utils";
 import { qualityConfidence, streamBadges, type BadgeKind } from "@/components/format-badge";
+import { badgeState } from "@/lib/stream-badges";
+import { scoreSourceMatch } from "@/lib/together/source-match";
+import { hostSourceForMedia } from "./together";
 import { streamDubSub, type DubSub } from "@/components/dub-sub-pill";
 import { QUALITY_LABEL, qualityKey } from "@/components/player/stream-switcher/quality";
 import { filterStreamsByMode } from "@/lib/streams/mode";
@@ -354,12 +357,45 @@ const BADGE_TEXT: Partial<Record<BadgeKind, string>> = {
 const QUALITY_KINDS = new Set<BadgeKind>(["4k-uhd", "1080p", "720p", "480p", "sd", "no-label", "unknown"]);
 
 /**
+ * (player parity pass 2) format-badge.tsx SRC: each kind's image under src/assets/badges, which
+ * tools/sync_upstream_assets.sh copies into the app as badges/. FormatBadge draws these.
+ */
+const BADGE_FILE: Record<BadgeKind, string> = {
+  "8k": "8k.png", "4k-uhd": "4k_uhd.webp", uhd: "uhd.png", "2k-qhd": "2k_qhd.png", "1080p": "1080p_fhd.webp", "1080i": "1080i.png",
+  "720p": "720p_hd.webp", "576p": "576p_pal.png", "480p": "480p.png", "360p": "360p_240p.png", hd: "hd.webp", sd: "sd.png",
+  dvd: "dvd.webp", "3d": "3d.webp", imax: "imax.png", bluray: "bluray.png", remux: "remux.png", webdl: "webdl.png",
+  webrip: "webrip.png", hdtv: "hdtv.png", dvb: "dvb.png", hevc: "hevc.png", av1: "av1.png", hdr: "hdr.webp", hdr10: "hdr10.png",
+  "hdr10-plus": "hdr10plus.webp", dv: "dv.webp", hlg: "hlg.png", sdr: "sdr.png", atmos: "atmos.webp", "atmos-912": "atmos_912.png",
+  truehd: "truehd.webp", "dts-hd": "dtshd.webp", "dts-hd-ma": "dtshd_ma.png", "dts-x": "dtsx.webp", dts: "dts.png", dd: "dd.png",
+  ddp: "ddplus.png", ac3: "ac3.png", eac3: "eac3.png", aac: "aac.png", flac: "flac.png", mp3: "mp3.png", opus: "opus.png",
+  pcm: "pcm.png", lpcm: "lpcm.png", stereo: "stereo.webp", mono: "mono.png", "5.1": "5_1.webp", "7.1": "7_1.webp", cam: "cam.png",
+  hdcam: "hdcam.png", telesync: "telesync.png", hdts: "hdts.png", telecine: "telecine.png", scr: "scr.png", wp: "wp.png",
+  extended: "extended.png", remastered: "remastered.png", repack: "repack.png", "no-label": "no_label.png", unknown: "unknown.png",
+};
+
+/**
+ * (player parity pass 2) bp-stream-row.tsx `badges.map((b) => <FormatBadge kind={b} />)`: every
+ * streamBadges kind (the resolution too: upstream draws it beside the quality pill), less the ones
+ * the viewer hid (stream-badges override `hidden`), each with its image file and a name to write
+ * when the image cannot be drawn.
+ */
+export type PickerFormatBadge = { kind: BadgeKind; file: string; text: string };
+export function pickerFormatBadges(stream: ScoredStream): PickerFormatBadge[] {
+  const overrides = badgeState().overrides ?? {};
+  return streamBadges(stream)
+    .filter((k) => overrides[k]?.hidden !== true)
+    .map((k) => ({ kind: k, file: BADGE_FILE[k], text: BADGE_TEXT[k] ?? k.toUpperCase() }))
+    .filter((b) => typeof b.file === "string" && b.file.length > 0);
+}
+
+/**
  * bp-stream-row.tsx BpStreamRow's labels:
  * - `quality`: the quality pill, t("No Label") / t("Unverified") when qualityConfidence says so, else
  *   QUALITY_LABEL[qualityKey] (English; the TV translates the first two).
  * - `badges`: streamBadges as names, less the leading one the quality pill already says (a
  *   resolution, No Label, Unverified; CAM / TS / TC when the pill names them). Both follow
  *   settings.showQualityBadge on the TV side.
+ * - `formats`: FormatBadge's images (pickerFormatBadges), which the TV draws in place of `badges`.
  * - `dubSub`: streamDubSub(audioLanguages, isAnime), before settings.showDubBadge.
  * - `cached` / `cachedOn`: bp-streams `cached={anyStreamCached(stream) || s.cachedOn(stream) != null}`
  *   and use-bp-streams cachedOn (your own cloud first: "In {name}", else "Cached on {name}").
@@ -369,6 +405,7 @@ export type PickerRowLabels = {
   quality: string;
   confidence: "labeled" | "unverified" | "unlabeled";
   badges: string[];
+  formats: PickerFormatBadge[];
   dubSub: DubSub | null;
   edition: string | null;
   cached: boolean;
@@ -401,6 +438,7 @@ export function pickerRowLabels(stream: ScoredStream, debrids: DebridStore[], is
     quality,
     confidence,
     badges,
+    formats: pickerFormatBadges(stream),
     dubSub: streamDubSub(stream.audioLanguages, isAnime),
     edition: stream.edition ? editionText(stream.edition) : null,
     cached,
@@ -712,6 +750,23 @@ export function deadRef(token: string, streamIndex: number, key: string | null =
     source: stream.source ?? null,
     size: stream.size ?? null,
   };
+}
+
+/**
+ * (player parity pass 2) use-bp-streams hostMatch: with a host playing this title in the room
+ * (hostSourceForMedia), source-match.ts scoreSourceMatch for every listed stream, keyed by its row
+ * identity (streamIdentity, the TV's tvKey). The TV draws matchBadge's "Same file" / "Close match"
+ * from it and sorts by it (bp-stream-filters displayStreams). null outside that case.
+ */
+export function hostMatch(token: string, mediaId: string, season: number | null, episode: number | null): Record<string, number> | null {
+  const host = hostSourceForMedia(mediaId, season != null && episode != null ? { season, episode } : null);
+  if (!host) return null;
+  const out: Record<string, number> = {};
+  for (const s of lastResults.get(token)?.picker.all ?? []) {
+    const key = streamIdentity(s);
+    if (!(key in out)) out[key] = scoreSourceMatch(s, host);
+  }
+  return out;
 }
 
 export function forget(token: string): void {
