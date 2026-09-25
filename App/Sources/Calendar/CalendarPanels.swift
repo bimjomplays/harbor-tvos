@@ -201,7 +201,7 @@ struct CalendarConfigRailView: View {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Filters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                            Text("Filters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                             Text(rail?.summary ?? "").font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
                         }
                         Spacer()

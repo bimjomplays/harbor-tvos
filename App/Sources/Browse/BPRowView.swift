@@ -31,6 +31,7 @@ struct BPRowView: View {
             HStack(spacing: BP.px(14)) {
                 Text(row.title)
                     .font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil && !seeAllFocused ? 0.55 : 1))
+                    .accessibilityAddTraits(.isHeader)
                 if let onSeeAll, focusedId != nil || seeAllFocused {
                     Button("See all", action: onSeeAll)
                         .buttonStyle(BPSeeAllStyle())

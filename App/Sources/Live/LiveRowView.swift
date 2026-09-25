@@ -38,7 +38,7 @@ struct LiveRowView: View {
             if !model.cells.isEmpty {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
                     HStack(spacing: BP.px(14)) {
-                        Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil ? 0.55 : 1))
+                        Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil ? 0.55 : 1)).accessibilityAddTraits(.isHeader)
                         if focusedId != nil { Button("Guide") { onOpenGuide() }.buttonStyle(BPActionStyle()) }
                     }
                     .padding(.horizontal, BP.gutter)

@@ -98,7 +98,7 @@ struct SportsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(SportsModel.Mode.allCases, id: \.rawValue) { m in
-                        Button(T(m.label)) { model.setMode(m) }.buttonStyle(BPActionStyle(primary: model.mode == m))
+                        Button(T(m.label)) { model.setMode(m) }.buttonStyle(BPActionStyle(primary: model.mode == m)).bpSelected(model.mode == m)
                     }
                     Divider().frame(height: BP.px(24)).overlay(BP.edge2)
                     Button("Make it yours") { personalize = true }.buttonStyle(BPActionStyle())
@@ -110,9 +110,9 @@ struct SportsView: View {
             if let p = model.page, p.showGroups {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
-                        Button("Your sports") { model.setGroup("all") }.buttonStyle(BPActionStyle(primary: model.group == "all"))
+                        Button("Your sports") { model.setGroup("all") }.buttonStyle(BPActionStyle(primary: model.group == "all")).bpSelected(model.group == "all")
                         ForEach(p.groups) { g in
-                            Button(g.label) { model.setGroup(g.key) }.buttonStyle(BPActionStyle(primary: model.group == g.key))
+                            Button(g.label) { model.setGroup(g.key) }.buttonStyle(BPActionStyle(primary: model.group == g.key)).bpSelected(model.group == g.key)
                         }
                         Button("All sports") { model.setMode(.explore) }.buttonStyle(BPActionStyle())
                     }

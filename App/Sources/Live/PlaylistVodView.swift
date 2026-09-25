@@ -268,7 +268,7 @@ struct PlaylistVodView: View {
                 if model.sources.count > 1 {
                     ForEach(model.sources) { s in
                         Button(s.name) { Task { await model.select(s.id) } }
-                            .buttonStyle(BPActionStyle(primary: model.activeId == s.id))
+                            .buttonStyle(BPActionStyle(primary: model.activeId == s.id)).bpSelected(model.activeId == s.id)
                     }
                 } else if let s = model.activeSource {
                     Text(s.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkMuted)
@@ -298,7 +298,7 @@ struct PlaylistVodView: View {
                 if count > 0 { Text(count.formatted()).opacity(0.55) }
             }
         }
-        .buttonStyle(BPActionStyle(primary: model.tab == tab))
+        .buttonStyle(BPActionStyle(primary: model.tab == tab)).bpSelected(model.tab == tab)
     }
 
     @ViewBuilder private var content: some View {
@@ -441,7 +441,7 @@ struct VodSeriesDetail: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
                         ForEach(series.seasons, id: \.self) { s in
-                            Button("Season \(s)") { season = s }.buttonStyle(BPActionStyle(primary: currentSeason == s))
+                            Button("Season \(s)") { season = s }.buttonStyle(BPActionStyle(primary: currentSeason == s)).bpSelected(currentSeason == s)
                         }
                     }
                     .padding(.vertical, BP.px(4))

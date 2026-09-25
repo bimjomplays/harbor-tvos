@@ -20,6 +20,7 @@ struct WhoIsWatchingView: View {
             VStack(spacing: BP.px(34)) {
                 VStack(spacing: BP.px(8)) {
                     Text("Who's watching?").font(BP.display(36)).foregroundStyle(BP.ink)
+                        .accessibilityAddTraits(.isHeader)
                     Text("Pick a profile to continue.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
                 }
                 if profiles.profiles.isEmpty {
@@ -83,6 +84,8 @@ struct WhoIsWatchingView: View {
         }
         .buttonStyle(BPTileStyle(radius: faceSize * 0.71))
         .accessibilityIdentifier("who-tile-\(p.id)")
+        // bp-who-is-watching-tile.tsx aria-label t("Switch to {name}"); the lock badge adds "PIN".
+        .accessibilityLabel(Text(verbatim: p.passwordHash != nil ? "\(T("Switch to %@", p.name)), \(T("PIN"))" : T("Switch to %@", p.name)))
     }
 
     @ViewBuilder private var syncNotice: some View {
@@ -138,7 +141,7 @@ struct ProfileFace: View {
         ZStack {
             Circle().fill(Color(css: profile.color) ?? BP.accent)
             if let art {
-                Image(uiImage: art).resizable().scaledToFill()
+                Image(uiImage: art).resizable().scaledToFill().accessibilityHidden(true)
             } else {
                 Text(initials).font(BP.display(size * 0.34 / BP.k, .semibold)).foregroundStyle(BP.canvas)
             }

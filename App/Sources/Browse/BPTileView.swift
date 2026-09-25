@@ -22,6 +22,14 @@ struct BPTileView: View {
     static var collectionSize: CGSize { CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded()) }
 
     var body: some View {
+        // bp-tile.tsx aria-label={meta.name}: one name for the whole tile. The poster's caption is
+        // invisible until focus, the rank tile has only its numeral, and the mark chips are extras.
+        face
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: meta.name))
+    }
+
+    @ViewBuilder private var face: some View {
         switch shape {
         case .poster: poster
         case .wide: wide

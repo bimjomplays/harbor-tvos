@@ -284,7 +284,7 @@ struct PlayerXRayOverlay: View {
                     if data?.hasDetails == true {
                         ForEach(data?.tabs ?? [], id: \.id) { t in
                             Button { tab = t.id } label: { Text(verbatim: t.label) }
-                                .buttonStyle(BPActionStyle(primary: tab == t.id))
+                                .buttonStyle(BPActionStyle(primary: tab == t.id)).bpSelected(tab == t.id)
                                 .focused(focus, equals: .chip("xray-tab:\(t.id)"))
                         }
                     }
@@ -379,6 +379,8 @@ struct PlayerXRayOverlay: View {
                             }
                             .buttonStyle(BPTileStyle(radius: BP.px(8)))
                             .focused(focus, equals: .chip("xray-v:\(v.ytId)"))
+                            // xray-about.tsx thumb aria-label: `${t("Play")} ${label}`.
+                            .accessibilityLabel(Text(verbatim: "\(T("Play")) \(v.name)"))
                         }
                         ForEach(a.strip, id: \.self) { b in
                             Button { hero = b } label: {
@@ -388,6 +390,9 @@ struct PlayerXRayOverlay: View {
                                     .overlay(RoundedRectangle(cornerRadius: BP.px(8), style: .continuous).stroke(b == shown ? BP.accent : .clear, lineWidth: 2))
                             }
                             .buttonStyle(BPTileStyle(radius: BP.px(8)))
+                            // xray-about.tsx still aria-label t("Show image"); the one on show reads as selected.
+                            .accessibilityLabel(Text(T("Show image")))
+                            .bpSelected(b == shown)
                         }
                     }
                     .focusSection()

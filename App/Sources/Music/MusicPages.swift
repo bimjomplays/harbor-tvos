@@ -273,7 +273,7 @@ struct MusicSearchView: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text(title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+            Text(title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             content()
         }
         .focusSection()
@@ -539,7 +539,7 @@ struct MusicQueueList: View {
         let suggestions = suggesting ? suggested.tracks : []
         VStack(alignment: .leading, spacing: BP.px(10)) {
             if showsTitle {
-                Text(copy("music.row.upNext", "Up next")).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text(copy("music.row.upNext", "Up next")).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             }
             if player.upcoming.isEmpty, suggestions.isEmpty {
                 // music-now-playing.tsx: "Building up next" while the suggestions load.
@@ -883,7 +883,7 @@ struct MusicLastFmView: View {
                 if let pending {
                     HStack(alignment: .top, spacing: BP.px(18)) {
                         if let qr = QRCode.image(pending.authUrl) {
-                            Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(170), height: BP.px(170))
+                            Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(170), height: BP.px(170)).accessibilityLabel(Text(T("QR code")))
                                 .padding(BP.px(8)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
                         }
                         VStack(alignment: .leading, spacing: BP.px(8)) {
@@ -1041,7 +1041,7 @@ struct MusicSpotifyView: View {
         step(1, copy("music.spotifySetup.createTitle", "Create a Spotify app"), copy("music.spotifySetup.createBody", "Use a Spotify Premium account to create an app in the developer dashboard.")) {
             HStack(alignment: .center, spacing: BP.px(14)) {
                 if let qr = QRCode.image(setup?.dashboardUrl ?? "https://developer.spotify.com/dashboard") {
-                    Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(120), height: BP.px(120))
+                    Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(120), height: BP.px(120)).accessibilityLabel(Text(T("QR code")))
                         .padding(BP.px(6)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
                 }
                 VStack(alignment: .leading, spacing: BP.px(4)) {
@@ -1086,7 +1086,7 @@ struct MusicSpotifyView: View {
     @ViewBuilder private func authorize(_ started: MusicSpotifyAuthStart) -> some View {
         HStack(alignment: .top, spacing: BP.px(18)) {
             if let qr = QRCode.image(started.authorizeUrl) {
-                Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(190), height: BP.px(190))
+                Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(190), height: BP.px(190)).accessibilityLabel(Text(T("QR code")))
                     .padding(BP.px(8)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
             }
             VStack(alignment: .leading, spacing: BP.px(8)) {

@@ -485,7 +485,7 @@ struct LiveView: View {
                             }
                         }
                     }
-                    .buttonStyle(BPActionStyle(primary: model.category == c.key))
+                    .buttonStyle(BPActionStyle(primary: model.category == c.key)).bpSelected(model.category == c.key)
                 }
                 if let group = model.currentGroup {
                     Button("Hide group") { Task { await model.toggleGroupHidden(group) } }.buttonStyle(BPActionStyle())
@@ -652,7 +652,7 @@ struct LiveSourcesSheet: View {
                     // bp-live-setup kind picker: M3U link, Xtream Codes login, or guide data only.
                     HStack(spacing: BP.px(8)) {
                         ForEach([("m3u", "M3U playlist"), ("xtream", "Xtream Codes"), ("epg", "Guide data only")], id: \.0) { k, label in
-                            Button(T(label)) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k))
+                            Button(T(label)) { kind = k }.buttonStyle(BPActionStyle(primary: kind == k)).bpSelected(kind == k)
                         }
                     }
                     BPField(label: "Name", placeholder: "My provider", text: $name)
@@ -696,7 +696,7 @@ struct LiveSourcesSheet: View {
                                 Button(pl.name) {
                                     Task { await model.select(pl.id); dismiss() }
                                 }
-                                .buttonStyle(BPActionStyle(primary: model.selectedPlaylist == pl.id))
+                                .buttonStyle(BPActionStyle(primary: model.selectedPlaylist == pl.id)).bpSelected(model.selectedPlaylist == pl.id)
                                 .disabled(guideOnly)
                                 Button("Remove") { Task { await model.remove(pl.id) } }.buttonStyle(BPActionStyle())
                             }

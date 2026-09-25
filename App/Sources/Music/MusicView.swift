@@ -119,7 +119,7 @@ struct MusicBandView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             VStack(alignment: .leading, spacing: BP.px(2)) {
-                Text(band.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focused == nil ? 0.62 : 1))
+                Text(band.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focused == nil ? 0.62 : 1)).accessibilityAddTraits(.isHeader)
                 if !band.subtitle.isEmpty {
                     Text(band.subtitle).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                 }

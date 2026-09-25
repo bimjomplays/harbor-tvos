@@ -298,7 +298,7 @@ struct EBookView: View {
     private var continueRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Continue your bookmarks").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text("Continue your bookmarks").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                 Text("Resume from your saved reading position").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
             .padding(.horizontal, BP.gutter)
@@ -383,7 +383,7 @@ struct EBookView: View {
                     HStack(spacing: BP.px(8)) {
                         ForEach(providers) { p in
                             Button(p.name) { model.loadSources(providers, requested: p.id) }
-                                .buttonStyle(BPActionStyle(primary: model.providerId == p.id))
+                                .buttonStyle(BPActionStyle(primary: model.providerId == p.id)).bpSelected(model.providerId == p.id)
                         }
                     }
                     .padding(.vertical, BP.px(6))
@@ -541,7 +541,7 @@ struct EBookSourcesView: View {
                     BPNote(text: T("Harbor never hosts your books.") + " " + T(Self.tvNote)).frame(maxWidth: BP.px(760), alignment: .leading)
                     if let s = store.state, !s.sources.isEmpty {
                         VStack(alignment: .leading, spacing: BP.px(10)) {
-                            Text("Your sources").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                            Text("Your sources").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                             ForEach(s.sources) { src in
                                 HStack(spacing: BP.px(12)) {
                                     Image(systemName: src.kind == "gutendex" ? "building.columns" : (src.kind == "local" ? "folder" : "globe"))
@@ -563,7 +563,7 @@ struct EBookSourcesView: View {
                         .frame(maxWidth: BP.px(900), alignment: .leading)
                     }
                     VStack(alignment: .leading, spacing: BP.px(10)) {
-                        Text("Bring your own").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                        Text("Bring your own").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                         // GutenbergQuickAdd.
                         let added = store.state?.hasGutendex == true
                         Button { Task { await store.addGutendex() } } label: {

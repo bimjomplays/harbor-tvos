@@ -30,7 +30,7 @@ struct StandingsSection: View {
                     Text("Standings").font(BP.sans(17, .bold)).foregroundStyle(BP.ink)
                     Text(t.season).font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
                     if t.groups.count > 1 {
-                        ForEach(Array(t.groups.enumerated()), id: \.offset) { i, g in Button(g.name) { group = i }.buttonStyle(BPActionStyle(primary: group == i)) }
+                        ForEach(Array(t.groups.enumerated()), id: \.offset) { i, g in Button(g.name) { group = i }.buttonStyle(BPActionStyle(primary: group == i)).bpSelected(group == i) }
                     }
                 }
                 let cols = Array(t.columns.prefix(6))

@@ -230,7 +230,7 @@ struct ExternalLinkView: View {
             BP.void_.opacity(0.94).ignoresSafeArea()
             VStack(spacing: BP.px(14)) {
                 if let qr = QRCode.image(url) {
-                    Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(240), height: BP.px(240))
+                    Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(240), height: BP.px(240)).accessibilityLabel(Text(T("QR code")))
                         .padding(BP.px(10)).background(Color.white).clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                 }
                 Text("This source opens in a web browser. Scan to open it on your phone.").font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)

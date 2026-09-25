@@ -66,7 +66,7 @@ struct DiscoverView: View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             VStack(alignment: .leading, spacing: BP.px(2)) {
                 Text(T(eyebrow)).font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text(T(title)).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                 Text(T(blurb)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
             }
             .padding(.horizontal, BP.gutter)

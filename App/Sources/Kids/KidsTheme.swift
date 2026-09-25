@@ -68,7 +68,7 @@ struct KidsArt: View {
 
     var body: some View {
         if let image {
-            Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode).accessibilityHidden(true)
         } else {
             Color.clear
         }

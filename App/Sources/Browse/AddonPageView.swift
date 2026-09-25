@@ -32,7 +32,7 @@ struct AddonPageView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: BP.px(8)) {
                                 ForEach(catalogs) { c in
-                                    Button("\(c.name) · \(c.type)") { Task { await open(c) } }.buttonStyle(BPActionStyle(primary: active?.key == c.key))
+                                    Button("\(c.name) · \(c.type)") { Task { await open(c) } }.buttonStyle(BPActionStyle(primary: active?.key == c.key)).bpSelected(active?.key == c.key)
                                 }
                             }
                             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))

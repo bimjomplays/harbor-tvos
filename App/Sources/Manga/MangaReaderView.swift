@@ -47,6 +47,8 @@ struct MangaReaderView: View {
                 .disabled(menuOpen || model.failed)
                 .focused($focus, equals: .surface)
                 .onMoveCommand(perform: move)
+                // The page is the only focus stop: VoiceOver names the book instead of an empty button.
+                .accessibilityLabel(Text(verbatim: model.manga.title))
             if counterVisible || menuOpen, !model.loading, !model.failed, model.total > 0 { pageCounter }
             if menuOpen { readerBar.transition(.opacity) }
         }
@@ -343,7 +345,7 @@ struct MangaReaderView: View {
     private var readerBar: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: BP.px(4)) {
-                Text(model.manga.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+                Text(model.manga.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1).accessibilityAddTraits(.isHeader)
                 Text(barSubtitle)
                     .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
             }

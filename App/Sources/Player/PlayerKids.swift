@@ -102,6 +102,8 @@ struct KidsPlayerTransport: View {
                     }
                     .buttonStyle(KidsRoundStyle(size: BP.px(64)))
                     .focused(focus, equals: .chip("mute"))
+                    // transport-kids.tsx KidsVolume aria-label: t("Unmute") while muted, else t("Mute").
+                    .accessibilityLabel(Text(T(muted ? "Unmute" : "Mute")))
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity)
@@ -116,6 +118,8 @@ struct KidsPlayerTransport: View {
                     }
                     .buttonStyle(KidsRoundStyle(size: BP.px(96), fill: .white, focusedFill: .white, ink: KidsTheme.teal))
                     .focused(focus, equals: .chip("playpause"))
+                    // transport-kids.tsx aria-label={playing ? t("Pause") : t("Play")}.
+                    .accessibilityLabel(Text(T(paused ? "Play" : "Pause")))
                     if !isLive {
                         seekButton(1)
                     }
@@ -129,6 +133,9 @@ struct KidsPlayerTransport: View {
                         .buttonStyle(KidsRoundStyle(size: BP.px(64), fill: subtitlesOn ? .white : .white.opacity(0.15),
                                                     focusedFill: subtitlesOn ? .white : .white.opacity(0.25), ink: subtitlesOn ? KidsTheme.teal : .white))
                         .focused(focus, equals: .chip("kids-subtitles"))
+                        // transport-kids.tsx RoundBtn label={t("Subtitles")} active={subActive}.
+                        .accessibilityLabel(Text(T("Subtitles")))
+                        .bpSelected(subtitlesOn)
                     }
                     if canPickAnother {
                         Button(action: onPickAnother) {
@@ -157,7 +164,7 @@ struct KidsPlayerTransport: View {
         }
         .buttonStyle(KidsRoundStyle(size: BP.px(64)))
         .focused(focus, equals: .chip(dir < 0 ? "rewind" : "forward"))
-        .accessibilityLabel(Text(dir < 0 ? "Back 10s" : "Forward 10s"))
+        .accessibilityLabel(Text(T(dir < 0 ? "Back 10s" : "Forward 10s")))
     }
 
     /// transport-utils fmtTime.
@@ -605,6 +612,7 @@ struct KidsStreamSwitcher: View {
                     Button(action: onClose) { Image(systemName: "xmark").font(.system(size: BP.px(22), weight: .heavy)) }
                         .buttonStyle(KidsRoundStyle(size: BP.px(48)))
                         .focused($focus, equals: "close")
+                        .accessibilityLabel(Text(T("Close")))
                 }
                 Text("Pick a video")
                     .font(KidsTheme.font(46, .heavy)).foregroundStyle(.white)

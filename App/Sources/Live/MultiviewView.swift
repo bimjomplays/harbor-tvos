@@ -199,7 +199,7 @@ struct MultiviewView: View {
                         Text(l.id == "2v" ? T(l.title) : l.id)
                     }
                 }
-                .buttonStyle(BPActionStyle(primary: model.layout == l.id))
+                .buttonStyle(BPActionStyle(primary: model.layout == l.id)).bpSelected(model.layout == l.id)
                 .accessibilityLabel(T(l.title))
                 .focused($focus, equals: .band(l.id))
             }
@@ -600,6 +600,6 @@ struct MultiviewPicker: View {
                 if let sub { Text(sub).opacity(0.55) }
             }
         }
-        .buttonStyle(BPActionStyle(primary: scopeId == id))
+        .buttonStyle(BPActionStyle(primary: scopeId == id)).bpSelected(scopeId == id)
     }
 }

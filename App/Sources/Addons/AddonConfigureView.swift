@@ -103,7 +103,7 @@ struct AddonConfigureView: View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             Text(T("Configure on the addon's setup page")).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
             if let url = target.configureUrl, let qr = QRCode.image(url) {
-                Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(260), height: BP.px(260))
+                Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(260), height: BP.px(260)).accessibilityLabel(Text(T("QR code")))
                     .padding(BP.px(10)).background(Color.white).clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                 Text(URL(string: url)?.host ?? "").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkSubtle)
             }

@@ -137,7 +137,7 @@ struct PersonView: View {
     // bp-collaborators: round portraits with the shared-title count and role.
     private func collaborators(_ people: [PersonModel.Collaborator]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Frequent Collaborators").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Frequent Collaborators").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(people.prefix(18)) { c in
@@ -166,7 +166,7 @@ struct PersonView: View {
     private func filterRow(_ heading: String, _ options: [(String, String)], active: String, trailing: String?, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
             Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
-            ForEach(options, id: \.0) { o in Button(T(o.1)) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)) }
+            ForEach(options, id: \.0) { o in Button(T(o.1)) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)).bpSelected(active == o.0) }
             if let trailing { Text(trailing).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
         }
         .focusSection()

@@ -90,6 +90,11 @@ struct SearchView: View {
             Spacer()
         }
         .frame(height: BP.px(44))
+        // bp-search-input.tsx aria-label t("Search Harbor"): one field that reads its query, not the
+        // glass, the placeholder and the caret as three elements.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(T("Search Harbor")))
+        .accessibilityValue(Text(verbatim: model.query))
         .accessibilityIdentifier("search-query")
     }
 
@@ -152,7 +157,7 @@ struct SearchView: View {
     // has nothing to browse and is dropped. Holding Select offers Install.
     private var addonIndexRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Addons you could install").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Addons you could install").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(model.addonHits.filter { $0.transportUrl != nil }) { hit in
@@ -194,7 +199,7 @@ struct SearchView: View {
     // name); Select opens the collection (bp-collection.tsx, a TVDB list).
     private var collectionRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Collections").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Collections").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(model.collections) { hit in
@@ -232,6 +237,7 @@ struct SearchView: View {
                             }
                         }
                         .buttonStyle(BPActionStyle(primary: model.filter == chip.filter))
+                        .bpSelected(model.filter == chip.filter)
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
@@ -255,7 +261,7 @@ struct SearchView: View {
     // bp-search-rows BpChannelCell: a channel from your Live TV sources, Select tunes it.
     private var channelRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+            Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(model.channels) { ch in
@@ -313,7 +319,7 @@ struct SearchView: View {
             // bp-search idle: recent queries as chips, then a "Suggested" row from the hero feed.
             if !model.recent.isEmpty {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
-                    Text("Recent").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+                    Text("Recent").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: BP.px(8)) {
                             ForEach(model.recent, id: \.self) { q in Button(q) { model.query = q }.buttonStyle(BPActionStyle()) }
@@ -341,7 +347,7 @@ struct SearchView: View {
         }
         if model.shows(.people) && !model.people.isEmpty {
             VStack(alignment: .leading, spacing: BP.px(10)) {
-                Text("People").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
+                Text("People").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: BP.trackGap) {
                         ForEach(model.people) { person in
@@ -423,6 +429,7 @@ struct SearchCollectionCell: View {
             LinearGradient(colors: [BP.void_.opacity(0.92), BP.void_.opacity(0.45), .clear], startPoint: .bottom, endPoint: .top)
             HStack(spacing: BP.px(8)) {
                 Image(systemName: "square.stack.3d.up").font(.system(size: BP.px(15), weight: .semibold)).foregroundStyle(BP.inkSubtle)
+                    .accessibilityHidden(true)
                 Text(hit.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
             }
             .padding(BP.px(12))

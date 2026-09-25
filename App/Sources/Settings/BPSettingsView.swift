@@ -170,6 +170,7 @@ struct BPSettingsView: View {
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM, onFocus: { model.select(c.id) }))
         .focused($focus, equals: "cat:\(c.id)")
+        .bpSelected(model.active == c.id)
     }
 
     /// bp-settings.tsx: `onCellFocus={control.id === "sound" ? auditionSound : undefined}`.
@@ -229,6 +230,7 @@ struct BPSettingsView: View {
                             }
                             .buttonStyle(BPTileStyle(radius: BP.rSM))
                             .focused($focus, equals: first && idx == 0 ? "first" : "\(c.id):\(i.value)")
+                            .bpSelected(i.on)
                         }
                     }
                     .padding(.vertical, BP.px(8))
@@ -270,6 +272,9 @@ struct BPSettingsView: View {
 
     private func label(_ text: String) -> some View {
         Text(text.uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle)
+            // The uppercase is styling: VoiceOver reads the control's own spelling as a heading.
+            .accessibilityLabel(Text(verbatim: text))
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func cell(_ text: String, on: Bool, letter: String?, focus: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
@@ -284,5 +289,7 @@ struct BPSettingsView: View {
                 .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).strokeBorder(on ? .clear : BP.edge, lineWidth: 1))
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM, onFocus: focus))
+        // bp-settings-parts.tsx BpOptionRow cells are aria-pressed: the picked one reads as selected.
+        .bpSelected(on)
     }
 }

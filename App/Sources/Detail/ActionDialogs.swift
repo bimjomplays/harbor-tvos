@@ -15,7 +15,7 @@ struct ListDialogView: View {
         ZStack(alignment: .trailing) {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(10)) {
-                Text("Add to list").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text("Add to list").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                 Text(meta.name).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 if lists.isEmpty && !naming { BPNote(text: "No lists yet") }
                 ForEach(lists) { l in
@@ -78,7 +78,7 @@ struct RateDialogView: View {
         ZStack(alignment: .bottom) {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(14)) {
-                Text("Rate this").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                Text("Rate this").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                 Text(meta.name).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 HStack(spacing: BP.px(8)) {
                     ForEach(1...10, id: \.self) { n in

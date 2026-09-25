@@ -268,7 +268,7 @@ struct AddonDetailView: View {
                         .padding(BP.px(14)).frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
                     if revealed, let qr = QRCode.image(d.card.transportUrl) {
-                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(180), height: BP.px(180))
+                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(180), height: BP.px(180)).accessibilityLabel(Text(T("QR code")))
                             .padding(BP.px(8)).background(Color.white).clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                     }
                     if !revealed {

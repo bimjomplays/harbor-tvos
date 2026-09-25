@@ -209,7 +209,7 @@ struct GroupPageView: View {
     }
 
     private func tabButton(_ key: String, _ label: String) -> some View {
-        Button(label) { tab = key }.buttonStyle(BPActionStyle(primary: tab == key))
+        Button(label) { tab = key }.buttonStyle(BPActionStyle(primary: tab == key)).bpSelected(tab == key)
     }
 
     @ViewBuilder private func postsView(_ g: Social.Group) -> some View {

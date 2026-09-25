@@ -174,6 +174,8 @@ struct HarborMark: View {
             .scaledToFit()
             .foregroundStyle(BP.ink)
             .frame(width: size, height: size)
+            // Decoration: VoiceOver read the asset's name ("HarborMark"). The wordmark or a label says Harbor.
+            .accessibilityHidden(true)
     }
 }
 

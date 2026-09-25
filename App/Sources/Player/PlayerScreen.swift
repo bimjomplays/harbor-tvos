@@ -260,6 +260,18 @@ struct PlayerScreen: View {
                     default: wake()
                     }
                 }
+                // bp-player-scrub.tsx role="slider" aria-label t("Seek") aria-valuetext={fmtTime(position)}:
+                // the surface is the scrubber the remote drives, so VoiceOver adjusts it the same way.
+                // A live channel has no timeline: bp-player-shell's t("Player controls").
+                .accessibilityLabel(Text(T(isLive ? "Player controls" : "Seek")))
+                .accessibilityValue(Text(verbatim: isLive ? "" : fmt(pendingSeek ?? snap.position)))
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: if isLive { controller?.seek(10); wake() } else { nudgeSeek(ahead: true) }
+                    case .decrement: if isLive { controller?.seek(-10); wake() } else { nudgeSeek(ahead: false) }
+                    @unknown default: break
+                    }
+                }
             // The Subtitles and Audio dialogs cover the stage, so the transport steps aside for them.
             if chrome, !pipActive, !roomOpen, resumePending == nil, !leaveConfirm, !kidsLoading, !stillPrompt, !xrayOpen, panel == nil || panel == .anime4k, status.state != "error" || (isLive && liveGuide == nil) {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport
@@ -927,14 +939,14 @@ struct PlayerScreen: View {
             // when there is none; VOD gets Back / Forward by the seek step.
             HStack(spacing: BP.px(10)) {
                 if !isLive, onPreviousEpisode != nil || upNext != nil {
-                    iconChip("prev", "backward.end.fill") { let go = onPreviousEpisode; finish(natural: false); go?() }
+                    iconChip("prev", "backward.end.fill", label: T("Previous episode")) { let go = onPreviousEpisode; finish(natural: false); go?() }
                         .disabled(onPreviousEpisode == nil)
                 }
-                if !isLive { iconChip("rewind", "gobackward") { seekBy(-prefs.seekBackStepSec) } }
+                if !isLive { iconChip("rewind", "gobackward", label: T("Back %llds", Int(prefs.seekBackStepSec))) { seekBy(-prefs.seekBackStepSec) } }
                 chip(snap.paused ? "Play" : "Pause", snap.paused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
-                if !isLive { iconChip("forward", "goforward") { seekBy(prefs.seekForwardStepSec) } }
+                if !isLive { iconChip("forward", "goforward", label: T("Forward %llds", Int(prefs.seekForwardStepSec))) { seekBy(prefs.seekForwardStepSec) } }
                 if !isLive, onPreviousEpisode != nil || upNext != nil {
-                    iconChip("next", "forward.end.fill") { playNext() }
+                    iconChip("next", "forward.end.fill", label: T("Next episode")) { playNext() }
                         .disabled(upNext == nil)
                 }
                 Spacer()
@@ -1067,11 +1079,12 @@ struct PlayerScreen: View {
         snap.position = clamped
     }
 
-    /// bp-player-controls.tsx BpControl: an icon-only transport button.
-    private func iconChip(_ id: String, _ icon: String, action: @escaping () -> Void) -> some View {
+    /// bp-player-controls.tsx BpControl: an icon-only transport button, named by its aria-label.
+    private func iconChip(_ id: String, _ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: { action(); wake() }) { Image(systemName: icon) }
             .buttonStyle(BPActionStyle())
             .focused($focus, equals: .chip(id))
+            .accessibilityLabel(Text(verbatim: label))
     }
 
     // MARK: panels (audio / subtitle tracks)
@@ -1134,7 +1147,7 @@ struct PlayerScreen: View {
         return HStack {
             Spacer()
             VStack(alignment: .leading, spacing: BP.px(8)) {
-                Text("Anime4K").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.bottom, BP.px(6))
+                Text("Anime4K").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.bottom, BP.px(6)).accessibilityAddTraits(.isHeader)
                 ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                     Button { setAnime4k(o.0) } label: {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1142,7 +1155,7 @@ struct PlayerScreen: View {
                             Text(T(o.2)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(BPActionStyle(primary: current == o.0))
+                    .buttonStyle(BPActionStyle(primary: current == o.0)).bpSelected(current == o.0)
                     .focused($focus, equals: .track(-10 - i))
                 }
                 if let a = anime4k, a.active { BPNote(text: T("Running mode %@ (%@). Stutter? Switch the tier to Fast in Settings.", a.mode ?? "", a.tier == "fast" ? T("Fast") : "HQ")) }

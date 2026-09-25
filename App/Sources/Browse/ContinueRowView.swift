@@ -16,6 +16,7 @@ struct ContinueRowView: View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
             Text("Jump back in")
                 .font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil ? 0.55 : 1))
+                .accessibilityAddTraits(.isHeader)
                 .padding(.horizontal, BP.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {

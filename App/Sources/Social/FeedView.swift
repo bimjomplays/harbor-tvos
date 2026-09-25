@@ -94,6 +94,8 @@ struct FeedView: View {
                 SocialAvatar(url: item.actor.avatarUrl, name: item.actor.alias, size: BP.px(48), online: item.actor.online)
             }
             .buttonStyle(BPTileStyle(radius: BP.px(24)))
+            // The avatar opens the actor's profile: it reads their name, not their initials.
+            .accessibilityLabel(Text(verbatim: item.actor.alias))
             SocialRow(title: item.title,
                       subtitle: "\(item.actor.alias) \(verb)\(item.subtitle.map { " · \($0)" } ?? "")",
                       trailing: "\(item.rating.map { "★ \(Int($0)) · " } ?? "")\(Social.ago(iso: item.at))") {

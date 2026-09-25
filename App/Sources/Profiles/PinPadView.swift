@@ -33,6 +33,10 @@ struct PinPadView: View {
                     }
                 }
                 .modifier(ShakeEffect(shakes: CGFloat(shake)))
+                // bp-who-is-watching-pin.tsx: the dots are aria-hidden; a count of four stands in.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(T("PIN")))
+                .accessibilityValue(Text(verbatim: "\(entry.count) / 4"))
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(56)), spacing: BP.px(10)), count: 3), spacing: BP.px(10)) {
                     ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "‹"], id: \.self) { key in
                         Button { tap(key) } label: {
@@ -43,6 +47,8 @@ struct PinPadView: View {
                         .buttonStyle(BPTileStyle(radius: BP.rSM))
                         .disabled(secondsLeft > 0 && key != "‹")
                         .accessibilityIdentifier("pin-key-\(key)")
+                        // bp-who-is-watching-pin.tsx aria-label t("Delete") / t("common.back") (English "Back").
+                        .accessibilityLabel(Text(verbatim: key == "⌫" ? T("Delete") : (key == "‹" ? T("Back") : key)))
                     }
                 }
             }

@@ -54,7 +54,7 @@ struct SportsPersonalizeView: View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
-                    ForEach(teamLeagues) { l in Button(l.label) { Task { await loadTeams(l.key) } }.buttonStyle(BPActionStyle(primary: teamLeague == l.key)) }
+                    ForEach(teamLeagues) { l in Button(l.label) { Task { await loadTeams(l.key) } }.buttonStyle(BPActionStyle(primary: teamLeague == l.key)).bpSelected(teamLeague == l.key) }
                 }
                 .padding(.vertical, BP.px(4))
             }

@@ -188,3 +188,11 @@ struct BPThemeCardFace: ViewModifier {
         }
     }
 }
+
+extension View {
+    /// VoiceOver's "selected" for a chip, tab or option that draws its picked state (aria-pressed /
+    /// data-bp-tab-on upstream). A Bool in, so busy view bodies stay cheap to type-check.
+    func bpSelected(_ on: Bool) -> some View {
+        accessibilityAddTraits(on ? .isSelected : [])
+    }
+}

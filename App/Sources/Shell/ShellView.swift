@@ -294,6 +294,9 @@ struct TopBarView: View {
                 HarborWordmark(px: 24)
             }
             .padding(.trailing, BP.px(12))
+            // The brand is one word to VoiceOver, not the mark's asset name and "Harb", "o", "r".
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "Harbor"))
             ForEach(Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)) { r in
                 Button { app.room = r } label: { Image(systemName: r.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                     .buttonStyle(BPTabStyle(active: app.room == r))
@@ -306,6 +309,8 @@ struct TopBarView: View {
                     .overlay(alignment: .topTrailing) { if r == .calendar { CalendarTabBadge() } }
                     .accessibilityIdentifier("tab-\(r.rawValue)")
                     .accessibilityLabel(T(r.label))
+                    // bp-top-bar data-bp-tab-on: the room on screen reads as the selected tab.
+                    .bpSelected(app.room == r)
             }
             Spacer(minLength: BP.px(8))
             Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(26))
@@ -320,6 +325,8 @@ struct TopBarView: View {
                 }
                 .buttonStyle(BPTabStyleWide())
                 .accessibilityIdentifier("profile-chip")
+                // bp-profile-menu.tsx: `${t("Switch profile")}: ${name}` (the colon and the name need no translation).
+                .accessibilityLabel(Text(verbatim: "\(T("Switch profile")): \(p.name)"))
             }
             // Stage 10 account area: profile, notifications, activity, groups, Watch together.
             AccountMenuButton().environmentObject(app)
@@ -327,6 +334,7 @@ struct TopBarView: View {
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .accessibilityIdentifier("tab-settings")
                 .accessibilityLabel("Settings")
+                .bpSelected(app.room == .settings)
             StatusGlyphs()
             ClockView().padding(.leading, BP.px(6))
         }
@@ -391,6 +399,8 @@ struct StatusGlyphs: View {
                     .accessibilityLabel("Changes not saved to your Harbor account yet")
             }
             Image(systemName: net.online ? "wifi" : "wifi.slash").foregroundStyle(net.online ? BP.inkMuted : BP.danger)
+                // bp-status.tsx: a connected glyph is nothing to announce; the offline one still reads.
+                .accessibilityHidden(net.online)
         }
         .font(.system(size: BP.px(15), weight: .semibold))
         .padding(.leading, BP.px(8))
@@ -439,6 +449,8 @@ struct HintBarView: View {
                         .background(RoundedRectangle(cornerRadius: h.glyph.count > 1 ? BP.rXS : BP.px(11), style: .continuous).fill(BP.edge2))
                     Text(h.label).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
                 }
+                // One hint reads as "OK, Select", not two stray elements.
+                .accessibilityElement(children: .combine)
             }
         }
         .padding(.horizontal, BP.gutter)

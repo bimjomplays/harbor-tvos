@@ -61,7 +61,7 @@ struct PasteTrackerPanel: View {
             } else if let url = model.url {
                 HStack(alignment: .top, spacing: BP.px(18)) {
                     if let qr = Self.qr(url) {
-                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(150), height: BP.px(150))
+                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(150), height: BP.px(150)).accessibilityLabel(Text(T("QR code")))
                             .padding(BP.px(8)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
                     }
                     VStack(alignment: .leading, spacing: BP.px(8)) {

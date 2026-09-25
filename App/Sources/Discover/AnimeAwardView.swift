@@ -93,7 +93,7 @@ struct AnimeAwardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(sources) { s in
-                        Button(s.name) { source = s.id }.buttonStyle(BPActionStyle(primary: s.id == source))
+                        Button(s.name) { source = s.id }.buttonStyle(BPActionStyle(primary: s.id == source)).bpSelected(s.id == source)
                     }
                 }
                 .padding(.vertical, BP.px(6))
@@ -102,10 +102,10 @@ struct AnimeAwardView: View {
             if let d = data, !d.years.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
-                        Button("All years  \(d.totalWins)") { year = nil }.buttonStyle(BPActionStyle(primary: year == nil))
+                        Button("All years  \(d.totalWins)") { year = nil }.buttonStyle(BPActionStyle(primary: year == nil)).bpSelected(year == nil)
                         ForEach(d.perYear, id: \.year) { y in
                             Button("\(String(y.year))  \(y.count)") { year = year == y.year ? nil : y.year }
-                                .buttonStyle(BPActionStyle(primary: year == y.year))
+                                .buttonStyle(BPActionStyle(primary: year == y.year)).bpSelected(year == y.year)
                                 .accessibilityLabel("\(String(y.year)), \(y.count) winners")
                         }
                     }

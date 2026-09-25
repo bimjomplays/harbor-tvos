@@ -281,6 +281,7 @@ struct KidsDetailView: View {
                     Button { if idx > 0 { model.choose(seasons[idx - 1].seasonNumber) } } label: { Image(systemName: "chevron.backward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))
                         .disabled(idx <= 0)
+                        .accessibilityLabel(Text(T("Previous")))
                     Button { seasonGrid.toggle() } label: {
                         HStack(spacing: BP.px(8)) {
                             Text("Season \(model.season)")
@@ -292,6 +293,7 @@ struct KidsDetailView: View {
                     Button { if idx < seasons.count - 1 { model.choose(seasons[idx + 1].seasonNumber) } } label: { Image(systemName: "chevron.forward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))
                         .disabled(idx >= seasons.count - 1)
+                        .accessibilityLabel(Text(T("Next")))
                 }
                 if seasonGrid {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(58)), spacing: BP.px(8)), count: 5), alignment: .leading, spacing: BP.px(8)) {
@@ -299,6 +301,8 @@ struct KidsDetailView: View {
                             let on = s.seasonNumber == model.season
                             Button { model.choose(s.seasonNumber); seasonGrid = false } label: { Text("\(s.seasonNumber)") }
                                 .buttonStyle(KidsPillStyle(fill: on ? KidsTheme.teal : Color(hex: 0xeaf6f5), ink: on ? .white : KidsTheme.deep))
+                                .accessibilityLabel(Text(T("Season %lld", s.seasonNumber)))
+                                .bpSelected(on)
                         }
                     }
                     .padding(BP.px(12))
