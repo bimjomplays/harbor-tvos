@@ -1642,6 +1642,12 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.eq("actions.heroState: a fresh movie", [hs.favorite, hs.reminder, hs.watchedLocal, hs.traktMovie, hs.showWatchedButton, hs.rating], [false, false, false, false, true, null]);
   r.eq("actions.toggleFavorite adds then removes", [e.actions.toggleFavorite(film, "tt0111161", "default"), e.actions.heroState(film, null, "default", true).favorite, e.actions.toggleFavorite(film, "tt0111161", "default")], [true, true, false]);
   r.eq("actions.toggleReminder on a series (heroState follows)", [e.actions.toggleReminder(show), e.actions.heroState(show, null, "default", true).reminder, e.actions.toggleReminder(show), e.actions.heroState(film, null, "default", true).reminder], [true, true, false, false]);
+  // (detail pass) use-bp-detail-actions watchlist: lib/watchlist, so it works without a Stremio account.
+  r.eq("(detail pass) actions.heroState: not in the watchlist", hs.watchlist, false);
+  const added = await e.actions.setWatchlist(null, film, "tt0111161", true);
+  const localWl = JSON.parse(rec.run('localStorage.getItem("harbor.watchlist.v1.default")') ?? "[]");
+  r.ok("(detail pass) actions.setWatchlist adds to Harbor's own watchlist without a Stremio account", added === true && e.actions.heroState(film, null, "default", true).watchlist === true && JSON.stringify(localWl).includes("tt0111161"), JSON.stringify(localWl));
+  r.eq("(detail pass) actions.setWatchlist on → off removes it (heroState follows)", [await e.actions.setWatchlist(null, film, "tt0111161", false), e.actions.heroState(film, "tt0111161", "default", true).watchlist], [false, false]);
   r.eq("actions.trackers without a Simkl/AniList/MAL session", await e.actions.trackers({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop" }, false), []);
   r.eq("actions.traktMarkWatched without a Trakt session", await e.actions.traktMarkWatched("tt0111161"), false);
   r.eq("streamsRoom.remembered with an unknown token", e.streamsRoom.remembered("nope", "default", true, film, null, null), null);
@@ -2491,6 +2497,43 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const flushed = await save(608000, true);
   r.eq("player.saveProgress: the cloud write follows a 30 s tick, a flush always writes", [first.cloud, n1, second.cloud, n2, flushed.cloud, calls.length], ["written", 2, "skipped", 2, "written", 4]);
   r.eq("player.saveProgress: a skipped cloud write still moves the local spot", P.localResume("tt0111161", null, null).ms, 608000);
+  rec.dispose();
+}
+
+// ------------------- (detail pass) a finished episode reads watched (use-resume-autosave.ts)
+{
+  const id = "tt7000002";
+  const vids = Array.from({ length: 4 }, (_, i) => ({ id: `${id}:1:${i + 1}`, season: 1, episode: i + 1, released: "2020-01-01T00:00:00Z" }));
+  const refs = vids.map((v) => ({ season: v.season, episode: v.episode, released: v.released }));
+  let lib = null;
+  const puts = [];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/api/datastoreGet")) return json({ result: lib ? [lib] : [] });
+    if (req.url.endsWith("/api/datastorePut")) { const b = JSON.parse(req.body); puts.push(b.changes[0]); lib = b.changes[0]; return json({ result: { success: true } }); }
+    if (req.url.includes(`/meta/series/${id}.json`)) return json({ meta: { id, type: "series", name: "Smoke Finish", videos: vids } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const E = rec.engine;
+  const slim = { id, type: "series", name: "Smoke Finish" };
+  const mid = await E.player.saveProgress({ meta: slim, season: 1, episode: 2, positionMs: 600000, durationMs: 2400000, authKey: null });
+  r.eq("(detail pass) a half-watched episode is not marked watched", [mid.watched, E.episodeWatched.state(id, refs, 1, "default", true).watched], [false, []]);
+  const end = await E.player.saveProgress({ meta: slim, season: 1, episode: 2, positionMs: 2300000, durationMs: 2400000, authKey: null, flush: true });
+  const st = E.episodeWatched.state(id, refs, 1, "default", true);
+  r.eq("(detail pass) player.saveProgress marks a finished episode watched for the strip, started cleared", [end.watched, st.watched, st.started], [true, ["1:2"], []]);
+  E.episodeWatched.mark(null, { ...slim, videos: vids }, id, { season: 1, episode: 1 }, "episode", true, refs, "default", true);
+  r.eq("(detail pass) episodeWatched.state names the next-up card (first unwatched of the strip)", [E.episodeWatched.state(id, refs, 1, "default", true).nextUp, E.episodeWatched.state(id, refs, 1, "default", true, ["1:2", "1:4"]).nextUp], ["1:3", "1:4"]);
+  const movie = await E.player.saveProgress({ meta: { id: "tt7000003", type: "movie", name: "Smoke Film" }, positionMs: 7000000, durationMs: 7200000, authKey: null });
+  r.eq("(detail pass) a finished movie writes no episode mark", [movie.watched, E.episodeWatched.state("tt7000003", [{ season: 1, episode: 1 }], 1, "default", true).watched], [true, []]);
+  // Signed in: the series' manual marks reach the Stremio library bitfield after the save's own write.
+  rec.run(`localStorage.setItem("harbor.auth.default", JSON.stringify({ authKey: "AUTH", user: { _id: "u" } }))`);
+  await E.player.saveProgress({ meta: slim, season: 1, episode: 3, positionMs: 2300000, durationMs: 2400000, authKey: "AUTH", flush: true });
+  await E.player.settleMarks();
+  const last = puts.at(-1);
+  r.ok("(detail pass) the finished episode's mark reaches the library bitfield last", !!last && typeof last.state?.watched === "string" && JSON.stringify(E.player.decodeWatchedField(last.state.watched, vids)) === JSON.stringify(["1:1", "1:2", "1:3"]) && last.state.timeOffset === 2300000, JSON.stringify(last && last.state));
   rec.dispose();
 }
 

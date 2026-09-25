@@ -4,6 +4,8 @@
 import { readResumeEntry, saveResumeMs, clearResume } from "@/lib/resume";
 import { saveLocalCw, clearLocalCw } from "@/lib/local-cw";
 import { setMovieWatchedLocal } from "@/lib/movie-watched";
+import { isManuallyWatched, recordManualWatchedMeta, setManualWatched } from "@/lib/manual-watched";
+import { pushToLibrary as pushEpisodeMarks } from "./episodeWatched";
 import { libraryGetOne, libraryPut, type LibraryItem } from "@/lib/stremio";
 import { resolveStartMs } from "@/lib/player/resume-start";
 import type { Meta } from "@/lib/cinemeta";
@@ -109,6 +111,26 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
   } else if (posSec >= MIN_POSITION_SEC) {
     saveResumeMs(p.meta.id, p.positionMs, s, e, undefined, durSec > 0 ? ratio : undefined);
   }
+  // (detail pass) use-resume-autosave.ts: a finished episode of a series or an anime is marked
+  // watched in the manual store (the detail strip's check and next-up read it) and the series'
+  // marks go into the Stremio library bitfield (syncSeriesWatchedToStremio, here episodeWatched's
+  // pushToLibrary: upstream's encoder needs CompressionStream, which JavaScriptCore lacks). The TV
+  // never marked a played episode, so the strip showed no check after watching one to the end.
+  let markEpisode = false;
+  if (watched && typeof s === "number" && typeof e === "number"
+    && (p.meta.type === "series" || p.meta.type === "anime" || ANIME_EPISODE_ID.test(p.meta.id))
+    && !isManuallyWatched(p.meta.id, s, e)) {
+    recordManualWatchedMeta(p.meta.id, { type: "series", name: p.meta.name, poster: p.meta.poster, background: p.meta.background });
+    setManualWatched(p.meta.id, s, e, true);
+    markEpisode = true;
+  }
+  // Run after this save's own library write (it spreads the entry it read), so the merged bitfield lands last.
+  const pushMarks = () => {
+    const authKey = p.authKey;
+    if (!markEpisode || !authKey) return;
+    const imdb = typeof p.imdbId === "string" && p.imdbId.startsWith("tt") ? p.imdbId : null;
+    marksSync = marksSync.then(() => pushEpisodeMarks(authKey, p.meta, imdb)).catch(() => undefined);
+  };
   const t = Date.now();
   const type = isEpisode || p.meta.type === "series" ? "series" : "movie";
   if (watched && type === "movie") {
@@ -121,12 +143,15 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
       season: s, episode: e, positionMs: p.positionMs, durationMs: p.durationMs, t } as never);
   }
 
-  if (!p.authKey || posSec < 6) return { watched, cloud: "none" };
+  if (!p.authKey || posSec < 6) { pushMarks(); return { watched, cloud: "none" }; }
   // (perf pass) use-stremio-sync.ts writes the library entry on its own 30 s tick (TICK_MS) and at
   // once on pause, end and exit (sent here as `flush`); every local save used to do a GET + PUT.
   const cloudKey = `${p.authKey}\u0000${p.meta.id}`;
-  if (!p.flush && t - (lastCloudWrite.get(cloudKey) ?? 0) < CLOUD_TICK_MS) return { watched, cloud: "skipped" };
+  if (!p.flush && t - (lastCloudWrite.get(cloudKey) ?? 0) < CLOUD_TICK_MS) { pushMarks(); return { watched, cloud: "skipped" }; }
   lastCloudWrite.set(cloudKey, t);
+  // A bitfield push still in flight goes first: this write spreads the entry it reads, and an exit
+  // flush right after the end would otherwise put the old bitfield back.
+  await Promise.race([marksSync, new Promise((r) => setTimeout(r, 5000))]);
   try {
     const cid = p.meta.id;
     const videoId = p.videoId ?? (isEpisode ? `${cid}:${s}:${e}` : cid);
@@ -153,10 +178,21 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
       },
     };
     await libraryPut(p.authKey, item);
+    pushMarks();
     return { watched, cloud: "written" };
   } catch {
+    pushMarks();
     return { watched, cloud: "failed" };
   }
+}
+
+const ANIME_EPISODE_ID = /^(kitsu|mal|anilist|anidb):/;
+/** Finished-episode bitfield pushes (episodeWatched.pushToLibrary), one at a time. */
+let marksSync: Promise<unknown> = Promise.resolve();
+/** Resolves once every finished-episode library push has settled (smoke checks). */
+export async function settleMarks(): Promise<boolean> {
+  await marksSync;
+  return true;
 }
 
 export function localResume(metaId: string, season: number | null, episode: number | null) {

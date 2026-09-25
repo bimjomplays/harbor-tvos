@@ -970,6 +970,8 @@ export const actions = {
   animeTuneClear: actionsGlue.animeTuneClear,
   heroState: actionsGlue.heroState,
   toggleFavorite: actionsGlue.toggleFavorite,
+  /** (detail pass) use-bp-detail-actions watchlist: lib/watchlist toggleWatchlist (local, Trakt, Simkl, Stremio). */
+  setWatchlist: actionsGlue.setWatchlist,
   toggleReminder: actionsGlue.toggleReminder,
   setMovieWatched: actionsGlue.setMovieWatched,
   traktMarkWatched: actionsGlue.traktMarkWatched,
@@ -1081,6 +1083,8 @@ export const subtitles = {
 export const player = {
   startPosition: playerGlue.startPosition,
   saveProgress: playerGlue.saveProgress,
+  /** (detail pass) Resolves once the finished-episode library pushes have settled. */
+  settleMarks: playerGlue.settleMarks,
   localResume: playerGlue.localResume,
   /** (bug pass 2) Every local episode resume of one title, newest first (Detail reads them in one call). */
   localResumes: playerGlue.localResumes,

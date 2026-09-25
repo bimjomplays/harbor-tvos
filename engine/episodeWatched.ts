@@ -163,6 +163,9 @@ export type EpisodeWatchedState = {
   /** bp-episode-card.tsx: settings.showEpisodeRating / showEpisodeDescription !== false. */
   showEpisodeRating: boolean;
   showEpisodeDescription: boolean;
+  /** (detail pass) The first unwatched card of `season` / `shown` (use-anime-progress-map nextUpId): an
+   *  anime page's Play target once any of it is watched (use-bp-anime-detail resume). */
+  nextUp: string | null;
 };
 
 /** lib/resume.ts entryKey + readAll (not exported): one parse for the whole season. */
@@ -232,6 +235,7 @@ export function state(metaId: string, refs: EpisodeRef[], season: number | null,
     masks,
     showEpisodeRating: settings.showEpisodeRating !== false,
     showEpisodeDescription: settings.showEpisodeDescription !== false,
+    nextUp,
   };
 }
 

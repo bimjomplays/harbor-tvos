@@ -198,6 +198,8 @@ import { markMovieWatched, unmarkMovieWatched } from "@/lib/mark-watched";
 import { pushWatched } from "@/lib/trakt/history";
 import { stremioIdToTraktTarget } from "@/lib/trakt/ids";
 import { getSession as traktSession } from "@/lib/trakt/session";
+import { toggleWatchlist as toggleWatchlistUpstream, watchlistHas } from "@/lib/watchlist";
+import { removeFromWatchlist as removeLibraryBookmark } from "./cards";
 
 export type HeroState = {
   /** useIsFavorite(meta.id, [imdbId]) */
@@ -212,6 +214,8 @@ export type HeroState = {
   showWatchedButton: boolean;
   /** useRating(meta.id)?.score */
   rating: number | null;
+  /** useInWatchlist(meta.id, [imdbId]): Harbor's own watchlist or the Stremio/Trakt/Simkl aggregate. */
+  watchlist: boolean;
 };
 
 const isMovieMeta = (meta: Meta) => meta.type === "movie";
@@ -231,7 +235,22 @@ export function heroState(meta: Meta, imdbId: string | null, profileId: string, 
     traktMovie: !!target && target.ok && target.target.kind === "movie",
     showWatchedButton: settings.showWatchedButton !== false,
     rating: r?.score ? r.score : null,
+    watchlist: watchlistHas(meta.id) || (!!imdbId && watchlistHas(imdbId)),
   };
+}
+
+/**
+ * "Add to Watchlist" / "In Watchlist" (use-bp-detail-actions: toggleWatchlist({ ...seed, imdbId })).
+ * Harbor's own watchlist is written at once, so the action works without a Stremio account like
+ * upstream's; Trakt, Simkl and the Stremio library follow in the background. `on` is the state the
+ * viewer asked for: a title the page showed as saved only because its Stremio library entry says
+ * so (the aggregate not rebuilt yet) is taken out of the library instead of being added again.
+ */
+export async function setWatchlist(authKey: string | null, meta: Meta, imdbId: string | null, on: boolean): Promise<boolean> {
+  const has = watchlistHas(meta.id) || (!!imdbId && watchlistHas(imdbId));
+  if (has !== on) return toggleWatchlistUpstream({ id: meta.id, type: meta.type, name: meta.name, poster: meta.poster, imdbId });
+  if (!on && authKey) await removeLibraryBookmark(authKey, meta.id, imdbId).catch(() => undefined);
+  return on;
 }
 
 /** "Add to favorites" / "Favorited": useMediaFavorites().toggle(seed). Returns the new state. */
