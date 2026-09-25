@@ -365,7 +365,11 @@ final class DetailModel: ObservableObject {
     /// The strip: the anime season chip's episodes when the TVDB order resolved, else this season's.
     var seasonEpisodes: [Episode] {
         if let k = animeSeasonKey, let g = animeGroups[k] { return g }
-        if let m = seasonMemo, m.season == season, m.source == episodes { return m.list }
+        if let m = seasonMemo, m.season == season, m.source == episodes {
+            // Adopt the equal list's storage, so the next compare is O(1) again.
+            seasonMemo = (season, episodes, m.list)
+            return m.list
+        }
         let list: [Episode] = episodes.filter { $0.season == season }
         seasonMemo = (season, episodes, list)
         return list
