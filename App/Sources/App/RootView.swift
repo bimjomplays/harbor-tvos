@@ -22,7 +22,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            BPAmbientBackground(root: true)
+            BPAmbientBackground(mosaic: rootMosaic, root: true)
             Group {
                 switch app.stage {
                 case .boot: BootSplashView()
@@ -87,6 +87,16 @@ struct RootView: View {
     }
 
     private var overlayUp: Bool { app.stage == .shell && (curfew.locked || saver.active) }
+
+    /// Whether the root background's mosaic may run. Upstream draws none behind the boot splash
+    /// (index-tv.html #boot), setup (bp-onboarding, z-60 on --bp-void), Who's watching (z-80 on
+    /// --bp-void) or the intro wall (bp-intro, z-60 on --bp-void): each sits opaque over bp-shell's
+    /// BpAmbient. It fades in as the wall leaves. A kid's shell paints its own canvas over it, and
+    /// bp-shell skips BpAmbient in some rooms (BPAmbientBackground.shellDrawsMosaic).
+    private var rootMosaic: Bool {
+        app.stage == .shell && intro.phase != .showing && profiles.active?.kid == nil
+            && BPAmbientBackground.shellDrawsMosaic(in: app.room)
+    }
 
     private func syncOverlay(_ up: Bool) {
         guard up else { ShellOverlay.shared.hide(); return }

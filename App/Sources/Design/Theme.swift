@@ -141,21 +141,63 @@ struct BPAmbientBackground: View {
     @ObservedObject private var coverage = AmbientCoverage.shared
     @State private var id = UUID()
     var body: some View {
-        let live = coverage.live == id
+        // `mosaic` can change while the instance stays up (RootView's follows the stage and the
+        // room), so the fade keys on both.
+        let on = mosaic && coverage.live == id
         ZStack {
             // --bp-void, or the theme's own backdrop (Stage 9); plain void on Harbor default.
             BPThemeBackdrop()
-            if mosaic, live, SettingsBridge.shared.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
+            if on, SettingsBridge.shared.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
                 BPMosaicView(posters: pool.posters).opacity(0.13).transition(.opacity)
             }
             RadialGradient(colors: [BP.accent.opacity(0.10), .clear], center: .topTrailing, startRadius: 0, endRadius: 1300)
             LinearGradient(colors: [BP.canvas.opacity(0.9), .clear], startPoint: .bottom, endPoint: .center)
         }
-        .animation(BP.easeSlow, value: live)
+        .animation(BP.easeSlow, value: on)
         .background(AmbientProbe(id: id))
         .ignoresSafeArea()
         .task { await pool.load() }
-        .onAppear { coverage.appeared(id, root: root) }
+        .onAppear { coverage.appeared(id, rank: root ? .root : .screen) }
+        .onDisappear { coverage.disappeared(id) }
+    }
+
+    /// bp-shell.tsx:418-423 mounts no BpAmbient on search, live, sports or sports-event ("Live TV
+    /// gets the flat canvas and no ambient at all"), so a shell's root instance draws no mosaic in
+    /// those rooms. A sports event opens as a cover, which stands the root down by itself.
+    static func shellDrawsMosaic(in room: Room) -> Bool {
+        switch room {
+        case .search, .live, .sports: return false
+        default: return true
+        }
+    }
+}
+
+/// A page's own stage mosaic (bp-mosaic variant "stage", painted at 32 %): Home's services and
+/// addons bands (bp-ambient-layers) and Search (bp-search). It registers with AmbientCoverage
+/// above every BPAmbientBackground, so the ambient mosaic under it (RootView's, or the screen's)
+/// stands down while it is up: upstream never has two mosaics on screen. It keeps that rank while
+/// it draws nothing (the caller passes [] below its own floor), because its caller paints an
+/// opaque page over the ambient one anyway.
+struct BPStageMosaic: View {
+    /// The posters to draw, or [] for none yet.
+    let posters: [String]
+    /// A new key swaps the columns with a fade (bp-ambient MOSAIC_SWAP_MS: a new band cell).
+    var key = ""
+    @ObservedObject private var coverage = AmbientCoverage.shared
+    @State private var id = UUID()
+
+    var body: some View {
+        let on = coverage.live == id && posters.count >= 12 && (SettingsBridge.shared.slice.bigPictureMosaic ?? true)
+        ZStack {
+            Color.clear
+            if on {
+                BPMosaicView(posters: posters, stage: true).opacity(0.32).id(key).transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.26), value: on)
+        .background(AmbientProbe(id: id))
+        .allowsHitTesting(false)
+        .onAppear { coverage.appeared(id, rank: .stage) }
         .onDisappear { coverage.disappeared(id) }
     }
 }
@@ -166,7 +208,8 @@ struct BPAmbientBackground: View {
 /// one ran its 48 masked, drifting posters behind whatever covered it: the screen over RootView,
 /// a fullScreenCover over the screen, the player, the screensaver. Now only the instance the
 /// viewer can see runs one: in the topmost window, not under a presented cover (an alert aside),
-/// a screen's own over the root fallback, and the newest of those. None runs under the
+/// a page's stage mosaic (BPStageMosaic: Home's bands, Search) over a screen's own background
+/// over the root fallback, and the newest of those. None runs under the
 /// screensaver or curfew lock, or while the app is in the background. Covers are not
 /// observable, so presentations are polled twice a second, as PreviewGate does; the mosaic
 /// leaves the tree when covered (fading back in when uncovered), so it neither animates nor draws.
@@ -175,7 +218,9 @@ final class AmbientCoverage: ObservableObject {
     static let shared = AmbientCoverage()
     /// The instance whose mosaic runs, if any.
     @Published private(set) var live: UUID?
-    private struct Entry { var root: Bool; var order: Int }
+    /// Within one window: a page's stage mosaic over a screen's own background over the root fallback.
+    enum Rank: Int { case root = 0, screen = 1, stage = 2 }
+    private struct Entry { var rank: Rank; var order: Int }
     private final class WeakView { weak var view: UIView?; init(_ v: UIView) { view = v } }
     private var entries: [UUID: Entry] = [:]
     private var probes: [UUID: WeakView] = [:]
@@ -191,9 +236,9 @@ final class AmbientCoverage: ObservableObject {
             .store(in: &bag)
     }
 
-    func appeared(_ id: UUID, root: Bool) {
+    func appeared(_ id: UUID, rank: Rank) {
         order += 1
-        entries[id] = Entry(root: root, order: order)
+        entries[id] = Entry(rank: rank, order: order)
         refresh()
     }
 
@@ -217,7 +262,7 @@ final class AmbientCoverage: ObservableObject {
         if !blocked {
             for (id, e) in entries {
                 guard let v = probes[id]?.view, let w = v.window, !w.isHidden, !Self.presentedOver(v) else { continue }
-                let key: (CGFloat, Int, Int) = (w.windowLevel.rawValue, e.root ? 0 : 1, e.order)
+                let key: (CGFloat, Int, Int) = (w.windowLevel.rawValue, e.rank.rawValue, e.order)
                 if key > best {
                     best = key
                     pick = id
