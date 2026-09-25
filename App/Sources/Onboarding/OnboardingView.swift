@@ -13,11 +13,17 @@ struct OnboardingView: View {
     @EnvironmentObject private var settings: SettingsBridge
 
     enum Step: Int, CaseIterable { case language, phone, tmdb, stremio, harbor, layout, streaming, subtitles, taste, done }
-    @State private var step: Step = .language
+    /// (onboarding device pass) bp-onboarding.tsx readResumeIndex: setup opens on the screen it was
+    /// left on. It always opened on Language, so a TV switched off or an app killed mid-setup (and
+    /// any rebuild of the tree, such as a language pulled in with a Harbor account) started over.
+    @State private var step: Step = OnboardingView.resumeStep()
+    /// A Stremio sign-in parked for the first profile (read back on appear after a relaunch).
     @State private var stremioName: String?
     /// bp-handoff-context.tsx: the host lives above the steps, not inside the phone screen, so the
-    /// code on screen survives Back and Continue and a delivery that lands after the TV moved on to
-    /// the Stremio screen still counts. Listening only from the phone step through the Harbor step.
+    /// code on screen survives Back and Continue and a delivery that lands after the TV moved on
+    /// still counts. (onboarding device pass) Listening from the phone step to the end of setup, as
+    /// upstream's provider does for the whole flow: it stopped past the Harbor step, which retired
+    /// the code the phone was still typing into.
     @StateObject private var handoff = TvHandoff(mode: .setup(HandoffStep.allCases))
     /// advanceBpOnboardRing: once a step's answer is given the ring moves to its primary button.
     @FocusState private var ring: String?
@@ -46,7 +52,14 @@ struct OnboardingView: View {
         .onExitCommand(perform: exitAction)
         .onChange(of: step) { _, s in
             syncHandoff(s)
+            Self.saveResume(s)
             if s == .done { Task { await loadFacts() } }
+        }
+        // A resumed setup opens past the phone step (or on the recap) without a step change.
+        .onAppear {
+            if stremioName == nil, let s = PendingStremio.session { stremioName = s.user.fullname ?? s.user.email }
+            syncHandoff(step)
+            if step == .done, facts == nil { Task { await loadFacts() } }
         }
         .onChange(of: handoff.done) { _, d in
             if d.contains(.stremio), stremioName == nil, let s = PendingStremio.session { stremioName = s.user.fullname ?? s.user.email }
@@ -55,7 +68,7 @@ struct OnboardingView: View {
     }
 
     private func syncHandoff(_ s: Step) {
-        guard s.rawValue >= Step.phone.rawValue, s.rawValue <= Step.harbor.rawValue else {
+        guard s.rawValue >= Step.phone.rawValue else {
             handoff.stop()
             return
         }
@@ -126,9 +139,22 @@ struct OnboardingView: View {
         case .tmdb:
             TmdbKeyForm(done: { advance() }, skip: { advance() })
         case .stremio:
-            StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
+            // (onboarding device pass) bp-step-stremio.tsx: once signed in (here, or by the phone while
+            // this screen was up) the screen says so and offers Continue; the empty form stayed up.
+            if let stremioName {
+                StepConfirmed(title: T("Signed in as %@", stremioName), detail: nil) { advance() }
+            } else {
+                StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
+            }
         case .harbor:
-            HarborSignInForm { advance() } skip: { advance() }
+            // bp-step-harbor.tsx: a linked account shows "Signed in as" in place of the form.
+            if let s = account.session {
+                StepConfirmed(title: T("Signed in as %@", s.user.username), detail: "Themes, lists and friends follow this account.") { advance() }
+            } else {
+                // The form's own done() lands after the roster pull, by when Continue above may
+                // already have moved on: only a press made on this screen advances.
+                HarborSignInForm { if step == .harbor { advance() } } skip: { advance() }
+            }
         case .layout:
             VStack(alignment: .leading, spacing: BP.px(16)) {
                 HStack(spacing: BP.px(16)) {
@@ -200,6 +226,24 @@ struct OnboardingView: View {
         .buttonStyle(BPTileStyle(radius: BP.rMD))
     }
 
+    /// bp-onboarding.tsx RESUME_KEY: its own key, apart from the finished flag (`harbor.onboarding.bp`
+    /// here is AppModel's). Written on every move: a power cut mid-setup is the common case on a TV.
+    private static let resumeKey = "tv.onboarding.step"
+
+    private static func resumeStep() -> Step {
+        // UI-test launches always open on the first screen.
+        guard !Fixtures.active, let raw = Prefs.get(String.self, for: resumeKey) else { return .language }
+        return Step.allCases.first { "\($0)" == raw } ?? .language
+    }
+
+    private static func saveResume(_ s: Step) {
+        guard !Fixtures.active else { return }
+        try? Prefs.set("\(s)", for: resumeKey)
+    }
+
+    /// bp-onboarding.tsx clearResume, with the finished flag (AppModel.finishOnboarding).
+    static func clearResume() { Prefs.remove(resumeKey) }
+
     /// Steps the phone already delivered are passed over, so nobody signs in twice.
     private func advance() {
         var next = Step(rawValue: step.rawValue + 1) ?? .done
@@ -251,6 +295,30 @@ struct ProgressBar: View {
         .frame(height: BP.px(4))
         .animation(BP.easeSlow, value: fraction)
         .accessibilityLabel("Setup progress")
+    }
+}
+
+/// bp-step-parts.tsx BpStepConfirmed: a step already satisfied says so, with the primary Continue.
+struct StepConfirmed: View {
+    let title: String
+    let detail: String?
+    let next: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(18)) {
+            HStack(alignment: .top, spacing: BP.px(14)) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.live)
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    Text(verbatim: title).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let detail {
+                        Text(T(detail)).font(BP.sans(15)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            Button("Continue", action: next).buttonStyle(BPActionStyle(primary: true))
+        }
+        .frame(maxWidth: BP.px(560), alignment: .leading)
     }
 }
 
@@ -308,8 +376,26 @@ struct StremioSignInForm: View {
 }
 
 /// A Stremio sign-in made before any profile exists; attached to the first profile that gets created.
+/// (onboarding device pass) Kept in the Keychain, not in memory: setup now resumes after a relaunch
+/// (upstream's useAuth session is in storage from the moment of sign-in), and a sign-in made before
+/// the app was killed was otherwise gone while the recap carried on without it.
 enum PendingStremio {
-    static var session: ProfilesStore.StremioSession?
+    /// Not an engine key (no `harbor.` prefix): the bundle never sees it before a profile owns it.
+    private static let key = "tv.onboarding.pending-stremio"
+
+    static var session: ProfilesStore.StremioSession? {
+        get {
+            guard let raw = SecretStore.get(key), let data = raw.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(ProfilesStore.StremioSession.self, from: data)
+        }
+        set {
+            if let newValue, let data = try? JSONEncoder().encode(newValue), let raw = String(data: data, encoding: .utf8) {
+                try? SecretStore.set(raw, for: key)
+            } else {
+                SecretStore.remove(key)
+            }
+        }
+    }
 }
 
 /// Harbor username + password with a create-account switch (identity API, protocol §1.1).

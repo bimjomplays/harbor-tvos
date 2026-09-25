@@ -79,15 +79,19 @@ struct CurfewLockView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: 0x1b1340).ignoresSafeArea()
+            // (kids device pass) curfew-guard.tsx: the sky-to-sea gradient with white copy. The lock
+            // drew the theme's ink on a fixed dark purple, so under a light theme (MinUI, Kawaii,
+            // which a kid profile can carry) "Time's up!" was dark on dark and could not be read.
+            KidsSeaBackdrop(bubbles: [8, 22, 38, 56, 70, 84, 93], bubbleStep: 3)
             if pin, let p = state.profile, let hash = p.kid?.parentPinHash {
                 PinPadView(profile: p, finish: { ok in if ok { state.unlock() }; pin = false }, hashOverride: hash, title: "Parent PIN")
             } else {
                 VStack(spacing: BP.px(18)) {
                     Text("🐙").font(.system(size: BP.px(90)))
-                    Text("Time's up!").font(BP.display(48)).foregroundStyle(BP.ink)
+                    Text("Time's up!").font(BP.display(48)).foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 3)
                     Text(state.profile?.kid?.parentPinHash != nil ? "A grown-up can enter the parent PIN to keep watching." : "Ask a grown-up to switch profiles.")
-                        .font(BP.sans(18)).foregroundStyle(BP.inkMuted)
+                        .font(BP.sans(18)).foregroundStyle(.white.opacity(0.9))
                     HStack(spacing: BP.px(12)) {
                         if state.profile?.kid?.parentPinHash != nil { Button("Enter parent PIN") { pin = true }.buttonStyle(BPActionStyle(primary: true)) }
                         Button("Switch profile") { app.stage = .whoIsWatching }.buttonStyle(BPActionStyle())

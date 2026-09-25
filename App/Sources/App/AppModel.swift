@@ -139,6 +139,7 @@ final class AppModel: ObservableObject {
 
     func finishOnboarding() {
         onboardingDone = true
+        OnboardingView.clearResume()
         if profiles.profiles.isEmpty { profiles.seedIfEmpty(name: account.session?.user.username ?? "Harbor") }
         attachPendingStremio()
         goToWhoOrShell()

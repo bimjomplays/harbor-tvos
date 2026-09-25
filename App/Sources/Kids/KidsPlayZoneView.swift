@@ -59,6 +59,11 @@ struct KidsPlayZoneView: View {
     /// The arcade game that is open (upstream's `gameOpen`): Back closes it before the activity.
     @State private var game: KidsArcadeGame?
     @Environment(\.dismiss) private var dismiss
+    /// (kids device pass) The header's Back is the first control on the page, so tvOS put the ring
+    /// there when the Play Zone opened and when an activity closed: the kid's first OK left the
+    /// Play Zone (or the activity) instead of opening one. The ring opens on the first activity and
+    /// comes back to the one just closed.
+    @FocusState private var cardFocus: Activity?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -82,6 +87,11 @@ struct KidsPlayZoneView: View {
         }
         .ignoresSafeArea()
         .onExitCommand(perform: goBack)
+        .onAppear { DispatchQueue.main.async { if activity == nil { cardFocus = Activity.allCases.first } } }
+        .onChange(of: activity) { old, now in
+            guard now == nil, let old else { return }
+            DispatchQueue.main.async { cardFocus = old }
+        }
     }
 
     private func goBack() {
@@ -134,6 +144,7 @@ struct KidsPlayZoneView: View {
                     .background(.white.opacity(0.9))
                 }
                 .buttonStyle(KidsCardStyle(radius: BP.px(16), ring: BP.px(4)))
+                .focused($cardFocus, equals: a)
                 .accessibilityIdentifier("kids-play-\(a.rawValue)")
             }
         }
@@ -235,6 +246,10 @@ struct KidsMemoryMatch: View {
     @State private var moves = 0
     @State private var locked = false
     private var won: Bool { matched.count == deck.count }
+    /// (kids device pass) Card keys, -1 for "Play again". The deck is disabled under the win card,
+    /// which threw the ring off the last card to the header's Back (the next OK left the game), and
+    /// nothing put it on the deck when the game opened or after Play again.
+    @FocusState private var ring: Int?
 
     var body: some View {
         ZStack {
@@ -254,6 +269,7 @@ struct KidsMemoryMatch: View {
                         let up = matched.contains(card.key) || flipped.contains(card.key)
                         Button { tap(card.key) } label: { face(card, up: up) }
                             .buttonStyle(KidsCardStyle(radius: BP.px(16), ring: 0))
+                            .focused($ring, equals: card.key)
                             .accessibilityLabel(up ? "Card" : "Hidden card")
                     }
                 }
@@ -264,6 +280,15 @@ struct KidsMemoryMatch: View {
             if won { winCard.transition(.opacity) }
         }
         .animation(BP.easeFast, value: won)
+        .onAppear { focusDeck() }
+        .onChange(of: won) { _, w in
+            if w { DispatchQueue.main.async { ring = -1 } } else { focusDeck() }
+        }
+    }
+
+    private func focusDeck() {
+        let first = deck.first?.key
+        DispatchQueue.main.async { ring = first }
     }
 
     private func face(_ card: Card, up: Bool) -> some View {
@@ -328,6 +353,7 @@ struct KidsMemoryMatch: View {
                 }
                 .buttonStyle(KidsPillStyle(fill: KidsTheme.sunny, ink: KidsTheme.sunnyInk, height: BP.px(56)))
                 .prefersDefaultFocus(true, in: winNS)
+                .focused($ring, equals: -1)
             }
             .padding(.horizontal, BP.px(48)).padding(.vertical, BP.px(40))
             .background(RoundedRectangle(cornerRadius: BP.px(16), style: .continuous).fill(.white.opacity(0.95)))
@@ -366,6 +392,10 @@ struct KidsBubblePop: View {
     @State private var nextUp = 1
     @State private var wrong: Int?
     @Namespace private var doneNS
+    /// (kids device pass) Bubble numbers; -1 "Again", -2 "Bigger numbers!". A popped bubble is
+    /// disabled under the ring, which then jumped to the header's Back (the next OK left the game);
+    /// it now moves to the nearest bubble still up, and to the done card's buttons at the end.
+    @FocusState private var ring: Int?
 
     private var count: Int { Self.levels[levelIdx] }
     private var done: Bool { nextUp > count }
@@ -398,6 +428,7 @@ struct KidsBubblePop: View {
                                 }
                                 .buttonStyle(KidsBubbleStyle())
                                 .disabled(popped || done)
+                                .focused($ring, equals: b.n)
                                 .opacity(popped ? 0 : 1)
                                 .scaleEffect(popped ? 1.5 : 1)
                                 .animation(.easeOut(duration: 0.3), value: popped)
@@ -414,6 +445,11 @@ struct KidsBubblePop: View {
             if done { doneCard.transition(.opacity) }
         }
         .animation(BP.easeFast, value: done)
+        .onAppear { DispatchQueue.main.async { ring = 1 } }
+        .onChange(of: done) { _, d in
+            let target = d ? (levelIdx < Self.levels.count - 1 ? -2 : -1) : 1
+            DispatchQueue.main.async { ring = target }
+        }
     }
 
     private func pop(_ n: Int) {
@@ -424,6 +460,16 @@ struct KidsBubblePop: View {
             return
         }
         nextUp += 1
+        guard !done, let target = nearestLeft(to: n) else { return }
+        DispatchQueue.main.async { ring = target }
+    }
+
+    /// The bubble still up that sits closest to the one just popped.
+    private func nearestLeft(to n: Int) -> Int? {
+        let all = Self.layout(count, salt: salt)
+        guard let from = all.first(where: { $0.n == n }) else { return nil }
+        func d(_ b: Bubble) -> CGFloat { (b.left - from.left) * (b.left - from.left) + (b.top - from.top) * (b.top - from.top) }
+        return all.filter { $0.n >= nextUp }.min { d($0) < d($1) }?.n
     }
 
     private func startLevel(_ idx: Int) {
@@ -442,10 +488,12 @@ struct KidsBubblePop: View {
                 HStack(spacing: BP.px(12)) {
                     Button("Again") { startLevel(levelIdx) }
                         .buttonStyle(KidsPillStyle(fill: .white, ink: KidsTheme.sea, height: BP.px(56)))
+                        .focused($ring, equals: -1)
                     if levelIdx < Self.levels.count - 1 {
                         Button("Bigger numbers!") { startLevel(levelIdx + 1) }
                             .buttonStyle(KidsPillStyle(fill: KidsTheme.sunny, ink: KidsTheme.sunnyInk, height: BP.px(56)))
                             .prefersDefaultFocus(true, in: doneNS)
+                            .focused($ring, equals: -2)
                     }
                 }
             }
@@ -516,6 +564,9 @@ struct KidsOceanFacts: View {
     @State private var idx = 0
     @State private var image: UIImage?
     @State private var imgFailed = false
+    /// (kids device pass) The activity card that opened this is gone, and tvOS put the ring on the
+    /// header's Back: "Another one!" takes it, as the only thing to press here.
+    @FocusState private var nextFocused: Bool
 
     private var fact: Fact { Self.facts[order[idx % order.count]] }
 
@@ -555,10 +606,12 @@ struct KidsOceanFacts: View {
                 HStack(spacing: BP.px(12)) { Image(systemName: "sparkles"); Text("Another one!") }
             }
             .buttonStyle(KidsPillStyle(fill: KidsTheme.sunny, ink: KidsTheme.sunnyInk, height: BP.px(64)))
+            .focused($nextFocused)
             .accessibilityIdentifier("kids-facts-next")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(BP.easeFast, value: idx)
+        .onAppear { DispatchQueue.main.async { nextFocused = true } }
         .task(id: idx) {
             image = nil
             imgFailed = false
