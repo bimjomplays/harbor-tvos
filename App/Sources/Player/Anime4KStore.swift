@@ -15,6 +15,9 @@ final class Anime4KStore: ObservableObject {
     @Published private(set) var installed = false
     @Published private(set) var busy = false
     @Published private(set) var note: String?
+    /// Set with `note`: true for a complete set, false for a failed download or missing shaders.
+    /// The panel colours the note by this, not by its (translated) wording.
+    @Published private(set) var noteOk = false
 
     let dir: URL = {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -58,6 +61,7 @@ final class Anime4KStore: ObservableObject {
         guard !busy else { return }
         busy = true; defer { busy = false }
         note = nil
+        noteOk = false
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let list: [Entry] = try await HarborEngine.shared.call("anime4k.files", [])
@@ -74,8 +78,10 @@ final class Anime4KStore: ObservableObject {
             }
             installed = Self.complete(in: dir)
             note = installed ? "Shaders ready." : "Some shaders are still missing."
+            noteOk = installed
         } catch {
             note = T("Download failed") + ": " + error.localizedDescription
+            noteOk = false
             installed = Self.complete(in: dir)
         }
     }

@@ -26,12 +26,13 @@ import { status as letterboxdStatus, watchlist as letterboxdWatchlist } from "./
 import { repairStremioLibrary, type RepairProgress, type RepairResult } from "@/lib/stremio-library-repair";
 import { findCorruptAnimeEntries, healCorruptAnimeEntries } from "@/lib/anime-cw-repair";
 import { clearResurfaceCache } from "@/lib/cw-resurface";
+import { readLibraryFilterPreferences, writeLibraryFilterPreferences } from "@/views/library/filter-preferences";
 
 export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "media-servers" | "trakt" | "anilist" | "mal" | "simkl" | "letterboxd";
 type Status = "loading" | "ready" | "error";
 
 export type Entry = {
-  key: string; meta: Meta; date: number | null; group?: string;
+  key: string; meta: Meta; date: number | null; group?: string; groups?: string[];
   progress?: number; season?: number; episode?: number; watched?: boolean;
 };
 
@@ -136,11 +137,61 @@ async function simklEntries(force: boolean): Promise<{ entries: Entry[]; status:
   return { entries, status };
 }
 
+// ------------------------------------------------------------- owned (Media Servers) sort
+// bp-library.tsx OWNED_SORTS / numericMeta / sortOwned: the owned tabs (local, media-servers)
+// sort by one key in a chosen direction into a single unlabelled section. Local files do not
+// exist on tvOS, so Media Servers is the one owned tab here.
+export type OwnedSortKey = "added" | "title" | "year" | "rating" | "runtime";
+export type SortDir = "asc" | "desc";
+const OWNED_SORT_KEYS: readonly OwnedSortKey[] = ["added", "title", "year", "rating", "runtime"];
+
+function ownedSortKey(v: unknown): OwnedSortKey | null {
+  return OWNED_SORT_KEYS.includes(v as OwnedSortKey) ? (v as OwnedSortKey) : null;
+}
+
+function sortDirKey(v: unknown): SortDir | null {
+  return v === "asc" || v === "desc" ? v : null;
+}
+
+function numericMeta(entry: Entry, key: OwnedSortKey): number | null {
+  const raw =
+    key === "year"
+      ? entry.meta.releaseInfo?.match(/\d{4}/)?.[0]
+      : key === "rating"
+        ? entry.meta.imdbRating
+        : key === "runtime"
+          ? entry.meta.runtime?.match(/\d+/)?.[0]
+          : entry.date;
+  if (raw == null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** bp-library sortOwned: title by locale (base sensitivity), numbers by value, missing values last either way. */
+export function sortOwned(entries: Entry[], key: OwnedSortKey, dir: SortDir): Entry[] {
+  const mul = dir === "asc" ? 1 : -1;
+  return [...entries].sort((a, b) => {
+    if (key === "title")
+      return mul * (a.meta.name ?? "").localeCompare(b.meta.name ?? "", undefined, { sensitivity: "base" });
+    const av = numericMeta(a, key);
+    const bv = numericMeta(b, key);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return mul * (av - bv);
+  });
+}
+
 export type FeedInput = {
   tab: Tab; profileId: string; linked: boolean; authKey: string | null;
   sort?: SortKey; flat?: boolean; type?: TypeKey; query?: string; group?: string; limit?: number; force?: boolean;
   /** History only (bp-library "Episodes / Posters"): false collapses a show's episodes into one card. */
   episodes?: boolean;
+  /** Media Servers (bp-library ownedSort / sortDir): the owned tab's own sort and direction. */
+  ownedSort?: OwnedSortKey | null; sortDir?: SortDir | null;
+  /** Media Servers: bp-library's [tab] effect. Type, server, sort and direction come from the saved
+   *  filter preferences (views/library/filter-preferences) instead of the input. */
+  restore?: boolean;
 };
 
 /** One finished library page: filtered + sorted + grouped + capped, with chips data. */
@@ -148,7 +199,8 @@ export async function feed(input: FeedInput) {
   const s = loadEffective(input.profileId, input.linked);
   const hideAnime = s.hideContent?.anime === true;
   const sort: SortKey = input.sort ?? ((s.librarySort as SortKey) || "recent");
-  const type: TypeKey = input.type ?? "all";
+  let type: TypeKey = input.type ?? "all";
+  let group: string | null = input.group || null;
   const limit = input.limit ?? 60;
   const tab = input.tab;
   let entries: Entry[] = [];
@@ -200,7 +252,7 @@ export async function feed(input: FeedInput) {
     status = tr.status;
   } else if (tab === "media-servers") {
     const list = await homeServerTitles();
-    entries = list.map((t) => ({ key: t.key, meta: t.meta, date: t.date, group: t.groups[0] }));
+    entries = list.map((t) => ({ key: t.key, meta: t.meta, date: t.date, group: t.groups[0], groups: t.groups }));
     const seen = new Map<string, string>();
     for (const t of list) for (const c of t.connections) seen.set(c.id, c.label);
     groups = [...seen].map(([id, label]) => ({ id, label }));
@@ -218,13 +270,36 @@ export async function feed(input: FeedInput) {
     status = lb.status;
   }
 
-  // bp-library.tsx:210: chip counts describe the group-scoped set, before type/query filters.
-  const scoped = input.group ? entries.filter((e) => e.group === input.group) : entries;
+  // bp-library.tsx [tab] effect + filter-preferences write: Media Servers keeps its type, server,
+  // sort and direction per profile (harbor.library.filters.media-servers.<profile>); every other
+  // tab starts unfiltered on the shared librarySort.
+  let owned: { type: TypeKey; group: string; sort: OwnedSortKey; dir: SortDir } | null = null;
+  if (tab === "media-servers") {
+    const saved = input.restore ? readLibraryFilterPreferences("media-servers") : {};
+    if (input.restore) {
+      type = saved.type === "movie" || saved.type === "series" ? saved.type : "all";
+      group = saved.server && saved.server !== "all" ? saved.server : null;
+    }
+    const sortKey: OwnedSortKey = (input.restore ? ownedSortKey(saved.sort) : ownedSortKey(input.ownedSort)) ?? "added";
+    const dir: SortDir = (input.restore ? sortDirKey(saved.sortDir) : sortDirKey(input.sortDir)) ?? "desc";
+    owned = { type, group: group ?? "", sort: sortKey, dir };
+    // Genres and the Library row are not on the TV, so they are written as unset.
+    writeLibraryFilterPreferences("media-servers", { type, genres: [], sort: sortKey, sortDir: dir, server: group || "all", library: "all" });
+  }
+
+  // bp-library.tsx:210: chip counts describe the group-scoped set, before type/query filters; a
+  // media-server title belongs to every server that has it (e.groups).
+  const pick = group;
+  const scoped = pick ? entries.filter((e) => e.group === pick || (e.groups?.includes(pick) ?? false)) : entries;
   const total = scoped.length;
   const filtered = applyFilter(scoped, type, input.query ?? "");
-  // buildBpSections + capBpSections
+  // buildBpSections (or sortOwned on the owned tab) + capBpSections
   let sections: Array<{ label: string; items: Entry[]; total: number }>;
   if (filtered.length === 0) sections = [];
+  else if (owned) {
+    const items = sortOwned(filtered, owned.sort, owned.dir);
+    sections = [{ label: "", items, total: items.length }];
+  }
   else if (sort === "recent" && (input.flat || filtered.every((e) => e.date == null))) {
     const items = [...filtered].sort((a, b) => (b.date ?? -Infinity) - (a.date ?? -Infinity));
     sections = [{ label: "", items, total: items.length }];
@@ -242,7 +317,7 @@ export async function feed(input: FeedInput) {
   // both over the filtered (visible) set.
   const dated = filtered.some((e) => e.date != null);
   const years = filtered.some((e) => !!e.meta.releaseInfo);
-  return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts, dated, years };
+  return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts, dated, years, owned };
 }
 
 // ----------------------------------------------------------------------------- repair

@@ -40,7 +40,7 @@ struct Anime4KPanel: View {
                     .buttonStyle(BPActionStyle(busy: store.busy))
                 Text(store.installed ? "Shaders installed" : "Not downloaded yet (about 3 MB, fetched on first use too)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
-            if let n = store.note { BPNote(text: n, tone: n.hasPrefix("Download failed") ? BP.danger : BP.live) }
+            if let n = store.note { BPNote(text: n, tone: store.noteOk ? BP.live : BP.danger) }
         }
     }
 

@@ -22,6 +22,9 @@ final class HomeServersModel: ObservableObject {
     @Published private(set) var servers: [Poll.Server] = []
     @Published private(set) var progress: [String: String] = [:]
     @Published private(set) var note: String?
+    /// Set with `note` (say): true only for the "Indexed …" sync line. The panel colours the note by
+    /// this, not by its wording.
+    @Published private(set) var noteOk = false
     @Published private(set) var busy = false
     private var pollTask: Task<Void, Never>?
     private var unsubscribe: (() -> Void)?
@@ -53,14 +56,14 @@ final class HomeServersModel: ObservableObject {
                     switch r.kind {
                     case "authorized":
                         self.servers = r.servers ?? []
-                        if self.servers.isEmpty { self.note = "Plex signed in, but that account has no servers." ; self.pin = nil }
+                        if self.servers.isEmpty { self.say("Plex signed in, but that account has no servers."); self.pin = nil }
                         return
-                    case "expired": self.pin = nil; self.note = "That code expired. Try again."; return
+                    case "expired": self.pin = nil; self.say("That code expired. Try again."); return
                     default: break
                     }
                 }
             }
-        } catch { note = "Plex sign-in failed: \(error.localizedDescription)" }
+        } catch { say("Plex sign-in failed: \(error.localizedDescription)") }
     }
 
     func addPlex(_ server: Poll.Server) async {
@@ -71,8 +74,11 @@ final class HomeServersModel: ObservableObject {
             self.pin = nil; servers = []
             await load()
             await sync(c.id)
-        } else { note = "Couldn't save that Plex server." }
+        } else { say("Couldn't save that Plex server.") }
     }
+
+    /// Sets the note and its ok flag together (LetterboxdPanel / TraktView noteOk pattern).
+    private func say(_ text: String, ok: Bool = false) { note = text; noteOk = ok }
 
     func cancelPlex() { pollTask?.cancel(); pin = nil; servers = [] }
 
@@ -87,7 +93,8 @@ final class HomeServersModel: ObservableObject {
             await sync(c.id)
             return true
         } catch {
-            note = "\(error)".split(separator: "\n").first.map(String.init)?.replacingOccurrences(of: "Error: ", with: "") ?? "Couldn't connect."
+            let line: String? = "\(error)".split(separator: "\n").first.map(String.init)?.replacingOccurrences(of: "Error: ", with: "")
+            say(line ?? "Couldn't connect.")
             return false
         }
     }
@@ -97,8 +104,11 @@ final class HomeServersModel: ObservableObject {
         progress[id] = "Connecting…"
         do {
             let o: Out = try await HarborEngine.shared.call("homeServers.sync", [id])
-            note = "Indexed \(o.itemCount) items from \(o.libraries) libraries."
-        } catch { note = "Sync failed: \("\(error)".split(separator: "\n").first.map(String.init) ?? "")" }
+            say("Indexed \(o.itemCount) items from \(o.libraries) libraries.", ok: true)
+        } catch {
+            let line: String = "\(error)".split(separator: "\n").first.map(String.init) ?? ""
+            say("Sync failed: \(line)")
+        }
         progress[id] = nil
         await load()
     }
@@ -227,7 +237,7 @@ struct HomeServersPanel: View {
                     Button("Add Jellyfin or Emby") { showForm = true; refocus("form-first") }.buttonStyle(BPActionStyle())
                 }
             }
-            if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Indexed") ? BP.live : BP.danger) }
+            if let n = model.note { BPNote(text: n, tone: model.noteOk ? BP.live : BP.danger) }
         }
         .task { await model.load() }
         // (settings pass 2) Menu steps out of the Plex code, the server list or the form first, as

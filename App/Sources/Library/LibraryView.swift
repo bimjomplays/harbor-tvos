@@ -20,7 +20,11 @@ final class LibraryModel: ObservableObject {
         var groups: [Group]; var status: String; var hidden: Int; var signedIn: Bool; var sort: String; var counts: Counts
         /// bp-library `dated` / `years` over the filtered set: the View row and the Year sort.
         var dated: Bool?; var years: Bool?
+        /// Media Servers only: the type, server ("" for all), owned sort and direction the engine
+        /// used (restored from the saved filter preferences when the tab opens).
+        var owned: Owned?
     }
+    struct Owned: Decodable { var type: String; var group: String; var sort: String; var dir: String }
 
     @Published private(set) var tabs: [Tab] = []
     @Published private(set) var feed: Feed?
@@ -38,6 +42,13 @@ final class LibraryModel: ObservableObject {
     /// used to open on Recent, with that chip lit, whatever the viewer had chosen last time.
     private var sortKnown = false
     @Published var flat = false
+    /// bp-library ownedSort / sortDir: Media Servers sorts by its own key (Date added, Title, Year,
+    /// Rating, Duration) in a direction, saved per profile with its type and server.
+    @Published var ownedSort = "added"
+    @Published var sortDir = "desc"
+    /// Set when Media Servers is picked: the next feed takes type, server, sort and direction from
+    /// the saved preferences (bp-library's [tab] effect) instead of the fresh-tab defaults.
+    private var restoreOwned = false
     /// bp-library "Episodes / Posters" for History (harbor.history.view).
     @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") == "episodes"
     @Published var group: String?
@@ -73,15 +84,28 @@ final class LibraryModel: ObservableObject {
         loading = true
         defer { if mine == generation { loading = false } }
         let p = profile
-        let input: AnyJSON = .object([
+        var fields: [String: AnyJSON] = [
             "tab": .string(tab), "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,
             "sort": sortKnown ? AnyJSON.string(sort) : AnyJSON.null, "flat": .bool(flat), "type": .string(type), "query": .string(query), "episodes": .bool(episodes),
             "group": group.map { .string($0) } ?? .null, "limit": .number(Double(limit)), "force": .bool(force),
-        ])
+        ]
+        // Media Servers: its own sort and direction, and whether to restore the saved filters.
+        let restore: Bool = restoreOwned && tab == "media-servers"
+        fields["ownedSort"] = AnyJSON.string(ownedSort)
+        fields["sortDir"] = AnyJSON.string(sortDir)
+        fields["restore"] = AnyJSON.bool(restore)
+        let input: AnyJSON = .object(fields)
         if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]), mine == generation {
             feed = f
             sort = f.sort
             sortKnown = true
+            if let o = f.owned, f.tab == tab {
+                restoreOwned = false
+                type = o.type
+                group = o.group.isEmpty ? nil : o.group
+                ownedSort = o.sort
+                sortDir = o.dir
+            }
             await CardMarksStore.shared.refresh(f.sections.flatMap { $0.items.map(\.meta) })
         }
     }
@@ -91,12 +115,13 @@ final class LibraryModel: ObservableObject {
     /// with the search row closed and nothing on screen saying so.
     func select(tab id: String) {
         tab = id; group = nil; type = "all"; query = ""; limit = 60
+        ownedSort = "added"; sortDir = "desc"; restoreOwned = id == "media-servers"
         // Loading from this frame on: the new tab has no feed yet (shownFeed), so the page shows
         // the spinner, not the failed-read note, until the load below starts.
         loading = true
         Task { await load() }
     }
-    func set(type t: String) { type = t; limit = 60; Task { await load() } }
+    func set(type t: String) { type = t; restoreOwned = false; limit = 60; Task { await load() } }
     func set(sort s: String) {
         sort = s; sortKnown = true; limit = 60
         // A feed already in flight (the first one asks with no sort and answers with the saved one)
@@ -105,9 +130,11 @@ final class LibraryModel: ObservableObject {
         let p = profile
         Task { _ = try? await HarborEngine.shared.callJSON("libraryRoom.setSort", [.string(s), .string(p.id), .bool(p.linked)]); await load() }
     }
+    func set(ownedSort k: String) { ownedSort = k; restoreOwned = false; limit = 60; Task { await load() } }
+    func set(sortDir d: String) { sortDir = d; restoreOwned = false; limit = 60; Task { await load() } }
     func toggleFlat() { flat.toggle(); Task { await load() } }
     func set(episodes on: Bool) { episodes = on; try? Prefs.set(on ? "episodes" : "posters", for: "harbor.history.view"); Task { await load() } }
-    func set(group g: String?) { group = g; limit = 60; Task { await load() } }
+    func set(group g: String?) { group = g; restoreOwned = false; limit = 60; Task { await load() } }
     func search(_ q: String) { query = q; limit = 60; Task { await load() } }
     func more() { limit += 60; Task { await load() } }
 }
@@ -283,21 +310,44 @@ struct LibraryView: View {
     // bp-library-filters: one labelled row per kind (Up/Down between kinds, Left/Right within).
     private var filters: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
+            // bp-library filterGroups order: the tab's own groups first, headed by the tab's label
+            // ("My Lists", "Media Servers", "Trakt"...), then Type, Sort (plus Direction on the
+            // owned tab), View, Episodes.
+            if let groups = model.shownFeed?.groups, !groups.isEmpty {
+                filterRow(tabLabel, [("", T("All"))] + groups.map { ($0.id, T($0.label)) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
+            }
             // (device-flow pass 3) bp-library TYPES / SORTS labels ("Shows", "A-Z"); Year only when a
             // shown title has a release year; View only for the Recent sort with a dated title,
             // outside the owned (Media Servers) tab; the History row is upstream's "Episodes" group.
             filterRow("Type", [("all", T("All") + " \(model.feed?.counts.all ?? 0)"), ("movie", T("Movies") + " \(model.feed?.counts.movie ?? 0)"), ("series", T("Shows") + " \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
-            filterRow("Sort", sortOptions, active: model.sort) { model.set(sort: $0) }
+            if ownedTab {
+                // bp-library OWNED_SORTS and the Direction group.
+                filterRow("Sort", ownedSortOptions, active: model.ownedSort) { model.set(ownedSort: $0) }
+                filterRow("Direction", [("asc", T("Ascending")), ("desc", T("Descending"))], active: model.sortDir) { model.set(sortDir: $0) }
+            } else {
+                filterRow("Sort", sortOptions, active: model.sort) { model.set(sort: $0) }
+            }
             if showViewRow {
                 filterRow("View", [("grouped", T("Grouped")), ("flat", T("One list"))], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
             }
             if model.tab == "history" {
                 filterRow("Episodes", [("posters", T("Posters")), ("episodes", T("Episodes"))], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
             }
-            if let groups = model.feed?.groups, !groups.isEmpty {
-                filterRow(model.tab == "lists" ? "List" : "Group", [("", T("All"))] + groups.map { ($0.id, T($0.label)) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
-            }
         }
+    }
+
+    /// bp-library `ownedTab`: local files do not exist on tvOS, so Media Servers is the one.
+    private var ownedTab: Bool { model.tab == "media-servers" }
+
+    /// bp-library `tabLabel`: the group row's heading (filterRow translates it).
+    private var tabLabel: String {
+        let label: String? = model.tabs.first(where: { $0.id == model.tab })?.label
+        return label ?? ""
+    }
+
+    /// bp-library OWNED_SORTS: every key offered (upstream does not hide Year on the owned tab).
+    private var ownedSortOptions: [(String, String)] {
+        [("added", T("Date added")), ("title", T("Title")), ("year", T("Year")), ("rating", T("Rating")), ("runtime", T("Duration"))]
     }
 
     /// bp-library `sorts`: Year only while a shown title has a release year.
@@ -312,12 +362,12 @@ struct LibraryView: View {
     /// owned media (local / media-servers).
     private var showViewRow: Bool {
         let dated: Bool = model.shownFeed?.dated ?? true
-        return model.tab != "media-servers" && model.sort == "recent" && dated
+        return !ownedTab && model.sort == "recent" && dated
     }
 
     private func filterRow(_ heading: String, _ options: [(String, String)], active: String, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
-            Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+            Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
             ForEach(options, id: \.0) { o in
                 Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)).bpSelected(active == o.0)
             }

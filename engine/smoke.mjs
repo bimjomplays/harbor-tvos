@@ -2353,6 +2353,26 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.libraryRoom.setSort("year", "default", true);
   r.eq("libraryRoom.setSort persists", engine.settings.load().librarySort, "year");
   engine.libraryRoom.setSort("recent", "default", true);
+  // bp-library OWNED_SORTS / sortOwned (Media Servers): one key, a direction, missing values last.
+  const own = [
+    { key: "a", meta: { id: "a", type: "movie", name: "beta", releaseInfo: "2001", imdbRating: "7.5", runtime: "120 min" }, date: 300 },
+    { key: "b", meta: { id: "b", type: "movie", name: "Alpha", releaseInfo: "1999–2003", runtime: "95 min" }, date: 100 },
+    { key: "c", meta: { id: "c", type: "series", name: "gamma", imdbRating: "8.1" }, date: null },
+    { key: "d", meta: { id: "d", type: "movie", name: "Delta", releaseInfo: "2010", imdbRating: "n/a", runtime: "80 min" }, date: 200 },
+  ];
+  const order = (k, d) => engine.libraryRoom.sortOwned(own, k, d).map((e) => e.key).join("");
+  r.ok("libraryRoom.sortOwned: Date added newest first by default, undated last", order("added", "desc") === "adbc" && order("added", "asc") === "bdac", JSON.stringify([order("added", "desc"), order("added", "asc")]));
+  r.ok("libraryRoom.sortOwned: Title ignores case, direction flips it", order("title", "asc") === "badc" && order("title", "desc") === "cdab", JSON.stringify([order("title", "asc"), order("title", "desc")]));
+  r.ok("libraryRoom.sortOwned: Year reads the first four digits, missing last both ways", order("year", "desc") === "dabc" && order("year", "asc") === "badc", JSON.stringify([order("year", "desc"), order("year", "asc")]));
+  r.ok("libraryRoom.sortOwned: Rating ignores a non-number, Duration reads the minutes", order("rating", "desc") === "cabd" && order("rating", "asc") === "acbd" && order("runtime", "asc") === "dbac" && order("runtime", "desc") === "abdc", JSON.stringify([order("rating", "desc"), order("rating", "asc"), order("runtime", "asc"), order("runtime", "desc")]));
+  const ms0 = await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, restore: true });
+  r.eq("libraryRoom.feed(media-servers) opens on Date added, descending, unfiltered", ms0.owned, { type: "all", group: "", sort: "added", dir: "desc" });
+  await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, type: "movie", group: "ms9", ownedSort: "runtime", sortDir: "asc" });
+  const ms1 = await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, restore: true });
+  r.eq("libraryRoom.feed(media-servers) keeps type, server, sort and direction (filter-preferences)", ms1.owned, { type: "movie", group: "ms9", sort: "runtime", dir: "asc" });
+  const ms2 = await engine.libraryRoom.feed({ tab: "media-servers", profileId: "default", linked: true, authKey: null, ownedSort: "bogus", sortDir: "up" });
+  r.eq("libraryRoom.feed(media-servers) falls back to Date added / descending on an unknown key", ms2.owned, { type: "all", group: "", sort: "added", dir: "desc" });
+  r.eq("libraryRoom.feed leaves owned unset outside Media Servers", fav.owned, null);
 }
 
 // -------------------------------------------- calendar, reminders, stats (recorded host)

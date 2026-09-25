@@ -805,6 +805,7 @@ export const libraryRoom = {
   tabs: libraryGlue.tabs,
   feed: libraryGlue.feed,
   setSort: libraryGlue.setSort,
+  sortOwned: libraryGlue.sortOwned,
   repair: libraryGlue.repair,
   animeScan: libraryGlue.animeScan,
   animeHeal: libraryGlue.animeHeal,

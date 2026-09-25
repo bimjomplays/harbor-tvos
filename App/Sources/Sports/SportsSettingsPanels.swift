@@ -76,6 +76,8 @@ struct SportsApiKeyPanel: View {
     @State private var info: Info?
     @State private var draft = ""
     @State private var note: String?
+    /// Set with `note`: false for the failed save, so the colour does not hang on the wording.
+    @State private var noteOk = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
@@ -95,7 +97,7 @@ struct SportsApiKeyPanel: View {
                 if info?.saved == true { Button("Clear key") { Task { draft = ""; await save("") } }.buttonStyle(BPActionStyle()) }
             }
             BPNote(text: "Saving does not verify your key. Sports uses it when loading supported competitions.")
-            if let note { BPNote(text: note, tone: note.hasPrefix("The key could not") ? BP.danger : BP.inkMuted) }
+            if let note { BPNote(text: note, tone: noteOk ? BP.inkMuted : BP.danger) }
             ForEach(info?.notices ?? [], id: \.self) { n in BPNote(text: n) }
         }
         .task { info = try? await HarborEngine.shared.call("sports.apiSports", []) }
@@ -103,8 +105,10 @@ struct SportsApiKeyPanel: View {
 
     private func save(_ value: String) async {
         let r: Saved? = try? await HarborEngine.shared.call("sports.setApiSportsKey", [value])
-        if r?.ok == true { note = value.isEmpty ? "Key cleared." : "Saved."; draft = "" }
-        else { note = "The key could not be saved. Your previous key is unchanged." }
+        // BPNote translates the note: "Saved." and the failure line are upstream catalog keys
+        // (settings-refinements, sports-api); "Key cleared." has none.
+        if r?.ok == true { note = value.isEmpty ? "Key cleared." : "Saved."; noteOk = true; draft = "" }
+        else { note = "The key could not be saved. Your previous key is unchanged."; noteOk = false }
         info = try? await HarborEngine.shared.call("sports.apiSports", [])
     }
 }
