@@ -89,8 +89,13 @@ struct RoomView: View {
                            },
                            onSeeAll: { row in
                                // bp-collections-row lead: "View all" goes to the Collections tab.
-                               if row.key == "collections" { app.room = .collections } else { seeAll = row }
+                               // (device-flow pass 10) bp-home services lead: "Manage" goes to Settings.
+                               if row.key == "collections" { app.room = .collections }
+                               else if row.key == "services" && model.isHomePage { app.room = .settings }
+                               else { seeAll = row }
                            },
+                           seeAllLabel: { row in Self.bandLeadLabel(row, home: model.isHomePage) },
+                           seeAllShown: { row in bandLeadShown(row) },
                            onQuick: { m in
                                // bp-quick-panel acts on a title; band tiles (services, addons, collections) have none.
                                guard !["service", "addon", "collection"].contains(m.type) else { return }
@@ -379,6 +384,30 @@ struct RoomView: View {
         case "services": return .settings
         case "addons": return nil
         default: return row.metas.first?.type == "series" ? .shows : .movies
+        }
+    }
+
+    /// (device-flow pass 10) bp-home's band leads: Your streaming reads "Manage" (tab settings) and
+    /// Collections "View all" (tab collections); every other row keeps "See all". The Home services
+    /// and addons rows offered See all onto a poster grid whose service / addon tiles opened a
+    /// broken title page.
+    static func bandLeadLabel(_ row: BrowseRow, home: Bool) -> String {
+        switch row.key {
+        case "collections": return "View all"
+        case "services" where home: return "Manage"
+        default: return "See all"
+        }
+    }
+
+    /// bp-home: the addons row has no lead (bp-addon-row renders a bare BpRowHeader); a lead whose
+    /// tab the profile's PIN locks is off the bar, and its way in goes with it.
+    private func bandLeadShown(_ row: BrowseRow) -> Bool {
+        guard model.isHomePage else { return true }
+        switch row.key {
+        case "addons": return false
+        case "services": return !parental.hides(Room.settings)
+        case "collections": return !parental.hides(Room.collections)
+        default: return true
         }
     }
 

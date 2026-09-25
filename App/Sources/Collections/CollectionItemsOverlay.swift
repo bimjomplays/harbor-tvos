@@ -23,6 +23,8 @@ struct CollectionItemsOverlay: View {
     @State private var saving = false
     /// (review 12) Why Save to my collections did nothing (the 24-collection limit).
     @State private var saveNote: String?
+    /// The first focus has been placed (device-flow pass 10).
+    @State private var seeded = false
     @FocusState private var focus: String?
 
     enum Panel { case rename, add }
@@ -82,14 +84,24 @@ struct CollectionItemsOverlay: View {
         // (social pass) bp-collection-items seeds the ring on its first focusable (Close) and
         // bp-collection-detail on its first tile; the overlay seeded nothing, so in the Collections
         // room the ring stayed wherever tvOS left it.
+        // (device-flow pass 10) Once per overlay, as upstream's autofocus runs on mount: onAppear
+        // fires again when a title page opened from a tile closes, and a seed landing before tvOS
+        // put the ring back on that tile threw it to Close or the first tile.
         .onAppear {
+            guard !seeded else { return }
+            seeded = true
             let seed: String = isDetail && !card.items.isEmpty ? "item:" + (card.items.first?.id ?? "") : "close"
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if focus == nil { focus = seed } }
         }
         .onExitCommand {
             // (social pass) Closing a panel or the delete prompt puts the ring back on the button that
-            // opened it (the panel's own buttons went away under it).
-            if let p = panel { panel = nil; focus = p == .rename ? "rename" : "add" }
+            // opened it (the panel's own buttons went away under it). (device-flow pass 10) "Add
+            // titles" is disabled once the list is full with the panel shut: the ring goes to Close then.
+            if let p = panel {
+                panel = nil
+                let full: Bool = card.items.count >= limits.items
+                focus = p == .rename ? "rename" : (full ? "close" : "add")
+            }
             else if editing { editing = false }
             else if confirmDelete { confirmDelete = false; DispatchQueue.main.async { focus = "delete" } }
             else { onClose() }
@@ -265,6 +277,12 @@ struct CollectionItemsOverlay: View {
         if let o = d.overview, !o.isEmpty { card.description = o }
         if card.image == nil { card.image = d.image }
         card.items = d.items
+        // bp-collection.tsx autofocuses the first tile once the list is in; the ring held Close
+        // (the only thing to seed while it loaded). A viewer who moved on keeps the ring.
+        if focus == "close" || focus == nil, let first = d.items.first {
+            let target: String = "item:" + first.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if focus == "close" || focus == nil { focus = target } }
+        }
     }
 
     @MainActor private func rename() async {

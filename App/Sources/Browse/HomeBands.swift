@@ -305,8 +305,11 @@ struct HomeCollectionView: View {
 
     var body: some View {
         ZStack {
-            if let card, !card.items.isEmpty {
+            if let card {
                 // A curated TMDB collection is read-only: default limits, nothing to reload on change.
+                // (device-flow pass 10) A collection that answered with no parts shows the overlay's
+                // bp-collection-detail empty line ("No films found in this collection."); it read as
+                // "Couldn't load this collection right now.", which is for a read that failed.
                 CollectionItemsOverlay(card: card, limits: CollectionsModel.Limits(collections: 24, items: 100),
                                        onClose: onClose, onChanged: { _ in }, onOpen: { item in detail = item.meta })
             } else {

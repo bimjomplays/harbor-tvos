@@ -257,7 +257,10 @@ struct ServiceBrowseSource: BrowseSource {
         // ProfilesStore is main-actor bound; this source runs off it.
         let p = await MainActor.run { ProfilesStore.shared.active }
         let build: Build = try await HarborEngine.shared.call("services.rows", [service, p?.id ?? "default", p?.linked ?? true])
-        if !build.hasKey { throw ServiceError.noKey }
+        // (device-flow pass 10) bp-service.tsx: no TMDB key is the empty state ("Add a TMDB key in
+        // Setup to power this view." + Open settings, RoomView emptyCopy), not a failure: thrown,
+        // it showed "Couldn't load your catalogs" with a Try again that could never succeed.
+        if !build.hasKey { return [] }
         return build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: .poster) }
     }
 

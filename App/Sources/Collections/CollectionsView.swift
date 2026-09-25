@@ -297,7 +297,10 @@ struct CollectionsView: View {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
                     Text("Collections").font(BP.display(36)).foregroundStyle(BP.ink)
                     sourceRow
-                    if naming { nameRow }
+                    // (device-flow pass 10) Only beside its "New collection" button (All / Mine): left
+                    // open under Community, TMDB or TVDB, its Cancel aimed the ring at a button no
+                    // longer drawn, and the ring fell off the page.
+                    if naming && canCreate { nameRow }
                     if model.source == "tmdb" {
                         // bp-collection-steps categories: Sagas, Superheroes, Action…
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -385,6 +388,9 @@ struct CollectionsView: View {
         .onChange(of: open?.key) { _, key in app.roomLayer = key != nil }
     }
 
+    /// The sources that show "New collection" (and its name row).
+    private var canCreate: Bool { model.source == "all" || model.source == "mine" }
+
     private var sourceRow: some View {
         HStack(spacing: BP.px(8)) {
             ForEach(Self.sources, id: \.0) { key, label in
@@ -392,7 +398,7 @@ struct CollectionsView: View {
                     .buttonStyle(BPActionStyle(primary: model.source == key)).bpSelected(model.source == key)
                     .focused($focus, equals: "source:" + key)
             }
-            if model.source == "all" || model.source == "mine" {
+            if canCreate {
                 // community-hub.tsx: "New collection", with the "{n} / {max}" count beside it.
                 Button { nameDraft = ""; naming.toggle() } label: { Label("New collection", systemImage: "plus") }
                     .buttonStyle(BPActionStyle(primary: naming))
@@ -424,6 +430,9 @@ struct CollectionsView: View {
             Button("Cancel") { naming = false; focus = "new" }.buttonStyle(BPActionStyle())
         }
         .focusSection()
+        // (device-flow pass 10) Back inside the row closes it like Cancel (the overlay's panels do the
+        // same); it left the room for Home with the row and its draft still open.
+        .onExitCommand { naming = false; focus = "new" }
     }
 
     /// bp-collection-items cleanup: the ring goes back to the card that opened the overlay, or to the

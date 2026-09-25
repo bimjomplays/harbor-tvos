@@ -11,6 +11,9 @@ struct AnimeAwardView: View {
     @State private var source: String
     @State private var year: Int?
     @State private var data: Award?
+    /// (device-flow pass 10) The source could not be read: the spinner stayed for good (upstream
+    /// reads a bundled table and cannot fail; its no-data line stands in).
+    @State private var failed = false
     @State private var busy: String?
     @State private var detail: Meta?
     @Environment(\.dismiss) private var dismiss
@@ -64,7 +67,10 @@ struct AnimeAwardView: View {
             // (device-flow pass) Engine calls don't stop when the task is cancelled: a source chip
             // pressed while the previous source still loaded got that source's winners under its name.
             guard !Task.isCancelled else { return }
+            // (device-flow pass 10) A failed read also drops the last source's winners, which stayed
+            // on screen under the new source's chip.
             data = got
+            failed = got == nil
         }
         .onExitCommand { dismiss() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
@@ -106,11 +112,15 @@ struct AnimeAwardView: View {
             if let d = data, !d.years.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
-                        Button("All years  \(d.totalWins)") { year = nil }.buttonStyle(BPActionStyle(primary: year == nil)).bpSelected(year == nil)
+                        // BpChip label={t("All years")} count={totalWins}. (device-flow pass 10) The
+                        // label and count were one key ("All years  %lld") no catalog carries.
+                        Button { year = nil } label: { chipLabel(T("All years"), d.totalWins) }
+                            .buttonStyle(BPActionStyle(primary: year == nil)).bpSelected(year == nil)
                         ForEach(d.perYear, id: \.year) { y in
-                            Button("\(String(y.year))  \(y.count)") { year = year == y.year ? nil : y.year }
+                            Button { year = year == y.year ? nil : y.year } label: { chipLabel(String(y.year), y.count) }
                                 .buttonStyle(BPActionStyle(primary: year == y.year)).bpSelected(year == y.year)
-                                .accessibilityLabel("\(String(y.year)), \(y.count) winners")
+                                // ariaLabel `${y}, ${t("{n} winners", { n })}`.
+                                .accessibilityLabel(Text(verbatim: String(y.year) + ", " + T("%lld winners", y.count)))
                         }
                     }
                     .padding(.vertical, BP.px(6))
@@ -120,10 +130,21 @@ struct AnimeAwardView: View {
         }
     }
 
+    /// BpChip: the label, then its count in a quieter weight (as AwardDetailView's chips).
+    private func chipLabel(_ label: String, _ count: Int) -> some View {
+        HStack(spacing: BP.px(8)) {
+            Text(verbatim: label)
+            Text(verbatim: String(count)).opacity(0.62).monospacedDigit()
+        }
+    }
+
     @ViewBuilder private var list: some View {
-        if let d = data {
+        if data == nil && failed {
+            Text(verbatim: T("No data shipped for this award yet."))
+                .font(BP.sans(16)).foregroundStyle(BP.inkSubtle).padding(.top, BP.px(10))
+        } else if let d = data {
             if categories.isEmpty {
-                Text(d.categories.isEmpty ? "No data shipped for this award yet." : "No winners match these filters.")
+                Text(verbatim: T(d.categories.isEmpty ? "No data shipped for this award yet." : "No winners match these filters."))
                     .font(BP.sans(16)).foregroundStyle(BP.inkSubtle).padding(.top, BP.px(10))
             } else {
                 VStack(alignment: .leading, spacing: BP.px(26)) {
@@ -146,7 +167,8 @@ struct AnimeAwardView: View {
                 }
                 Text(c.name).font(BP.sans(18, .bold)).foregroundStyle(BP.ink)
                 Spacer(minLength: BP.px(10))
-                Text(c.winners.count == 1 ? "1 winner" : "\(c.winners.count) winners")
+                // t("{n} winner") / t("{n} winners"): "1 winner" was a key no catalog carries.
+                Text(verbatim: TCount(c.winners.count, one: "%lld winner", "%lld winners"))
                     .font(BP.sans(11, .bold)).textCase(.uppercase).tracking(BP.px(1.7)).foregroundStyle(BP.inkSubtle)
             }
             .padding(.bottom, BP.px(5))

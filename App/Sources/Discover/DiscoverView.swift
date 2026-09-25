@@ -55,6 +55,11 @@ struct DiscoverView: View {
                         .buttonStyle(BPActionStyle(primary: true, busy: model.loading))
                         .padding(.top, BP.px(6))
                 }
+                // (device-flow pass 10) The card is centred and nothing else on the page takes focus:
+                // Down from a tab not above Try again found no target and the ring stayed on the bar
+                // (RoomView's pageMessage rule). A full-width focus section catches Down from anywhere.
+                .frame(maxWidth: .infinity)
+                .focusSection()
                 .padding(.top, BP.px(300)).padding(.horizontal, BP.gutter)
             } else if model.build == nil {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
@@ -322,11 +327,13 @@ struct QueueBandView: View {
     }
 
     private var line: String {
+        // bp-queue-band.tsx line: ready, loading, empty, else "No picks loaded…". (device-flow pass
+        // 10) "nokey" had a line of its own that no catalog carries (it stayed English); the deck
+        // itself names the TMDB key once opened.
         switch queue?.status {
         case "ready": return "Open the queue"
         case "empty": return "Nothing left in today's picks"
-        case "nokey": return "Add a TMDB key for tonight's picks"
-        case "unreachable": return "No picks loaded. TMDB might be unreachable."
+        case "nokey", "unreachable": return "No picks loaded. TMDB might be unreachable."
         default: return "Building tonight's queue…"
         }
     }
@@ -480,14 +487,22 @@ struct AwardsBandView: View {
         }
     }
 
+    private func winsLine(_ a: DiscoverModel.Awards.Summary) -> String {
+        let wins: String = T("%lld winners", a.wins)
+        return a.span.isEmpty ? wins : wins + "  •  " + a.span
+    }
+
     private var awardTiles: some View {
         ForEach(summaries) { a in
             Button { onOpen(a) } label: {
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Text(a.shorthand).font(BP.display(22)).foregroundStyle(BP.ink)
-                    Text(a.title).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink.opacity(0.85)).lineLimit(2)
+                    // bp-award-tiles BpAwardTile: t(summary.title), then t("{n} winners") • span (the
+                    // span only when there is one). (device-flow pass 10) The title was verbatim and the
+                    // count line matched no catalog key, with a dangling "·" when the span was empty.
+                    Text(verbatim: T(a.title)).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink.opacity(0.85)).lineLimit(2)
                     Spacer(minLength: 0)
-                    Text("\(a.wins) winners · \(a.span)").font(BP.sans(11)).foregroundStyle(BP.ink.opacity(0.7))
+                    Text(verbatim: winsLine(a)).font(BP.sans(11)).foregroundStyle(BP.ink.opacity(0.7))
                 }
                 .padding(BP.px(14))
                 .frame(width: BP.px(178), height: BP.px(120), alignment: .topLeading)

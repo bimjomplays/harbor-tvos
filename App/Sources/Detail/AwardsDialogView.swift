@@ -7,8 +7,10 @@ struct AwardsDialogView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let wins = entries.filter { $0.result == "won" }
-        let noms = entries.filter { $0.result != "won" }
+        // bp-award-detail-dialog: wins and nominations, each newest year first (byYear).
+        // (device-flow pass 10) They kept the engine's order.
+        let wins: [DetailModel.TitleAwards.Entry] = Self.byYear(entries.filter { $0.result == "won" })
+        let noms: [DetailModel.TitleAwards.Entry] = Self.byYear(entries.filter { $0.result == "nominated" })
         ZStack(alignment: .trailing) {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -30,6 +32,25 @@ struct AwardsDialogView: View {
         .onExitCommand { dismiss() }
     }
 
+    /// bp-award-detail-dialog byYear: `(b.year ?? 0) - (a.year ?? 0)` (a stable sort, as Array.sort is).
+    private static func byYear(_ list: [DetailModel.TitleAwards.Entry]) -> [DetailModel.TitleAwards.Entry] {
+        let sorted = list.enumerated().sorted { (a, b) -> Bool in
+            let ya: Int = a.element.year ?? 0
+            let yb: Int = b.element.year ?? 0
+            return ya != yb ? ya > yb : a.offset < b.offset
+        }
+        return sorted.map { $0.element }
+    }
+
+    /// BpAwardLine: the year, then `e.category || e.awardName`. (device-flow pass 10) A win with no
+    /// category read as a bare year.
+    private static func line(_ e: DetailModel.TitleAwards.Entry) -> String {
+        let category: String = e.category ?? ""
+        let text: String = category.isEmpty ? e.awardName : category
+        guard let year = e.year else { return text }
+        return String(year) + " · " + text
+    }
+
     private func section(_ label: String, _ list: [DetailModel.TitleAwards.Entry]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             Text(label).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle)
@@ -37,7 +58,7 @@ struct AwardsDialogView: View {
             ForEach(Array(list.enumerated()), id: \.offset) { _, e in
                 DialogLine {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text([e.year.map(String.init), e.category].compactMap { $0 }.joined(separator: " · ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                        Text(verbatim: Self.line(e)).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
                         if let r = e.recipient, !r.isEmpty { Text(r).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                     }
                 }

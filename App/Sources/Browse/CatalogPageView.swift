@@ -55,11 +55,23 @@ struct CatalogPageView: View {
                 .padding(.horizontal, BP.gutter)
                 .padding(.top, Self.headroom)
                 .padding(.bottom, BP.hintHeight + BP.px(40))
-                if loading { ProgressView().tint(BP.inkMuted).padding() }
-                if let emptyNote, metas.isEmpty, !loading {
+                if loading && emptyNote == nil { ProgressView().tint(BP.inkMuted).padding() }
+                if let emptyNote, metas.isEmpty {
+                    // (device-flow pass 10) The note and Try again stay up (dimmed) while the retry
+                    // runs: they went away under the ring, which had nothing to land on in this page,
+                    // and a retry that failed again brought them back with no ring on them.
                     VStack(alignment: .leading, spacing: BP.px(10)) {
                         BPNote(text: emptyNote)
-                        Button("Try again") { exhausted = false; page = 0; Task { await loadMore() } }.buttonStyle(BPActionStyle(primary: true))
+                        Button("Try again") {
+                            guard !loading else { return }
+                            exhausted = false; page = 0
+                            Task {
+                                await loadMore()
+                                // A retry that worked takes Try again away: the ring goes to the first title.
+                                if let first = metas.first { focusedId = first.id }
+                            }
+                        }
+                        .buttonStyle(BPActionStyle(primary: true, busy: loading))
                     }
                     .padding(.horizontal, BP.gutter)
                 }
