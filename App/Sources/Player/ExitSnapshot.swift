@@ -265,7 +265,8 @@ enum FrameGrab {
     static func mpvFrame(_ handle: OpaquePointer, fullQuality: Bool) -> Data? {
         mpv_set_property_string(handle, "screenshot-sw", "yes")
         mpv_set_property_string(handle, "screenshot-high-bit-depth", "no")
-        var cargs: [UnsafePointer<CChar>?] = ["screenshot-raw", "video"].map { UnsafePointer(strdup($0)) }
+        let words: [String] = ["screenshot-raw", "video"]
+        var cargs: [UnsafePointer<CChar>?] = words.map { UnsafePointer(strdup($0)) }
         cargs.append(nil)
         defer { cargs.forEach { free(UnsafeMutablePointer(mutating: $0)) } }
         var result = mpv_node()
