@@ -311,7 +311,10 @@ struct PlayerScreen: View {
                 inBrowseLayer = PiPBrowse.shared.isUp
                 PiPBrowse.shared.playbackOpening(nowPlayingId)
             }
-            focus = .surface; scheduleHide(); PlaybackState.shared.claim(nowPlayingId); TorrentEngine.shared.playerOpened(url: url)
+            // (bug pass) The stream playing now, as onDisappear releases it: after a kid / quality
+            // switch, a re-appear used to re-own the original torrent and leave the playing one to
+            // be removed under the player.
+            focus = .surface; scheduleHide(); PlaybackState.shared.claim(nowPlayingId); TorrentEngine.shared.playerOpened(url: switched?.url ?? url)
             SleepTimer.shared.playerOpened(url: url)
             // use-sleep-timer.ts registerSleepFireHandler: a minutes timer running out pauses this player.
             SleepTimer.shared.register(nowPlayingId) { sleepFired() }
@@ -1313,6 +1316,7 @@ struct PlayerScreen: View {
 
     /// speed-menu.tsx onRate; shell-layer.tsx remembers it for the show (writePlayerPrefs rate).
     private func setRate(_ value: Double) {
+        guard value.isFinite, value > 0 else { return }   // (bug pass)
         rate = value
         controller?.setRate(value)
         if let m = trackMemory { TrackPlanner.send("player.rememberRate", [m, value]) }
@@ -1572,7 +1576,10 @@ struct PlayerScreen: View {
                 if onChooseAnother != nil {
                     chip("Pick another source", "list.bullet") { let go = onChooseAnother; finish(natural: false); go?() }
                 }
-                chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); reloadToken += 1 }
+                // (bug pass) Like the other retries: the connecting card's clock starts over (it
+                // otherwise came up at once with the first open's elapsed time and "Still looking"),
+                // and the torn-down engine is no longer read by the tick until the new one is ready.
+                chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); loadingSince = Date(); controller = nil; reloadToken += 1 }
                 // header-warning.tsx onUseMpv: the forced native engine could not open it; mpv can try.
                 if engine == .native { chip("Use mpv engine", "play.rectangle") { useMpvEngine() } }
                 chip("Back", "chevron.left") { finish(natural: false) }
