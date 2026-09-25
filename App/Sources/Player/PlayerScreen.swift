@@ -1368,7 +1368,12 @@ struct PlayerScreen: View {
             PlayerAudioPanel(controller: controller, title: title, audioDelay: $audioDelay) { closePanel() }
         case .channels:
             if let liveGuide {
-                LivePlayerGuidePanel(model: liveGuide, current: currentChannel, onPick: { tune($0) }, onClose: { closePanel() })
+                // (review 10) The panel's "{n}m left" and airing bars read the wall clock; they moved
+                // with the player's per-second redraw, which perf pass 4 removed, so they froze while
+                // the guide was open. A minute beat redraws the panel.
+                TimelineView(.everyMinute) { _ in
+                    LivePlayerGuidePanel(model: liveGuide, current: currentChannel, onPick: { tune($0) }, onClose: { closePanel() })
+                }
             }
         case .homeServerQuality:
             if let h = context?.homeServer {
