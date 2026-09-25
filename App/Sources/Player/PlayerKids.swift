@@ -611,8 +611,12 @@ struct KidsStreamSwitcher: View {
     let meta: Meta
     let episode: AnyJSON?
     let currentURL: URL
-    /// The stream's URL, headers and own subtitles (use-stream-switcher `subtitles: r.data.subtitles`).
-    let onPicked: (URL, [String: String], [SeedSubtitle]) -> Void
+    /// (device-flow pass 11) What plays now as PlayerSourcesPanel.Current (the picked stream's ref:
+    /// its info hash, file and addon URL), kids-switcher.tsx's currentInfoHash / currentFileIdx.
+    let current: PlayerSourcesPanel.Current?
+    /// The stream's URL, headers and own subtitles (use-stream-switcher `subtitles: r.data.subtitles`),
+    /// and its PlayerStreamRef (use-stream-switcher moves streamRef with the swap).
+    let onPicked: (URL, [String: String], [SeedSubtitle], AnyJSON?) -> Void
     let onClose: () -> Void
 
     @StateObject private var model = StreamsModel()
@@ -682,6 +686,10 @@ struct KidsStreamSwitcher: View {
 
     /// switcher-row.tsx isCurrentStream: the same torrent (and file), else the same URL.
     private func isCurrent(_ s: ScoredStream) -> Bool {
+        // (device-flow pass 11) A debrid stream plays from the debrid's link, which no row carries:
+        // "Playing now" was missing and picking that row resolved and reloaded the same video.
+        // The stream's ref (info hash and file, else its addon URL) matches like the adult switcher.
+        if let current, current.matches(s) { return true }
         if let ref = TorrentEngine.streamRef(currentURL), let hash = s.infoHash, hash.lowercased() == ref.infoHash { return true }
         return s.url != nil && s.url == currentURL.absoluteString
     }
@@ -749,7 +757,9 @@ struct KidsStreamSwitcher: View {
             return
         }
         await model.remember(s, meta: meta, episode: episode, url: link.url)
-        onPicked(url, link.headers ?? [:], link.subtitles ?? [])
+        let ref: AnyJSON? = await model.deadRef(s)
+        guard !closed else { return }
+        onPicked(url, link.headers ?? [:], link.subtitles ?? [], ref)
     }
 }
 

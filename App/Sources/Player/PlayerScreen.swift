@@ -1527,8 +1527,11 @@ struct PlayerScreen: View {
             }
         case .kidsSources:
             if let context {
-                KidsStreamSwitcher(meta: context.meta, episode: kidsEpisode(context), currentURL: playURL,
-                                   onPicked: { next, headers, subs in switchStream(to: next, headers: headers, subtitles: subs) }, onClose: { closePanel() })
+                // (device-flow pass 11) The stream's ref marks its row "Playing now" and moves with a swap.
+                KidsStreamSwitcher(meta: context.meta, episode: kidsEpisode(context), currentURL: playURL, current: currentSource,
+                                   onPicked: { next, headers, subs, ref in
+                                       switchStream(to: next, headers: headers, subtitles: subs, ref: sourceRef(ref, playing: next))
+                                   }, onClose: { closePanel() })
             }
         case .speed:
             PlayerSpeedPanel(rate: rate, isLive: isLive, onRate: { setRate($0) }, onClose: { closePanel() })
@@ -1890,7 +1893,13 @@ struct PlayerScreen: View {
         panel = p
         hideTask?.cancel()
         // The Subtitles and Audio dialogs seed their own ring; Anime4K lands on its first option.
-        if p == .anime4k { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(-10) } }
+        // (device-flow pass 11) On the option in use (anime4k-menu marks it), not always Auto; the ids
+        // are anime4kPanel's options, in its order.
+        if p == .anime4k {
+            let ids: [String] = ["auto", "off", "A", "B", "C", "AA", "BB", "CA"]
+            let at: Int = ids.firstIndex(of: anime4k?.choice ?? "auto") ?? 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = .track(-10 - at) }
+        }
     }
 
     private func closePanel() {

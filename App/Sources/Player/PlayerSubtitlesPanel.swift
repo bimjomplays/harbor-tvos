@@ -41,6 +41,8 @@ struct PlayerSubtitlesPanel: View {
     struct Found: Decodable, Identifiable {
         var id: String; var url: String; var lang: String; var langName: String; var title: String
         var detail: String; var tags: [String]; var provider: String; var hearingImpaired: Bool; var forced: Bool
+        /// (device-flow pass 11) The row's identity: a provider's id alone can repeat.
+        var key: String { id + "|" + url }
     }
     struct FindResult: Decodable { var results: [Found]; var tooNew: Bool }
     struct Preset: Decodable, Identifiable { var id: String; var name: String; var values: [String: AnyJSON] }
@@ -77,6 +79,8 @@ struct PlayerSubtitlesPanel: View {
     @State private var findNote: String?
     /// (player pass 2) Only the newest trackView answer lands.
     @State private var refreshRun = 0
+    /// (device-flow pass 11) The Tracks lane's ring was seeded before the file had any tracks.
+    @State private var seededEmpty = false
 
     var body: some View {
         ZStack {
@@ -144,7 +148,13 @@ struct PlayerSubtitlesPanel: View {
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
                 let now = (controller?.tracks() ?? []).filter { $0.type == "sub" }
-                if now != tracks { await refresh() }
+                if now != tracks {
+                    await refresh()
+                    // (device-flow pass 11) Opened before the file's tracks were read, the ring was
+                    // seeded on "No subtitles": once they arrive with one on, it moves there while
+                    // the viewer has not moved it.
+                    if seededEmpty, !tracks.isEmpty, lane == .tracks, focus == "line-off" { seedFocus() }
+                }
             }
         }
         .onChange(of: lane) {
@@ -201,7 +211,18 @@ struct PlayerSubtitlesPanel: View {
     private func seedFocus() {
         let seed: String
         switch lane {
-        case .tracks: seed = tracks.first { $0.selected }.map { "line-\($0.id)" } ?? "line-off"
+        case .tracks:
+            // (device-flow pass 11) bp-player-subtitles seeds the lane's data-bp-autofocus line (the
+            // chosen track, else "No subtitles"), else the lane's first focusable, "All languages":
+            // a chosen track the filters hide left the ring on the lane chip.
+            let on: MPVPlayerController.Track? = tracks.first { $0.selected }
+            if let on {
+                let shown: Bool = visible.contains(where: { $0.id == on.id })
+                seed = shown ? "line-\(on.id)" : "lang-all"
+            } else {
+                seed = "line-off"
+            }
+            seededEmpty = tracks.isEmpty
         case .find: seed = "chip-Search"
         case .sync: seed = "chip--0.1s"
         case .style: seed = presets.first.map { "chip-\($0.name)" } ?? "chip-Shadow"
@@ -248,9 +269,10 @@ struct PlayerSubtitlesPanel: View {
     @ViewBuilder private var tracksLane: some View {
         PlayerChipRow {
             PlayerRowLabel(text: "Languages")
-            chip(T("All languages") + " \(langTracks.count)", on: activeLang == Self.all) { activeLang = Self.all }
+            // (device-flow pass 11) Focus ids that outlive the counts in the labels.
+            chip(T("All languages") + " \(langTracks.count)", on: activeLang == Self.all, id: "lang-all") { activeLang = Self.all }
             ForEach(groups) { g in
-                chip("\(g.display) \(g.count)", on: activeLang == g.id) { activeLang = g.id }
+                chip("\(g.display) \(g.count)", on: activeLang == g.id, id: "lang-\(g.id)") { activeLang = g.id }
             }
         }
         PlayerChipRow {
@@ -264,7 +286,12 @@ struct PlayerSubtitlesPanel: View {
         if let better = best, !better.selected {
             PlayerChipRow {
                 PlayerRowLabel(text: "Better match")
-                chip(titleOf(better)) { select(better) }
+                // (device-flow pass 11) The row goes once its track is on: the ring moves to that
+                // track's line (it fell wherever the focus engine put it).
+                chip(titleOf(better), id: "better") {
+                    select(better)
+                    focus = "line-\(better.id)"
+                }
             }
         }
         let noneOn = !tracks.contains { $0.selected }
@@ -380,6 +407,8 @@ struct PlayerSubtitlesPanel: View {
             chip(searching ? "Searching…" : "Search", icon: "magnifyingglass", id: "chip-Search") { Task { await submit() } }
             if override {
                 chip("Back to what's playing") {
+                    // (device-flow pass 11) The chip leaves with the override: the ring goes to Search.
+                    focus = "chip-Search"
                     override = false
                     query = context?.meta.name ?? title
                     target = home
@@ -403,7 +432,9 @@ struct PlayerSubtitlesPanel: View {
         if results != nil, list.isEmpty, !searching {
             note(tooNew ? "Too new. Subtitles haven't been published yet." : "No subtitles found. Try another title above, or adjust the season and episode.")
         }
-        ForEach(Array(list.prefix(limit).enumerated()), id: \.element.id) { i, r in
+        // (device-flow pass 11) Keyed by id and URL like bp-subtitle-find (`${source}:${id}:${url}`):
+        // two addons answering with the same id drew one row twice and shared its focus target.
+        ForEach(Array(list.prefix(limit).enumerated()), id: \.element.key) { i, r in
             if i == 0 || list[i - 1].langName != r.langName { PlayerRowLabel(text: r.langName).padding(.top, BP.px(6)) }
             let isAdded = added.contains(r.url)
             Button {
@@ -412,11 +443,17 @@ struct PlayerSubtitlesPanel: View {
                 PlayerLineLabel(icon: isAdded ? "checkmark" : "plus", title: r.title, detail: r.detail, badges: isAdded ? [T("Added")] + r.tags : r.tags)
             }
             .buttonStyle(PlayerLineStyle())
-            .focused($focus, equals: "find-\(r.id)")
+            .focused($focus, equals: "find-\(r.key)")
         }
         if list.count > limit {
             PlayerChipRow {
-                chip(T("Show %lld more", list.count - limit)) { limit += Self.page }
+                chip(T("Show %lld more", list.count - limit), id: "find-more") {
+                    // (device-flow pass 11) The last page takes the chip away: the ring goes to the
+                    // first row it revealed instead of wherever the focus engine put it.
+                    let from: Int = limit
+                    limit += Self.page
+                    if from < list.count, list.count <= from + Self.page { focus = "find-\(list[from].key)" }
+                }
             }
         }
     }

@@ -285,7 +285,14 @@ struct PlayerSpeedPanel: View {
             .focusSection()
         }
         .onAppear {
-            let seed = isLive ? "sleep-0" : "speed-\(speeds.firstIndex { abs($0 - rate) < 0.01 } ?? 1)"
+            // (device-flow pass 11) The row that is on takes the ring. A rate no row lists (a room's
+            // speed, a default outside the presets) fell back to the second row, which is not
+            // Normal once a custom speed sorts below 0.75; a live channel always opened on 30 min.
+            let list: [Double] = speeds
+            let normal: Int = list.firstIndex(where: { abs($0 - 1) < 0.001 }) ?? 0
+            let speedAt: Int = list.firstIndex(where: { abs($0 - rate) < 0.01 }) ?? normal
+            let sleepAt: Int = sleepRows.firstIndex(where: { isSelected($0.mode) }) ?? 0
+            let seed: String = isLive ? "sleep-\(sleepAt)" : "speed-\(speedAt)"
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = seed }
         }
     }
