@@ -43,13 +43,23 @@ final class LiveGuideModel: ObservableObject {
     /// Bumped when the playlist or the guide data changes: replies from before are dropped.
     private var epoch = 0
 
-    func seed(playlistId: String, channelIds: [String]) async {
+    /// bp-guide.tsx resetKey (`${activeId}:${catKey}`): the list the window was seeded for.
+    private var resetKey: String?
+
+    func seed(playlistId: String, channelIds: [String], resetKey: String) async {
         let now = Date().timeIntervalSince1970 * 1000
-        if windowStart == 0 {
-            windowStart = (((now - Self.pastPadMs) / Self.slotMs).rounded(.down)) * Self.slotMs
-            windowEnd = windowStart + Self.initialWindowMs
-            viewStart = windowStart
+        if windowStart == 0 || self.resetKey != resetKey {
+            // (live sources device pass) bp-guide.tsx seededRef: another source or chip opens on
+            // now again. The window stayed wherever the last chip had been scrolled to (hours
+            // ahead, or yesterday), so a new category opened far from what is on.
+            let start = (((now - Self.pastPadMs) / Self.slotMs).rounded(.down)) * Self.slotMs
+            let end = start + Self.initialWindowMs
+            if windowStart != 0, start != windowStart || end != windowEnd { stale = Set(lanes.keys) }
+            windowStart = start
+            windowEnd = end
+            viewStart = start
         }
+        self.resetKey = resetKey
         if self.playlistId != playlistId { epoch += 1; pending = [] }
         let changedList = self.playlistId != playlistId || self.channelIds != channelIds
         self.playlistId = playlistId
@@ -202,17 +212,25 @@ struct LiveGuideView: View {
     var body: some View {
         VStack(spacing: 0) {
             ruler
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: BP.px(4)) {
-                    ForEach(live.visible) { ch in
-                        row(ch)
-                            .onAppear { model.rowAppeared(ch.id) }
-                            .onDisappear { model.rowDisappeared(ch.id) }
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: BP.px(4)) {
+                        ForEach(live.visible) { ch in
+                            row(ch)
+                                .id(ch.id)
+                                .onAppear { model.rowAppeared(ch.id) }
+                                .onDisappear { model.rowDisappeared(ch.id) }
+                        }
                     }
+                    .padding(.bottom, BP.px(150) + BP.hintHeight)
+                    .padding(.top, BP.px(4))
+                    .padding(.horizontal, Self.headroom)
                 }
-                .padding(.bottom, BP.px(150) + BP.hintHeight)
-                .padding(.top, BP.px(4))
-                .padding(.horizontal, Self.headroom)
+                .onChange(of: live.focusRequest) { _, request in
+                    guard let id = request?.channelId else { return }
+                    live.focusRequest = nil
+                    restoreFocus(to: id, proxy: proxy)
+                }
             }
             // (layout pass) The channel cells sit flush with the scroller's left edge, so its clip cut
             // the focused cell's ring and lift (~17 pt out) off its whole left side, and the top of
@@ -233,9 +251,11 @@ struct LiveGuideView: View {
                 }
             }
         }
-        .task(id: live.visible.map(\.id)) {
-            await model.seed(playlistId: live.selectedPlaylist ?? "", channelIds: live.visible.map(\.id))
+        .task(id: live.visibleIds) {
+            let key: String = (live.selectedPlaylist ?? "") + ":" + live.category
+            await model.seed(playlistId: live.selectedPlaylist ?? "", channelIds: live.visibleIds, resetKey: key)
         }
+        .onChange(of: live.category) { _, _ in portal = nil }
         .task {
             // bp-live-tick: the now line and airing state move every 10 s.
             while !Task.isCancelled {
@@ -259,7 +279,15 @@ struct LiveGuideView: View {
                 else if portal?.channel.id == id { portal = nil }
             }
         }
-        .onChange(of: focused) { _, id in
+        .onChange(of: focused) { old, id in
+            // (live sources device pass) use-bp-guide-nav: Right from the channel cell lands on what is
+            // airing now. The focus engine took the ring to the lane's left edge (an hour back at
+            // first, wherever the lane had been scrolled after that): no way back to now.
+            if let old, let id, let chId = Self.starChannel(old), !id.hasSuffix(Self.starSuffix), Self.channelOf(id) == chId,
+               let nowKey = airingKey(chId), nowKey != id {
+                DispatchQueue.main.async { focused = nowKey }
+                return
+            }
             guard let id, let hit = cellFor(id) else { return }
             let cell = hit.0
             portal = (hit.1, cell)
@@ -276,9 +304,44 @@ struct LiveGuideView: View {
 
     private func cellFor(_ key: String) -> (LiveGuideModel.Cell, LiveModel.Channel)? {
         let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
-        guard parts.count == 2, let ch = live.visible.first(where: { $0.id == parts[0] }),
+        guard parts.count == 2, let ch = live.channel(parts[0]),
               let cell = model.lanes[ch.id]?.first(where: { $0.id == parts[1] }) else { return nil }
         return (cell, ch)
+    }
+
+    /// The channel cell's focus key (its star button) is the channel id with this suffix.
+    private static let starSuffix = "|\u{2605}"
+
+    private static func starChannel(_ key: String) -> String? {
+        guard key.hasSuffix(starSuffix) else { return nil }
+        return String(key.dropLast(starSuffix.count))
+    }
+
+    private static func channelOf(_ key: String) -> String {
+        key.split(separator: "|", maxSplits: 1).first.map(String.init) ?? key
+    }
+
+    /// The focus key of the cell airing now on a channel's lane (nil before its lane is built).
+    private func airingKey(_ channelId: String) -> String? {
+        guard let cells = model.lanes[channelId], let first = cells.first, let last = cells.last else { return nil }
+        let t: Double = Date().timeIntervalSince1970 * 1000
+        let airing: LiveGuideModel.Cell? = cells.first(where: { $0.startMs <= t && t < $0.endMs })
+        let cell: LiveGuideModel.Cell = airing ?? (t < first.startMs ? first : last)
+        return channelId + "|" + cell.id
+    }
+
+    /// Back from the player after zapping: scroll the playing channel's row in and ring its airing
+    /// cell once the lane is there (a row far down is built, and its lane asked, by the scroll).
+    private func restoreFocus(to channelId: String, proxy: ScrollViewProxy) {
+        guard live.visibleIds.contains(channelId) else { return }
+        proxy.scrollTo(channelId, anchor: .center)
+        Task { @MainActor in
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(100))
+                if let key = airingKey(channelId) { focused = key; return }
+            }
+            focused = channelId + Self.starSuffix
+        }
     }
 
     private func x(_ ms: Double) -> CGFloat { CGFloat(ms - model.viewStart) * pxPerMs }
@@ -328,6 +391,7 @@ struct LiveGuideView: View {
                 .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.panel2))
             }
             .buttonStyle(BPTileStyle())
+            .focused($focused, equals: ch.id + Self.starSuffix)
             .onLongPressGesture(minimumDuration: 0.6) { requestMatch(ch) }
             .frame(width: colPx, alignment: .leading)
             ZStack(alignment: .topLeading) {

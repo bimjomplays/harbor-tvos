@@ -1944,6 +1944,13 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const xt = engine.live.addStructured("xtream", "Smoke Xtream", "", "", "http://xt.example.invalid", "user", "pass");
   r.ok("live.addStructured builds an Xtream playlist", xt.kind === "xtream" && /get\.php/.test(xt.url) && xt.xtream.username === "user", JSON.stringify(xt));
   engine.live.removePlaylist(xt.id);
+  // (live sources device pass) A server typed without a scheme gets http://; a login missing a field is refused.
+  const xt2 = engine.live.addStructured("xtream", "Smoke Xtream 2", "", "", "xt.example.invalid:8080/", "user", "pass");
+  r.ok("live.addStructured gives a bare Xtream server http://", xt2.url.startsWith("http://xt.example.invalid:8080/get.php?") && xt2.xtream.server === "http://xt.example.invalid:8080", JSON.stringify(xt2));
+  engine.live.removePlaylist(xt2.id);
+  let refused = "";
+  try { engine.live.addStructured("xtream", "Half", "", "", "http://xt.example.invalid", "user", ""); } catch (e) { refused = String(e.message ?? e); }
+  r.ok("live.addStructured refuses an Xtream login without a password", /incomplete/.test(refused) && !engine.live.playlists().some((p) => p.name === "Half"), refused);
   const aw2 = await engine.detailRoom.awards({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop", releaseInfo: "1998" });
   r.ok("detailRoom.awards answers without an imdb id", aw2 && Array.isArray(aw2.groups) && Array.isArray(aw2.entries), JSON.stringify(aw2.groups));
   r.ok("sports.teamLeagues keeps team sports only", engine.sports.teamLeagues(["nba", "ufc"]).every((l) => l.key !== "ufc"), JSON.stringify(engine.sports.teamLeagues(["nba", "ufc"])));

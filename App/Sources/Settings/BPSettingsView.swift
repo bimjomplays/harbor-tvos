@@ -168,6 +168,9 @@ struct BPSettingsView: View {
     @FocusState private var focus: String?
     /// Setup → AI search (engine settingsRoom TvControl, pane "ai"): the key and model panel.
     @State private var aiOpen = false
+    /// Setup → Live TV (pane "live"): bp-settings renders BpLiveSetup in place; here the Sources
+    /// sheet over Settings. (live sources device pass) It left Settings for the Live TV tab (ST-3).
+    @State private var liveOpen = false
 
     var body: some View {
         HStack(alignment: .top, spacing: BP.px(23)) {
@@ -213,6 +216,9 @@ struct BPSettingsView: View {
         .onChange(of: refresh) { _, _ in model.scheduleReload() }
         .fullScreenCover(isPresented: $aiOpen, onDismiss: { Task { await model.load() } }) {
             AISearchPanel(onClose: { aiOpen = false })
+        }
+        .fullScreenCover(isPresented: $liveOpen, onDismiss: { Task { await model.load() } }) {
+            LiveSourcesCover(dismiss: { liveOpen = false })
         }
     }
 
@@ -344,7 +350,7 @@ struct BPSettingsView: View {
             }
         case "push":
             Button {
-                if c.pane == "live" { app.room = .live } else if c.pane == "ai" { aiOpen = true } else { openConnect() }
+                if c.pane == "live" { liveOpen = true } else if c.pane == "ai" { aiOpen = true } else { openConnect() }
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
