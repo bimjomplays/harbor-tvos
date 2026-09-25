@@ -60,8 +60,8 @@ keep what the audit found; their first column now says what happened to each row
 
 **Closed.** 30 of the 38 rows are fully ported: P1, P2, P3, P5, P6, P7, P8, P10, P11; S2, S3, S5
 (the picker's host match and the player's duration-mismatch chip); D1-D5; V1, V2; H1, H2, H3, H6;
-L1, L3; X1, X2; O1 (plus the "Startup & default" rows), O3, O4. Six are ported in part (P9, V3, H4,
-H5, X3, L2; what is left is listed below), S4 is open and O2 is the owner's. The same day also
+L1, L3; X1, X2; O1 (plus the "Startup & default" rows), O3, O4. Seven are ported in part (P9, S4, V3,
+H4, H5, X3, L2; what is left is listed below) and O2 is the owner's. The same day also
 closed these Big Picture behaviours that were outside the table:
 - bp-view-state keys: Search and Library state across tabs (L1), `sportsMode` per profile, and
   `liveCategory` / `collectionSource` / `collectionCategory` in `ShellViewState`, kept across tabs
@@ -75,7 +75,8 @@ closed these Big Picture behaviours that were outside the table:
   (C1); the lyrics' 9 s give-up (music-now-playing.tsx); manga page auto-retry (page-image.tsx).
 
 **Still open: parity gaps.**
-- S4: the subtitle step before playback (M; `subtitlePreselect` is off by default upstream).
+- S4 (ported in part, 09-25 late): the subtitle step runs; what differs is listed under "Still open
+  in this scope" below.
 - Flag icons for stream languages (FlagStack): SVGs that tvOS can't draw without converting them.
 - P9: use-track-autoload's automatic subtitle search and its "Search every source again" chip (the
   TV has the manual Find more lane, which shows no source counts). "{count} dl" is ported; the
@@ -172,7 +173,27 @@ Ported after P8 (P11 and review 22's open items):
 Still open in this scope:
 - P11: no TV control for the retention, full quality or "Clear" (desktop Settings → Library → Home only, as in Big Picture); the hero keeps the title's own backdrop ahead of the frame, as bp-cw-row cwMeta does, so it was left alone. Device check: the AVPlayer frame on HDR and Dolby Vision (the copy is tone-mapped to SDR), mpv's screenshot under MoltenVK with VideoToolbox, the frame's colours on HDR passthrough.
 - P9: "Search every source again" belongs to use-track-autoload's automatic subtitle search, which the TV does not run (it has the manual Find more lane). The SubtitleOffsetIndicator only shows for 1.8 s after a keyboard shortcut (use-keyboard-shortcuts), so it is not a TV gap.
-- S4 subtitle step (M, off by default).
+- S4 subtitle step, ported (`Streams/SubtitleStep.swift`, engine `subtitles.choices`, the
+  `preselect` field of `player.trackPlan`'s memory key). With `subtitlePreselect` on, a manual pick
+  in the Detail or Kids picker (addon stream or home-server copy) opens "Choose subtitles": the
+  use-subtitle-choices search for the picked stream, language chips with counts, "No subtitles"
+  seeded, the best match selected once the list loads, Back / Menu to the list (ring on the row
+  picked), Skip (no preselect) and Start playback. Gated as openPlayerGated: not in a Watch Together
+  session, not for instant play's auto-fired stream, not for iptv / live, movie / series / anime
+  only, never in the in-player switcher (upstream's `mode="switch"` goes through `onPick`, not
+  `openPlayerGated`); kid profiles get it too, as upstream. The player hands the choice to the
+  engine's track plan, which turns subtitles off or fetches and shows the URL (the remembered
+  restore path) in place of the automatic choice and the remembered subtitle. Left:
+  - The chosen result's `subtitleLoadMetadataOf` (provider label, classification) is not carried
+    into the player's track list; the added track shows its title and language only.
+  - Row icons are the language's flag emoji (settingsRoom.flagEmoji), not upstream's `<Flag>` SVG.
+  - A stream swapped in place (the source switcher, the kid switcher, a home-server quality change)
+    drops the preselect and gets the plan's automatic choice. Upstream keeps `src.subtitlePreselect`:
+    a quality change re-applies it on the new URL, and a source switch suppresses the automatic
+    choice without re-applying it.
+  - A retry or the move to mpv applies the choice again (upstream's preselectAppliedRef keeps it to
+    the first open of `src.url`).
+  - Sports addon pickers do not offer the step (their players take no preselect).
 - Flag icons for stream languages (FlagStack): upstream's flags are SVGs plus the flag-icons set, which tvOS cannot draw without converting them first.
 - X3 Live band art: ported in parity pass 3 below, except the sampled-glow wash and the channel hydration.
 
@@ -240,7 +261,7 @@ Left:
 | S3 (ported) | Stream row labels | `bp-stream-row.tsx:265-300,379-387` | "Cached on Real-Debrid", or "In TorBox" when it is your own cloud. "Unverified" or "No Label" when the quality is guessed. DUB/SUB badge (`showDubBadge`). Quality badges follow `showQualityBadge`. | A plain "Cached" badge (`PlayPickerView.swift:686,783`). No confidence label, no DUB/SUB, no badge toggles. | S | Yes |
 | S2 (ported) | Remaining picker chips | `bp-stream-chips.tsx:31-47,137-142,186`; `bp-stream-filters.ts:121`; `bp-streams.tsx:380-392` | Mode chip: All sources, Direct/debrid only, P2P only. A preferred-language chip, on by default under `requirePreferredLanguage`. A Refresh chip. A header like "N of M sources · K addons loading". "No sources found". | Only the All sources / Media servers toggle (`PlayPickerView.swift:611-614`). "Asking addons… n/m" shows only before the first result. No language chip, no Refresh. | S | Yes |
 | S5 (ported: picker pass 2, player with P8) | Watch Together host match | `components/host-match-chip.tsx` (`bp-stream-row.tsx:327`); `views/player/duration-mismatch-chip.tsx` | A guest sees which rows are "Same file as host" or a "Close match". In the player, a chip warns when the file's length differs from the host's and offers to find a closer one. | `TogetherModel.swift:120` receives `hostSource`, but neither the picker nor the player uses it. PROJECT_STATE lists this as open. | S-M | Yes, for Together |
-| S4 (open) | Subtitle step before playback | `bp-subtitle-step.tsx` via `bp-streams.tsx:337`, `use-bp-stream-play.ts:145-160` | With `subtitlePreselect` on (a desktop setting, off by default), a "Choose subtitles" screen appears between the pick and the player. It has "Skip, let Harbor choose" and "Start playback". | None. The picker goes straight to the player. | M | Maybe (off by default) |
+| S4 (ported in part, see "Still open in this scope") | Subtitle step before playback | `bp-subtitle-step.tsx` via `bp-streams.tsx:337`, `use-bp-stream-play.ts:145-160` | With `subtitlePreselect` on (a desktop setting, off by default), a "Choose subtitles" screen appears between the pick and the player. It has "Skip, let Harbor choose" and "Start playback". | None. The picker goes straight to the player. | M | Maybe (off by default) |
 
 ### Detail and Person (5)
 

@@ -164,6 +164,9 @@ final class StreamsModel: ObservableObject {
     @Published private(set) var addonRanked = false
     /// use-bp-streams rememberedStream: index into `streams` of the last pick (or season-locked source).
     @Published private(set) var rememberedIndex: Int?
+    /// (S4) use-imdb-id for this search (use-bp-streams s.imdbId / imdbIdVerified): the subtitle step
+    /// searches with it, as use-pick-handler's PlayerSrc carries it.
+    private(set) var imdb: SearchResult.Imdb?
     /// Home-server copies of this title (use-bp-streams homeServerCopies), loaded beside the addon search.
     @Published private(set) var copies: [HomeCopy] = []
     /// The copies lookup has answered (bp-streams waits for homeServersLoaded before its preference).
@@ -231,6 +234,7 @@ final class StreamsModel: ObservableObject {
                 [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object(["strictMode": .bool(strict), "filterDisabled": .bool(showAll)])])
             guard gen == searchGen else { return }
             if let err = r.error { phase = .failed(err); return }
+            imdb = r.imdb
             addonCount = r.addonCount
             addonOrder = r.addonOrder ?? []
             debridCount = r.debridCount ?? 0
@@ -336,6 +340,8 @@ final class StreamsModel: ObservableObject {
         var autoPicked: Bool? = nil
         /// view.ts PlayerSrc.streamRef (engine streamsRoom.deadRef): set by the picker for the stream it handed over.
         var streamRef: AnyJSON? = nil
+        /// (S4) view.ts PlayerSrc.subtitlePreselect: set by the picker's subtitle step (SubtitleStepView).
+        var subtitlePreselect: SubtitlePreselect? = nil
     }
 
     /// A home-server copy resolves through the server (direct play or transcode).

@@ -3668,6 +3668,15 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     const embeddedFirst = e.player.planTracks(D, null, [S(1, "eng", "English"), seed(2, "eng", { autoSelectionEligible: true })]);
     r.eq("player.planTracks: the file's own track in the same language beats a seed (track-selection confidence)", embeddedFirst.subId, "1");
     r.eq("player.planTracks: autoUpgrade follows settings.subtitleAutoUpgrade", [embeddedFirst.autoUpgrade, e.player.planTracks({ ...D, subtitleAutoUpgrade: true }, null, []).autoUpgrade], [false, true]);
+    // (S4) PlayerSrc.subtitlePreselect: the subtitle step's choice replaces the automatic one and the remembered restore.
+    const preOff = e.player.planTracks(D, { metaId: "tt7000007", preselect: { off: true } }, subs);
+    r.eq("(S4) player.planTracks: a preselect of No subtitles turns them off", [preOff.sub, preOff.subId, preOff.restore], ["off", null, null]);
+    const preUrl = e.player.trackPlan("default", true, { ...film, preselect: { off: false, url: "https://subs.example.invalid/step.srt", lang: "spa", title: "Spanish" } }, subs);
+    r.eq("(S4) player.trackPlan: a preselected result is fetched and shown instead of the remembered one", [preUrl.sub, preUrl.restore], ["none", { source: "https://subs.example.invalid/step.srt", lang: "spa", title: "Spanish" }]);
+    e.player.noteSubtitleSource("/caches/subs/step_9.srt", "https://subs.example.invalid/step9.srt");
+    const preListed = e.player.planTracks(D, { metaId: "tt7000008", preselect: { off: false, url: "https://subs.example.invalid/step9.srt", lang: "en" } }, [...subs, S(9, "en", "en", { external: true, externalFilename: "/caches/subs/step_9.srt" })]);
+    r.eq("(S4) player.planTracks: a preselected URL already listed is selected, not fetched again", [preListed.sub, preListed.subId, preListed.restore], ["select", "9", null]);
+    r.eq("(S4) player.planTracks: no preselect keeps the automatic choice", e.player.planTracks(D, { metaId: "tt7000009", preselect: null }, subs).subId, "1");
     const seedFilm = { metaId: "tt7000006" };
     e.player.noteSubtitleSource("/caches/subs/seed_7.srt", "https://addon.example.invalid/subs/en.srt");
     e.player.rememberSubtitle(seedFilm, seed(7, "eng"));
@@ -3743,6 +3752,14 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("subtitles.titleTarget: a one-letter query re-runs the current target", await e.subtitles.titleTarget("b", { imdbId: "", type: "movie", title: "x" }), null);
   const found = await e.subtitles.find("default", true, null, target, null, null, null);
   r.ok("subtitles.find searches the other title's episode with provider details and HI flags", found.tooNew === false && found.results.length === 3 && found.results[1].hearingImpaired === true && found.results[1].tags.join() === "HI/SDH" && found.results[0].provider === "OpenSubtitles" && found.results[2].langName === "French" && hits.includes("https://opensubtitles-v3.strem.io/subtitles/series/tt0903747:2:5.json"), JSON.stringify(found));
+  // (S4) bp-subtitle-step / use-subtitle-choices: the step's list, language groups and best match.
+  const stepSrc = { meta: { id: "tt0903747", type: "series", name: "Breaking Bad" }, episode: { season: 2, episode: 5 }, imdbId: "tt0903747", imdbIdVerified: true,
+    streamRef: { title: "Breaking.Bad.S02E05.1080p.WEB-DL.x264-GRP", parsedTitle: null, source: "WEB-DL", resolution: "1080p" }, filename: null };
+  const step = await e.subtitles.choices("default", true, null, stepSrc);
+  r.ok("(S4) subtitles.choices lists every result with bp-subtitle-step's label and detail", step.error === false && step.results.length === 3 &&
+    step.results[0].label === "OpenSubtitles V3 #2" && step.results[0].detail === "opensubtitles · HI/SDH" && step.results[1].detail === "opensubtitles" && step.results[2].langKey === "French" && step.results[0].flag === "\u{1F1FA}\u{1F1F8}" && step.results[2].flag === "\u{1F1EB}\u{1F1F7}" && step.results.every((x) => x.url.startsWith("https://subs.example.invalid/")), JSON.stringify(step));
+  r.eq("(S4) subtitles.choices groups by language in result order", step.groups, [{ langKey: "English", langDisplay: "English", count: 2 }, { langKey: "French", langDisplay: "French", count: 1 }]);
+  r.ok("(S4) subtitles.choices: the best match is a preferred-language result (rankSubtitleCandidates)", step.bestId === "os3:2", JSON.stringify(step.bestId));
   rec.dispose();
 }
 

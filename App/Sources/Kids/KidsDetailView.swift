@@ -206,6 +206,7 @@ struct KidsDetailView: View {
                 let s: Int? = ep?["season"]?.number.map { Int($0) }
                 let e: Int? = ep?["episode"]?.number.map { Int($0) }
                 let sub: String? = Self.subtitle(ep)
+                let preselect: SubtitlePreselect? = resolved.subtitlePreselect
                 let ctx = PlaybackContext(meta: meta, season: s, episode: e, videoId: ep?["videoId"]?.string,
                                           imdbId: meta.id.hasPrefix("tt") ? meta.id : nil, imdbVerified: meta.id.hasPrefix("tt"),
                                           homeServer: resolved.homeServer)
@@ -213,9 +214,9 @@ struct KidsDetailView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     let upNext: String? = nextEpisode(after: ctx).map { n in "S\(n.season) E\(n.episode) · \(n.name)" }
                     playing = KidsPlayTarget(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, pick: pick,
-                                             subtitles: link.subtitles ?? [])
+                                             subtitles: link.subtitles ?? [], preselect: preselect)
                 }
-            }, autoPlay: pickerAuto)
+            }, autoPlay: pickerAuto, subtitleStep: true)
         }
         .fullScreenCover(item: $playing) { t in
             PlayerScreen(title: t.title, subtitle: t.subtitle, url: t.url, headers: t.headers, context: t.context, upNext: t.upNext,
@@ -226,7 +227,7 @@ struct KidsDetailView: View {
                              pickerAuto = auto
                              let next = (t.pick?.attempt ?? 0) + 1
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = KidsPickerTarget(meta: meta, episode: t.episode, attempt: next) }
-                         }, streamSubtitles: t.subtitles) { natural in
+                         }, streamSubtitles: t.subtitles, subtitlePreselect: t.preselect) { natural in
                 playing = nil
                 // A finished episode opens the next one of the loaded season, straight to its best source.
                 if natural, let next = nextEpisode(after: t.context) {
@@ -465,6 +466,8 @@ struct KidsPlayTarget: Identifiable {
     var pick: PlayerPickInfo? = nil
     /// PlayerSrc.subtitles (use-pick-handler `subtitles: r.data.subtitles`): the stream's own subtitles.
     var subtitles: [SeedSubtitle] = []
+    /// (S4) PlayerSrc.subtitlePreselect: the picker's subtitle step chose it.
+    var preselect: SubtitlePreselect? = nil
 }
 
 /// kids-episodes.tsx EpisodeCard: 16:9 still, "Ep n" badge, the star rating badge, name below.

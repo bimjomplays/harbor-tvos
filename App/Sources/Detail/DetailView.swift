@@ -174,6 +174,8 @@ struct DetailView: View {
         var pick: PlayerPickInfo? = nil
         /// PlayerSrc.subtitles (use-pick-handler `subtitles: r.data.subtitles`): the stream's own subtitles.
         var subtitles: [SeedSubtitle] = []
+        /// (S4) PlayerSrc.subtitlePreselect: the picker's subtitle step chose it.
+        var preselect: SubtitlePreselect? = nil
     }
 
     /// Quick panel / Discovery Queue "Play now": open the picker as soon as the page knows what to play.
@@ -254,6 +256,7 @@ struct DetailView: View {
                 PlayPickerView(meta: picker.meta, episode: picker.episode, onPlay: { stream, resolved in
                     guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
                     let ep = picker.episode
+                    let preselect: SubtitlePreselect? = resolved.subtitlePreselect
                     let sub = ep.flatMap { e -> String? in
                         guard let s = e["season"]?.number, let n = e["episode"]?.number else { return nil }
                         return "S\(Int(s)) E\(Int(n))" + (e["name"]?.string.map { " · \($0)" } ?? "")
@@ -279,10 +282,10 @@ struct DetailView: View {
                             let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
                                                           hdrFormat: stream?.hdrFormat, filename: link.filename)
                             playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints, pick: pick,
-                                                 subtitles: link.subtitles ?? [])
+                                                 subtitles: link.subtitles ?? [], preselect: preselect)
                         }
                     }
-                }, autoPlay: pickerAuto, applyPreference: pickerPref)
+                }, autoPlay: pickerAuto, applyPreference: pickerPref, subtitleStep: true)
             }
         }
         .fullScreenCover(item: $related) { m in DetailView(meta: m) }
@@ -311,7 +314,7 @@ struct DetailView: View {
                              pickerAuto = auto; pickerPref = false
                              let next = (t.pick?.attempt ?? 0) + 1
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAttempt = next; picker = (model.meta, t.episode) }
-                         }, streamSubtitles: t.subtitles, pickEpisode: t.episode) { natural in
+                         }, streamSubtitles: t.subtitles, pickEpisode: t.episode, subtitlePreselect: t.preselect) { natural in
                 playerClosed = ClosedPlay(at: Date(), season: t.context.season, episode: t.context.episode)
                 playing = nil
                 hintSpent = true
