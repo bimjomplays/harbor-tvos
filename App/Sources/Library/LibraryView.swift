@@ -546,7 +546,7 @@ struct LibraryView: View {
     /// watched or bookmarked title read no mark in the Library.
     @MainActor private func tileValue(_ e: LibraryModel.Entry) -> String {
         let fraction: Double = e.progress ?? 0
-        let pct: Int = Int((fraction * 100).rounded())
+        let pct: Int = clampedInt((fraction * 100).rounded())
         let bar: String = pct >= 1 && pct <= 99 ? T("%lld%% watched", pct) : ""
         let marks: String = BPTileView.markValue(e.meta.id)
         let parts: [String] = [bar, marks].filter { !$0.isEmpty }

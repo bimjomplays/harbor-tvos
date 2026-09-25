@@ -215,7 +215,7 @@ extension View {
     /// VoiceOver's value for a drawn progress bar (a resume bar, a now-playing programme): upstream's
     /// "{n}% watched" by default. Nothing is read outside 1–99 %, where no bar is drawn.
     func bpProgressValue(_ fraction: Double?, key: String = "%lld%% watched") -> some View {
-        let pct = Int(((fraction ?? 0) * 100).rounded())
+        let pct = clampedInt(((fraction ?? 0) * 100).rounded())
         let text: String = pct >= 1 && pct <= 99 ? T(key, pct) : ""
         return accessibilityValue(Text(verbatim: text))
     }

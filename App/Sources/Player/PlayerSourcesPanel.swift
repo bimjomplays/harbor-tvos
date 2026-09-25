@@ -80,7 +80,7 @@ enum DurationMismatch {
     /// source-descriptor.ts formatRuntime: rounded seconds, m:ss or h:mm:ss.
     static func runtime(_ sec: Double) -> String {
         guard sec.isFinite, sec > 0 else { return "0:00" }
-        let total = Int(sec.rounded())
+        let total = clampedInt(sec.rounded())
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)

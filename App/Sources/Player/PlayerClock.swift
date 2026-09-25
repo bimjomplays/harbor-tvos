@@ -33,7 +33,7 @@ final class PlayerClock: ObservableObject {
     /// bp-player-scrub.tsx fmtTime: m:ss, or h:mm:ss from an hour.
     static func fmt(_ s: Double) -> String {
         guard s.isFinite, s > 0 else { return "0:00" }
-        let t = Int(s)
+        let t = clampedInt(s)
         return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
     }
 }

@@ -34,7 +34,7 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     var fileIdx: AnyJSON?
     var fileIndex: Int? {
         guard let n = fileIdx?.number, n.isFinite, n >= 0, n == n.rounded() else { return nil }
-        return Int(n)
+        return clampedInt(n)
     }
     /// engine/streams.ts stampPickerRows: bp-stream-row.tsx's detail line, full description and filename.
     struct RowText: Decodable, Equatable { var headline: String; var detail: String; var description: String; var filename: String }
@@ -482,8 +482,8 @@ final class StreamsModel: ObservableObject {
             if hostScores != nil { hostScores = nil }
             return
         }
-        let season: Int? = lastEpisode?["season"]?.number.map { Int($0) }
-        let ep: Int? = lastEpisode?["episode"]?.number.map { Int($0) }
+        let season: Int? = lastEpisode?["season"]?.number.map { clampedInt($0) }
+        let ep: Int? = lastEpisode?["episode"]?.number.map { clampedInt($0) }
         let args: [any Encodable] = [token, meta.id, season, ep]
         Task { [weak self] in
             let scores: [String: Double]? = try? await HarborEngine.shared.call("streamsRoom.hostMatch", args)

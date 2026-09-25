@@ -937,7 +937,7 @@ struct PlayPickerView: View {
         let s: Double? = episode?["imdbSeason"]?.number ?? episode?["season"]?.number
         let e: Double? = episode?["imdbEpisode"]?.number ?? episode?["episode"]?.number
         guard let s, let e else { return meta.name }
-        return "\(meta.name) · S\(Int(s))E\(Int(e))"
+        return "\(meta.name) · S\(clampedInt(s))E\(clampedInt(e))"
     }
 
     private var list: some View {

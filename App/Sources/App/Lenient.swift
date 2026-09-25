@@ -38,3 +38,12 @@ extension KeyedDecodingContainer where K == LenientKey {
         return items.compactMap { $0.value }
     }
 }
+
+/// (pre-release crash audit) `Int(x)` on a Double traps on NaN, ±infinity or a value past Int's
+/// range, and a synced, addon, server or player value can be any of those. This is `Int(x)` (it
+/// truncates toward zero) for every value that converts, clamped to ±2^53 (JavaScript's safe
+/// integers, far past any real count, index or second), and 0 for NaN / ±infinity.
+func clampedInt(_ value: Double) -> Int {
+    guard value.isFinite else { return 0 }
+    return Int(min(max(value, -9_007_199_254_740_991), 9_007_199_254_740_991))
+}
