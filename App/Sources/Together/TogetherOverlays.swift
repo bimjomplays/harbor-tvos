@@ -103,7 +103,7 @@ struct TogetherToastHost: View {
     // MARK: summon (together-summon-toast.tsx)
 
     private func summonToast(_ s: TogetherModel.IncomingSummon) -> some View {
-        let label = s.target.label ?? s.target.mediaTitle ?? (s.target.view.map { $0 == "queue" ? T("My Library") : $0.capitalized } ?? T("a title"))
+        let label: String = Self.summonHeadline(s.target)
         return HStack(spacing: BP.px(12)) {
             Text("\(s.name) wants you here").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
             Text(label).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
@@ -118,6 +118,26 @@ struct TogetherToastHost: View {
         .padding(BP.px(12))
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
         .focusSection()
+    }
+
+    /// together-summon-toast.tsx headline: a view target reads its label or viewLabel (Home,
+    /// Discover, Anime, My Library, else the view's own name), a title its mediaTitle, else "a
+    /// title"; empty strings count as missing (`||`). (device-flow pass 7) Home / Discover / Anime
+    /// were capitalised English ids, untranslated.
+    private static func summonHeadline(_ t: TogetherModel.SummonTarget) -> String {
+        func present(_ v: String?) -> String? { (v?.isEmpty ?? true) ? nil : v }
+        if let view = t.view {
+            if let l = present(t.label) { return l }
+            switch view {
+            case "home": return T("Home")
+            case "discover": return T("Discover")
+            case "anime": return T("Anime")
+            case "queue": return T("My Library")
+            default: return view
+            }
+        }
+        // The TV does not read addon targets: their label is the headline upstream shows.
+        return present(t.mediaTitle) ?? present(t.label) ?? T("a title")
     }
 
     private func leftToast(_ left: TogetherModel.IncomingParticipantLeft) -> some View {

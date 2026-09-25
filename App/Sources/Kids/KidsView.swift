@@ -36,6 +36,13 @@ struct KidsView: View {
                                 .padding(.top, BP.px(6))
                         }
                         .padding(.horizontal, BP.gutter)
+                        // (device-flow pass 7) Nothing else on the failed page takes focus (the hero's
+                        // plates are not buttons), and Try again sits at the left edge, under no bar item:
+                        // Down from Watch, Play or the profile chip found no target and the ring stayed
+                        // on the bar. A full-width focus section catches Down from anywhere (RoomView's
+                        // failure plate, run 251).
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .focusSection()
                     }
                     ForEach(Array(model.rows.enumerated()), id: \.element.key) { i, row in
                         KidsRowView(row: row, onOpen: { detail = $0 }) {

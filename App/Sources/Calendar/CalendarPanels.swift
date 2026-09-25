@@ -99,6 +99,8 @@ struct RemindersManagerView: View {
     @State private var loaded = false
     @State private var note: String?
     @State private var detail: Meta?
+    /// The reminder whose show page is (or was last) open.
+    @State private var lastOpened: String?
     @FocusState private var focus: String?
 
     var body: some View {
@@ -114,6 +116,7 @@ struct RemindersManagerView: View {
                         ForEach(rows) { r in
                             HStack(spacing: BP.px(8)) {
                                 Button {
+                                    lastOpened = r.id
                                     detail = Meta(id: r.id, type: r.type == "movie" ? "movie" : "series", name: r.name, poster: r.poster)
                                 } label: {
                                     HStack(spacing: BP.px(10)) {
@@ -162,7 +165,23 @@ struct RemindersManagerView: View {
             loaded = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = rows.first?.id ?? "close" }
         }
-        .fullScreenCover(item: $detail, onDismiss: { Task { rows = await ReminderCenter.shared.list() } }) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $detail, onDismiss: { rereadAfterPage() }) { m in DetailView(meta: m) }
+    }
+
+    /// The page just closed may have turned its reminder off (the clock on the show's page), and
+    /// the re-read then drops the row tvOS hands the ring back to: (device-flow pass 7) it fell to
+    /// whatever tvOS found. It goes to the row now in that place (the one before at the end), else
+    /// to Close, as a remove here does.
+    private func rereadAfterPage() {
+        let openedIndex: Int? = rows.firstIndex(where: { $0.id == lastOpened })
+        let opened: String? = lastOpened
+        Task {
+            let fresh: [ReminderCenter.Row] = await ReminderCenter.shared.list()
+            rows = fresh
+            guard let opened, !fresh.contains(where: { $0.id == opened }), detail == nil else { return }
+            let target: String = fresh.isEmpty ? "close" : fresh[min(openedIndex ?? 0, fresh.count - 1)].id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if detail == nil { focus = target } }
+        }
     }
 
     private func remove(_ r: ReminderCenter.Row) async {

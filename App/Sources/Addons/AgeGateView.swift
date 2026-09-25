@@ -15,6 +15,11 @@ struct AgeGateView: View {
     @State private var picks: [Int?] = [nil, nil, nil]
     @State private var submitted = false
     @State private var verified = false
+    /// (device-flow pass 7) "question-option" of the ring. A wrong round keeps the ring on Continue,
+    /// which the fresh round 1.4 s later disables (nothing answered yet): tvOS threw it to whatever
+    /// it found. And the gate opened with the ring on Cancel, the only control until the questions
+    /// arrived. Each round now starts on the first answer of the first question.
+    @FocusState private var ring: String?
 
     private var allAnswered: Bool { !questions.isEmpty && picks.prefix(questions.count).allSatisfy { $0 != nil } }
     private var allCorrect: Bool { questions.enumerated().allSatisfy { i, q in picks[i] == q.correct } }
@@ -107,6 +112,7 @@ struct AgeGateView: View {
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
         .bpSelected(picked)
+        .focused($ring, equals: "\(qi)-\(oi)")
     }
 
     private func deal() async {
@@ -114,6 +120,8 @@ struct AgeGateView: View {
         questions = Array((r?.questions ?? []).prefix(3))
         picks = [nil, nil, nil]
         submitted = false
+        guard !questions.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if !verified { ring = "0-0" } }
     }
 
     private func submit() {
