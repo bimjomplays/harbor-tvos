@@ -618,6 +618,7 @@ export const collectionsRoom = {
   categories: collectionsGlue.categories,
   tmdb: collectionsGlue.tmdb,
   curatedRow: collectionsGlue.curatedRow,
+  curatedGate: collectionsGlue.curatedGate,
   tmdbCard: collectionsGlue.tmdbCard,
   tvdb: collectionsGlue.tvdb,
   tvdbDetail: collectionsGlue.tvdbDetail,
@@ -784,6 +785,7 @@ export const profilesRoom = {
   pickColor: profilesRoomGlue.pickColor,
   purge: profilesRoomGlue.purge,
   launchPicker: profilesRoomGlue.launchPicker,
+  returnPicker: profilesRoomGlue.returnPicker,
 };
 
 /** Per-profile gating (lib/parental.tsx, bp-top-bar useBpTabGate, profile-identity-sync hideContent). */

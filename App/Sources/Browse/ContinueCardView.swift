@@ -20,13 +20,22 @@ struct ContinueCardView: View {
                     Text(item.name).font(BP.sans(14, .bold)).foregroundStyle(BP.ink).lineLimit(1)
                 }
                 HStack(spacing: BP.px(6)) {
-                    HStack(spacing: BP.px(4)) {
-                        Image(systemName: item.external == "trakt" ? "checkmark.circle" : item.external == "simkl" ? "circle.dotted" : item.waitingForAir ? "clock" : "play.fill").accessibilityHidden(true).font(.system(size: BP.px(8), weight: .bold))
-                        Text(statusText)
+                    // bp-cw-card-meta BpCwCardPill: nothing to say and no service mark, no pill.
+                    if !episodeText.isEmpty || !trailingText.isEmpty || isExternal {
+                        HStack(spacing: BP.px(4)) {
+                            Image(systemName: item.external == "trakt" ? "checkmark.circle" : item.external == "simkl" ? "circle.dotted" : item.waitingForAir ? "clock" : "play.fill").accessibilityHidden(true).font(.system(size: BP.px(8), weight: .bold))
+                            if !episodeText.isEmpty { Text(episodeText).lineLimit(1).fixedSize() }
+                            if !episodeText.isEmpty && !trailingText.isEmpty { Text(verbatim: "·").opacity(0.4).accessibilityHidden(true) }
+                            if !trailingText.isEmpty {
+                                Text(trailingText).lineLimit(1)
+                                    // bp-cw-card-meta: Up Next reads in the touch colour.
+                                    .foregroundStyle(upNextShown ? BP.accent : BP.ink)
+                            }
+                        }
+                        .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink)
+                        .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(4))
+                        .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.void_.opacity(0.92)))
                     }
-                    .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink)
-                    .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(4))
-                    .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.void_.opacity(0.92)))
                     // bp-cw-card-meta badges: watched on Trakt, new episodes since the last watch.
                     if item.watched { Image(systemName: "checkmark").font(.system(size: BP.px(9), weight: .bold)).foregroundStyle(BP.canvas).padding(BP.px(4)).background(Circle().fill(BP.live)) }
                     if item.newEpisode > 0 {
@@ -52,20 +61,48 @@ struct ContinueCardView: View {
         .accessibilityLabel(Text(verbatim: accessibilityText))
     }
 
-    /// bp-cw-card-meta.tsx bpCwCardLabel.
+    /// bp-cw-card-meta.tsx bpCwCardLabel: name, episode, state, badges.
     private var accessibilityText: String {
         let fresh = item.newEpisode <= 0 ? "" : (item.newEpisode == 1 ? T("1 new episode since you last watched") : T("%lld new episodes since you last watched", item.newEpisode))
-        return [item.name, statusText, item.watched ? T("Watched on Trakt") : "", fresh, item.watcher.map { T("Watched by %@", $0) } ?? ""]
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
+        let watcher: String = item.watcher.map { T("Watched by %@", $0) } ?? ""
+        let parts: [String] = [item.name, episodeText, trailingText, item.watched ? T("Watched on Trakt") : "", fresh, watcher]
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    private var statusText: String {
+    private var isExternal: Bool { !(item.external ?? "").isEmpty }
+
+    /// lib/stremio isAnimeCwItem (the card's flag, or an anime catalogue id).
+    private var isAnime: Bool {
+        item.anime || ["kitsu:", "mal:", "anilist:", "anidb:"].contains { item.id.hasPrefix($0) }
+    }
+
+    /// bp-cw-row.tsx episodeLabel: "Episode {n}" for anime (absolute numbering), "S{s} E{e}" for a
+    /// series, nothing for a film.
+    private var episodeText: String {
+        guard item.type != "movie", let e = item.episode, e > 0 else { return "" }
+        if isAnime { return T("Episode %lld", e) }
+        return T("S%lld E%lld", item.season ?? 0, e)
+    }
+
+    /// bp-cw-card-meta BpCwCardPill: Up Next shows only while the card is not waiting for air.
+    private var upNextShown: Bool { item.upNext && !item.waitingForAir }
+
+    /// BpCwCardPill trailing: the air countdown, else "Up Next", else the time left (upstream puts
+    /// the TMDB episode title first when it has one; the TV does not look it up).
+    private var trailingText: String {
         if item.waitingForAir { return Self.countdown(item.nextAirDate) }
-        if item.upNext { return T("Up Next") + (item.season.map { " · S\($0) E\(item.episode ?? 0)" } ?? "") }
-        if let s = item.season, let e = item.episode { return "S\(s) E\(e)" }
-        let left = Int((1 - item.progress) * 100)
-        return item.progress > 0 ? "\(left)% left" : T("Resume")
+        if upNextShown { return T("Up Next") }
+        return remainingText
+    }
+
+    /// bp-cw-row.tsx remainingLabel: "Almost done", "{n}m left", "{h}h {m}m left" from the saved
+    /// duration and offset; nothing without a duration or for a Trakt / Simkl entry.
+    private var remainingText: String {
+        guard item.durationMs > 0, !isExternal else { return "" }
+        let mins: Int = max(0, Int(((item.durationMs - item.timeOffsetMs) / 60000).rounded()))
+        if mins < 1 { return T("Almost done") }
+        if mins < 60 { return T("%lldm left", mins) }
+        return T("%lldh %lldm left", mins / 60, mins % 60)
     }
 
     /// bp-cw-card-meta useAirCountdown: "Airing now" / "Next in 2d 3h" / "Next in 40m".

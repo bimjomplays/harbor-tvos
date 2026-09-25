@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import UIKit
 
 /// Top-level flow: boot → onboarding (first run) → who's watching → shell.
 @MainActor
@@ -175,6 +176,8 @@ final class AppModel: ObservableObject {
     let account = AccountStore.shared
     let profiles = ProfilesStore.shared
     let sync = SyncReader.shared
+    /// Search and Library state kept across tab switches (Shell/ShellViewState.swift).
+    let views = ShellViewState()
 
     private var bag = Set<AnyCancellable>()
     private let isBrowseLayer: Bool
@@ -190,7 +193,17 @@ final class AppModel: ObservableObject {
             guard let self, id == nil, self.stage == .shell else { return }
             self.stage = .whoIsWatching
         }.store(in: &bag)
+        // use-bp-profile-reset resetBpViewState: another profile gets a fresh Search and Library.
+        profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in
+            self?.views.reset()
+        }.store(in: &bag)
         guard !isBrowseLayer else { return }
+        // lib/profiles.tsx window "focus": back in front after the prompt interval, Who's watching.
+        NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { @MainActor in await self?.promptWhoOnReturn() }
+            }.store(in: &bag)
         // (profiles bug pass) The Harbor session is per profile (theme-auth sessionKey). Boot starts
         // profile sync only when the restored profile is signed in, and Sign out stops it, but
         // nothing started it again when a signed-in profile became active later (a switch to the
@@ -332,6 +345,20 @@ final class AppModel: ObservableObject {
             return
         }
         goToWhoOrShell()
+    }
+
+    /// lib/profiles.tsx:569-580 (the window "focus" listener): Harbor coming back to the front asks
+    /// Who's watching again once profilePromptInterval (15m / 30m) has passed since the last pick
+    /// (engine `profilesRoom.returnPicker`). tvOS resumes the app rather than relaunching it, so the
+    /// launch path alone never asked. Like that path, a kid behind a parent PIN is never taken off
+    /// its profile this way, and like the profile chip it opens over the profile in use (Back
+    /// returns to it). Not over a film (leaving the shell would close the player) or setup.
+    private func promptWhoOnReturn() async {
+        guard stage == .shell, !Fixtures.active, profiles.active?.kid?.parentPinHash == nil,
+              !PlaybackState.shared.active, !PiPBrowse.shared.isUp else { return }
+        guard let open: Bool = try? await HarborEngine.shared.call("profilesRoom.returnPicker", []), open else { return }
+        guard stage == .shell, !PlaybackState.shared.active, !PiPBrowse.shared.isUp else { return }
+        stage = .whoIsWatching
     }
 
     func finishOnboarding() {

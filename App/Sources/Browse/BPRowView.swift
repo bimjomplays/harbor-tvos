@@ -17,10 +17,43 @@ struct BPRowView: View {
     var restoreCell: String? = nil
     /// The row gained (true) or lost (false) the focused tile.
     var onHold: ((Bool) -> Void)? = nil
+    /// use-bp-focus toNav: Left at the start of the row (Right under RTL) takes the ring to the top
+    /// bar. Only rail rows pass it (a room's rows, where the bar is right above); nil does nothing.
+    var onNavEdge: (() -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var seeAllFocused: Bool
+    /// Bumped to bring the last cell into existence (the track is lazy) before the ring goes there.
+    @State private var revealLast = 0
     @Environment(\.shellFocusNamespace) private var shellNS
+    @Environment(\.layoutDirection) private var layoutDirection
     @Namespace private var rowNS
+
+    /// The row's cells, one per title (the ForEach ids).
+    private var items: [Meta] { row.metas.uniquedById() }
+
+    /// Physical directions for the row's start and end: mirrored under RTL, as upstream's are.
+    private var startDir: MoveCommandDirection { layoutDirection == .rightToLeft ? .right : .left }
+    private var endDir: MoveCommandDirection { layoutDirection == .rightToLeft ? .left : .right }
+
+    /// use-bp-focus stepAcross for a cell. A press that tvOS can carry to a neighbour is left to it;
+    /// only the two dead ends act. bpSeeAllEnter: Right on the last cell puts the ring on the row's
+    /// own see-all (a row without one does nothing, as upstream shakes). toNav: Left on the first
+    /// cell reaches the top bar, on the tab the row names (RoomView / DiscoverView pass it).
+    private func tileMove(_ dir: MoveCommandDirection, at index: Int, count: Int) {
+        if dir == endDir, index == count - 1, onSeeAll != nil {
+            seeAllFocused = true
+        } else if dir == startDir, index == 0, let onNavEdge {
+            onNavEdge()
+        }
+    }
+
+    /// bp-row-see-all.ts bpSeeAllExit: back to the row's last cell, not whatever tvOS scores nearest.
+    private func seeAllMove(_ dir: MoveCommandDirection) {
+        guard dir == startDir, let last = items.last else { return }
+        let id: String = last.id
+        revealLast += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focusedId = id }
+    }
 
     /// readBpRowPosition: the cell this row had last time focus left it.
     private var remembered: String? {
@@ -39,6 +72,9 @@ struct BPRowView: View {
                         .buttonStyle(BPSeeAllStyle())
                         .focused($seeAllFocused)
                         .accessibilityIdentifier("seeall-\(row.key)")
+                        // bp-row-see-all.ts bpSeeAllExit: Left off the see-all goes straight back to
+                        // the last cell of its own row (Right under RTL).
+                        .onMoveCommand { dir in seeAllMove(dir) }
                 }
             }
             .padding(.horizontal, BP.gutter)
@@ -47,7 +83,7 @@ struct BPRowView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: BP.trackGap) {
                         // (bug pass) Unique ids: a catalog that repeats a title broke ForEach and focus.
-                        ForEach(Array(row.metas.uniquedById().enumerated()), id: \.element.id) { i, meta in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { i, meta in
                             Button { onSelect(meta) } label: {
                                 BPTileView(meta: meta, shape: row.shape, rank: i + 1, focused: focusedId == meta.id)
                             }
@@ -56,6 +92,8 @@ struct BPRowView: View {
                             .prefersDefaultFocus(restoreCell == meta.id, in: shellNS ?? rowNS)
                             .accessibilityIdentifier("tile-\(row.key)-\(i)")
                             .onLongPressGesture(minimumDuration: 0.6) { onQuick?(meta) }
+                            // bp-row-see-all.ts / use-bp-focus stepAcross: both ends of a row lead on.
+                            .onMoveCommand { dir in tileMove(dir, at: i, count: items.count) }
                             // The lifted tile, its ring, shadow and caption draw over its neighbours.
                             .zIndex(focusedId == meta.id ? 1 : 0)
                         }
@@ -64,6 +102,10 @@ struct BPRowView: View {
                     .padding(.vertical, BP.px(14))   // room for the lift and ring
                 }
                 .scrollClipDisabled()
+                .onChange(of: revealLast) { _, _ in
+                    guard let last = items.last else { return }
+                    proxy.scrollTo(last.id, anchor: UnitPoint(x: 0.9, y: 0.5))
+                }
                 .onAppear {
                     // A remembered cell further along the track is brought into view (and so into
                     // existence, the track is lazy) before focus is asked to land on it.
@@ -106,7 +148,12 @@ struct BPRailView<Lead: View>: View {
     var onHold: ((String, Bool) -> Void)? = nil
     /// A lead row (Continue Watching, Live, the anime hero actions) holds focus.
     var leadHeld = false
+    /// bp-row data-bp-row-tab: the tab a row belongs to, where Left at its start lands the ring
+    /// (use-bp-focus toNav); nil (or no closure) lands on the active tab.
+    var rowTab: ((BrowseRow) -> Room?)? = nil
     @ViewBuilder var lead: () -> Lead
+    /// The shell's way to put the ring on its top bar (ShellView); absent outside a shell.
+    @Environment(\.bpFocusTopBar) private var focusTopBar
     @State private var focusedRow: String?
     /// The row that holds focus right now (focusedRow keeps the last one after focus moves on).
     @State private var heldRow: String?
@@ -138,6 +185,13 @@ struct BPRailView<Lead: View>: View {
         return { onSeeAll(row) }
     }
 
+    /// use-bp-focus toNav for a rail row: Left at its start goes up to the bar, on the row's tab.
+    private func navEdge(_ row: BrowseRow) -> (() -> Void)? {
+        guard let focusTopBar else { return nil }
+        let tab: Room? = rowTab?(row)
+        return { focusTopBar(tab) }
+    }
+
     private func parkEntry(_ proxy: ScrollViewProxy) {
         guard focusedRow == nil, let e = entry, rows.contains(where: { $0.key == e.row }) else { return }
         // The rail is lazy: bring the row into existence by its own id, then park it by its marker.
@@ -160,7 +214,8 @@ struct BPRailView<Lead: View>: View {
                                   onHold: { held in
                                       if held { heldRow = row.key } else if heldRow == row.key { heldRow = nil }
                                       onHold?(row.key, held)
-                                  })
+                                  },
+                                  onNavEdge: navEdge(row))
                             .id(row.key)
                             .background(alignment: .top) {
                                 // The park marker: parkOffset above the row's top edge.

@@ -51,6 +51,9 @@ struct WhoIsWatchingView: View {
                     self.pinFor = nil
                     if ok, commit(id, unlocked: true) { return }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { tileFocus = id }
+                    // (navigation UI test) The pad's fade-out ends after that, and tvOS then put
+                    // the ring on the first tile; set it again once the pad has gone.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { if self.pinFor == nil { tileFocus = id } }
                 }
                 .transition(.opacity)
             }

@@ -84,6 +84,12 @@ struct PlayerScreen: View {
     @State private var liveReloadTimes: [Date] = []
     /// The pending reload (or close) after a live channel ran out.
     @State private var liveEndTask: Task<Void, Never>?
+    /// (player parity pass) use-auto-retry.ts liveRetryCountRef / livePlayedRef: the reconnects made
+    /// for this channel, and whether it ever played (which allows a second one). Reset per channel.
+    @State private var liveRetries = 0
+    @State private var livePlayed = false
+    /// The pending live reconnect (its timer, 1.5 s or 4 s).
+    @State private var liveRetryTask: Task<Void, Never>?
     /// (player/live device pass) use-auto-retry.ts truncatedReloadedRef: this source already came
     /// back once after ending well before its length (a dropped connection).
     @State private var truncatedReloaded = false
@@ -325,7 +331,8 @@ struct PlayerScreen: View {
             if failed, !isLive, !roomOpen, !pipActive, panel == nil, resumePending == nil, !leaveConfirm { sourceErrorCard.transition(.opacity) }
             // live-channel-error.tsx: every live channel (the Home row, Search, Sports links too, where
             // only the bare transport showed); "Browse channels" only with a guide to browse.
-            if status.state == "error", isLive, panel == nil, !roomOpen, !pipActive { liveErrorCard.transition(.opacity) }
+            // (player parity pass) Only once use-auto-retry's live reconnects are used up (liveGaveUp).
+            if status.state == "error", isLive, liveGaveUp, panel == nil, !roomOpen, !pipActive { liveErrorCard.transition(.opacity) }
             if connectingShown { connectingCard.transition(.opacity) }
             // cinematic-player-loader.tsx: a kid gets the sea loader over everything until the first frame.
             if kidsLoading { kidsLoader.transition(.opacity) }
@@ -530,12 +537,15 @@ struct PlayerScreen: View {
             }
             skipTick()
             nowPlayingTick()
+            noteLivePlayed()
             stallTick()
             stubTick()
         }
         // views/player.tsx: an auto pick that fails before it ever played goes on to the next source.
         .onChange(of: status.state) { _, state in
             if state == "error" { autoNextOnError() }
+            // (player parity pass) use-auto-retry.ts: a live channel's error reconnects on its own first.
+            if state == "error", isLive { liveErrored() }
             // (bug pass 2) use-auto-end-exit.ts: a live channel's end reloads it.
             if state == "ended", isLive { liveEnded() }
             // (player/live device pass) use-auto-retry.ts premature EOF.
@@ -907,6 +917,38 @@ struct PlayerScreen: View {
             guard !Task.isCancelled, !finishing, token == reloadToken, status.state == "ended" else { return }
             finish(natural: false)
         }
+    }
+
+    /// (player parity pass) use-auto-retry.ts:141-160, live only: a channel that errors is loaded
+    /// again after 1.5 s, or 4 s once it has played; one reconnect before it ever played, two after
+    /// (per channel, never reset by the reconnect itself). The error card waits for the last one
+    /// to fail (liveGaveUp). Upstream mounts LiveChannelError on the error at once and swaps it for
+    /// the loader when the reconnect fires; here it stays down until the reconnects are spent, so
+    /// its onAppear does not pull the ring onto a card that is about to go.
+    private func liveErrored() {
+        guard isLive, !finishing, !liveGaveUp else { return }
+        let attempt: Int = liveRetries + 1
+        let delay: UInt64 = livePlayed ? 4_000_000_000 : 1_500_000_000
+        let token = reloadToken
+        liveRetryTask?.cancel()
+        liveRetryTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delay)
+            // The effect's cleanup upstream: the error clearing, a retry or a tune meanwhile cancels it.
+            guard !Task.isCancelled, !finishing, token == reloadToken, status.state == "error" else { return }
+            liveRetries = attempt
+            reloadSame()
+        }
+    }
+
+    /// use-auto-retry.ts maxAttempts: `livePlayedRef.current ? 2 : 1`.
+    private var liveGaveUp: Bool { liveRetries >= (livePlayed ? 2 : 1) }
+
+    /// use-auto-retry.ts livePlayedRef: set once the channel has a position or a buffer (hasProgress).
+    /// Only with a player: the clock keeps the last channel's reading until the new one's first tick.
+    private func noteLivePlayed() {
+        guard isLive, !livePlayed, controller != nil else { return }
+        let progress: Bool = clock.snap.position > 0.5 || clock.buffered > 0.5
+        if progress { livePlayed = true }
     }
 
     /// (player/live device pass) use-auto-retry.ts premature EOF (isTruncatedEnd): a stream that
@@ -1554,6 +1596,10 @@ struct PlayerScreen: View {
         // (bug pass 2) use-auto-end-exit.ts resets its reload count per source.
         liveEndTask?.cancel()
         liveReloadTimes = []
+        // (player parity pass) use-auto-retry.ts resets its live reconnects per source (src.url).
+        liveRetryTask?.cancel()
+        liveRetries = 0
+        livePlayed = false
         status = MPVPlayerController.Status()
         loadingSince = Date()
         controller = nil

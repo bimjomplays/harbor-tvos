@@ -201,6 +201,15 @@ final class MPVPlayerController: UIViewController {
         check(mpv_set_option_string(handle, "secondary-sid", "no"))
         check(mpv_set_option_string(handle, "embeddedfonts", "yes"))
         applySubtitleStyle(handle)
+        // (player parity pass) mpv.ts applyAudioFilters, which use-track-autoload runs as each file's
+        // tracks arrive (settings.audioNormalize, settings.audioProfile). A setting changed mid-file
+        // takes effect with the next file there too, so it is set once per player, before init.
+        // Previews decode no audio and Multiview tiles are not upstream's mpv bridge: neither gets it.
+        if ownsDisplay {
+            let slice = SettingsBridge.shared.slice
+            let af: String = Self.audioFilter(normalize: slice.audioNormalize ?? false, profile: slice.audioProfile)
+            if !af.isEmpty { check(mpv_set_option_string(handle, "af", af)) }
+        }
         check(mpv_set_option_string(handle, "subs-fallback", "yes"))
         check(mpv_set_option_string(handle, "keep-open", "yes"))
         check(mpv_initialize(handle))
@@ -358,7 +367,85 @@ final class MPVPlayerController: UIViewController {
         if type == "sub" { subPicks += 1 } else { audioPicks += 1 }
         let prop = type == "sub" ? "sid" : "aid"
         mpv_set_property_string(mpv, prop, track.map { String($0.id) } ?? "no")
-        if type == "sub" { sdhTrack = track.map { (forced: $0.forced, lang: $0.lang) }; applySdhFilter() }
+        if type == "sub" {
+            sdhTrack = track.map { (forced: $0.forced, lang: $0.lang) }
+            applySdhFilter()
+            assShown = Self.isAss(codec: track?.codec, title: track?.title)
+            applyAssPlacement()
+        }
+    }
+
+    /// (player parity pass) use-player-media.ts assNativeActive: the shown subtitle is a styled
+    /// (ASS/SSA) track, which mpv always draws itself on the TV. sub-style.ts keys the ASS margins
+    /// and sub-pos off it.
+    private var assShown = false
+
+    /// lib/player/sub-format.ts isAssTrack: an ASS/SSA codec, or a title ending in .ass / .ssa.
+    static func isAss(codec: String?, title: String?) -> Bool {
+        let c: String = (codec ?? "").uppercased()
+        if c.contains("ASS") || c.contains("SSA") || c.contains("SUBSTATION") || c.contains("SUB STATION") { return true }
+        let t: String = (title ?? "").lowercased()
+        return t.hasSuffix(".ass") || t.hasSuffix(".ssa")
+    }
+
+    /// sub-style.ts: sub-ass-force-margins / sub-use-margins follow `assNativeActive && override !== "no"`,
+    /// and sub-pos moves with subMarginY unless an ASS track keeps its own placement.
+    private func applyAssPlacement() {
+        guard let mpv else { return }
+        let s = SettingsBridge.shared.slice
+        let placement = Self.assPlacement(mode: Self.assOverride(s.subAssOverride), assShown: assShown, marginY: s.subMarginY ?? 12)
+        check(mpv_set_property_string(mpv, "sub-ass-force-margins", placement.margins))
+        check(mpv_set_property_string(mpv, "sub-use-margins", placement.margins))
+        check(mpv_set_property_string(mpv, "sub-pos", placement.pos))
+    }
+
+    /// sub-style.ts assMargins / reposition / sub-pos.
+    static func assPlacement(mode: String, assShown: Bool, marginY: Double) -> (margins: String, pos: String) {
+        let margins: String = (assShown && mode != "no") ? "yes" : "no"
+        let reposition: Bool = !assShown || mode != "no"
+        let y: Double = min(max(marginY, 0), 100)
+        let pos: Int = reposition ? Int(min(max(100 - y, 0), 100)) : 100
+        return (margins, String(pos))
+    }
+
+    /// settings.subAssOverride as mpv's sub-ass-override (settings/types.ts: no | yes | force | scale | strip).
+    static func assOverride(_ value: String?) -> String {
+        let v: String = value ?? "no"
+        return ["no", "yes", "force", "scale", "strip"].contains(v) ? v : "no"
+    }
+
+    /// sub-style.ts mpvFontFor(subFontFamily): upstream's faces are Inter, Vazirmatn, Segoe UI,
+    /// Times New Roman and Fredoka, which the TV does not carry. Each preset gets the TV's nearest
+    /// face: Switzer (the app's stand-in for Inter, bundled), Sentient (the bundled serif), and
+    /// tvOS's own Arabic, system and rounded faces. A custom font is a file on the desktop that
+    /// never reaches the TV, so it reads as the default. A face libass cannot find falls back to
+    /// the system font per glyph.
+    nonisolated static func subFont(_ family: String?) -> String {
+        switch family ?? "inter" {
+        case "arabic": return "Geeza Pro"
+        case "system": return "Helvetica Neue"
+        case "serif": return "Sentient"
+        case "rounded": return "Arial Rounded MT Bold"
+        default: return "Switzer"
+        }
+    }
+
+    /// lib/player/mpv.ts AUDIO_PROFILE_AF.
+    static let audioProfileFilters: [String: String] = [
+        "bass": "lavfi=[bass=g=7:f=110:w=0.6]",
+        "voice": "lavfi=[equalizer=f=300:t=q:w=1:g=-3,equalizer=f=2800:t=q:w=1:g=5]",
+        "bass-reduce": "lavfi=[bass=g=-8:f=110:w=0.6]",
+        "night": "lavfi=[acompressor=ratio=3:threshold=-20dB:attack=20:release=300:makeup=4dB]",
+    ]
+
+    /// mpv.ts applyAudioFilters: the normalizer, then the profile, then a limiter whenever either
+    /// is on; "" (no filters) otherwise.
+    static func audioFilter(normalize: Bool, profile: String?) -> String {
+        var parts: [String] = []
+        if normalize { parts.append("dynaudnorm=f=500:g=31:p=0.9:m=4:b=1") }
+        if let p = profile, let af = audioProfileFilters[p] { parts.append(af) }
+        if !parts.isEmpty { parts.append("lavfi=[alimiter=limit=0.97]") }
+        return parts.joined(separator: ",")
     }
 
     /// (player tracks pass) sub-style.ts sub-filter-sdh: settings.subHideSdh, but only while the
@@ -432,6 +519,8 @@ final class MPVPlayerController: UIViewController {
         command("sub-add", [file.path, "select", title, lang])
         sdhTrack = (forced: false, lang: lang.isEmpty ? nil : lang)
         applySdhFilter()
+        assShown = Self.isAss(codec: nil, title: file.lastPathComponent)
+        applyAssPlacement()
     }
 
     /// mpv.rs mpv_sub_add(select: false): `sub-add <file> auto <title> <lang>` lists the track
@@ -482,7 +571,7 @@ final class MPVPlayerController: UIViewController {
         let style = s.subStyle ?? "shadow"
         let fontsDir = Bundle.main.bundleURL.path
         if !live { set("sub-fonts-dir", fontsDir) }
-        set("sub-font", "Switzer")
+        set("sub-font", Self.subFont(s.subFontFamily))
         set("sub-font-size", "32")
         set("sub-scale", String(min(max((s.subFontSize ?? 32) / 32, 0.4), 4)))
         set("sub-color", mpvColor(s.subFontColor, opacity))
@@ -495,7 +584,14 @@ final class MPVPlayerController: UIViewController {
         set("sub-align-x", s.subAlignX ?? "center")
         set("sub-spacing", String(s.subLineSpacing ?? 0))
         set("sub-bold", (s.subBold ?? false) ? "yes" : "no")
-        set("sub-pos", String(Int(min(max(100 - (s.subMarginY ?? 12), 0), 100))))
+        // (player parity pass) sub-style.ts sub-ass-override (settings.subAssOverride), the ASS
+        // margins and sub-pos, which an ASS track keeps as its own under "no".
+        let assMode: String = Self.assOverride(s.subAssOverride)
+        let placement = Self.assPlacement(mode: assMode, assShown: assShown, marginY: s.subMarginY ?? 12)
+        set("sub-ass-override", assMode)
+        set("sub-ass-force-margins", placement.margins)
+        set("sub-use-margins", placement.margins)
+        set("sub-pos", placement.pos)
         set("sub-filter-sdh", sdhFilterOn ? "yes" : "no")
         set("sub-filter-sdh-harder", "no")
     }

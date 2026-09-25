@@ -85,6 +85,15 @@ final class LibraryModel: ObservableObject {
         return (p?.id ?? "default", p?.linked ?? true, p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey })
     }
 
+    /// bp-view-state useBpPersistedState("libraryTab"): Library opens on the tab it was left on
+    /// (ShellViewState). Media Servers restores its saved filters then, as a pick of it does.
+    init(tab: String? = nil) {
+        if let tab, !tab.isEmpty {
+            self.tab = tab
+            restoreOwned = tab == "media-servers"
+        }
+    }
+
     deinit { unsubscribe?() }
 
     func start() async {
@@ -240,7 +249,14 @@ final class LibraryModel: ObservableObject {
 }
 
 struct LibraryView: View {
-    @StateObject private var model = LibraryModel()
+    @StateObject private var model: LibraryModel
+    /// The shell's store: bp-view-state's libraryTab.
+    private let views: ShellViewState
+
+    init(views: ShellViewState) {
+        self.views = views
+        _model = StateObject(wrappedValue: LibraryModel(tab: views.libraryTab))
+    }
     @State private var detail: Meta?
     @State private var draft = ""
     /// views/library.tsx "Stats" (settings.wrappedButton) opens the Wrapped view.
@@ -349,6 +365,8 @@ struct LibraryView: View {
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16)).padding(.bottom, BP.hintHeight + BP.px(40))
         }
         .task { await model.start() }
+        // bp-view-state: the tab is kept for the next visit (the filters are this visit's own).
+        .onChange(of: model.tab) { _, t in views.libraryTab = t }
         .task {
             let p = ProfilesStore.shared.active
             statsEnabled = (try? await HarborEngine.shared.call("wrapped.enabled", [p?.id ?? "default", p?.linked ?? true]) as Bool) ?? false
