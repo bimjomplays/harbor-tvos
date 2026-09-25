@@ -53,6 +53,25 @@ Close behind: D3 anime Filler tag (S), H2 minutes-left on Continue Watching card
 watching on return (S), D2 hero provenance marks (S-M) and V1 award pages with playable
 winners (M).
 
+### Ported since this audit
+
+The player, Browse and Picker/Detail parity passes (PROJECT_STATE, 2026-09-25 15:57-16:08 UTC)
+ported P1, P2, P3, S2, S3, D1, D3, V2, H1, H2, L1, O1 and the "Available in" / TMDB-key half of D2.
+The parity batch after them ported:
+
+| # | What landed | Where |
+|---|---|---|
+| X1 | "Search your channels": name search over every playlist's sports channels (searchSportsChannels, 30 rows), Select plays, the pin square toggles "Always use for {league}"; opened from the event picker, the empty picker's primary button and the official-broadcast list; "Pinned channels are tried first for {league}." | `engine/sports.ts` `searchChannels`, `watch()` `searchable`/`attachedIds`/`leagueLabel`; `Sports/SportsChannelSearchView.swift`; `Sports/SportsEventView.swift` |
+| V1 | Award page: decade and category chips with counts, header counts of what the filters leave, winner tiles (metahub poster or year) paged 90 at a time; Select opens the IMDb id or a TMDB lookup scored by use-bp-award-work ("Checking with TMDB…" / "No match found"); keyless goes to Settings. | `engine/discover.ts` `awardPage` / `awardOpen`; `Discover/AwardDetailView.swift` |
+| D2 | The addon-origin mark: `Meta` decodes `addonOrigin` (kept across the Cinemeta re-read) and the hero draws the addon's logo and name. D2 is now complete. | `Browse/Meta.swift`, `Detail/DetailModel.swift`, `Detail/DetailView.swift` `AddonOriginMark` |
+| D5 | Crew row role names with singular/plural (Director(s), Creator(s), Writer(s), Producers, Cinematography, Music, Editor(s)); the facts card is upstream's `bpFactRows` (credit rows first); the Person page's "Top {n}" department rank (lib/rankings over TMDB person/popular). | `engine/detailRoom.ts`, `engine/personRoom.ts`, `Detail/PersonView.swift` |
+| H3 | Each room's failure copy (Home, Movies, Shows, Anime) with Try again; Movies / Shows / a service page that settles empty say why and offer Open settings. ("Anime is hidden" is not reachable on the TV: a hidden anime tab is off the bar.) | `Browse/RoomView.swift`, `Browse/BrowseModel.swift` |
+| H6 | `hidePosterTitles` hides the poster title (bp-tile showTitle). `cardBadgeLimit` has nothing to cap: TV tiles carry no score chips (upstream gate). | `Settings/SettingsBridge.swift`, `Browse/BPTileView.swift` |
+| O3 | The setup poster wall: two drifting columns at 7 % on the trailing side under a page wash; still under Reduce Motion. | `Onboarding/OnboardBackdropView.swift`, `Onboarding/OnboardingView.swift` |
+| O4 | TMDB step: "rejected" and "could not reach TMDB" are separate answers (engine `onboarding.checkTmdbKey`, configuration endpoint), Save it anyway only for the second, a live "{n} of 32 characters" note, Verify dims rather than disables. | `engine/onboarding.ts`, `Onboarding/TmdbStep.swift` |
+
+Still open from this audit: P5-P11, S4, S5, D4, V3, H4, H5, L2, L3, X2, X3, O2.
+
 ### Player (10)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
