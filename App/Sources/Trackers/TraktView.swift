@@ -77,7 +77,12 @@ final class TraktModel: ObservableObject {
 
     func disconnect() async {
         pollTask?.cancel(); code = nil
-        _ = try? await HarborEngine.shared.callJSON("\(service).disconnect", [])
+        // (settings pass 2) The last "Connected as …" stayed up under "Not connected".
+        note = nil
+        // simkl-panel.tsx: Simkl's disconnect also resets the profile's Simkl settings (engine/simkl.ts).
+        let p = ProfilesStore.shared.active
+        let args: [AnyJSON] = service == "simkl" ? [.string(p?.id ?? "default"), .bool(p?.linked ?? true)] : []
+        _ = try? await HarborEngine.shared.callJSON("\(service).disconnect", args)
         await refresh()
     }
 }
@@ -87,6 +92,9 @@ struct TraktPanel: View {
     @ObservedObject private var settings = SettingsBridge.shared
     /// When the waiting code was approved: the Cancel under the ring has just become Disconnect.
     @State private var connectedAt: Date?
+    /// (settings pass 2) trakt-panel.tsx / simkl-panel.tsx: Disconnect asks first (SettingsModal
+    /// "Disconnect from Trakt"); one press signed the tracker out at once.
+    @State private var confirmDisconnect = false
     init(service: String = "trakt", label: String = "Trakt") {
         _model = StateObject(wrappedValue: TraktModel(service: service, label: label))
     }
@@ -122,6 +130,20 @@ struct TraktPanel: View {
             if was != nil && now == nil { connectedAt = Date() }
         }
         .onDisappear { model.cancelConnect() }   // (bug pass 2)
+        .alert(disconnectTitle, isPresented: $confirmDisconnect) {
+            Button(T("Disconnect"), role: .destructive) { Task { await model.disconnect() } }
+            Button(T("Cancel"), role: .cancel) {}
+        } message: {
+            Text(verbatim: disconnectMessage)
+        }
+    }
+
+    private var disconnectTitle: String {
+        T(model.service == "simkl" ? "Disconnect from Simkl" : "Disconnect from Trakt")
+    }
+
+    private var disconnectMessage: String {
+        T(model.service == "simkl" ? "Disconnect Simkl? Syncing will stop until you reconnect." : "Disconnect Trakt? Scrobbles and syncs will stop until you reconnect.")
     }
 
     // T(): a String title is not looked up the way a Button literal is.
@@ -135,7 +157,7 @@ struct TraktPanel: View {
         if model.status.authenticated {
             // A press meant for Cancel that lands just after the approval must not disconnect.
             if let at = connectedAt, Date().timeIntervalSince(at) < 2 { return }
-            Task { await model.disconnect() }
+            confirmDisconnect = true
         } else if model.code != nil {
             model.cancelConnect()
         } else {

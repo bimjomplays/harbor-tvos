@@ -47,6 +47,8 @@ final class PasteTrackerModel: ObservableObject {
     func disconnect() async {
         _ = try? await HarborEngine.shared.callJSON("\(service).disconnect", [])
         url = nil
+        // (settings pass 2) The last "Connected as …" stayed up under "Not connected".
+        note = nil
         await refresh()
     }
 }
@@ -54,6 +56,11 @@ final class PasteTrackerModel: ObservableObject {
 struct PasteTrackerPanel: View {
     @StateObject private var model: PasteTrackerModel
     @State private var pasted = ""
+    /// (settings pass 2) anilist-panel.tsx / mal-panel.tsx: Disconnect asks first.
+    @State private var confirmDisconnect = false
+    /// (settings pass 2) Each step swaps the button under the ring (Connect → the code's Connect →
+    /// Disconnect → Connect): the ring fell off the panel. It follows to the step's lead button.
+    @FocusState private var lead: Bool
     init(service: String, label: String) { _model = StateObject(wrappedValue: PasteTrackerModel(service: service, label: label)) }
 
     var body: some View {
@@ -61,7 +68,8 @@ struct PasteTrackerPanel: View {
             if model.status.authenticated {
                 Text("Connected as \(model.status.username ?? "\(model.label) user")").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Your lists show in the Anime room and the Library.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                Button("Disconnect") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())
+                Button("Disconnect") { confirmDisconnect = true }.buttonStyle(BPActionStyle())
+                    .focused($lead)
             } else if let url = model.url {
                 HStack(alignment: .top, spacing: BP.px(18)) {
                     if let qr = Self.qr(url) {
@@ -74,25 +82,54 @@ struct PasteTrackerPanel: View {
                         Text("2. Copy the code it shows and paste it here (the iPhone keyboard for Apple TV can paste).").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                         BPField(label: "Code from \(model.label)", placeholder: "Paste the code or the whole page address", text: $pasted, phone: true)
                         HStack(spacing: BP.px(8)) {
+                            // (settings pass 2) Dimmed, not disabled, while the field is empty, so
+                            // the ring can wait here for the pasted code.
+                            let empty = pasted.trimmingCharacters(in: .whitespaces).isEmpty
                             Button(model.busy ? "Connecting…" : "Connect") {
-                                guard !model.busy else { return }
+                                guard !model.busy, !empty else { return }
                                 // (settings device pass) A rejected code stays in the field to fix
                                 // or retry; clearing it also disabled the focused Connect button.
-                                Task { if await model.complete(pasted) { pasted = "" } }
+                                Task {
+                                    if await model.complete(pasted) {
+                                        pasted = ""
+                                        refocus()
+                                    }
+                                }
                             }
-                                .buttonStyle(BPActionStyle(primary: true, busy: model.busy)).disabled(pasted.trimmingCharacters(in: .whitespaces).isEmpty)
-                            Button("Cancel") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())
+                                .buttonStyle(BPActionStyle(primary: true, busy: model.busy || empty))
+                                .focused($lead)
+                            Button("Cancel") { Task { await model.disconnect(); refocus() } }.buttonStyle(BPActionStyle())
                         }
                     }
                 }
             } else {
                 Text("Not connected").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Your \(model.label) lists in the Anime room and the Library").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                Button("Connect \(model.label)") { Task { await model.begin() } }.buttonStyle(BPActionStyle(primary: true))
+                Button("Connect \(model.label)") { Task { await model.begin(); refocus() } }.buttonStyle(BPActionStyle(primary: true))
+                    .focused($lead)
             }
             if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Connected") ? BP.live : BP.danger) }
         }
         .task { await model.refresh() }
+        .alert(disconnectTitle, isPresented: $confirmDisconnect) {
+            Button(T("Disconnect"), role: .destructive) { Task { await model.disconnect(); refocus() } }
+            Button(T("Cancel"), role: .cancel) {}
+        } message: {
+            Text(verbatim: disconnectMessage)
+        }
+    }
+
+    /// The step's lead button, once it is on screen.
+    private func refocus() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { lead = true }
+    }
+
+    private var disconnectTitle: String {
+        T(model.service == "mal" ? "Disconnect from MyAnimeList" : "Disconnect from AniList")
+    }
+
+    private var disconnectMessage: String {
+        T(model.service == "mal" ? "Disconnect MyAnimeList? Your progress will stop syncing until you reconnect." : "Disconnect AniList? Your lists will stop showing on the Anime page until you reconnect.")
     }
 
     private static func qr(_ text: String) -> UIImage? { QRCode.image(text) }

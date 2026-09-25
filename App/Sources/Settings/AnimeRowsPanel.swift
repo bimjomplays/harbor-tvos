@@ -16,6 +16,9 @@ struct AnimeRowsPanel: View {
     @State private var renaming: Row?
     @State private var newName = ""
     @FocusState private var focus: String?
+    /// (settings pass 2) A layout synced from another device (profile sync's `anime` section is
+    /// settings.animeRows) or picks tuned elsewhere: the panel kept the state it read on open.
+    @StateObject private var watch = SettingsFieldWatch { f in f.hasPrefix("anime") }
 
     /// The editor opens under the list: the ring goes to its Save (the field sits just above).
     private func startRename(_ r: Row) {
@@ -63,6 +66,9 @@ struct AnimeRowsPanel: View {
             if !rows.isEmpty { Button("Reset rows") { Task { await call("animeRowsReset", []) } }.buttonStyle(BPActionStyle()) }
         }
         .task { await load() }
+        .onChange(of: watch.tick) { _, _ in Task { await load() } }
+        // (settings pass 2) Menu closes the rename editor first; it used to leave Settings.
+        .onExitCommand(perform: renaming == nil ? nil : { if let r = renaming { endRename(r.key) } })
     }
 
     /// AnimeGenrePicker ("Tune anime"): genres steer Top Picks for You (settings.animeFavoriteGenres);
@@ -93,8 +99,17 @@ struct AnimeRowsPanel: View {
                 Text(verbatim: "\(T("Hide anime I've already watched")): \(T(t.hideWatched ? "On" : "Off"))").lineLimit(1)
             }
             .buttonStyle(BPActionStyle(primary: t.hideWatched))
+            .focused($focus, equals: "tune-hide")
             if t.genres.contains(where: { $0.on }) {
-                Button(T("Clear all")) { Task { await tuneCall("animeTuneClear", []) } }.buttonStyle(BPActionStyle())
+                // (settings pass 2) Clear all goes away with the genres it cleared, from under the
+                // ring: the ring moves to its neighbour instead of falling off the panel.
+                Button(T("Clear all")) {
+                    Task {
+                        await tuneCall("animeTuneClear", [])
+                        focus = "tune-hide"
+                    }
+                }
+                .buttonStyle(BPActionStyle())
             }
         }
     }

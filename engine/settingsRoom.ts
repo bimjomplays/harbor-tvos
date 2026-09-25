@@ -304,7 +304,9 @@ export function pane(profileId: string, linked: boolean) {
     servicesEmpty: t("Turn off what you do not have"),
     language: language ? { code: language.code, nativeLabel: language.nativeLabel, greeting: language.greeting, rtl: language.rtl } : null,
     playback: [
-      [t("Player engine"), s.playerEngine === "auto" ? t("Auto") : s.playerEngine],
+      // (settings pass 2) The TV's name for upstream's html5 value, as the Playback summary and the
+      // Player engine cells say it: the preview read "html5" beside a column that said AVPlayer.
+      [t("Player engine"), s.playerEngine === "auto" ? t("Auto") : s.playerEngine === "html5" ? NATIVE_ENGINE_LABEL : s.playerEngine],
       [t("Play button behavior"), t(source === "ask" ? "Ask every time" : source === "online" ? "Online streams" : "Home server")],
       [t("Hardware acceleration"), t(tvHwdec(s.mpvHwdec) === "auto" ? "Auto" : "Off")],
       [t("Skip intros"), t(s.autoSkipIntro ? "On" : "Off")],

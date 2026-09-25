@@ -84,7 +84,14 @@ struct SportsApiKeyPanel: View {
             if let i = info, i.saved { Text("Key saved on this device (\(i.length) characters)").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink) }
             BPField(label: "API-Sports key", placeholder: "Paste your API-Sports key", text: $draft, secure: true)
             HStack(spacing: BP.px(10)) {
-                Button("Save") { Task { await save(draft) } }.buttonStyle(BPActionStyle(primary: true)).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                // (settings pass 2) Dimmed, not disabled, while the field is empty: a save clears the
+                // draft, and disabling the focused Save threw the ring off the panel.
+                let empty = draft.trimmingCharacters(in: .whitespaces).isEmpty
+                Button("Save") {
+                    guard !empty else { return }
+                    Task { await save(draft) }
+                }
+                .buttonStyle(BPActionStyle(primary: true, busy: empty))
                 if info?.saved == true { Button("Clear key") { Task { draft = ""; await save("") } }.buttonStyle(BPActionStyle()) }
             }
             BPNote(text: "Saving does not verify your key. Sports uses it when loading supported competitions.")

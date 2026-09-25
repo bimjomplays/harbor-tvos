@@ -4,6 +4,13 @@ import { getSession, setSession, isAuthenticated } from "@/lib/simkl/session";
 import { simklScrobble } from "@/lib/simkl/scrobble";
 import { loadStoredSettings } from "@/lib/settings/load";
 import type { SimklPin } from "@/lib/simkl/types";
+import type { Settings } from "@/lib/settings/types";
+import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
+import { clearCalendarCache } from "@/lib/simkl/calendar";
+import { clearHomeRailsCache } from "@/lib/simkl/home-rails";
+import { clearCalendarSourceCache } from "@/lib/calendar-sources";
+import { clearAnimeGroupingCache } from "@/lib/simkl/anime-grouping";
+import { markSettingsPatched } from "./sync";
 
 const pins = new Map<string, SimklPin>();
 const issuedAt = new Map<string, number>();
@@ -51,7 +58,41 @@ export function status(): { authenticated: boolean; username: string | null } {
   return { authenticated: isAuthenticated(), username: getSession()?.username ?? null };
 }
 
-export function disconnect(): void {
+/**
+ * simkl-panel.tsx's confirmed Disconnect: besides dropping the session it puts the Simkl
+ * settings back to their defaults (scrobbling on, the home rails off, …) and clears the Simkl
+ * caches, so a later reconnect starts clean. (settings pass 2) The TV only dropped the session:
+ * "Scrobbling off" or the rails switched on survived a disconnect and came back on reconnect.
+ * The avatar half (useSimklAvatar/pushAvatar) is the account's and is left alone here.
+ */
+export const SIMKL_DISCONNECT_RESET: Partial<Settings> = {
+  simklScrobbleEnabled: true,
+  simklShowCommunityRatings: true,
+  simklEnableUserRatings: true,
+  simklHomeRailsEnabled: false,
+  simklUpNextRailEnabled: false,
+  simklTrendingRailEnabled: false,
+  showSimklBadge: true,
+  simklAnimeTitleLanguage: "english",
+  simklGranularFilters: {
+    movies: { plantowatch: true },
+    shows: { watching: true, plantowatch: true },
+    anime: { watching: true, plantowatch: true },
+  },
+} as Partial<Settings>;
+
+export function disconnect(profileId?: string, linked?: boolean): void {
+  if (typeof profileId === "string" && profileId) {
+    const l = linked !== false;
+    persistEffective({ ...loadEffective(profileId, l), ...SIMKL_DISCONNECT_RESET } as Settings, profileId, l);
+    const fields = Object.keys(SIMKL_DISCONNECT_RESET);
+    markSettingsPatched(fields);
+    window.dispatchEvent(new CustomEvent("harbor:settings-updated", { detail: { profileId, fields } }));
+  }
+  clearCalendarCache();
+  clearHomeRailsCache();
+  clearCalendarSourceCache();
+  clearAnimeGroupingCache();
   setSession(null);
 }
 
