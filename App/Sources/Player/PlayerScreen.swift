@@ -1214,7 +1214,7 @@ struct PlayerScreen: View {
             Spacer()
             if duration > 0 {
                 Text("\(fmt(remaining)) left").foregroundStyle(BP.inkSubtle)
-                TimelineView(.everyMinute) { _ in
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(BP.inkMuted)
                 }
             }
