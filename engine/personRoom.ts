@@ -7,6 +7,7 @@ import { t } from "@/lib/i18n";
 import { tmdbTitleCredits } from "@/lib/providers/tmdb/tmdb-title-credits";
 import { mergeBundledPersonAwards } from "@/lib/awards-history";
 import { awardSummary } from "@/lib/providers/wikidata";
+import { AWARD_CATALOG } from "@/lib/awards-catalog";
 import { applyMinRating, rankByRating, sortFilmography, TOP_PERFORMANCE_COUNT, TOP_PERFORMANCE_MIN, type FilmographySort } from "@/views/person/filmography-rank";
 import { dedupe, dedupeByMedia, DIRECTOR_JOBS, isCameoOrGuest, notableScore, PRODUCER_JOBS, WRITER_JOBS, calcAge, fmtDate } from "@/views/person/person-utils";
 import { rankCollaborators, type Collaborator, type CollaboratorTitle } from "@/views/person/collaborator-rank";
@@ -163,7 +164,9 @@ export async function page(personId: number, profileId: string, linked: boolean,
     knownFor: metas(knownFor),
     topRated: metas(topRated),
     collaborators: collaborators.map((c) => ({ id: c.id, name: c.name, portrait: portrait(c.profilePath), role: c.role ?? null, titles: c.titles })),
-    awards: awards.map((a) => ({ type: a.type, wins: a.wins, nominations: a.nominations })),
+    // (device-flow pass 6) bp-person.tsx BpPersonAwards names the body by AWARD_CATALOG's shorthand
+    // ("The Oscars", "BAFTAs"), raw; the TV capitalised the type key ("Oscar", "Bafta").
+    awards: awards.map((a) => ({ type: a.type, wins: a.wins, nominations: a.nominations, shorthand: AWARD_CATALOG[a.type]?.shorthand ?? null })),
     sections: shaped.filter((x) => x.credits.length > 0).map((x) => ({ id: x.id, title: SECTION_TITLES[x.id](x.credits.length), metas: metas(x.credits) })),
     total: count(raw), shownTotal: count(shaped), sort, minRating,
   };

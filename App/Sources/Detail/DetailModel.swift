@@ -740,8 +740,11 @@ final class DetailModel: ObservableObject {
     /// views/player.tsx airedNext: the episode after this one when it has aired
     /// (isNextAired(false, airDate): no date counts as aired). Specials never follow. An unaired
     /// next episode used to get the up-next card and an auto-advance into a picker with no streams.
+    /// (device-flow pass 6) Nor do specials lead anywhere: series-episodes.ts loadCinemetaEpisodes
+    /// and tmdbSeason drop season < 1 from the adjacency list, so a special has no next episode.
+    /// Specials sort first here, so the last special ran on into S1 E1 (up-next card, auto-advance).
     func airedNext(season s: Int, episode e: Int) -> Episode? {
-        guard let idx = episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < episodes.count else { return nil }
+        guard s > 0, let idx = episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < episodes.count else { return nil }
         let next = episodes[idx + 1]
         guard next.season > 0, (next.released ?? .distantPast) <= Date() else { return nil }
         return next

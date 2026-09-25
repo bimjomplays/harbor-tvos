@@ -1928,6 +1928,17 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const localWl = JSON.parse(rec.run('localStorage.getItem("harbor.watchlist.v1.default")') ?? "[]");
   r.ok("(detail pass) actions.setWatchlist adds to Harbor's own watchlist without a Stremio account", added === true && e.actions.heroState(film, null, "default", true).watchlist === true && JSON.stringify(localWl).includes("tt0111161"), JSON.stringify(localWl));
   r.eq("(detail pass) actions.setWatchlist on → off removes it (heroState follows)", [await e.actions.setWatchlist(null, film, "tt0111161", false), e.actions.heroState(film, "tt0111161", "default", true).watchlist], [false, false]);
+  // (device-flow pass 6) lib/ratings rate(): harbor.site refusing the score (here a 404, a signed-out
+  // viewer's 401 alike) rolls the optimistic score back, so the dialog must not say it was kept.
+  const refused = await e.actions.rate(film, 7);
+  r.eq("(device-flow pass 6) actions.rate refused by harbor.site: not kept, nothing stored", [refused, e.actions.heroState(film, null, "default", true).rating], [{ score: 0, synced: false, kept: false }, null]);
+  {
+    const off = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+    off.node.host.fetch = async () => { throw new Error("offline"); };
+    const kept = await off.engine.actions.rate(film, 8);
+    r.eq("(device-flow pass 6) actions.rate offline: kept on the device (the note shows)", [kept, off.engine.actions.heroState(film, null, "default", true).rating], [{ score: 8, synced: false, kept: true }, 8]);
+    off.dispose();
+  }
   r.eq("actions.trackers without a Simkl/AniList/MAL session", await e.actions.trackers({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop" }, false), []);
   r.eq("actions.traktMarkWatched without a Trakt session", await e.actions.traktMarkWatched("tt0111161"), false);
   r.eq("streamsRoom.remembered with an unknown token", e.streamsRoom.remembered("nope", "default", true, film, null, null), null);
@@ -2329,6 +2340,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   pr.engine.settingsRoom.installUiCatalog("it", JSON.stringify({ "Movies · {n}": "Film · {n}", Acting: "Recitazione" }));
   const pings = [];
   pr.engine.runtime.onEvent((type) => { if (type === "harbor:person-updated") pings.push(type); });
+  // (device-flow pass 6) The bundled awards index, for BpPersonAwards' body names below.
+  const personFs = await import("node:fs");
+  pr.engine.discoverRoom.installAwards(personFs.readFileSync(new URL("../reference/harbor/src/data/awards.json", import.meta.url), "utf8"));
   const first = await pr.engine.personRoom.page(287, "default", true);
   for (let i = 0; i < 120 && pings.length === 0; i++) await new Promise((res) => setTimeout(res, 25));
   const second = await pr.engine.personRoom.page(287, "default", true);
@@ -2336,6 +2350,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("personRoom: section titles and department follow the UI language", [first.sections?.[0]?.title, first.person?.department], ["Film · 3", "Recitazione"]);
   r.ok("personRoom: a failed collaborators run answers once and the re-read does not fetch again", first.person?.name === "Brad Pitt" && pings.length === 1 && Array.isArray(second.collaborators) && second.collaborators.length === 0 && creditHits.length > 0 && creditHits.length <= 3, JSON.stringify({ pings: pings.length, hits: creditHits.length }));
   r.eq("personRoom: no rank while TMDB's popular list has not answered", [first.person?.deptRank, first.person?.topLabel], [null, null]);
+  // (device-flow pass 6) bp-person.tsx BpPersonAwards: AWARD_CATALOG[type].shorthand names the body.
+  const oscarRow = (first.awards ?? []).find((a) => a.type === "oscar");
+  r.ok("(device-flow pass 6) personRoom awards carry the catalog shorthand (The Oscars)", oscarRow?.shorthand === "The Oscars" && (first.awards ?? []).every((a) => typeof a.shorthand === "string" || a.shorthand === null), JSON.stringify(first.awards));
   pr.dispose();
 }
 // D5 bp-person.tsx "Top {n}" (lib/rankings RankingsProvider): person/popular pages bucketed by department.
