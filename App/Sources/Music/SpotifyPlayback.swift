@@ -66,6 +66,12 @@ final class SpotifyPlayback: ObservableObject {
     nonisolated static let queue = DispatchQueue(label: "harbor.spotify", qos: .userInitiated)
     private var restoreTask: Task<Void, Never>?
     private var restoreSerial = 0
+    /// (bug pass 2) When the last restore from the saved sign-in failed. Every Spotify entry asks
+    /// for a restore before it plays, and with the network down each one waited out Rust's 45 s
+    /// CONNECT_TIMEOUT, so a queue of Spotify tracks took minutes to fail over to other sources.
+    /// Upstream tries once at launch (mod.rs initialize) and a play without a session fails at once.
+    private var restoreFailedAt: Date?
+    private static let restoreRetryAfter: TimeInterval = 60
     /// Bumped by disconnect: a sign-in still in flight from before is shut down when it lands.
     private var generation = 0
 
@@ -121,9 +127,18 @@ final class SpotifyPlayback: ObservableObject {
     func restoreIfNeeded() async {
         if connected { return }
         if let running = restoreTask { await running.value; return }
+        // (bug pass 2) Offline, or a restore failed under a minute ago: don't wait on another one.
+        guard NetworkStatus.shared.online else { return }
+        if let failedAt = restoreFailedAt, Date().timeIntervalSince(failedAt) < Self.restoreRetryAfter { return }
         let task = Task { @MainActor in
             guard let saved: Restore = try? await HarborEngine.shared.call("music.spotifyRestore"), let credentials = saved.credentials else { return }
-            _ = try? await self.establish(ConnectRequest(cacheDir: Self.cacheDir, deviceId: saved.deviceId, accessToken: nil, credentials: credentials))
+            let started = self.generation
+            do {
+                _ = try await self.establish(ConnectRequest(cacheDir: Self.cacheDir, deviceId: saved.deviceId, accessToken: nil, credentials: credentials))
+            } catch {
+                // A disconnect meanwhile is not a failed restore (it cleared the mark itself).
+                if started == self.generation { self.restoreFailedAt = Date() }
+            }
         }
         restoreTask = task
         restoreSerial += 1
@@ -172,6 +187,7 @@ final class SpotifyPlayback: ObservableObject {
                 _ = try? await Self.run(OK.self) { harbor_spotify_disconnect() }
             }
             connected = status.connected
+            if status.connected { restoreFailedAt = nil }
             return status
         } catch {
             // A stale attempt leaves Rust alone: disconnect() queued its own shutdown behind this
@@ -202,6 +218,7 @@ final class SpotifyPlayback: ObservableObject {
         // clock (sessionLost) nor a restore can sign the session back in on the way out.
         connected = false
         restoreTask = nil
+        restoreFailedAt = nil
         generation += 1
         output.stop()
         let _: Status? = try? await HarborEngine.shared.call("music.spotifyDisconnect")
@@ -214,6 +231,7 @@ final class SpotifyPlayback: ObservableObject {
         guard connected else { return }
         connected = false
         restoreTask = nil
+        restoreFailedAt = nil
         Task {
             let _: Status? = try? await HarborEngine.shared.call("music.spotifyFailed", ["Spotify session connection failed: the session closed"])
             await restoreIfNeeded()
@@ -337,8 +355,13 @@ final class SpotifyAudioOutput {
         }
     }
 
+    /// The ring's format: 44.1 kHz stereo, de-interleaved float32.
+    private static var ringFormat: AVAudioFormat? {
+        AVAudioFormat(standardFormatWithSampleRate: Double(HARBOR_SPOTIFY_SAMPLE_RATE), channels: 2)
+    }
+
     private func build() {
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(HARBOR_SPOTIFY_SAMPLE_RATE), channels: 2) else { return }
+        guard let format = Self.ringFormat else { return }
         let node = Self.makeSource(format)
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
@@ -346,13 +369,32 @@ final class SpotifyAudioOutput {
         let center = NotificationCenter.default
         // A route change (HDMI, AirPlay) stops the engine; start it again if Spotify is playing.
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { @Sendable [weak self] _ in
-            Task { @MainActor in self?.resume() }
+            Task { @MainActor in self?.configurationChanged() }
         })
         observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { @Sendable [weak self] note in
             let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             guard raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .ended else { return }
             Task { @MainActor in self?.resume() }
         })
+    }
+
+    /// (bug pass 2) AVAudioEngineConfigurationChange: the output's sample rate or channel count
+    /// changed (HDMI to AirPlay, a receiver switching modes). The engine has stopped and uninitialized
+    /// and keeps the old connection formats ("the app must reestablish connections if the connection
+    /// formats need to change"): the mixer goes back on the output in the new hardware format, the
+    /// source back on the mixer in the ring's fixed 44.1 kHz stereo (the mixer converts between
+    /// them), then the engine starts again if Spotify is playing.
+    private func configurationChanged() {
+        if let node = source, let format = Self.ringFormat {
+            if engine.isRunning { engine.stop() }
+            let hardware = engine.outputNode.outputFormat(forBus: 0)
+            if hardware.sampleRate > 0, hardware.channelCount > 0 {
+                engine.connect(engine.mainMixerNode, to: engine.outputNode, format: hardware)
+            }
+            engine.disconnectNodeOutput(node)
+            engine.connect(node, to: engine.mainMixerNode, format: format)
+        }
+        resume()
     }
 
     private func resume() {

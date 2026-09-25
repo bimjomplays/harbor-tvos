@@ -1239,6 +1239,7 @@ export const music = {
   search: musicGlue.search,
   open: musicGlue.open,
   prepare: musicGlue.prepare,
+  started: musicGlue.started,
   stopped: musicGlue.stopped,
   library: musicGlue.library,
   addRecent: musicGlue.addRecent,

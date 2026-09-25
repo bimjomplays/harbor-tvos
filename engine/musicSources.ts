@@ -1174,18 +1174,53 @@ async function jfResolve(config: JellyfinConfig, track: MusicTrack): Promise<Mus
   for (const [k, v] of Object.entries(params)) url.searchParams.append(k, v);
   const mime = !direct ? "audio/mpeg" : ({ flac: "audio/flac", mp3: "audio/mpeg", wav: "audio/wav", aiff: "audio/aiff" } as Record<string, string>)[container] ?? "audio/mp4";
   // mod.rs report(): the previous session is closed and this one announced; failures only log.
-  const previous = jfSession;
-  jfSession = { config, itemId, session, sourceId: text(source.Id) };
-  if (previous) void jfReportStopped(previous).catch(() => undefined);
-  void jfDispatch(config, "POST", "/Sessions/Playing", {}, { ItemId: itemId, PlaySessionId: session, CanSeek: true, IsPaused: false, PlayMethod: direct ? "DirectStream" : "Transcode", ...(jfSession.sourceId ? { MediaSourceId: jfSession.sourceId } : {}) }).catch(() => undefined);
+  // (bug pass 2) Held until the track is heard (playReport): a gapless preload resolves ~30 s early.
+  const opened = { config, itemId, session, sourceId: text(source.Id) };
+  holdReport(track, () => {
+    const previous = jfSession;
+    jfSession = opened;
+    if (previous) void jfReportStopped(previous).catch(() => undefined);
+    void jfDispatch(config, "POST", "/Sessions/Playing", {}, { ItemId: itemId, PlaySessionId: session, CanSeek: true, IsPaused: false, PlayMethod: direct ? "DirectStream" : "Transcode", ...(opened.sourceId ? { MediaSourceId: opened.sourceId } : {}) }).catch(() => undefined);
+  });
   return { url: url.toString(), mimeType: mime, bitrate: direct ? Math.floor((num(source.Bitrate) ?? 0) / 1000) : 320 };
 }
 let jfSession: { config: JellyfinConfig; itemId: string; session: string; sourceId?: string } | null = null;
 function jfReportStopped(s: NonNullable<typeof jfSession>): Promise<unknown> {
   return jfDispatch(s.config, "POST", "/Sessions/Playing/Stopped", {}, { ItemId: s.itemId, PlaySessionId: s.session, ...(s.sourceId ? { MediaSourceId: s.sourceId } : {}) });
 }
+/**
+ * (bug pass 2) Play reports (Jellyfin's /Sessions/Playing, Subsonic's "now playing") follow the
+ * audible track. Upstream resolves a track only when it starts (music_play_track → resolve →
+ * report); the TV also resolves the next entry ~30 s early for its gapless hand-off, which reported
+ * it as playing and closed the Jellyfin session of the song still sounding. A resolve now holds its
+ * report; prepare() sends it at once for a track that starts now, and a preloaded one sends it when
+ * the AVQueuePlayer reaches it (music.started).
+ */
+const heldReports = new Map<string, () => void>();
+const reportKey = (track: MusicTrack) => `${track.connectorId}:${track.id}`;
+function holdReport(track: MusicTrack, send: () => void): void {
+  const key = reportKey(track);
+  heldReports.delete(key);
+  heldReports.set(key, send);
+  // Preloads that were dropped never claim theirs; keep only the latest few.
+  while (heldReports.size > 8) {
+    const oldest = heldReports.keys().next().value;
+    if (oldest === undefined) break;
+    heldReports.delete(oldest);
+  }
+}
+/** Sends the held play report for `track`, if its resolve left one. */
+export function playReport(track: MusicTrack): void {
+  const key = reportKey(track);
+  const send = heldReports.get(key);
+  if (!send) return;
+  heldReports.delete(key);
+  send();
+}
+
 /** The player stopped for good: close the open Jellyfin session. */
 export function jellyfinStopped(): void {
+  heldReports.clear();
   const s = jfSession;
   jfSession = null;
   if (s) void jfReportStopped(s).catch(() => undefined);
@@ -1738,8 +1773,8 @@ async function subsonicSearch3(p: SubsonicPairing, query: string, artists: numbe
 const SUBSONIC_TRANSCODE = new Set(["ogg", "oga", "opus", "webm", "mka", "wv", "ape", "wma", "mpc", "dsf", "dff"]);
 async function subsonicResolve(p: SubsonicPairing, track: MusicTrack): Promise<MusicStream> {
   const songId = subsonicSafeId(track.sourceId ?? track.id);
-  // mod.rs stream(): the "now playing" report is fire-and-forget.
-  void subsonicScrobble(p, songId, null).catch(() => undefined);
+  // mod.rs stream(): the "now playing" report is fire-and-forget, sent once the track is heard (bug pass 2).
+  holdReport(track, () => void subsonicScrobble(p, songId, null).catch(() => undefined));
   const song = await subsonicCall(p, "getSong", [["id", songId]]).then((b) => (b.song as Record<string, unknown> | undefined) ?? {}, () => ({}) as Record<string, unknown>);
   const suffix = (text(song.suffix) ?? "").toLowerCase();
   const transcode = SUBSONIC_TRANSCODE.has(suffix);
