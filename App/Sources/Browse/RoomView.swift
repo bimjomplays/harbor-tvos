@@ -119,6 +119,13 @@ struct RoomView: View {
             let wait = model.entry == nil ? 0.05 : 0.3
             if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + wait) { ShellFocus.shared.requestDefault() } }
         }
+        // (focus pass) The last Continue Watching card removed (quick panel) takes the whole row away
+        // from under the ring: focus goes back into the rail (its default, like a first load)
+        // instead of wherever tvOS resets it. cwHeld is still set here; the row's onDisappear clears it.
+        .onChange(of: model.continueWatching.isEmpty) { _, empty in
+            guard empty, cwHeld else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ShellFocus.shared.requestDefault() }
+        }
         // BAND_SETTLE_MS: a new band (or a new cell in it) commits once focus has rested; a later
         // record for the same cell (its posters arriving) replaces it at once.
         .task(id: bandWanted?.key) {

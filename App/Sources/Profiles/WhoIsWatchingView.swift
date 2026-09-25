@@ -9,6 +9,10 @@ struct WhoIsWatchingView: View {
     @EnvironmentObject private var account: AccountStore
     @State private var pinFor: ProfilesStore.Profile?
     @State private var notice: String?
+    /// (focus pass) bp-who-is-watching `returnTo`: backing out of the PIN pad puts the ring on the
+    /// tile it came from. The keypad left with the ring on it and tvOS reset focus (the first tile),
+    /// so on a big roster the viewer had to walk back across it.
+    @FocusState private var tileFocus: String?
 
     private var faceSize: CGFloat {
         let n = profiles.profiles.count
@@ -45,6 +49,10 @@ struct WhoIsWatchingView: View {
                     // bp-who-is-watching commit(id, unlocked): the PIN unlocks the profile's locked tabs for the session.
                     if ok { profiles.select(pinFor.id, unlocked: true); app.stage = .shell }
                     self.pinFor = nil
+                    if !ok {
+                        let id = pinFor.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { tileFocus = id }
+                    }
                 }
                 .transition(.opacity)
             }
@@ -84,6 +92,7 @@ struct WhoIsWatchingView: View {
             .frame(width: faceSize * 1.42)
         }
         .buttonStyle(WhoTileStyle())
+        .focused($tileFocus, equals: p.id)
         .accessibilityIdentifier("who-tile-\(p.id)")
         // bp-who-is-watching-tile.tsx aria-label t("Switch to {name}"); the lock badge adds "PIN".
         .accessibilityLabel(Text(verbatim: p.passwordHash != nil ? "\(T("Switch to %@", p.name)), \(T("PIN"))" : T("Switch to %@", p.name)))

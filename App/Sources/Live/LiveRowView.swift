@@ -27,6 +27,9 @@ struct LiveRowView: View {
     @StateObject private var model = LiveRowModel()
     @State private var playing: LiveRowModel.Cell?
     @FocusState private var focusedId: String?
+    /// (focus pass) The header's Guide link holds the ring: the row still counts as focused, as
+    /// BPRowView's See all does (bp-row-header shows the link while [data-bp-row-focus]).
+    @FocusState private var guideFocused: Bool
     let onOpenGuide: () -> Void
     /// bp-live-row onHot: the focused cell (nil once focus leaves the row), for Home's band and
     /// its ambient preview (bp-live-hero); and whether this row's player is up.
@@ -38,8 +41,13 @@ struct LiveRowView: View {
             if !model.cells.isEmpty {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
                     HStack(spacing: BP.px(14)) {
-                        Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil ? 0.55 : 1)).accessibilityAddTraits(.isHeader)
-                        if focusedId != nil { Button("Guide") { onOpenGuide() }.buttonStyle(BPActionStyle()) }
+                        Text("Live TV").font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil && !guideFocused ? 0.55 : 1)).accessibilityAddTraits(.isHeader)
+                        // (focus pass) Shown only while a cell held focus, so Up onto it took the ring
+                        // off every cell, the link vanished under it and the ring fell elsewhere.
+                        if focusedId != nil || guideFocused {
+                            Button("Guide") { onOpenGuide() }.buttonStyle(BPActionStyle())
+                                .focused($guideFocused)
+                        }
                     }
                     .padding(.horizontal, BP.gutter)
                     ScrollView(.horizontal, showsIndicators: false) {

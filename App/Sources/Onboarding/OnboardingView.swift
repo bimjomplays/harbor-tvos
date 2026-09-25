@@ -39,6 +39,11 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(40)).padding(.bottom, BP.hintHeight)
         }
+        // (focus pass) bp-onboarding.tsx pushBpBack: Back steps to the previous screen and never
+        // reaches the shell while setup is up; there was no handler, so Menu on any step closed the
+        // app. On the first screen the press stays the system's (upstream asks whether to leave
+        // setup there; on the TV that is leaving the app).
+        .onExitCommand(perform: step == .language ? nil : { back() })
         .onChange(of: step) { _, s in
             syncHandoff(s)
             if s == .done { Task { await loadFacts() } }
@@ -200,6 +205,14 @@ struct OnboardingView: View {
         var next = Step(rawValue: step.rawValue + 1) ?? .done
         while let h = Self.handoffStep(next), handoff.done.contains(h), let after = Step(rawValue: next.rawValue + 1) { next = after }
         withAnimation(BP.easeSlow) { step = next }
+    }
+
+    /// bp-onboarding.tsx Back: `setIndex(i - 1)`, passing over the steps the phone delivered as
+    /// advance() does, so Back never lands on a sign-in the viewer never saw.
+    private func back() {
+        guard var prev = Step(rawValue: step.rawValue - 1) else { return }
+        while let h = Self.handoffStep(prev), handoff.done.contains(h), let before = Step(rawValue: prev.rawValue - 1) { prev = before }
+        withAnimation(BP.easeSlow) { step = prev }
     }
 
     private static func handoffStep(_ s: Step) -> HandoffStep? {

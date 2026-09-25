@@ -38,5 +38,14 @@ struct ContinueRowView: View {
             if let id, let i = items.first(where: { $0.id == id }) { onFocus(i) }
         }
         .onChange(of: focusedId != nil) { _, held in onHold?(held) }
+        // (focus pass) "Remove from Continue watching" (the quick panel): the ring comes back to the
+        // card as the panel closes and the row re-reads a moment later without it. The card that
+        // takes its place (or the one before it, at the end) takes the ring rather than tvOS
+        // resetting focus somewhere else on the page.
+        .onChange(of: items.map(\.id)) { old, new in
+            guard let gone = focusedId, !new.contains(gone), let at = old.firstIndex(of: gone), !new.isEmpty else { return }
+            let next = new[min(at, new.count - 1)]
+            DispatchQueue.main.async { focusedId = next }
+        }
     }
 }

@@ -11,6 +11,8 @@ struct SearchView: View {
     @State private var spotlight: Meta?
     @State private var detail: Meta?
     @State private var phoneOpen = false
+    /// (focus pass) Bumped to put the ring on the keyboard (BPKeyboardView.focusRequest).
+    @State private var keyboardFocus = 0
     /// A manga result (SR-9) or a franchise manga opened in the manga detail page.
     @State private var mangaOpen: MangaOpen?
 
@@ -21,7 +23,8 @@ struct SearchView: View {
                     queryLine
                     BPKeyboardView(onChar: { model.query += $0 },
                                    onBackspace: { if !model.query.isEmpty { model.query.removeLast() } },
-                                   onClear: { model.query = "" })
+                                   onClear: { model.query = "" },
+                                   focusRequest: keyboardFocus)
                     HStack(spacing: BP.px(10)) {
                         // bp-phone-typing.tsx: on search, Options (here Play/Pause) opens it too.
                         Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
@@ -322,8 +325,11 @@ struct SearchView: View {
                     Text("Recent").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: BP.px(8)) {
-                            ForEach(model.recent, id: \.self) { q in Button(q) { model.query = q }.buttonStyle(BPActionStyle()) }
-                            Button { model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
+                            // (focus pass) bp-search BpRecentRow onPick / onClear: setBpFocus(input) first.
+                            // Either press takes the whole row away (the query leaves idle, or the list
+                            // empties) from under the ring, leaving it to wherever tvOS resets focus.
+                            ForEach(model.recent, id: \.self) { q in Button(q) { keyboardFocus += 1; model.query = q }.buttonStyle(BPActionStyle()) }
+                            Button { keyboardFocus += 1; model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
                         }
                         .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
                     }

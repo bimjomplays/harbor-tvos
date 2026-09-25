@@ -44,6 +44,19 @@ struct PlayPickerView: View {
     /// search and set `alive = false`, so the P2P dialog's "Stream" resolved and then dropped the pick.
     @State private var searched = false
     @Environment(\.dismiss) private var dismiss
+    /// (focus pass) bp-streams autofocus on the first row (the first home-server copy, else the first
+    /// stream), taken by use-bp-focus's seed pass while the viewer has not moved (SETTLE_WINDOW_MS,
+    /// 6 s): the cover opened with the ring on the "All" chip, so Select did nothing and every pick
+    /// took a Down first. `seededKey` is where the last seed put the ring; the seed follows a new
+    /// first row only while the ring is still there.
+    @FocusState private var rowFocus: String?
+    /// The quality chips ("q:<name>"); the cover's first ring lands on "q:All".
+    @FocusState private var chipFocus: String?
+    @State private var seededKey: String?
+    @State private var seedFrom = Date()
+    /// The auto step just handed over to the list (bp-streams recoverBpFocus on a surface swap):
+    /// the next seed may take the ring from wherever it fell.
+    @State private var seedAfterSwap = false
 
     enum PickerDialog: Identifiable {
         case p2p(ScoredStream), debridDown, noSources, exhausted(Int)
@@ -116,6 +129,15 @@ struct PlayPickerView: View {
             stubNotice = false
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
+        .onChange(of: firstRowKey) { _, _ in seedRing() }
+        .onChange(of: showAutoStep) { _, busy in
+            guard !busy else { return }
+            seededKey = nil
+            seedFrom = Date()
+            seedAfterSwap = true
+            seedRing()
+        }
+        .onChange(of: dialog == nil) { _, clear in if clear { seedRing() } }
         .onChange(of: model.copiesLoaded) { _, loaded in if loaded { Task { await applySourcePreference() } } }
         // bp-streams: BpNoSourcesDialog when there is no addon, no debrid and no home-server copy.
         .onChange(of: model.phase) { _, phase in
@@ -188,6 +210,30 @@ struct PlayPickerView: View {
                 Button("Back") { closePicker() }.buttonStyle(BPActionStyle())
             }
             .onExitCommand { browseManually() }
+        }
+    }
+
+    /// bp-streams: the row that carries data-bp-autofocus (a home-server copy first, else the first stream).
+    private var firstRowKey: String? {
+        if let c = model.copies.first { return "copy:" + c.key }
+        guard showOnline, let s = visible.first else { return nil }
+        return "stream:" + s.id
+    }
+
+    /// use-bp-focus seed pass: the first row takes the ring while the viewer has not moved it.
+    private func seedRing() {
+        guard !showAutoStep, dialog == nil, resolving == nil, let key = firstRowKey, key != rowFocus,
+              Date().timeIntervalSince(seedFrom) < 6 else { return }
+        let from = seededKey
+        // Untouched: the first seed while the ring is on the "All" chip (where the cover lands) or
+        // just after the auto step went; a later seed only while the ring is on the row seeded last.
+        let untouched = from == nil ? (chipFocus == "q:All" || seedAfterSwap) : rowFocus == from
+        guard untouched else { return }
+        seededKey = key
+        seedAfterSwap = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard from == nil || rowFocus == from else { return }
+            rowFocus = key
         }
     }
 
@@ -521,6 +567,7 @@ struct PlayPickerView: View {
                         // A String, not a literal: "%@ %lld" is a catalog entry some languages re-order (review 20).
                         Button(T(q.0) + " \(n)") { quality = q.0 }.buttonStyle(BPActionStyle(primary: quality == q.0))
                             .bpSelected(quality == q.0)
+                            .focused($chipFocus, equals: "q:" + q.0)
                     }
                 }
                 if pool.contains(where: \.isCached) {
@@ -605,7 +652,11 @@ struct PlayPickerView: View {
     }
 
     private func row(_ s: ScoredStream, highlight: Bool) -> some View {
-        Button { handPicked = true; Task { await pick(s) } } label: {
+        Button {
+            // (focus pass) One pick at a time, guarded here rather than by disabling every row.
+            guard resolving == nil else { return }
+            handPicked = true; Task { await pick(s) }
+        } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(badges(s), id: \.self) { b in
@@ -658,13 +709,19 @@ struct PlayPickerView: View {
             .opacity(failedIds.contains(s.id) ? 0.7 : 1)
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
-        .disabled(resolving != nil)
+        // (focus pass) Was .disabled(resolving != nil): the pressed row turned unfocusable the moment
+        // its resolve began, so the ring was thrown onto the filter chips and stayed there when the
+        // link failed ("Unavailable, try another."), a whole list away from the next row to try.
+        .focused($rowFocus, equals: "stream:" + s.id)
         .accessibilityIdentifier("stream-\(s.index)")
     }
 
     /// A copy on a Plex/Jellyfin/Emby server (bp-streams home-server rows): direct play or transcode through the server.
     private func copyRow(_ c: StreamsModel.HomeCopy) -> some View {
-        Button { handPicked = true; Task { await pick(copy: c) } } label: {
+        Button {
+            guard resolving == nil else { return }
+            handPicked = true; Task { await pick(copy: c) }
+        } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
                     ForEach([c.resolution, c.quality].compactMap { $0 }.filter { !$0.isEmpty && $0 != "unknown" }, id: \.self) { b in
@@ -686,7 +743,7 @@ struct PlayPickerView: View {
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
-        .disabled(resolving != nil)
+        .focused($rowFocus, equals: "copy:" + c.key)
     }
 
     private func pick(copy: StreamsModel.HomeCopy) async {

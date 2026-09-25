@@ -5,7 +5,11 @@ struct BPKeyboardView: View {
     let onChar: (String) -> Void
     let onBackspace: () -> Void
     let onClear: () -> Void
+    /// (focus pass) Bumped by the page to put the ring back on the keyboard (bp-search moves it to
+    /// the field when a recent query is picked or the list cleared); it lands on the first key.
+    var focusRequest = 0
     @State private var symbols = false
+    @FocusState private var focusedKey: String?
 
     private static let letters = ["1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm,.-"].map { $0.map(String.init) }
     private static let symbolRows = ["!@#$%^&*()", "+=/\\|~`°£€", ":;\"?<>[]{}", "éèáàöüñçåø"].map { $0.map(String.init) }
@@ -18,6 +22,7 @@ struct BPKeyboardView: View {
                     ForEach(row, id: \.self) { ch in
                         Button { onChar(ch) } label: { Text(ch).font(BP.sans(17, .semibold)).frame(width: keySize, height: keySize) }
                             .buttonStyle(BPKeyStyle())
+                            .focused($focusedKey, equals: ch)
                             .accessibilityIdentifier("key-\(ch)")
                     }
                 }
@@ -38,6 +43,10 @@ struct BPKeyboardView: View {
             }
         }
         .focusSection()
+        .onChange(of: focusRequest) { _, _ in
+            let first = (symbols ? Self.symbolRows : Self.letters).first?.first
+            DispatchQueue.main.async { focusedKey = first }
+        }
     }
 }
 
