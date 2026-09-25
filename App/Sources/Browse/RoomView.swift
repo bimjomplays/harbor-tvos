@@ -30,6 +30,8 @@ struct RoomView: View {
     @State private var animeActionsHeld = false
     /// bp-home seedRowRef: the first focus has been placed (once per visit).
     @State private var seeded = false
+    /// When this visit began (review 6): a walk along the top bar after it keeps the ring there.
+    @State private var visitStart = Date()
     @Environment(\.shellFocusNamespace) private var shellNS
     @Namespace private var localNS
 
@@ -253,8 +255,11 @@ struct RoomView: View {
         seeded = true
         // A restored position needs its row parked and its track scrolled (both lazy) first.
         let wait = model.entry == nil ? 0.05 : 0.3
+        let since: Date = visitStart
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
             guard !model.tileHeld, !animeActionsHeld else { return }
+            // (review 6) The viewer went along the bar meanwhile (use-bp-focus interactedRef).
+            if let moved = ShellFocus.shared.barMovedAt, moved > since { return }
             ShellFocus.shared.requestDefault()
         }
     }
