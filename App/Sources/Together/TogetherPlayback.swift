@@ -54,6 +54,10 @@ final class TogetherPlayback: ObservableObject {
     private var lastInRoom: Bool?
     /// The player's playback speed (snap.rate upstream), published with every state.
     private var rate: Double = 1
+    /// The last spot the picture reached (duration and position both known). (review 5) mpv reports
+    /// 0 / 0 once its stream has died, so a host's "Switch source" from the error card held the room
+    /// at 0:00 and every guest jumped back to the start.
+    private var lastPosition: Double = 0
     /// use-room-sync `b.setRate(state.speed)`: the player applies the room's speed (its own `rate`
     /// state and the engine), without remembering it for the show.
     var onRoomRate: ((Double) -> Void)?
@@ -102,6 +106,7 @@ final class TogetherPlayback: ObservableObject {
         if controller !== c { controller = c }
         rate = r
         let snap = c.snapshot()
+        if snap.duration > 0, snap.position > 0 { lastPosition = snap.position }
         let playing = !snap.paused
         let view = room.view
 
@@ -211,8 +216,10 @@ final class TogetherPlayback: ObservableObject {
         bag.removeAll()
         // Opening the next episode or another source keeps the room (and the host role), but the
         // guests should not play on unseen while the host picks: the room holds at this spot.
-        if inRoom, isHost, reopening, let c = controller {
-            publish(position: c.snapshot().position, playing: false)
+        if inRoom, isHost, reopening {
+            var at = lastPosition
+            if let s = controller?.snapshot(), s.duration > 0, s.position > 0 { at = s.position }
+            publish(position: at, playing: false)
         }
         if inRoom, isHost, !reopening {
             room.publish(.object([
