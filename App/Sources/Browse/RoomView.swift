@@ -36,19 +36,13 @@ struct RoomView: View {
         ZStack(alignment: .top) {
             // bp-home: a band that owns the backdrop fades the spotlight out (180 ms) and its
             // identity in (300 ms after 140 ms); card-owned bands keep the spotlight.
-            SpotlightView(meta: model.spotlight, boxHeight: heroHeight,
-                          pips: model.heroCount > 1 && !model.tileHeld ? HeroPips(total: model.heroCount, active: model.heroIndex) : nil,
-                          drift: model.room != .anime, awardsCorner: model.room != .anime)
-                .opacity(band == nil ? 1 : 0)
-                .animation(band == nil ? BP.easeSlow.delay(0.14) : .easeIn(duration: 0.18), value: band == nil)
+            // bp-home: the hero art sits under the rail, the hero copy (below) over it.
+            spotlight(.backdrop)
             if let band {
                 HomeBandBackdrop(band: band).transition(.opacity)
             }
             if model.isHomePage {
                 LiveHeroPreview(channel: liveHot?.channel, suspended: previewSuspended)
-            }
-            if let band {
-                BandIdentityView(band: band, boxHeight: heroHeight).transition(.opacity)
             }
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
@@ -103,6 +97,12 @@ struct RoomView: View {
                     }
                 }
                 .prefersDefaultFocus(true, in: shellNS ?? localNS)
+            }
+            // bp-home data-bp-home-hero is z-20 over BpRail: rows scrolling up pass under the title,
+            // chips and description instead of drawing over them. Nothing here takes focus.
+            spotlight(.copy)
+            if let band {
+                BandIdentityView(band: band, boxHeight: heroHeight).transition(.opacity)
             }
         }
         .task { await model.load() }
@@ -166,6 +166,16 @@ struct RoomView: View {
         }
         bandWanted = nil
         if m.type != "service" { model.focus(m) }
+    }
+
+    /// One layer of the spotlight; a band that owns the backdrop fades both out (180 ms) and back in
+    /// (300 ms after 140 ms).
+    private func spotlight(_ layer: SpotlightView.Layer) -> some View {
+        SpotlightView(meta: model.spotlight, boxHeight: heroHeight,
+                      pips: model.heroCount > 1 && !model.tileHeld ? HeroPips(total: model.heroCount, active: model.heroIndex) : nil,
+                      drift: model.room != .anime, awardsCorner: model.room != .anime, layer: layer)
+            .opacity(band == nil ? 1 : 0)
+            .animation(band == nil ? BP.easeSlow.delay(0.14) : .easeIn(duration: 0.18), value: band == nil)
     }
 
     /// The band mosaic's posters resolve long after the focus that asked for them, so the record

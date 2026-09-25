@@ -13,60 +13,70 @@ struct SpotlightView: View {
     var drift = true
     /// MetaAwardsCorner: BpSpotlight mounts it on Home, Movies, Shows and service pages only.
     var awardsCorner = false
+    /// Which part to draw. bp-home stacks the hero copy (`data-bp-home-hero`, z-20) above the rail
+    /// while the art stays behind it, so RoomView draws `.backdrop` under the rail and `.copy`
+    /// over it; the other pages draw both in one place (`.all`).
+    var layer: Layer = .all
+
+    enum Layer { case all, backdrop, copy }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            backdrop
-            VStack(alignment: .leading, spacing: BP.px(10)) {
-                Spacer(minLength: 0)
-                // bp-spotlight data-bp-hero-mark: the provider badge's mark above the title
-                // (clamp(19px,3.2vh,29px) tall at 85 %, 18 px above the logo or name).
-                if let mark = meta?.providerBadge?.logo, !mark.isEmpty {
-                    BandMark(url: mark, height: BP.px(20.5), maxWidth: BP.px(200))
-                        .opacity(0.85)
-                        .padding(.bottom, BP.px(8))
-                }
-                if let logo = meta?.logo, !logo.isEmpty {
-                    RemoteImage(url: logo, contentMode: .fit)
-                        .frame(maxWidth: BP.px(300), maxHeight: BP.px(90), alignment: .leading)
-                        // The title logo reads as the name it draws.
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(verbatim: meta?.name ?? ""))
-                } else {
-                    Text(meta?.name ?? " ")
-                        .font(BP.display(36)).foregroundStyle(BP.ink)
-                        .lineLimit(2).shadow(color: .black.opacity(0.5), radius: 12, y: 4)
-                }
-                HStack(spacing: BP.px(10)) {
-                    // bp-spotlight: provider chips from use-bp-card-badges, then TMDB's own score, then facts.
-                    ScoreChipsView(meta: meta, surface: "card", limit: 3)
-                    if let s = meta?.tmdbScore, s > 0 { scoreChip("TMDB", String(format: "%.1f", s)) }
-                    if let f = meta?.facts, !f.isEmpty {
-                        Text(f).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
-                    }
-                }
-                Text(meta?.description ?? "")
-                    .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(5)
-                    .lineLimit(2).frame(maxWidth: BP.px(520), alignment: .leading)
-                if let pips {
-                    BPHeroPipsView(pips: pips).padding(.top, BP.px(4)).transition(.opacity)
-                }
-            }
-            .padding(.leading, BP.gutter)
-            .padding(.bottom, BP.px(27))
-            .frame(height: boxHeight, alignment: .bottomLeading)
-            .animation(.easeOut(duration: 0.26), value: meta?.id)
-            // bp-spotlight MetaAwardsCorner: bottom-end of the hero box (bottom-10 end-10),
-            // pushed down by translate-y clamp(26px,4vh,58px).
-            if awardsCorner, let meta {
-                HeroAwardsCornerView(meta: meta)
-                    .padding(.trailing, BP.px(40))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .frame(height: boxHeight - BP.px(40) + BP.px(26), alignment: .bottomTrailing)
-            }
+            if layer != .copy { backdrop }
+            if layer != .backdrop { copy }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
+    }
+
+    @ViewBuilder private var copy: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Spacer(minLength: 0)
+            // bp-spotlight data-bp-hero-mark: the provider badge's mark above the title
+            // (clamp(19px,3.2vh,29px) tall at 85 %, 18 px above the logo or name).
+            if let mark = meta?.providerBadge?.logo, !mark.isEmpty {
+                BandMark(url: mark, height: BP.px(20.5), maxWidth: BP.px(200))
+                    .opacity(0.85)
+                    .padding(.bottom, BP.px(8))
+            }
+            if let logo = meta?.logo, !logo.isEmpty {
+                RemoteImage(url: logo, contentMode: .fit)
+                    .frame(maxWidth: BP.px(300), maxHeight: BP.px(90), alignment: .leading)
+                    // The title logo reads as the name it draws.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: meta?.name ?? ""))
+            } else {
+                Text(meta?.name ?? " ")
+                    .font(BP.display(36)).foregroundStyle(BP.ink)
+                    .lineLimit(2).shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+            }
+            HStack(spacing: BP.px(10)) {
+                // bp-spotlight: provider chips from use-bp-card-badges, then TMDB's own score, then facts.
+                ScoreChipsView(meta: meta, surface: "card", limit: 3)
+                if let s = meta?.tmdbScore, s > 0 { scoreChip("TMDB", String(format: "%.1f", s)) }
+                if let f = meta?.facts, !f.isEmpty {
+                    Text(f).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
+                }
+            }
+            Text(meta?.description ?? "")
+                .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(5)
+                .lineLimit(2).frame(maxWidth: BP.px(520), alignment: .leading)
+            if let pips {
+                BPHeroPipsView(pips: pips).padding(.top, BP.px(4)).transition(.opacity)
+            }
+        }
+        .padding(.leading, BP.gutter)
+        .padding(.bottom, BP.px(27))
+        .frame(height: boxHeight, alignment: .bottomLeading)
+        .animation(.easeOut(duration: 0.26), value: meta?.id)
+        // bp-spotlight MetaAwardsCorner: bottom-end of the hero box (bottom-10 end-10),
+        // pushed down by translate-y clamp(26px,4vh,58px).
+        if awardsCorner, let meta {
+            HeroAwardsCornerView(meta: meta)
+                .padding(.trailing, BP.px(40))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(height: boxHeight - BP.px(40) + BP.px(26), alignment: .bottomTrailing)
+        }
     }
 
     private var backdrop: some View {

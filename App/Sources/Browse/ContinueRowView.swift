@@ -24,6 +24,7 @@ struct ContinueRowView: View {
                         Button { onSelect(item) } label: { ContinueCardView(item: item, focused: focusedId == item.id) }
                             .buttonStyle(BPTileStyle())
                             .focused($focusedId, equals: item.id)
+                            .zIndex(focusedId == item.id ? 1 : 0)
                             .accessibilityIdentifier("cw-\(item.id)")
                             .onLongPressGesture(minimumDuration: 0.6) { onQuick?(item) }
                     }

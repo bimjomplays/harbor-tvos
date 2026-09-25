@@ -45,6 +45,7 @@ struct AddonPageView: View {
                             Button { detail = meta } label: { BPTileView(meta: meta, shape: .poster, focused: focusedId == meta.id) }
                                 .buttonStyle(BPTileStyle())
                                 .focused($focusedId, equals: meta.id)
+                                .zIndex(focusedId == meta.id ? 1 : 0)
                                 .onAppear { if i >= metas.count - 12 { Task { await loadMore() } } }
                         }
                     }

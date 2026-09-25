@@ -54,6 +54,8 @@ struct BPRowView: View {
                             .prefersDefaultFocus(restoreCell == meta.id, in: shellNS ?? rowNS)
                             .accessibilityIdentifier("tile-\(row.key)-\(i)")
                             .onLongPressGesture(minimumDuration: 0.6) { onQuick?(meta) }
+                            // The lifted tile, its ring, shadow and caption draw over its neighbours.
+                            .zIndex(focusedId == meta.id ? 1 : 0)
                         }
                     }
                     .padding(.horizontal, BP.gutter)
@@ -97,6 +99,8 @@ struct BPRailView<Lead: View>: View {
     var onHold: ((String, Bool) -> Void)? = nil
     @ViewBuilder var lead: () -> Lead
     @State private var focusedRow: String?
+    /// The row that holds focus right now (focusedRow keeps the last one after focus moves on).
+    @State private var heldRow: String?
     /// Where the focused row parks: just under the spotlight copy (bp rail "resting floor").
     private var parkAnchor: CGFloat { (topInset + BP.px(6)) / 1080 }
 
@@ -110,13 +114,19 @@ struct BPRailView<Lead: View>: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                     Color.clear.frame(height: topInset)
-                    lead().id("lead")
+                    // Continue Watching / Live sit here: over the plain rows below them.
+                    lead().id("lead").zIndex(1)
                     ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
                                   onSeeAll: onSeeAll.map { cb in { cb(row) } }, onQuick: onQuick,
                                   restoreRoute: restoreRoute, restoreCell: entry?.row == row.key ? entry?.cell : nil,
-                                  onHold: { held in onHold?(row.key, held) })
+                                  onHold: { held in
+                                      if held { heldRow = row.key } else if heldRow == row.key { heldRow = nil }
+                                      onHold?(row.key, held)
+                                  })
                             .id(row.key)
+                            // The row holding focus draws its lifted tile and caption over the row below.
+                            .zIndex(heldRow == row.key ? 2 : 0)
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }

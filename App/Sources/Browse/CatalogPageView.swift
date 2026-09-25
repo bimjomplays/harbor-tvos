@@ -35,6 +35,7 @@ struct CatalogPageView: View {
                         }
                         .buttonStyle(BPTileStyle())
                         .focused($focusedId, equals: meta.id)
+                        .zIndex(focusedId == meta.id ? 1 : 0)
                         .onAppear { if i >= metas.count - 12 { Task { await loadMore() } } }
                     }
                 }
