@@ -29,7 +29,7 @@ import { isAuthenticated as traktConnected } from "@/lib/trakt/session";
 import { isAuthenticated as simklConnected } from "@/lib/simkl/session";
 import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
 import type { Settings } from "@/lib/settings/types";
-import { t } from "@/lib/i18n";
+import { getUiLanguage, t } from "@/lib/i18n";
 import { formatRemaining } from "@/lib/use-now";
 import { fetchEpisodeList } from "@/lib/series-episodes";
 import {
@@ -46,7 +46,6 @@ import {
   calendarEpisodeHint,
   calendarToMeta,
   FILTERS,
-  formatDateLong,
   isUpcoming,
   MONTH_NAMES,
   normalizeName,
@@ -229,6 +228,23 @@ export type CalendarMonth = {
   total: number;
   cells: CalendarCell[];
 };
+
+/**
+ * calendar/utils.ts formatDateLong in Harbor's UI language. (device-flow pass) Upstream passes
+ * `undefined`, which in JavaScriptCore is the Apple TV's own language: the day view's heading
+ * ("Thursday, September 25, 2026") ignored the language picked in Harbor, unlike the month label
+ * and weekdays beside it (t(MONTH_NAMES), t(weekday)).
+ */
+function formatDateLong(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+  const opts: Intl.DateTimeFormatOptions = { weekday: "long", month: "long", day: "numeric", year: "numeric" };
+  try {
+    return date.toLocaleDateString(getUiLanguage(), opts);
+  } catch {
+    return date.toLocaleDateString(undefined, opts);
+  }
+}
 
 function toEntry(item: CalendarItem): CalendarEntry {
   const hint = calendarEpisodeHint(item);

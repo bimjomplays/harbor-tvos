@@ -20,6 +20,7 @@ final class DiscoverModel: ObservableObject {
     @Published private(set) var failed: String?
     @Published var spotlight: Meta?
     @Published private(set) var genreArt: [String: [Meta]] = [:]
+    private var genreArtLoading = false
     @Published private(set) var awards: Awards?
     @Published private(set) var people: [Person] = []
     /// bp-award-tiles BpAnimeAwardTile: one tile per bundled anime award source.
@@ -62,7 +63,11 @@ final class DiscoverModel: ObservableObject {
 
     /// Genre tiles fetch their three backdrops only once the Genres band has focus (upstream defers the same way).
     func loadGenreArt() async {
-        guard let build, genreArt.isEmpty, !SettingsBridge.shared.slice.tmdbKey.isEmpty else { return }
+        // (device-flow pass) Every focus move in the band asks; until the first genre answered,
+        // genreArt was still empty and each move started another pass over all eighteen genres.
+        guard let build, genreArt.isEmpty, !genreArtLoading, !SettingsBridge.shared.slice.tmdbKey.isEmpty else { return }
+        genreArtLoading = true
+        defer { genreArtLoading = false }
         let p = profile
         for g in build.genres {
             if let metas: LossyArray<Meta> = try? await HarborEngine.shared.call("discoverRoom.genreArtFor", [p.id, p.linked, g.genre]) {
@@ -71,11 +76,23 @@ final class DiscoverModel: ObservableObject {
         }
     }
 
+    /// (device-flow pass) The band reads the deck's order again when the Discovery Queue closes: it
+    /// kept counting, fanning and backdropping the titles just skipped or hidden there (upstream's
+    /// band redraws off the shared order when the overlay closes).
+    func reloadQueue() async {
+        guard build != nil else { return }
+        let p = profile
+        if let q: Build.Queue = try? await HarborEngine.shared.call("discoverRoom.queuePeekFor", [p.id, p.linked]) {
+            build?.queue = q
+        }
+    }
+
     func loadVoyage() async {
         if let s: VoyageModel.Snapshot = try? await HarborEngine.shared.call("voyageRoom.state", []) { voyage = s }
     }
 
-    var rows: [BrowseRow] { (build?.rails ?? []).map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas) } }
+    /// bp-discover.tsx title={t(rail.name)}: the daily shelves' titles are English source keys.
+    var rows: [BrowseRow] { (build?.rails ?? []).map { BrowseRow(key: $0.key, title: T($0.name), metas: $0.metas) } }
 }
 
 

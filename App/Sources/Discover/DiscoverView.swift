@@ -3,6 +3,7 @@ import SwiftUI
 /// Discover room (bp-discover.tsx): Discovery Queue band → Genres → "Picked for you" rails.
 /// Awards, Collections and Top People bands arrive with their features.
 struct DiscoverView: View {
+    @EnvironmentObject private var app: AppModel
     @StateObject private var model = DiscoverModel()
     @State private var detail: Meta?
     @State private var awardDetail: DiscoverModel.Awards.Summary?
@@ -23,12 +24,23 @@ struct DiscoverView: View {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load Discover").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
                     BPNote(text: failed)
+                    // (device-flow pass) The failure had nothing to press: the room stayed empty
+                    // until the app was restarted or the tab reopened.
+                    Button("Try again") { Task { await model.load() } }
+                        .buttonStyle(BPActionStyle(primary: true))
+                        .padding(.top, BP.px(6))
                 }
                 .padding(.top, BP.px(300)).padding(.horizontal, BP.gutter)
             } else if model.build == nil {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
             } else {
-                BPRailView(rows: model.rows, onFocus: { m, _ in model.spotlight = m }, onSelect: { detail = $0 }, topInset: BP.barHeight + BP.px(10)) {
+                // bp-discover.tsx: each "Picked for you" rail leads to its tab (BpRowLead action
+                // "All shows" / "All movies", tab shows / movies). (device-flow pass) The rails had
+                // no way on from their header.
+                BPRailView(rows: model.rows, onFocus: { m, _ in model.spotlight = m }, onSelect: { detail = $0 },
+                           onSeeAll: { row in app.room = Self.isSeries(row) ? .shows : .movies },
+                           seeAllLabel: { row in Self.isSeries(row) ? "All shows" : "All movies" },
+                           topInset: BP.barHeight + BP.px(10)) {
                     section("Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
                         QueueBandView(queue: model.build?.queue) { queueOpen = true }
                     }
@@ -43,7 +55,9 @@ struct DiscoverView: View {
                                            onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 })
                         }
                     }
-                    section("Discover", "Genres", "18 shelves, one press into any of them") {
+                    // bp-discover.tsx t("{n} shelves, …", { n: BP_GENRES.length }): the literal "18 …"
+                    // matched no catalog key and stayed English.
+                    section("Discover", "Genres", T("%lld shelves, one press into any of them", model.build?.genres.count ?? 18)) {
                         GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt, onOpen: { genre in
                             genrePage = BrowseRow(key: "genre:\(genre)", title: T(genre), metas: [])
                         }) {
@@ -62,9 +76,12 @@ struct DiscoverView: View {
         .fullScreenCover(item: $awardDetail) { a in AwardDetailView(summary: a) }
         .fullScreenCover(item: $animeAward) { a in AnimeAwardView(sources: model.animeAwards, initial: a.id) }
         .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
-        .fullScreenCover(isPresented: $queueOpen) { QueueDeckView() }
+        .fullScreenCover(isPresented: $queueOpen, onDismiss: { Task { await model.reloadQueue() } }) { QueueDeckView() }
         .fullScreenCover(isPresented: $voyageOpen, onDismiss: { Task { await model.loadVoyage() } }) { VoyageView() }
     }
+
+    /// bp-discover.tsx `series = rail.metas[0]?.type === "series"`.
+    private static func isSeries(_ row: BrowseRow) -> Bool { row.metas.first?.type == "series" }
 
     private func section<C: View>(_ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {

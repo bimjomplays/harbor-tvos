@@ -140,8 +140,9 @@ struct CalendarView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: BP.px(6)) {
                 ForEach(model.data?.sources ?? []) { s in
+                    let on = (model.pendingSource ?? model.data?.source) == s.id
                     Button { model.set(source: s.id) } label: { Label(s.label, systemImage: s.icon) }
-                        .buttonStyle(BPActionStyle(primary: model.data?.source == s.id)).bpSelected(model.data?.source == s.id)
+                        .buttonStyle(BPActionStyle(primary: on)).bpSelected(on)
                         .accessibilityHint(s.hint)
                 }
             }
@@ -213,7 +214,10 @@ struct CalendarView: View {
     // MARK: body (calendar.tsx `body`)
 
     @ViewBuilder private var content: some View {
-        if let d = model.data {
+        if let d = model.data, model.pendingSource != nil {
+            // use-calendar-data: a new source starts from no rows while it loads.
+            CalendarSkeleton(weekdays: d.weekdays)
+        } else if let d = model.data {
             switch d.status {
             case "not-signed-in":
                 CalendarEmptyShell(heading: "Sign in to see your library calendar",
@@ -227,6 +231,9 @@ struct CalendarView: View {
                 VStack(spacing: BP.px(8)) {
                     Text("Couldn't load the calendar").font(BP.sans(14, .semibold)).foregroundStyle(Color(hex: 0xffe4e6))
                     Text(d.error ?? "Failed to load").font(BP.sans(12.5)).foregroundStyle(Color(hex: 0xffe4e6).opacity(0.85))
+                    // (device-flow pass) The remote has no reload: the error card had nothing to press.
+                    Button("Try again") { Task { await model.load() } }
+                        .buttonStyle(BPActionStyle(primary: true)).padding(.top, BP.px(4))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, BP.px(40))
                 .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(hex: 0xfb7185).opacity(0.06)))
