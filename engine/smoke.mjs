@@ -4621,6 +4621,34 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   pf.dispose();
 }
 
+// ------------------- FlagStack (components/flag.tsx): the Swift tables match upstream's, offline
+{
+  const fs = await import("node:fs");
+  const flagSrc = fs.readFileSync(new URL("../reference/harbor/src/components/flag.tsx", import.meta.url), "utf8");
+  const swift = fs.readFileSync(new URL("../App/Sources/Streams/FlagStack.swift", import.meta.url), "utf8");
+  const imports = Object.fromEntries([...flagSrc.matchAll(/import (\w+) from "@\/assets\/flags\/([\w-]+)\.svg";/g)].map((m) => [m[1], m[2]]));
+  // flag.tsx FLAG: `English: flagEng,` or `"Spanish (Latin America)": flagSpa,` → file name.
+  const flagBody = flagSrc.slice(flagSrc.indexOf("const FLAG:"), flagSrc.indexOf("};", flagSrc.indexOf("const FLAG:")));
+  const upFile = Object.fromEntries([...flagBody.matchAll(/^\s+(?:"([^"]+)"|(\w+)):\s*(\w+),/gm)].map((m) => [m[1] ?? m[2], imports[m[3]]]));
+  const ccBody = flagSrc.slice(flagSrc.indexOf("const LANG_COUNTRY:"), flagSrc.indexOf("};", flagSrc.indexOf("const LANG_COUNTRY:")));
+  const upCountry = Object.fromEntries([...ccBody.matchAll(/^\s+(?:"([^"]+)"|(\w+)):\s*"([\w-]+)",/gm)].map((m) => [m[1] ?? m[2], m[3]]));
+  const swiftTable = (name) => {
+    const at = swift.indexOf(`static let ${name}: [String: String] = [`);
+    const body = swift.slice(at, swift.indexOf("\n    ]", at));
+    return Object.fromEntries([...body.matchAll(/^\s+"([^"]+)": "([\w-]+)",$/gm)].map((m) => [m[1], m[2]]).sort((a, b) => a[0].localeCompare(b[0])));
+  };
+  const sorted = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => a[0].localeCompare(b[0])));
+  r.ok("FlagStack: flag.tsx FLAG and LANG_COUNTRY parsed (every FLAG entry has an imported SVG)", Object.keys(upFile).length >= 25 && Object.keys(upCountry).length >= 40 && Object.values(upFile).every(Boolean), JSON.stringify({ upFile, n: Object.keys(upCountry).length }));
+  r.eq("FlagStack.swift FlagArt.file matches flag.tsx FLAG (language → upstream SVG)", swiftTable("file"), sorted(upFile));
+  r.eq("FlagStack.swift FlagArt.country matches flag.tsx LANG_COUNTRY (flag-icons codes)", swiftTable("country"), sorted(upCountry));
+  const fcAt = swift.indexOf("static let fileCountry");
+  const fileCountry = Object.fromEntries([...swift.slice(fcAt, swift.indexOf("\n    ]", fcAt)).matchAll(/"(flag-\w+)": "(\w\w)"/g)].map((m) => [m[1], m[2]]));
+  r.ok("FlagStack.swift fileCountry gives every upstream flag file an emoji twin (no imageset in the bundle)", Object.values(upFile).every((f) => fileCountry[f]), JSON.stringify(fileCountry));
+  // tools/sync_upstream_assets.sh makes one imageset per src/assets/flags file, named after it.
+  const flagFiles = fs.readdirSync(new URL("../reference/harbor/src/assets/flags/", import.meta.url)).filter((f) => f.endsWith(".svg")).map((f) => f.slice(0, -4));
+  r.ok("FlagStack: every file FLAG names ships in src/assets/flags (the sync script's imagesets)", Object.values(upFile).every((f) => flagFiles.includes(f)), JSON.stringify({ missing: Object.values(upFile).filter((f) => !flagFiles.includes(f)) }));
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());

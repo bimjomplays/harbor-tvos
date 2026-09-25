@@ -1130,6 +1130,9 @@ struct PlayPickerView: View {
                     .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(3))
                     .background(Capsule().fill(BP.glass))
             }
+            // bp-stream-row.tsx: the audio languages' flags, last in META (FlagStack max 4, md).
+            let flagLangs: [String] = FlagStack.streamLanguages(s.audioLanguages)
+            if !flagLangs.isEmpty { FlagStack(languages: flagLangs, maxCount: 4, size: .md) }
         }
     }
 

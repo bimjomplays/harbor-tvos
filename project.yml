@@ -46,6 +46,8 @@ targets:
       - path: App/Upstream/badges
         type: folder
         buildPhase: resources
+      # components/flag.tsx's language flags as vector imagesets (tools/sync_upstream_assets.sh).
+      - path: App/Upstream/Flags.xcassets
     dependencies:
       - package: MPVKit
         product: MPVKit

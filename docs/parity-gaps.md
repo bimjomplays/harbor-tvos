@@ -76,7 +76,8 @@ closed these Big Picture behaviours that were outside the table:
 
 **Still open: parity gaps.**
 - S4: the subtitle step before playback (M; `subtitlePreselect` is off by default upstream).
-- Flag icons for stream languages (FlagStack): SVGs that tvOS can't draw without converting them.
+- Flag icons: ported (see "Flag icons (FlagStack)" below), except that the flag-icons languages are
+  drawn as emoji flags and Catalan, Basque and Galician as their text chip.
 - P9: use-track-autoload's automatic subtitle search and its "Search every source again" chip (the
   TV has the manual Find more lane, which shows no source counts). "{count} dl" is ported; the
   offset badge is not a TV gap.
@@ -173,8 +174,37 @@ Still open in this scope:
 - P11: no TV control for the retention, full quality or "Clear" (desktop Settings → Library → Home only, as in Big Picture); the hero keeps the title's own backdrop ahead of the frame, as bp-cw-row cwMeta does, so it was left alone. Device check: the AVPlayer frame on HDR and Dolby Vision (the copy is tone-mapped to SDR), mpv's screenshot under MoltenVK with VideoToolbox, the frame's colours on HDR passthrough.
 - P9: "Search every source again" belongs to use-track-autoload's automatic subtitle search, which the TV does not run (it has the manual Find more lane). The SubtitleOffsetIndicator only shows for 1.8 s after a keyboard shortcut (use-keyboard-shortcuts), so it is not a TV gap.
 - S4 subtitle step (M, off by default).
-- Flag icons for stream languages (FlagStack): upstream's flags are SVGs plus the flag-icons set, which tvOS cannot draw without converting them first.
+- Flag icons for stream languages (FlagStack): ported later; see "Flag icons (FlagStack)" below.
 - X3 Live band art: ported in parity pass 3 below, except the sampled-glow wash and the channel hydration.
+
+### Flag icons (FlagStack)
+
+components/flag.tsx FlagStack as bp-stream-row.tsx draws it: last in the row's META line, the
+stream's `audioLanguages` without "unknown", `max={4} size="md"` (16 px tall, 1.5 x as wide,
+radius 2, the faint ring and drop shadow, 4 px apart), "Multi" as the accent "M" chip, a language
+with no flag as its first two letters in a quiet chip, then "+{n}". The P8 switcher reuses the row
+(upstream's `<BpStreams mode="switch">` reuses bp-stream-row), so it shows the flags too. No setting
+hides them upstream.
+
+- **Upstream's own art** (flag.tsx FLAG, 29 languages over 27 files): `src/assets/flags/*.svg` is
+  in the upstream repo, not in node_modules. `tools/sync_upstream_assets.sh` writes each one as a
+  single-scale imageset with "Preserves Vector Data" into the gitignored
+  `App/Upstream/Flags.xcassets` (adding `width`/`height` from the viewBox, which the files lack);
+  `project.yml` compiles that catalog with the app's own. The SVGs use only rect, circle, polygon,
+  g and one clipPath (Korea), all within CoreSVG.
+- **The flag-icons set** (flag.tsx LANG_COUNTRY, 53 languages, `fi fi-{cc}`): that is an npm
+  package (`flag-icons`, CSS plus SVGs) which neither CI nor the engine installs; adding it to
+  `engine/package.json` would change the lockfile hash and throw away CI's Rust cache. These are
+  drawn as the country's emoji flag (Apple Color Emoji: regional-indicator pairs, Wales's tag
+  sequence). Catalan, Basque and Galician (`es-ct`, `es-pv`, `es-ga`) have no emoji flag and get
+  the text chip ("CA", "BA", "GA").
+- A build whose sync step did not run draws the emoji twin of each upstream flag (flag-eng is the
+  US flag), so nothing is blank.
+- Smoke compares both Swift tables with flag.tsx (5 checks).
+
+Device check: the flags on a stream row (English, a "Multi" release, an Indian-language anime or
+film for an emoji flag), Korea's taeguk (the clipPath), and that a long language list wraps with
+the other pills rather than squeezing them.
 
 ### Parity pass 3 (outside the player and picker)
 
