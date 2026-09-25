@@ -343,8 +343,9 @@ struct EBookDetailView: View {
             } label: {
                 Label(model.resume != nil ? "Continue Reading" : "Start Reading", systemImage: "book.fill")
             }
-            .buttonStyle(BPActionStyle(primary: true))
-            .disabled(!ready)
+            // (device-flow pass) Dimmed, not disabled, while the chapters load: a disabled first button
+            // sent the page's first focus to Bookmark, so an early Select put the book on the shelf.
+            .buttonStyle(BPActionStyle(primary: true, busy: !ready))
             Button { Task { await model.toggleShelf() } } label: {
                 Label(model.onShelf ? "Bookmarked" : "Bookmark", systemImage: model.onShelf ? "books.vertical.fill" : "bookmark")
             }

@@ -151,6 +151,8 @@ struct EBookView: View {
     @State private var open: EBookOpen?
     @State private var sourcesOpen = false
     @State private var shelfOpen = false
+    /// A book picked on the Shelf page, opened once that page has gone.
+    @State private var shelfPick: EBookOpen?
     @State private var spotlight: EBook?
     @State private var continueRows: [EBookContinue] = []
     @State private var loadedFor: String?
@@ -177,8 +179,12 @@ struct EBookView: View {
         .fullScreenCover(isPresented: $sourcesOpen, onDismiss: { Task { await store.refresh(); reloadIfNeeded() } }) {
             EBookSourcesView { sourcesOpen = false }
         }
-        .fullScreenCover(isPresented: $shelfOpen) {
-            EBookShelfView(onOpen: { b in shelfOpen = false; open = EBookOpen(id: b.id) }, onClose: { shelfOpen = false })
+        // (device-flow pass) The book opens after the Shelf cover has closed: dismissing one cover and
+        // presenting another in the same update dropped the new one, so the Shelf closed and nothing opened.
+        .fullScreenCover(isPresented: $shelfOpen, onDismiss: {
+            if let pick = shelfPick { shelfPick = nil; open = pick }
+        }) {
+            EBookShelfView(onOpen: { b in shelfPick = EBookOpen(id: b.id); shelfOpen = false }, onClose: { shelfOpen = false })
         }
     }
 
@@ -566,7 +572,7 @@ struct EBookSourcesView: View {
                         Text("Bring your own").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                         // GutenbergQuickAdd.
                         let added = store.state?.hasGutendex == true
-                        Button { Task { await store.addGutendex() } } label: {
+                        Button { if !added { Task { await store.addGutendex() } } } label: {
                             HStack(spacing: BP.px(14)) {
                                 Image(systemName: "building.columns.fill").font(.system(size: BP.px(20))).foregroundStyle(BP.accent)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -581,7 +587,8 @@ struct EBookSourcesView: View {
                             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
                         }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
-                        .disabled(added)
+                        // (device-flow pass) GutenbergQuickAdd disables itself once added; here it stays
+                        // focusable (a disabled focused tile threw the ring off the page) and does nothing.
                     }
                     .focusSection()
                     Button("Done", action: onClose).buttonStyle(BPActionStyle())

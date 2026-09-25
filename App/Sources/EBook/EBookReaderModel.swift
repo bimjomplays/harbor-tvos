@@ -299,6 +299,13 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         if page > 0 { page -= 1 } else if hasPrevious { Task { await openChapter(index - 1, landing: .end) } }
     }
 
+    /// The failed chapter's Try again: open it again where it was saved.
+    func retry() {
+        guard failed != nil, !loading else { return }
+        let i = index
+        Task { await openChapter(i, landing: nil) }
+    }
+
     func goToChapter(_ i: Int, line: Int? = nil) {
         guard chapters.indices.contains(i) else { return }
         if i == index, let line, let pages = pages { page = pages.page(forLine: line); return }
