@@ -114,12 +114,13 @@ final class AccountStore: ObservableObject {
         guard case EngineError.js(let text) = error else { return error }
         let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
         let line = first.hasPrefix("Error: ") ? String(first.dropFirst(7)) : first
-        struct Wire: Decodable { var status: Int; var code: String?; var reason: String?; var message: String }
+        struct Wire: Decodable { var status: Int; var code: String?; var reason: String?; var message: String; var name: String? }
         if line.hasPrefix("harbor-api:"), let w = try? JSONDecoder().decode(Wire.self, from: Data(line.dropFirst(11).utf8)) {
-            // The identity API puts the code in `error` (the message) when `code` is absent.
-            let code = w.code ?? (w.message.allSatisfy { $0 == "_" || ($0.isLetter && $0.isLowercase) } ? w.message : nil)
-            return HarborAPI.APIError(status: w.status, code: code, reason: w.reason ?? (code == nil ? w.message : nil))
+            // (review 26) The error's own fields, as error-messages.ts reads them: the identity API
+            // puts the code in `error` (the message) when `code` is absent, and accountErrorMessage
+            // falls back to the message itself (HarborErrorMessages.message).
+            return HarborAPI.APIError(status: w.status, code: w.code, reason: w.reason, message: w.message, name: w.name)
         }
-        return HarborAPI.APIError(status: 0, code: nil, reason: line)
+        return HarborAPI.APIError(status: 0, code: nil, reason: nil, message: line)
     }
 }

@@ -165,7 +165,12 @@ struct SettingsView: View {
                         HStack(spacing: BP.px(12)) {
                             Button("Switch profile") {
                                 app.switchProfile()
-                                Self.ringReturn = app.stage == .whoIsWatching ? "switch" : nil
+                                // (review 26) Not from the Picture in Picture browse layer: its switch
+                                // takes the layer down and the main shell's Who's watching returns to
+                                // whatever room that shell was on, so the key waited for a later,
+                                // unrelated Settings visit and pulled the ring to Switch profile there.
+                                let fromLayer: Bool = PiPBrowse.shared.isBrowseApp(app)
+                                Self.ringReturn = app.stage == .whoIsWatching && !fromLayer ? "switch" : nil
                             }
                             .buttonStyle(BPActionStyle())
                             .focused($returnFocus, equals: "switch")

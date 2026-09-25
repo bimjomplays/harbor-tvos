@@ -172,6 +172,7 @@ struct HomeServersPanel: View {
                     // refresh) disabled the button under the ring and threw the ring off the row.
                     let syncing = model.progress[c.id] != nil
                     Button("Remove") { if !syncing { removing = c } }.buttonStyle(BPActionStyle(busy: syncing))
+                        .focused($focus, equals: "remove:\(c.id)")
                 }
                 HStack(spacing: BP.px(10)) {
                     Button(T("Quality") + ": " + T(Self.label(HomeServersModel.qualities, c.preferredQuality ?? "original"))) { Task { await model.cycle(c, field: "preferredQuality", options: HomeServersModel.qualities, current: c.preferredQuality) } }.buttonStyle(BPActionStyle())
@@ -258,7 +259,17 @@ struct HomeServersPanel: View {
             // (device-flow pass 5) After the alert has gone (review 24's Live Sources rule): the
             // removal answers before the alert finishes dismissing, and a focus set under it is
             // dropped, so the ring fell off the section with the removed row's buttons.
-            Button("Remove server", role: .destructive) { Task { await model.remove(c.id); refocus("add-plex", after: 0.4) } }
+            // (review 26) The ring goes to the Remove of the server now in its place (the next row,
+            // else the one before), as the Live Sources sheet does, and to Add Plex when none is left.
+            Button("Remove server", role: .destructive) {
+                let list: [HomeServersModel.Connection] = model.connections
+                var next: String = "add-plex"
+                if let i = list.firstIndex(where: { $0.id == c.id }) {
+                    if i + 1 < list.count { next = "remove:" + list[i + 1].id } else if i > 0 { next = "remove:" + list[i - 1].id }
+                }
+                let target: String = next
+                Task { await model.remove(c.id); refocus(target, after: 0.4) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Cached titles from this server will also be removed. Your media on the server will not be changed.")

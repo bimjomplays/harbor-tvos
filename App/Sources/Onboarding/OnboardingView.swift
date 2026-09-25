@@ -680,12 +680,20 @@ enum OnboardDecisionSeed {
     /// bp-onboarding-frame.tsx LATE_MOUNT_MS.
     private static let lateMount: TimeInterval = 6
 
-    static func place(_ target: String?, opened: Date, ring: FocusState<String?>.Binding) async {
-        guard let target, Date().timeIntervalSince(opened) < lateMount else { return }
+    /// The step's Skip: tagged so a ring the viewer moved there is not read as "nowhere".
+    static let skip = "skip"
+
+    /// `left`: the ring has been in the step and gone out of it (Continue or Skip pressed, Back,
+    /// the Leave setup dialog). (review 26) A step on its way out is still drawn while the next
+    /// fades in, and its ring reads nil there: without this a load that finished after Continue
+    /// could pull the ring back onto the step the viewer had just left.
+    static func place(_ target: String?, opened: Date, ring: FocusState<String?>.Binding, left: () -> Bool) async {
+        guard let target, !Task.isCancelled, !left(), Date().timeIntervalSince(opened) < lateMount else { return }
         let before: String? = ring.wrappedValue
         guard before == nil || before == primary else { return }
         // The grid mounts on this pass: focus its first cell once it is there.
         try? await Task.sleep(for: .milliseconds(120))
+        guard !Task.isCancelled, !left() else { return }
         let now: String? = ring.wrappedValue
         guard now == nil || now == primary else { return }
         ring.wrappedValue = target
@@ -701,6 +709,8 @@ struct StreamingServicesStep: View {
     @State private var loaded = false
     /// (device-flow pass 5) bp-onboarding-frame useBpOnboardFocus: see OnboardDecisionSeed.
     @FocusState private var ring: String?
+    /// (review 26) The ring went out of this step: the seed stays out (OnboardDecisionSeed.place).
+    @State private var ringLeft = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
@@ -731,16 +741,20 @@ struct StreamingServicesStep: View {
             }
             BPNote(text: hasKey ? T("%lld on", items.filter(\.on).count) : "These rows need a TMDB key before they show anything.")
             HStack(spacing: BP.px(12)) {
-                Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
+                Button("Continue") { ringLeft = true; done() }.buttonStyle(BPActionStyle(primary: true))
                     .focused($ring, equals: OnboardDecisionSeed.primary)
-                Button("Skip") { done() }.buttonStyle(BPActionStyle())
+                Button("Skip") { ringLeft = true; done() }.buttonStyle(BPActionStyle())
+                    .focused($ring, equals: OnboardDecisionSeed.skip)
             }
         }
         .task {
             let opened = Date()
             await load()
             let first: String? = items.first.map { "s:\($0.value)" }
-            await OnboardDecisionSeed.place(first, opened: opened, ring: $ring)
+            await OnboardDecisionSeed.place(first, opened: opened, ring: $ring, left: { ringLeft })
+        }
+        .onChange(of: ring) { old, now in
+            if old != nil && now == nil { ringLeft = true }
         }
     }
 
@@ -771,6 +785,8 @@ struct TasteStep: View {
     @State private var bump: String?
     /// (device-flow pass 5) bp-onboarding-frame useBpOnboardFocus: see OnboardDecisionSeed.
     @FocusState private var ring: String?
+    /// (review 26) The ring went out of this step: the seed stays out (OnboardDecisionSeed.place).
+    @State private var ringLeft = false
     private static let max = 5
     /// (layout pass) Six 253 pt posters (1 603 pt) overran the 891 pt step column, and the scroller
     /// centred and clipped them. bp-step-taste keeps PER_ROW = 6 at the column's width: 6 × px(76)
@@ -811,9 +827,10 @@ struct TasteStep: View {
             }
             BPNote(text: onScreen >= Self.max ? "That is five. Deselect one to swap it out." : T("%lld of %lld picked", onScreen, Self.max))
             HStack(spacing: BP.px(12)) {
-                Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
+                Button("Continue") { ringLeft = true; done() }.buttonStyle(BPActionStyle(primary: true))
                     .focused($ring, equals: OnboardDecisionSeed.primary)
-                Button("Skip") { done() }.buttonStyle(BPActionStyle())
+                Button("Skip") { ringLeft = true; done() }.buttonStyle(BPActionStyle())
+                    .focused($ring, equals: OnboardDecisionSeed.skip)
             }
         }
         .task {
@@ -823,7 +840,10 @@ struct TasteStep: View {
             picked = Set((try? await HarborEngine.shared.call("onboarding.upvoted", []) as [String]) ?? [])
             loaded = true
             let first: String? = items.first.map { "t:\($0.id)" }
-            await OnboardDecisionSeed.place(first, opened: opened, ring: $ring)
+            await OnboardDecisionSeed.place(first, opened: opened, ring: $ring, left: { ringLeft })
+        }
+        .onChange(of: ring) { old, now in
+            if old != nil && now == nil { ringLeft = true }
         }
     }
 

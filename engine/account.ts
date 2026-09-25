@@ -41,7 +41,7 @@ export function session(): SessionView {
  * survives the bridge. Re-throw with everything in the message, as one JSON line the host parses.
  */
 function apiError(e: unknown): Error {
-  const err = e as { message?: unknown; status?: unknown; code?: unknown; reason?: unknown } | null;
+  const err = e as { name?: unknown; message?: unknown; status?: unknown; code?: unknown; reason?: unknown } | null;
   const out = new Error(
     "harbor-api:" +
       JSON.stringify({
@@ -49,6 +49,9 @@ function apiError(e: unknown): Error {
         code: typeof err?.code === "string" ? err.code : null,
         reason: typeof err?.reason === "string" ? err.reason : null,
         message: typeof err?.message === "string" ? err.message : String(e),
+        // (review 26) error-messages.ts isNetworkError reads e.name === "TypeError" (the fetch
+        // shim's transport failure, whose message is the system's own wording).
+        name: typeof err?.name === "string" ? err.name : null,
       }),
   );
   return out;

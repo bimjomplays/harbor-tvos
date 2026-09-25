@@ -36,7 +36,11 @@ enum HarborAPI {
         var status: Int
         var code: String?
         var reason: String?
-        var errorDescription: String? { HarborErrorMessages.message(code: code, reason: reason, status: status) }
+        /// The error's message (client.ts: the body's `error`, else "Request failed (N).").
+        var message: String? = nil
+        /// The JS error's name ("TypeError" for a fetch that never reached the server).
+        var name: String? = nil
+        var errorDescription: String? { HarborErrorMessages.message(code: code, reason: reason, message: message, name: name) }
     }
 
     static func login(username: String, password: String) async throws -> AuthResult {
@@ -79,7 +83,9 @@ enum HarborAPI {
         guard (200..<300).contains(status) else {
             struct Envelope: Codable { var error: String?; var code: String?; var message: String? }
             let env = try? JSONDecoder().decode(Envelope.self, from: data)
-            throw APIError(status: status, code: env?.code ?? env?.error, reason: env?.message)
+            // client.ts unwrap: the message is the body's `error`, else "Request failed (N).".
+            let fallback: String = "Request failed (\(status))."
+            throw APIError(status: status, code: env?.code, reason: env?.message, message: env?.error ?? fallback)
         }
         return data
     }
@@ -143,22 +149,27 @@ enum HarborErrorMessages {
     private static let networkKey = "Couldn't reach Harbor. Check your connection and try again."
     private static let genericKey = "Something went wrong. Try again."
 
-    /// `code` is the server's code (or its snake_case message, AccountStore.translate); `reason`
-    /// its reason, or its message / the engine's error line when there is no code.
-    static func message(code: String?, reason: String?, status: Int) -> String {
-        let c: String = (code ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let r: String = (reason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    /// accountErrorMessage in error-messages.ts order: `code` is the error's code, `message` its
+    /// message (the code when the server sent none), `reason` its reason, `name` the JS error name.
+    /// (review 26) The message is read as upstream reads it: the code falls back to it, a network
+    /// failure is known by its name as well as its wording, and an unmapped error shows its
+    /// message before a snake_case code turns into the generic line.
+    static func message(code rawCode: String?, reason rawReason: String?, message rawMessage: String? = nil, name: String? = nil) -> String {
+        let message: String = rawMessage ?? ""
+        let codeOnly: String = (rawCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let c: String = codeOnly.isEmpty ? message.trimmingCharacters(in: .whitespacesAndNewlines) : codeOnly
+        let r: String = (rawReason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if c == "validation" { return T(byReason[r] ?? validationKey) }
         if let key = byReason[r] { return T(key) }
         if let key = byCode[c] { return T(key) }
-        // isNetworkError: a fetch that never reached the server ("Load failed", a TypeError).
-        let lower: String = r.lowercased()
-        if c.isEmpty, lower.hasPrefix("typeerror") || lower.contains("failed to fetch") || lower.contains("networkerror") || lower.contains("load failed") {
+        // isNetworkError: a fetch that never reached the server.
+        let lower: String = message.lowercased()
+        if name == "TypeError" || lower.hasPrefix("typeerror") || lower.contains("failed to fetch") || lower.contains("networkerror") || lower.contains("load failed") {
             return T(networkKey)
         }
-        if c.isEmpty, !r.isEmpty { return r }
+        if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return message }
         // SNAKE_CODE_RE: an unknown code reads as the generic line, not as "handle_whatever".
-        if c.range(of: "^[a-z0-9]+(_[a-z0-9]+)+$", options: .regularExpression) != nil { return T(genericKey) }
+        if codeOnly.range(of: "^[a-z0-9]+(_[a-z0-9]+)+$", options: .regularExpression) != nil { return T(genericKey) }
         if !c.isEmpty { return c }
         return T(genericKey)
     }
