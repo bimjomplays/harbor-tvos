@@ -217,6 +217,12 @@ struct CalendarView: View {
         if let d = model.data, model.pendingSource != nil {
             // use-calendar-data: a new source starts from no rows while it loads.
             CalendarSkeleton(weekdays: d.weekdays)
+        } else if let d = model.data, model.loading, d.year != model.year || d.month != model.month {
+            // (discover/onboarding pass 2) Previous / Next / Today: the last month's grid stayed up
+            // under the new month's label until the new month answered, and a day pressed meanwhile
+            // opened last month's releases. Upstream redraws the new month's cells at once
+            // (buildMonthCells(year, month)); its titles arrive with the load.
+            CalendarSkeleton(weekdays: d.weekdays)
         } else if let d = model.data {
             switch d.status {
             case "not-signed-in":

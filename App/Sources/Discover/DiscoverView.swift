@@ -13,7 +13,7 @@ struct DiscoverView: View {
     @State private var genrePage: BrowseRow?
     @State private var queueOpen = false
     @State private var voyageOpen = false
-    /// The lead band holding the ring ("queue", "people", "awards", "genres", "voyage").
+    /// The lead band holding the ring ("queue", "awards", "genres", "voyage", "people").
     @State private var leadHeld: String?
 
     var body: some View {
@@ -58,11 +58,6 @@ struct DiscoverView: View {
                     section("queue", "Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
                         QueueBandView(queue: model.build?.queue, onOpen: { queueOpen = true }, onHold: { hold("queue", $0) })
                     }
-                    if !model.people.isEmpty {
-                        section("people", "Discover", "Top People", T("Top %lld, ranked by the work they left behind", model.people.count)) {
-                            PeopleBandView(people: model.people, onHold: { hold("people", $0) })
-                        }
-                    }
                     if let aw = model.awards, !aw.summaries.isEmpty {
                         section("awards", "Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : T("%lld awards, %lld winners, %@, all offline", aw.overview.bodies, aw.overview.wins, aw.overview.span)) {
                             AwardsBandView(summaries: aw.summaries, anime: model.animeAwards,
@@ -83,6 +78,16 @@ struct DiscoverView: View {
                     if let pool = model.build?.voyagePool, pool.count >= 3 {
                         VoyageBannerView(snapshot: model.voyage, pool: pool, onOpen: { voyageOpen = true }, onHold: { hold("voyage", $0) })
                             .modifier(BPRailLeadMark(key: Self.leadKey("voyage"), held: leadHeld == "voyage"))
+                    }
+                    // (discover/onboarding pass 2) bp-discover.tsx entries: queue, awards, genres,
+                    // collections, people, then the rails. Top People sat second, and it is the last
+                    // lead to arrive (a TMDB read behind the awards install), so it dropped in above
+                    // Awards and Genres after the viewer had walked down to them and pushed the band
+                    // holding the ring down the screen.
+                    if !model.people.isEmpty {
+                        section("people", "Discover", "Top People", T("Top %lld, ranked by the work they left behind", model.people.count)) {
+                            PeopleBandView(people: model.people, onHold: { hold("people", $0) })
+                        }
                     }
                 }
             }
