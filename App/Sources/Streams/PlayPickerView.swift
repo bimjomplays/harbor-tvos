@@ -573,7 +573,9 @@ struct PlayPickerView: View {
     /// stream back and the banner says so (filterFellBack).
     private var filterPool: (streams: [ScoredStream], fellBack: Bool) {
         let key: PoolKey = poolKey
-        if let have = memo.poolKey, have == key { return memo.pool }
+        // An equal key is adopted, so a re-sent but unchanged `streams` array (new storage, same
+        // values) is compared element by element once, then by storage again.
+        if let have = memo.poolKey, have == key { memo.poolKey = key; return memo.pool }
         let built: (streams: [ScoredStream], fellBack: Bool) = computeFilterPool()
         memo.poolKey = key
         memo.pool = built
@@ -713,7 +715,7 @@ struct PlayPickerView: View {
         let key = VisibleKey(pool: poolKey, quality: quality, addonFilter: addonFilter, facet: facet,
                              sortByAddon: sortByAddon, addonOrder: model.addonOrder, hostScores: model.hostScores,
                              rememberedIndex: model.rememberedIndex, switching: switching)
-        if let have = memo.visibleKey, have == key { return memo.visible }
+        if let have = memo.visibleKey, have == key { memo.visibleKey = key; return memo.visible }
         let built: [ScoredStream] = computeVisible()
         memo.visibleKey = key
         memo.visible = built
