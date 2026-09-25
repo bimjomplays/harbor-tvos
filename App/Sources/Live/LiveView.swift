@@ -174,6 +174,8 @@ final class LiveModel: ObservableObject {
         var ids: [String] = []
         for (i, ch) in visible.enumerated() where i < Self.nowNextLead || guide[ch.id] != nil { ids.append(ch.id) }
         if let list: [NowNext] = try? await HarborEngine.shared.call("live.nowNext", [id, ids]) {
+            // (review) A reply for a source switched away from would merge into the new source's map.
+            guard selectedPlaylist == id else { return }
             merge(list)
         }
     }
@@ -184,6 +186,7 @@ final class LiveModel: ObservableObject {
         guard let id = selectedPlaylist, !ids.isEmpty else { return }
         let ask = Array(ids.prefix(400))
         if let list: [NowNext] = try? await HarborEngine.shared.call("live.nowNext", [id, ask]) {
+            guard selectedPlaylist == id else { return }
             merge(list)
         }
     }
