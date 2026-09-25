@@ -309,7 +309,7 @@ struct DetailView: View {
                              pickerAuto = auto; pickerPref = false
                              let next = (t.pick?.attempt ?? 0) + 1
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAttempt = next; picker = (model.meta, t.episode) }
-                         }, streamSubtitles: t.subtitles) { natural in
+                         }, streamSubtitles: t.subtitles, pickEpisode: t.episode) { natural in
                 playerClosed = ClosedPlay(at: Date(), season: t.context.season, episode: t.context.episode)
                 playing = nil
                 hintSpent = true

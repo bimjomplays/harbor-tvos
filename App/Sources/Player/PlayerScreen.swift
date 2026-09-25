@@ -20,6 +20,7 @@ struct PlayerScreen: View {
     /// source-error-card "Pick another source": the caller reopens the picker after this closes.
     var onChooseAnother: (() -> Void)? = nil
     /// bp-player-sources "Switch source": reopen the picker and resume the new stream here.
+    /// (P8) Only where the switcher cannot swap in place (canSwitchInPlace: a home-server copy).
     var onSwitchSource: ((Double) -> Void)? = nil
     /// bp-player-controls "Previous episode": the caller opens the previous episode's picker.
     /// "Next episode" needs nothing new: closing with `true` is how the caller advances.
@@ -46,6 +47,9 @@ struct PlayerScreen: View {
     /// unselected once the file is open (mpv.ts addSeedSubtitles), so a retry or the move to mpv
     /// brings them again (use-auto-retry passes src.subtitles on every reload).
     var streamSubtitles: [SeedSubtitle] = []
+    /// (P8) The PlayEpisode the picker searched with (view.ts PlayerSrc.episode): the in-player
+    /// switcher searches with it again. nil builds one from the context.
+    var pickEpisode: AnyJSON? = nil
     /// use-live-channel-overlay switchChannel: the channel tuned in place (nil = the one opened).
     @State private var tuned: LiveModel.Channel?
     /// goPrevChannel: the channels tuned before, newest last, 12 at most.
@@ -61,6 +65,9 @@ struct PlayerScreen: View {
         var headers: [String: String]
         /// The swapped-in stream's own subtitles (use-stream-switcher / switchMediaServerQuality `subtitles: next.subtitles`).
         var subtitles: [SeedSubtitle] = []
+        /// (P8) use-stream-switcher liveStreamRef: the picked stream's PlayerStreamRef, when the
+        /// switcher knew it (its "Now playing" row and the room's source descriptor).
+        var ref: AnyJSON? = nil
     }
     /// TransportKids' subtitle toggle reads the subtitle tracks (refreshed while its chrome is up).
     @State private var kidSubs: [MPVPlayerController.Track] = []
@@ -215,7 +222,7 @@ struct PlayerScreen: View {
         var instantPlay = true
     }
 
-    enum Panel { case audio, subtitles, anime4k, channels, kidsSources, homeServerQuality, speed }
+    enum Panel { case audio, subtitles, anime4k, channels, kidsSources, homeServerQuality, speed, sources }
     struct Anime4KChoice: Decodable { var active: Bool; var choice: String; var mode: String?; var tier: String?; var files: [String]; var indicator: Bool }
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
@@ -230,6 +237,8 @@ struct PlayerScreen: View {
     /// Watch Together (Together/TogetherPlayback.swift): room sync, lobby and the Room panel.
     @StateObject private var together = TogetherPlayback()
     @State private var roomOpen = false
+    /// (P8) duration-mismatch-chip.tsx dismissedKey: the host-file / own-file pair the ✕ hid.
+    @State private var mismatchDismissed: String?
     private static let hideAfter: Double = 4.6   // use-bp-player-chrome.ts
 
     var body: some View {
@@ -304,6 +313,7 @@ struct PlayerScreen: View {
                     case .right: if isLive { controller?.seek(10); wake() } else { nudgeSeek(ahead: true) }
                     case .up where showUpNextCard: StillWatching.reset(); focus = .chip("upnext-keep")
                     case .up where activeSkip != nil: StillWatching.reset(); focus = .chip("skip")
+                    case .up where mismatchNow != nil: focus = DurationMismatch.entry
                     case .up where xrayMeta != nil: focus = PlayerXRayOverlay.entry
                     default: wake()
                     }
@@ -351,6 +361,12 @@ struct PlayerScreen: View {
             // (perf pass 4) The up-next card and the skip pill follow the playhead: they are drawn in
             // a leaf that observes the clock (cueLayer), not in this body.
             PlayerClockReader(clock) { _ in cueLayer }
+            // (P8) room-layer.tsx DurationMismatchChip: a guest's file runs longer or shorter than the host's.
+            if let context {
+                DurationMismatchChip(clock: clock, metaId: context.meta.id, season: context.season, episode: context.episode,
+                                     playKey: playURL.absoluteString, allowed: mismatchAllowed, chromeUp: chromeShown,
+                                     dismissed: $mismatchDismissed, focus: $focus, onFindCloser: { findCloserMatch() })
+            }
             // xray-overlay.tsx: X-Ray while paused (PlayerXRay.swift), when settings.xrayEnabled.
             if let meta = xrayMeta { PlayerXRayOverlay(meta: meta, open: $xrayOpen, focus: $focus).transition(.opacity) }
             // player.tsx StillWatchingPrompt: over everything but the Together room and PiP.
@@ -398,6 +414,7 @@ struct PlayerScreen: View {
             else if noAudioWarning, engine == .native, !failed { noAudioWarning = false; focus = .surface; wake() }  // header-warning "Dismiss"
             else if showUpNextCard, !failed { cancelAutoNext() }            // bp-up-next: Back is "Keep watching"
             else if focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
+            else if focus == DurationMismatch.entry || focus == DurationMismatch.dismissTarget { focus = .surface }
             // (player/live device pass) Only a transport that is on screen: behind an error card the
             // flag could still be up, so the first Back did nothing the viewer could see.
             // (player pass 2) The ring goes back to the stage with it, as the hide timer does: it
@@ -529,7 +546,7 @@ struct PlayerScreen: View {
             // closing() had just cleared, pulling the guests back into it.
             if !finishing {
                 scrobbleTick()
-                together.tick(controller: controller, context: isLive ? nil : context, url: url, rate: rate)
+                together.tick(controller: controller, context: isLive ? nil : context, url: playURL, rate: rate)
             }
             // (player tracks pass) useSkipSegments also reads the file's chapters (mpv chapter-list).
             // The chapter list is read only when the (whole-second) duration changes: mpv fills it with
@@ -596,6 +613,8 @@ struct PlayerScreen: View {
     private var autoPickLive: Bool {
         pick?.autoPicked == true && onPickAgain != nil && !isLive && !together.inRoom && switched == nil
             && !playbackStarted && !sentBack && !finishing
+            // (P8) Not while the viewer is choosing another source in the switcher over it.
+            && panel != .sources
     }
 
     /// lib/player/stall-wait.ts hasPlaybackStartedForStallCheck: paused, a position, or a picture.
@@ -752,6 +771,9 @@ struct PlayerScreen: View {
         }
         // A pill that went away takes the ring back to the stage.
         if activeSkip == nil, focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
+        // (P8) So does the duration-mismatch chip (the host changed files, the length arrived).
+        let onMismatch: Bool = focus == DurationMismatch.entry || focus == DurationMismatch.dismissTarget
+        if onMismatch, mismatchNow == nil { focus = .surface }
     }
 
     /// player-overlay-layers onSkip = seekTo: through the Watch Together room when in one.
@@ -1218,7 +1240,10 @@ struct PlayerScreen: View {
                     chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
                 }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
-                if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
+                // (P8) bp-ten-foot.tsx sources slot: the switcher opens over the film and swaps the
+                // stream in place. Where it can't (a home-server copy), the picker reopens at this spot.
+                if canSwitchInPlace { chip("Sources", "list.bullet") { open(.sources) } }
+                else if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
                 // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
                 if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
@@ -1462,6 +1487,12 @@ struct PlayerScreen: View {
             }
         case .speed:
             PlayerSpeedPanel(rate: rate, isLive: isLive, onRate: { setRate($0) }, onClose: { closePanel() })
+        case .sources:
+            if let context {
+                // (P8) bp-player-sources.tsx BpPlayerSources (PlayerSourcesPanel.swift).
+                PlayerSourcesPanel(meta: context.meta, episode: pickEpisode ?? kidsEpisode(context), current: currentSource,
+                                   onPicked: { stream, resolved in switchSource(stream, resolved) }, onClose: { closePanel() })
+            }
         }
     }
 
@@ -1567,14 +1598,22 @@ struct PlayerScreen: View {
     /// stream-switcher onPick: the picked stream replaces this one in place at the same position
     /// (use-bridge-load hasExplicitStart), through the engine rule again; a torrent stays owned by
     /// the player while it plays (use-player-media).
-    private func switchStream(to next: URL, headers nextHeaders: [String: String], subtitles nextSubtitles: [SeedSubtitle] = []) {
-        let at = clock.snap.position > 5 ? clock.snap.position : 0
+    /// (P8) `spot`: where the new stream starts (the source switcher's resume spot; the position
+    /// otherwise), `hints`: the picked stream's facts for the engine rule, `ref`: its PlayerStreamRef.
+    private func switchStream(to next: URL, headers nextHeaders: [String: String], subtitles nextSubtitles: [SeedSubtitle] = [],
+                              from spot: Double? = nil, hints: PlayerStreamHints? = nil, ref: AnyJSON? = nil) {
+        let here: Double = clock.snap.position > 5 ? clock.snap.position : 0
+        // use-stream-switcher `startAtSec: resumeAt > 5 ? resumeAt : undefined`.
+        let at: Double = spot.map { $0 > 5 ? $0 : 0 } ?? here
         let owned = switched?.url ?? url
         if next != owned {
             TorrentEngine.shared.playerOpened(url: next)
             TorrentEngine.shared.playerClosed(url: owned)
         }
-        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles)
+        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles, ref: ref)
+        // (P8) use-host-source: nothing closes, so a Watch Together room keeps this player (no
+        // host-leaving, no reopen); the room's source descriptor follows the new stream.
+        together.sourceSwitched(url: next, ref: ref, at: at)
         // use-auto-retry.ts resets its early-end reload per source.
         truncatedReloaded = false
         status = MPVPlayerController.Status()
@@ -1585,7 +1624,7 @@ struct PlayerScreen: View {
         startAt = nil
         let target = playURL
         Task {
-            guard await settleEngine(for: target, hints: nil) else { return }
+            guard await settleEngine(for: target, hints: hints) else { return }
             startAt = at
             reloadToken += 1
         }
@@ -1593,6 +1632,93 @@ struct PlayerScreen: View {
         // under the Connecting card / the kid loader), not back on Quality or the kid switcher.
         panelOpener = nil
         closePanel()
+    }
+
+    // MARK: switch source in place (P8: bp-player-sources.tsx, use-stream-switcher.ts, duration-mismatch-chip.tsx)
+
+    /// bp-ten-foot.tsx sources slot `!resuming && !src.isLive`, for a title the stream search can run
+    /// for again (PlayerSourcesPanel). Not a playlist item, and not a home-server copy (the session
+    /// reports to its server, and the switcher lists no copies): those keep the picker's reopen.
+    /// A kid profile has its own switcher (KidsStreamSwitcher).
+    private var canSwitchInPlace: Bool {
+        guard let context, !isLive, tuned == nil, !isKid else { return false }
+        return !context.playlistVod && context.homeServer == nil
+    }
+
+    /// switcher-row.tsx isCurrentStream's inputs: the URL playing and the picked stream's ref
+    /// (PlayerSrc.streamRef, or the one swapped in), else the local torrent the URL names.
+    private var currentSource: PlayerSourcesPanel.Current {
+        let ref: AnyJSON? = switched != nil ? switched?.ref : pick?.streamRef
+        let torrent = TorrentEngine.streamRef(playURL)
+        let hash: String? = ref?["infoHash"]?.string ?? torrent?.infoHash
+        var idx: Int? = torrent?.fileIdx
+        if let n = ref?["fileIdx"]?.number, n.isFinite, n >= 0 { idx = Int(n) }
+        return PlayerSourcesPanel.Current(url: playURL.absoluteString, streamURL: ref?["url"]?.string, infoHash: hash, fileIdx: idx)
+    }
+
+    /// use-stream-switcher onSwitchStream: the switcher's resolved pick (resolved through the
+    /// picker's own path, remembered for next time as savePlayback does) replaces the stream in
+    /// place, at use-stream-switcher's resumeAt: where playback is (the last good spot once the
+    /// engine has died), or, from a stub, the spot this player opened at (the saved resume).
+    /// Upstream plays the new stream (b.play()); in a Watch Together room it keeps the room's pause.
+    private func switchSource(_ stream: ScoredStream?, _ r: StreamsModel.Resolved) {
+        // As the kid switcher (bug pass): a resolve that lands after the viewer closed the switcher,
+        // or after the player began to close, does not swap the video under them.
+        guard panel == .sources, !finishing else { return }
+        guard let link = r.data, let next = PlayableURL.make(link.url) else { return }
+        let stub: Bool = clock.snap.duration > 0 && clock.snap.duration < 180
+        let at: Double = stub ? (startAt ?? 0) : switchSpot
+        let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
+                                      hdrFormat: stream?.hdrFormat, filename: link.filename)
+        if together.inRoom { pausedAfterSwitch = clock.snap.paused }
+        switchStream(to: next, headers: link.headers ?? [:], subtitles: link.subtitles ?? [],
+                     from: at, hints: hints, ref: sourceRef(r.streamRef, playing: next))
+    }
+
+    /// The picked stream's PlayerStreamRef, with the torrent and file the TV's engine actually
+    /// serves when it is a local P2P stream (use-stream-switcher `fileIdx: r.data.fileIdx ?? …`).
+    private func sourceRef(_ ref: AnyJSON?, playing next: URL) -> AnyJSON? {
+        var o: [String: AnyJSON] = [:]
+        if case .object(let base)? = ref { o = base }
+        if let t = TorrentEngine.streamRef(next) {
+            o["infoHash"] = .string(t.infoHash)
+            o["fileIdx"] = .number(Double(t.fileIdx))
+        }
+        return o.isEmpty ? nil : AnyJSON.object(o)
+    }
+
+    /// room-layer.tsx mounts the chip unless PiP or drawing, and it hides while the switcher is
+    /// open; the TV also keeps it off the prompts, cards and panels that own the bottom band, and
+    /// off a stream still opening (the clock holds the last file's length until the new one ticks).
+    private var mismatchAllowed: Bool {
+        guard canFindCloser, !isLive, !failed, status.state != "loading", status.state != "idle" else { return false }
+        return panel == nil && !leaveConfirm && !roomOpen && resumePending == nil && !pipActive && !stillPrompt && !xrayOpen && !kidsLoading
+    }
+
+    /// What the chip says now (read at a press or a tick, never by the body).
+    private var mismatchNow: DurationMismatch.Info? {
+        guard mismatchAllowed, let context else { return nil }
+        let info: DurationMismatch.Info? = DurationMismatch.info(room: TogetherModel.shared.view, metaId: context.meta.id,
+                                                                 season: context.season, episode: context.episode,
+                                                                 guestSec: clock.snap.duration, playKey: playURL.absoluteString)
+        guard let info, info.key != mismatchDismissed else { return nil }
+        return info
+    }
+
+    /// "Find closer match" has a switcher to open.
+    private var canFindCloser: Bool {
+        canSwitchInPlace || (isKid && kidsCanSwitch) || onSwitchSource != nil
+    }
+
+    /// duration-mismatch-chip onFindCloser = pickAnother: the in-place switcher (the host-match
+    /// rows lead it); a kid's own switcher; else the picker at this spot, as the Sources chip.
+    private func findCloserMatch() {
+        if canSwitchInPlace { open(.sources); return }
+        if isKid, kidsCanSwitch { open(.kidsSources); return }
+        guard let go = onSwitchSource else { return }
+        let at: Double = switchSpot
+        finish(natural: false, reopening: true)
+        go(at)
     }
 
     // MARK: live channels (use-live-channel-overlay.ts)
@@ -1721,7 +1847,9 @@ struct PlayerScreen: View {
                 HStack(spacing: BP.px(10)) {
                     chip("Go back", "chevron.backward") { finish(natural: false) }
                     chip("Try again", "arrow.clockwise") { reloadSame() }
-                    if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
+                    // (P8) The in-place switcher where it can open, else the picker at this spot.
+                    if canSwitchInPlace { chip("Switch source", "list.bullet") { open(.sources) } }
+                    else if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
                 }
                 .focusSection()
                 .onAppear { focusLater(.chip("Go back")) }
@@ -1883,7 +2011,8 @@ struct PlayerScreen: View {
     /// The ring is on a card that outlives the chrome.
     private var ringOnCard: Bool {
         guard case .chip(let id)? = focus else { return false }
-        return ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry"].contains(id)
+        return ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry",
+                "mismatch-find", "mismatch-dismiss"].contains(id)
     }
 
     private func fmt(_ s: Double) -> String { PlayerClock.fmt(s) }
