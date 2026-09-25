@@ -37,6 +37,14 @@ struct BPTileView: View {
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
+    /// (review 11) The same marks for a caller that sets the tile button's own value (Library's
+    /// resume bar): a value set on the button replaced the tile's, so the marks went unread there.
+    @MainActor static func markValue(_ id: String) -> String {
+        let m = CardMarksStore.shared.byId[id]
+        let parts: [String] = [m?.watched != nil ? T("Watched") : "", m?.bookmark != nil ? T("In watchlist") : ""]
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
     @ViewBuilder private var face: some View {
         switch shape {
         case .poster: poster

@@ -14,6 +14,7 @@ import { decidePlaybackSource } from "@/lib/media-server/playback-policy";
 import { getMediaServerHealthSnapshot, markMediaServerInactive, probeMediaServerHealth, type MediaServerHealth } from "@/lib/media-server/health";
 import { MEDIA_SERVER_QUALITIES, connectionQuality } from "@/lib/media-server/quality";
 import { loadEffective } from "@/lib/settings/profile-store";
+import { loadStoredSettings } from "@/lib/settings/load";
 import { t } from "@/lib/i18n";
 import type { PlayerSrc } from "@/lib/view";
 import { mediaServerRequest } from "@/lib/media-server/transport";
@@ -126,6 +127,9 @@ export function plexAdd(pinId: number, serverId: string): MediaServerConnection 
 export function remove(id: string): void {
   removeMediaServerConnection(id);
   void removeMediaServerItems(id);
+  // (review 11) Lookups still queued for the removed server's titles are dropped; the next
+  // Library read queues again whatever the remaining servers still need.
+  detailWanted = new Set();
   // Liked / recent music keeps Plex art without its token; a list from an older build is rewritten.
   scrubMusicLibrary();
 }
@@ -240,6 +244,18 @@ const detailRunning = new Set<string>();
 const detailMissed = new Map<string, number>();
 let detailLanded = 0;
 let detailTimer: ReturnType<typeof setTimeout> | null = null;
+// (review 11) Every refresh makes the Library read the whole feed again (the server index parsed,
+// every title grouped and its stored details read): a few hundred ms per read for a 5,000-title
+// library in node, several times that in the TV's JIT-less JavaScriptCore, so a refresh every
+// 1.5 s kept the engine busy for the minutes the lookups run. The gap grows with the library
+// (3 ms per title, 1.5 s to 15 s); the last lookup still refreshes at once.
+const DETAIL_NOTIFY_MAX_MS = 15_000;
+let detailNotifyMs = DETAIL_NOTIFY_MS;
+// (review 11) The cache keys the latest feed read still wants looked up. A lookup queued for
+// another profile's language, or for a server removed since, is skipped when its turn comes
+// instead of fetching ahead of the titles on screen (the queue is first in, first out).
+let detailWanted: Set<string> | null = null;
+const DETAIL_SKIPPED = Symbol("skipped");
 
 function detailEmit(): void {
   if (detailTimer != null) { clearTimeout(detailTimer); detailTimer = null; }
@@ -253,7 +269,7 @@ function detailEmit(): void {
 /** One refresh per 1.5 s while lookups land, and one as the last finishes. */
 function detailNotify(): void {
   if (detailRunning.size === 0) { detailEmit(); return; }
-  if (detailTimer == null) detailTimer = setTimeout(detailEmit, DETAIL_NOTIFY_MS);
+  if (detailTimer == null) detailTimer = setTimeout(detailEmit, detailNotifyMs);
 }
 
 /** What the Library card and the owned sort read; the rest of a Cinemeta meta (videos…) stays out of the store. */
@@ -271,14 +287,34 @@ function lookupId(t: MediaServerTitle): string | null {
   return null;
 }
 
+/** What hydrate-meta localizes by, read the way it reads it (loadStoredSettings) when a lookup starts. */
+function hydrateLocaleKey(): string {
+  try {
+    const st = loadStoredSettings();
+    return `${st.tmdbLanguage || "en"}:${(st.tmdbImageLangs ?? []).join(",")}:${st.translateTitles}:${st.translateDescriptions}`;
+  } catch {
+    return "";
+  }
+}
+
 function lookUp(cacheKey: string, id: string, kind: "movie" | "series", tmdbKey: string | null): void {
   if (detailRunning.has(cacheKey)) return;
   const missedAt = detailMissed.get(cacheKey);
   if (missedAt != null && Date.now() - missedAt < DETAIL_RETRY_MS) return;
   detailRunning.add(cacheKey);
+  const queuedLocale = hydrateLocaleKey();
   void detailRequests
-    .schedule(cacheKey, () => hydrateLibraryMeta(id, kind, tmdbKey).catch(() => null))
+    .schedule<Meta | null | typeof DETAIL_SKIPPED>(cacheKey, async () => {
+      if (detailWanted != null && !detailWanted.has(cacheKey)) return DETAIL_SKIPPED;
+      // (review 11) hydrate-meta reads the language as the lookup starts: one queued before a
+      // language change would fetch the new language's details and store them under the old
+      // language's key for good. It waits for the next Library read to queue it again instead.
+      if (hydrateLocaleKey() !== queuedLocale) return DETAIL_SKIPPED;
+      return hydrateLibraryMeta(id, kind, tmdbKey).catch(() => null);
+    })
     .then(async (meta) => {
+      // Skipped: neither a miss (no 10-minute wait) nor a landing; a later read may queue it again.
+      if (meta === DETAIL_SKIPPED) return;
       if (meta && (meta.name || meta.poster)) {
         await putMediaServerMetadata(cacheKey, cardMeta(meta));
         detailMissed.delete(cacheKey);
@@ -305,6 +341,9 @@ export async function libraryFeed(profileId?: string, linked?: boolean, force?: 
   const languageKey = `${s.tmdbLanguage || "en"}:${(s.tmdbImageLangs ?? []).join(",")}`;
   const tmdbKey = s.tmdbKey || null;
   const entries: LibraryTitle[] = [];
+  detailNotifyMs = Math.min(DETAIL_NOTIFY_MAX_MS, Math.max(DETAIL_NOTIFY_MS, grouped.length * 3));
+  // The lookups are queued once the wanted set is whole: a queued one checks it when it starts.
+  const wanted = new Map<string, { id: string; kind: "movie" | "series" }>();
   for (const t of grouped) {
     const base = { id: t.identity.imdbId ?? (t.identity.tmdbId != null ? `tmdb:${t.kind === "series" ? "tv" : "movie"}:${t.identity.tmdbId}` : t.key), type: t.kind, name: t.fallbackTitle, releaseInfo: t.year ? String(t.year) : undefined } as Meta;
     const cacheKey = `${t.key}:locale:${languageKey}`;
@@ -315,10 +354,12 @@ export async function libraryFeed(profileId?: string, linked?: boolean, force?: 
       meta = { ...cached, id: base.id, type: base.type, name: cached.name || base.name, releaseInfo: cached.releaseInfo || base.releaseInfo };
     } else {
       const id = lookupId(t);
-      if (id) lookUp(cacheKey, id, t.kind, tmdbKey);
+      if (id) wanted.set(cacheKey, { id, kind: t.kind });
     }
     entries.push({ key: t.key, meta, date: t.addedAt ?? null, groups: t.connectionIds, libraries: t.libraryIds });
   }
+  detailWanted = new Set(wanted.keys());
+  for (const [cacheKey, w] of wanted) lookUp(cacheKey, w.id, w.kind, tmdbKey);
   // use-bp-library.ts: libraryId → libraryName (else the id) over the enabled servers' items.
   const libraryNames = new Map<string, string>();
   for (const item of all) libraryNames.set(item.libraryId, item.libraryName || item.libraryId);

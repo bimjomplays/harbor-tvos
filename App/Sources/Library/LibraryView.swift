@@ -175,11 +175,26 @@ final class LibraryModel: ObservableObject {
         restoreOwned = false; limit = 60
         Task { await load() }
     }
+    /// (review 11) A details read is running; a batch landing meanwhile asks for one more after it.
+    private var detailsReading = false
+    private var detailsAgain = false
+
     /// A details batch landed: read the Media Servers feed again with the same filters and page.
+    /// (review 11) One read at a time: a big library's read can outlast the gap between batches,
+    /// and each batch used to start another whole-feed read on the engine behind the last one.
     private func detailsArrived() async {
         guard tab == "media-servers" else { return }
-        await load()
-        detailsLanded += 1
+        if detailsReading {
+            detailsAgain = true
+            return
+        }
+        detailsReading = true
+        defer { detailsReading = false }
+        repeat {
+            detailsAgain = false
+            await load()
+            detailsLanded += 1
+        } while detailsAgain && tab == "media-servers"
     }
     func search(_ q: String) { query = q; limit = 60; Task { await load() } }
     func more() { limit += 60; Task { await load() } }
@@ -207,6 +222,9 @@ struct LibraryView: View {
     /// Where in the grid the ring last was: a details re-sort that takes that tile off the page
     /// hands the ring to the tile now at the same place.
     @State private var ringIndex: Int?
+    /// (review 11) The tile the ring was last on: the hand-off runs only when that tile has left the
+    /// page, not when the viewer moved on to Show more, Refresh or the search field (no focus id).
+    @State private var ringKey: String?
     /// The filter chip ("filter:<row>:<option>") the ring was last on, kept when the chip goes away
     /// under it so the ring can be handed on (handOnFilterRing).
     @State private var lastFilterChip: String?
@@ -265,7 +283,8 @@ struct LibraryView: View {
                                         }
                                         .buttonStyle(BPTileStyle())
                                         .focused($focusedKey, equals: e.key)
-                                        .bpProgressValue(e.progress)
+                                        // (review 11) The bar's "{n}% watched" and the tile's marks together.
+                                        .accessibilityValue(Text(verbatim: tileValue(e)))
                                         // The lifted tile, ring and shadow draw over the next grid row.
                                         .zIndex(focusedKey == e.key ? 1 : 0)
                                     }
@@ -302,6 +321,7 @@ struct LibraryView: View {
             if old != nil, new == nil { gridFocusLostAt = Date() }
             if let key = new {
                 ringIndex = gridKeys.firstIndex(of: key)
+                ringKey = key
                 lastFilterChip = nil
             }
         }
@@ -313,6 +333,8 @@ struct LibraryView: View {
                       let lost = gridFocusLostAt, Date().timeIntervalSince(lost) < 0.6 else { return }
                 let keys: [String] = gridKeys
                 guard !keys.isEmpty else { return }
+                // (review 11) A tile still on the page was left by the viewer, not taken by the re-sort.
+                if let was = ringKey, keys.contains(was) { return }
                 focusedKey = keys[min(i, keys.count - 1)]
             }
         }
@@ -421,6 +443,18 @@ struct LibraryView: View {
 
     /// bp-library's Filters chip is selected while a group, library, genre or type narrows the grid.
     private var filtersLit: Bool { model.showFilters || narrowed }
+
+    /// (review 11) A grid tile's VoiceOver value: the resume bar (bpProgressValue's "{n}% watched",
+    /// 1–99 % only) and BPTileView's marks. The button's own value replaced the tile's, so a
+    /// watched or bookmarked title read no mark in the Library.
+    @MainActor private func tileValue(_ e: LibraryModel.Entry) -> String {
+        let fraction: Double = e.progress ?? 0
+        let pct: Int = Int((fraction * 100).rounded())
+        let bar: String = pct >= 1 && pct <= 99 ? T("%lld%% watched", pct) : ""
+        let marks: String = BPTileView.markValue(e.meta.id)
+        let parts: [String] = [bar, marks].filter { !$0.isEmpty }
+        return parts.joined(separator: ", ")
+    }
 
     /// A group, library, genre or type pick narrows the grid (the empty copy says "No matches").
     private var narrowed: Bool {

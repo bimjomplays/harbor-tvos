@@ -2471,6 +2471,54 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   await new Promise((res) => setTimeout(res, 50));
   r.ok("media-server title that missed is not looked up again on the next read", bigAgain.pending === 0 && bigHits.filter((u) => u.includes("1007")).length === missHits, JSON.stringify({ pending: bigAgain.pending, missHits }));
   big.dispose();
+
+  // (review 11) Queued lookups the latest read no longer wants (another language, a removed server)
+  // are skipped when their turn comes, not fetched ahead of the titles on screen.
+  const stale = loadEngine({ storage: seedMs(many, [conn("msA", "Den")]) });
+  const staleHits = [];
+  stale.node.host.fetch = async (req) => {
+    staleHits.push(req.url);
+    await new Promise((res) => setTimeout(res, 15));
+    const m = req.url.match(/\/3\/movie\/(\d+)\?/);
+    if (m) return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ id: Number(m[1]), title: `Film ${Number(m[1]) - 1000}`, vote_average: 5, runtime: 100 }) };
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  stale.engine.settings.patchFor({ tmdbKey: "0123456789abcdef0123456789abcdef", tmdbLanguage: "en" }, "p1", true);
+  const stalePings = [];
+  stale.engine.runtime.onEvent((type, d) => { if (type === "harbor:media-server-details") stalePings.push(d); });
+  const sq = () => stale.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null });
+  await sq();
+  stale.engine.settings.patchFor({ tmdbLanguage: "de" }, "p1", true);
+  // No Library read after the change yet: the queued English lookups must not fetch German ones.
+  await new Promise((res) => setTimeout(res, 300));
+  const enBeforeRead = [...stale.node.storage.keys()].filter((k) => /^harbor\.media-server\.meta\.v1\..*:locale:en:/.test(k)).length;
+  const deBeforeRead = staleHits.filter((u) => /\/3\/movie\/\d+\?.*language=de(&|$)/.test(u)).length;
+  r.ok("media-server lookups queued before a language change are skipped even before the next Library read", enBeforeRead <= 6 && deBeforeRead === 0, JSON.stringify({ enBeforeRead, deBeforeRead }));
+  stalePings.length = 0;
+  const deRead = await sq();
+  for (let i = 0; i < 300 && !(stalePings.length > 0 && stalePings[stalePings.length - 1].pending === 0); i++) await new Promise((res) => setTimeout(res, 20));
+  const enDetails = staleHits.filter((u) => /\/3\/movie\/\d+\?.*language=en(&|$)/.test(u)).length;
+  const deDetails = staleHits.filter((u) => /\/3\/movie\/\d+\?.*language=de(&|$)/.test(u)).length;
+  // hydrate-meta reads the language when a lookup starts, so a stale one fetched German details
+  // and stored them under the English key; only the ones already in flight may land there.
+  const enStored = [...stale.node.storage.keys()].filter((k) => /^harbor\.media-server\.meta\.v1\..*:locale:en:/.test(k)).length;
+  r.ok("media-server lookups queued under the last language are skipped once the language changes", deRead.pending >= 30 && enDetails <= 6 && enStored <= 6 && deDetails === 30, JSON.stringify({ pending: deRead.pending, enDetails, enStored, deDetails }));
+  stale.dispose();
+
+  const gone = loadEngine({ storage: seedMs(many, [conn("msA", "Den")]) });
+  const goneHits = [];
+  gone.node.host.fetch = async (req) => {
+    goneHits.push(req.url);
+    await new Promise((res) => setTimeout(res, 15));
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  gone.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, gone.engine.settings.sourceKeyFor("p1", true));
+  await gone.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null });
+  gone.engine.homeServers.remove("msA");
+  await new Promise((res) => setTimeout(res, 200));
+  const goneDetails = goneHits.filter((u) => /\/3\/movie\/\d+\?/.test(u)).length;
+  r.ok("media-server lookups for a removed server stop at the ones already in flight", goneDetails <= 6, JSON.stringify({ goneDetails }));
+  gone.dispose();
 }
 
 // -------------------------------------------- calendar, reminders, stats (recorded host)
