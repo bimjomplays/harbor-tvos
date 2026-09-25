@@ -235,15 +235,15 @@ struct SportsEventView: View {
     @ViewBuilder private func primary(_ w: SportsEventModel.Watch) -> some View {
         switch w.plan {
         case "stream":
-            Button(w.label ?? T("Watch")) { playAttached(w) }.buttonStyle(BPActionStyle(primary: true))
+            Button(w.label.map { T($0) } ?? T("Watch")) { playAttached(w) }.buttonStyle(BPActionStyle(primary: true))
         case "broadcast":
-            Button(w.label ?? T("Where to watch")) {
+            Button(w.label.map { T($0) } ?? T("Where to watch")) {
                 // setAuto(pickCount > 1 ? null : shows[0]): a single broadcast opens straight away.
                 if w.broadcasts.count == 1 && w.channels.isEmpty, let b = w.broadcasts.first { link = broadcastLink(b) } else { broadcastsOpen = true }
             }
             .buttonStyle(BPActionStyle(primary: true))
         case "channel":
-            if let first = w.channels.first { Button((w.label ?? T("Watch")) + " · " + first.name) { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
+            if let first = w.channels.first { Button((w.label.map { T($0) } ?? T("Watch")) + " · " + first.name) { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
         case "picker":
             Button(w.channels.isEmpty ? T("Search your channels") : w.channels.count == 1 ? T("Watch · 1 channel found") : T("Watch · %lld channels found", w.channels.count)) { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
         case "addons":
@@ -284,7 +284,7 @@ struct SportsEventView: View {
                         Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(BP.inkMuted).frame(width: BP.px(48))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(b.title).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                            Text(b.platformLabel).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                            Text(T(b.platformLabel)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                         }
                         Spacer()
                     }
@@ -299,7 +299,7 @@ struct SportsEventView: View {
                             RemoteImage(url: opt.logo, contentMode: .fit).frame(width: BP.px(48), height: BP.px(28))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(opt.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                Text(opt.copy + (opt.reasons.isEmpty ? "" : " · " + opt.reasons.prefix(2).joined(separator: ", "))).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                                Text(T(opt.copy) + (opt.reasons.isEmpty ? "" : " · " + opt.reasons.prefix(2).map { T($0) }.joined(separator: ", "))).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                             }
                             Spacer()
                             Text(opt.tier.capitalized).font(BP.sans(11, .bold)).foregroundStyle(opt.tier == "exact" ? BP.live : BP.inkSubtle)

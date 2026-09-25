@@ -613,7 +613,7 @@ final class DetailModel: ObservableObject {
             if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }
             if r.positionMs > 60_000 { return T("Resume") }
         }
-        if isSeries, let t = playTarget { return "Play S\(t.season) E\(t.episode)" }
+        if isSeries, let t = playTarget { return "\(T("Play")) S\(t.season) E\(t.episode)" }
         return T("Play")
     }
 

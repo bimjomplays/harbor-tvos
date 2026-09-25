@@ -272,7 +272,9 @@ final class MPVPlayerController: UIViewController {
         var externalFilename: String?
         var channels: String?
         var label: String {
-            let base = [title, lang.map { Locale.current.localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
+            // lib/subtitles/language.ts languageName: upstream's English names (as PlayerPanelParts
+            // does), not the Apple TV's own language, which leaked into an otherwise Harbor-language panel.
+            let base = [title, lang.map { Locale(identifier: "en").localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
             return base.isEmpty ? "\(T(type == "sub" ? "Subtitle" : "Audio")) \(id)" : base
         }
     }

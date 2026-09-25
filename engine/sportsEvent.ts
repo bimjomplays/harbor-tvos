@@ -31,7 +31,7 @@ import { readSportsApiKey, saveSportsApiKey } from "@/lib/sports/api-credentials
 import { API_SPORTS_LEAGUES, getApiSportsStatus, invalidateApiSportsCredentials } from "@/lib/sports/providers/api-sports";
 import { detail, forgetSlices } from "./sports";
 import { markSettingsPatched } from "./sync";
-import { getUiLanguage } from "@/lib/i18n";
+import { getUiLanguage, t } from "@/lib/i18n";
 
 // ------------------------------------------------------------------ SP-1 / SP-11: event rows
 const PAIRED = 8;
@@ -95,7 +95,7 @@ function diamond(d: SportsMatchDetail) {
     bases: held.map(Boolean),
     balls: s?.balls ?? null, strikes: s?.strikes ?? null, outs: s?.outs ?? null,
     batter: nameOf(roster, s?.batterId), pitcher: nameOf(roster, s?.pitcherId),
-    runners: held.map((id, i) => (id ? `${labels[i]}: ${nameOf(roster, id) || "On base"}` : "")).filter(Boolean).join(" · "),
+    runners: held.map((id, i) => (id ? `${t(labels[i])}: ${nameOf(roster, id) || t("On base")}` : "")).filter(Boolean).join(" · "),
   };
 }
 
@@ -360,14 +360,15 @@ export function actions(game: SportsGame) {
       const team = favouriteOf(game[key], leagueKey, group);
       if (!team) continue;
       const on = isTeamFavourite(fav, leagueKey, team.id);
-      follow.push({ key, name: team.name, logo: team.logo || "", on, label: on ? `Following ${team.name}` : `Follow ${team.name}` });
+      // use-bp-sports-event.ts: the follow and reminder labels go through t().
+      follow.push({ key, name: team.name, logo: team.logo || "", on, label: on ? t("Following {name}", { name: team.name }) : t("Follow {name}", { name: team.name }) });
     }
   }
   return {
     reminder: remindable ? {
       active: reminded,
       setup: channels.length === 0,
-      label: reminded ? "Reminder set" : channels.length === 0 ? "Set up reminders" : `Remind me ${DEFAULT_LEAD} minutes before`,
+      label: reminded ? t("Reminder set") : channels.length === 0 ? t("Set up reminders") : t("Remind me {n} minutes before", { n: DEFAULT_LEAD }),
     } : null,
     follow,
     opendota: game.source === "opendota" && game.id ? `https://www.opendota.com/matches/${game.id}` : null,

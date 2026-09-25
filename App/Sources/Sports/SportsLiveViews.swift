@@ -37,13 +37,14 @@ struct SportsPanelRow<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
-            Text(title).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
+            // use-bp-sports-event.ts: the engine's panel titles and notes are upstream's t() keys.
+            Text(T(title)).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: BP.px(14)) { content() }
                     .padding(.vertical, BP.px(10))
             }
             .scrollClipDisabled()
-            if let foot, !foot.isEmpty { Text(foot).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).frame(maxWidth: BP.px(1100), alignment: .leading) }
+            if let foot, !foot.isEmpty { Text(T(foot)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).frame(maxWidth: BP.px(1100), alignment: .leading) }
         }
         .focusSection()
     }

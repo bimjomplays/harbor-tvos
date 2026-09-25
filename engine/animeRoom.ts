@@ -336,6 +336,7 @@ export async function specPage(key: string, pageNo: number): Promise<Meta[]> {
 // ------------------------------------------------------------ hero actions / meta line
 // bp-anime-hero-meta.tsx: the award pill or "New", the MAL score, "Sub and Dub", the country.
 import { findTopAward as heroTopAward, parseAwardYear as heroAwardYear } from "@/lib/anime-awards";
+import { CR_CATEGORY_SHORT as heroCategoryShort, shortCategory as heroShortCategory } from "@/lib/anime-award-labels";
 import { animeHasDub as heroHasDub, ensureDubSet as heroEnsureDub } from "@/lib/providers/anime-dub-sub";
 import { jikanScore as heroJikanScore } from "@/lib/mal-rating";
 import { kitsuToMal as heroKitsuToMal } from "@/lib/providers/anime-mapping";
@@ -350,7 +351,12 @@ async function heroMalId(metaId: string): Promise<number | null> {
 export async function heroMeta(meta: Meta, profileId: string, linked: boolean, cwItem: { season?: number | null; episode?: number | null; duration?: number | null; timeOffset?: number | null } | null): Promise<HeroMeta> {
   const s = loadEffective(profileId, linked);
   const win = heroTopAward(meta.name ?? "", heroAwardYear(meta.releaseInfo), meta.id);
-  const topLine = win ? (win.isAOTY ? "Anime of the year" : `Best ${win.categoryName ?? ""}`.trim()) : meta.releaseInfo === String(new Date().getFullYear()) ? "New" : "";
+  // bp-anime-hero-meta.tsx bpTopLine / bpAwardPill: t("Anime of the year"), t("Best {label}") over
+  // bpAwardShortLabel (the catalog's short category through t()), else t("New").
+  const known = win ? heroCategoryShort[win.categoryKey] : undefined;
+  const topLine = win
+    ? (win.isAOTY ? t("Anime of the year") : t("Best {label}", { label: known ? t(known) : heroShortCategory(win) }))
+    : meta.releaseInfo === String(new Date().getFullYear()) ? t("New") : "";
   const malId = await heroMalId(meta.id);
   const jikan = malId ? await heroJikanScore(malId).catch(() => null) : null;
   const score = jikan ?? meta.imdbRating ?? null;
@@ -362,8 +368,8 @@ export async function heroMeta(meta: Meta, profileId: string, linked: boolean, c
   const c = (meta as { country?: string }).country ?? "";
   const country = c.length > 3 && c !== "Japan" ? c : "";
   const se = cwItem?.season ?? 0, ep = cwItem?.episode ?? 0;
-  const episode = ep > 0 ? (se > 0 ? `S${se} E${ep}` : `E${ep}`) : "";
+  const episode = ep > 0 ? (se > 0 ? t("S{s} E{e}", { s: se, e: ep }) : t("E{e}", { e: ep })) : "";
   const dur = cwItem?.duration ?? 0, off = cwItem?.timeOffset ?? 0;
   const left = dur > 0 ? Math.round((dur - off) / 60000) : 0;
-  return { topLine, score, fromMal: jikan != null, dub, country, episode, minutesLeft: left >= 1 ? `${left} min left` : "" };
+  return { topLine, score, fromMal: jikan != null, dub, country, episode, minutesLeft: left >= 1 ? t("{n} min left", { n: left }) : "" };
 }

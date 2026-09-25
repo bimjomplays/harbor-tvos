@@ -17,7 +17,7 @@ struct GroupsView: View {
                    subtitle: T("Find people who watch what you watch. Join a group to share lists, post, and watch together.")) {
             HStack(spacing: BP.px(10)) {
                 Button { searching = true } label: {
-                    Label(query.isEmpty ? "Search groups by name or tag" : "“\(query)”", systemImage: "magnifyingglass")
+                    Label(query.isEmpty ? T("Search groups by name or tag") : "“\(query)”", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(BPActionStyle())
                 if !query.isEmpty {

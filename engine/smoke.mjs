@@ -1961,9 +1961,13 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   ];
   const en = lc.engine.cards.marks(metas, "default", true).map((m) => m.chip);
   lc.engine.settingsRoom.commit("uiLanguage", "it", "default", true);
-  lc.engine.settingsRoom.installUiCatalog("it", JSON.stringify({ New: "Nuovo", "In Cinema": "Al cinema", Rerun: "Replica" }));
+  lc.engine.settingsRoom.installUiCatalog("it", JSON.stringify({ New: "Nuovo", "In Cinema": "Al cinema", Rerun: "Replica", "S{s} E{e}": "S{s} Ep{e}", "{n} min left": "ancora {n} min" }));
   const it = lc.engine.cards.marks(metas, "default", true).map((m) => m.chip);
   r.eq("cards.marks: chips follow the UI language (New / In Cinema / Rerun)", [en, it], [["New", "In Cinema", "Rerun · 2015"], ["Nuovo", "Al cinema", "Replica · 2015"]]);
+  // bp-anime-hero-meta.tsx: the episode and minutes-left pills go through t() too.
+  lc.engine.settings.patch({ showDubBadge: false }, lc.engine.settings.sourceKeyFor("default", true));
+  const hmIt = await lc.engine.animeRoom.heroMeta({ id: "tt0388629", type: "anime", name: "One Piece", releaseInfo: "1999" }, "default", true, { season: 2, episode: 5, duration: 1_440_000, timeOffset: 240_000 });
+  r.eq("animeRoom.heroMeta: episode and minutes-left pills follow the UI language", [hmIt.episode, hmIt.minutesLeft], ["S2 Ep5", "ancora 20 min"]);
   lc.dispose();
 }
 

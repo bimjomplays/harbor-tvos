@@ -996,6 +996,9 @@ struct PlayerScreen: View {
         }
         .frame(height: BP.px(5))
         .padding(.vertical, BP.px(3))
+        // bp-player-scrub.tsx draws the track from the physical left (left-0, left: %) under rtl too;
+        // mirrored, the fill ran from the right and the pending-seek mark's offset left the bar.
+        .environment(\.layoutDirection, .leftToRight)
     }
 
     private func fraction(_ sec: Double) -> CGFloat {

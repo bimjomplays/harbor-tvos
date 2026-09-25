@@ -194,6 +194,8 @@ struct KidsSeekBar: View {
             .frame(maxHeight: .infinity)
         }
         .frame(height: BP.px(32))
+        // transport-kids.tsx fills from the physical left (left: %) under rtl as well.
+        .environment(\.layoutDirection, .leftToRight)
     }
 }
 
