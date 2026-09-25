@@ -124,7 +124,11 @@ final class BrowseModel: ObservableObject {
     func load() async {
         // A refresh asked for mid-load runs once this one finishes, so the last arrival is never lost.
         guard !loading else { reloadPending = true; return }
-        loading = true; failed = nil
+        // (regression pass) `failed` stays until this read answers, like DiscoverModel.load: the
+        // failure card's Try again held the ring, and clearing the card at once swapped in the spinner
+        // with nothing to focus, so the ring fell to the tab bar and a second failure brought the
+        // card back without it. The card stays up (busy) until the answer (RoomView).
+        loading = true
         // Last session's shelves first (bp-home-cache): a TV kills the process between
         // sessions and nobody should watch an empty screen while the live build runs.
         // (perf pass) The cached shelves (a few hundred KB of JSON) are read and decoded off the main
@@ -133,6 +137,7 @@ final class BrowseModel: ObservableObject {
         if cacheable, rows.isEmpty {
             let cached = await Task.detached(priority: .userInitiated) { CacheStore.shared.get([BrowseRow].self, for: key) }.value
             if rows.isEmpty, let cached, !cached.isEmpty {
+                failed = nil
                 rows = cached
                 if spotlight == nil { spotlight = cached.first?.metas.first }
             }
@@ -150,6 +155,7 @@ final class BrowseModel: ObservableObject {
             let page: BrowsePage = try await r
             let live: [BrowseRow] = page.rows
             if page.hero != heroSlides { heroSlides = page.hero }
+            if failed != nil { failed = nil }
             // A re-read that built the same shelves (Home's harbor:home-updated, the anime bursts)
             // republishes nothing and rewrites nothing.
             if live != rows {
@@ -177,7 +183,8 @@ final class BrowseModel: ObservableObject {
             startHeroCycle()
             await CardMarksStore.shared.refresh(live.flatMap(\.metas))
         } catch {
-            if rows.isEmpty { failed = error.localizedDescription }
+            let why: String? = rows.isEmpty ? error.localizedDescription : nil
+            if failed != why { failed = why }
             cwResolved = true
         }
         loading = false

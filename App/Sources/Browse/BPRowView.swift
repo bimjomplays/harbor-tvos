@@ -125,7 +125,12 @@ struct BPRowView: View {
                 onFocus(m)
             }
         }
-        .onChange(of: focusedId != nil) { _, held in onHold?(held) }
+        // (regression pass) The row's own See all counts as the row holding the ring: bp-row-see-all
+        // puts it inside [data-bp-row], and use-bp-rail / use-bp-sections follow the rail row that
+        // contains focus. Since Right off the last tile reaches See all, the row reported losing the
+        // ring there: Home's band let go (the spotlight crossfaded back in over a services or addons
+        // row) and the rail dropped the row's zIndex, then both came back on Left.
+        .onChange(of: focusedId != nil || seeAllFocused) { _, held in onHold?(held) }
     }
 }
 
