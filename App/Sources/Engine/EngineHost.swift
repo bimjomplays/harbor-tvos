@@ -117,6 +117,9 @@ final class HarborEngine {
     // Logs and event observers (touched from several threads, so they take the lock).
     private let sideLock = NSLock()
     private var logRing: [String] = []
+    /// (bug pass) Lines ever logged. The ring stops growing at 200, so "count before / count after"
+    /// stopped seeing new lines once it was full; `logMark` + `logs(since:)` count through it.
+    private var logTotal = 0
     private var eventHandlers: [(id: Int, fn: (String, AnyJSON?) -> Void)] = []
     private var nextHandlerId = 1
 
@@ -414,6 +417,21 @@ final class HarborEngine {
         return logRing
     }
 
+    /// A position in the log stream, for `logs(since:)`.
+    var logMark: Int {
+        sideLock.lock()
+        defer { sideLock.unlock() }
+        return logTotal
+    }
+
+    /// The lines logged after `mark` (as many of them as the ring still holds), oldest first.
+    func logs(since mark: Int) -> [String] {
+        sideLock.lock()
+        defer { sideLock.unlock() }
+        let fresh = min(logRing.count, max(0, logTotal - mark))
+        return Array(logRing.suffix(fresh))
+    }
+
     /// Stage-0 stream benchmark, kept synchronous so `EngineSpikeView` still works.
     /// Never call this from inside the engine queue.
     func benchmark(rounds: Int) throws -> [String: Any] {
@@ -548,6 +566,7 @@ final class HarborEngine {
     private func appendLog(_ level: String, _ message: String) {
         sideLock.lock()
         logRing.append("[\(level)] \(message)")
+        logTotal &+= 1
         if logRing.count > Self.logRingCapacity {
             logRing.removeFirst(logRing.count - Self.logRingCapacity)
         }

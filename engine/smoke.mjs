@@ -1350,6 +1350,10 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
       ] })],
       ["harbor.sync.idmap", JSON.stringify({ p_local1: "s_aaa" })],
       ["harbor.auth.p_guest", JSON.stringify({ authKey: "x", user: {} })],
+      // (bug pass) Keys only upstream's full purge list names (sessions, history, addons).
+      ["harbor.simkl.session.v1.p_guest", JSON.stringify({ token: "s" })],
+      ["harbor.watchlist.v1.p_guest", "[]"],
+      ["harbor.installed-addons.p_guest", "[]"],
       // The session was stored while the bootstrap profile was active (Settings → Sign in).
       ["harbor.theme-session.p_guest", seededSession],
     ]),
@@ -1383,6 +1387,7 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const blob = JSON.parse(rec.node.storage.get("harbor.profiles.v1"));
   r.ok("roster adopted into harbor.profiles.v1 (2 profiles, local id kept, PIN kept)", blob.profiles.length === 2 && blob.profiles[0].id === "p_local1" && blob.profiles[0].passwordHash === "abc" && blob.profiles[1].name === "Kiddo" && blob.profiles[1].settingsLinked === false, JSON.stringify(blob));
   r.ok("bootstrap profile dropped and its per-profile keys purged", !blob.profiles.some((p) => p.id === "p_guest") && !rec.node.storage.has("harbor.auth.p_guest"), JSON.stringify([...rec.node.storage.keys()].filter((k) => k.includes("p_guest"))));
+  r.ok("(bug pass) roster drop purges upstream's whole per-profile key list (Simkl session, watchlist, addons)", !["harbor.simkl.session.v1.p_guest", "harbor.watchlist.v1.p_guest", "harbor.installed-addons.p_guest"].some((k) => rec.node.storage.has(k)), JSON.stringify([...rec.node.storage.keys()].filter((k) => k.includes("p_guest"))));
   r.ok("roster-applied event names the dropped id", events.some(([t, d]) => t === "harbor:roster-applied" && d && d.dropped && d.dropped[0] === "p_guest"));
   r.eq("active profile cleared when the active one was dropped", blob.activeId, null);
   r.ok("account session survives the drop (moved onto the new primary)", rec.engine.account.session() && rec.engine.account.session().user.username === "skipper" && !!rec.node.storage.get("harbor.theme-session.p_local1"), JSON.stringify([...rec.node.storage.keys()].filter((k) => k.startsWith("harbor.theme-session"))));
@@ -2122,6 +2127,15 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
 {
   const av = engine.profilesRoom.avatars();
   r.ok("profilesRoom.avatars lists upstream's catalog with bundle paths", av.length >= 4 && av[0].items[0].path === "/avatars/harbor_person_01.webp", JSON.stringify(av.map((g) => [g.group, g.items.length])));
+  {
+    // (bug pass) profilesRoom.purge (a profile deleted on this TV) clears the same list.
+    const keys = ["harbor.mal.session.v1.p_del", "harbor.anilist.session.v1.p_del", "harbor.playback-history.v1.p_del", "harbor.settings.p_del"];
+    for (const k of [...keys, "harbor.settings.p_keep"]) { app.node.storage.set(k, "x"); engine.runtime.syncStorage(k, "x"); }
+    engine.profilesRoom.purge("p_del");
+    r.ok("(bug pass) profilesRoom.purge removes MAL/AniList sessions and history with the profile, nothing else", keys.every((k) => !app.node.storage.has(k)) && app.node.storage.get("harbor.settings.p_keep") === "x", JSON.stringify([...app.node.storage.keys()].filter((k) => k.includes("p_del") || k.includes("p_keep"))));
+    app.node.storage.delete("harbor.settings.p_keep");
+    engine.runtime.syncStorage("harbor.settings.p_keep", null);
+  }
   r.ok("profilesRoom.colors + pickColor", engine.profilesRoom.colors().length >= 6 && engine.profilesRoom.pickColor([engine.profilesRoom.colors()[0]]) === engine.profilesRoom.colors()[1]);
 }
 
