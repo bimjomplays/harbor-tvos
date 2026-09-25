@@ -11,6 +11,13 @@ struct PlayPickerView: View {
     /// settings.playbackSourcePreference applies: only "online" fires on its own, and a home-server
     /// preference opens on the Media servers list and plays the preferred server's copy.
     var applyPreference = false
+    /// (P8) bp-player-sources.tsx BpPlayerSources → `<BpStreams mode="switch">`: this list drawn in
+    /// the player as a card over the running film (PlayerSourcesPanel), with the stream playing now
+    /// first and marked "Now playing". nil is the picker. No home-server copies here (bp-streams
+    /// `homeServerCopies = switching ? []`), no instant play, no source preference.
+    var switching: PlayerSourcesPanel.Current? = nil
+    /// The switcher's onClose (the player's closePanel); the picker dismisses its own cover instead.
+    var onClose: (() -> Void)? = nil
     @StateObject private var model = StreamsModel()
     /// bp-stream-chips BpSourceKind, the kinds the TV has: "all", "media-server" or "online" (the
     /// source chip's Direct/debrid only and P2P only; no Local Library on a TV).
@@ -79,29 +86,15 @@ struct PlayPickerView: View {
 
     var body: some View {
         ZStack {
-            BPAmbientBackground()
-            if showAutoStep {
-                // bp-streams.tsx: while auto is busy BpAutoStep stands in for the panel (a kid
-                // profile's is auto-play-transition.tsx's kid branch).
-                PickerAutoStep(meta: meta, episode: episode, attemptIdx: autoTried, resolving: autoFiring,
-                               p2p: model.p2pStarting, kid: ProfilesStore.shared.active?.kid != nil,
-                               stubNotice: stubNotice, onCancel: { cancelAuto() })
-                    .transition(.opacity)
+            if switching != nil {
+                switchCard
+                // (P8) bp-streams: in the player the dialogs sit over the card inside the player, not
+                // in a cover: a cover over the player takes it off screen (its onDisappear releases
+                // the stream, Now Playing and the torrent while the film plays on).
+                if let d = dialog { dialogView(d).transition(.opacity) }
             } else {
-                HStack(alignment: .top, spacing: BP.px(40)) {
-                    VStack(alignment: .leading, spacing: BP.px(10)) {
-                        Text("Play").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                        Text(meta.name).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(3)
-                        if let ep = episodeLabel { Text(ep).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted) }
-                        statusLine
-                        if stubNotice { stubBanner }
-                        if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
-                        RemoteImage(url: meta.poster).frame(width: BP.px(177), height: BP.px(265)).clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)).padding(.top, BP.px(10))
-                    }
-                    .frame(width: BP.px(300), alignment: .leading)
-                    list
-                }
-                .padding(.horizontal, BP.gutter).padding(.top, BP.px(50))
+                BPAmbientBackground()
+                pickerSurface
             }
         }
         .ignoresSafeArea()
@@ -132,12 +125,22 @@ struct PlayPickerView: View {
         }
         .task {
             // play-picker.tsx / auto-play-transition.tsx: consumeRecentStubEvent(8000) as the picker
-            // opens; the notice clears itself after 6 s.
+            // opens; the notice clears itself after 6 s. (P8) Not the in-player switcher: it has no
+            // stub banner, and reading the event here would take it from the picker it was meant for.
+            guard switching == nil else { return }
             let ev: String? = try? await HarborEngine.shared.call("deadStreams.consumeStubEvent", [8000])
             guard ev != nil, !Task.isCancelled else { return }
             stubNotice = true
             try? await Task.sleep(for: .seconds(6))
             stubNotice = false
+        }
+        .onAppear {
+            // (P8) The switcher opens inside the player with no ring of its own: it starts on the
+            // "All" chip, where the picker's cover lands, so the first row's seed takes it from there.
+            guard switching != nil else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                if rowFocus == nil, chipFocus == nil { chipFocus = "q:All" }
+            }
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
         // bp-stream-filters useState(requirePreferredLanguage && preferredLanguages.length > 0): once per opening.
@@ -156,21 +159,57 @@ struct PlayPickerView: View {
         }
         .onChange(of: dialog == nil) { _, clear in if clear { seedRing() } }
         .onChange(of: model.copiesLoaded) { _, loaded in if loaded { Task { await applySourcePreference() } } }
-        // bp-streams: BpNoSourcesDialog when there is no addon, no debrid and no home-server copy.
+        // bp-streams: BpNoSourcesDialog when there is no addon, no debrid and no home-server copy
+        // (the switcher lists no copies: `homeServerCopies.length === 0` holds there).
         .onChange(of: model.phase) { _, phase in
+            let noCopies: Bool = switching != nil || model.copies.isEmpty
             // It outranks "tried N sources" (bp-streams shows that one only when !noSources).
-            if phase == .done, model.addonCount == 0, model.debridCount == 0, model.copies.isEmpty, dialog == nil || dialog?.id == "exhausted" { dialog = .noSources }
+            if phase == .done, model.addonCount == 0, model.debridCount == 0, noCopies, dialog == nil || dialog?.id == "exhausted" { dialog = .noSources }
         }
         // BpAutoExhaustedDialog: shown unless no sources or debrid down already explains it.
         .onChange(of: autoState) { _, state in
             if state == .exhausted, dialog == nil { dialog = .exhausted(autoTried) }
         }
         .onDisappear {
-            // Covered by one of its own dialogs, not closed (bug pass).
-            guard dialog == nil else { return }
+            // Covered by one of its own dialogs, not closed (bug pass). The switcher draws its
+            // dialogs inline, so it only disappears when it closes.
+            guard dialog == nil || switching != nil else { return }
             alive = false; if autoState == .waiting { autoState = .cancelled }; model.cancel()
         }
-        .fullScreenCover(item: $dialog) { d in dialogView(d) }
+        .fullScreenCover(item: coverDialog) { d in dialogView(d) }
+    }
+
+    /// The picker's dialogs come up in a cover; the in-player switcher's never do (drawn inline).
+    private var coverDialog: Binding<PickerDialog?> {
+        if switching != nil { return Binding<PickerDialog?>.constant(nil) }
+        return $dialog
+    }
+
+    /// The picker's own page: the auto step, or the list beside the title's column.
+    @ViewBuilder private var pickerSurface: some View {
+        if showAutoStep {
+            // bp-streams.tsx: while auto is busy BpAutoStep stands in for the panel (a kid
+            // profile's is auto-play-transition.tsx's kid branch).
+            PickerAutoStep(meta: meta, episode: episode, attemptIdx: autoTried, resolving: autoFiring,
+                           p2p: model.p2pStarting, kid: ProfilesStore.shared.active?.kid != nil,
+                           stubNotice: stubNotice, onCancel: { cancelAuto() })
+                .transition(.opacity)
+        } else {
+            HStack(alignment: .top, spacing: BP.px(40)) {
+                VStack(alignment: .leading, spacing: BP.px(10)) {
+                    Text("Play").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+                    Text(meta.name).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(3)
+                    if let ep = episodeLabel { Text(ep).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted) }
+                    statusLine
+                    if stubNotice { stubBanner }
+                    if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
+                    RemoteImage(url: meta.poster).frame(width: BP.px(177), height: BP.px(265)).clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)).padding(.top, BP.px(10))
+                }
+                .frame(width: BP.px(300), alignment: .leading)
+                list
+            }
+            .padding(.horizontal, BP.gutter).padding(.top, BP.px(50))
+        }
     }
 
     // bp-stream-dialogs.tsx, one view per dialog. Back acts like the seeded button's escape
@@ -244,7 +283,9 @@ struct PlayPickerView: View {
         let from = seededKey
         // Untouched: the first seed while the ring is on the "All" chip (where the cover lands) or
         // just after the auto step went; a later seed only while the ring is on the row seeded last.
-        let untouched = from == nil ? (chipFocus == "q:All" || seedAfterSwap) : rowFocus == from
+        // (P8) The in-player switcher also takes its first seed while nothing in it has the ring yet.
+        let fresh: Bool = chipFocus == "q:All" || seedAfterSwap || (switching != nil && rowFocus == nil && chipFocus == nil)
+        let untouched = from == nil ? fresh : rowFocus == from
         guard untouched else { return }
         seededKey = key
         seedAfterSwap = false
@@ -304,6 +345,9 @@ struct PlayPickerView: View {
 
     private func closePicker() {
         dialog = nil
+        // (P8) The in-player switcher closes its panel (bp-stream-dialogs onBack={onClose}); a
+        // dismiss here would take the player's own cover down.
+        if switching != nil { onClose?(); return }
         // Leave once the dialog's cover is gone; a dismiss while it is still dismissing is dropped.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { dismiss() }
     }
@@ -571,7 +615,7 @@ struct PlayPickerView: View {
     private func nextSource() {
         let current: String = sourceKind == "online" || (sourceKind == "all" && model.streamMode != "both") ? model.streamMode : sourceKind
         var ids: [String] = ["all"]
-        if !model.copies.isEmpty || sourceKind == "media-server" { ids.append("media-server") }
+        if switching == nil, !model.copies.isEmpty || sourceKind == "media-server" { ids.append("media-server") }
         ids.append("addons")
         ids.append("p2p")
         let at: Int = ids.firstIndex(of: current) ?? 0
@@ -587,7 +631,8 @@ struct PlayPickerView: View {
 
     /// bp-streams showOnline / showHomeServers.
     private var showOnline: Bool { sourceKind == "all" || sourceKind == "online" }
-    private var showHomeServers: Bool { sourceKind == "all" || sourceKind == "media-server" }
+    /// (P8) bp-streams `homeServerCopies = download || switching ? [] : …`: none in the switcher.
+    private var showHomeServers: Bool { switching == nil && (sourceKind == "all" || sourceKind == "media-server") }
 
     /// bp-stream-chips filter chip: the active filter's name (or "Filter" when it has none), else "Filters".
     private var filterChipLabel: String {
@@ -647,8 +692,14 @@ struct PlayPickerView: View {
         }
         // (player parity pass 2) bp-stream-filters displayStreams: under a room host playing this
         // title the host match leads (a stable sort), in place of the remembered pick.
-        if let scores = model.hostScores { return hostMatchFirst(sorted, scores) }
-        return pinnedFirst(sorted)
+        let ordered: [ScoredStream]
+        if let scores = model.hostScores { ordered = hostMatchFirst(sorted, scores) } else { ordered = pinnedFirst(sorted) }
+        // (P8) bp-streams switch mode `list`: the stream playing now moves to the front.
+        guard let current = switching, let at = ordered.firstIndex(where: { current.matches($0) }), at > 0 else { return ordered }
+        var out: [ScoredStream] = ordered
+        let playing: ScoredStream = out.remove(at: at)
+        out.insert(playing, at: 0)
+        return out
     }
 
     /// bp-stream-filters `ordered.slice().sort((a, b) => hostMatch(b) - hostMatch(a))`, stable.
@@ -764,6 +815,57 @@ struct PlayPickerView: View {
         .focusSection()
     }
 
+    /// (P8) bp-streams.tsx switch mode (SWITCH_SURFACE over a 50% void scrim): a card the size of the
+    /// player's other panels (the Audio dialog's frame), "Switch source", the title line with the
+    /// source counts, the chips and rows, and the footer note.
+    private var switchCard: some View {
+        ZStack {
+            BP.void_.opacity(0.5).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: BP.px(5)) {
+                    Text("Switch source").font(BP.display(26)).foregroundStyle(BP.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(verbatim: switchHeading + " · " + sourcesLine)
+                        .font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                    if model.p2pStarting {
+                        HStack(spacing: BP.px(8)) {
+                            ProgressView().tint(BP.accent)
+                            Text("Looking for peers…").font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)
+                        }
+                    }
+                    if case .failed(let why) = model.phase { BPNote(text: why, tone: BP.danger) }
+                    if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
+                }
+                .padding(.horizontal, BP.px(30)).padding(.top, BP.px(30)).padding(.bottom, BP.px(6))
+
+                list
+                    .padding(.horizontal, BP.px(30))
+                    .frame(maxHeight: .infinity, alignment: .top)
+
+                Text("Pick a source to swap in place. Playback keeps running.")
+                    .font(BP.sans(12.5, .semibold)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, BP.px(30)).padding(.vertical, BP.px(12))
+                    .overlay(alignment: .top) { Rectangle().fill(BP.edge).frame(height: 1) }
+            }
+            .frame(width: BP.px(1049), height: BP.px(551), alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.void_))
+            .clipShape(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge, lineWidth: 1))
+            .focusSection()
+            // The dialog over the card owns the remote while it is up.
+            .disabled(dialog != nil)
+        }
+    }
+
+    /// bp-streams heading: "{name} · S{imdbSeason ?? season}E{imdbEpisode ?? episode}", else the name.
+    private var switchHeading: String {
+        let s: Double? = episode?["imdbSeason"]?.number ?? episode?["season"]?.number
+        let e: Double? = episode?["imdbEpisode"]?.number ?? episode?["episode"]?.number
+        guard let s, let e else { return meta.name }
+        return "\(meta.name) · S\(Int(s))E\(Int(e))"
+    }
+
     private var list: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             chips
@@ -779,7 +881,7 @@ struct PlayPickerView: View {
                         ForEach(model.copies) { c in copyRow(c) }
                         if !rows.isEmpty { Text("Addons").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted).padding(.top, BP.px(6)) }
                     }
-                    ForEach(rows) { s in row(s, highlight: s.id == model.primary?.id) }
+                    ForEach(rows) { s in row(s, highlight: isHighlighted(s)) }
                     if rows.isEmpty, !showHomeServers || model.copies.isEmpty { emptyList }
                     Color.clear.frame(height: BP.px(60))
                 }
@@ -822,8 +924,18 @@ struct PlayPickerView: View {
         .padding(.top, BP.px(40))
     }
 
+    /// The picker lifts its best pick; the switcher marks the stream playing now (bp-stream-row
+    /// isCurrent: the stronger edge).
+    private func isHighlighted(_ s: ScoredStream) -> Bool {
+        if let current = switching { return current.matches(s) }
+        return s.id == model.primary?.id
+    }
+
     private func row(_ s: ScoredStream, highlight: Bool) -> some View {
         Button {
+            // (P8) The stream playing now: the switcher just closes (as the kid switcher does),
+            // rather than loading the same stream over itself.
+            if let current = switching, current.matches(s) { onClose?(); return }
             // (focus pass) One pick at a time, guarded here rather than by disabling every row.
             guard resolving == nil else { return }
             // (detail/search pass 2) Held from the press: the Task starts a beat later and the P2P
@@ -851,8 +963,16 @@ struct PlayPickerView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    // bp-stream-row: the remembered pick wears "Played last".
-                    if model.rememberedIndex == s.index {
+                    // bp-stream-row: the stream playing now wears "Now playing" (the switcher), else
+                    // the remembered pick "Played last".
+                    if let current = switching, current.matches(s) {
+                        // bp-stream-row PILL_STATE: an outlined capsule (edge-2), uppercase, ink.
+                        Text("Now playing")
+                            .font(BP.sans(10.5, .bold)).textCase(.uppercase).tracking(1.2).foregroundStyle(BP.ink)
+                            .padding(.horizontal, BP.px(9)).padding(.vertical, BP.px(4))
+                            .overlay(Capsule().stroke(BP.edge2, lineWidth: 1))
+                            .fixedSize()
+                    } else if model.rememberedIndex == s.index {
                         Label("Played last", systemImage: "clock.arrow.circlepath")
                             .font(BP.sans(10.5, .bold)).foregroundStyle(BP.ink)
                             .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(2))

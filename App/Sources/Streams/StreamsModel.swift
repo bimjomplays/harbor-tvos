@@ -28,6 +28,14 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     var nativeIdx: Int?
     var url: String?
     var infoHash: String?
+    /// The file inside the torrent (Stream.fileIdx). Read as any JSON so an addon's odd value never
+    /// fails the list's decode; `fileIndex` is the whole number, when it is one. (P8) switcher-row.tsx
+    /// isCurrentStream compares it when both sides have one.
+    var fileIdx: AnyJSON?
+    var fileIndex: Int? {
+        guard let n = fileIdx?.number, n.isFinite, n >= 0, n == n.rounded() else { return nil }
+        return Int(n)
+    }
     /// engine/streams.ts stampPickerRows: bp-stream-row.tsx's detail line, full description and filename.
     struct RowText: Decodable, Equatable { var headline: String; var detail: String; var description: String; var filename: String }
     var tvRow: RowText?
@@ -80,7 +88,7 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters, tvCached, tvSort, tvKey
+        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, fileIdx, tvRow, tvFilters, tvCached, tvSort, tvKey
         case tvLabels, tvModes, tvLang
         // stampAddonOrder's fields: the "addon order" sort ranks by these, so they must decode.
         case addonUrl, nativeIdx

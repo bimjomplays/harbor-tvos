@@ -11,6 +11,7 @@ import UIKit
 ///   interceptToggle(controller)         Play/Pause; true when the room handled it
 ///   interceptSeek(to:controller)        a committed seek; true when the room handled it
 ///   closing(reopening:)                 the player is leaving (use-player-exit.ts)
+///   sourceSwitched(url:ref:at:)         a stream swapped in place (use-stream-switcher, P8)
 /// Incoming room state and commands arrive through TogetherModel's publishers; the room's speed
 /// goes back to the player through `onRoomRate`.
 @MainActor
@@ -51,6 +52,11 @@ final class TogetherPlayback: ObservableObject {
     private var guestWaitingSince: Date?
     private var source: AnyJSON?
     private var sourceAsked = false
+    /// (P8) use-host-source.ts: the stream swapped in place (its PlayerStreamRef, when the switcher
+    /// knew it), when, and a count that drops an older descriptor answer landing after a swap.
+    private var switchRef: AnyJSON?
+    private var switchedAt = Date.distantPast
+    private var sourceGen = 0
     private var openedSent = false
     private var lastInRoom: Bool?
     /// The player's playback speed (snap.rate upstream), published with every state.
@@ -157,7 +163,9 @@ final class TogetherPlayback: ObservableObject {
             selfFrameReady = true
             room.call("markReady", [.bool(true)])
         }
-        if snap.duration > 0, !sourceAsked { askSource(c, duration: snap.duration) }
+        // (P8) use-host-source URL_CHANGE_DURATION_GUARD_MS: a length read in the first 1.5 s after
+        // a swap in place is not the new file's yet.
+        if snap.duration > 0, !sourceAsked, Date().timeIntervalSince(switchedAt) >= 1.5 { askSource(c, duration: snap.duration) }
         // (together pass 2) The relay marks everyone not ready when a host claims the room afresh
         // (engine playerOpened: a host's source switch or reopen of the same title, and the TV host's
         // own claim, which can land after its own "ready"). Upstream's guest reloads on the re-invite
@@ -284,6 +292,44 @@ final class TogetherPlayback: ObservableObject {
         room.setReopenPending(false)
     }
 
+    /// (P8) use-stream-switcher onSwitchStream + use-host-source.ts: the player swapped its stream in
+    /// place (bp-player-sources, the kid switcher, a home-server quality). Nothing closes, so the
+    /// room, the host role and the guests' session stay as they are: no host-leaving, no reopen.
+    /// The source descriptor follows the new stream: at once from its ref (no length yet, as
+    /// upstream's liveStreamRef descriptor), and again with the new file's length once it has one
+    /// (askSource, past the 1.5 s guard). A started host holds the room at the swap spot while the
+    /// new stream opens (the heartbeat stops until it plays), as the reopening close does, rather
+    /// than leave the guests playing on unseen and pull them back when it resumes; a host still in
+    /// the lobby seeds it again from the new stream.
+    func sourceSwitched(url u: URL, ref: AnyJSON?, at: Double) {
+        url = u
+        switchRef = ref
+        switchedAt = Date()
+        sourceAsked = false
+        sourceGen += 1
+        let gen: Int = sourceGen
+        guard inRoom, isHost else {
+            if let ref { describe(ref, duration: nil, gen: gen) }
+            return
+        }
+        if hasStarted {
+            publish(position: at, playing: false)
+        } else {
+            lobbySeeded = false
+        }
+        if let ref { describe(ref, duration: nil, gen: gen) }
+    }
+
+    /// source-descriptor.ts buildSourceDescriptor through the engine (together.sourceDescriptor);
+    /// only the newest swap's answer lands.
+    private func describe(_ ref: AnyJSON, duration: Double?, gen: Int) {
+        let args: [AnyJSON] = [ref, duration.map { AnyJSON.number($0) } ?? AnyJSON.null]
+        Task {
+            guard let d = try? await HarborEngine.shared.callJSON("together.sourceDescriptor", args), gen == sourceGen else { return }
+            source = d
+        }
+    }
+
     // MARK: lobby (use-lobby-gate.ts)
 
     private func startHost(_ c: (any PlayerEngineControlling)?) {
@@ -338,12 +384,33 @@ final class TogetherPlayback: ObservableObject {
         }
         let meta = metaJSON()
         let ep = episodeJSON()
+        // (P8) A stream swapped in place after the player's first open: its descriptor, now with
+        // the new file's length (the room was already told about this player, so no second invite).
+        if openedSent {
+            let picked: AnyJSON = switchRef ?? AnyJSON.object(ref)
+            let gen: Int = sourceGen
+            let args: [AnyJSON] = [picked, .number(duration)]
+            Task {
+                guard let d = try? await HarborEngine.shared.callJSON("together.sourceDescriptor", args), gen == sourceGen else { return }
+                source = d
+                // use-host-source.ts: in the lobby the host seeds the room again with the new descriptor.
+                if !d.isNull, inRoom, isHost, !hasStarted, lobbySeeded, let ctl = controller {
+                    publish(position: ctl.snapshot().position, playing: false)
+                }
+            }
+            return
+        }
+        // (P8) A swap in place before this first ask: the picked stream's ref describes it.
+        let opened: AnyJSON = switchRef ?? AnyJSON.object(ref)
+        let gen: Int = sourceGen
         Task {
             // use-room-invite.ts: in a room with no other host, playing a title invites the room.
             if !openedSent {
                 openedSent = true
                 struct Opened: Decodable { var invited: Bool; var source: AnyJSON? }
-                if let o: Opened = try? await HarborEngine.shared.call("together.playerOpened", [meta, ep, AnyJSON.object(ref), duration]) {
+                if let o: Opened = try? await HarborEngine.shared.call("together.playerOpened", [meta, ep, opened, duration]) {
+                    // (P8) A swap in place meanwhile: its own descriptor is on its way; this one is the old stream's.
+                    guard gen == sourceGen else { return }
                     source = o.source
                     // (bug pass) use-host-source.ts: in the lobby the host re-seeds the room whenever its
                     // source descriptor arrives. The one lobby seed usually went out before this answer,

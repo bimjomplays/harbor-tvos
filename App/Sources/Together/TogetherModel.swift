@@ -93,7 +93,9 @@ final class TogetherModel: ObservableObject {
     struct Cursor: Decodable, Equatable { var from: String; var name: String; var x: Double; var y: Double; var path: String }
     struct Point: Decodable, Equatable { var x: Double; var y: Double }
     struct Stroke: Decodable, Equatable, Identifiable { var id: String; var authorName: String; var color: String; var points: [Point]; var path: String }
-    struct HostSource: Decodable, Equatable { var descriptor: SourceDescriptor; var mediaId: String? }
+    /// room-derive.ts HostSourceInfo. (P8) `episode`: hostSourceMatchesMedia compares it (the
+    /// duration-mismatch chip's guestHostSource).
+    struct HostSource: Decodable, Equatable { var descriptor: SourceDescriptor; var mediaId: String?; var episode: EpisodeRef? }
 
     /// engine/together.ts view().
     struct Snapshot: Decodable, Equatable {

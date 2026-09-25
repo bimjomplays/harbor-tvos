@@ -3904,6 +3904,15 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   // (player parity pass 2) use-bp-streams hostSourceForMedia / hostMatch: the picker matches rows only to a foreign host playing this title.
   r.eq("together.hostSourceForMedia: the host's descriptor for its title; null for another title or an episode of it", [T.hostSourceForMedia("tt0111161", null), T.hostSourceForMedia("tt0000001", null), T.hostSourceForMedia("tt0111161", { season: 1, episode: 1 })], [{ resolution: "1080p", infoHash: "0123456789abcdef0123456789abcdef01234567" }, null, null]);
   r.eq("streamsRoom.hostMatch: scores (none for a token with no rows) under a matching host, null for another title", [rec.engine.streamsRoom.hostMatch("no-such-token", "tt0111161", null, null), rec.engine.streamsRoom.hostMatch("no-such-token", "tt0000001", null, null)], [{}, null]);
+  // (P8) duration-mismatch-chip guestHostSource: the view's hostSource carries the media and episode hostSourceMatchesMedia compares.
+  r.ok("together.view hostSource names its media and (no) episode", v1.hostSource && v1.hostSource.mediaId === "tt0111161" && v1.hostSource.episode === null, JSON.stringify(v1.hostSource));
+  // (P8) use-host-source after a swap in place: the switcher's PlayerStreamRef (streamsRoom.deadRef's shape) → the room's descriptor.
+  const swapRef = { infoHash: "0123456789ABCDEF0123456789ABCDEF01234567", fileIdx: 2, url: null, addonId: "org.example", title: "Some.Film.2160p.WEB-DL", parsedTitle: "Some Film", resolution: "4K", source: "WEB-DL", size: 123456789.4 };
+  r.eq("together.sourceDescriptor: a swapped-in stream's ref without its length yet, then with it", [T.sourceDescriptor(swapRef, null), T.sourceDescriptor(swapRef, 5400.04)], [
+    { title: "Some Film", resolution: "2160p", sizeBytes: 123456789, infoHash: "0123456789abcdef0123456789abcdef01234567", fileIdx: 2 },
+    { title: "Some Film", resolution: "2160p", sizeBytes: 123456789, infoHash: "0123456789abcdef0123456789abcdef01234567", fileIdx: 2, durationSec: 5400 },
+  ]);
+  r.eq("together.sourceDescriptor of an empty ref is null", T.sourceDescriptor({}, null), null);
   r.ok("joined with media playing turns into an invite (client.ts joined → invite)", v1.incomingInvite && v1.incomingInvite.invite.mediaId === "tt0111161" && v1.incomingInvite.name === "Ana" && T.wasInvitedTo("tt0111161||"), JSON.stringify(v1.incomingInvite));
   r.ok("incoming state reaches the host as harbor:together-sync at once", events.some(([t, d]) => t === "harbor:together-sync" && d.kind === "state" && d.state.mediaId === "tt0111161"), JSON.stringify(events.map(([t, d]) => [t, d && d.kind])));
   r.ok("the view reaches the host as a throttled harbor:together event", events.some(([t, d]) => t === "harbor:together" && d && d.state === "joined"));
