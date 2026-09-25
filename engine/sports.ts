@@ -102,7 +102,20 @@ function notify(): void {
 async function feed(keys: string[], mode: FeedMode, force: boolean, wait: boolean): Promise<SportsSnapshot> {
   if (keys.length === 0) return EMPTY;
   const maxAge = force ? 0 : mode === "upcoming" ? 15 * 60_000 : 15_000;
-  const due = keys.some((k) => { const hit = readSlice(k); return !hit || Date.now() - hit.at >= maxAge; });
+  // (bug pass) A feed that failed has no newer slice, so it read as due on the very next call —
+  // and every load ends in `harbor:sports-updated`, which makes the host read the page again.
+  // Offline (or with one league's feed erroring) that was a load every few hundred ms for as long
+  // as the room stayed open. use-hub.ts retries on its interval (60 s, 15 min for upcoming): a
+  // key that failed within that window waits for it, unless the viewer forces a refresh.
+  const retryAfter = mode === "upcoming" ? 15 * 60_000 : 60_000;
+  const now = Date.now();
+  const due = keys.some((k) => {
+    const hit = readSlice(k);
+    if (hit && now - hit.at < maxAge) return false;
+    const failedAt = lastFailed.get(k);
+    if (!force && failedAt !== undefined && now - failedAt < retryAfter && (!hit || hit.at < failedAt)) return false;
+    return true;
+  });
   const signature = keys.join(",") + "|" + mode;
   let running = inflight.get(signature);
   if (due && !running) {

@@ -21,9 +21,9 @@ struct KidsShellView: View {
         ZStack(alignment: .top) {
             KidsTheme.canvas.ignoresSafeArea()
             KidsView(openPlay: openPlay)
-                .disabled(parentPin)
+                .disabled(pinUp)
             KidsTopBar(onPlay: openPlay, onSwitch: requestSwitch)
-                .disabled(parentPin)
+                .disabled(pinUp)
             if parentPin, let p = profiles.active, let hash = p.kid?.parentPinHash {
                 ZStack {
                     BP.void_.opacity(0.94).ignoresSafeArea()
@@ -38,7 +38,7 @@ struct KidsShellView: View {
                 .zIndex(5)
             }
         }
-        .animation(BP.easeFast, value: parentPin)
+        .animation(BP.easeFast, value: pinUp)
         // bp-settings "Edge margin" applies here too: it is the TV's crop, not a room setting.
         .padding(.horizontal, 1920 * CGFloat(settings.slice.overscanFraction))
         .padding(.vertical, 1080 * CGFloat(settings.slice.overscanFraction))
@@ -54,6 +54,10 @@ struct KidsShellView: View {
         // lib/deep-link.ts: a title handed to the TV opens as the kids detail page (App.tsx meta → KidsDetailView).
         .fullScreenCover(item: $app.deepLinkMeta) { m in KidsDetailView(meta: m) }
     }
+
+    /// (bug pass) The keypad is actually on screen. A profile sync that clears the parent PIN while
+    /// it is up removes the keypad; disabling on `parentPin` alone then left nothing focusable.
+    private var pinUp: Bool { parentPin && profiles.active?.kid?.parentPinHash != nil }
 
     /// use-account-menu.ts requestSwitch: a kid profile with a parent PIN needs it to switch away.
     private func requestSwitch() {

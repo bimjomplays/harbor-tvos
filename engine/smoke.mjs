@@ -1301,6 +1301,29 @@ r.ok("benchmark still works", (() => {
   rec.dispose();
 }
 
+// ---------------------------------------- sports feeds that fail back off (Kids/Sports bug pass)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  let hits = 0;
+  rec.node.host.fetch = async (req) => { hits++; return { status: 503, statusText: "Unavailable", headers: {}, url: req.url, body: "" }; };
+  const S = rec.engine.sports;
+  S.accept();
+  const first = await S.page({ mode: "live", group: "all", wait: true });
+  const afterFirst = hits;
+  // Every load ends in harbor:sports-updated and the TV reads the page again; a failed feed must
+  // not start another load on that read (it did, back to back, while offline).
+  await S.page({ mode: "live", group: "all" });
+  await S.page({ mode: "live", group: "all", wait: true });
+  const afterRepeat = hits;
+  await S.page({ mode: "live", group: "all", force: true, wait: true });
+  r.ok("sports.page: failed feeds wait for the retry window instead of reloading on every read; Retry (force) still reloads",
+    afterFirst > 0 && first.status.failed === true && afterRepeat === afterFirst && hits > afterRepeat,
+    JSON.stringify({ afterFirst, afterRepeat, hits, failed: first.status.failed }));
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------ settings
 const defaults = engine.settings.DEFAULT;
 r.ok("settings.DEFAULT is a populated object", Object.keys(defaults).length > 50, `${Object.keys(defaults).length} keys`);

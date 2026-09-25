@@ -59,6 +59,8 @@ struct SportsAddonPanelView: View {
     @State private var external: External?
     @State private var handoff: Meta?
     @State private var seeded = false
+    /// (bug pass) Off screen: closed, or under one of its own covers.
+    @State private var gone = false
 
     static func matchCopy(_ row: SportsEventModel.AddonRow) -> String {
         switch row.match {
@@ -87,6 +89,9 @@ struct SportsAddonPanelView: View {
             .padding(BP.gutter).padding(.top, BP.px(30))
         }
         .onExitCommand { if picked != nil { back() } else { onClose() } }
+        // Its own covers (the phone link, the stream list) hide it too; they bring it back.
+        .onAppear { gone = false }
+        .onDisappear { gone = true }
         .task {
             guard !seeded else { return }
             seeded = true
@@ -194,6 +199,9 @@ struct SportsAddonPanelView: View {
         playing = st.index; fault = ""
         Task {
             let out: Outcome? = try? await HarborEngine.shared.call("sports.addonPlay", [row.key, st.index])
+            // (bug pass) The viewer went Back to the listings, or closed the panel, while the addon
+            // answered: a late "play" closed the event's covers and started the stream anyway.
+            guard picked?.key == row.key, !gone else { return }
             playing = nil
             switch out?.kind {
             case "play":

@@ -8,6 +8,8 @@ struct SportsWhoView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var stack: [Who] = []
     @State private var loading = true
+    /// The roster player whose page is loading (openPlayer).
+    @State private var openingPlayer: String?
     struct Who: Decodable, Identifiable {
         struct Stat: Decodable { var name: String; var value: String }
         struct Fact: Decodable { var label: String; var value: String }
@@ -96,6 +98,17 @@ struct SportsWhoView: View {
 
     private func openPlayer(_ p: Who.Player) async {
         struct Out: Encodable { var id: String; var name: String; var image: String?; var source: String }
-        if let w: Who = try? await HarborEngine.shared.call("sports.whoPlayer", [game.league, Out(id: p.id, name: p.name, image: p.image, source: p.source)]) { stack.append(w) }
+        // (bug pass) The athlete fetch runs up to its timeout: a second press pushed the athlete
+        // twice (Back then showed the same page), and an answer landing after Back or on another
+        // player's page stacked on the wrong one. Only the page that asked, once.
+        guard openingPlayer == nil else { return }
+        openingPlayer = p.id
+        let depth = stack.count
+        let top = stack.last?.key
+        defer { openingPlayer = nil }
+        if let w: Who = try? await HarborEngine.shared.call("sports.whoPlayer", [game.league, Out(id: p.id, name: p.name, image: p.image, source: p.source)]),
+           stack.count == depth, stack.last?.key == top {
+            stack.append(w)
+        }
     }
 }

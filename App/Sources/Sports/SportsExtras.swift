@@ -82,9 +82,14 @@ struct SportsArtView: View {
             }
         }
         .task(id: game.id) {
+            // (bug pass) The hero reuses this view as it cycles games every 7 s: the art fetched for
+            // the previous game stayed in `url` and won over the next game's own art (and stayed
+            // when the next game's lookup found nothing).
+            url = nil
             guard game.artwork == nil, game.poster == nil else { return }
             try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, let a: Art = try? await HarborEngine.shared.call("sports.artwork", [game.wire]) else { return }
+            guard !Task.isCancelled, let a: Art = try? await HarborEngine.shared.call("sports.artwork", [game.wire]),
+                  !Task.isCancelled else { return }
             url = a.backdrop ?? a.poster
         }
     }

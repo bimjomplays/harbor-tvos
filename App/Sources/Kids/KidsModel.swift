@@ -50,6 +50,12 @@ final class KidsModel: ObservableObject {
 
     private var cacheKey: String { "kids.page.\(profile.id)" }
 
+    /// (bug pass) The engine answered with a page once. KidsView's `.task` runs again every time a
+    /// cover over it closes (a detail page, a franchise, the Play Zone), and `kidsRoom.page`
+    /// rebuilds every row from its first page: a row paged out to 60 titles snapped back to 20 and
+    /// the focused card vanished. Upstream keeps the Kids view mounted and loads on tmdbKey only.
+    private(set) var loadedOnce = false
+
     func load() async {
         guard !loading else { return }
         loading = true
@@ -62,7 +68,7 @@ final class KidsModel: ObservableObject {
         do {
             let page: Page = try await HarborEngine.shared.call("kidsRoom.page", [p.id, p.linked])
             apply(page)
-            if !page.failed { try? CacheStore.shared.set(page, for: cacheKey) }
+            if !page.failed { try? CacheStore.shared.set(page, for: cacheKey); loadedOnce = true }
             failed = page.failed && rows.isEmpty
         } catch {
             failed = rows.isEmpty
