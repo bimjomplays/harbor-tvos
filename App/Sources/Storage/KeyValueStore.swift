@@ -46,6 +46,14 @@ final class KeyValueStore {
     /// Every key the engine may own: upstream uses both `harbor.` and `harbor-` spellings.
     static func isEngineKey(_ key: String) -> Bool { key.hasPrefix("harbor.") || key.hasPrefix("harbor-") }
 
+    /// (review 12) Lazy namespaces (engine/shims/storage.js LAZY_PREFIXES must match): `snapshot()`
+    /// leaves them out and the bundle reads each key with `get` the first time it asks for it. Only
+    /// the media-server per-title details and their index: thousands of small Caches files that
+    /// every launch read (and the bundle held) though only the Media Servers tab needs them. They
+    /// are not memoized here either; the bundle's map holds the ones it has read.
+    private static let lazyPrefixes = ["harbor.media-server.meta.v1.", "harbor.media-server.meta-index.v1"]
+    static func isLazy(_ key: String) -> Bool { lazyPrefixes.contains(where: key.hasPrefix) }
+
     private var memory: [String: String] = [:]
     private let lock = NSLock()
     /// (bug pass) Bumped by every set/remove. `get` reads the disk outside the lock (the engine queue
@@ -80,7 +88,7 @@ final class KeyValueStore {
     private static let memoLimit = 16 * 1024
 
     private static func skipsMemo(_ key: String, _ value: String) -> Bool {
-        tier(for: key) == .cache && value.utf16.count >= memoLimit
+        tier(for: key) == .cache && (isLazy(key) || value.utf16.count >= memoLimit)
     }
 
     func set(_ value: String, for key: String) throws {
@@ -112,20 +120,33 @@ final class KeyValueStore {
     /// `HarborEngine`'s `__harbor_host.storageSnapshot()` hands this to the bundle at boot so
     /// the JS `localStorage` shim can serve every read from memory. Later tiers win over
     /// earlier ones (an in-memory write is the freshest, then the Keychain / UserDefaults
-    /// copy, then a possibly stale Caches copy of the same key).
+    /// copy, then a possibly stale Caches copy of the same key). The lazy namespaces are left out.
     func snapshot() -> [String: String] {
         var out: [String: String] = [:]
-        for key in CacheStore.shared.allKeys() where Self.isEngineKey(key) {
+        for key in CacheStore.shared.allKeys() where Self.isEngineKey(key) && !Self.isLazy(key) {
             if let value = CacheStore.shared.get(String.self, for: key) { out[key] = value }
         }
-        for key in Prefs.allKeys() where Self.isEngineKey(key) {
+        for key in Prefs.allKeys() where Self.isEngineKey(key) && !Self.isLazy(key) {
             if let value = Prefs.get(String.self, for: key) { out[key] = value }
         }
-        for key in SecretStore.allKeys() where Self.isEngineKey(key) {
+        for key in SecretStore.allKeys() where Self.isEngineKey(key) && !Self.isLazy(key) {
             if let value = SecretStore.get(key) { out[key] = value }
         }
         lock.lock()
-        for (key, value) in memory where Self.isEngineKey(key) { out[key] = value }
+        for (key, value) in memory where Self.isEngineKey(key) && !Self.isLazy(key) { out[key] = value }
+        lock.unlock()
+        return out
+    }
+
+    /// (review 12) Every engine key in every tier, lazy ones included, without reading a value
+    /// (the bundle's `localStorage.clear()`; `snapshot()` no longer lists the lazy namespaces).
+    func engineKeys() -> Set<String> {
+        var out = Set<String>()
+        for key in CacheStore.shared.allKeys() where Self.isEngineKey(key) { out.insert(key) }
+        for key in Prefs.allKeys() where Self.isEngineKey(key) { out.insert(key) }
+        for key in SecretStore.allKeys() where Self.isEngineKey(key) { out.insert(key) }
+        lock.lock()
+        for key in memory.keys where Self.isEngineKey(key) { out.insert(key) }
         lock.unlock()
         return out
     }

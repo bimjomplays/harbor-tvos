@@ -5,7 +5,7 @@ import type { Meta } from "@/lib/cinemeta";
 import { mediaServerConnections, saveMediaServerConnection, removeMediaServerConnection, updateMediaServerConnection, mediaServerToken, mediaServerSyncDue } from "@/lib/media-server/connections";
 import { discoverAndAuthenticate } from "@/lib/media-server/discovery";
 import { synchronizeMediaServer, subscribeMediaServerSyncProgress, mediaServerAdapter } from "@/lib/media-server/sync";
-import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries, mediaServerMetadata, putMediaServerMetadata } from "@/lib/media-server/index-store";
+import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries, mediaServerMetadata, putMediaServerMetadata, pruneMediaServerMetadata } from "@/lib/media-server/index-store";
 import { hydrateLibraryMeta } from "@/views/library/hydrate-meta";
 import { createRequestScheduler } from "@/lib/request-scheduler";
 import { matchingServerItems, serverPlayableCopies, groupMediaServerTitles } from "@/lib/media-server/selectors";
@@ -15,6 +15,7 @@ import { getMediaServerHealthSnapshot, markMediaServerInactive, probeMediaServer
 import { MEDIA_SERVER_QUALITIES, connectionQuality } from "@/lib/media-server/quality";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { loadStoredSettings } from "@/lib/settings/load";
+import type { Settings } from "@/lib/settings/types";
 import { t } from "@/lib/i18n";
 import type { PlayerSrc } from "@/lib/view";
 import { mediaServerRequest } from "@/lib/media-server/transport";
@@ -256,6 +257,10 @@ let detailNotifyMs = DETAIL_NOTIFY_MS;
 // instead of fetching ahead of the titles on screen (the queue is first in, first out).
 let detailWanted: Set<string> | null = null;
 const DETAIL_SKIPPED = Symbol("skipped");
+// (review 12) Stored details kept across languages and profiles (about 1 KB each): past this, the
+// least recently read go (engine/media/index-store.ts pruneMediaServerMetadata). A library bigger
+// than this keeps every title in the language on screen.
+const DETAIL_STORE_CAP = 3000;
 
 function detailEmit(): void {
   if (detailTimer != null) { clearTimeout(detailTimer); detailTimer = null; }
@@ -287,29 +292,37 @@ function lookupId(t: MediaServerTitle): string | null {
   return null;
 }
 
+/** Everything hydrate-meta localizes by: language, image languages, translated titles / overviews. */
+function localeKeyOf(st: Pick<Settings, "tmdbLanguage" | "tmdbImageLangs" | "translateTitles" | "translateDescriptions">): string {
+  return `${st.tmdbLanguage || "en"}:${(st.tmdbImageLangs ?? []).join(",")}:${st.translateTitles}:${st.translateDescriptions}`;
+}
+
 /** What hydrate-meta localizes by, read the way it reads it (loadStoredSettings) when a lookup starts. */
 function hydrateLocaleKey(): string {
   try {
-    const st = loadStoredSettings();
-    return `${st.tmdbLanguage || "en"}:${(st.tmdbImageLangs ?? []).join(",")}:${st.translateTitles}:${st.translateDescriptions}`;
+    return localeKeyOf(loadStoredSettings());
   } catch {
     return "";
   }
 }
 
-function lookUp(cacheKey: string, id: string, kind: "movie" | "series", tmdbKey: string | null): void {
+/** `localeKey`: localeKeyOf the profile settings the cache key was made from. */
+function lookUp(cacheKey: string, id: string, kind: "movie" | "series", tmdbKey: string | null, localeKey: string): void {
   if (detailRunning.has(cacheKey)) return;
   const missedAt = detailMissed.get(cacheKey);
   if (missedAt != null && Date.now() - missedAt < DETAIL_RETRY_MS) return;
   detailRunning.add(cacheKey);
-  const queuedLocale = hydrateLocaleKey();
   void detailRequests
     .schedule<Meta | null | typeof DETAIL_SKIPPED>(cacheKey, async () => {
       if (detailWanted != null && !detailWanted.has(cacheKey)) return DETAIL_SKIPPED;
-      // (review 11) hydrate-meta reads the language as the lookup starts: one queued before a
-      // language change would fetch the new language's details and store them under the old
-      // language's key for good. It waits for the next Library read to queue it again instead.
-      if (hydrateLocaleKey() !== queuedLocale) return DETAIL_SKIPPED;
+      // (review 12) Upstream makes the cache key from the profile's settings (use-bp-library
+      // useSettings) while hydrate-meta localizes from the mirror (loadStoredSettings): the same
+      // settings there, as the mirror follows the active profile. Here the key comes from the
+      // profile the Library asked for, so a lookup runs only while the mirror localizes the way
+      // that key says; otherwise (a language change since it was queued (review 11), a mirror not
+      // caught up, another profile's read) it would store one language's details under another's
+      // key for good, so it waits for a Library read that queues it again.
+      if (hydrateLocaleKey() !== localeKey) return DETAIL_SKIPPED;
       return hydrateLibraryMeta(id, kind, tmdbKey).catch(() => null);
     })
     .then(async (meta) => {
@@ -336,20 +349,24 @@ export async function libraryFeed(profileId?: string, linked?: boolean, force?: 
   if (force) detailMissed.clear();
   const conns = mediaServerConnections().filter((c) => c.enabled);
   const enabled = new Set(conns.map((c) => c.id));
-  const all = (await mediaServerItems()).filter((i) => enabled.has(i.connectionId));
+  const stored = await mediaServerItems();
+  const all = stored.filter((i) => enabled.has(i.connectionId));
   const grouped = groupMediaServerTitles(all);
   const languageKey = `${s.tmdbLanguage || "en"}:${(s.tmdbImageLangs ?? []).join(",")}`;
+  const localeKey = localeKeyOf(s);
   const tmdbKey = s.tmdbKey || null;
   const entries: LibraryTitle[] = [];
   detailNotifyMs = Math.min(DETAIL_NOTIFY_MAX_MS, Math.max(DETAIL_NOTIFY_MS, grouped.length * 3));
   // The lookups are queued once the wanted set is whole: a queued one checks it when it starts.
   const wanted = new Map<string, { id: string; kind: "movie" | "series" }>();
+  const found = new Set<string>();
   for (const t of grouped) {
     const base = { id: t.identity.imdbId ?? (t.identity.tmdbId != null ? `tmdb:${t.kind === "series" ? "tv" : "movie"}:${t.identity.tmdbId}` : t.key), type: t.kind, name: t.fallbackTitle, releaseInfo: t.year ? String(t.year) : undefined } as Meta;
     const cacheKey = `${t.key}:locale:${languageKey}`;
     const cached = await mediaServerMetadata<Meta>(cacheKey);
     let meta: Meta = base;
     if (cached) {
+      found.add(cacheKey);
       // The entry keeps the id the rest of the app opens (IMDb first) and the server's kind.
       meta = { ...cached, id: base.id, type: base.type, name: cached.name || base.name, releaseInfo: cached.releaseInfo || base.releaseInfo };
     } else {
@@ -359,7 +376,12 @@ export async function libraryFeed(profileId?: string, linked?: boolean, force?: 
     entries.push({ key: t.key, meta, date: t.addedAt ?? null, groups: t.connectionIds, libraries: t.libraryIds });
   }
   detailWanted = new Set(wanted.keys());
-  for (const [cacheKey, w] of wanted) lookUp(cacheKey, w.id, w.kind, tmdbKey);
+  for (const [cacheKey, w] of wanted) lookUp(cacheKey, w.id, w.kind, tmdbKey, localeKey);
+  // (review 12) The store is bounded: titles no stored server holds (a disabled one's still count)
+  // go in every language, then the least recently read past the cap; this read's own never do.
+  const titleKeys = new Set(grouped.map((t) => t.key));
+  if (stored.length !== all.length) for (const t of groupMediaServerTitles(stored)) titleKeys.add(t.key);
+  pruneMediaServerMetadata(titleKeys, found, DETAIL_STORE_CAP);
   // use-bp-library.ts: libraryId → libraryName (else the id) over the enabled servers' items.
   const libraryNames = new Map<string, string>();
   for (const item of all) libraryNames.set(item.libraryId, item.libraryName || item.libraryId);

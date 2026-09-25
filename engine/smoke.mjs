@@ -2471,7 +2471,71 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const again = await q();
   await new Promise((res) => setTimeout(res, 50));
   r.ok("media-server details come from the store next time (no lookups; unmatched titles never looked up)", hits.length === before && again.pending === 0 && !hits.some((u) => /Home%20Video|Home Video/.test(u)), JSON.stringify(hits.slice(before)));
+  const msStore = new Map(ms.node.storage);
   ms.dispose();
+
+  // (review 12) The details are a lazy namespace: a relaunch leaves them out of the boot snapshot,
+  // and the next Library read finds them (one storageGet each) without asking the network.
+  const META = "harbor.media-server.meta.v1.";
+  const INDEX = "harbor.media-server.meta-index.v1";
+  const noNet = async (req) => ({ status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" });
+  const rel = loadEngine({ storage: new Map(msStore) });
+  const relHits = [];
+  rel.node.host.fetch = async (req) => { relHits.push(req.url); return noNet(req); };
+  const relBoot = rel.engine.runtime.storageKeys().filter((k) => k.startsWith("harbor.media-server.meta"));
+  const relFeed = await rel.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null, limit: 60 });
+  await new Promise((res) => setTimeout(res, 50));
+  const relRead = rel.engine.runtime.storageKeys().filter((k) => k.startsWith(META));
+  r.ok("media-server details stay out of the boot snapshot and are read on first use", relBoot.length === 0 && relRead.length === 3 && relFeed.pending === 0 && relHits.length === 0 && relFeed.sections[0].items.some((e) => e.meta.imdbRating === "8.6") && msStore.has(INDEX),
+    JSON.stringify({ relBoot, read: relRead.length, pending: relFeed.pending, hits: relHits.length }));
+  rel.dispose();
+
+  // (review 12) The store is bounded: a title no server holds goes in every language, other languages
+  // stay until the cap, then the least recently read go first; the read's own details never do.
+  const pruneStore = new Map(msStore);
+  const pruneIndex = JSON.parse(msStore.get(INDEX));
+  const ownKeys = Object.keys(pruneIndex);
+  const metaVal = JSON.stringify({ meta: { id: "x", type: "movie", name: "x" }, updatedAt: 1 });
+  for (const k of ["tmdb:movie:99:locale:en:", "tmdb:movie:11:locale:fr:"]) { pruneIndex[k] = Date.now(); pruneStore.set(META + k, metaVal); }
+  for (let n = 0; n < 3010; n++) pruneIndex[`tmdb:movie:11:locale:x${n}:`] = n + 1;
+  pruneStore.set(META + "tmdb:movie:11:locale:x0:", metaVal);
+  pruneStore.set(META + "tmdb:movie:11:locale:x3009:", metaVal);
+  pruneStore.set(INDEX, JSON.stringify(pruneIndex));
+  const pr = loadEngine({ storage: pruneStore });
+  pr.node.host.fetch = noNet;
+  await pr.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null, limit: 60 });
+  const prIndex = JSON.parse(pr.node.storage.get(INDEX));
+  const prHas = (k) => pr.node.storage.has(META + k);
+  r.ok("media-server details: a title no server holds is dropped, other languages kept under the cap, oldest first past it",
+    Object.keys(prIndex).length === 3000 && ownKeys.length === 3 && ownKeys.every((k) => k in prIndex && prHas(k)) && !prHas("tmdb:movie:99:locale:en:") && !("tmdb:movie:99:locale:en:" in prIndex)
+      && prHas("tmdb:movie:11:locale:fr:") && !prHas("tmdb:movie:11:locale:x0:") && !("tmdb:movie:11:locale:x13:" in prIndex) && ("tmdb:movie:11:locale:x14:" in prIndex) && prHas("tmdb:movie:11:locale:x3009:"),
+    JSON.stringify({ size: Object.keys(prIndex).length, own: ownKeys.length }));
+  pr.dispose();
+
+  // (review 12) The cache key is made from the profile's settings (upstream useSettings) and
+  // hydrate-meta localizes from the mirror: while they differ nothing is looked up (it would store
+  // French details under the English key); once the mirror follows the profile the lookups run.
+  const mir = loadEngine({ storage: seedMs([item("msA", "a1", "L1", "Movies", "movie", "Star Film", { tmdbId: 11 }, 100)], [conn("msA", "Den")]) });
+  const mirHits = [];
+  mir.node.host.fetch = async (req) => {
+    mirHits.push(req.url);
+    if (/api\.themoviedb\.org\/3\/movie\/11\?/.test(req.url)) return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ id: 11, title: "Star Film", vote_average: 8.6, runtime: 121 }) };
+    return noNet(req);
+  };
+  mir.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef", tmdbLanguage: "en" }, mir.engine.settings.sourceKeyFor("p1", true));
+  mir.engine.settings.patch({ tmdbLanguage: "fr" });
+  const mirEnKey = () => [...mir.node.storage.keys()].some((k) => k.startsWith(META + "tmdb:movie:11:locale:en:"));
+  const mirQ = () =>mir.engine.libraryRoom.feed({ tab: "media-servers", profileId: "p1", linked: true, authKey: null });
+  await mirQ();
+  await new Promise((res) => setTimeout(res, 100));
+  const mirStale = mirHits.filter((u) => /\/3\/movie\/11\?/.test(u)).length;
+  mir.engine.settings.activate("p1", true);
+  await mirQ();
+  for (let i = 0; i < 100 && !mirEnKey(); i++) await new Promise((res) => setTimeout(res, 20));
+  const mirEn = mirHits.filter((u) => /\/3\/movie\/11\?.*language=en(&|$)/.test(u)).length;
+  r.ok("media-server lookups wait while the settings mirror localizes differently from the profile the key is made from",
+    mirStale === 0 && mirEn === 1 && !mirHits.some((u) => /language=fr/.test(u)) && mirEnKey(), JSON.stringify({ mirStale, mirEn, hits: mirHits.length }));
+  mir.dispose();
 
   // A big library: never more than six lookups at once, a handful of refreshes, and a miss is not asked again.
   const many = Array.from({ length: 30 }, (_, n) => item("msA", `m${n}`, "L1", "Movies", "movie", `Film ${n}`, { tmdbId: 1000 + n }, n));

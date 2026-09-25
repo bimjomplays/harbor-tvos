@@ -60,12 +60,90 @@ export async function manualMappings(): Promise<Array<{ connectionId: string; it
   return readJson(MAPPINGS, []);
 }
 
+// (review 12) The per-title details (METADATA + upstream's `${title.key}:locale:${language}:${imageLangs}`,
+// about 1 KB each) were never dropped: a big library read in a few languages kept thousands of them,
+// each one in the bundle's localStorage map and read by the boot snapshot. The index below holds
+// every stored key and when it was last read (to the hour); pruneMediaServerMetadata drops titles
+// no server holds any more, then the least recently read past a cap. The details and the index are
+// lazy namespaces (shims/storage.js LAZY_PREFIXES, KeyValueStore.lazyPrefixes): the boot snapshot
+// leaves them out and a key is read from the host the first time it is asked for.
+const META_INDEX = "harbor.media-server.meta-index.v1";
+const META_TOUCH_MS = 60 * 60_000;
+const META_FLUSH_MS = 5_000;
+let metaIndex: Map<string, number> | null = null;
+let metaIndexDirty = false;
+let metaIndexTimer: ReturnType<typeof setTimeout> | null = null;
+
+function metaIndexOf(): Map<string, number> {
+  if (metaIndex) return metaIndex;
+  const raw = readJson<unknown>(META_INDEX, null);
+  const index = new Map<string, number>();
+  if (raw && typeof raw === "object" && !Array.isArray(raw))
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (typeof v === "number" && Number.isFinite(v)) index.set(k, v);
+  metaIndex = index;
+  return index;
+}
+
+function flushMetaIndex(): void {
+  if (metaIndexTimer != null) { clearTimeout(metaIndexTimer); metaIndexTimer = null; }
+  if (!metaIndexDirty || !metaIndex) return;
+  metaIndexDirty = false;
+  writeJson(META_INDEX, Object.fromEntries(metaIndex));
+}
+
+/** One index write for a batch of landings, not one per title. */
+function metaIndexChanged(): void {
+  metaIndexDirty = true;
+  if (metaIndexTimer == null) metaIndexTimer = setTimeout(flushMetaIndex, META_FLUSH_MS);
+}
+
+function touchMetadata(key: string, landed: boolean): void {
+  const index = metaIndexOf();
+  const now = Date.now();
+  const at = index.get(key);
+  if (!landed && at != null && now - at < META_TOUCH_MS) return;
+  index.set(key, now);
+  metaIndexChanged();
+}
+
 export async function putMediaServerMetadata(key: string, meta: unknown): Promise<void> {
   writeJson(METADATA + key, { meta, updatedAt: Date.now() });
+  touchMetadata(key, true);
 }
 
 export async function mediaServerMetadata<T>(key: string): Promise<T | null> {
-  return readJson<{ meta?: T } | null>(METADATA + key, null)?.meta ?? null;
+  const meta = readJson<{ meta?: T } | null>(METADATA + key, null)?.meta ?? null;
+  // A hit the index does not hold yet (stored before it existed, or its write was lost) is adopted.
+  if (meta != null) touchMetadata(key, false);
+  return meta;
+}
+
+/**
+ * (review 12) After a Library read: drops the stored details of titles no server holds any more
+ * (`titleKeys`: every stored server's titles, enabled or not), then, past `cap` entries, the least
+ * recently read. `keep` (the keys the read itself used) is never dropped, so a library bigger than
+ * the cap keeps every title in the language on screen and loses other languages first.
+ * Returns how many entries went.
+ */
+export function pruneMediaServerMetadata(titleKeys: Set<string>, keep: Set<string>, cap: number): number {
+  const index = metaIndexOf();
+  const drop: string[] = [];
+  for (const key of index.keys()) {
+    const at = key.lastIndexOf(":locale:");
+    if (!keep.has(key) && (at < 0 || !titleKeys.has(key.slice(0, at)))) drop.push(key);
+  }
+  if (index.size - drop.length > cap) {
+    const gone = new Set(drop);
+    const oldest = [...index].filter(([k]) => !gone.has(k) && !keep.has(k)).sort((a, b) => a[1] - b[1]);
+    for (let i = 0; i < oldest.length && index.size - drop.length > cap; i++) drop.push(oldest[i][0]);
+  }
+  for (const key of drop) {
+    index.delete(key);
+    try { localStorage.removeItem(METADATA + key); } catch { /* ignore */ }
+  }
+  if (drop.length > 0) metaIndexChanged();
+  flushMetaIndex();
+  return drop.length;
 }
 
 export async function putMediaServerSyncSummary(summary: MediaServerSyncSummary): Promise<void> {
