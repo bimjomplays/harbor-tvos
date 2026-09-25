@@ -112,7 +112,10 @@ struct AnimeHeroActionsView: View {
     let resume: ContinueItem?
     let onPlay: (Meta) -> Void
     let onInfo: (Meta) -> Void
+    /// The actions gained (true) or lost (false) focus (the rail parks back at rest for them).
+    var onHold: ((Bool) -> Void)? = nil
     @State private var info: HeroMeta?
+    @FocusState private var focus: Int?
     struct HeroMeta: Decodable { var topLine: String; var score: String?; var fromMal: Bool?; var dub: Bool; var country: String; var episode: String; var minutesLeft: String }
 
     var body: some View {
@@ -129,9 +132,13 @@ struct AnimeHeroActionsView: View {
             HStack(spacing: BP.px(10)) {
                 // bp-anime-hero-actions: RotateCcw for Resume, the filled Play for Start Watching.
                 Button { onPlay(meta) } label: { Label(resume != nil ? "Resume" : "Start Watching", systemImage: resume != nil ? "arrow.counterclockwise" : "play.fill") }.buttonStyle(BPActionStyle(primary: true))
+                    .focused($focus, equals: 0)
                 Button { onInfo(meta) } label: { Label("More Info", systemImage: "info.circle") }.buttonStyle(BPActionStyle())
+                    .focused($focus, equals: 1)
             }
         }
+        .onChange(of: focus != nil) { _, held in onHold?(held) }
+        .onDisappear { onHold?(false) }
         .task(id: meta.id) {
             let p = ProfilesStore.shared.active
             let cw: AnyJSON = resume.map { r in .object(["season": r.season.map { .number(Double($0)) } ?? .null, "episode": r.episode.map { .number(Double($0)) } ?? .null,

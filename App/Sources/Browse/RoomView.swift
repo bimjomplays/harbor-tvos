@@ -25,6 +25,9 @@ struct RoomView: View {
     /// bp-live-row `hot`: the focused Live TV cell, and whether that row's player is up.
     @State private var liveHot: LiveRowModel.Cell?
     @State private var livePlaying = false
+    /// A lead row of the rail holds focus: Continue Watching, or the anime hero's actions (Live is liveHot).
+    @State private var cwHeld = false
+    @State private var animeActionsHeld = false
     @Environment(\.shellFocusNamespace) private var shellNS
     @Namespace private var localNS
 
@@ -73,18 +76,20 @@ struct RoomView: View {
                                BPSound.shared.open(); quickFromCw = false; quick = m
                            }, topInset: heroHeight,
                            restoreRoute: model.restoreKey, entry: model.entry,
-                           onHold: { key, held in model.hold(key, held) }) {
+                           onHold: { key, held in model.hold(key, held) },
+                           leadHeld: cwHeld || animeActionsHeld || liveHot != nil) {
                     if model.room == .anime, let hero = model.spotlight, hero.type != "service" {
                         // bp-anime-hero-actions: the focused hero's Resume / Start Watching and More Info.
                         AnimeHeroActionsView(meta: hero, resume: model.continueWatching.first { $0.id == hero.id },
-                                             onPlay: { play = $0 }, onInfo: { detail = $0 })
+                                             onPlay: { play = $0 }, onInfo: { detail = $0 }, onHold: { animeActionsHeld = $0 })
                             .padding(.horizontal, BP.gutter)
                     }
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
                                         onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { openContinue($0) },
                                         onQuick: { item in BPSound.shared.open(); quickFromCw = true; quick = Meta(continue: item) },
-                                        onHold: { model.hold("cw", $0) })
+                                        onHold: { cwHeld = $0; model.hold("cw", $0) })
+                            .onDisappear { cwHeld = false }
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
                     if model.isHomePage {
@@ -99,8 +104,9 @@ struct RoomView: View {
                 .prefersDefaultFocus(true, in: shellNS ?? localNS)
             }
             // bp-home data-bp-home-hero is z-20 over BpRail: rows scrolling up pass under the title,
-            // chips and description instead of drawing over them. Nothing here takes focus.
-            spotlight(.copy)
+            // chips and description instead of drawing over them. Nothing here takes focus, and the
+            // full-screen layer never stands between the remote and the rail (like BandIdentityView).
+            spotlight(.copy).allowsHitTesting(false)
             if let band {
                 BandIdentityView(band: band, boxHeight: heroHeight).transition(.opacity)
             }

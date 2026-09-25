@@ -97,10 +97,13 @@ struct BPRailView<Lead: View>: View {
     var restoreRoute: String? = nil
     var entry: BPRestore.Position? = nil
     var onHold: ((String, Bool) -> Void)? = nil
+    /// A lead row (Continue Watching, Live, the anime hero actions) holds focus.
+    var leadHeld = false
     @ViewBuilder var lead: () -> Lead
     @State private var focusedRow: String?
     /// The row that holds focus right now (focusedRow keeps the last one after focus moves on).
     @State private var heldRow: String?
+    private static var topID: String { "bp-rail-top" }
     /// Where the focused row parks: just under the spotlight copy (bp rail "resting floor").
     private var parkAnchor: CGFloat { (topInset + BP.px(6)) / 1080 }
 
@@ -113,7 +116,7 @@ struct BPRailView<Lead: View>: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.rowGap) {
-                    Color.clear.frame(height: topInset)
+                    Color.clear.frame(height: topInset).id(Self.topID)
                     // Continue Watching / Live sit here: over the plain rows below them.
                     lead().id("lead").zIndex(1)
                     ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
@@ -141,6 +144,14 @@ struct BPRailView<Lead: View>: View {
             .onChange(of: focusedRow) { _, key in
                 guard let key else { return }
                 withAnimation(BP.easeSlow) { proxy.scrollTo(key, anchor: UnitPoint(x: 0, y: parkAnchor)) }
+            }
+            // use-bp-rail parks every rail row, the lead ones too. Up from a parked row onto
+            // Continue Watching, Live or the anime actions left them where they were: in the top
+            // band, under the spotlight copy (drawn over the rail). The rail goes back to rest.
+            .onChange(of: leadHeld) { _, held in
+                guard held, focusedRow != nil else { return }
+                focusedRow = nil
+                withAnimation(BP.easeSlow) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
             // Route entry: park the remembered row first so it exists when focus resets into it.
             .onAppear { parkEntry(proxy) }
