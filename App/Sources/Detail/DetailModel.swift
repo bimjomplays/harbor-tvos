@@ -365,8 +365,17 @@ final class DetailModel: ObservableObject {
     /// The strip: the anime season chip's episodes when the TVDB order resolved, else this season's.
     var seasonEpisodes: [Episode] {
         if let k = animeSeasonKey, let g = animeGroups[k] { return g }
-        return episodes.filter { $0.season == season }
+        if let m = seasonMemo, m.season == season, m.source == episodes { return m.list }
+        let list: [Episode] = episodes.filter { $0.season == season }
+        seasonMemo = (season, episodes, list)
+        return list
     }
+    /// (perf pass 5) The strip's filter, kept until the season or the episode list changes. The
+    /// page's body reads the strip about ten times a pass (Play's label and target, the resume bar,
+    /// the strip, its park key and count, the season menu), and a long anime listed as one season
+    /// (a thousand episodes, each carrying its play payload) was copied whole each time. An
+    /// unchanged `episodes` array compares by storage in O(1).
+    private var seasonMemo: (season: Int, source: [Episode], list: [Episode])?
 
     /// How far `load()` has got, for a one-press play (bp-detail's pending-play effect fires as soon
     /// as the page has its meta and knows the episode, not after the rest of the page). It only

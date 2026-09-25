@@ -1178,6 +1178,12 @@ struct EpisodeStill: View {
     var backdrop: String?
     @State private var image: UIImage?
     @State private var exhausted = false
+    @Environment(\.displayScale) private var displayScale
+    /// (perf pass 5) EpisodeCell's still box (230 x 129 at the 1140 canvas). The ladder was decoded
+    /// with no size, so at ImageLoader's 1920 px default: TVDB, ani.zip and metahub stills come at
+    /// 780 px to full HD, 1.4 to 8 MB each decoded for a card a fifth of the screen wide, and a
+    /// season strip of them could fill the whole image cache on an Apple TV HD.
+    private static let box = CGSize(width: BP.px(230), height: (BP.px(230) * 9 / 16).rounded())
 
     var body: some View {
         ZStack {
@@ -1195,9 +1201,12 @@ struct EpisodeStill: View {
         .task(id: chain.joined(separator: "|")) {
             image = nil
             exhausted = false
+            let scale: Double = Double(max(1, displayScale))
+            let target = ImageLoader.Target(width: Int((Double(Self.box.width) * scale).rounded(.up)),
+                                            height: Int((Double(Self.box.height) * scale).rounded(.up)))
             for url in chain {
                 guard let u = URL(string: url) else { continue }
-                if let img = await ImageLoader.shared.image(for: u) {
+                if let img = await ImageLoader.shared.image(for: u, target: target) {
                     withAnimation(BP.easeFast) { image = img }
                     return
                 }

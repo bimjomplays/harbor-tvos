@@ -201,7 +201,10 @@ enum PosterSizing {
     static func sizeImageUrl(_ url: String, _ targetPx: Int) -> String {
         guard targetPx > 0 else { return url }
         let seg = tmdbTiers.first { $0 >= targetPx }.map { "w\($0)" } ?? "original"
-        if let r = url.range(of: #"/t/p/(w\d+|original)/"#, options: .regularExpression) {
+        // (perf pass 5) This runs in every poster tile's body (each marks refresh redraws every tile
+        // on screen). The regex searches only run when the literal part they need is there: a
+        // Cinemeta/metahub poster went through two failing regex searches per tile per redraw.
+        if url.contains("/t/p/"), let r = url.range(of: #"/t/p/(w\d+|original)/"#, options: .regularExpression) {
             let sized = url.replacingCharacters(in: r, with: "/t/p/\(seg)/")
             if sized != url { return sized }
         }
@@ -210,7 +213,7 @@ enum PosterSizing {
 
     /// img-size.ts upgradeArtworkUrl: Google (=wN-hN, up to 1200) and Deezer (/NxN-, up to 1000) art.
     static func upgradeArtworkUrl(_ url: String, _ targetPx: Int) -> String {
-        if let r = url.range(of: #"=w\d+-h\d+"#, options: .regularExpression) {
+        if url.contains("=w"), let r = url.range(of: #"=w\d+-h\d+"#, options: .regularExpression) {
             let size = min(1200, max(targetPx, 1))
             return url.replacingCharacters(in: r, with: "=w\(size)-h\(size)")
         }

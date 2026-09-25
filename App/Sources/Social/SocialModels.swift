@@ -245,11 +245,18 @@ enum Social {
     /// views/profile/profile-bits.tsx timeAgo.
     static func ago(iso: String?) -> String {
         guard let iso else { return "" }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
+        guard let d = isoFraction.date(from: iso) ?? isoPlain.date(from: iso) else { return "" }
         return ago(ms: d.timeIntervalSince1970 * 1000)
     }
+
+    /// (perf pass 5) Made once: `ago(iso:)` runs in the Feed, Groups and profile rows' bodies, and
+    /// built one or two ISO formatters per row on every redraw of those lists.
+    private static let isoFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let isoPlain = ISO8601DateFormatter()
 
     static func ago(ms: Double) -> String {
         guard ms > 0 else { return "" }

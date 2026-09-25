@@ -389,10 +389,24 @@ struct KidsFullscreenClock: View {
         case "24h": template = seconds ? "HHmmss" : "HHmm"
         default: template = seconds ? "jmmss" : "jmm"
         }
+        return formatter(template).string(from: date)
+    }
+
+    /// (perf pass 5) One formatter per template and UI language. The face redraws every second with
+    /// seconds on (and the "Ends at" line with it), and each redraw built two DateFormatters and ran
+    /// ICU's pattern generator for their templates on the main thread during kid playback.
+    private static var formatters: [String: DateFormatter] = [:]
+
+    private static func formatter(_ template: String) -> DateFormatter {
+        let language: String = L10n.language
+        let key: String = template + "|" + language
+        if let hit = formatters[key] { return hit }
         let f = DateFormatter()
-        f.locale = L10n.locale
+        f.locale = Locale(identifier: language)
         f.setLocalizedDateFormatFromTemplate(template)
-        return f.string(from: date)
+        if formatters.count >= 12 { formatters.removeAll() }
+        formatters[key] = f
+        return f
     }
 }
 

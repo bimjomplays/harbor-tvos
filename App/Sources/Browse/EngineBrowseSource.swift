@@ -184,6 +184,9 @@ struct EngineBrowseSource: BrowseSource {
         }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        // (perf pass 5) One fallback formatter for the row, not a new one per item whose date has no
+        // fractional seconds (local entries), as DetailModel.buildEpisodes does.
+        let isoPlain = ISO8601DateFormatter()
         let mapped: [ContinueItem] = items.map { i in
             let off = i.state?.timeOffset ?? 0, dur = i.state?.duration ?? 0
             var season = i.state?.season, episode = i.state?.episode
@@ -191,7 +194,7 @@ struct EngineBrowseSource: BrowseSource {
             return ContinueItem(id: i._id, type: i.type, name: i.name, poster: i.poster, background: i.background, logo: nil,
                                 season: season, episode: episode,
                                 progress: dur > 0 ? min(1, max(0, off / dur)) : 0,
-                                lastWatched: (i.state?.lastWatched ?? i._mtime).flatMap { iso.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) },
+                                lastWatched: (i.state?.lastWatched ?? i._mtime).flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) },
                                 durationMs: dur, timeOffsetMs: off,
                                 watched: i._cw?.watched ?? false, newEpisode: i._cw?.newEpisode ?? 0, upNext: i._cw?.upNext ?? false,
                                 waitingForAir: i._cw?.waitingForAir ?? false, nextAirDate: i._cw?.nextAirDate, watcher: i._cw?.watcher, external: i._cw?.external,
