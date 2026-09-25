@@ -126,13 +126,27 @@ function tmdbHomeCard(tc: TmdbCollection, name: string, image: string | null): C
     description: tc.overview || null, items, hidden: 0 };
 }
 
-export async function curatedRow(profileId: string, linked: boolean, limit = 30): Promise<CollectionCard[]> {
-  const s = loadEffective(profileId, linked);
-  const key = s.tmdbKey;
-  if (!key) return [];
+/**
+ * The TMDB key the curated row reads with, or null when it shows nothing. bp-discover's
+ * BpCollectionsBand (`home` false) gates on the key alone (showCollections = Boolean(tmdbKey));
+ * the Home row also honours the synced Home layout hiding "collections" (useBpPinnedRows).
+ */
+export function curatedGate(s: { tmdbKey?: unknown; homeRows?: unknown }, home: boolean): string | null {
+  const key = typeof s.tmdbKey === "string" ? s.tmdbKey : "";
+  if (!key) return null;
+  if (!home) return key;
   // useBpPinnedRows: a malformed synced `hidden` degrades to "show every band".
-  const raw = (s as { homeRows?: { hidden?: unknown } }).homeRows?.hidden;
-  if (Array.isArray(raw) && raw.includes("collections")) return [];
+  const rows = s.homeRows as { hidden?: unknown } | null | undefined;
+  const raw = rows && typeof rows === "object" ? rows.hidden : undefined;
+  if (Array.isArray(raw) && raw.includes("collections")) return null;
+  return key;
+}
+
+/** `home` false: Discover's Collections band (bp-collections-band.tsx), which the Home layout does not hide. */
+export async function curatedRow(profileId: string, linked: boolean, limit = 30, home = true): Promise<CollectionCard[]> {
+  const s = loadEffective(profileId, linked);
+  const key = curatedGate(s as { tmdbKey?: unknown; homeRows?: unknown }, home !== false);
+  if (!key) return [];
   const slice = COLLECTIONS_CATALOG.slice(0, limit);
   const found = new Array<CollectionCard | null>(slice.length).fill(null);
   const work = bpMapLimit(slice.map((c, i) => ({ c, i })), 4, async ({ c, i }) => {

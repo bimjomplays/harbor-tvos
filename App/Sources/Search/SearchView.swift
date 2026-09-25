@@ -2,9 +2,13 @@ import SwiftUI
 
 /// Search room: keyboard on the left, query + results on the right.
 struct SearchView: View {
-    @StateObject private var model = SearchModel()
+    /// lib/search-context.tsx: the query and results outlive the page (ShellViewState), so leaving
+    /// Search for another tab and coming back finds them where they were.
+    @ObservedObject private var model: SearchModel
     /// search-overlay.tsx AI mode + ai-search-section.tsx (engine/aiSearch.ts).
-    @StateObject private var ai = AISearchModel()
+    @ObservedObject private var ai: AISearchModel
+    /// The shell's store: the models above and where the ring was in the results.
+    private let views: ShellViewState
     /// ai-result-list.tsx openMeta(meta, { episodeHint }).
     @State private var aiOpen: AIOpen?
     @EnvironmentObject private var app: AppModel
@@ -19,6 +23,14 @@ struct SearchView: View {
     @FocusState private var fieldFocused: Bool
     /// (search pass 3) The recent-query chip holding the ring.
     @FocusState private var recentFocus: String?
+    /// bp-restore: the result cell to put the ring back on when Search opens again (set once, on appear).
+    @State private var resume: ShellViewState.SearchSpot?
+
+    init(views: ShellViewState) {
+        self.views = views
+        _model = ObservedObject(wrappedValue: views.search)
+        _ai = ObservedObject(wrappedValue: views.ai)
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -28,7 +40,10 @@ struct SearchView: View {
                     BPKeyboardView(onChar: { model.query += $0 },
                                    onBackspace: { if !model.query.isEmpty { model.query.removeLast() } },
                                    onClear: { model.query = "" },
-                                   focusRequest: keyboardFocus)
+                                   focusRequest: keyboardFocus,
+                                   // bp-restore remembers whatever held the ring last: back on the
+                                   // keyboard, a return to Search starts there, not on a result.
+                                   onHold: { held in if held { views.searchSpot = nil } })
                     HStack(spacing: BP.px(10)) {
                         // bp-phone-typing.tsx: on search, Options (here Play/Pause) opens it too.
                         Button { phoneOpen = true } label: { Label("Type on your phone", systemImage: "iphone") }
@@ -55,7 +70,17 @@ struct SearchView: View {
             // to the result that opened it. After ShellView's LB/RB default-focus reset (0.1 s).
             if !autofocused {
                 autofocused = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { keyboardFocus += 1 }
+                // use-bp-search: the chip filter is the page's own state (bp-view-state keeps nothing
+                // for Search), so a visit opens on All for the kept query.
+                model.filter = .all
+                if let spot = resumeSpot() {
+                    // use-bp-focus route restore: a remembered cell wins over the autofocus seed. The
+                    // results scroll to its row and the row to its cell before the shell resets focus.
+                    resume = spot
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { ShellFocus.shared.requestDefault() }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { keyboardFocus += 1 }
+                }
             }
         }
         .task { await model.loadSuggestions() }
@@ -63,6 +88,7 @@ struct SearchView: View {
         // model catalog, and a failed read there turned AI mode off under the viewer's AI picks.
         .task { if ai.state == nil { await ai.load() } }
         .onChange(of: model.query) { _, q in ai.queryChanged(q) }
+        .onChange(of: fieldFocused) { _, on in if on { views.searchSpot = nil } }
         .onPlayPauseCommand { phoneOpen.toggle() }
         .fullScreenCover(isPresented: $phoneOpen) {
             // search-overlay.tsx: Enter in AI mode asks the model straight away.
@@ -373,7 +399,48 @@ struct SearchView: View {
         return T("Nothing found for \"%@\"", q)
     }
 
+    /// bp-restore rememberBpPosition for Search: the result cell the ring is on, under this query.
+    private func note(_ row: String, _ m: Meta) {
+        views.searchSpot = ShellViewState.SearchSpot(query: model.query, row: row, cell: m.id)
+    }
+
+    /// The remembered cell when Search opens again, if its row still holds it under the same query
+    /// (idle, the Suggested row). A query changed elsewhere (the quick panel's Search) starts over.
+    private func resumeSpot() -> ShellViewState.SearchSpot? {
+        // In AI mode the AI section stands in for the rows.
+        guard !ai.aiMode, let spot = views.searchSpot, spot.query == model.query else { return nil }
+        let metas: [Meta]
+        if spot.row == "suggested" {
+            guard model.status == .idle else { return nil }
+            metas = model.suggestions
+        } else {
+            guard model.status != .idle, let row = model.rows.first(where: { $0.key == spot.row }) else { return nil }
+            metas = row.metas
+        }
+        return metas.contains(where: { $0.id == spot.cell }) ? spot : nil
+    }
+
+    /// The row's cell that takes the ring when the shell resets focus on a return (BPRowView restoreCell).
+    private func resumeCell(_ row: String) -> String? {
+        guard let resume, resume.row == row else { return nil }
+        return resume.cell
+    }
+
     private var results: some View {
+        ScrollViewReader { proxy in
+            resultsScroll
+                // The remembered row is brought into existence (the results are lazy) and into view
+                // before focus is asked to land on it; the row itself scrolls to the cell.
+                .onChange(of: resume) { _, spot in
+                    guard let spot else { return }
+                    proxy.scrollTo(spot.row, anchor: .center)
+                    // Once the ring has had its chance, the tile stops preferring default focus.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { resume = nil }
+                }
+        }
+    }
+
+    private var resultsScroll: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                 Color.clear.frame(height: BP.barHeight + BP.px(20))
@@ -423,7 +490,9 @@ struct SearchView: View {
                 .focusSection()
             }
             if !model.suggestions.isEmpty {
-                BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { _ in }, onSelect: { detail = $0 })
+                BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { note("suggested", $0) }, onSelect: { detail = $0 },
+                          restoreCell: resumeCell("suggested"))
+                    .id("suggested")
             } else if model.suggestionsLoaded {
                 // bp-search idle showEmpty (suggestions.length === 0): the right side was blank.
                 BPNote(text: "Start typing to search movies, series and everything your addons carry.").padding(.horizontal, BP.gutter)
@@ -446,12 +515,14 @@ struct SearchView: View {
         // use-bp-search slot order: Movies, Series, People, Anime, Manga, Live TV, Collections,
         // Franchise, one row per addon, then "Addons you could install".
         ForEach(mediaRows) { row in
-            BPRowView(row: row, onFocus: { _ in }, onSelect: { select($0) })
+            BPRowView(row: row, onFocus: { note(row.key, $0) }, onSelect: { select($0) }, restoreCell: resumeCell(row.key))
+                .id(row.key)
         }
         if model.shows(.livetv) && !model.channels.isEmpty { channelRow }
         if model.shows(.collections) && !model.collections.isEmpty { collectionRow }
         ForEach(laterRows) { row in
-            BPRowView(row: row, onFocus: { _ in }, onSelect: { select($0) })
+            BPRowView(row: row, onFocus: { note(row.key, $0) }, onSelect: { select($0) }, restoreCell: resumeCell(row.key))
+                .id(row.key)
         }
         if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
     }
@@ -472,7 +543,8 @@ struct SearchView: View {
     @ViewBuilder private var leadRows: some View {
         if model.promotePerson { peopleRow }
         ForEach(titleRows) { row in
-            BPRowView(row: row, onFocus: { _ in }, onSelect: { select($0) })
+            BPRowView(row: row, onFocus: { note(row.key, $0) }, onSelect: { select($0) }, restoreCell: resumeCell(row.key))
+                .id(row.key)
         }
         if !model.promotePerson { peopleRow }
     }

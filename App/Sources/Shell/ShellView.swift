@@ -20,6 +20,23 @@ extension EnvironmentValues {
     }
 }
 
+/// use-bp-focus toNav → focusBpTopBar(root, tab): a room's row asks its shell's top bar to take the
+/// ring, on the tab the row names (nil: the active tab). Each press is a new serial, so asking for
+/// the same tab twice still moves the ring.
+struct BPBarRequest: Equatable {
+    var serial: Int
+    var tab: Room?
+}
+
+private struct BPFocusTopBarKey: EnvironmentKey { static let defaultValue: ((Room?) -> Void)? = nil }
+extension EnvironmentValues {
+    /// Set by ShellView on its room; nil anywhere else, where a row has no bar to go to.
+    var bpFocusTopBar: ((Room?) -> Void)? {
+        get { self[BPFocusTopBarKey.self] }
+        set { self[BPFocusTopBarKey.self] = newValue }
+    }
+}
+
 struct ShellView: View {
     @EnvironmentObject private var app: AppModel
     @Namespace private var focusNS
@@ -33,12 +50,15 @@ struct ShellView: View {
     @ObservedObject private var links = DeepLinkQueue.shared
     /// The eBook tab, off until Settings turns it on (EBook/EBookModels.swift EBookGate).
     @AppStorage(EBookGate.key) private var ebookOn = false
+    /// A row's Left off its start (BPRowView onNavEdge): the bar puts the ring on a tab.
+    @State private var barRequest = BPBarRequest(serial: 0, tab: nil)
 
     var body: some View {
         ZStack(alignment: .top) {
             room
+                .environment(\.bpFocusTopBar, { tab in requestBar(tab) })
             // (review 12) Up from an in-place layer (Collections' overlay) reached the bar behind it.
-            TopBarView().disabled(app.roomLayer)
+            TopBarView(request: barRequest).disabled(app.roomLayer)
             VStack { Spacer(); HintBarView(actions: hints) }
         }
         // bp-shell.tsx fallback → popBigPicture: a tab is [home, tab], so Back from a tab lands on
@@ -117,11 +137,14 @@ struct ShellView: View {
         case .home, .movies, .shows, .anime:
             RoomView(room: app.room, source: app.browseSource).id(app.room)
         case .search:
-            SearchView()
+            // bp-search over lib/search-context: the query and results live in the app's store, so
+            // they survive a trip to another tab (AppModel.views).
+            SearchView(views: app.views)
         case .discover:
             DiscoverView()
         case .library:
-            LibraryView()
+            // bp-view-state libraryTab: the tab picked last is where Library opens again.
+            LibraryView(views: app.views)
         case .calendar:
             CalendarView()
         case .live:
@@ -138,6 +161,16 @@ struct ShellView: View {
             EBookView()
         default: RoomPlaceholderView(room: app.room)
         }
+    }
+
+    /// A room's row ran off its start (BPRowView onNavEdge): the bar takes the ring.
+    private func requestBar(_ tab: Room?) {
+        // focusBpTopBar: "a dialog owns navigation while it is up; jumping behind it would strand
+        // it". A page over the room (a service page's rows reach here through the environment) or
+        // an in-place layer keeps the ring.
+        let clear: Bool = inBrowseLayer ? PiPBrowse.shared.noCoverPresented : (!PlaybackState.shared.active && Self.noCoverPresented)
+        guard clear, !app.roomLayer else { return }
+        barRequest = BPBarRequest(serial: barRequest.serial + 1, tab: tab)
     }
 
     private func leaveHiddenRoom() {
@@ -323,6 +356,8 @@ struct TopBarView: View {
     @ObservedObject private var parental = ParentalGate.shared
     @AppStorage(EBookGate.key) private var ebookOn = false
     @FocusState private var focusedTab: Room?
+    /// ShellView's latest "ring to the bar" request (a row's Left off its start).
+    var request = BPBarRequest(serial: 0, tab: nil)
 
     var body: some View {
         HStack(spacing: BP.px(9)) {
@@ -369,6 +404,7 @@ struct TopBarView: View {
             AccountMenuButton().environmentObject(app)
             Button { app.room = .settings } label: { Image(systemName: Room.settings.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
+                .focused($focusedTab, equals: .settings)
                 .accessibilityIdentifier("tab-settings")
                 .accessibilityLabel("Settings")
                 .bpSelected(app.room == .settings)
@@ -385,10 +421,28 @@ struct TopBarView: View {
         .onChange(of: focusedTab) { old, _ in
             if old != nil { ShellFocus.shared.barMovedAt = Date() }
         }
+        .onChange(of: request) { _, r in focusBar(r.tab) }
         .background(
             LinearGradient(colors: [BP.void_.opacity(0.95), BP.void_.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: BP.barHeight * 1.9), alignment: .top
         )
+    }
+
+    /// bp-focus-core focusBpTopBar / bpChromeOrder: the tab the row named when it is on the bar,
+    /// else the active tab (the cog for Settings), else the first tab.
+    private func focusBar(_ wanted: Room?) {
+        let order: [Room] = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)
+        let onBar: (Room) -> Bool = { r in r == .settings || order.contains(r) }
+        let target: Room?
+        if let wanted, onBar(wanted) {
+            target = wanted
+        } else if onBar(app.room) {
+            target = app.room
+        } else {
+            target = order.first
+        }
+        guard let target else { return }
+        focusedTab = target
     }
 
     /// context-menu.tsx nav items: "Hide this tab", "Show all tabs", "Reset layout".

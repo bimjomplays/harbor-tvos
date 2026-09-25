@@ -27,6 +27,11 @@ final class DiscoverModel: ObservableObject {
     @Published private(set) var animeAwards: [AnimeAwardTile] = []
     /// voyage-banner.tsx: the voyage in progress (or none) and the streak (engine/voyage.ts).
     @Published private(set) var voyage: VoyageModel.Snapshot?
+    /// bp-collections-band.tsx (useBpCuratedRow(30)): TMDB's curated franchises as 16:9 cards, and
+    /// whether the read has answered (until then the band holds its place with placeholders).
+    @Published private(set) var collections: [Meta] = []
+    @Published private(set) var collectionsSettled = false
+    private var collectionsLoading = false
     struct AnimeAwardTile: Decodable, Identifiable { var id: String; var name: String; var shortName: String; var wins: Int }
 
     struct Awards: Decodable {
@@ -62,6 +67,23 @@ final class DiscoverModel: ObservableObject {
         awards = try? await HarborEngine.shared.call("discoverRoom.awards", [])
         animeAwards = (try? await HarborEngine.shared.call("discoverRoom.animeAwardSources", [])) ?? []
         people = (try? await HarborEngine.shared.call("discoverRoom.people", [24])) ?? []
+    }
+
+    /// bp-discover.tsx showCollections = Boolean(settings.tmdbKey): the band is only offered with a key.
+    var showsCollections: Bool { !SettingsBridge.shared.slice.tmdbKey.isEmpty }
+
+    /// bp-collections-band.tsx over useBpCuratedRow(30): the first 30 curated franchises, resolved by
+    /// the engine (collectionsRoom.curatedRow with `home` false: the synced Home layout does not hide
+    /// this band). Runs beside the rest of Discover's reads, once per visit that has not answered.
+    func loadCollections() async {
+        guard showsCollections, !collectionsSettled, !collectionsLoading else { return }
+        collectionsLoading = true
+        defer { collectionsLoading = false }
+        let p = profile
+        let cards: LossyArray<CollectionsModel.Card>? = try? await HarborEngine.shared.call("collectionsRoom.curatedRow", [p.id, p.linked, 30, false])
+        let list: [CollectionsModel.Card] = cards?.wrappedValue ?? []
+        collections = list.map { EngineBrowseSource.collectionMeta($0) }
+        collectionsSettled = true
     }
 
     /// Genre tiles fetch their three backdrops only once the Genres band has focus (upstream defers the same way).

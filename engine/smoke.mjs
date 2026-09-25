@@ -2931,6 +2931,24 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("(profiles device pass) launchPicker: a Start as default opens without asking", at([["harbor.profiles.v1", roster("p_a", 3)], ["harbor.settings", JSON.stringify({ defaultProfileId: "p_c" })]]), { open: false, defaultId: "p_c" });
   r.eq("(profiles device pass) launchPicker: a default with a PIN is ignored", at([["harbor.profiles.v1", roster("p_a", 3)], ["harbor.settings", JSON.stringify({ defaultProfileId: "p_b" })]]), { open: true, defaultId: null });
   r.eq("(profiles device pass) launchPicker: a default applies with no active profile", at([["harbor.profiles.v1", roster(null, 3)], ["harbor.settings", JSON.stringify({ defaultProfileId: "p_c" })]]), { open: false, defaultId: "p_c" });
+  // lib/profiles.tsx window focus (profiles.tsx:569-580): Who's watching again on return.
+  const back = (entries) => {
+    const rec = loadEngine({ storage: new Map(entries) });
+    const out = rec.engine.profilesRoom.returnPicker();
+    rec.dispose();
+    return out;
+  };
+  const ago = (ms) => ["harbor.profile.lastSelectAt", String(Date.now() - ms)];
+  const every = (v) => ["harbor.settings", JSON.stringify({ profilePromptInterval: v })];
+  r.eq("returnPicker: 15m, picked 20 minutes ago asks again", back([["harbor.profiles.v1", roster("p_a")], every("15m"), ago(20 * 60000)]), true);
+  r.eq("returnPicker: 15m, picked 5 minutes ago does not", back([["harbor.profiles.v1", roster("p_a")], every("15m"), ago(5 * 60000)]), false);
+  r.eq("returnPicker: 30m, picked 20 minutes ago does not", back([["harbor.profiles.v1", roster("p_a")], every("30m"), ago(20 * 60000)]), false);
+  r.eq("returnPicker: 30m, picked 40 minutes ago asks again", back([["harbor.profiles.v1", roster("p_a")], every("30m"), ago(40 * 60000)]), true);
+  r.eq("returnPicker: the default (launch) never asks on return", back([["harbor.profiles.v1", roster("p_a")], ago(3600000)]), false);
+  r.eq("returnPicker: never never asks", back([["harbor.profiles.v1", roster("p_a")], every("never"), ago(3600000)]), false);
+  r.eq("returnPicker: a one-profile household is never asked", back([["harbor.profiles.v1", roster("p_a", 1)], every("15m"), ago(3600000)]), false);
+  r.eq("returnPicker: no active profile is not asked here", back([["harbor.profiles.v1", roster(null)], every("15m"), ago(3600000)]), false);
+  r.eq("returnPicker: the shared settings blob wins over the mirror", back([["harbor.profiles.v1", roster("p_a")], ["harbor.settings.shared", JSON.stringify({ profilePromptInterval: "15m" })], every("never"), ago(3600000)]), true);
 }
 
 // ------------------------------------------------------------------ settings room
@@ -3348,6 +3366,13 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
 // -------------------------------- Home / Discover / Anime bands (HM-1, HM-4, HM-5, DS-3)
 {
   r.eq("collectionsRoom.curatedRow is empty without a TMDB key (bp-home showCollections)", await engine.collectionsRoom.curatedRow("default", true, 30), []);
+  r.eq("collectionsRoom.curatedRow for Discover is empty without a TMDB key too (bp-discover showCollections)", await engine.collectionsRoom.curatedRow("default", true, 30, false), []);
+  const gate = engine.collectionsRoom.curatedGate;
+  const hidden = { tmdbKey: "k", homeRows: { hidden: ["collections"] } };
+  r.eq("curatedGate: the Home row hides with the synced Home layout", gate(hidden, true), null);
+  r.eq("curatedGate: the Discover band ignores the Home layout (bp-collections-band gates on the key alone)", gate(hidden, false), "k");
+  r.eq("curatedGate: a malformed synced hidden shows every band", gate({ tmdbKey: "k", homeRows: { hidden: "collections" } }, true), "k");
+  r.eq("curatedGate: no key, no band anywhere", [gate({ tmdbKey: "" }, true), gate({}, false)], [null, null]);
   r.eq("collectionsRoom.tmdbCard is null without a TMDB key", await engine.collectionsRoom.tmdbCard("default", true, 10, "Star Wars Collection"), null);
   r.eq("addonsRoom.bandPosters for an unknown base is empty (below the 14-poster mosaic floor)", await engine.addonsRoom.bandPosters("https://nowhere.invalid"), []);
   const srcs = engine.discoverRoom.animeAwardSources();

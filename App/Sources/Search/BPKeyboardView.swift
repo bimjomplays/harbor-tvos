@@ -8,6 +8,8 @@ struct BPKeyboardView: View {
     /// (focus pass) Bumped by the page to put the ring back on the keyboard (bp-search moves it to
     /// the field when a recent query is picked or the list cleared); it lands on the first key.
     var focusRequest = 0
+    /// The keyboard gained (true) or lost (false) the ring.
+    var onHold: ((Bool) -> Void)? = nil
     @State private var symbols = false
     @FocusState private var focusedKey: String?
 
@@ -43,6 +45,7 @@ struct BPKeyboardView: View {
             }
         }
         .focusSection()
+        .onChange(of: focusedKey != nil) { _, held in onHold?(held) }
         .onChange(of: focusRequest) { _, _ in
             let first = (symbols ? Self.symbolRows : Self.letters).first?.first
             DispatchQueue.main.async { focusedKey = first }

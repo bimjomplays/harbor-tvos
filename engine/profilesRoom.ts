@@ -126,6 +126,13 @@ function isLocked(p: LaunchProfile): boolean {
   return typeof p.passwordHash === "string" && p.passwordHash.length > 0;
 }
 
+function launchProfiles(blob: Record<string, unknown>): LaunchProfile[] {
+  const list: unknown[] = Array.isArray(blob.profiles) ? blob.profiles : [];
+  return list.filter(
+    (p): p is LaunchProfile => !!p && typeof p === "object" && typeof (p as { id?: unknown }).id === "string",
+  );
+}
+
 /**
  * Once per process, at launch: `defaultId` is the "Start as" profile to open (never one with a
  * PIN; launchDefault), and `open` says whether Who's watching comes up (pickerOpen's initial
@@ -134,10 +141,7 @@ function isLocked(p: LaunchProfile): boolean {
  */
 export function launchPicker(): { open: boolean; defaultId: string | null } {
   const blob = readJSON(PROFILES_KEY);
-  const list: unknown[] = Array.isArray(blob.profiles) ? blob.profiles : [];
-  const profiles = list.filter(
-    (p): p is LaunchProfile => !!p && typeof p === "object" && typeof (p as { id?: unknown }).id === "string",
-  );
+  const profiles = launchProfiles(blob);
   const settings = readLaunchSettings();
   const wanted = typeof settings.defaultProfileId === "string" ? settings.defaultProfileId : "";
   const def = wanted ? profiles.find((p) => p.id === wanted && !isLocked(p)) : undefined;
@@ -149,4 +153,19 @@ export function launchPicker(): { open: boolean; defaultId: string | null } {
   if (interval === "never") return { open: false, defaultId: null };
   if (interval === "launch") return { open: true, defaultId: null };
   return { open: Date.now() - lastSelectAt() >= intervalMinutes(interval) * 60000, defaultId: null };
+}
+
+/**
+ * lib/profiles.tsx window "focus" listener (profiles.tsx:569-580): Harbor coming back to the front
+ * asks Who's watching again once profilePromptInterval ("15m" / "30m") has passed since the last
+ * pick. "launch" and "never" (and the legacy skipProfileScreen) never ask on return, nor does a
+ * one-profile household or one with no active profile. No "Start as" check: upstream's focus
+ * prompt has none either.
+ */
+export function returnPicker(): boolean {
+  const blob = readJSON(PROFILES_KEY);
+  const mins = intervalMinutes(promptInterval(readLaunchSettings()));
+  const activeId = typeof blob.activeId === "string" ? blob.activeId : null;
+  if (mins <= 0 || activeId == null || launchProfiles(blob).length <= 1) return false;
+  return Date.now() - lastSelectAt() >= mins * 60000;
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Discover room (bp-discover.tsx): Discovery Queue band → Genres → "Picked for you" rails.
-/// Awards, Collections and Top People bands arrive with their features.
+/// Discover room (bp-discover.tsx): Discovery Queue, Awards, Genres, Voyages, Collections and Top
+/// People bands, then the "Picked for you" rails.
 struct DiscoverView: View {
     @EnvironmentObject private var app: AppModel
     @StateObject private var model = DiscoverModel()
@@ -13,7 +13,9 @@ struct DiscoverView: View {
     @State private var genrePage: BrowseRow?
     @State private var queueOpen = false
     @State private var voyageOpen = false
-    /// The lead band holding the ring ("queue", "awards", "genres", "voyage", "people").
+    /// bp-collections-band.tsx: a curated collection card opens its page (tmdb-collection).
+    @State private var collection: HomeCollectionView.Target?
+    /// The lead band holding the ring ("queue", "awards", "genres", "voyage", "collections", "people").
     @State private var leadHeld: String?
     /// (open-items sweep) A Try again that worked hands the ring to the Discovery Queue band (the
     /// button under it went away and the ring fell to the tab bar).
@@ -55,7 +57,9 @@ struct DiscoverView: View {
                            // off Discover. A locked tab is off the bar (bp-top-bar visibleTabs), and its
                            // way in from a rail goes with it.
                            seeAllShown: { row in !parental.hides(Self.isSeries(row) ? Room.shows : Room.movies) },
-                           topInset: BP.barHeight + BP.px(10)) {
+                           topInset: BP.barHeight + BP.px(10),
+                           // bp-discover.tsx lead.tab: Left at a rail's start lands on All shows / All movies' tab.
+                           rowTab: { row in Self.isSeries(row) ? Room.shows : Room.movies }) {
                     // (browse open-items pass) Each lead section parks like a rail row when it takes the
                     // ring (use-bp-rail; the bands are rail rows in bp-discover). Up from a parked rail
                     // row left the scroll to tvOS, which only brought the focused tile into view: the
@@ -86,6 +90,18 @@ struct DiscoverView: View {
                         VoyageBannerView(snapshot: model.voyage, pool: pool, onOpen: { voyageOpen = true }, onHold: { hold("voyage", $0) })
                             .modifier(BPRailLeadMark(key: Self.leadKey("voyage"), held: leadHeld == "voyage"))
                     }
+                    // bp-discover.tsx:240-246: the Collections band follows Genres (only with a TMDB
+                    // key, showCollections). Until the curated row answers it holds its place with
+                    // placeholders (bp-collections-band skeletons), so nothing below it jumps; one
+                    // that answered empty goes away (settled && entries.length === 0).
+                    if model.showsCollections && !(model.collectionsSettled && model.collections.isEmpty) {
+                        section("collections", "Discover", "Collections", "Sagas and series, gathered in the order they were meant to be watched.") {
+                            CollectionsBandView(cards: model.collections, settled: model.collectionsSettled,
+                                                onOpen: { openCollection($0) },
+                                                onAll: collectionsLink,
+                                                onHold: { hold("collections", $0) })
+                        }
+                    }
                     // (discover/onboarding pass 2) bp-discover.tsx entries: queue, awards, genres,
                     // collections, people, then the rails. Top People sat second, and it is the last
                     // lead to arrive (a TMDB read behind the awards install), so it dropped in above
@@ -100,7 +116,10 @@ struct DiscoverView: View {
             }
         }
         .task { await model.load() }
+        // Beside the rest of Discover's reads: the curated row can take a few seconds to resolve.
+        .task { await model.loadCollections() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $collection) { t in HomeCollectionView(target: t) { collection = nil } }
         .fullScreenCover(item: $awardDetail) { a in AwardDetailView(summary: a) }
         .fullScreenCover(item: $animeAward) { a in AnimeAwardView(sources: model.animeAwards, initial: a.id) }
         .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
@@ -110,6 +129,21 @@ struct DiscoverView: View {
 
     /// bp-discover.tsx `series = rail.metas[0]?.type === "series"`.
     private static func isSeries(_ row: BrowseRow) -> Bool { row.metas.first?.type == "series" }
+
+    /// bp-collections-band onOpen: a TMDB entry opens its collection page (as Home's row does).
+    private func openCollection(_ m: Meta) {
+        let prefix = "collection:tmdb:"
+        guard m.id.hasPrefix(prefix) else { return }
+        BPSound.shared.open()
+        collection = HomeCollectionView.Target(ref: String(m.id.dropFirst(prefix.count)), name: m.name, image: m.background)
+    }
+
+    /// bp-collections-band BpLeadTile "View all" → pushBigPicture({ kind: "collections" }). A
+    /// Collections tab locked by the profile's PIN is off the bar, and its way in goes with it.
+    private var collectionsLink: (() -> Void)? {
+        guard !parental.hides(Room.collections) else { return nil }
+        return { app.room = .collections }
+    }
 
     /// A lead section's park key; never the same as a rail row's key.
     private static func leadKey(_ key: String) -> String { "discover-lead:" + key }
@@ -131,6 +165,71 @@ struct DiscoverView: View {
             content()
         }
         .modifier(BPRailLeadMark(key: Self.leadKey(key), held: leadHeld == key))
+    }
+}
+
+/// bp-collections-band.tsx: the curated TMDB collections as 16:9 cards (bp-collection-card), six
+/// quiet placeholders while the row resolves, and last the "View all" / "Collections" lead tile
+/// (bp-lead-tile: the band's way in closes the track).
+struct CollectionsBandView: View {
+    let cards: [Meta]
+    let settled: Bool
+    let onOpen: (Meta) -> Void
+    /// The lead tile's destination (the Collections tab); nil hides the tile.
+    var onAll: (() -> Void)? = nil
+    /// The band gained (true) or lost (false) the ring (the rail parks it).
+    var onHold: ((Bool) -> Void)? = nil
+    @FocusState private var focusedCard: String?
+    private static let placeholders = 6
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: BP.trackGap) {
+                ForEach(Array(cards.uniquedById().enumerated()), id: \.element.id) { i, m in
+                    Button { onOpen(m) } label: {
+                        BPTileView(meta: m, shape: .collection, focused: focusedCard == m.id)
+                    }
+                    .buttonStyle(BPTileStyle())
+                    .focused($focusedCard, equals: m.id)
+                    .accessibilityIdentifier("collection-card-\(i)")
+                    .zIndex(focusedCard == m.id ? 1 : 0)
+                }
+                if !settled && cards.isEmpty {
+                    // Not focusable: nothing to act on yet.
+                    ForEach(0..<Self.placeholders, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)
+                            .fill(BP.panel)
+                            .frame(width: BPTileView.collectionSize.width, height: BPTileView.collectionSize.height)
+                            .accessibilityHidden(true)
+                    }
+                }
+                if let onAll {
+                    Button {
+                        BPSound.shared.click()
+                        onAll()
+                    } label: {
+                        VStack(alignment: .leading, spacing: BP.px(2)) {
+                            Spacer(minLength: 0)
+                            Text(T("View all")).font(BP.display(17)).foregroundStyle(BP.ink).lineLimit(2)
+                            Text(T("Collections")).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.5)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                        }
+                        .padding(BP.px(14))
+                        .frame(width: BPTileView.collectionSize.width, height: BPTileView.collectionSize.height, alignment: .topLeading)
+                        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+                        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+                    }
+                    .buttonStyle(BPTileStyle(radius: BP.rMD))
+                    .focused($focusedCard, equals: "lead:collections")
+                    .accessibilityIdentifier("collections-view-all")
+                    // bp-lead-tile aria-label `${label}, ${action}`.
+                    .accessibilityLabel(Text(verbatim: "\(T("View all")), \(T("Collections"))"))
+                }
+            }
+            .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+        }
+        .scrollClipDisabled()
+        .focusSection()
+        .onChange(of: focusedCard != nil) { _, held in onHold?(held) }
     }
 }
 

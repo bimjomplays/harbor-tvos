@@ -88,7 +88,8 @@ struct RoomView: View {
                            }, topInset: heroHeight,
                            restoreRoute: model.restoreKey, entry: model.entry,
                            onHold: { key, held in model.hold(key, held) },
-                           leadHeld: cwHeld || animeActionsHeld || liveHot != nil) {
+                           leadHeld: cwHeld || animeActionsHeld || liveHot != nil,
+                           rowTab: { row in Self.navTab(for: row, home: model.isHomePage) }) {
                     if model.room == .anime, let lead = model.heroLead {
                         animeActions(lead: lead)
                     }
@@ -285,6 +286,19 @@ struct RoomView: View {
             // (review 6) The viewer went along the bar meanwhile (use-bp-focus interactedRef).
             if let moved = ShellFocus.shared.barMovedAt, moved > since { return }
             ShellFocus.shared.requestDefault()
+        }
+    }
+
+    /// bp-home.tsx: every Home row names its tab (data-bp-row-tab), where Left at its start puts the
+    /// ring: a catalog row its type's tab (catalogLead), Your streaming Settings, Collections the
+    /// Collections tab. Addon rows and the other rooms' rows name none (the active tab).
+    static func navTab(for row: BrowseRow, home: Bool) -> Room? {
+        guard home else { return nil }
+        switch row.key {
+        case "collections": return .collections
+        case "services": return .settings
+        case "addons": return nil
+        default: return row.metas.first?.type == "series" ? .shows : .movies
         }
     }
 
