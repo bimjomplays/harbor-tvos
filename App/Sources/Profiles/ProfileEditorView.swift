@@ -25,6 +25,10 @@ struct ProfileEditorView: View {
     /// (profiles bug pass) A second Select on Create while the lock value was fetched made a second profile.
     @State private var saving = false
     @State private var deleting = false
+    /// (profiles focus pass) "Enter PIN to change locks" and the lock tiles: the ring comes back
+    /// from the PIN pad to the button that opened it (or, once unlocked, to the first tile). The pad
+    /// left with the ring on it and tvOS put it on the Name field at the top of the form.
+    @FocusState private var lockFocus: String?
 
     var body: some View {
         ZStack {
@@ -103,6 +107,7 @@ struct ProfileEditorView: View {
                 PinPadView(profile: e) { ok in
                     if ok { profiles.unlockParental(e.id) }
                     pinToUnlock = false
+                    returnRingFromPin()
                 }
                 .transition(.opacity)
             }
@@ -175,6 +180,7 @@ struct ProfileEditorView: View {
             if needsUnlock {
                 HStack(spacing: BP.px(12)) {
                     Button("Enter PIN to change locks") { pinToUnlock = true }.buttonStyle(BPActionStyle(primary: true))
+                        .focused($lockFocus, equals: "unlock")
                     BPNote(text: T("%lld tabs require this profile's PIN.", lockedCount))
                 }
             } else {
@@ -190,6 +196,7 @@ struct ProfileEditorView: View {
                             .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(BPActionStyle(primary: on))
+                        .focused($lockFocus, equals: "lock:" + tab.key)
                         .accessibilityIdentifier("lock-tab-\(tab.key)")
                         // The padlock: a locked tab reads as selected.
                         .bpSelected(on)
@@ -199,6 +206,23 @@ struct ProfileEditorView: View {
             }
         }
         .focusSection()
+    }
+
+    /// (profiles focus pass) After the PIN pad: the unlock button when it is still there (Back, a
+    /// miss), else the first lock tile (the gate's refresh after the unlock takes the button away a
+    /// moment later). Set again once the pad's fade has ended, as Who's watching does for its tiles.
+    private func returnRingFromPin() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { placeRingAfterPin() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { placeRingAfterPin() }
+    }
+
+    private func placeRingAfterPin() {
+        guard !pinToUnlock else { return }
+        if needsUnlock {
+            lockFocus = "unlock"
+        } else if let first = parental.lockable.first {
+            lockFocus = "lock:" + first.key
+        }
     }
 
     /// editor-view.tsx save: updateProfile (edit) or createProfile + patch { passwordHash, lockedTabs }.

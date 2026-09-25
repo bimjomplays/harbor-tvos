@@ -3013,6 +3013,10 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("collectionsRoom.tvdb reports an unreachable TVDB", t3.failed && t3.cards.length === 0, JSON.stringify(t3));
   r.ok("collectionsRoom.tvdbDetail of an unknown list fails softly", (await E.collectionsRoom.tvdbDetail(999, "Fallback")).failed === true);
   tvdbDown = false;
+  // bp-collection-steps stepCommunity: an unreachable community feed is reported (communityFailed),
+  // so the room says "Community collections are unavailable right now." rather than "Nobody has shared…".
+  const allDown = await E.collectionsRoom.all();
+  r.ok("collectionsRoom.all reports an unreachable community feed", allDown.communityFailed === true && allDown.community.length === 0 && Array.isArray(allDown.mine), JSON.stringify({ ...allDown, mine: allDown.mine.length }));
 
   // LB-3 / DS-4: Letterboxd public mode.
   r.eq("letterboxd.status off by default", E.letterboxd.status("default", true).active, false);
@@ -3844,6 +3848,8 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   // (social pass) community-hub SaveButton isOwn: the member's own shared collection offers no Save.
   const comm = await rec.engine.collectionsRoom.community();
   r.ok("collectionsRoom.community marks the signed-in member's own collections", comm.length === 2 && comm[0].own === true && comm[1].own === false && comm[1].byline === "Mate", JSON.stringify(comm.map((c) => [c.handle, c.own])));
+  const allUp = await rec.engine.collectionsRoom.all();
+  r.ok("collectionsRoom.all with the community feed up is not failed", allUp.communityFailed === false && allUp.community.length === 2, JSON.stringify({ failed: allUp.communityFailed, n: allUp.community.length }));
   r.ok("collectionsRoom.saveCommunity refuses the member's own collection and saves another's once",
     rec.engine.collectionsRoom.saveCommunity("Skipper", "c1") === null && rec.engine.collectionsRoom.saveCommunity("mate", "c2")?.name === "Mate's picks" && rec.engine.collectionsRoom.saveCommunity("mate", "c2")?.ref === rec.engine.collectionsRoom.mine()[0]?.ref && rec.engine.collectionsRoom.mine().length === 1,
     JSON.stringify(rec.engine.collectionsRoom.mine().map((c) => c.name)));
