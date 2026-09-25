@@ -316,11 +316,22 @@ struct PeopleBandView: View {
 struct AwardDetailView: View {
     let summary: DiscoverModel.Awards.Summary
     @State private var detail: Detail?
+    /// The engine answered (or failed): a failed read says so instead of spinning forever.
+    @State private var loaded = false
     @Environment(\.dismiss) private var dismiss
 
     struct Detail: Decodable {
         struct Category: Decodable { var id: String?; var label: String?; var name: String? }
-        struct Entry: Decodable { var year: Int; var title: String?; var recipients: [String]? }
+        /// awards-history.ts CategoryWinner: the film or show is `workTitle` (there is no `title`,
+        /// so the winners list showed recipients alone, and nothing for a title with none).
+        struct Entry: Decodable {
+            var year: Int; var workTitle: String?; var title: String?; var recipients: [String]?
+            /// bp-award.tsx winner tile: the work, then the recipients.
+            var line: String {
+                let parts: [String?] = [workTitle ?? title, recipients?.joined(separator: ", ")]
+                return parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
+            }
+        }
         struct Group: Decodable, Identifiable { var category: Category; var entries: [Entry]; var id: String { category.id ?? category.label ?? category.name ?? UUID().uuidString } }
         var title: String
         var wins: Int
@@ -345,7 +356,7 @@ struct AwardDetailView: View {
                                 ForEach(Array(g.entries.prefix(12).enumerated()), id: \.offset) { _, e in
                                     HStack(alignment: .top, spacing: BP.px(10)) {
                                         Text(String(e.year)).font(BP.sans(13, .semibold)).foregroundStyle(BP.accent).frame(width: BP.px(46), alignment: .leading)
-                                        Text([e.title, e.recipients?.joined(separator: ", ")].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                                        Text(e.line).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(2)
                                     }
                                 }
                             }
@@ -354,6 +365,8 @@ struct AwardDetailView: View {
                             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
                             .focusable()
                         }
+                    } else if loaded {
+                        BPNote(text: "Couldn't load this award right now.")
                     } else {
                         ProgressView().tint(BP.inkMuted)
                     }
@@ -363,6 +376,10 @@ struct AwardDetailView: View {
             }
         }
         .ignoresSafeArea()
-        .task { detail = try? await HarborEngine.shared.call("discoverRoom.awardDetail", [summary.type]) }
+        .task {
+            guard detail == nil else { return }
+            detail = try? await HarborEngine.shared.call("discoverRoom.awardDetail", [summary.type])
+            loaded = true
+        }
     }
 }

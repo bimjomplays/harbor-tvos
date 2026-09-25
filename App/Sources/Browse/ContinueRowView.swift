@@ -5,6 +5,9 @@ struct ContinueRowView: View {
     let items: [ContinueItem]
     let onFocus: (ContinueItem) -> Void
     let onSelect: (ContinueItem) -> Void
+    /// bp-quick-panel on a Continue Watching card (registerBpTarget cwItem): hold Select. It is the
+    /// only way to reach "Remove from Continue watching" on a card.
+    var onQuick: ((ContinueItem) -> Void)? = nil
     /// The row gained (true) or lost (false) the focused card.
     var onHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedId: String?
@@ -21,6 +24,7 @@ struct ContinueRowView: View {
                             .buttonStyle(BPTileStyle())
                             .focused($focusedId, equals: item.id)
                             .accessibilityIdentifier("cw-\(item.id)")
+                            .onLongPressGesture(minimumDuration: 0.6) { onQuick?(item) }
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))

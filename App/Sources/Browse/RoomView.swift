@@ -7,6 +7,12 @@ struct RoomView: View {
     @State private var seeAll: BrowseRow?
     @State private var detail: Meta?
     @State private var quick: Meta?
+    /// bp-quick-panel `cwItem`: the panel was opened on a Continue Watching card.
+    @State private var quickFromCw = false
+    /// bp-cw-row onPress → requestBpPlay(metaId, resumeAt): a card that can name what it would
+    /// play opens the detail page playing it (the episode named, so no premiere fallback).
+    @State private var cwPlay: CwPlay?
+    struct CwPlay: Identifiable { var meta: Meta; var hint: (season: Int, episode: Int)?; var id: String { meta.id } }
     @State private var addonPage: AddonTarget?
     @State private var play: Meta?
     struct AddonTarget: Identifiable { var base: String; var name: String; var logo: String?; var id: String { base } }
@@ -70,7 +76,7 @@ struct RoomView: View {
                            onQuick: { m in
                                // bp-quick-panel acts on a title; band tiles (services, addons, collections) have none.
                                guard !["service", "addon", "collection"].contains(m.type) else { return }
-                               BPSound.shared.open(); quick = m
+                               BPSound.shared.open(); quickFromCw = false; quick = m
                            }, topInset: heroHeight,
                            restoreRoute: model.restoreKey, entry: model.entry,
                            onHold: { key, held in model.hold(key, held) }) {
@@ -82,7 +88,8 @@ struct RoomView: View {
                     }
                     if !model.continueWatching.isEmpty {
                         ContinueRowView(items: model.continueWatching,
-                                        onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { detail = Meta(continue: $0) },
+                                        onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { openContinue($0) },
+                                        onQuick: { item in BPSound.shared.open(); quickFromCw = true; quick = Meta(continue: item) },
                                         onHold: { model.hold("cw", $0) })
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
@@ -129,11 +136,23 @@ struct RoomView: View {
             CatalogPageView(room: model.room, row: row)
         }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
-        .fullScreenCover(item: $quick) { m in QuickPanelView(meta: m) }
+        .fullScreenCover(item: $quick) { m in QuickPanelView(meta: m, fromContinueWatching: quickFromCw) }
         .fullScreenCover(item: $service) { t in ServicePageView(service: t.id, name: t.name) }
         .fullScreenCover(item: $addonPage) { t in AddonPageView(base: t.base, name: t.name, logo: t.logo) }
         .fullScreenCover(item: $play) { m in DetailView(meta: m, autoPlay: true) }
+        .fullScreenCover(item: $cwPlay) { c in DetailView(meta: c.meta, autoPlay: true, episodeHint: c.hint) }
         .fullScreenCover(item: $collection) { t in HomeCollectionView(target: t) { collection = nil } }
+    }
+
+    /// bp-cw-row.tsx BpCwCard onPress: resume in one press when the card can name what it would
+    /// play (bpCwResume), else the detail page, which takes its time resolving the right episode.
+    private func openContinue(_ item: ContinueItem) {
+        let meta = Meta(continue: item)
+        switch item.press {
+        case .detail: detail = meta
+        case .resumeMovie: cwPlay = CwPlay(meta: meta, hint: nil)
+        case .resumeEpisode(let s, let e): cwPlay = CwPlay(meta: meta, hint: (season: s, episode: e))
+        }
     }
 
     /// A rail tile took focus. On Home, a tile of a band-owned row (services, addons, collections)
@@ -167,7 +186,7 @@ struct RoomView: View {
 
     /// bp-live-hero `mountVideo`: never while this row's player or any page over Home is up.
     private var previewSuspended: Bool {
-        livePlaying || detail != nil || quick != nil || seeAll != nil || service != nil || addonPage != nil || play != nil
+        livePlaying || detail != nil || quick != nil || seeAll != nil || service != nil || addonPage != nil || play != nil || cwPlay != nil
             || collection != nil || app.room != .home
     }
 

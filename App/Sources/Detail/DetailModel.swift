@@ -360,6 +360,8 @@ final class DetailModel: ObservableObject {
         // The favourite check also answers to the IMDb id TMDB just resolved.
         if !meta.id.hasPrefix("tt"), extras?.imdbId != nil {
             await loadHero()
+            // use-bp-library-item: the library entry may sit under that IMDb id (resume, watchlist).
+            await loadResume()
             // Trakt history is keyed by the IMDb id, which a TMDB-sourced series only has now (review 27).
             if isSeries {
                 let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.load", [authKey, meta, imdbId])
@@ -478,6 +480,36 @@ final class DetailModel: ObservableObject {
         await CardMarksStore.shared.refreshWatchlist()
     }
 
+    /// The resume point whose season the strip was last moved to. The page reloads every time a
+    /// cover over it closes (a trailer, a dialog, the cast page), and re-applying the same point
+    /// each time threw away the season the viewer had picked.
+    private var resumeSeasonApplied: String?
+
+    /// The strip opens on the resume point's season once per resume point (use-bp-episode-strip
+    /// defaultSeason follows resumeAt only while it has progress; the viewer's pick wins after).
+    private func applyResumeSeason() {
+        guard isSeries, let r = resume, r.positionMs > 0, let s = r.season, seasons.contains(s) else { return }
+        let key = "\(s):\(r.episode ?? 0)"
+        guard key != resumeSeasonApplied else { return }
+        resumeSeasonApplied = key
+        season = s
+    }
+
+    /// use-bp-library-item.ts: the ids the Stremio library entry may sit under, in upstream's order
+    /// (a tt id, the IMDb id TMDB resolved, then a cloud-writable non-tt id). A tmdb:… page whose
+    /// title the viewer watched under its tt id found nothing (no Resume, no "In Watchlist").
+    private var libraryCandidates: [String] {
+        guard !meta.id.hasPrefix("simkl:") else { return [] }
+        var out: [String] = []
+        if meta.id.hasPrefix("tt") { out.append(meta.id) }
+        if let i = imdbId, i.hasPrefix("tt"), !out.contains(i) { out.append(i) }
+        let cloudOk = ["kitsu:", "mal:", "anilist:", "anidb:", "tmdb:"].contains { meta.id.hasPrefix($0) }
+        if !meta.id.hasPrefix("tt"), cloudOk { out.append(meta.id) }
+        // Any other id last: "Add to Watchlist" (stremio.saveBookmark) files the page under it.
+        if !out.contains(meta.id) { out.append(meta.id) }
+        return out
+    }
+
     /// Cloud library entry first (Stremio), else the local resume store, like bpResumeMark.
     private func loadResume() async {
         struct Item: Decodable {
@@ -486,24 +518,42 @@ final class DetailModel: ObservableObject {
             var removed: Bool?
         }
         canWatchlist = authKey != nil
-        if let authKey,
-           let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, meta.id]) {
-            inWatchlist = item.map { $0.removed != true } ?? false
-            stremioWatched = isMovie && ((item?.state?.flaggedWatched ?? 0) > 0 || (item?.state?.timesWatched ?? 0) > 0)
-            guard let st = item?.state, let off = st.timeOffset, off > 0 else { return await loadLocalResume() }
-            var s = st.season, e = st.episode
-            if (e ?? 0) == 0, let vid = st.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: meta.id) { s = parsed.season; e = parsed.episode }
-            resume = Resume(season: isSeries ? s : nil, episode: isSeries ? e : nil, positionMs: off, durationMs: st.duration ?? 0)
-            if let s, isSeries, seasons.contains(s) { season = s }
-            return
+        guard let authKey else { return await loadLocalResume() }
+        var found: Item?
+        var answered = false
+        for cid in libraryCandidates {
+            guard let item: Item? = try? await HarborEngine.shared.call("stremio.libraryGetOne", [authKey, cid]) else { continue }
+            answered = true
+            if let item { found = item; break }
         }
-        await loadLocalResume()
+        guard answered else { return await loadLocalResume() }
+        inWatchlist = found.map { $0.removed != true } ?? false
+        stremioWatched = isMovie && ((found?.state?.flaggedWatched ?? 0) > 0 || (found?.state?.timesWatched ?? 0) > 0)
+        guard let st = found?.state else { return await loadLocalResume() }
+        let off = st.timeOffset ?? 0
+        var s = st.season, e = st.episode
+        if (e ?? 0) == 0, let vid = st.video_id, let parsed = VideoId.seasonEpisode(vid, metaId: meta.id) { s = parsed.season; e = parsed.episode }
+        if isSeries, !isAnimeId {
+            // bp-resume-mark.ts: the entry's episode is the Play target when it is on this page,
+            // with or without a position (a finished episode resumes there too); one that is not
+            // on the page is no resume point at all (it labelled "Resume S3:E4" over a Play that
+            // started the season's first episode).
+            guard let es = s, let ee = e, ee > 0, episodes.contains(where: { $0.season == es && $0.episode == ee }) else { return await loadLocalResume() }
+            resume = Resume(season: es, episode: ee, positionMs: off, durationMs: st.duration ?? 0)
+        } else {
+            guard off > 0 else { return await loadLocalResume() }
+            resume = Resume(season: isSeries ? s : nil, episode: isSeries ? e : nil, positionMs: off, durationMs: st.duration ?? 0)
+        }
+        applyResumeSeason()
     }
 
     private func loadLocalResume() async {
         struct Local: Decodable { var ms: Double; var pct: Double? }
+        // Built aside and assigned once: nothing found clears a point left from an earlier load of
+        // this page (it reloads after every cover), without the label flickering meanwhile.
+        var next: Resume?
         if !isSeries, let local: Local? = try? await HarborEngine.shared.call("player.localResume", [meta.id, AnyJSON.null, AnyJSON.null]), let l = local {
-            resume = Resume(season: nil, episode: nil, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
+            next = Resume(season: nil, episode: nil, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
         } else if isSeries {
             // (bug pass 2) One engine read for every local entry of the title (newest first), not one
             // bridge call per episode (~1000 for a long anime). The newest entry on this page wins,
@@ -517,10 +567,11 @@ final class DetailModel: ObservableObject {
                 if let ep = byKey["\(r.season):\(r.episode)"] { best = (ep, Local(ms: r.ms, pct: r.pct)); break }
             }
             if let (ep, l) = best {
-                resume = Resume(season: ep.season, episode: ep.episode, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
-                season = ep.season
+                next = Resume(season: ep.season, episode: ep.episode, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
             }
         }
+        resume = next
+        applyResumeSeason()
     }
 
     /// The episode Play should start with: the resume target, else the first of the current season.
@@ -528,6 +579,16 @@ final class DetailModel: ObservableObject {
         if let h = episodeHint, let ep = episodes.first(where: { $0.season == h.season && $0.episode == h.episode }) { return ep }
         if let r = resume, let s = r.season, let e = r.episode, let ep = episodes.first(where: { $0.season == s && $0.episode == e }) { return ep }
         return seasonEpisodes.first
+    }
+
+    /// views/player.tsx airedNext: the episode after this one when it has aired
+    /// (isNextAired(false, airDate): no date counts as aired). Specials never follow. An unaired
+    /// next episode used to get the up-next card and an auto-advance into a picker with no streams.
+    func airedNext(season s: Int, episode e: Int) -> Episode? {
+        guard let idx = episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < episodes.count else { return nil }
+        let next = episodes[idx + 1]
+        guard next.season > 0, (next.released ?? .distantPast) <= Date() else { return nil }
+        return next
     }
 
     /// An episodeHint that names an episode on the page other than the resume point: Play starts it

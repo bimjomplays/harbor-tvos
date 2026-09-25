@@ -183,7 +183,11 @@ struct BandMark: View {
         .task(id: url) {
             image = nil
             guard let u = URL(string: url) else { return }
-            image = await ImageLoader.shared.image(for: u)
+            let img = await ImageLoader.shared.image(for: u)
+            // A mark whose url moved on (focus crossed to another service) must not land late
+            // over the newer band's mark.
+            guard !Task.isCancelled else { return }
+            image = img
         }
     }
 }

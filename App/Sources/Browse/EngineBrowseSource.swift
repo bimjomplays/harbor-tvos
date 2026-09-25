@@ -26,7 +26,8 @@ struct EngineBrowseSource: BrowseSource {
             var video_id: String?
             var lastWatched: String?
         }
-        struct CwExtras: Decodable { var watched: Bool; var newEpisode: Int; var upNext: Bool; var waitingForAir: Bool; var nextAirDate: String?; var watcher: String?; var external: String? }
+        /// `anime`: lib/stremio isAnimeCwItem (engine rooms.cwExtras), which bp-cw-row's one-press resume skips.
+        struct CwExtras: Decodable { var watched: Bool; var newEpisode: Int; var upNext: Bool; var waitingForAir: Bool; var nextAirDate: String?; var watcher: String?; var external: String?; var anime: Bool? }
         var _cw: CwExtras?
         var _id: String
         var type: String
@@ -171,7 +172,8 @@ struct EngineBrowseSource: BrowseSource {
                                 lastWatched: (i.state?.lastWatched ?? i._mtime).flatMap { iso.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) },
                                 durationMs: dur, timeOffsetMs: off,
                                 watched: i._cw?.watched ?? false, newEpisode: i._cw?.newEpisode ?? 0, upNext: i._cw?.upNext ?? false,
-                                waitingForAir: i._cw?.waitingForAir ?? false, nextAirDate: i._cw?.nextAirDate, watcher: i._cw?.watcher, external: i._cw?.external)
+                                waitingForAir: i._cw?.waitingForAir ?? false, nextAirDate: i._cw?.nextAirDate, watcher: i._cw?.watcher, external: i._cw?.external,
+                                anime: room == .anime || (i._cw?.anime ?? false))
         }
     }
 

@@ -4,6 +4,9 @@ import SwiftUI
 /// watching, Search by this title. Sound/backdrop toggles live in Settings on the TV.
 struct QuickPanelView: View {
     let meta: Meta
+    /// bp-quick-panel `cwItem` (readBpCwItem): opened on a Continue Watching card. Only then is
+    /// "Remove from Continue watching" offered.
+    var fromContinueWatching = false
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var app: AppModel
     @State private var detail: Target?
@@ -33,7 +36,7 @@ struct QuickPanelView: View {
                 action("Details", "info.circle") { detail = Target(meta: meta, autoPlay: false) }
                 action("Add to list", "text.badge.plus") { listDialog = true }
                 action("Rate", "star") { rateDialog = true }
-                action("Remove from Continue watching", "eye.slash") { Task { await removeCw() } }
+                if fromContinueWatching { action("Remove from Continue watching", "eye.slash") { Task { await removeCw() } } }
                 action("Search", "magnifyingglass") { app.searchSeed = meta.name; app.room = .search; dismiss() }
                 if let note { BPNote(text: note, tone: BP.inkMuted) }
                 Spacer()
@@ -68,7 +71,10 @@ struct QuickPanelView: View {
     private func removeCw() async {
         let p = ProfilesStore.shared.active
         let ok = (try? await HarborEngine.shared.callJSON("rooms.dismissContinueWatching", [.string(p?.id ?? "default"), .bool(p?.linked ?? true), authKey.map { .string($0) } ?? .null, .string(meta.id)]))?.bool ?? false
-        note = ok ? "Removed from Continue watching." : "This title isn't in Continue watching."
-        if ok { HarborEngine.shared.emitEvent("harbor:cw-dismissed") }
+        guard ok else { note = "This title isn't in Continue watching."; return }
+        HarborEngine.shared.emitEvent("harbor:cw-dismissed")
+        // bp-quick-panel: dismissCw(cwItem, authKey); onClose(). Home re-reads the row as the
+        // panel's cover closes, so the card is gone when the rail comes back.
+        dismiss()
     }
 }

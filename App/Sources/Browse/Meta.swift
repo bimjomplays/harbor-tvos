@@ -136,4 +136,21 @@ struct ContinueItem: Identifiable, Equatable {
     var nextAirDate: String? = nil
     var watcher: String? = nil
     var external: String? = nil
+    /// lib/stremio isAnimeCwItem: absolute numbering that does not map onto season and episode.
+    var anime = false
+
+    /// What Select on the card does (bp-cw-row.tsx BpCwCard onPress).
+    enum Press: Equatable { case detail, resumeMovie, resumeEpisode(season: Int, episode: Int) }
+
+    /// bp-cw-row.tsx bpCwResume: one-press resume needs positive evidence of what the card would
+    /// play. No progress, an Up Next or waiting card, an anime entry, or a series without a
+    /// nameable episode goes to the detail page instead.
+    var press: Press {
+        guard progress > 0, !upNext, !waitingForAir else { return .detail }
+        if type == "movie" { return .resumeMovie }
+        let animeId = ["kitsu:", "mal:", "anilist:", "anidb:"].contains { id.hasPrefix($0) }
+        if anime || animeId { return .detail }
+        guard let s = season, let e = episode, s > 0, e > 0 else { return .detail }
+        return .resumeEpisode(season: s, episode: e)
+    }
 }

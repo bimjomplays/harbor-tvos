@@ -428,6 +428,10 @@ r.ok("benchmark still works", (() => {
   const home = await r.timed("rooms.continueWatchingWithExtras(advance)", () => E.rooms.continueWatchingWithExtras("default", true, null));
   const h1 = home.find((i) => i._id === "tt9000001");
   r.ok("Home Continue Watching shows the next episode with the Up Next extra", h1 && h1.state.episode === 2 && h1._cw.upNext === true, JSON.stringify(h1 && { ep: h1.state.episode, cw: h1._cw }));
+  // bp-cw-row bpCwResume: the card says whether it is an anime entry (isAnimeCwItem); Swift's one-press resume skips those.
+  r.ok("Continue Watching extras carry isAnimeCwItem as _cw.anime (a tt show is not anime)", home.every((i) => typeof i._cw.anime === "boolean") && h1 && h1._cw.anime === false, JSON.stringify(home.map((i) => [i._id, i._cw.anime])));
+  const animeCw = await E.rooms.cwExtras([{ _id: "kitsu:7442", type: "series", name: "Seed", state: { timeOffset: 600000, duration: 1400000, season: 1, episode: 3 }, removed: false, temp: false, _ctime: "", _mtime: "" }], "default");
+  r.ok("a kitsu Continue Watching entry reads anime", animeCw.length === 1 && animeCw[0].anime === true, JSON.stringify(animeCw));
   r.eq("homeRowsState carries the Continue Watching settings (upstream defaults)", E.rooms.homeRowsState("default", true).cw, { advanceNext: true, hideCaughtUp: true, animeCwEnd: "hide" });
   const st = E.rooms.homeCwSetting("default", true, "advanceNext", false);
   E.rooms.homeCwSetting("default", true, "animeCwEnd", "timer");
@@ -3433,6 +3437,18 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("settingsRoom.pane setup lists AI search", other.engine.settingsRoom.pane("default", true).setup.some((l) => l[0] === "AI search" && l[1] === "None"));
   other.dispose();
   rec.dispose();
+}
+
+// ------------------- Discover award page (bp-award.tsx): the winner's work is `workTitle`, offline
+{
+  const fs = await import("node:fs");
+  const aw = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  aw.engine.discoverRoom.installAwards(fs.readFileSync(new URL("../reference/harbor/src/data/awards.json", import.meta.url), "utf8"));
+  const oscar = aw.engine.discoverRoom.awardDetail("oscar");
+  const firstWin = oscar.groups[0] && oscar.groups[0].entries[0];
+  // AwardDetailView reads workTitle (awards-history CategoryWinner); it read a `title` that never comes.
+  r.ok("discoverRoom.awardDetail entries name the work as workTitle (no title field)", !!firstWin && typeof firstWin.workTitle === "string" && firstWin.workTitle.length > 0 && typeof firstWin.year === "number" && !("title" in firstWin), JSON.stringify(firstWin));
+  aw.dispose();
 }
 
 // ------------------------------------------------------------------- live network
