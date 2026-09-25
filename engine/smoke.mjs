@@ -1897,6 +1897,10 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   // results re-rank picker.all under the TV's list), and a key no longer listed names nothing.
   r.ok("(detail/search pass 2) picker rows carry tvKey = streamIdentity", all.length === 3 && all.every((s) => typeof s.tvKey === "string" && s.tvKey.startsWith(`${manifest.id}:`)) && all[ic].tvKey === `${manifest.id}:h:${hash}:2`, JSON.stringify(all.map((s) => s.tvKey)));
   r.ok("(detail/search pass 2) deadRef follows the key over a stale index", e.streamsRoom.deadRef("dead", ib, all[ia].tvKey)?.url === "https://cdn.example.invalid/a.mp4" && e.streamsRoom.deadRef("dead", ia, "gone:u:x") === null && e.streamsRoom.deadRef("dead", ia, null)?.url === "https://cdn.example.invalid/a.mp4", "");
+  // (review 7) A row's key changes when the same hash or URL gets credited to another addon between
+  // partials (the debrid library lands first in mergeAndDedupe): the source is still the one picked.
+  r.ok("(review 7) a key re-credited to another addon still names the same hash / URL", e.streamsRoom.deadRef("dead", ia, `rd-library:h:${hash}:2`)?.url === "https://cdn.example.invalid/c.mp4" && e.streamsRoom.deadRef("dead", ia, `x-library:h:${hash.toUpperCase()}:2`)?.infoHash === hash && e.streamsRoom.deadRef("dead", ia, "other.addon:u:https://cdn.example.invalid/b.mp4")?.url === "https://cdn.example.invalid/b.mp4", "");
+  r.eq("(review 7) no re-credit match for another file, a bare prefix or an empty URL", [e.streamsRoom.deadRef("dead", ia, `rd-library:h:${hash}:3`), e.streamsRoom.deadRef("dead", ia, ":u:"), e.streamsRoom.deadRef("dead", ia, "other:u:"), e.streamsRoom.deadRef("dead", ia, "other:u:https://cdn.example.invalid/")], [null, null, null, null]);
   r.eq("(detail/search pass 2) autoCandidateKeys = autoCandidates as row keys", e.streamsRoom.autoCandidateKeys("dead", "default", true, film, null, null, false, null), auto().map((i) => all[i].tvKey));
   {
     const viaKey = await e.streamsRoom.resolve("default", true, "dead", ib, true, false, false, null, null, all[ia].tvKey);

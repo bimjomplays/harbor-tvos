@@ -107,6 +107,13 @@ struct PlayerScreen: View {
     /// bp-leave-confirm: Back asks "Leave the show?" (settings.playerConfirmLeave) unless the viewer said don't ask again.
     @State private var leaveConfirm = false
     @State private var leaveRemember = false
+    /// (player pass 2) The video was playing when Back asked "Leave the show?". Only then do Keep
+    /// watching and Menu start it again (upstream never pauses for the dialog); a viewer who had
+    /// paused first had the film start playing under them.
+    @State private var leaveResumes = false
+    /// (player pass 2) The rail chip that opened the panel: the ring goes back to it when the panel
+    /// closes, as use-bp-focus restores the route's last position (it was left on the stage).
+    @State private var panelOpener: FocusTarget?
     @State private var lastSavedPos: Double = -10
     /// The last spot the picture reached (duration and position both known), for Switch source.
     @State private var lastGoodPos: Double = 0
@@ -341,14 +348,17 @@ struct PlayerScreen: View {
             if pipActive { pipPlacard.transition(.opacity) }
         }
         // media-session.ts mediaKeyGate: a press that also reaches us as a remote command toggles once.
-        .onPlayPauseCommand { if VideoNowPlaying.shared.mediaKeyGate() { togglePause() } }
+        .onPlayPauseCommand { if VideoNowPlaying.shared.mediaKeyGate() { playPausePressed() } }
         .onExitCommand {
+            // (player pass 2) The close is on its way (it waits on the saves): a second Back asked
+            // "Leave the show?" again, or put the chrome away, under a player that was leaving.
+            guard !finishing else { return }
             StillWatching.reset()
             if pipActive { controller?.stopPictureInPicture() }                 // back to the full picture first
             else if stillPrompt { stopWatching() }                              // still-watching-prompt: Escape is Stop
             else if roomOpen { roomOpen = false; focus = .surface; wake() }   // the inline Watch Together room closes first (review 22)
             else if resumePending != nil { acknowledgeResume(true) }     // Back takes the default action (bp-resume-prompt)
-            else if leaveConfirm { leaveConfirm = false; controller?.setPaused(false); focus = .surface; wake() }
+            else if leaveConfirm { keepWatching() }
             else if panel != nil { closePanel() }
             else if kidsLoading { finish(natural: false) }                   // the kid loader's Cancel (onCancel closes, no leave dialog)
             // (player/live device pass) bp-connecting pushBpBack(onCancel): Back on a slow start is its
@@ -359,7 +369,10 @@ struct PlayerScreen: View {
             else if focus == .chip("skip") || focus == .chip("skip-dismiss") { focus = .surface }
             // (player/live device pass) Only a transport that is on screen: behind an error card the
             // flag could still be up, so the first Back did nothing the viewer could see.
-            else if chromeShown { chrome = false }
+            // (player pass 2) The ring goes back to the stage with it, as the hide timer does: it
+            // stayed on a chip that was gone and fell to whatever the focus engine found (the skip
+            // pill, the X-Ray rail), so the next Select skipped or opened a card instead of pausing.
+            else if chromeShown { hideTask?.cancel(); chrome = false; focus = .surface }
             else { requestClose() }
         }
         // use-player-media: a torrent served by the TV's engine belongs to this player while it is
@@ -468,7 +481,9 @@ struct PlayerScreen: View {
                     c.setShaders([])
                 }
             }
-            Task { await saveTick(flush: false) }
+            // (player pass 2) Not once finish() ran: the close pauses the video and saves the spot
+            // itself; the tick saw that pause as a new one and flushed a second Stremio write.
+            if !finishing { Task { await saveTick(flush: false) } }
             // (bug pass) Not once finish() ran: the close awaits the flushed save (a Stremio push)
             // before onClose, and the video plays on meanwhile. The next tick turned the closing
             // "pause" scrobble back into "start" (Trakt/Simkl showed the title as watching after
@@ -510,6 +525,12 @@ struct PlayerScreen: View {
         // only Select and the stage's arrows restarted it, so the chrome vanished mid-navigation.
         .onChange(of: focus) { _, target in
             if case .chip(_)? = target, chromeShown { scheduleHide() }
+        }
+        // (player pass 2) use-bp-player-chrome restarts the idle wait when `playing` changes: the
+        // wait that ran out while paused never came back, so a video started again without a press
+        // here (the Watch Together host, the iPhone remote, PiP's own button) kept the chrome up.
+        .onChange(of: snap.paused) { _, paused in
+            if !paused, chromeShown { scheduleHide() }
         }
         // A retry or the switch to mpv starts the stall wait over (review 31).
         .onChange(of: reloadToken) { _, _ in
@@ -736,6 +757,10 @@ struct PlayerScreen: View {
                 Button {
                     if outroNext { playNext(); return }
                     skipTo(seg.endSec)
+                    // (player pass 2) The pill leaves with the segment: the ring goes to the stage
+                    // (Select means pause again) rather than wherever the focus engine drops it,
+                    // a transport chip under the woken chrome.
+                    focus = .surface
                     wake()
                 } label: {
                     HStack(spacing: BP.px(8)) {
@@ -1425,6 +1450,9 @@ struct PlayerScreen: View {
             startAt = at
             reloadToken += 1
         }
+        // (player pass 2) A new stream is opening: the ring stays on the stage (its chip goes
+        // under the Connecting card / the kid loader), not back on Quality or the kid switcher.
+        panelOpener = nil
         closePanel()
     }
 
@@ -1502,6 +1530,8 @@ struct PlayerScreen: View {
     }
 
     private func open(_ p: Panel) {
+        // (player pass 2) The chip pressed to open it, when it sits on the transport.
+        if case .chip(_)? = focus, chromeShown { panelOpener = focus } else { panelOpener = nil }
         panel = p
         hideTask?.cancel()
         // The Subtitles and Audio dialogs seed their own ring; Anime4K lands on its first option.
@@ -1509,9 +1539,19 @@ struct PlayerScreen: View {
     }
 
     private func closePanel() {
+        let back = panelOpener
+        panelOpener = nil
         panel = nil
         focus = .surface
         wake()
+        // (player pass 2) bp-player-shell closePanel → the route's remembered position: the ring
+        // goes back to the chip that opened the panel once the transport is on screen again. It
+        // stayed on the invisible stage, so Select paused instead of reopening Subtitles.
+        guard let back else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            let untouched: Bool = focus == nil || focus == .surface
+            if panel == nil, chromeShown, untouched { focus = back }
+        }
     }
 
     /// bp-connecting: while the stream is still opening, elapsed time and a way out; after 22 s the
@@ -1544,7 +1584,27 @@ struct PlayerScreen: View {
 
     // MARK: behaviour
 
+    /// The remote's Play/Pause (and the system's play / pause commands).
+    /// (player pass 2) Under the resume fork it takes the ring's choice (Resume unless the ring is on
+    /// Start over), under "Leave the show?" it is Keep watching, playing: it toggled the video under
+    /// both, so the film began from 0:00 behind "Pick up where you left off", or played under the
+    /// leave dialog.
+    private func playPausePressed() {
+        guard !finishing else { return }
+        if resumePending != nil {
+            let startOver: Bool = focus == .chip("Start over")
+            acknowledgeResume(!startOver)
+        } else if leaveConfirm {
+            leaveResumes = true
+            keepWatching()
+        } else {
+            togglePause()
+        }
+    }
+
     private func togglePause() {
+        // (player pass 2) A closing player stays paused (finish): Select on the stage started it again.
+        guard !finishing else { return }
         // In a Watch Together room the lobby, or the host, may own the press (use-playback-controls).
         if together.interceptToggle(controller) { wake(); return }
         controller?.togglePause()
@@ -1611,7 +1671,7 @@ struct PlayerScreen: View {
         if hasNextEpisodeNow { next = { playNext() } }
         let actions = VideoNowPlaying.Actions(
             isPlaying: { controller.map { !$0.snapshot().paused } ?? false },
-            toggle: { togglePause() },
+            toggle: { playPausePressed() },
             seekStep: { delta in if isLive { controller?.seek(delta) } else { seekBy(delta) } },
             seekTo: { sec in if !isLive { seekBy(sec - snap.position) } },
             next: next,
@@ -1724,6 +1784,8 @@ struct PlayerScreen: View {
     private func requestClose() {
         if !isLive, SettingsBridge.shared.slice.playerConfirmLeave ?? true {
             leaveRemember = false
+            let wasPlaying: Bool = controller.map { !$0.snapshot().paused } ?? true
+            leaveResumes = wasPlaying
             leaveConfirm = true
             controller?.setPaused(true); if let c = controller { snap = c.snapshot() }
             hideTask?.cancel()
@@ -1731,6 +1793,16 @@ struct PlayerScreen: View {
         } else {
             finish(natural: false)
         }
+    }
+
+    /// bp-leave-confirm close (Keep watching, Back): the dialog goes, and the video plays again
+    /// only if it was playing when it opened (player pass 2).
+    private func keepWatching() {
+        leaveConfirm = false
+        if leaveResumes { controller?.setPaused(false) }
+        if let c = controller { snap = c.snapshot() }
+        focus = .surface
+        wake()
     }
 
     private func acknowledgeResume(_ resume: Bool) {
@@ -1978,7 +2050,7 @@ struct PlayerScreen: View {
             Text("Leave the show?").font(BP.display(34)).foregroundStyle(BP.ink)
             Text("We'll save your spot so you can pick up right where you left off.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
             HStack(spacing: BP.px(10)) {
-                chip("Keep watching", "play.fill") { leaveConfirm = false; controller?.setPaused(false); focus = .surface; scheduleHide() }
+                chip("Keep watching", "play.fill") { keepWatching() }
                 chip("Leave", "rectangle.portrait.and.arrow.right") {
                     if leaveRemember { Task { try? await SettingsBridge.shared.patch(["playerConfirmLeave": .bool(false)]) } }
                     leaveConfirm = false
@@ -2020,21 +2092,53 @@ struct PlayerScreen: View {
             let progress = snap.duration > 0 ? (natural ? 100 : snap.position / snap.duration * 100) : 0
             sendScrobble(progress >= 90 ? "stop" : "pause")
         }
-        Task {
-            if natural, let c = controller, let context, c.snapshot().duration > 0 {
-                let s = c.snapshot()
-                _ = await context.save(positionSec: s.duration, durationSec: s.duration, flush: true)
-                if s.duration >= 150 { await context.reportHomeServer(positionSec: s.duration, durationSec: s.duration, watched: true) }
-            } else {
-                await saveTick(flush: true)
+        // (player pass 2) Nothing plays on under a closing player (Next episode, Play now, Sources
+        // and a Back without the leave dialog kept the film and its sound going through the close).
+        controller?.setPaused(true)
+        let advancing: Bool = advance ?? natural
+        Task { @MainActor in
+            // (player pass 2) use-player-exit closePlayer saves the spot locally and leaves; the
+            // Stremio library write goes on by itself. Here the close waited for the whole flushed
+            // save (a Stremio GET + PUT, the home server's report and stop): seconds on a slow
+            // connection, up to the request timeout on one that had just dropped, with the viewer
+            // stuck on the error card or the last frame. The engine's local write lands first (its
+            // calls run in order), so the close waits for the saves at most 2 s; they finish after.
+            let saved = PlayerCloseFlag()
+            Task { @MainActor in
+                await closeSaves(natural: natural)
+                saved.done = true
             }
-            if let context, context.homeServer != nil, let c = controller { await context.stopHomeServerSession(positionSec: c.snapshot().position) }
-            SleepTimer.shared.playerClosed(advancing: advance ?? natural)
+            var waited = 0
+            while !saved.done, waited < 40 {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                waited += 1
+            }
+            SleepTimer.shared.playerClosed(advancing: advancing)
             // use-still-watching counts auto-advanced episodes in a row: a close that doesn't advance ends the run (review 28).
-            if !(advance ?? natural) { StillWatching.reset() }
-            onClose(advance ?? natural)
+            if !advancing { StillWatching.reset() }
+            onClose(advancing)
             // The watched check on the tiles reads the flags this session just wrote.
             await CardMarksStore.shared.remark()
         }
     }
+
+    /// The close's saves: the finished spot (a natural end) or the last one, then the home server's
+    /// report and session stop. The spot is read before the first wait: once the close has gone on
+    /// without them, the torn-down engine reads 0 (player pass 2).
+    private func closeSaves(natural: Bool) async {
+        let s: (position: Double, duration: Double, paused: Bool)? = controller?.snapshot()
+        if natural, let context, let s, s.duration > 0 {
+            _ = await context.save(positionSec: s.duration, durationSec: s.duration, flush: true)
+            if s.duration >= 150 { await context.reportHomeServer(positionSec: s.duration, durationSec: s.duration, watched: true) }
+        } else {
+            await saveTick(flush: true)
+        }
+        if let context, context.homeServer != nil, let s { await context.stopHomeServerSession(positionSec: s.position) }
+    }
+}
+
+/// (player pass 2) PlayerScreen.finish: the close's saves are done.
+@MainActor
+private final class PlayerCloseFlag {
+    var done = false
 }

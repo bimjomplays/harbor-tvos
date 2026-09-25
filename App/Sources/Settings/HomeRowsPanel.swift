@@ -139,7 +139,9 @@ struct HomeRowsPanel: View {
 
     private func load() async {
         let p = profile
-        layout = try? await HarborEngine.shared.call("rooms.homeRowsState", [p.id, p.linked])
+        // (review 7) A failed re-read (SettingsFieldWatch now re-reads while the panel is open) keeps
+        // what is on screen: it blanked the panel to "Loading…" under the ring.
+        if let next: RowsState = try? await HarborEngine.shared.call("rooms.homeRowsState", [p.id, p.linked]) { layout = next }
     }
 
     /// Every edit returns the new state; the engine raises `harbor:home-updated` for Home.

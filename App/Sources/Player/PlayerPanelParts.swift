@@ -107,6 +107,8 @@ struct PlayerAudioPanel: View {
     private static let delaySteps: [Double] = [-0.5, -0.1, 0.1, 0.5]
     /// bp-player-sources.tsx BpAudioLane `locked = engine === "html5"`: AVPlayer has no audio delay.
     private var locked: Bool { controller?.engineKind == .native }
+    /// (player pass 2) Which engine the dialog reads; its track poll restarts with a new one.
+    private var engineKey: ObjectIdentifier? { controller.map { ObjectIdentifier($0 as AnyObject) } }
 
     var body: some View {
         ZStack {
@@ -150,6 +152,17 @@ struct PlayerAudioPanel: View {
             tracks = (controller?.tracks() ?? []).filter { $0.type == "audio" }
             let seed = tracks.first { $0.selected } ?? tracks.first
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = seed.map { "track-\($0.id)" } ?? "back" }
+        }
+        // (player pass 2) The list follows the file, like upstream's snapshot: opened before the
+        // file (or AVPlayer's audio group) was read, it said "one audio track" for good.
+        // Keyed to the engine: a reload under the dialog hands it a new one to read.
+        .task(id: engineKey) {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                let now = (controller?.tracks() ?? []).filter { $0.type == "audio" }
+                if now != tracks { tracks = now }
+            }
         }
     }
 

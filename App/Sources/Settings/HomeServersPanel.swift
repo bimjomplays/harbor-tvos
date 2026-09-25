@@ -138,6 +138,9 @@ struct HomeServersPanel: View {
     /// Add buttons under the ring, and closing them took the button under the ring away again: the
     /// ring fell off the section. It goes to the new step's first button, and back to Add.
     @FocusState private var focus: String?
+    /// When the ring last dropped off a Plex / form button (the step went away under it, or the
+    /// viewer left the panel); refocusIfInFlow reads it.
+    @State private var flowLeftAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -192,20 +195,24 @@ struct HomeServersPanel: View {
                     // of them (all offline, the wrong account) kept it until Settings was rebuilt.
                     // home-servers-tab.tsx's dialog always has Cancel.
                     Button("Cancel") { closeFlow() }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "plex-list-cancel")
                 }
             } else if showForm {
                 HStack(spacing: BP.px(8)) {
                     Button("Jellyfin") { provider = "jellyfin" }.buttonStyle(BPActionStyle(primary: provider == "jellyfin")).bpSelected(provider == "jellyfin")
                         .focused($focus, equals: "form-first")
                     Button("Emby") { provider = "emby" }.buttonStyle(BPActionStyle(primary: provider == "emby")).bpSelected(provider == "emby")
+                        .focused($focus, equals: "form-emby")
                 }
                 BPField(label: "Server address", placeholder: "192.168.1.20:8096 or https://media.example.com", text: $address, keyboard: .URL)
                 BPField(label: "Username", placeholder: "Username", text: $username)
                 BPField(label: "Password", placeholder: "Password", text: $password, secure: true)
                 HStack(spacing: BP.px(8)) {
-                    Button(model.busy ? "Connecting…" : "Connect") { Task { if await model.connect(provider: provider, address: address, username: username, password: password) { showForm = false; address = ""; username = ""; password = ""; refocus("add-plex") } } }
+                    Button(model.busy ? "Connecting…" : "Connect") { Task { if await model.connect(provider: provider, address: address, username: username, password: password) { showForm = false; address = ""; username = ""; password = ""; refocusIfInFlow("add-plex") } } }
                         .buttonStyle(BPActionStyle(primary: true, busy: model.busy)).disabled(address.count < 3)
+                        .focused($focus, equals: "form-connect")
                     Button("Cancel") { closeFlow() }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "form-cancel")
                 }
             } else {
                 HStack(spacing: BP.px(8)) {
@@ -225,14 +232,17 @@ struct HomeServersPanel: View {
         .task { await model.load() }
         // (settings pass 2) Menu steps out of the Plex code, the server list or the form first, as
         // Escape closes upstream's dialog; it used to leave Settings for Home.
-        .onExitCommand(perform: model.pin != nil || showForm ? { closeFlow() } : nil)
+        .onExitCommand(perform: exitAction)
         // The approved code turned into the server list under the ring (Cancel went away).
         .onChange(of: model.servers.isEmpty) { _, empty in
-            if !empty { refocus("plex-server") }
+            if !empty { refocusIfInFlow("plex-server") }
         }
         // The code expired, or the account had no servers: the Add buttons are back.
         .onChange(of: model.pin?.pinId) { was, now in
-            if was != nil && now == nil { refocus("add-plex") }
+            if was != nil && now == nil { refocusIfInFlow("add-plex") }
+        }
+        .onChange(of: focus) { old, now in
+            if now == nil, let old, Self.isFlowKey(old) { flowLeftAt = Date() }
         }
         .alert(removeTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { c in
             Button("Remove server", role: .destructive) { Task { await model.remove(c.id); refocus("add-plex") } }
@@ -254,6 +264,31 @@ struct HomeServersPanel: View {
     /// The target is drawn on the next pass; focus it once it is there.
     private func refocus(_ key: String) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = key }
+    }
+
+    /// Menu while the Plex code, the server list or the form is up closes it; nil lets Menu leave Settings.
+    private var exitAction: (() -> Void)? {
+        guard model.pin != nil || showForm else { return nil }
+        return { closeFlow() }
+    }
+
+    /// A button of the Plex code, the server list or the Jellyfin/Emby form.
+    private static func isFlowKey(_ key: String) -> Bool { key.hasPrefix("plex-") || key.hasPrefix("form-") }
+
+    /// (review 7) refocus() for a step that ends on its own (the code approved or expired, a
+    /// Jellyfin connect that returns after its first sync, which can take minutes): only while the
+    /// ring is on that step, or has just lost it as the step went away. The viewer who walked on to
+    /// the column or another panel meanwhile had the ring pulled back to Add Plex.
+    private func refocusIfInFlow(_ key: String) {
+        let wasOn: String? = focus
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let onStep: Bool = wasOn.map { Self.isFlowKey($0) } ?? false
+            let justLost: Bool = flowLeftAt.map { Date().timeIntervalSince($0) < 0.6 } ?? false
+            let now: String? = focus
+            let stillHere: Bool = now == nil || now.map { Self.isFlowKey($0) } == true
+            guard stillHere, onStep || justLost else { return }
+            focus = key
+        }
     }
 
     private static func label(_ options: [(String, String)], _ value: String) -> String {

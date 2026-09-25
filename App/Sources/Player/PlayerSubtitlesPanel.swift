@@ -14,6 +14,8 @@ struct PlayerSubtitlesPanel: View {
     /// file's own through its legible output), so Find more, Sync and Look work on both engines; a
     /// second subtitle there must be one of the sideloaded tracks.
     private var mpvExtras: Bool { controller?.supportsMpvExtras ?? true }
+    /// (player pass 2) Which engine the dialog reads; its track poll restarts with a new one.
+    private var engineKey: ObjectIdentifier? { controller.map { ObjectIdentifier($0 as AnyObject) } }
 
     enum Lane: Hashable { case tracks, find, sync, style }
 
@@ -70,6 +72,8 @@ struct PlayerSubtitlesPanel: View {
     @State private var ranOnce = false
     @State private var added: Set<String> = []
     @State private var findNote: String?
+    /// (player pass 2) Only the newest trackView answer lands.
+    @State private var refreshRun = 0
 
     var body: some View {
         ZStack {
@@ -126,6 +130,18 @@ struct PlayerSubtitlesPanel: View {
                 await refresh()
                 seedFocus()
                 if let list = try? await loadPresets() { presets = list }
+            }
+        }
+        // (player pass 2) upstream's dialog reads the live snapshot's tracks. This one read them
+        // once: opened while the file was still opening, or before the remembered subtitle came
+        // back from its download, it showed "No subtitles" / Off under a subtitle that was on.
+        // Keyed to the engine: a reload under the dialog hands it a new one to read.
+        .task(id: engineKey) {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                let now = (controller?.tracks() ?? []).filter { $0.type == "sub" }
+                if now != tracks { await refresh() }
             }
         }
         .onChange(of: lane) {
@@ -302,6 +318,8 @@ struct PlayerSubtitlesPanel: View {
     private func refresh() async {
         let list = (controller?.tracks() ?? []).filter { $0.type == "sub" }
         tracks = list
+        refreshRun += 1
+        let run = refreshRun
         let ins = list.map { t in
             TrackIn(id: t.id, lang: t.lang, title: t.title, codec: t.codec, external: t.external, forced: t.forced,
                     hearingImpaired: t.hearingImpaired, default: t.isDefault, selected: t.selected, secondary: t.secondary,
@@ -311,11 +329,16 @@ struct PlayerSubtitlesPanel: View {
         do {
             let view: TrackView = try await HarborEngine.shared.call("subtitles.trackView",
                 [p?.id ?? "default", p?.linked ?? true, ins, controller?.streamFilename(), context?.season, context?.episode])
+            // (player pass 2) An older answer (the list before the viewer's pick, or before the
+            // file's tracks arrived) landing last put back its rows: the picked track could drop
+            // out of the list (its `keep` computed while another one was selected).
+            guard run == refreshRun else { return }
             var byId: [String: TrackRow] = [:]
             for r in view.tracks { byId[r.id] = r }
             rows = byId
             ranked = view.ranked
         } catch {
+            guard run == refreshRun else { return }
             rows = [:]
             ranked = []
         }

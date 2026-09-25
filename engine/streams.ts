@@ -123,7 +123,8 @@ const lastResults = new Map<string, PipelineResult>();
  * row sat in the list the TV drew. Every partial result re-ranks picker.all as slower addons answer,
  * so the index alone could name another stream by the time a resolve, a remember or a dead mark
  * reached the engine (the wrong source played, was remembered or was marked dead). Without a key
- * the index is used as before; a key no longer in the list names nothing.
+ * the index is used as before; a key no longer in the list names nothing (review 7: unless the
+ * same hash or URL is still listed under another addon id).
  */
 function pickedStream(token: string, streamIndex: number, key: string | null | undefined): ScoredStream | undefined {
   const all = lastResults.get(token)?.picker.all;
@@ -131,7 +132,24 @@ function pickedStream(token: string, streamIndex: number, key: string | null | u
   const at = all[streamIndex];
   if (key == null || key === "") return at;
   if (at && streamIdentity(at) === key) return at;
-  return all.find((s) => streamIdentity(s) === key);
+  const exact = all.find((s) => streamIdentity(s) === key);
+  if (exact) return exact;
+  // (review 7) The same torrent / link under another addon id: mergeAndDedupe credits a hash or
+  // URL to whoever listed it first, and the debrid library (`<slug>-library`) comes first once it
+  // lands, so a row's key changes between partials while the stream stays. The addon prefix is
+  // dropped and the rest (h:<hash>:<fileIdx> or u:<url>) must match whole; the row at the old
+  // index wins a tie.
+  const sameSource = (s: ScoredStream) => {
+    // Only a hash or a URL names the same source; a bare title ("1080p") could be anyone's.
+    if (!s.infoHash && !s.url) return false;
+    const id = streamIdentity(s);
+    // A hash is matched whatever its case (mergeAndDedupe does the same); a URL exactly.
+    const fold = (v: string) => (s.infoHash ? v.toLowerCase() : v);
+    const rest = fold(id.slice(String(s.addonId ?? "").length));
+    return rest.length > 3 && key.length > rest.length && fold(key).endsWith(rest);
+  };
+  if (at && sameSource(at)) return at;
+  return all.find(sameSource);
 }
 
 /**
