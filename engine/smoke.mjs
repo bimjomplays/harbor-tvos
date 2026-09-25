@@ -2500,6 +2500,30 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// ------------------- use-stremio-sync.ts: a title first seen through playback is a hidden temp entry
+{
+  const rec = loadEngine({});
+  const puts = [];
+  let lib = null;
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.endsWith("/api/datastoreGet")) return json({ result: lib ? [lib] : [] });
+    if (req.url.endsWith("/api/datastorePut")) { const b = JSON.parse(req.body || "{}"); for (const c of b.changes ?? []) puts.push(c); return json({ result: { success: true } }); }
+    return json({ result: { success: true } });
+  };
+  const P = rec.engine.player;
+  const meta = { id: "tt0133093", type: "movie", name: "The Matrix" };
+  await P.saveProgress({ meta, positionMs: 600000, durationMs: 8100000, authKey: "k", flush: true });
+  const fresh = puts.at(-1);
+  // A title the viewer bookmarked stays a bookmark when played.
+  lib = { _id: "tt0133093", type: "movie", name: "The Matrix", removed: false, temp: false, state: { timeOffset: 0, duration: 0 } };
+  await P.saveProgress({ meta, positionMs: 700000, durationMs: 8100000, authKey: "k", flush: true });
+  const kept = puts.at(-1);
+  r.eq("player.saveProgress: a new library entry is removed+temp (CW only, not a bookmark); a bookmark stays one",
+    [fresh?.removed, fresh?.temp, kept?.removed, kept?.temp], [true, true, false, false]);
+  rec.dispose();
+}
+
 // ------------------- (detail pass) a finished episode reads watched (use-resume-autosave.ts)
 {
   const id = "tt7000002";

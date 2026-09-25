@@ -177,6 +177,16 @@ export async function saveProgress(p: ProgressInput): Promise<ProgressResult> {
         timesWatched: flagged === 1 && (prevState.flaggedWatched ?? 0) === 0 ? (prevState.timesWatched ?? 0) + 1 : (prevState.timesWatched ?? 0),
       },
     };
+    // use-stremio-sync.ts: a title first seen through playback is a hidden, temporary entry
+    // (removed + temp: Continue Watching only, not a Library bookmark), and an unwatched temp entry
+    // stays removed. A new item was written removed:false/temp:false, so every title played on the
+    // TV became a Stremio Library bookmark (and read as "In Watchlist").
+    let removed = existing ? existing.removed === true : true;
+    let temp = existing ? existing.temp === true : true;
+    if (temp && (item.state?.timesWatched ?? 0) === 0) removed = true;
+    if (removed) temp = true;
+    item.removed = removed;
+    item.temp = temp;
     await libraryPut(p.authKey, item);
     pushMarks();
     return { watched, cloud: "written" };
