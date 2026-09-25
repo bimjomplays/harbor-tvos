@@ -158,7 +158,10 @@ struct DetailView: View {
         .ignoresSafeArea()
         .task {
             model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) } ?? episodeHint?.season
-            model.episodeHint = episodeHint
+            // A Continue Watching one-press resume names its episode only for that one play (bp-detail
+            // takeBpPlayIntent consumes the intent): once it fired, Play and the strip follow the resume
+            // point again, not the episode the page was opened for (an auto-advance moved on from it).
+            model.episodeHint = autoPlayFired ? nil : episodeHint
             let first = !didFirstLoad
             didFirstLoad = true
             await model.load()
@@ -248,6 +251,8 @@ struct DetailView: View {
     private func fireAutoPlayIfReady() {
         guard autoPlay, !autoPlayFired, model.knowsPlayTarget(roomEpisode: roomEpisode != nil) else { return }
         autoPlayFired = true
+        // The play request is spent (takeBpPlayIntent): the hint goes once the picker has its episode.
+        defer { model.episodeHint = nil }
         // A picker the viewer already opened by hand wins; the autoplay is spent either way.
         guard picker == nil else { return }
         if let h = episodeHint, model.seasons.contains(h.season) { model.season = h.season }
