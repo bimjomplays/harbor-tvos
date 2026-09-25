@@ -8,6 +8,9 @@ struct VoyageBannerView: View {
     /// discover.tsx voyageBannerPool (the Discover build's voyagePool).
     let pool: [Meta]
     let onOpen: () -> Void
+    /// The banner gained (true) or lost (false) the ring (Discover's rail parks it).
+    var onHold: ((Bool) -> Void)? = nil
+    @FocusState private var focused: Bool
     private let height = BP.px(172)
 
     var body: some View {
@@ -41,10 +44,12 @@ struct VoyageBannerView: View {
             .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
+        .focused($focused)
         .accessibilityIdentifier("voyage-band")
         .accessibilityLabel(Text(T("Open Voyages")))
         .padding(.horizontal, BP.gutter)
         .padding(.vertical, BP.px(14))
+        .onChange(of: focused) { _, held in onHold?(held) }
     }
 
     private func copy(active: VoyageModel.Active?, accent: Color) -> some View {

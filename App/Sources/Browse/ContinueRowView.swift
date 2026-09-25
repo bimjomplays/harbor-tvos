@@ -10,14 +10,27 @@ struct ContinueRowView: View {
     var onQuick: ((ContinueItem) -> Void)? = nil
     /// The row gained (true) or lost (false) the focused card.
     var onHold: ((Bool) -> Void)? = nil
+    /// bp-home / bp-shows lead `{ action: "Your library", tab: "library" }`: the row header's
+    /// see-all, shown while the row holds the ring (bp-row-header BpRowSeeAll). nil = no link.
+    var onLibrary: (() -> Void)? = nil
     @FocusState private var focusedId: String?
+    @FocusState private var libraryFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Jump back in")
-                .font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil ? 0.55 : 1))
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, BP.gutter)
+            HStack(spacing: BP.px(14)) {
+                Text("Jump back in")
+                    .font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil && !libraryFocused ? 0.55 : 1))
+                    .accessibilityAddTraits(.isHeader)
+                if let onLibrary, focusedId != nil || libraryFocused {
+                    Button(T("Your library"), action: onLibrary)
+                        .buttonStyle(BPSeeAllStyle())
+                        .focused($libraryFocused)
+                        .accessibilityIdentifier("seeall-cw")
+                }
+            }
+            .padding(.horizontal, BP.gutter)
+            .animation(.easeOut(duration: 0.26), value: focusedId == nil)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(items.uniquedById()) { item in   // (bug pass) unique ids
