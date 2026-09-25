@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// JSON documents in the Caches directory. tvOS may purge this whole folder at any time,
 /// so everything here must be rebuildable from the Harbor account, Stremio, or a re-fetch.
@@ -22,12 +23,37 @@ final class CacheStore {
     /// the engine back the exact `harbor.*` key it wrote.
     private static let fileNameAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
 
-    private func url(_ key: String) -> URL {
+    /// (bug pass 2) A file name is at most 255 bytes. A long key (`harbor.manga.art.<CJK title>`:
+    /// CJK letters stay verbatim at 3 bytes each) made the write throw, so the value lived only in
+    /// memory. Names that fit keep exactly the old form (so every existing file still reads); a
+    /// longer one becomes `<readable prefix>~<sha256 hex>.json` with the key itself in a
+    /// `<same>.key` sidecar for `allKeys()`. `~` is always escaped in the old form, so it marks a
+    /// hashed name unambiguously.
+    private static let maxNameBytes = 255
+    private static let hashMarker = "~"
+
+    private func base(_ key: String) -> (name: String, hashed: Bool) {
         let safe = key.addingPercentEncoding(withAllowedCharacters: Self.fileNameAllowed) ?? key
-        return root.appendingPathComponent(safe + ".json")
+        if safe.utf8.count + 5 <= Self.maxNameBytes { return (safe, false) }   // + ".json"
+        var prefix = ""
+        for ch in safe {
+            if prefix.utf8.count + String(ch).utf8.count > 60 { break }
+            prefix.append(ch)
+        }
+        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        return (prefix + Self.hashMarker + digest, true)
     }
 
-    /// Every key currently on disk, decoded back from its file name.
+    private func url(_ key: String) -> URL {
+        root.appendingPathComponent(base(key).name + ".json")
+    }
+
+    private func keyURL(_ name: String) -> URL {
+        root.appendingPathComponent(name + ".key")
+    }
+
+    /// Every key currently on disk, decoded back from its file name (or, for a hashed name, read
+    /// from its sidecar).
     func allKeys() -> [String] {
         queue.sync {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
@@ -35,6 +61,10 @@ final class CacheStore {
                 guard name.hasSuffix(".json") else { return nil }
                 let encoded = String(name.dropLast(5))
                 guard !encoded.isEmpty else { return nil }
+                if encoded.contains(Self.hashMarker) {
+                    guard let data = try? Data(contentsOf: keyURL(encoded)), let key = String(data: data, encoding: .utf8), !key.isEmpty else { return nil }
+                    return key
+                }
                 return encoded.removingPercentEncoding ?? encoded
             }
         }
@@ -42,7 +72,11 @@ final class CacheStore {
 
     func set<T: Encodable>(_ value: T, for key: String) throws {
         let data = try encoder.encode(value)
-        try queue.sync { try data.write(to: url(key), options: .atomic) }
+        let b = base(key)
+        try queue.sync {
+            if b.hashed { try Data(key.utf8).write(to: keyURL(b.name), options: .atomic) }
+            try data.write(to: root.appendingPathComponent(b.name + ".json"), options: .atomic)
+        }
     }
 
     func get<T: Decodable>(_ type: T.Type, for key: String) -> T? {
@@ -52,7 +86,13 @@ final class CacheStore {
         }
     }
 
-    func remove(_ key: String) { queue.sync { try? FileManager.default.removeItem(at: url(key)) } }
+    func remove(_ key: String) {
+        let b = base(key)
+        queue.sync {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent(b.name + ".json"))
+            if b.hashed { try? FileManager.default.removeItem(at: keyURL(b.name)) }
+        }
+    }
 
     func exists(_ key: String) -> Bool { FileManager.default.fileExists(atPath: url(key).path) }
 

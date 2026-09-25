@@ -228,3 +228,79 @@ final class SettingsBridge: ObservableObject {
         return (false, tmdbLine)
     }
 }
+
+// (bug pass 2) Every field decodes on its own: a synced blob with null or a wrong type in one key
+// (a numeric tmdbKey, a null region…) used to fail the whole Slice, and `load()` then kept the
+// defaults (TMDB key "missing", English UI). A bad non-optional key now keeps its default; a bad
+// optional key reads as nil, exactly like a missing one did, so readers keep their `?? default`.
+// Arrays drop only their bad elements. In an extension so the memberwise / no-argument inits stay.
+extension SettingsBridge.Slice {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: LenientKey.self)
+        tmdbKey = c.lenient("tmdbKey") ?? tmdbKey
+        region = c.lenient("region") ?? region
+        homeMode = c.lenient("homeMode") ?? homeMode
+        uiLanguage = c.lenient("uiLanguage") ?? uiLanguage
+        animeOnlyInAnimeRoom = c.lenient("animeOnlyInAnimeRoom") ?? animeOnlyInAnimeRoom
+        preferredSubLangs = c.lossyArray("preferredSubLangs") ?? preferredSubLangs
+        preferredAudioLangs = c.lossyArray("preferredAudioLangs")
+        subFontSize = c.lenient("subFontSize")
+        subFontColor = c.lenient("subFontColor")
+        subBorderColor = c.lenient("subBorderColor")
+        subBorderSize = c.lenient("subBorderSize")
+        subMarginY = c.lenient("subMarginY")
+        subAlignX = c.lenient("subAlignX")
+        subStyle = c.lenient("subStyle")
+        subBold = c.lenient("subBold")
+        subBoxOpacity = c.lenient("subBoxOpacity")
+        subBoxColor = c.lenient("subBoxColor")
+        subOpacity = c.lenient("subOpacity")
+        subLineSpacing = c.lenient("subLineSpacing")
+        subShowInPip = c.lenient("subShowInPip")
+        playerAnime4k = c.lenient("playerAnime4k")
+        playerAnime4kAnimeOnly = c.lenient("playerAnime4kAnimeOnly")
+        playerAnime4kIndicator = c.lenient("playerAnime4kIndicator")
+        playerAnime4kMode = c.lenient("playerAnime4kMode")
+        playerAnime4kTier = c.lenient("playerAnime4kTier")
+        playerAnime4kOverride = c.lenient("playerAnime4kOverride")
+        simklScrobbleEnabled = c.lenient("simklScrobbleEnabled")
+        showAdultAddons = c.lenient("showAdultAddons")
+        instantPlay = c.lenient("instantPlay")
+        streamFilterLevel = c.lenient("streamFilterLevel")
+        rememberLastStream = c.lenient("rememberLastStream")
+        seasonSourceLock = c.lenient("seasonSourceLock")
+        resumePlayback = c.lenient("resumePlayback")
+        resumePrompt = c.lenient("resumePrompt")
+        playerConfirmLeave = c.lenient("playerConfirmLeave")
+        autoSkipIntro = c.lenient("autoSkipIntro")
+        autoSkipRecap = c.lenient("autoSkipRecap")
+        autoSkipOutro = c.lenient("autoSkipOutro")
+        autoSkipAd = c.lenient("autoSkipAd")
+        showSkipButton = c.lenient("showSkipButton")
+        skipButtonHideSec = c.lenient("skipButtonHideSec")
+        stillWatching = c.lenient("stillWatching")
+        stillWatchingAfter = c.lenient("stillWatchingAfter")
+        xrayEnabled = c.lenient("xrayEnabled")
+        defaultPlaybackSpeed = c.lenient("defaultPlaybackSpeed")
+        customPlaybackSpeeds = c.lossyArray("customPlaybackSpeeds")
+        customSleepMinutes = c.lossyArray("customSleepMinutes")
+        fullscreenClockEnabled = c.lenient("fullscreenClockEnabled")
+        fullscreenClockFormat = c.lenient("fullscreenClockFormat")
+        fullscreenClockStyle = c.lenient("fullscreenClockStyle")
+        fullscreenClockShowSeconds = c.lenient("fullscreenClockShowSeconds")
+        fullscreenClockShowEndTime = c.lenient("fullscreenClockShowEndTime")
+        fullscreenClockSizePx = c.lenient("fullscreenClockSizePx")
+        screensaver = c.lenient("screensaver")
+        screensaverDelayMin = c.lenient("screensaverDelayMin")
+        heroFeed = c.lenient("heroFeed")
+        bigPictureMosaic = c.lenient("bigPictureMosaic")
+        bigPictureOverscan = c.lenient("bigPictureOverscan")
+        bigPictureSound = c.lenient("bigPictureSound")
+        sfxVolume = c.lenient("sfxVolume")
+        mangaEnabled = c.lenient("mangaEnabled")
+        playbackSourcePreference = c.lenient("playbackSourcePreference")
+        mpvHwdec = c.lenient("mpvHwdec")
+        posterQuality = c.lenient("posterQuality")
+    }
+}

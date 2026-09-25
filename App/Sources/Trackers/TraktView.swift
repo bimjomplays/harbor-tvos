@@ -59,6 +59,15 @@ final class TraktModel: ObservableObject {
         }
     }
 
+    /// (bug pass 2) trakt-device-modal.tsx / simkl-device-modal.tsx: closing the panel before the
+    /// code is confirmed calls cancelConnect (provider.tsx cancels the poll). The poll kept running
+    /// until the code expired while the panel stayed alive off screen.
+    func cancelConnect() {
+        pollTask?.cancel()
+        pollTask = nil
+        code = nil
+    }
+
     func disconnect() async {
         pollTask?.cancel(); code = nil
         _ = try? await HarborEngine.shared.callJSON("\(service).disconnect", [])
@@ -97,5 +106,6 @@ struct TraktPanel: View {
             if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Connected") ? BP.live : BP.danger) }
         }
         .task { await model.refresh() }
+        .onDisappear { model.cancelConnect() }   // (bug pass 2)
     }
 }

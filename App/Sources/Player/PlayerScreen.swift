@@ -668,7 +668,10 @@ struct PlayerScreen: View {
 
     // MARK: up next (bp-up-next.tsx, skip-pill-container.tsx, use-auto-next-episode.ts)
 
-    private var hasNextEp: Bool { upNext != nil && !autoNextCancelled && !isLive }
+    /// (bug pass 2) player.tsx hasNextEpDisplay = canChangeEpisode && !autoNextCancelled && airedNext
+    /// (canChangeEpisode = !inRoom || isHost): a Watch Together guest gets the plain skip pill, not
+    /// the up-next card and its manual "Play now".
+    private var hasNextEp: Bool { upNext != nil && !autoNextCancelled && !isLive && !(together.inRoom && !together.isHost) }
     private var remainingSec: Double { max(0, snap.duration - snap.position) }
     /// skip-pill-container.tsx nextEpisodeLead: 0 = off, > 0 = fixed, -1 = 4 % of the runtime within 15–45 s.
     private var leadSec: Double {

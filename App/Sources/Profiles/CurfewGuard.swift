@@ -14,6 +14,13 @@ final class CurfewState: ObservableObject {
     private static func today() -> String { Date().formatted(.iso8601.year().month().day()) }
     private static func key(_ id: String) -> String { "harbor.curfew.v1.\(id)" }
 
+    /// (bug pass 2) The record is a Swift-only Prefs key (a Codable struct, not an engine string),
+    /// so engine/profilesRoom.ts PROFILE_KEY_PREFIXES can't reach it: ProfilesStore drops it when a
+    /// profile is deleted here or dropped by a roster sync.
+    static func purge(profileId id: String) {
+        Prefs.remove(key(id))
+    }
+
     private func load(_ id: String) -> Record {
         let r = Prefs.get(Record.self, for: Self.key(id))
         if let r, r.date == Self.today() { return r }

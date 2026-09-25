@@ -296,3 +296,65 @@ final class TogetherModel: ObservableObject {
         Task { _ = try? await HarborEngine.shared.callJSON("together.\(fn)", args) }
     }
 }
+
+// (bug pass 2) The room view is built from relay data. One malformed participant (no `name`) or
+// chat line failed the whole synthesized decode, `try?` dropped every later harbor:together
+// update and the Watch Together screen froze on the last good view. Each field now decodes on its
+// own (in extensions, so `Snapshot()` and the memberwise inits stay): bad list entries are
+// skipped, a bad optional reads as nil, anything else keeps its default.
+extension TogetherModel.Participant {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LenientKey.self)
+        guard let id: String = c.lenient("id") else {
+            throw DecodingError.keyNotFound(LenientKey("id"), .init(codingPath: c.codingPath, debugDescription: "participant without an id"))
+        }
+        self.id = id
+        name = c.lenient("name") ?? ""
+        ready = c.lenient("ready") ?? false
+        avatar = c.lenient("avatar")
+        color = c.lenient("color")
+        isSelf = c.lenient("isSelf") ?? false
+        host = c.lenient("host") ?? false
+        activeAt = c.lenient("activeAt")
+        locationLabel = c.lenient("locationLabel")
+    }
+}
+
+extension TogetherModel.Snapshot {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: LenientKey.self)
+        rev = c.lenient("rev") ?? rev
+        enabled = c.lenient("enabled") ?? enabled
+        relayUrl = c.lenient("relayUrl") ?? relayUrl
+        publicRelay = c.lenient("publicRelay") ?? publicRelay
+        isPublicRelay = c.lenient("isPublicRelay") ?? isPublicRelay
+        relayOutdated = c.lenient("relayOutdated") ?? relayOutdated
+        state = c.lenient("state") ?? state
+        room = c.lenient("room")
+        lastError = c.lenient("lastError")
+        started = c.lenient("started") ?? started
+        hostClientId = c.lenient("hostClientId")
+        syncState = c.lenient("syncState")
+        clientId = c.lenient("clientId") ?? clientId
+        displayName = c.lenient("displayName") ?? displayName
+        selfColor = c.lenient("selfColor")
+        inSession = c.lenient("inSession") ?? inSession
+        inRoom = c.lenient("inRoom") ?? inRoom
+        isHost = c.lenient("isHost") ?? isHost
+        guestsPick = c.lenient("guestsPick") ?? guestsPick
+        shareCursors = c.lenient("shareCursors") ?? shareCursors
+        hostSource = c.lenient("hostSource")
+        roomGuestPick = c.lenient("roomGuestPick") ?? roomGuestPick
+        lastInviteProto = c.lenient("lastInviteProto") ?? lastInviteProto
+        participants = c.lossyArray("participants") ?? participants
+        chat = c.lossyArray("chat") ?? chat
+        incomingInvite = c.lenient("incomingInvite")
+        incomingHostLeaving = c.lenient("incomingHostLeaving")
+        incomingParticipantLeft = c.lenient("incomingParticipantLeft")
+        incomingSummon = c.lenient("incomingSummon")
+        cursors = c.lossyArray("cursors") ?? cursors
+        strokes = c.lossyArray("strokes") ?? strokes
+        inviteUrl = c.lenient("inviteUrl")
+    }
+}

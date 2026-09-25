@@ -2684,6 +2684,16 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const v2 = T.view();
   r.ok("chat, strokes, cursors and presence land in the view", v2.chat.length === 1 && v2.chat[0].text === "popcorn ready?" && v2.strokes.length === 1 && v2.strokes[0].points.length === 2 && v2.cursors.length === 1 && v2.participants[0].locationLabel === "Watching The Shawshank Redemption", JSON.stringify({ chat: v2.chat, strokes: v2.strokes, cursors: v2.cursors, loc: v2.participants[0].locationLabel }));
   r.ok("a room command reaches the host as harbor:together-sync", events.some(([t, d]) => t === "harbor:together-sync" && d.kind === "command" && d.command.action === "pause" && d.from === "host1"));
+  // (bug pass 2) A nameless participant (and a nameless draw) from the relay: nameColor(undefined)
+  // threw inside the emit timer, so harbor:together stopped and the TV's room screen froze.
+  wsEvent(sock, "message", JSON.stringify({ t: "participant-joined", participant: { id: "odd1", joinedAt: 3, ready: false } }));
+  wsEvent(sock, "message", JSON.stringify({ t: "draw", from: "odd1", strokeId: "s9", phase: "start", x: 0.1, y: 0.1, path: "player:tt0111161" }));
+  const evBefore = events.filter(([t]) => t === "harbor:together").length;
+  await wait(220);
+  let vOdd = null;
+  try { vOdd = T.view(); } catch (e) { vOdd = String(e); }
+  r.ok("a participant without a name still yields a view (name \"\", a colour) and the throttled event", vOdd && Array.isArray(vOdd.participants) && vOdd.participants.some((p) => p.id === "odd1" && p.name === "" && typeof p.color === "string") && vOdd.strokes.some((s) => s.id === "s9" && s.authorName === "") && events.filter(([t]) => t === "harbor:together").length > evBefore, JSON.stringify(vOdd).slice(0, 300));
+  wsEvent(sock, "message", JSON.stringify({ t: "participant-left", clientId: "odd1" }));
   T.sendChat("  hi all  ");
   T.sendCommand({ action: "seek", positionSeconds: 10 });
   T.sendCommand({ action: "seek", positionSeconds: 20 });
