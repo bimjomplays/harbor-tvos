@@ -105,7 +105,10 @@ struct TogetherToastHost: View {
 
     private func tickInvite() {
         guard let inv = room.view.incomingInvite, inv.at != handledInviteAt, !covered else {
-            if inviteStarted != nil { inviteStarted = nil; progress = 0 }
+            // (review 31) The card went without Join or Dismiss (the host stopped, a cover came up):
+            // its onRing(false) never arrives from a removed view, and a stale inviteRing made the
+            // next invite's auto-join hand the ring to the room from wherever the viewer had it.
+            if inviteStarted != nil { inviteStarted = nil; progress = 0; inviteRing = false }
             return
         }
         let now = Date().timeIntervalSince1970
