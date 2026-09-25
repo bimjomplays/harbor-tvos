@@ -80,6 +80,10 @@ final class CalendarModel: ObservableObject {
     @Published private(set) var filter = "all"
     @Published private(set) var watchlistOnly = false
     @Published private(set) var animeDub = false
+    /// (device-flow pass 7) The newest month read got no answer (the engine threw or the build did
+    /// not decode). The first one left the skeleton up for good; a month stepped to kept the last
+    /// month's grid under the new month's name. The view shows the error card with Try again.
+    @Published private(set) var failed = false
     private var generation = 0
 
     init() {
@@ -110,6 +114,7 @@ final class CalendarModel: ObservableObject {
         let out: Month? = try? await HarborEngine.shared.call("calendar.month", [input])
         // A newer request (month flipped again) owns the screen.
         guard mine == generation else { return }
+        failed = out == nil
         if let out {
             data = out
             filter = out.filter

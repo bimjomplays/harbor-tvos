@@ -246,6 +246,10 @@ struct KidsMemoryMatch: View {
     @State private var matched: Set<Int> = []
     @State private var moves = 0
     @State private var locked = false
+    /// (device-flow pass 7) Counts deals. A miss turns its two cards back 0.85 s later; Shuffle in
+    /// that time dealt a new deck, and the pending turn-back then hid the first card the kid
+    /// flipped on it (memory-match.tsx's timer has the same race; the TV drops a stale one).
+    @State private var dealt = 0
     private var won: Bool { matched.count == deck.count }
     /// (kids device pass) Card keys, -1 for "Play again". The deck is disabled under the win card,
     /// which threw the ring off the last card to the header's Back (the next OK left the game), and
@@ -328,13 +332,16 @@ struct KidsMemoryMatch: View {
             return
         }
         locked = true
+        let deal: Int = dealt
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+            guard dealt == deal else { return }
             locked = false
             flipped = []
         }
     }
 
     private func reset() {
+        dealt += 1
         deck = Self.buildDeck()
         flipped = []
         matched = []

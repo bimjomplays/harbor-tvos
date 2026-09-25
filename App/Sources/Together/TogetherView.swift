@@ -51,6 +51,24 @@ struct TogetherView: View {
             if inPlayer, let t = typing { typingSheet(t).transition(.opacity) }
         }
         .ignoresSafeArea()
+        // (device-flow pass 7) In the player the typing sheet is drawn in place, not a cover, so
+        // nothing handed the ring back when it closed: its Close went and tvOS put the ring on the
+        // first control of the page. It goes back to the button that opened the sheet (a cover
+        // restores that by itself).
+        .onChange(of: typing) { old, now in
+            guard inPlayer, now == nil, let old else { return }
+            let back: String = typingOrigin(old)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { if typing == nil { focus = back } }
+        }
+        // (device-flow pass 7) Start a new room, Join and a pasted invite link sit in the lobby,
+        // which the room replaces once the relay answers: the ring went with the button pressed
+        // and tvOS put it wherever it found. It lands on "Now watching" when the room is on a
+        // video (return-to-video.tsx, the panel's first control), else on the chat's Message.
+        .onChange(of: room.view.inSession) { was, now in
+            guard now, !was else { return }
+            code = ""
+            seedRoomFocus()
+        }
         .onExitCommand { close() }
         .task { await room.attach() }
         .fullScreenCover(item: Binding(get: { inPlayer ? nil : typing }, set: { typing = $0 })) { t in typingSheet(t) }
@@ -61,12 +79,40 @@ struct TogetherView: View {
         if let onClose { onClose() } else { dismiss() }
     }
 
+    /// The button that opens each phone-typing sheet (its focus key), for the ring's way back.
+    private func typingOrigin(_ t: Typing) -> String {
+        switch t {
+        case .chat: return "message"
+        case .name: return room.view.inSession ? "roomName" : "name"
+        case .link: return "link"
+        case .relay: return "relay"
+        }
+    }
+
+    /// The room's first control once the lobby has gone from under the ring. Only when the ring
+    /// has nowhere to be (it was on a lobby button) and no sheet or page is over the room.
+    private func seedRoomFocus() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard room.view.inSession, typing == nil, opening == nil else { return }
+            let lobbyKeys: Set<String> = ["start", "link", "name", "relay", "public"]
+            if let f = focus, !lobbyKeys.contains(f) { return }
+            let hasVideo: Bool = !inPlayer && room.view.syncState?.mediaId != nil
+            focus = hasVideo ? "return" : "message"
+        }
+    }
+
     // MARK: states
 
     /// together-relay-banner.tsx
     @ViewBuilder private var relayBanner: some View {
         if room.view.relayOutdated {
-            BPNote(text: "Relay outdated. Your self-hosted relay is running an older version.", tone: BP.danger)
+            // The engine raises it for a self-hosted relay only (the public one updates itself), so
+            // this is upstream's self-hosted pair; (device-flow pass 7) the second line was missing.
+            VStack(alignment: .leading, spacing: BP.px(4)) {
+                BPNote(text: "Relay outdated. Your self-hosted relay is running an older version.", tone: BP.danger)
+                Text(T("Redeploy it to get the latest Watch Together fixes. Harbor's public relay updates on its own."))
+                    .font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -78,7 +124,9 @@ struct TogetherView: View {
                 Button { Task { await room.setRelay(room.view.publicRelay) } } label: { Label("Use Harbor's public relay", systemImage: "antenna.radiowaves.left.and.right") }
                     .buttonStyle(BPActionStyle(primary: true)).focused($focus, equals: "public")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
+                    .focused($focus, equals: "link")
                 Button { draft = ""; typing = .relay } label: { Label("Your relay URL", systemImage: "link") }.buttonStyle(BPActionStyle())
+                    .focused($focus, equals: "relay")
                 Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
@@ -92,6 +140,7 @@ struct TogetherView: View {
                 Text("Your name").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
                 Button { draft = room.view.displayName; typing = .name } label: { Label(room.view.displayName, systemImage: "pencil") }
                     .buttonStyle(BPActionStyle())
+                    .focused($focus, equals: "name")
             }
             .focusSection()
             HStack(spacing: BP.px(10)) {
@@ -104,6 +153,7 @@ struct TogetherView: View {
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: room.view.state == "connecting")).focused($focus, equals: "start")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
+                    .focused($focus, equals: "link")
                 Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
             .focusSection()
@@ -120,7 +170,14 @@ struct TogetherView: View {
             if room.view.state == "error" {
                 VStack(alignment: .leading, spacing: BP.px(8)) {
                     BPNote(text: room.view.lastError ?? "Couldn't reach the relay.", tone: BP.danger)
-                    Button("Try again") { Task { await room.retry() } }.buttonStyle(BPActionStyle())
+                    // (device-flow pass 7) The retry puts the relay back to "connecting", which swaps
+                    // this block for the connecting line under the ring: it goes to Start a new room
+                    // (busy while the relay answers) instead of wherever tvOS put it.
+                    Button("Try again") {
+                        focus = "start"
+                        Task { await room.retry() }
+                    }
+                    .buttonStyle(BPActionStyle())
                 }
             } else if room.view.state == "connecting" {
                 HStack(spacing: BP.px(8)) { ProgressView().tint(BP.ink); Text("Connecting to the relay…").font(BP.sans(14)).foregroundStyle(BP.inkMuted) }
@@ -148,11 +205,18 @@ struct TogetherView: View {
                                 VStack(alignment: .leading, spacing: BP.px(2)) {
                                     Text("Now watching").textCase(.uppercase).font(BP.sans(10, .bold)).tracking(2).foregroundStyle(BP.live)
                                     Text(media.mediaTitle ?? T("Untitled")).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
-                                    if let e = media.episode { Text("S\(e.season) · E\(e.episode)").font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
+                                    // (device-flow pass 7) return-to-video.tsx: "S{season} · E{episode}" on
+                                    // the IMDb numbering when there is one, the episode padded to two
+                                    // digits (the invite card's spelling); it read the raw S2 · E3.
+                                    if let e = media.episode {
+                                        let epLabel: String = String(format: "%02d", e.imdbEpisode ?? e.episode)
+                                        Text(T("S%lld · E%@", e.imdbSeason ?? e.season, epLabel)).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
+                                    }
                                 }
                             }
                         }
                         .buttonStyle(BPActionStyle(primary: true))
+                        .focused($focus, equals: "return")
                     }
                     Text("\(v.participants.count) watching").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
                     ForEach(v.participants) { p in participantRow(p) }
@@ -176,6 +240,7 @@ struct TogetherView: View {
                     .buttonStyle(BPActionStyle())
                 }
                 Button { draft = room.view.displayName; typing = .name } label: { Label(T("Your name") + ": " + v.displayName, systemImage: "pencil") }.buttonStyle(BPActionStyle())
+                    .focused($focus, equals: "roomName")
                 Button { Task { await room.leave() } } label: { Label("Leave room", systemImage: "rectangle.portrait.and.arrow.right") }.buttonStyle(BPActionStyle())
                 Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
@@ -221,6 +286,7 @@ struct TogetherView: View {
                         Button(T(q)) { room.sendChat(T(q)) }.buttonStyle(BPActionStyle())
                     }
                     Button { draft = ""; typing = .chat } label: { Label("Message", systemImage: "iphone") }.buttonStyle(BPActionStyle(primary: true))
+                        .focused($focus, equals: "message")
                 }
                 .padding(.vertical, BP.px(8))
             }
@@ -251,9 +317,11 @@ struct TogetherView: View {
         }
     }
 
+    /// (device-flow pass 7) The code stays in its field until the room is joined: clearing it as
+    /// soon as the relay took the request disabled Join (it needs a code) under the ring while the
+    /// relay was still connecting, so the ring fell off the lobby. The room clears it.
     private func join(_ input: String) async {
         note = await room.join(input)
-        if note == nil { code = "" }
     }
 
     private func setRelay(_ raw: String) async {

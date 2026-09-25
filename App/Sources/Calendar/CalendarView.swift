@@ -16,6 +16,8 @@ struct CalendarView: View {
     @State private var fired: [ReminderCenter.Fired] = []
     @State private var now = Date()
     @State private var mounted = false
+    /// The error card's Try again is running (it keeps the card, and the ring, up meanwhile).
+    @State private var retrying = false
     private let tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -219,8 +221,19 @@ struct CalendarView: View {
 
     // MARK: body (calendar.tsx `body`)
 
+    /// (device-flow pass 7) The last read failed and the month on screen is not the one asked for
+    /// (the first read, or a month stepped to): the error card, not a skeleton for good or last
+    /// month's grid under this month's name. It stays up (busy) while its own Try again runs.
+    private var readFailed: Bool {
+        guard model.failed, !model.loading || retrying else { return false }
+        guard let d = model.data else { return true }
+        return d.year != model.year || d.month != model.month
+    }
+
     @ViewBuilder private var content: some View {
-        if let d = model.data, model.pendingSource != nil {
+        if readFailed {
+            loadError(T("Failed to load"))
+        } else if let d = model.data, model.pendingSource != nil {
             // use-calendar-data: a new source starts from no rows while it loads.
             CalendarSkeleton(weekdays: d.weekdays)
         } else if let d = model.data, model.loading, d.year != model.year || d.month != model.month {
@@ -240,16 +253,7 @@ struct CalendarView: View {
                                    bodyText: "TMDB powers the firehose of every release this month. The free tier covers it. About 60 seconds to set up. Switch to My Library if you'd rather only see what you've saved.",
                                    action: ("Open settings", { app.room = .settings }))
             case "error":
-                VStack(spacing: BP.px(8)) {
-                    Text("Couldn't load the calendar").font(BP.sans(14, .semibold)).foregroundStyle(Color(hex: 0xffe4e6))
-                    Text(d.error ?? T("Failed to load")).font(BP.sans(12.5)).foregroundStyle(Color(hex: 0xffe4e6).opacity(0.85))
-                    // (device-flow pass) The remote has no reload: the error card had nothing to press.
-                    Button("Try again") { Task { await model.load() } }
-                        .buttonStyle(BPActionStyle(primary: true)).padding(.top, BP.px(4))
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, BP.px(40))
-                .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(hex: 0xfb7185).opacity(0.06)))
-                .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).strokeBorder(Color(hex: 0xfda4af).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6, 4])))
+                loadError(d.error ?? T("Failed to load"))
             case "empty" where !model.loading:
                 CalendarEmptyShell(heading: d.emptyHeading, bodyText: d.emptyBody, action: nil)
             default:
@@ -258,6 +262,31 @@ struct CalendarView: View {
         } else {
             CalendarSkeleton(weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map { T($0) })
         }
+    }
+
+    /// empty-states.tsx error card.
+    private func loadError(_ message: String) -> some View {
+        VStack(spacing: BP.px(8)) {
+            Text("Couldn't load the calendar").font(BP.sans(14, .semibold)).foregroundStyle(Color(hex: 0xffe4e6))
+            Text(message).font(BP.sans(12.5)).foregroundStyle(Color(hex: 0xffe4e6).opacity(0.85))
+            // (device-flow pass) The remote has no reload: the error card had nothing to press.
+            // (device-flow pass 7) Dims and holds the ring while it runs; one read at a time.
+            Button("Try again") {
+                guard !retrying else { return }
+                retrying = true
+                Task {
+                    await model.load()
+                    retrying = false
+                }
+            }
+            .buttonStyle(BPActionStyle(primary: true, busy: retrying)).padding(.top, BP.px(4))
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, BP.px(40))
+        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(hex: 0xfb7185).opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).strokeBorder(Color(hex: 0xfda4af).opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6, 4])))
+        // (device-flow pass 7) Try again is centred and the chip rows above end well left of the
+        // middle, so Down from them found nothing: a full-width focus section catches it.
+        .focusSection()
     }
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: BP.px(6)), count: 7)
