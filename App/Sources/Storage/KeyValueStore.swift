@@ -39,7 +39,10 @@ final class KeyValueStore {
                                           "harbor.favorites.v1.", "harbor.customlists.v1.", "harbor.localwatchlist.v1.", "harbor.moviewatched.v1.",
                                           "harbor.ebook.progress.v1.", "harbor.ebook.resume.v1.", "harbor.ebook.bookmarks.v1.",
                                           // engine/manga.ts FAV_PREFIX (lib/manga-favorites.tsx): manga favourites per profile.
-                                          "harbor.mangafav.v1."]
+                                          "harbor.mangafav.v1.",
+                                          // (review 11) views/library/filter-preferences: Media Servers' saved type, server,
+                                          // library, genres, sort and direction per profile (a Caches purge reset them).
+                                          "harbor.library.filters."]
     /// Every key the engine may own: upstream uses both `harbor.` and `harbor-` spellings.
     static func isEngineKey(_ key: String) -> Bool { key.hasPrefix("harbor.") || key.hasPrefix("harbor-") }
 

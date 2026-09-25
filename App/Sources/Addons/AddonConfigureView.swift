@@ -31,6 +31,7 @@ struct AddonConfigureView: View {
     @State private var shown = Shown()
     @State private var error: String?
     @State private var phoneOpen = false
+    @State private var prefilled = false
     @FocusState private var primaryFocused: Bool
     @FocusState private var installFocused: Bool
     @FocusState private var doneFocused: Bool
@@ -43,6 +44,9 @@ struct AddonConfigureView: View {
     var body: some View {
         ZStack {
             BPAmbientBackground()
+                // (sports/addons pass 2) Back on when its own phone cover (or the keyboard) closes: it
+                // stayed off, so the success card after a phone-typed link never closed by itself.
+                .onAppear { shown.on = true }
                 .onDisappear { shown.on = false }
             BP.void_.opacity(0.7).ignoresSafeArea()
             ScrollView(.vertical, showsIndicators: false) {
@@ -67,6 +71,11 @@ struct AddonConfigureView: View {
         .ignoresSafeArea()
         .onExitCommand { if !isInstalling { onClose() } }
         .onAppear {
+            // (sports/addons pass 2) Once. onAppear runs again when "Type on your phone" (or the
+            // keyboard) closes: the prefill (empty unless a deep link) overwrote the link the phone
+            // had just sent, and the read already under way was thrown away as out of date.
+            guard !prefilled else { return }
+            prefilled = true
             pasted = target.prefill
             if !target.prefill.isEmpty { Task { await read() } }
         }
@@ -153,7 +162,8 @@ struct AddonConfigureView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { primaryFocused = true }
+        // Not over a card already read: its Install / Update takes the focus (resolvedCard).
+        .onAppear { if cardMatch == nil { primaryFocused = true } }
     }
 
     private var hasResolved: Bool { if case .resolved = phase { return true }; return false }

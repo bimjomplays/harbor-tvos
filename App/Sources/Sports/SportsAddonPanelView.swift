@@ -70,6 +70,14 @@ struct SportsAddonPanelView: View {
     @State private var seeded = false
     /// (bug pass) Off screen: closed, or under one of its own covers.
     @State private var gone = false
+    /// (sports/addons pass 2) bp-sports-addon-panel seedRef: the panel opens on the first listing
+    /// (it opened on the name field, where Select brings up the keyboard), a picked listing's first
+    /// stream takes the focus when the streams land (it stayed on Back, below the list), and Back
+    /// returns to the first listing. A seed never pulls the focus off a place the viewer moved to.
+    private enum Seat: Hashable { case search, browse, refresh, close, more, back, listing(String), stream(Int) }
+    @FocusState private var seat: Seat?
+    @State private var placed: Seat?
+    @State private var placedFor: String?
 
     static func matchCopy(_ row: SportsEventModel.AddonRow) -> String {
         switch row.match {
@@ -105,7 +113,9 @@ struct SportsAddonPanelView: View {
             guard !seeded else { return }
             seeded = true
             if let r = initial { choose(r) }
+            seedFocus()
         }
+        .onChange(of: seedKey) { _, _ in seedFocus() }
         .fullScreenCover(item: $external) { e in ExternalLinkView(url: e.url) { external = nil } }
         .fullScreenCover(item: $handoff) { meta in
             PlayPickerView(meta: meta, episode: nil) { _, resolved in
@@ -129,13 +139,17 @@ struct SportsAddonPanelView: View {
         Text(T(note)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
         HStack(spacing: BP.px(10)) {
             TextField("Channel or event name", text: $query).frame(width: BP.px(420))
+                .focused($seat, equals: .search)
                 .onChange(of: query) { _, _ in limit = Self.page }
             Button(browse ? "Matching events" : "Browse addon channels") { browse.toggle(); limit = Self.page }.buttonStyle(BPActionStyle())
+                .focused($seat, equals: .browse)
             Button("Refresh") {
                 guard !model.addonsLoading else { return }
                 Task { await model.loadAddons(game, force: true) }
             }.buttonStyle(BPActionStyle(busy: model.addonsLoading))
+                .focused($seat, equals: .refresh)
             Button("Close") { onClose() }.buttonStyle(BPActionStyle())
+                .focused($seat, equals: .close)
         }
         .focusSection()
         ScrollView(.vertical, showsIndicators: false) {
@@ -143,10 +157,12 @@ struct SportsAddonPanelView: View {
                 ForEach(shown) { row in
                     Button { choose(row) } label: { SportsAddonTile(logo: row.addonLogo, title: row.name, sub: Self.matchCopy(row)) }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
+                        .focused($seat, equals: .listing(row.key))
                 }
                 if more > 0 {
                     Button { limit += Self.page } label: { SportsAddonTile(logo: nil, title: T("More addon channels (%lld left)", more), sub: "", icon: "ellipsis") }
                         .buttonStyle(BPTileStyle(radius: BP.rMD))
+                        .focused($seat, equals: .more)
                 }
             }
             .padding(.vertical, BP.px(8))
@@ -182,6 +198,7 @@ struct SportsAddonPanelView: View {
                         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rMD))
+                    .focused($seat, equals: .stream(st.index))
                     .disabled(playing != nil && playing != st.index)
                 }
             }
@@ -189,6 +206,35 @@ struct SportsAddonPanelView: View {
         }
         .scrollClipDisabled()
         Button { back() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
+            .focused($seat, equals: .back)
+    }
+
+    // MARK: focus seed (bp-sports-addon-panel `view` / `placed`)
+
+    /// Which list is up, and whether it has anything in it yet.
+    private var seedKey: String {
+        let filled: Bool = picked != nil ? !streams.isEmpty : !rows.isEmpty
+        return (picked?.key ?? "list") + (filled ? ":ready" : ":empty")
+    }
+
+    /// bp-sports-addon-streams / -listings seedRef: the first stream (Back while none), the first
+    /// listing shown (Browse when none match, Refresh when there are none at all).
+    private var seedTarget: Seat {
+        if picked != nil { return streams.first.map { Seat.stream($0.index) } ?? Seat.back }
+        if let first = filtered.first { return Seat.listing(first.key) }
+        return rows.isEmpty ? Seat.refresh : Seat.browse
+    }
+
+    private func seedFocus() {
+        let listing: String = picked?.key ?? "list"
+        if placedFor != listing { placedFor = listing; placed = nil }
+        let target: Seat = seedTarget
+        DispatchQueue.main.async {
+            // The viewer moved on from the last seed: leave the focus where they put it.
+            if let p = placed, let now = seat, now != p { return }
+            placed = target
+            seat = target
+        }
     }
 
     private func choose(_ row: SportsEventModel.AddonRow) {
