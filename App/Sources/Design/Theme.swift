@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import Combine
 
 /// Big Picture design tokens (docs/big-picture-design.md). Upstream lays out on a 1140×641 CSS
 /// canvas; tvOS lays out on 1920×1080 points, so every px value is scaled by `BP.k`.
@@ -131,19 +133,139 @@ struct BPAmbientBackground: View {
     /// bp-mosaic "ambient" variant behind screens with no art of their own; off when the viewer
     /// turned the animated backdrop off (settings.bigPictureMosaic).
     var mosaic = true
+    /// RootView's (and the PiP browse layer's) instance: the fallback under screens that draw
+    /// no background of their own, so any other instance showing in its window outranks it.
+    var root = false
     @ObservedObject private var pool = AmbientPool.shared
+    /// (perf pass 2) Only one mosaic in the app runs: see AmbientCoverage.
+    @ObservedObject private var coverage = AmbientCoverage.shared
+    @State private var id = UUID()
     var body: some View {
+        let live = coverage.live == id
         ZStack {
             // --bp-void, or the theme's own backdrop (Stage 9); plain void on Harbor default.
             BPThemeBackdrop()
-            if mosaic, SettingsBridge.shared.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
-                BPMosaicView(posters: pool.posters).opacity(0.13)
+            if mosaic, live, SettingsBridge.shared.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
+                BPMosaicView(posters: pool.posters).opacity(0.13).transition(.opacity)
             }
             RadialGradient(colors: [BP.accent.opacity(0.10), .clear], center: .topTrailing, startRadius: 0, endRadius: 1300)
             LinearGradient(colors: [BP.canvas.opacity(0.9), .clear], startPoint: .bottom, endPoint: .center)
         }
+        .animation(BP.easeSlow, value: live)
+        .background(AmbientProbe(id: id))
         .ignoresSafeArea()
         .task { await pool.load() }
+        .onAppear { coverage.appeared(id, root: root) }
+        .onDisappear { coverage.disappeared(id) }
+    }
+}
+
+/// (perf pass 2) Which BPAmbientBackground draws its mosaic. Upstream mounts one ambient layer,
+/// in bp-shell outside the routed page, so one mosaic at most is ever on screen. Here the
+/// background is drawn by RootView and again by ~20 screens and covers, each opaque, and every
+/// one ran its 48 masked, drifting posters behind whatever covered it: the screen over RootView,
+/// a fullScreenCover over the screen, the player, the screensaver. Now only the instance the
+/// viewer can see runs one: in the topmost window, not under a presented cover (an alert aside),
+/// a screen's own over the root fallback, and the newest of those. None runs under the
+/// screensaver or curfew lock, or while the app is in the background. Covers are not
+/// observable, so presentations are polled twice a second, as PreviewGate does; the mosaic
+/// leaves the tree when covered (fading back in when uncovered), so it neither animates nor draws.
+@MainActor
+final class AmbientCoverage: ObservableObject {
+    static let shared = AmbientCoverage()
+    /// The instance whose mosaic runs, if any.
+    @Published private(set) var live: UUID?
+    private struct Entry { var root: Bool; var order: Int }
+    private final class WeakView { weak var view: UIView?; init(_ v: UIView) { view = v } }
+    private var entries: [UUID: Entry] = [:]
+    private var probes: [UUID: WeakView] = [:]
+    private var order = 0
+    private var bag = Set<AnyCancellable>()
+
+    private init() {
+        // @Published fires before the value lands: read it on the next main-queue turn.
+        ScreensaverModel.shared.$active.sink { [weak self] _ in Task { @MainActor in self?.refresh() } }.store(in: &bag)
+        CurfewState.shared.$locked.sink { [weak self] _ in Task { @MainActor in self?.refresh() } }.store(in: &bag)
+        Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &bag)
+    }
+
+    func appeared(_ id: UUID, root: Bool) {
+        order += 1
+        entries[id] = Entry(root: root, order: order)
+        refresh()
+    }
+
+    func disappeared(_ id: UUID) {
+        entries[id] = nil
+        refresh()
+    }
+
+    fileprivate func attach(_ id: UUID, _ view: UIView) {
+        probes[id] = WeakView(view)
+        // didMoveToWindow can land inside a SwiftUI update: publish on the next main-queue turn.
+        Task { @MainActor [weak self] in self?.refresh() }
+    }
+
+    func refresh() {
+        probes = probes.filter { $0.value.view != nil }
+        var pick: UUID?
+        var best: (CGFloat, Int, Int) = (-.greatestFiniteMagnitude, -1, -1)
+        let blocked = ScreensaverModel.shared.active || CurfewState.shared.locked
+            || UIApplication.shared.applicationState == .background
+        if !blocked {
+            for (id, e) in entries {
+                guard let v = probes[id]?.view, let w = v.window, !w.isHidden, !Self.presentedOver(v) else { continue }
+                let key: (CGFloat, Int, Int) = (w.windowLevel.rawValue, e.root ? 0 : 1, e.order)
+                if key > best {
+                    best = key
+                    pick = id
+                }
+            }
+        }
+        if live != pick { live = pick }
+    }
+
+    /// Something is presented over the view controller hosting `view` (a fullScreenCover, a sheet,
+    /// the player's cover). An alert or confirmation dialog leaves the screen showing around it.
+    private static func presentedOver(_ view: UIView) -> Bool {
+        var responder: UIResponder? = view
+        var owner: UIViewController?
+        while let next = responder?.next {
+            if let vc = next as? UIViewController {
+                owner = vc
+                break
+            }
+            responder = next
+        }
+        guard var host = owner else { return false }
+        while let parent = host.parent { host = parent }
+        guard let presented = host.presentedViewController else { return false }
+        if presented is UIAlertController { return false }
+        return !presented.isBeingDismissed
+    }
+}
+
+/// Tells AmbientCoverage where one BPAmbientBackground sits (its window and view controller).
+private struct AmbientProbe: UIViewRepresentable {
+    let id: UUID
+
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.id = id
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {}
+
+    final class ProbeView: UIView {
+        var id: UUID?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let id { AmbientCoverage.shared.attach(id, self) }
+        }
     }
 }
 
@@ -170,10 +292,23 @@ struct BPMosaicView: View {
     /// bp-mosaic `variant="stage"`: the band mosaic behind Home's services/addons bands (wider,
     /// denser mask; the caller paints it at 32 %). The default is the "ambient" variant.
     var stage = false
+    /// bp-decor-motion (useReducedMotion follows the setting live): the columns hold still under
+    /// Reduce Motion.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        // Toggling Reduce Motion rebuilds the columns, so a drift already running stops (or one
+        // switched back on starts): a running repeatForever animation cannot be called off in place.
+        BPMosaicColumns(posters: posters, stage: stage, drift: !reduceMotion).id(reduceMotion)
+    }
+}
+
+private struct BPMosaicColumns: View {
+    let posters: [String]
+    let stage: Bool
+    let drift: Bool
     private static let columns = 6, perColumn = 4
     @State private var phase = false
-    /// bp-decor-motion: the columns hold still under Reduce Motion.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { g in
@@ -201,6 +336,6 @@ struct BPMosaicView: View {
                   : RadialGradient(colors: [.black, .black.opacity(0.55), .clear], center: .init(x: 0.5, y: 0.4), startRadius: 0, endRadius: g.size.width * 0.75))
         }
         .allowsHitTesting(false)
-        .onAppear { if !reduceMotion { phase = true } }
+        .onAppear { if drift { phase = true } }
     }
 }
