@@ -743,13 +743,18 @@ export async function addonSources(game: SportsGame, authKey: string | null = nu
 }
 
 /** bp-sports-addon-play choose: the streams one listing offers (inline, its addon, then others that accept the id). */
+let addonStreamsSeq = 0;
 export async function addonStreams(key: string): Promise<{ status: "ok" | "listing" | "reload"; rows: Array<{ index: number; name: string; title: string; external: boolean }> }> {
   const row = addonHeld?.rows.find((r) => r.key === key);
   if (!row || !isAddonEnabled(row.addon.transportUrl)) { addonHeld = null; return { status: "reload", rows: [] }; }
+  // (sports/addons pass 2) Only the newest pick is kept (bp-sports-addon-play choose: a new pick
+  // aborts the last one). A slow listing the viewer backed out of used to land after the one they
+  // chose next and replace its streams, so every Play on the shown list said "Could not start".
+  const seq = ++addonStreamsSeq;
   try {
     const providers = (addonHeld?.providers ?? []).filter((a) => isAddonEnabled(a.transportUrl));
     const streams = await loadSportsAddonStreams(row, new AbortController().signal, providers);
-    addonPicked = { key, streams };
+    if (seq === addonStreamsSeq) addonPicked = { key, streams };
     return {
       status: "ok",
       rows: streams.map((st, index) => ({
