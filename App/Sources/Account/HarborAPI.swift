@@ -95,21 +95,71 @@ enum HarborAPI {
 }
 
 /// Human-facing strings for the error codes upstream knows (src/lib/account/error-messages.ts).
+/// (device-flow pass 5) Upstream's own copy and order (accountErrorMessage): the TV had its own
+/// shorter lines ("That username is taken.", "Invalid taken.", "Harbor error: handle_taken"),
+/// which no catalog translates and which named the raw code. Now BY_REASON, then BY_CODE, then a
+/// network failure, then the server's own text, then "Something went wrong. Try again.".
 enum HarborErrorMessages {
+    /// error-messages.ts BY_CODE.
+    private static let byCode: [String: String] = [
+        "username_taken": "That username is already taken. Try a different one.",
+        "bad_credentials": "That username and password don't match. Check both and try again.",
+        "banned": "This account has been suspended. Reach out to support if you think that's wrong.",
+        "rate_limited": "Too many attempts in a row. Wait a minute, then try again.",
+        "auth_required": "Please sign in again to continue.",
+        "recovery_invalid": "That username and recovery key don't match.",
+        "refresh_invalid": "Your session expired. Sign in again.",
+        "handle_locked": "Your handle is locked. Contact support to change it.",
+        "handle_reserved": "That handle is reserved. Pick a different one.",
+        "handle_too_short": "Handles need at least 3 characters.",
+        "handle_too_long": "That handle is too long. Use at most 24 characters.",
+        "handle_invalid": "Handles can use letters, numbers, and single hyphens only.",
+        "handle_taken": "That handle is already taken. Try one of the suggestions.",
+        "handle_cooldown_other": "Someone released that handle recently. It frees up 14 days after they dropped it.",
+        "handle_cooldown": "You changed your handle recently. You can change it again after the cooldown.",
+        "stremio_already_bound": "That Stremio account is already linked to a different Harbor account. Unlink it there first.",
+        "stremio_key_invalid": "That Stremio sign-in did not go through. Try again.",
+        "stremio_anonymous": "Sign in to a real Stremio account, not a guest, to verify.",
+        "stremio_unreachable": "Could not reach Stremio right now. Try again in a moment.",
+        "challenge_invalid": "That verification attempt expired. Start it again.",
+        "password_required": "Set a password before unlinking, so you don't get locked out.",
+        "no_image": "Choose an image file first.",
+        "bad_image": "That file could not be read as an image. Try a PNG, JPG, or WEBP.",
+        "slow_down": "You're doing that too fast. Wait a moment and try again.",
+        "blocked_text": "That text isn't allowed. Try different wording.",
+        "password_too_short": "Your password needs to be at least 8 characters.",
+    ]
+    /// error-messages.ts BY_REASON.
+    private static let byReason: [String: String] = [
+        "password_too_short": "Your password needs to be at least 8 characters.",
+        "too-short": "That name is too short. Use at least 3 characters.",
+        "invalid": "That name has characters that aren't allowed. Stick to letters, numbers, and underscores.",
+        "reserved": "That name is reserved. Pick a different one.",
+        "taken": "That name is already taken. Try another.",
+        "profanity": "Please choose a different name.",
+        "max-length": "That name is too long.",
+    ]
+    private static let validationKey = "Please check the details you entered and try again."
+    private static let networkKey = "Couldn't reach Harbor. Check your connection and try again."
+    private static let genericKey = "Something went wrong. Try again."
+
+    /// `code` is the server's code (or its snake_case message, AccountStore.translate); `reason`
+    /// its reason, or its message / the engine's error line when there is no code.
     static func message(code: String?, reason: String?, status: Int) -> String {
-        switch code {
-        case "bad_credentials": return T("Wrong username or password")
-        case "username_taken": return "That username is taken."
-        case "banned": return "This account is banned."
-        case "rate_limited", "slow_down": return "Too many attempts. Wait a moment and try again."
-        case "auth_required", "refresh_invalid": return "Please sign in again."
-        case "password_too_short": return "Password is too short."
-        case "stremio_already_bound": return "That Stremio account is already linked to another Harbor account."
-        case "stremio_key_invalid": return "Stremio rejected that sign-in."
-        case "validation": return "Invalid \(reason ?? "input")."
-        default:
-            if code == nil, let reason, !reason.isEmpty { return reason }
-            return code.map { "Harbor error: \($0)" } ?? "Harbor request failed (\(status))."
+        let c: String = (code ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let r: String = (reason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if c == "validation" { return T(byReason[r] ?? validationKey) }
+        if let key = byReason[r] { return T(key) }
+        if let key = byCode[c] { return T(key) }
+        // isNetworkError: a fetch that never reached the server ("Load failed", a TypeError).
+        let lower: String = r.lowercased()
+        if c.isEmpty, lower.hasPrefix("typeerror") || lower.contains("failed to fetch") || lower.contains("networkerror") || lower.contains("load failed") {
+            return T(networkKey)
         }
+        if c.isEmpty, !r.isEmpty { return r }
+        // SNAKE_CODE_RE: an unknown code reads as the generic line, not as "handle_whatever".
+        if c.range(of: "^[a-z0-9]+(_[a-z0-9]+)+$", options: .regularExpression) != nil { return T(genericKey) }
+        if !c.isEmpty { return c }
+        return T(genericKey)
     }
 }

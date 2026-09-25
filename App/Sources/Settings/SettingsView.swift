@@ -22,6 +22,12 @@ struct SettingsView: View {
     /// asks nothing first, like upstream (account-identity-card / stremio-card signOut), and takes
     /// its own button away; the ring follows to Sign in (stremio-card returnRing → signInRef).
     @FocusState private var accountLead: String?
+    /// (device-flow pass 5) The cover that just closed (read in its onDismiss, when `sheet` is nil).
+    @State private var closingSheet: Sheet?
+    /// (device-flow pass 5) Replay walkthrough ("replay") or Switch profile ("switch") took the app
+    /// off the shell: the rebuilt page returns the ring to that button.
+    private static var ringReturn: String?
+    @FocusState private var returnFocus: String?
 
     @EnvironmentObject private var settings: SettingsBridge
     /// The eBook tab (EBook/EBookModels.swift EBookGate): a choice for this TV.
@@ -43,6 +49,7 @@ struct SettingsView: View {
                     if let s = account.session {
                         row(T("Signed in as %@", s.user.username), detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")
                         Button("Sign out") { app.signOutHarbor(); returnRing(to: "harbor") }.buttonStyle(BPActionStyle())
+                            .focused($accountLead, equals: "harbor-out")
                     } else {
                         row("Not signed in", detail: "Sync, themes and friends")
                         Button("Sign in") { sheet = .harbor }.buttonStyle(BPActionStyle(primary: true))
@@ -53,7 +60,12 @@ struct SettingsView: View {
                     if let p = profiles.active {
                         if let s = profiles.stremioSession(for: p.id) {
                             row(T("Signed in as %@", s.user.fullname ?? s.user.email), detail: "For the \(p.name) profile")
-                            Button("Sign out") { profiles.setStremioSession(nil, for: p.id); returnRing(to: "stremio") }.buttonStyle(BPActionStyle())
+                            // (device-flow pass 5) The column's Setup summary, "Accounts and TMDB" detail
+                            // and preview name the Stremio account (engine settingsRoom facts): they are
+                            // read again, as a sign-in's closing cover already has them (bp-settings
+                            // reads live); they said "Connected: Stremio" after the sign-out.
+                            Button("Sign out") { profiles.setStremioSession(nil, for: p.id); coversClosed &+= 1; returnRing(to: "stremio") }.buttonStyle(BPActionStyle())
+                                .focused($accountLead, equals: "stremio-out")
                         } else {
                             row("Not signed in", detail: "Your Stremio library for the \(p.name) profile")
                             Button("Sign in") { sheet = .stremio }.buttonStyle(BPActionStyle(primary: true))
@@ -151,7 +163,12 @@ struct SettingsView: View {
                     if let p = profiles.active {
                         row(p.name, detail: "\(profiles.profiles.count) profiles on this account")
                         HStack(spacing: BP.px(12)) {
-                            Button("Switch profile") { app.switchProfile() }.buttonStyle(BPActionStyle())
+                            Button("Switch profile") {
+                                app.switchProfile()
+                                Self.ringReturn = app.stage == .whoIsWatching ? "switch" : nil
+                            }
+                            .buttonStyle(BPActionStyle())
+                            .focused($returnFocus, equals: "switch")
                             Button(p.passwordHash == nil ? "Set a PIN" : "Remove PIN") {
                                 if p.passwordHash == nil { pinDraft = ""; sheet = .pin } else { sheet = .removePin }
                             }.buttonStyle(BPActionStyle())
@@ -179,10 +196,12 @@ struct SettingsView: View {
                         row("Replay walkthrough", detail: "Re-runs the welcome flow and clears every dismissed tip.")
                         Button {
                             app.replayOnboarding()
+                            Self.ringReturn = app.stage == .onboarding ? "replay" : nil
                         } label: {
                             Label(T("Replay"), systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(BPActionStyle())
+                        .focused($returnFocus, equals: "replay")
                         .accessibilityIdentifier("settings-replay-walkthrough")
                     }
                 }
@@ -194,7 +213,26 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { if Fixtures.openSpikes && sheet == nil { sheet = .spikes } }
-        .fullScreenCover(item: $sheet, onDismiss: { coversClosed &+= 1 }) { which in
+        // (device-flow pass 5) Setup and Who's watching replace the shell, so leaving them (Start
+        // watching, Finish later, a pick, Back) builds Settings afresh and the ring started at the
+        // top of the page, far above the row it was on. bp-shell opens setup and the chooser over
+        // the room (bp-who-is-watching-layer) and the ring comes back to what opened them: Replay
+        // or Switch profile, once the page is laid out again.
+        .task {
+            guard let key = Self.ringReturn else { return }
+            Self.ringReturn = nil
+            try? await Task.sleep(for: .milliseconds(350))
+            if sheet == nil { returnFocus = key }
+        }
+        .onChange(of: sheet) { old, now in
+            if now == nil { closingSheet = old }
+        }
+        .fullScreenCover(item: $sheet, onDismiss: {
+            coversClosed &+= 1
+            let closed: Sheet? = closingSheet
+            closingSheet = nil
+            afterCover(closed)
+        }) { which in
             ZStack {
                 BPAmbientBackground()
                 switch which {
@@ -259,6 +297,23 @@ struct SettingsView: View {
     /// The section's Sign in, once the sign-out has put it on screen.
     private func returnRing(to key: String) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { accountLead = key }
+    }
+
+    /// (device-flow pass 5) A sign-in cover that signed in took the Sign in under the ring away (the
+    /// section shows Sign out now), so tvOS had nothing to hand the ring back to when the cover
+    /// closed and it fell to the top of the page. It goes to the section's Sign out, the button
+    /// that took the place of the one that opened the cover (account-identity-card / stremio-card
+    /// swap the same pair). A cover closed without a sign-in finds its Sign in again by itself.
+    private func afterCover(_ closed: Sheet?) {
+        guard let closed else { return }
+        switch closed {
+        case .harbor:
+            if account.isSignedIn { returnRing(to: "harbor-out") }
+        case .stremio:
+            if let p = profiles.active, profiles.stremioSession(for: p.id) != nil { returnRing(to: "stremio-out") }
+        default:
+            break
+        }
     }
 
     private func testSavedKey() async {

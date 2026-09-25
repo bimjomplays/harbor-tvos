@@ -255,7 +255,10 @@ struct HomeServersPanel: View {
             if now == nil, let old, Self.isFlowKey(old) { flowLeftAt = Date() }
         }
         .alert(removeTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { c in
-            Button("Remove server", role: .destructive) { Task { await model.remove(c.id); refocus("add-plex") } }
+            // (device-flow pass 5) After the alert has gone (review 24's Live Sources rule): the
+            // removal answers before the alert finishes dismissing, and a focus set under it is
+            // dropped, so the ring fell off the section with the removed row's buttons.
+            Button("Remove server", role: .destructive) { Task { await model.remove(c.id); refocus("add-plex", after: 0.4) } }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("Cached titles from this server will also be removed. Your media on the server will not be changed.")
@@ -272,8 +275,8 @@ struct HomeServersPanel: View {
     }
 
     /// The target is drawn on the next pass; focus it once it is there.
-    private func refocus(_ key: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = key }
+    private func refocus(_ key: String, after delay: Double = 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { focus = key }
     }
 
     /// Menu while the Plex code, the server list or the form is up closes it; nil lets Menu leave Settings.

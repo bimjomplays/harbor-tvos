@@ -214,6 +214,11 @@ struct BPSettingsView: View {
         // Changes written from the panels below (SettingsBridge.patch raises no event).
         .onChange(of: settings.slice) { _, _ in model.scheduleReload() }
         .onChange(of: refresh) { _, _ in model.scheduleReload() }
+        // (device-flow pass 5) The Setup summary, the "Accounts and TMDB" detail and the preview
+        // name the Harbor account (engine settingsRoom facts → currentAuthor): Sign out, or a
+        // session the server ended, left them saying "Connected: Harbor" until another change.
+        // The engine drops its session as logoutAuthor starts, well inside the reload's debounce.
+        .onChange(of: account.session) { _, _ in model.scheduleReload() }
         // (settings pass 2) The ring left the column (Down into the panels below): an auditioned
         // sound pack is not the committed one, so it stops playing there too.
         .onChange(of: focus) { _, now in

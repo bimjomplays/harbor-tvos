@@ -252,6 +252,7 @@ struct ConnectPane: View {
     @EnvironmentObject private var settings: SettingsBridge
     @StateObject private var handoff = TvHandoff(mode: .setup(HandoffStep.allCases))
     @State private var typing = false
+    @FocusState private var typeKeyFocused: Bool
 
     private var hasKey: Bool { !settings.slice.tmdbKey.trimmingCharacters(in: .whitespaces).isEmpty }
     private var stremioName: String? {
@@ -281,12 +282,18 @@ struct ConnectPane: View {
                     }
                 }
                 if typing {
-                    TmdbKeyForm(done: { typing = false }, skip: { typing = false })
+                    TmdbKeyForm(done: { endTyping() }, skip: { endTyping() })
                 }
                 HStack(spacing: BP.px(12)) {
                     Button("Settings", action: onBack).buttonStyle(BPActionStyle())
                     if !typing {
-                        Button(hasKey ? "Replace the saved key" : "Type a key on this TV") { typing = true }.buttonStyle(BPActionStyle(primary: !hasKey))
+                        // (device-flow pass 5) bp-connect.tsx: "Type a key on this TV" whether or not a
+                        // key is saved (upstream says "Replace the saved key" only as the field's
+                        // placeholder), the primary and the autofocus of the rail. The ring opened
+                        // on Settings, so one OK closed the pane it had just opened.
+                        Button("Type a key on this TV") { typing = true }
+                            .buttonStyle(BPActionStyle(primary: true))
+                            .focused($typeKeyFocused)
                     }
                     if handoff.phase != .complete {
                         Button("Show a new code") { handoff.restart() }.buttonStyle(BPActionStyle())
@@ -300,8 +307,17 @@ struct ConnectPane: View {
             let a = app
             handoff.onPayload = HandoffApply.make(profileId: profiles.active?.id, afterHarbor: { await a.refreshRoster() })
             handoff.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { typeKeyFocused = true }
         }
         .onDisappear { handoff.stop() }
+    }
+
+    /// (device-flow pass 5) The key form's Verify / Keep / Use Cinemeta held the ring and go with
+    /// the form: the ring returns to "Type a key on this TV" once it is back (bp-connect's rail),
+    /// instead of falling to whatever tvOS found first.
+    private func endTyping() {
+        typing = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { typeKeyFocused = true }
     }
 
     /// bp-connect-parts.tsx BpConnectStatus.

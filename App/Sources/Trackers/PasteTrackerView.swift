@@ -120,7 +120,10 @@ struct PasteTrackerPanel: View {
         }
         .task { await model.refresh() }
         .alert(disconnectTitle, isPresented: $confirmDisconnect) {
-            Button(T("Disconnect"), role: .destructive) { Task { await model.disconnect(); refocus() } }
+            // (device-flow pass 5) After the alert has gone, as review 24 did for the Live Sources
+            // Remove: the engine's disconnect answers before the alert finishes dismissing, and a
+            // focus set under a presented alert is dropped, so the ring fell off the panel.
+            Button(T("Disconnect"), role: .destructive) { Task { await model.disconnect(); refocus(after: 0.4) } }
             Button(T("Cancel"), role: .cancel) {}
         } message: {
             Text(verbatim: disconnectMessage)
@@ -128,8 +131,8 @@ struct PasteTrackerPanel: View {
     }
 
     /// The step's lead button, once it is on screen.
-    private func refocus() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { lead = true }
+    private func refocus(after delay: Double = 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { lead = true }
     }
 
     private var disconnectTitle: String {

@@ -238,7 +238,9 @@ struct OnboardingView: View {
                     Button("Continue") { advance() }.buttonStyle(BPActionStyle(primary: true))
                     Button("Skip") { advance() }.buttonStyle(BPActionStyle())
                 }
-                BPNote(text: T("In order: %@", settings.slice.preferredSubLangs.joined(separator: ", ")))
+                // (device-flow pass 5) bp-step-subtitles.tsx: an empty list says so; it read "In order: ".
+                let langs: [String] = settings.slice.preferredSubLangs
+                BPNote(text: langs.isEmpty ? T("Nothing selected. Harbor will not load a subtitle on its own.") : T("In order: %@", langs.joined(separator: ", ")))
             }
         case .taste:
             TasteStep { advance() }
@@ -508,8 +510,8 @@ struct StremioSignInForm: View {
                     .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 if let skip { Button("Not now", action: skip).buttonStyle(BPActionStyle()) }
             }
-            if let error { BPNote(text: error, tone: BP.danger) }
-            BPNote(text: "Skip this and Harbor still works. Your library just stays local.")
+            // bp-step-stremio.tsx: the failure takes the note's place (text={error ?? …}, alert).
+            BPNote(text: error ?? "Skip this and Harbor still works. Your library just stays local.", tone: error == nil ? BP.inkMuted : BP.danger)
         }
         .frame(maxWidth: BP.px(520))
     }
@@ -517,6 +519,8 @@ struct StremioSignInForm: View {
     private func signIn() async {
         guard !busy else { return }
         busy = true; defer { busy = false }
+        // bp-step-stremio.tsx submit: setError(null) first, so a retry does not keep the last failure.
+        error = nil
         do {
             let r = try await StremioAPI.login(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
             let session = ProfilesStore.StremioSession(authKey: r.authKey, user: r.user)
@@ -588,7 +592,9 @@ struct HarborSignInForm: View {
             HStack(spacing: BP.px(12)) {
                 Button(busy ? "Working…" : (creating ? "Create account" : "Sign in")) { Task { await submit() } }
                     .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
-                Button(creating ? "I have an account" : "Create an account") { creating.toggle() }.buttonStyle(BPActionStyle())
+                // (device-flow pass 5) account-auth-form.tsx: switching mode clears the last error
+                // (a sign-in's "don't match" stayed up over the new account's fields).
+                Button(creating ? "I have an account" : "Create an account") { creating.toggle(); error = nil }.buttonStyle(BPActionStyle())
                 if let skip {
                     Button("Later", action: skip).buttonStyle(BPActionStyle())
                         .focused($laterFocused)
@@ -613,6 +619,7 @@ struct HarborSignInForm: View {
     private func submit() async {
         guard !busy else { return }
         busy = true; defer { busy = false }
+        error = nil
         do {
             if creating { try await account.register(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password) }
             else { try await account.signIn(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password) }
@@ -661,6 +668,30 @@ struct RecoveryRevealView: View {
 }
 
 
+/// (device-flow pass 5) bp-onboarding-frame.tsx useBpOnboardFocus for a `focus: "decision"` screen
+/// whose choices load after it opens (Your services, Taste): the ring waits on the primary while
+/// they load, then moves onto the first choice once it mounts, for up to LATE_MOUNT_MS (6 s) and
+/// only while nothing else has moved it. The ring stayed on Continue under the grid, so the first
+/// OK passed over the step the viewer had only just reached.
+@MainActor
+enum OnboardDecisionSeed {
+    /// The step's Continue.
+    static let primary = "primary"
+    /// bp-onboarding-frame.tsx LATE_MOUNT_MS.
+    private static let lateMount: TimeInterval = 6
+
+    static func place(_ target: String?, opened: Date, ring: FocusState<String?>.Binding) async {
+        guard let target, Date().timeIntervalSince(opened) < lateMount else { return }
+        let before: String? = ring.wrappedValue
+        guard before == nil || before == primary else { return }
+        // The grid mounts on this pass: focus its first cell once it is there.
+        try? await Task.sleep(for: .milliseconds(120))
+        let now: String? = ring.wrappedValue
+        guard now == nil || now == primary else { return }
+        ring.wrappedValue = target
+    }
+}
+
 /// onboarding/steps/bp-step-streaming.tsx: every service as a chip, on/off, through the BP settings
 /// catalog's "service" control (settingsRoom.commit toggles settings.streaming).
 struct StreamingServicesStep: View {
@@ -668,6 +699,8 @@ struct StreamingServicesStep: View {
     let done: () -> Void
     @State private var items: [BPSettingsModel.MultiItem] = []
     @State private var loaded = false
+    /// (device-flow pass 5) bp-onboarding-frame useBpOnboardFocus: see OnboardDecisionSeed.
+    @FocusState private var ring: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
@@ -691,6 +724,7 @@ struct StreamingServicesStep: View {
                             .opacity(i.on ? 1 : 0.55)
                         }
                         .buttonStyle(BPTileStyle(radius: BP.rSM))
+                        .focused($ring, equals: "s:\(i.value)")
                     }
                 }
                 .focusSection()
@@ -698,10 +732,16 @@ struct StreamingServicesStep: View {
             BPNote(text: hasKey ? T("%lld on", items.filter(\.on).count) : "These rows need a TMDB key before they show anything.")
             HStack(spacing: BP.px(12)) {
                 Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
+                    .focused($ring, equals: OnboardDecisionSeed.primary)
                 Button("Skip") { done() }.buttonStyle(BPActionStyle())
             }
         }
-        .task { await load() }
+        .task {
+            let opened = Date()
+            await load()
+            let first: String? = items.first.map { "s:\($0.value)" }
+            await OnboardDecisionSeed.place(first, opened: opened, ring: $ring)
+        }
     }
 
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
@@ -729,6 +769,8 @@ struct TasteStep: View {
     @State private var picked: Set<String> = []
     @State private var loaded = false
     @State private var bump: String?
+    /// (device-flow pass 5) bp-onboarding-frame useBpOnboardFocus: see OnboardDecisionSeed.
+    @FocusState private var ring: String?
     private static let max = 5
     /// (layout pass) Six 253 pt posters (1 603 pt) overran the 891 pt step column, and the scroller
     /// centred and clipped them. bp-step-taste keeps PER_ROW = 6 at the column's width: 6 × px(76)
@@ -756,6 +798,7 @@ struct TasteStep: View {
                                 .offset(y: bump == m.id ? -6 : 0)
                             }
                             .buttonStyle(BPTileStyle(radius: BP.rXS))
+                            .focused($ring, equals: "t:\(m.id)")
                             // A poster with no caption: the title, selected once it is picked.
                             .accessibilityLabel(Text(verbatim: m.name))
                             .bpSelected(on)
@@ -769,14 +812,18 @@ struct TasteStep: View {
             BPNote(text: onScreen >= Self.max ? "That is five. Deselect one to swap it out." : T("%lld of %lld picked", onScreen, Self.max))
             HStack(spacing: BP.px(12)) {
                 Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
+                    .focused($ring, equals: OnboardDecisionSeed.primary)
                 Button("Skip") { done() }.buttonStyle(BPActionStyle())
             }
         }
         .task {
+            let opened = Date()
             let p = ProfilesStore.shared.active
             items = (try? await HarborEngine.shared.call("onboarding.tasteTitles", [p?.id ?? "default", p?.linked ?? true])) ?? []
             picked = Set((try? await HarborEngine.shared.call("onboarding.upvoted", []) as [String]) ?? [])
             loaded = true
+            let first: String? = items.first.map { "t:\($0.id)" }
+            await OnboardDecisionSeed.place(first, opened: opened, ring: $ring)
         }
     }
 
@@ -788,7 +835,9 @@ struct TasteStep: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { bump = nil } }
             return
         }
-        let ids: [String] = (try? await HarborEngine.shared.call("onboarding.vote", [m.id, !on, m.name, m.type])) ?? []
-        picked = Set(ids)
+        // (device-flow pass 5) A failed vote keeps the picks on screen: `?? []` cleared every tick
+        // while the picks were still saved in the vote store.
+        let ids: [String]? = try? await HarborEngine.shared.call("onboarding.vote", [m.id, !on, m.name, m.type])
+        if let ids { picked = Set(ids) }
     }
 }

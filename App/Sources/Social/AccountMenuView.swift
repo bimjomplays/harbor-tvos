@@ -151,10 +151,12 @@ struct AccountMenuView: View {
     @ObservedObject private var profiles = ProfilesStore.shared
     @Environment(\.dismiss) private var dismiss
 
-    private enum Sheet: String, Identifiable { case profile, notifications, feed, groups, together, list; var id: String { rawValue } }
+    private enum Sheet: String, Identifiable { case profile, notifications, feed, groups, together, list, signIn; var id: String { rawValue } }
     @State private var sheet: Sheet?
     /// The open cover is the notification center: closing it marks everything read.
     @State private var readOnClose = false
+    /// The open cover is the Harbor sign-in (device-flow pass 5).
+    @State private var signInOpen = false
     @FocusState private var focus: String?
     /// (device-flow pass 4) onAppear also runs when a page opened from here closes (Groups,
     /// Notifications, Watch together…): the ring went back to its item, then 0.12 s later was
@@ -162,6 +164,8 @@ struct AccountMenuView: View {
     @State private var seeded = false
 
     private var kid: Bool { profiles.active?.kid != nil }
+    /// The item the ring opens on.
+    private var seedKey: String { kid ? "who" : (center.me.signedIn ? "profile" : "groups") }
 
     var body: some View {
         ZStack {
@@ -181,7 +185,14 @@ struct AccountMenuView: View {
                         item("Open a shared list", "list.star", key: "list") { sheet = .list }
                     }
                     item("Who's watching?", "person.2.circle", key: "who") { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { app.switchProfile() } }
-                    item(center.me.signedIn || kid ? "Settings" : "Sign in to Harbor", center.me.signedIn || kid ? "gearshape" : "person.badge.key", key: "settings") {
+                    // (device-flow pass 5) account-menu-panel.tsx: signed out, "Sign in" opens the
+                    // sign-in dialog itself (setAuthOpen) and Settings stays its own item. The TV's
+                    // one item went to Settings instead, with the ring left on the bell and the Harbor
+                    // section dozens of rows down the page, and Settings had no item while signed out.
+                    if !kid && !center.me.signedIn {
+                        item("Sign in to Harbor", "person.badge.key", key: "signin") { signInOpen = true; sheet = .signIn }
+                    }
+                    item("Settings", "gearshape", key: "settings") {
                         app.room = .settings
                         dismiss()
                     }
@@ -197,13 +208,13 @@ struct AccountMenuView: View {
         .onAppear {
             guard !seeded else { return }
             seeded = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = seedKey }
         }
         .task {
             await center.refresh()
             // (social pass) The refresh can change which items exist (signed out elsewhere: "View my
             // profile" goes, taking the seeded ring with it); seed again when nothing holds it.
-            if focus == nil && sheet == nil { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") }
+            if focus == nil && sheet == nil { focus = seedKey }
         }
         .fullScreenCover(item: $sheet, onDismiss: {
             // (settings/social bug pass) notification-center.tsx: closing the center marks everything
@@ -211,9 +222,15 @@ struct AccountMenuView: View {
             // kept its badge for notifications the viewer had just read.
             let read = readOnClose
             readOnClose = false
+            let wasSignIn = signInOpen
+            signInOpen = false
             Task {
                 if read { await center.markAllRead() }
                 await center.refresh()
+                // (device-flow pass 5) A sign-in swaps "Sign in to Harbor" (under the ring) for the
+                // signed-in items: the ring goes to the first of them instead of falling off the menu.
+                // Only after the sign-in cover: every other page hands the ring back to its own item.
+                if wasSignIn && focus == nil && sheet == nil { focus = seedKey }
             }
         }) { s in
             switch s {
@@ -223,6 +240,13 @@ struct AccountMenuView: View {
             case .groups: GroupsView()
             case .together: TogetherView()
             case .list: SharedListOpenView()
+            case .signIn:
+                ZStack {
+                    BPAmbientBackground()
+                    HarborSignInForm(done: { sheet = nil }, skip: { sheet = nil }).padding(BP.gutter)
+                }
+                .environmentObject(app)
+                .environmentObject(AccountStore.shared)
             }
         }
     }

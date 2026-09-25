@@ -14,6 +14,9 @@ struct AISearchPanel: View {
     @State private var customDraft = ""
     /// ai-search-section.tsx savedFlags: "Saved" flashes for 1.8 s after a save.
     @State private var flash = false
+    /// (device-flow pass 5) The key rows' Save ("key" / "jina"): Remove goes with the key it
+    /// removes, and the ring it held fell off the panel; it goes to that row's Save.
+    @FocusState private var saveFocus: String?
 
     private var profile: (id: String, linked: Bool) {
         let p = ProfilesStore.shared.active
@@ -83,9 +86,15 @@ struct AISearchPanel: View {
                     Task { await saveKey(groq ? "groq" : "openrouter", keyDraft) }
                 }
                     .buttonStyle(BPActionStyle(primary: true, busy: keyEmpty))
+                    .focused($saveFocus, equals: "key")
                     .accessibilityIdentifier("ai-key-save")
                 if let mask = groq ? state?.saved.groq : state?.saved.openrouter {
-                    Button(T("Remove")) { Task { await saveKey(groq ? "groq" : "openrouter", "") } }
+                    Button(T("Remove")) {
+                        Task {
+                            await saveKey(groq ? "groq" : "openrouter", "")
+                            saveFocus = "key"
+                        }
+                    }
                         .buttonStyle(BPActionStyle())
                     Text(verbatim: "\(T("Saved")) · \(mask)").font(BP.sans(13, .semibold))
                         .foregroundStyle(flash ? BP.accent : BP.inkSubtle)
@@ -187,8 +196,15 @@ struct AISearchPanel: View {
                     Task { await saveKey("jina", jinaDraft) }
                 }
                     .buttonStyle(BPActionStyle(busy: jinaEmpty))
+                    .focused($saveFocus, equals: "jina")
                 if let mask = state?.saved.jina {
-                    Button(T("Remove")) { Task { await saveKey("jina", "") } }.buttonStyle(BPActionStyle())
+                    Button(T("Remove")) {
+                        Task {
+                            await saveKey("jina", "")
+                            saveFocus = "jina"
+                        }
+                    }
+                    .buttonStyle(BPActionStyle())
                     Text(verbatim: "\(T("Saved")) · \(mask)").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkSubtle)
                 }
             }

@@ -78,6 +78,7 @@ struct SportsApiKeyPanel: View {
     @State private var note: String?
     /// Set with `note`: false for the failed save, so the colour does not hang on the wording.
     @State private var noteOk = true
+    @FocusState private var saveFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
@@ -94,7 +95,19 @@ struct SportsApiKeyPanel: View {
                     Task { await save(draft) }
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: empty))
-                if info?.saved == true { Button("Clear key") { Task { draft = ""; await save("") } }.buttonStyle(BPActionStyle()) }
+                .focused($saveFocused)
+                // (device-flow pass 5) Clearing takes Clear key away under the ring (only a saved
+                // key shows it), which fell off the panel: it goes to Save beside it.
+                if info?.saved == true {
+                    Button("Clear key") {
+                        Task {
+                            draft = ""
+                            await save("")
+                            if info?.saved != true { saveFocused = true }
+                        }
+                    }
+                    .buttonStyle(BPActionStyle())
+                }
             }
             BPNote(text: "Saving does not verify your key. Sports uses it when loading supported competitions.")
             if let note { BPNote(text: note, tone: noteOk ? BP.inkMuted : BP.danger) }
