@@ -643,8 +643,11 @@ struct KidsStreamSwitcher: View {
             }
         }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if focus == nil { focus = "close" } } }
-        .onDisappear { model.cancel() }
+        .onDisappear { closed = true; model.cancel() }
     }
+
+    /// (bug pass) The switcher went away (✕, Back, the player closing) while a pick resolved.
+    @State private var closed = false
 
     /// `list.slice(0, 6)`.
     private var options: [ScoredStream] { Array(model.streams.prefix(6)) }
@@ -710,6 +713,9 @@ struct KidsStreamSwitcher: View {
         failure = nil
         let r = await model.resolve(s)
         resolving = nil
+        // (bug pass) A debrid resolve or torrent add can take seconds: once the kid has closed the
+        // switcher, a late answer must not swap the video that is playing.
+        guard !closed else { return }
         guard r.ok, let link = r.data, let url = PlayableURL.make(link.url) else {
             // (bug pass 2) An ok answer with a link no URL can be made of has no message: say so.
             failure = r.message ?? r.code ?? (r.ok && r.data != nil ? Optional(PlayPickerView.badLinkMessage) : nil)

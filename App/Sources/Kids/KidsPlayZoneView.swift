@@ -564,6 +564,9 @@ struct KidsOceanFacts: View {
             imgFailed = false
             if let u = URL(string: fact.img) {
                 let img = await ImageLoader.shared.image(for: u)
+                // (bug pass) "Another one!" cancels this task, but the load runs on: a slow photo
+                // landing after the next fact's (often preloaded) one put the wrong animal on it.
+                guard !Task.isCancelled else { return }
                 image = img
                 imgFailed = img == nil
             }

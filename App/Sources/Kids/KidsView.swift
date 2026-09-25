@@ -49,7 +49,9 @@ struct KidsView: View {
             }
         }
         .background(KidsTheme.canvas.ignoresSafeArea())
-        .task { await model.load() }
+        // (bug pass) Once per visit: a cover closing re-runs `.task` (see KidsModel.loadedOnce); a
+        // failed load still retries then.
+        .task { if !model.loadedOnce { await model.load() } }
         .onChange(of: model.heroCards.isEmpty) { _, empty in
             if !empty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ShellFocus.shared.requestDefault() } }
         }

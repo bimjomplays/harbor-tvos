@@ -11,7 +11,14 @@ final class CurfewState: ObservableObject {
     @Published private(set) var profile: ProfilesStore.Profile?
     private var ticker: Task<Void, Never>?
 
-    private static func today() -> String { Date().formatted(.iso8601.year().month().day()) }
+    /// lib/curfew.ts todayKey: the viewer's local calendar day. (bug pass) Was `.iso8601`, whose
+    /// format style is pinned to GMT, so the allowance rolled over at UTC midnight (8 pm in New
+    /// York): a spent allowance came back that evening and a parent's unlock ran out mid-evening.
+    /// Same yyyy-MM-dd spelling, so a record written today still matches when the dates agree.
+    private static func today() -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
     private static func key(_ id: String) -> String { "harbor.curfew.v1.\(id)" }
 
     /// (bug pass 2) The record is a Swift-only Prefs key (a Codable struct, not an engine string),
@@ -39,14 +46,21 @@ final class CurfewState: ObservableObject {
 
     private func tick() {
         let p = ProfilesStore.shared.active
-        guard let p, let limit = p.kid?.curfewMinutes, limit > 0 else { profile = nil; locked = false; return }
-        profile = p
+        // (bug pass) Publish only on a change: RootView observes this object, and assigning the same
+        // values every second re-rendered the root (and every observer) once a second for everyone.
+        guard let p, let limit = p.kid?.curfewMinutes, limit > 0 else {
+            if profile != nil { profile = nil }
+            if locked { locked = false }
+            return
+        }
+        if profile != p { profile = p }
         var rec = load(p.id)
         if PlaybackState.shared.active, !rec.unlocked, rec.seconds < limit * 60 {
             rec.seconds += 1
             try? Prefs.set(rec, for: Self.key(p.id))
         }
-        locked = !rec.unlocked && rec.seconds >= limit * 60
+        let now = !rec.unlocked && rec.seconds >= limit * 60
+        if locked != now { locked = now }
     }
 
     /// The parent PIN was entered: the rest of today is free.
