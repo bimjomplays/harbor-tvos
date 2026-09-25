@@ -25,6 +25,11 @@ struct DiscoverView: View {
     /// (review 21) Held in a box only DiscoverWash observes: as @State here, every step along the
     /// Genres or Awards band re-ran this whole page's body (every band and rail) to change one colour.
     @State private var washTint = DiscoverWashTint()
+    /// (regression pass) bp-discover `band = entries[activeRow] ?? entries[0]`: the wash follows the
+    /// last entry the rail made active and starts on the Discovery Queue (120°), so the ring leaving
+    /// for the top bar keeps the band's wash, and a "Picked for you" rail is its own key (180°, no
+    /// tint). It was `leadHeld ?? ""`: 180° at rest and the accent wash whenever nothing held.
+    @State private var washBand = "queue"
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -35,8 +40,8 @@ struct DiscoverView: View {
             SpotlightView(meta: model.spotlight, boxHeight: BP.px(160) + BP.barHeight, layer: .backdrop)
                 .opacity(model.spotlight == nil ? 0 : 1)
             // bp-discover-wash: the band holding the ring washes the page in its focused cell's
-            // colour (a "Picked for you" rail, or nothing held, is the 180° accent wash).
-            DiscoverWash(tint: washTint, bandId: leadHeld ?? "")
+            // colour (a "Picked for you" rail is the 180° accent wash; nothing held keeps the last band).
+            DiscoverWash(tint: washTint, bandId: washBand)
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load Discover").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
@@ -66,6 +71,8 @@ struct DiscoverView: View {
                            // way in from a rail goes with it.
                            seeAllShown: { row in !parental.hides(Self.isSeries(row) ? Room.shows : Room.movies) },
                            topInset: BP.barHeight + BP.px(10),
+                           // A rail row is a band of its own for the wash (bp-discover rail.key).
+                           onHold: { key, held in hold("rail:" + key, held) },
                            // bp-discover.tsx lead.tab: Left at a rail's start lands on All shows / All movies' tab.
                            rowTab: { row in Self.isSeries(row) ? Room.shows : Room.movies }) {
                     // (browse open-items pass) Each lead section parks like a rail row when it takes the
@@ -168,6 +175,7 @@ struct DiscoverView: View {
     /// band's release and the new band's hold in either order.
     private func hold(_ key: String, _ held: Bool) {
         if held { leadHeld = key } else if leadHeld == key { leadHeld = nil }
+        if held, washBand != key { washBand = key }
     }
 
     private func section<C: View>(_ key: String, _ eyebrow: String, _ title: String, _ blurb: String, @ViewBuilder _ content: () -> C) -> some View {

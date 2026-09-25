@@ -23,6 +23,9 @@ struct KidsFranchiseView: View {
             }
             .padding(.bottom, BP.px(100))
         }
+        // App.tsx's music-dock.tsx is over the kids "grid" view too (KidsDetailView carries the
+        // same dock): this cover hides the shell's.
+        .musicDock()
         .background(KidsTheme.canvas.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .task { await model.start() }

@@ -128,8 +128,12 @@ struct ContinueCardView: View {
     }
 
     /// bp-cw-card-meta useAirCountdown: "Airing now" / "Next in 2d 3h" / "Next in 40m".
+    /// (regression pass) An air date upstream's Date.parse cannot read gives "" (the pill then shows
+    /// the episode alone), not the English-only "Waiting for air". Addon and Kitsu air dates carry
+    /// milliseconds ("2026-10-02T00:00:00.000Z"), which the plain ISO8601DateFormatter refuses, so
+    /// every such card read "Waiting for air" instead of its countdown. The formatters are made once.
     private static func countdown(_ at: String?) -> String {
-        guard let at, let date = ISO8601DateFormatter().date(from: at) ?? ISO8601DateFormatter.dateOnly.date(from: at) else { return "Waiting for air" }
+        guard let at, let date = Self.airDate(at) else { return "" }
         let diff = date.timeIntervalSinceNow
         if diff <= 0 { return T("Airing now") }
         let days = Int(diff / 86_400), hours = Int(diff.truncatingRemainder(dividingBy: 86_400) / 3600), minutes = Int(diff.truncatingRemainder(dividingBy: 3600) / 60)
@@ -142,4 +146,20 @@ struct ContinueCardView: View {
 
 extension ISO8601DateFormatter {
     static let dateOnly: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withFullDate]; return f }()
+}
+
+extension ContinueCardView {
+    private static let isoPlain = ISO8601DateFormatter()
+    private static let isoFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    /// Date.parse for the shapes an air date arrives in: with or without milliseconds, or a bare day.
+    static func airDate(_ raw: String) -> Date? {
+        if let d = isoFraction.date(from: raw) { return d }
+        if let d = isoPlain.date(from: raw) { return d }
+        return ISO8601DateFormatter.dateOnly.date(from: raw)
+    }
 }

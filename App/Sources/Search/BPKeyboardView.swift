@@ -16,6 +16,14 @@ struct BPKeyboardView: View {
     private static let letters = ["1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm,.-"].map { $0.map(String.init) }
     private static let symbolRows = ["!@#$%^&*()", "+=/\\|~`°£€", ":;\"?<>[]{}", "éèáàöüñçåø"].map { $0.map(String.init) }
     private let keySize = BP.px(44)
+    /// (regression pass) Focus ids for the bottom row, so `onHold` covers the whole keyboard: with
+    /// the ring on Space, Backspace, Clear or the set toggle the keyboard reported losing it, and
+    /// SearchView's bp-restore spot kept the last result, so a return to Search put the ring back
+    /// on that result instead of the keyboard. Never a character the letter rows use.
+    private static let spaceKey = "__space"
+    private static let backspaceKey = "__backspace"
+    private static let clearKey = "__clear"
+    private static let toggleKey = "__toggle"
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
@@ -32,14 +40,18 @@ struct BPKeyboardView: View {
             HStack(spacing: BP.px(8)) {
                 Button { onChar(" ") } label: { Label("Space", systemImage: "space").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 4 + BP.px(24), height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-space")
+                    .focused($focusedKey, equals: Self.spaceKey)
                 Button(action: onBackspace) { Label("Backspace", systemImage: "delete.left").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 2.6, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-backspace")
+                    .focused($focusedKey, equals: Self.backspaceKey)
                 Button(action: onClear) { Label("Clear", systemImage: "xmark").font(BP.sans(13, .semibold)).lineLimit(1).frame(width: keySize * 1.8, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-clear")
+                    .focused($focusedKey, equals: Self.clearKey)
                     // bp-keyboard.tsx aria={t("Clear search")}.
                     .accessibilityLabel(Text(T("Clear search")))
                 Button { symbols.toggle() } label: { Text(symbols ? "abc" : "?#+").font(BP.sans(13, .semibold)).frame(width: keySize * 1.4, height: keySize) }
                     .buttonStyle(BPKeyStyle()).accessibilityIdentifier("key-toggle")
+                    .focused($focusedKey, equals: Self.toggleKey)
                     // bp-keyboard.tsx aria={symbols ? t("Letters") : t("Symbols")}: "abc" / "?#+" say nothing.
                     .accessibilityLabel(Text(T(symbols ? "Letters" : "Symbols")))
             }

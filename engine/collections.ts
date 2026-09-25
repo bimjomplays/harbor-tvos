@@ -80,10 +80,20 @@ export async function community(): Promise<CollectionCard[]> {
   return list.map((c) => ({ ...card(c, "community", c.displayName || c.handle), handle: c.handle, saved: isSaved(c, own), own: isOwnHandle(c.handle) }));
 }
 
-export async function all(): Promise<{ mine: CollectionCard[]; community: CollectionCard[] }> {
+/**
+ * `communityFailed`: bp-collection-steps stepCommunity sets ctx.communityFailed when
+ * fetchCommunityCollections throws (offline, harbor.site down), and bp-collections endMessage
+ * then says "Community collections are unavailable right now." (or, in All, "That's everything
+ * we could reach…") instead of "Nobody has shared a collection yet."
+ */
+export async function all(): Promise<{ mine: CollectionCard[]; community: CollectionCard[]; communityFailed: boolean }> {
   const m = mine();
-  const c = await community().catch(() => [] as CollectionCard[]);
-  return { mine: m, community: c };
+  let communityFailed = false;
+  const c = await community().catch(() => {
+    communityFailed = true;
+    return [] as CollectionCard[];
+  });
+  return { mine: m, community: c, communityFailed };
 }
 
 

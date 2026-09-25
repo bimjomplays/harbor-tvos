@@ -136,6 +136,23 @@ Left in this scope:
 - X3: the sampled-glow wash over the split (no art colour sampling on the TV) and the metahub channel hydration ahead of the XMLTV icon (useChannelHydration).
 - O2 avatar and name write-back: not ported on purpose. It writes to the viewer's Harbor account, so it is left for the owner.
 
+### Profiles, Kids and Collections pass
+
+Closes the two items device-flow pass 3 left open (no TV rows for the launch prompt options, no music dock on the kids detail page), plus the Collections room offline path:
+
+| # | What landed | Where |
+|---|---|---|
+| O1 (rows) | views/settings/account/startup-defaults.tsx: a "Startup & default" section after Profiles, shown only with more than one profile (StartupDefaults returns null for one). "Who's watching" (Every launch / Every 15 min / Every 30 min / Never → `profilePromptInterval`) and "Start as" (No default profile, then every profile without a PIN → `defaultProfileId`), with upstream's descriptions. Written through `settings.patchFor` (the active profile's effective settings, as `update()` does); the launch and return prompts already read both keys (engine `profilesRoom.launchPicker` / `returnPicker`, AppModel). | `Settings/StartupDefaultsPanel.swift`, `Settings/SettingsView.swift`, `Settings/SettingsBridge.swift` |
+| K1 | App.tsx mounts music-dock.tsx over every view but the player and picker, the kid's "meta" (KidsDetailView) and "grid" (franchise) views included. The kids detail page and the franchise grid are covers over the kids shell (which hid its dock), so each carries the dock and its Now Playing. | `Kids/KidsDetailView.swift`, `Kids/KidsFranchiseView.swift` |
+| C1 | bp-collections offline: the community step's failure is reported (`collectionsRoom.all` → `communityFailed`), so the end line is "Community collections are unavailable right now." / "That's everything we could reach. Some sources are unavailable right now." instead of "Nobody has shared a collection yet."; a pull walks pages until one adds a card (STEPS_PER_PULL) and pulls again while nothing was added (AUTO_PULLS), so an offline curated walk (every franchise fails to resolve) reaches TVDB and the end line instead of an empty grid with no spinner and no message. Picking a source again re-runs a failed community / TVDB / curated feed (upstream rebuilds its feed on every source pick). | `engine/collections.ts`, `Collections/CollectionsView.swift` |
+| F1 | Focus: the PIN pad sends the ring to Back when the third miss starts the cool-down (it sat on a disabled digit); the profile editor's "Enter PIN to change locks" gets the ring back from the pad (or the first lock tile once unlocked) instead of the Name field. | `Profiles/PinPadView.swift`, `Profiles/ProfileEditorView.swift` |
+
+Left:
+- Collections: upstream has no Try again in the room (bp-collections.tsx; retrying is picking a source again), so none was added. With no TMDB key upstream replaces the room with BpConnect; the TV keeps it (Mine, Community and TVDB lists, and the only place to edit collections on the TV).
+- "Who's watching background" (account/picker-background.tsx): an image uploaded on the desktop for the desktop picker; Big Picture's chooser does not draw it.
+- The "Start as" launch stamps `harbor.profile.lastSelectAt` (ProfilesStore.select); upstream's launchDefault does not, so its first timed prompt counts from the last hand-picked profile. Left as is: without the stamp a TV resumed a minute after launch could ask at once.
+- Checked, not a gap: the Play Zone has no dock, as upstream's (kids/play/play-zone.tsx is `fixed z-[150]`, over the dock's `z-[120]`).
+
 ### Player (10)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |

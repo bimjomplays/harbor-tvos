@@ -59,8 +59,12 @@ struct RoomView: View {
                 // (parity) bp-home / bp-movies / bp-shows / bp-anime: each room's own failure copy.
                 // (home device pass) The failure had nothing to press: Home stayed empty until the
                 // app was restarted (Back at Home closes it), another room until the tab was left.
+                // (regression pass) The card stays up while Try again runs (BrowseModel keeps `failed`
+                // until the answer), dimmed but focusable, so the ring stays on the button.
                 let copy: (title: String, body: String) = failureCopy
-                pageMessage(title: copy.title, body: copy.body, action: T("Try again"), icon: "arrow.clockwise") {
+                let retrying: Bool = model.loading
+                pageMessage(title: copy.title, body: copy.body, action: T("Try again"), icon: "arrow.clockwise", busy: retrying) {
+                    guard !model.loading else { return }
                     Task { await model.load() }
                 }
             } else if model.loading && model.rows.isEmpty {
@@ -260,7 +264,7 @@ struct RoomView: View {
 
     /// BpPageMessage / BpEmptyState: a heading, a sentence, and the one action that fixes the state,
     /// on a solid plate that takes the ring.
-    private func pageMessage(title: String, body: String, action: String, icon: String, perform: @escaping () -> Void) -> some View {
+    private func pageMessage(title: String, body: String, action: String, icon: String, busy: Bool = false, perform: @escaping () -> Void) -> some View {
         VStack(spacing: BP.px(12)) {
             if !title.isEmpty {
                 Text(verbatim: title).font(BP.display(26)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
@@ -270,7 +274,7 @@ struct RoomView: View {
                 .multilineTextAlignment(.center).frame(maxWidth: BP.px(560))
                 .fixedSize(horizontal: false, vertical: true)
             Button(action: perform) { Label(action, systemImage: icon) }
-                .buttonStyle(BPActionStyle(primary: true))
+                .buttonStyle(BPActionStyle(primary: true, busy: busy))
                 .padding(.top, BP.px(6))
         }
         .frame(maxWidth: .infinity)

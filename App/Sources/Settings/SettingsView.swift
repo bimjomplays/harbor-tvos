@@ -160,6 +160,11 @@ struct SettingsView: View {
                         }
                     }
                 }
+                // views/settings/account.tsx mounts StartupDefaults under the profiles; it renders
+                // nothing for a one-profile household (profiles.length <= 1).
+                if profiles.profiles.count > 1 {
+                    section("Startup & default") { StartupDefaultsPanel() }
+                }
                 section("Developer") {
                     Button("Stage 0 spikes") { sheet = .spikes }.buttonStyle(BPActionStyle())
                 }

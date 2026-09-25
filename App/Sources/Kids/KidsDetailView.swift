@@ -170,6 +170,11 @@ struct KidsDetailView: View {
                 .padding(.bottom, BP.px(120))
             }
         }
+        // App.tsx mounts music-dock.tsx over every view, and a kid's title page is the "meta" view
+        // (KidsDetailView under a kid): the dock stays while a track is loaded (music-dock.tsx
+        // visible unless the top is the player or the picker). This page is a cover over the kids
+        // shell, whose dock it hides, so it carries its own; the canvas is laid under both.
+        .musicDock()
         .background(KidsTheme.canvas.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .task {
