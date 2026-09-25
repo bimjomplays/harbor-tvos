@@ -25,6 +25,21 @@ const app = loadEngine({ storage: seeded, onFetch: (req) => tmdbRequests.push(re
 const { engine, run } = app;
 
 r.ok("bundle loads in a bare context", true);
+
+// ------------------------------------------- app lifecycle → document / navigator (lifecycle pass)
+{
+  const lc = loadEngine({ storage: new Map() });
+  lc.run(`globalThis.__lcSeen = []; document.addEventListener("visibilitychange", () => globalThis.__lcSeen.push("doc:" + document.visibilityState)); window.addEventListener("visibilitychange", () => globalThis.__lcSeen.push("win:" + document.visibilityState)); window.addEventListener("online", () => globalThis.__lcSeen.push("online:" + navigator.onLine)); window.addEventListener("offline", () => globalThis.__lcSeen.push("offline:" + navigator.onLine));`);
+  r.eq("(lifecycle) the bundle starts visible and online", lc.run("[document.visibilityState, document.hidden, navigator.onLine]"), ["visible", false, true]);
+  lc.engine.runtime.setVisibility(false);
+  r.eq("(lifecycle) hidden: document.hidden + visibilitychange on document and window", [lc.run("document.hidden"), lc.run("JSON.stringify(__lcSeen)")], [true, JSON.stringify(["doc:hidden", "win:hidden"])]);
+  lc.engine.runtime.setVisibility(true);
+  lc.engine.runtime.setOnline(false);
+  lc.engine.runtime.setOnline(false);
+  lc.engine.runtime.setOnline(true);
+  r.eq("(lifecycle) visible again, then offline → online fire once each with navigator.onLine already set", lc.run("JSON.stringify(__lcSeen.slice(2))"), JSON.stringify(["doc:visible", "win:visible", "offline:false", "online:true"]));
+  lc.dispose();
+}
 r.eq("host contract satisfied", engine.runtime.missingHostFunctions(), []);
 r.ok("benchmark still works", (() => {
   const b = engine.benchmark(50);
@@ -1498,6 +1513,14 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("settings.patch on homeRows pushed s_aaa:home at baseRev 3", sent.some((w) => w.key === "s_aaa:home" && w.baseRev === 3 && w.value && w.value.order[0] === "continue"), JSON.stringify(sent.map((w) => [w.key, w.baseRev])));
   r.ok("no roster re-push when unchanged (sent-hash suppression)", !sent.some((w) => w.key === "account:profiles"), JSON.stringify(sent.map((w) => w.key)));
   r.ok("sync status reached idle with a pull time", rec.engine.sync.status().phase === "idle" && rec.engine.sync.status().lastPullAt > 0, JSON.stringify(rec.engine.sync.status()));
+  // (lifecycle pass) scheduler.ts onVisibility: the app going to the background flushes the
+  // queue at once instead of after the 2.5 s debounce (tvOS may suspend it within seconds).
+  const pushedBefore = pushes.length;
+  rec.engine.settings.patch({ homeRows: { order: ["new", "continue", "trending"], hidden: [] } }, rec.engine.settings.sourceKeyFor("p_local1", true));
+  r.eq("(lifecycle) runtime.setVisibility(false) reports a change", rec.engine.runtime.setVisibility(false), true);
+  await new Promise((res) => setTimeout(res, 200));
+  r.ok("(lifecycle) going to the background pushes the queued change without waiting for the debounce", pushes.slice(pushedBefore).flatMap((p) => p.writes).some((w) => w.key === "s_aaa:home" && w.value && w.value.order[0] === "new"), JSON.stringify(pushes.slice(pushedBefore)));
+  r.eq("(lifecycle) runtime.setVisibility(true) reports a change, a repeat does not", [rec.engine.runtime.setVisibility(true), rec.engine.runtime.setVisibility(true)], [true, false]);
   rec.engine.sync.stop();
   rec.engine.account.stop();
   rec.dispose();

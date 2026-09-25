@@ -100,11 +100,41 @@ export function createDom(globals) {
   win.self = win;
   win.globalThis = globals;
 
+  // The app's lifecycle, from the host (tvOS: UIApplication background/foreground and
+  // NWPathMonitor). Upstream flushes and wakes on these: profile-sync's scheduler pushes its
+  // queue on hidden and pulls when it comes back stale, the account session refresh runs on
+  // wake and on "online", storage-recovery and the Suwayomi progress bridge flush on hidden,
+  // Trakt/Simkl pending syncs retry on "online", and a failed MAL token refresh only signs
+  // out while navigator.onLine is true. Without these the bundle always looked visible and
+  // online, so none of that ever ran on a TV.
+  const lifecycle = {
+    /** Returns true when the state changed (and the events went out). */
+    setVisibility(visible) {
+      const state = visible ? "visible" : "hidden";
+      if (doc.visibilityState === state) return false;
+      doc.visibilityState = state;
+      doc.hidden = !visible;
+      // A browser fires it at the document and it propagates to the window; upstream listens
+      // on both.
+      doc.dispatchEvent(new EventShim("visibilitychange"));
+      win.dispatchEvent(new EventShim("visibilitychange"));
+      return true;
+    },
+    setOnline(online) {
+      const next = !!online;
+      if (navigator.onLine === next) return false;
+      navigator.onLine = next;
+      win.dispatchEvent(new EventShim(next ? "online" : "offline"));
+      return true;
+    },
+  };
+
   return {
     window: win,
     document: doc,
     location,
     navigator,
+    lifecycle,
     events: {
       /** Observe every event dispatched on `window`. Returns an unsubscribe function. */
       on(fn) {

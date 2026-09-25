@@ -1335,6 +1335,10 @@ export const runtime = {
   storageKeys: () => shims.localStorage.__harborKeys(),
   /** Tell the bundle a key changed underneath it (e.g. after an account sync). */
   syncStorage: (key: string, value: string | null) => shims.localStorage.__harborSync(key, value),
+  /** The app went to the background (false) or came back (true): document.visibilityState + visibilitychange. */
+  setVisibility: (visible: boolean) => shims.lifecycle.setVisibility(visible),
+  /** The network path went down (false) or came back (true): navigator.onLine + online/offline. */
+  setOnline: (online: boolean) => shims.lifecycle.setOnline(online),
   randomUuid,
   pendingTimers: () => shims.timers.pending(),
   /** Self-check: proves fetch, URL, storage, crypto and timers all work through the host. */

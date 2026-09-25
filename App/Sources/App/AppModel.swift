@@ -18,6 +18,10 @@ final class AppModel: ObservableObject {
     @Published var deepLinkList: Social.ListRef?
 
     /// parseHarborOpen / parseStremioOpen / emitDeepLinkInstall, as the TV receives them.
+    /// (lifecycle pass) A link that cold-launches the app arrives while `boot()` is still loading
+    /// settings, the theme and the account: it only records what to open, and boot's own
+    /// `goToWhoOrShell()` shows it. It used to jump to the shell mid-boot, which then rebuilt
+    /// under the opened title as the theme and language landed (and the intro wall rose over it).
     func handle(url: URL) {
         let raw = url.absoluteString
         let scheme = (url.scheme ?? "").lowercased()
@@ -27,12 +31,12 @@ final class AppModel: ObservableObject {
         if parts.first == "detail", parts.count >= 3 {
             deepLinkMeta = Meta(id: parts[2], type: parts[1], name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
                                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
-            if stage != .shell, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            if stage != .shell, stage != .boot, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
             return
         }
         if scheme == "harbor", parts.first == "list", parts.count >= 3, !parts[1].isEmpty, !parts[2].isEmpty {
             deepLinkList = Social.ListRef(handle: parts[1], listId: parts[2])
-            if stage != .shell, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            if stage != .shell, stage != .boot, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
             return
         }
         if scheme == "stremio", raw.hasSuffix("manifest.json") {
@@ -89,12 +93,18 @@ final class AppModel: ObservableObject {
         ActivityMonitor.install()
         Fixtures.installIfRequested(into: self)
         if !Fixtures.active {
+            // (lifecycle pass) The first `HarborEngine.shared` evaluates the ~4.4 MB bundle and reads
+            // every stored key; SettingsBridge.load() below made it on the main actor, freezing the
+            // boot splash (and every press) for seconds on an Apple TV. Build it off the main thread.
+            _ = await Task.detached(priority: .userInitiated) { (try? HarborEngine.sharedOrThrow()) != nil }.value
+            // Background/foreground and the network path reach the engine (visibilitychange, online).
+            AppLifecycle.shared.start()
             await SettingsBridge.shared.load()
             // Stage 9: the profile's theme is painted from the first Big Picture frame.
             await ThemeStore.shared.load()
             profiles.attachEngine()
             await account.attachEngine()
-            if account.isSignedIn { await refreshRoster() }
+            if account.isSignedIn { await refreshRosterAtBoot() }
             // App.tsx MediaServerSyncRunner: due home-server indexes at launch, then every 15 minutes.
             _ = try? await HarborEngine.shared.callJSON("homeServers.startRunner", [])
             // Stage 10: the Watch Together room client (engine/together.ts) for the active profile.
@@ -145,6 +155,30 @@ final class AppModel: ObservableObject {
         }
         await sync.start()
     }
+
+    /// (lifecycle pass) Boot waits for the first pull only so long: on a slow or captive network
+    /// each sync request may sit out a whole fetch timeout (30 s of silence, after a token refresh),
+    /// and the boot splash waited with it. The pull carries on; a roster it adopts later reaches
+    /// ProfilesStore through harbor:roster-applied, and `refreshRoster` still finishes its work.
+    private func refreshRosterAtBoot() async {
+        let once = BootOnce()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let finish: @MainActor () -> Void = {
+                guard !once.done else { return }
+                once.done = true
+                continuation.resume()
+            }
+            Task { @MainActor in
+                await self.refreshRoster()
+                finish()
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(Self.bootPullWait))
+                finish()
+            }
+        }
+    }
+    private static let bootPullWait: Double = 8
 
     func signOutHarbor() {
         sync.stop()
@@ -209,3 +243,6 @@ enum Room: String, CaseIterable, Identifiable {
     }
     static var tabs: [Room] { allCases.filter { $0 != .settings } }
 }
+
+/// `AppModel.refreshRosterAtBoot`: whichever of the pull and the deadline ends first resumes boot.
+private final class BootOnce { var done = false }

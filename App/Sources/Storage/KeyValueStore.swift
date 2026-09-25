@@ -64,12 +64,24 @@ final class KeyValueStore {
         case .durable: value = Prefs.get(String.self, for: key) ?? CacheStore.shared.get(String.self, for: key)
         case .cache: value = CacheStore.shared.get(String.self, for: key)
         }
-        if let value { lock.lock(); if writes == seen { memory[key] = value }; lock.unlock() }
+        if let value, !Self.skipsMemo(key, value) { lock.lock(); if writes == seen { memory[key] = value }; lock.unlock() }
         return value
     }
 
+    /// (lifecycle pass) `memory` kept a second copy of every value the engine ever wrote, for the
+    /// life of the process: the bundle's localStorage shim already holds each one (it is the
+    /// source of truth for every engine read), so parsed playlists, catalog and anime caches, the
+    /// eBook/manga caches… sat in RAM twice, as UTF-16, with nothing ever trimming them. A large
+    /// Caches-tier value that is safely on disk is no longer memoized; Swift reads only a few small
+    /// keys (profiles, the music volume), and a `get` of a big one just reads the file again.
+    private static let memoLimit = 16 * 1024
+
+    private static func skipsMemo(_ key: String, _ value: String) -> Bool {
+        tier(for: key) == .cache && value.utf16.count >= memoLimit
+    }
+
     func set(_ value: String, for key: String) throws {
-        lock.lock(); memory[key] = value; writes &+= 1; lock.unlock()
+        lock.lock(); memory[key] = value; writes &+= 1; let stamp = writes; lock.unlock()
         switch Self.tier(for: key) {
         case .secret: try SecretStore.set(value, for: key)
         case .durable:
@@ -83,7 +95,13 @@ final class KeyValueStore {
                 Prefs.remove(key)
                 try CacheStore.shared.set(value, for: key)
             }
-        case .cache: try CacheStore.shared.set(value, for: key)
+        case .cache:
+            try CacheStore.shared.set(value, for: key)
+            // On disk now: drop the RAM copy of a big one, unless another write came in meanwhile
+            // (a failed write keeps it, so the value still reads back this session).
+            if Self.skipsMemo(key, value) {
+                lock.lock(); if writes == stamp { memory[key] = nil }; lock.unlock()
+            }
         }
     }
 
