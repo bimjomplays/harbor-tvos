@@ -45,6 +45,7 @@ struct SportsView: View {
             }
         }
         .task { await model.start() }
+        .onDisappear { model.stopPolling() }
         .fullScreenCover(item: $event) { g in SportsEventView(game: g, dismiss: { event = nil }) }
         .fullScreenCover(item: $directPlay) { opt in
             PlayerScreen(title: opt.name, subtitle: opt.label, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in directPlay = nil }
@@ -136,7 +137,7 @@ struct SportsView: View {
                         model.setDay(d.key)
                     } label: {
                         VStack(spacing: BP.px(3)) {
-                            Text(d.label).font(BP.sans(13, .semibold))
+                            Text(d.today ? L10n.lookup(d.label) : d.label).font(BP.sans(13, .semibold))
                             Circle().fill(p.liveDays.contains(d.key) ? BP.live : .clear).frame(width: BP.px(5), height: BP.px(5))
                         }
                     }

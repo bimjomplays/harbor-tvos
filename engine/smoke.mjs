@@ -3485,6 +3485,8 @@ if (!OFFLINE) {
   const quick = await r.timed("sports.page(for-you, no wait) returns from cache at once", () => engine.sports.page({ mode: "for-you", group: "all" }));
   r.ok("sports.page without wait reports busy while feeds load", quick.status.busy === true && Array.isArray(quick.rows), JSON.stringify(quick.status));
   const sdays = engine.sports.days();
+  const fdays = engine.sports.days(null, "fr");
+  r.ok("sports.days: weekdays follow the UI language", fdays.length === 14 && fdays[3].label === "Today" && fdays[4].label !== sdays[4].label, JSON.stringify([sdays[4].label, fdays[4].label]));
   r.ok("sports.days: 14 cells with Today at index 3", sdays.length === 14 && sdays[3].today && sdays[3].label === "Today", JSON.stringify(sdays.slice(2, 5)));
   const spg = await r.timed("sports.page(for-you)", () => engine.sports.page({ mode: "for-you", group: "all", wait: true }));
   r.ok("sports.page for-you returns groups, rows and a status", Array.isArray(spg.rows) && spg.groups.length > 3 && spg.status && typeof spg.status.failed === "boolean", JSON.stringify({ rows: spg.rows.map((x) => [x.key, x.games.length]), heroes: spg.heroes.length, note: spg.status.note, failed: spg.status.failedKeys.slice(0, 4) }));

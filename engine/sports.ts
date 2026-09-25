@@ -263,17 +263,30 @@ export async function page(input: PageInput) {
   };
 }
 
-/** Day strip for schedule mode: 3 days back, 10 ahead (date-band). */
-export function days(anchor?: string): Array<{ key: string; label: string; today: boolean }> {
+/**
+ * Day strip for schedule mode: 3 days back, 10 ahead (date-band). Weekdays in Harbor's UI language
+ * like bp-sports-date-band.tsx (`toLocaleDateString(lang, …)`); "Today" stays the English source
+ * string, which Swift translates.
+ */
+export function days(anchor?: string | null, locale?: string | null): Array<{ key: string; label: string; today: boolean }> {
+  const lang = locale || "en";
   const base = anchor ? new Date(+anchor.slice(0, 4), +anchor.slice(4, 6) - 1, +anchor.slice(6, 8)) : new Date();
   const today = dayStamp(new Date());
   const out: Array<{ key: string; label: string; today: boolean }> = [];
   for (let i = -3; i <= 10; i++) {
     const d = new Date(base); d.setDate(base.getDate() + i);
     const key = dayStamp(d);
-    out.push({ key, label: key === today ? "Today" : d.toLocaleDateString("en", { weekday: "short" }), today: key === today });
+    out.push({ key, label: key === today ? "Today" : weekdayShort(d, lang), today: key === today });
   }
   return out;
+}
+
+function weekdayShort(d: Date, lang: string): string {
+  try {
+    return d.toLocaleDateString(lang, { weekday: "short" });
+  } catch {
+    return d.toLocaleDateString("en", { weekday: "short" });
+  }
 }
 
 /** Game detail (espn summary and provider branches), 25 s cache like use-match-detail.ts. */

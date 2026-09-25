@@ -72,7 +72,8 @@ final class SportsModel: ObservableObject {
                 self?.scheduleReload()
             }
         }
-        days = (try? await HarborEngine.shared.call("sports.days", [])) ?? []
+        // (bug pass) weekday labels in Harbor's UI language, as the upstream date band does.
+        days = (try? await HarborEngine.shared.call("sports.days", [AnyJSON.null, AnyJSON.string(L10n.language)])) ?? []
         await reload()
         poll?.cancel()
         poll = Task { [weak self] in
@@ -83,6 +84,10 @@ final class SportsModel: ObservableObject {
             }
         }
     }
+
+    /// (bug pass) use-hub.ts only polls while the room is visible; a player or page covering
+    /// Sports stopped nothing, so the 60 s reload kept running under it. `.task` restarts it.
+    func stopPolling() { poll?.cancel(); poll = nil }
 
     func accept() async {
         consent = ((try? await HarborEngine.shared.call("sports.accept", [])) as Consent?)?.status ?? "accepted"
