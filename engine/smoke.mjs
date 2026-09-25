@@ -757,6 +757,38 @@ r.ok("benchmark still works", (() => {
   vy.dispose();
 }
 
+// ------------------- Discovery Queue (queue/use-bp-queue.ts): the band and the deck share one order
+{
+  const CM = "https://v3-cinemeta.strem.io";
+  const dq = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  let round = 1;
+  dq.node.host.fetch = async (req) => {
+    const u = req.url;
+    if (!u.startsWith(`${CM}/catalog/`)) return { status: 404, statusText: "Not Found", headers: {}, url: u, body: "" };
+    // The keyless pool (pool.ts buildFallbackPool): Cinemeta's top catalogs, other titles each round.
+    const slug = u.slice(`${CM}/catalog/`.length).replace(/[^a-z0-9]/gi, "");
+    const metas = Array.from({ length: 6 }, (_, k) => ({ id: `r${round}-${slug}-${k}`, type: "movie", name: `Pick ${k}`, poster: `https://img.example.invalid/${round}/${slug}/${k}.jpg`, background: `https://img.example.invalid/${round}/${slug}/${k}-bg.jpg` }));
+    return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: u, body: JSON.stringify({ metas }) };
+  };
+  const D = dq.engine.discoverRoom;
+  const peek = await D.queuePeekFor("default", true);
+  const open = await D.queueOpen("default", true);
+  r.ok("(device flow) queue: the Discover band's fan and backdrop are the deck's first titles (one shared order)", open.status === "ready" && peek.total === open.entries.length && peek.total > 10 && JSON.stringify(peek.posters) === JSON.stringify(open.entries.slice(0, 4).map((e) => e.meta.poster)) && peek.backdrop === open.entries[0].meta.background, JSON.stringify({ peek: peek.posters.slice(0, 2), deck: open.entries.slice(0, 2).map((e) => e.meta.poster) }));
+  D.queueSnooze(open.entries[0].meta.id);
+  const after = await D.queuePeekFor("default", true);
+  r.ok("(device flow) queue: a skip in the deck leaves the band (count and fan move on)", after.total === peek.total - 1 && after.posters[0] === open.entries[1].meta.poster, JSON.stringify({ before: peek.total, after: after.total }));
+  const reopened = await D.queueOpen("default", true);
+  r.ok("(device flow) queue: reopening the deck keeps its order, the skipped title gone", reopened.entries.length === open.entries.length - 1 && reopened.entries[0].meta.id === open.entries[1].meta.id);
+  // getPool memoises per day: the next day's pool reaches the deck (it was kept per key for good).
+  round = 2;
+  dq.run("(() => { const R = Date; const shift = 86400000; class D extends R { constructor(...a) { if (a.length) super(...a); else super(R.now() + shift); } static now() { return R.now() + shift; } } globalThis.Date = D; })()");
+  const nextDay = await D.queueOpen("default", true);
+  r.ok("(device flow) queue: the next day's pool reaches the deck and the band", nextDay.status === "ready" && nextDay.entries.every((e) => e.meta.id.startsWith("r2-")) && (await D.queuePeekFor("default", true)).posters[0] === nextDay.entries[0].meta.poster, JSON.stringify(nextDay.entries.slice(0, 2).map((e) => e.meta.id)));
+  dq.dispose();
+}
+
 // ------------------------------------------------ music (Stage 12): sources, rows, matching, library
 {
   const jf = "http://jf.example.invalid";
@@ -2255,6 +2287,18 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("calendar.month: filter chips (no Anime on All upcoming) with counts", all.filters.map((f) => `${f.id}:${f.count}`), ["all:2", "movie:1", "tv:1"]);
   const movies = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m, filter: "movie" });
   r.ok("calendar.month: the Movies filter narrows the grid", movies.total === 1 && movies.filter === "movie", JSON.stringify({ t: movies.total }));
+  {
+    // (device flow) The day view's long date follows Harbor's UI language, not the device's.
+    const longOpts = { weekday: "long", month: "long", day: "numeric", year: "numeric" };
+    const midDate = new Date(y, m, 15);
+    E.settingsRoom.commit("uiLanguage", "de", "default", true);
+    const de = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+    const deLong = de.cells.find((c) => c.iso === mid).items[0].dateLong;
+    E.settingsRoom.commit("uiLanguage", "en", "default", true);
+    const en = await E.calendar.month({ profileId: "default", linked: true, year: y, month: m });
+    const enLong = en.cells.find((c) => c.iso === mid).items[0].dateLong;
+    r.ok("(device flow) calendar.month: the day's long date is in Harbor's UI language", deLong === midDate.toLocaleDateString("de", longOpts) && enLong === midDate.toLocaleDateString("en", longOpts) && deLong !== enLong, JSON.stringify({ deLong, enLong }));
+  }
   const later = await E.calendar.month({ profileId: "default", linked: true, year: y + 1, month: 0 });
   r.eq("calendar.month: an empty month carries upstream's empty copy", [later.status, later.emptyHeading], ["empty", "Nothing this month"]);
   r.ok("calendar.month: month label and 0-based month", later.monthLabel === `January ${y + 1}` && later.month === 0, later.monthLabel);

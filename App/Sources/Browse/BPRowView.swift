@@ -7,6 +7,8 @@ struct BPRowView: View {
     let onSelect: (Meta) -> Void
     /// Present when the row can open a "See all" page (bp-row-header.tsx chip).
     var onSeeAll: (() -> Void)? = nil
+    /// bp-row-header BpRowLead `action`: the chip's copy ("All movies" on Discover's rails).
+    var seeAllLabel = "See all"
     /// bp-quick-panel: hold Select on a tile.
     var onQuick: ((Meta) -> Void)? = nil
     /// bp-restore: the route this row remembers its cell under (nil = no memory).
@@ -33,7 +35,7 @@ struct BPRowView: View {
                     .font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil && !seeAllFocused ? 0.55 : 1))
                     .accessibilityAddTraits(.isHeader)
                 if let onSeeAll, focusedId != nil || seeAllFocused {
-                    Button("See all", action: onSeeAll)
+                    Button(T(seeAllLabel), action: onSeeAll)
                         .buttonStyle(BPSeeAllStyle())
                         .focused($seeAllFocused)
                         .accessibilityIdentifier("seeall-\(row.key)")
@@ -91,6 +93,8 @@ struct BPRailView<Lead: View>: View {
     let onFocus: (Meta, BrowseRow) -> Void
     let onSelect: (Meta) -> Void
     var onSeeAll: ((BrowseRow) -> Void)? = nil
+    /// The See all chip's copy per row (bp-row-header BpRowLead `action`).
+    var seeAllLabel: ((BrowseRow) -> String)? = nil
     var onQuick: ((Meta) -> Void)? = nil
     var topInset: CGFloat = 0
     /// bp-restore: the route rows remember their cells under, and the position to re-enter at.
@@ -134,7 +138,7 @@ struct BPRailView<Lead: View>: View {
                     lead().id("lead").zIndex(1)
                     ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
-                                  onSeeAll: onSeeAll.map { cb in { cb(row) } }, onQuick: onQuick,
+                                  onSeeAll: onSeeAll.map { cb in { cb(row) } }, seeAllLabel: seeAllLabel?(row) ?? "See all", onQuick: onQuick,
                                   restoreRoute: restoreRoute, restoreCell: entry?.row == row.key ? entry?.cell : nil,
                                   onHold: { held in
                                       if held { heldRow = row.key } else if heldRow == row.key { heldRow = nil }

@@ -17,7 +17,8 @@ final class PersonModel: ObservableObject {
 
     let personId: Int
     @Published private(set) var page: Page?
-    @Published private(set) var loading = false
+    /// Starts true: the first frame (before `.task` runs) shows the spinner, not the failed-load card.
+    @Published private(set) var loading = true
     @Published var sort = "popularity"
     @Published var minRating = 0
     private var unsubscribe: (() -> Void)?
@@ -82,24 +83,49 @@ struct PersonView: View {
                         if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: T("Known For"), metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }) }
                         if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: T("IMDb Top"), metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }) }
                         if let c = pg.collaborators, c.count >= 3 { collaborators(c) }
-                        if let secs = pg.sections, !secs.isEmpty {
+                        // bp-person.tsx: the Filmography heading and the Sort / Rating rows stand while
+                        // the person has any credit (total > 0). (device-flow pass) They hung off the
+                        // filtered sections, so a Rating pick that no title cleared took the chips
+                        // (and the ring) away with no way back to "Any rating" short of leaving.
+                        if (pg.total ?? 0) > 0 {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
                                 Text("Filmography").font(BP.display(24)).foregroundStyle(BP.ink)
                                 filterRow("Sort", [("popularity", "Popularity"), ("rating", "Rating"), ("newest", "Newest")], active: model.sort, trailing: T("%lld of %lld", pg.shownTotal ?? 0, pg.total ?? 0)) { model.sort = $0; Task { await model.load() } }
                                 filterRow("Rating", [("0", "Any rating"), ("6", T("Rated %lld+", 6)), ("7", T("Rated %lld+", 7)), ("8", T("Rated %lld+", 8))], active: String(model.minRating), trailing: nil) { model.minRating = Int($0) ?? 0; Task { await model.load() } }
                             }
                             .padding(.horizontal, BP.gutter)
-                            ForEach(secs) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        }
+                        ForEach(pg.sections ?? []) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        // bp-person.tsx BpEmptyState when nothing is shown (the no-key note is above).
+                        if pg.hasKey, !model.loading, (pg.shownTotal ?? 0) == 0 {
+                            VStack(alignment: .leading, spacing: BP.px(10)) {
+                                if (pg.total ?? 0) > 0 {
+                                    BPNote(text: "No titles clear that rating.")
+                                    Button("Any rating") { model.minRating = 0; Task { await model.load() } }.buttonStyle(BPActionStyle(primary: true))
+                                } else {
+                                    BPNote(text: "No filmography on record.")
+                                }
+                            }
+                            .padding(.horizontal, BP.gutter)
                         }
                     } else if model.loading {
                         ProgressView().tint(BP.inkMuted).padding(.horizontal, BP.gutter)
+                    } else {
+                        // (device-flow pass) A failed first read left the name and Back alone.
+                        VStack(alignment: .leading, spacing: BP.px(10)) {
+                            BPNote(text: "Something went wrong. Try again.")
+                            Button("Try again") { Task { await model.load() } }.buttonStyle(BPActionStyle(primary: true))
+                        }
+                        .padding(.horizontal, BP.gutter)
                     }
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }
                 .padding(.top, BP.px(40))
             }
         }
-        .task { await model.load() }
+        // (device-flow pass) Load once: the task runs again whenever a title or collaborator cover
+        // closes, and refetched the whole page each time (person-updated still refreshes it).
+        .task { if model.page == nil { await model.load() } }
         .onExitCommand { close() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $other) { c in PersonView(personId: c.id, name: c.name) }
