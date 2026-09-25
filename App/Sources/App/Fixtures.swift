@@ -5,7 +5,9 @@ import Foundation
 /// (FixtureBrowseSource), for the failure card's Try again. `calfail` is the shell with every
 /// Calendar month read failing, `detail` the shell whose series titles carry a one-season episode
 /// list (DetailModel reads it instead of Cinemeta), and `kidsfail` is Who's watching with the kids
-/// page failing to build (NavigationTests3).
+/// page failing to build (NavigationTests3). `discfail` is the shell with every Discover build
+/// failing, and `bands` the shell whose Home carries the Your streaming, Your addons and
+/// Collections band rows (NavigationTests4).
 @MainActor
 enum Fixtures {
     static var active: Bool { ProcessInfo.processInfo.arguments.contains("--fixtures") }
@@ -15,7 +17,7 @@ enum Fixtures {
         switch args[i + 1] {
         case "onboarding": return .onboarding
         case "who", "kidsfail": return .whoIsWatching
-        case "shell", "spikes", "live", "roomfail", "calfail", "detail": return .shell
+        case "shell", "spikes", "live", "roomfail", "calfail", "detail", "discfail", "bands": return .shell
         default: return nil
         }
     }

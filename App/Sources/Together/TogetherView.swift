@@ -154,11 +154,15 @@ struct TogetherView: View {
             HStack(spacing: BP.px(10)) {
                 Button { Task { await room.setRelay(room.view.publicRelay) } } label: { Label("Use Harbor's public relay", systemImage: "antenna.radiowaves.left.and.right") }
                     .buttonStyle(BPActionStyle(primary: true)).focused($focus, equals: "public")
+                    .accessibilityIdentifier("together-public")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                     .focused($focus, equals: "link")
+                    .accessibilityIdentifier("together-link")
                 Button { draft = ""; typing = .relay } label: { Label("Your relay URL", systemImage: "link") }.buttonStyle(BPActionStyle())
                     .focused($focus, equals: "relay")
+                    .accessibilityIdentifier("together-relay")
                 Button("Back") { close() }.buttonStyle(BPActionStyle())
+                    .accessibilityIdentifier("together-back")
             }
             .focusSection()
         }
@@ -183,9 +187,12 @@ struct TogetherView: View {
                     Label(room.view.state == "connecting" ? "Starting…" : "Start a new room", systemImage: "plus")
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: room.view.state == "connecting")).focused($focus, equals: "start")
+                .accessibilityIdentifier("together-start")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                     .focused($focus, equals: "link")
+                    .accessibilityIdentifier("together-link")
                 Button("Back") { close() }.buttonStyle(BPActionStyle())
+                    .accessibilityIdentifier("together-back")
             }
             .focusSection()
             HStack(alignment: .bottom, spacing: BP.px(10)) {

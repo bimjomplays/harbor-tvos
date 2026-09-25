@@ -308,12 +308,41 @@ struct FixtureBrowseSource: BrowseSource {
     /// that list as the full meta instead of asking Cinemeta for an id it has never heard of
     /// (NavigationTests3). Every other scenario keeps its titles without videos.
     static let withEpisodes: Bool = scenario("detail")
+    /// `--fixtures discfail`: every Discover build fails after a beat (DiscoverModel.load), for its
+    /// failure card's Try again (NavigationTests4).
+    static let failDiscover: Bool = scenario("discfail")
+    /// `--fixtures bands`: Home also carries bp-home's band rows (Your streaming, Your addons,
+    /// Collections), for their row leads (NavigationTests4). Every other scenario's Home is unchanged.
+    static let withBands: Bool = scenario("bands")
 
     /// The launch named this fixture scenario (`--fixtures <name>`), and only then.
     private static func scenario(_ name: String) -> Bool {
         let args: [String] = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "--fixtures"), i + 1 < args.count else { return false }
         return args[i + 1] == name
+    }
+
+    /// Three tiles per band row, shaped as EngineBrowseSource builds them (service:, addon: and
+    /// collection:tmdb: ids), placed after the first two catalog rows as bp-home slots them.
+    static func bandRows() -> [BrowseRow] {
+        let names: [String] = ["Harbor One", "Harbor Two", "Harbor Three"]
+        let tints: [String] = ["#e50914", "#0063e5", "#1ce783"]
+        func brand(_ prefix: String, _ type: String, _ i: Int) -> Meta {
+            Meta(id: "\(prefix)fixture-\(i)", type: type, name: names[i], poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
+                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil,
+                 providerBadge: Meta.ProviderBadge(name: names[i], logo: "", tint: tints[i]), videos: nil)
+        }
+        let indices: [Int] = [0, 1, 2]
+        let services: [Meta] = indices.map { brand("service:", "service", $0) }
+        let addons: [Meta] = indices.map { brand("addon:https://addon.invalid/", "addon", $0) }
+        let collections: [Meta] = indices.map { i -> Meta in
+            Meta(id: "collection:tmdb:\(900 + i)", type: "collection", name: "\(names[i]) Collection", poster: nil, background: nil, logo: nil,
+                 description: "3 films", releaseInfo: nil, releaseDate: nil, inTheaters: nil,
+                 imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: true, providerBadge: nil, videos: nil)
+        }
+        return [BrowseRow(key: "services", title: "Your streaming", metas: services, shape: .brand),
+                BrowseRow(key: "addons", title: "Your addons", metas: addons, shape: .brand),
+                BrowseRow(key: "collections", title: "Collections", metas: collections, shape: .collection)]
     }
 
     /// One season of six episodes for a fixture series (Cinemeta's `videos` shape).
@@ -354,10 +383,12 @@ struct FixtureBrowseSource: BrowseSource {
                     BrowseRow(key: "trending", title: "Trending This Week", metas: metas("ts", "series")),
                     BrowseRow(key: "hbo", title: "From HBO", metas: metas("h", "series"))]
         default:
-            return [BrowseRow(key: "trending", title: "Trending This Week", metas: metas("t", "movie")),
-                    BrowseRow(key: "theaters", title: "In Theaters Now", metas: metas("n", "movie")),
-                    BrowseRow(key: "popular", title: "Popular Movies", metas: metas("p", "movie")),
-                    BrowseRow(key: "series", title: "Trending Series", metas: metas("s", "series"))]
+            var rows: [BrowseRow] = [BrowseRow(key: "trending", title: "Trending This Week", metas: metas("t", "movie")),
+                                     BrowseRow(key: "theaters", title: "In Theaters Now", metas: metas("n", "movie")),
+                                     BrowseRow(key: "popular", title: "Popular Movies", metas: metas("p", "movie")),
+                                     BrowseRow(key: "series", title: "Trending Series", metas: metas("s", "series"))]
+            if Self.withBands && room == .home { rows.insert(contentsOf: Self.bandRows(), at: 2) }
+            return rows
         }
     }
 
