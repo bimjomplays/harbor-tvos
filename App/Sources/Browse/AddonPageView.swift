@@ -74,6 +74,9 @@ struct AddonPageView: View {
         .onChange(of: focusedId) { _, id in spotlight = metas.first { $0.id == id } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .task {
+            // (bug pass) `.task` runs again when a title's cover closes: it re-opened the first
+            // catalog then, dropping the viewer's chip and scroll position.
+            guard !loadedCatalogs else { return }
             catalogs = (try? await HarborEngine.shared.call("addonsRoom.catalogs", [base])) ?? []
             loadedCatalogs = true
             if let first = catalogs.first { await open(first) }
@@ -89,11 +92,13 @@ struct AddonPageView: View {
         guard let c = active, !loading, !done else { return }
         loading = true; defer { loading = false }
         let next: [Meta] = (try? await HarborEngine.shared.call("addonsRoom.feed", [c.cursor, page, metas.count])) ?? []
-        guard active?.key == c.key else { return }
+        // (bug pass) A catalog chip pressed while this page loaded: its own first load bounced off
+        // `loading`, so it runs now instead of leaving the grid on "This catalog came back empty".
+        guard active?.key == c.key else { loading = false; await loadMore(); return }
         if next.isEmpty { done = true; return }
         page += 1
-        let known = Set(metas.map(\.id))
-        metas += next.filter { !known.contains($0.id) }
+        // (bug pass) Also drops repeats inside the new page itself (duplicate ForEach ids).
+        metas = (metas + next).uniquedById()
         await CardMarksStore.shared.refresh(metas)
     }
 }

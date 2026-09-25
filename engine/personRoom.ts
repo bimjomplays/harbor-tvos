@@ -28,6 +28,11 @@ const SECTION_TITLES: Record<string, (n: number) => string> = {
 };
 
 const collabInflight = new Set<number>();
+/** (bug pass) use-collaborators setPeople(ranked): this session's answer even when it was not
+ *  written (fewer than half the titles resolved), so the page shows it and `page` does not start
+ *  another fetch. Without it a failed or empty run fired harbor:person-updated, the page re-read,
+ *  found nothing cached and fetched again: an endless loop of TMDB requests. */
+const collabSession = new Map<number, Collaborator[]>();
 
 function loadCollaborators(person: PersonDetail, key: string): void {
   if (collabInflight.has(person.id)) return;
@@ -38,10 +43,14 @@ function loadCollaborators(person: PersonDetail, key: string): void {
     .then((fetched) => {
       const resolved = fetched.filter((t): t is CollaboratorTitle => t !== null);
       const ranked = rankCollaborators(resolved, person.id);
+      collabSession.delete(person.id);
+      collabSession.set(person.id, ranked);
+      while (collabSession.size > 48) collabSession.delete(collabSession.keys().next().value as number);
       if (resolved.length * 2 >= sample.length) writeCollaborators(person.id, ranked);
       window.dispatchEvent(new CustomEvent("harbor:person-updated", { detail: { personId: person.id } }));
     })
-    .finally(() => collabInflight.delete(person.id));
+    .finally(() => collabInflight.delete(person.id))
+    .catch(() => undefined);   // (bug pass) a throw in the ranking must not surface as an unhandled rejection
 }
 
 export async function page(personId: number, profileId: string, linked: boolean, sort: FilmographySort = "popularity", minRating = 0) {
@@ -69,8 +78,10 @@ export async function page(personId: number, profileId: string, linked: boolean,
   const shaped = raw.map((sec) => ({ id: sec.id, credits: sortFilmography(applyMinRating(sec.credits, minRating), sort).slice(0, SECTION_CAP) }));
   const count = (list: Array<{ credits: PersonCredit[] }>) => list.reduce((n, x) => n + x.credits.length, 0);
   const awards = awardSummary(mergeBundledPersonAwards(null, person.name)).filter((a) => a.wins > 0 || a.nominations > 0);
-  let collaborators: Collaborator[] = readCollaborators(personId) ?? [];
-  if (collaborators.length === 0) loadCollaborators(person, s.tmdbKey);
+  // use-collaborators: a cached list (even an empty one) is the answer; only a miss fetches (bug pass).
+  const known = readCollaborators(personId) ?? collabSession.get(personId) ?? null;
+  const collaborators: Collaborator[] = known ?? [];
+  if (known === null) loadCollaborators(person, s.tmdbKey);
   const age = person.birthday ? calcAge(person.birthday, person.deathday) : null;
   const facts: string[] = [];
   if (person.birthday) facts.push(`Born ${fmtDate(person.birthday)}${age != null ? ` · ${age}` : ""}`);

@@ -33,6 +33,11 @@ struct DetailView: View {
     /// When a Kitsu season button last lost focus by vanishing (the TVDB chips replacing it).
     @State private var kitsuFocusLostAt: Date?
     @Environment(\.dismiss) private var dismiss
+    /// (bug pass) Every fullScreenCover over this page (the picker, the player, a dialog) makes it
+    /// disappear and re-appear, which re-runs `.task`. The reload is kept (resume and marks refresh
+    /// after playback), but the hint season and autoPlay act once: an autoPlay page re-opened the
+    /// picker (and instant play fired again) every time the player closed.
+    @State private var didFirstLoad = false
 
     /// use-bp-detail-actions BpDetailAction.
     struct HeroAction: Identifiable {
@@ -151,7 +156,10 @@ struct DetailView: View {
         .task {
             model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) } ?? episodeHint?.season
             model.episodeHint = episodeHint
+            let first = !didFirstLoad
+            didFirstLoad = true
             await model.load()
+            guard first else { return }
             if let h = episodeHint, model.seasons.contains(h.season) { model.season = h.season }
             if autoPlay, picker == nil {
                 pickerAuto = roomPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
@@ -445,7 +453,8 @@ struct DetailView: View {
             Text("Cast").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
-                    ForEach(cast) { person in
+                    // (bug pass) TMDB lists an actor once per role (same person id): unique ids for ForEach.
+                    ForEach(cast.uniquedById()) { person in
                         Button { self.person = person } label: {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {

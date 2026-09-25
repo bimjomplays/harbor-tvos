@@ -341,7 +341,7 @@ export type MusicPrepared = { track: MusicTrack; stream: src.MusicStream; failed
  * first (preferring the source that is already playing), then resolved; a source that fails is
  * swapped for the next matched candidate, at most two alternatives, as upstream does.
  */
-export async function prepare(track: MusicTrack, failedKeys: string[] | null, workingSource: string | null): Promise<MusicPrepared> {
+export async function prepare(track: MusicTrack, failedKeys: string[] | null, workingSource: string | null, preload?: boolean | null): Promise<MusicPrepared> {
   const failed = new Set(failedKeys ?? []);
   const catalog = track.connectorId === "catalog" && !track.playbackUrl;
   let alternatives: MusicTrack[] = [];
@@ -363,7 +363,10 @@ export async function prepare(track: MusicTrack, failedKeys: string[] | null, wo
       if (failed.has(attemptKey(current))) throw new Error(t("music.error.playback"));
       if (current.playbackUrl) return { track: current, stream: { url: current.playbackUrl, mimeType: "", bitrate: 0 }, failed: [...failed] };
       if (!owner || !owner.playable || !owner.ready()) throw new Error(t("music.source.none"));
-      return { track: current, stream: await owner.resolve(current), failed: [...failed] };
+      const stream = await owner.resolve(current);
+      // (bug pass 2) A track that starts now reports now; a gapless preload waits for started().
+      if (!preload) src.playReport(current);
+      return { track: current, stream, failed: [...failed] };
     } catch (cause) {
       failed.add(attemptKey(current));
       if (!searched) {
@@ -377,6 +380,11 @@ export async function prepare(track: MusicTrack, failedKeys: string[] | null, wo
       current = next;
     }
   }
+}
+
+/** (bug pass 2) A preloaded track became the one heard: its held play report goes out now. */
+export function started(track: MusicTrack): void {
+  src.playReport(track);
 }
 
 /** The listener stopped the player: close any server-side play session (Jellyfin). */

@@ -156,6 +156,10 @@ export async function search(
         shims.events.emit("harbor-tvos:streams", { token, phase: "progress", ...progress });
       },
     );
+    // (bug pass) runPipeline returns (it does not throw) when aborted. A search superseded on the
+    // same token ("Search wider", "Show everything") or cancelled must not overwrite the newer
+    // search's lastResults: resolve / deadRef / autoCandidates index into them.
+    if (ac.signal.aborted) return { token, imdb, streamIds, addonCount: addons.length, result: null, error: "aborted" };
     stampAddonOrder(result.picker.all, result.raw.addon);
     stampPickerRows(result.picker.all, settings, meta, episode);
     lastResults.set(token, result);

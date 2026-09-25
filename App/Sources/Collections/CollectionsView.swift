@@ -89,11 +89,14 @@ final class CollectionsModel: ObservableObject {
         struct Page: Decodable { var cards: [Card]; var done: Bool }
         let p = ProfilesStore.shared.active
         let want = category
-        if let page: Page = try? await HarborEngine.shared.call("collectionsRoom.tmdb", [p?.id ?? "default", p?.linked ?? true, category, tmdbPage + 1]) {
-            guard want == category else { return }
+        let got: Page? = try? await HarborEngine.shared.call("collectionsRoom.tmdb", [p?.id ?? "default", p?.linked ?? true, category, tmdbPage + 1])
+        // (bug pass) A category chip pressed while this page loaded reset the list, and its own load
+        // bounced off tmdbLoading: load the new category now instead of leaving the grid empty (and a
+        // failed stale page must not mark the new category done).
+        guard want == category else { tmdbLoading = false; await loadTmdb(reset: false); return }
+        if let page = got {
             tmdbPage += 1
-            let known = Set(tmdb.map(\.key))
-            tmdb += page.cards.filter { !known.contains($0.key) }
+            tmdb = (tmdb + page.cards).uniquedById()   // (bug pass) repeats inside a page too
             tmdbDone = page.done
         } else { tmdbDone = true }
     }
@@ -269,7 +272,9 @@ struct CollectionsView: View {
                 .transition(.opacity)
             }
         }
-        .task { await model.load() }
+        // (bug pass) `.task` re-runs whenever a title's cover closes (and on every return to the
+        // tab): a full load reset the TMDB / TVDB grid each time. Later passes refresh "Mine" only.
+        .task { if model.loaded || model.loading { await model.reloadMine() } else { await model.load() } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .animation(BP.easeFast, value: open?.key)
     }

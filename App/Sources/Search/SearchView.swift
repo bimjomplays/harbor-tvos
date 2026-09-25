@@ -44,7 +44,8 @@ struct SearchView: View {
         }
         .task { await model.loadSuggestions() }
         .task { await ai.load() }
-        .onChange(of: model.query) { _, q in ai.queryChanged(q) }
+        // (bug pass) The focused tile of the last query must not stand in as the next query's top match.
+        .onChange(of: model.query) { _, q in ai.queryChanged(q); spotlight = nil }
         .onPlayPauseCommand { phoneOpen.toggle() }
         .fullScreenCover(isPresented: $phoneOpen) {
             // search-overlay.tsx: Enter in AI mode asks the model straight away.
@@ -464,6 +465,7 @@ struct SearchCollectionView: View {
             }
         }
         .task {
+            guard card == nil else { return }   // (bug pass) re-runs when a title's cover closes
             card = try? await HarborEngine.shared.call("search.collection", [hit.id, hit.name, hit.image])
             loaded = true
         }

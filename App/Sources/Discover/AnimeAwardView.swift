@@ -56,6 +56,9 @@ struct AnimeAwardView: View {
         }
         .ignoresSafeArea()
         .task(id: source) {
+            // (bug pass) The task also re-runs when a title's cover closes (same source): keep the
+            // viewer's year filter and the loaded award then.
+            if data?.id == source { return }
             year = nil
             data = try? await HarborEngine.shared.call("discoverRoom.animeAward", [source])
         }

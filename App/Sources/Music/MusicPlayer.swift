@@ -65,6 +65,9 @@ final class MusicPlayer: ObservableObject {
     private var timeObserver: Any?
     private var bag = Set<AnyCancellable>()
     private var commandsReady = false
+    /// (bug pass 2) PlaybackState.active as its sink last delivered it. @Published calls the sink
+    /// before the value lands, so reading PlaybackState.shared.active there still gives the old one.
+    private var videoHoldsNowPlaying = false
     private var artworkFor: String?
     private var artwork: MPMediaItemArtwork?
     /// Keys of sources that failed for the entry now playing (player.ts failedAttempts).
@@ -128,14 +131,22 @@ final class MusicPlayer: ObservableObject {
         // A film or channel starting takes the TV's audio: the music pauses (player.ts stopCastOwner).
         // Now Playing belongs to the video player meanwhile (VideoNowPlaying); when it closes the
         // music's own track goes back up (media-session.ts clearMediaControls).
+        // (bug pass 2) Handled synchronously with the delivered value: the write-back used to wait
+        // for a Task and read PlaybackState.active itself, so whether it landed after the video's
+        // clear depended on the order the player happened to call end() and release() in. Now the
+        // release writes the track here, and VideoNowPlaying.end calls back (onEnded) after it clears.
         PlaybackState.shared.$active
             .removeDuplicates()
             .sink { [weak self] video in
-                Task { @MainActor in
-                    if video { self?.pauseForVideo() } else { self?.refreshNowPlaying() }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.videoHoldsNowPlaying = video
+                    // The pause keeps its hop (it publishes phase; claim() runs from a view's onAppear).
+                    if video { Task { @MainActor in self.pauseForVideo() } } else { self.refreshNowPlaying() }
                 }
             }
             .store(in: &bag)
+        VideoNowPlaying.shared.onEnded = { [weak self] in self?.refreshNowPlaying() }
         Task { await reloadLibrary() }
     }
 
@@ -402,9 +413,11 @@ final class MusicPlayer: ObservableObject {
     }
 
     /// player.ts: a catalog entry prefers the source that is already playing (workingSource).
-    private func prepare(_ track: MusicTrack, excluding: [String]) async throws -> MusicPrepared {
+    /// `preload`: resolved ahead for the gapless hand-off; its server play report waits for
+    /// music.started (bug pass 2).
+    private func prepare(_ track: MusicTrack, excluding: [String], preload: Bool = false) async throws -> MusicPrepared {
         do {
-            return try await HarborEngine.shared.call("music.prepare", [track, excluding, lastSource])
+            return try await HarborEngine.shared.call("music.prepare", [track, excluding, lastSource, preload])
         } catch EngineError.js(let message) {
             throw MusicPlaybackError.message(Self.cleanJSError(message))
         }
@@ -471,6 +484,12 @@ final class MusicPlayer: ObservableObject {
 
     /// player.ts recoverPlayback for the entry now playing, whichever engine failed it.
     private func recover(_ track: MusicTrack, at index: Int, _ message: String?) {
+        // (bug pass 2) engine.rs scrobbles on any EndFile, the error one included: what was heard of
+        // the failed stream counts before the retry starts its own listen. The retry plays from the
+        // start, as upstream's recoverPlayback → playMusic does (currentTime: 0; resumeAt is only
+        // set by a resume after restart, never by recovery), so the clock goes back to 0:00 too.
+        finishScrobble()
+        position = 0
         failed.append(track.queueKey)
         guard failed.count < 3 else { fail(message ?? "music.error.playback"); return }
         // Retry the original queue entry with every failed source excluded.
@@ -520,6 +539,10 @@ final class MusicPlayer: ObservableObject {
         duration = entry.track.seconds
         beginScrobble(entry.track)
         addRecent(entry.track)
+        // (bug pass 2) The preloaded track is heard from now: Jellyfin / Navidrome hear about it now,
+        // not when it was resolved ~30 s early (upstream reports as it starts a track).
+        let heardTrack = entry.track
+        Task { let _: AnyJSON? = try? await HarborEngine.shared.call("music.started", [heardTrack]) }
         refreshNowPlaying()
         extendRadioIfDue()
     }
@@ -536,7 +559,7 @@ final class MusicPlayer: ObservableObject {
         let entry = queue[n]
         Task {
             defer { if self.preloading == n { self.preloading = nil } }
-            let prepared = try? await self.prepare(entry, excluding: [])
+            let prepared = try? await self.prepare(entry, excluding: [], preload: true)
             // A Spotify entry cannot join the AVQueuePlayer; it starts through librespot when reached.
             guard ticket == self.request, let prepared, !Self.isSpotify(prepared), let current = self.player.currentItem, self.queue.indices.contains(n),
                   self.queue[n].queueKey == entry.queueKey, let item = self.makeItem(prepared) else { return }
@@ -880,8 +903,9 @@ final class MusicPlayer: ObservableObject {
 
     private func refreshNowPlaying() {
         // While a film or channel plays, VideoNowPlaying holds Now Playing; the sink above writes
-        // the music back once it closes.
-        guard let t = current, !PlaybackState.shared.active else { return }
+        // the music back once it closes. (bug pass 2) The sink's own value, not PlaybackState's:
+        // inside the release it still reads true.
+        guard let t = current, !videoHoldsNowPlaying else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: t.title,
             MPMediaItemPropertyArtist: t.artist,

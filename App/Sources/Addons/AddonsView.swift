@@ -197,8 +197,8 @@ final class AddonsModel: ObservableObject {
         browseLoading = false
         guard let r else { hasMore = false; return }
         // community-browse-list: a row already shown (same uuid) is not repeated.
-        let known = Set(items.map(\.key))
-        items += r.items.filter { !known.contains($0.key) }
+        // (bug pass) Also drops repeats inside the page itself (duplicate ForEach ids).
+        items = (items + r.items).uniquedById()
         hasMore = r.hasMore && !r.items.isEmpty
         browseEmpty = r.empty
         page += 1

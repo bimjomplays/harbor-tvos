@@ -221,6 +221,9 @@ final class SearchModel: ObservableObject {
 
     private func schedule() {
         timer?.cancel()
+        // (bug pass) Any edit retires the run in flight: it re-checks this after each await, so a
+        // cleared field (or a newer query) never gets the old query's people / top match / status.
+        requestId += 1
         let q = query.trimmingCharacters(in: .whitespaces)
         if q != latchedQuery { latchedQuery = q; latched = []; filter = .all; engineRequestId = 0; addonsPending = [] }
         guard !q.isEmpty else { status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; addonsPending = []; people = []; early = []; engineRequestId = 0; return }
@@ -256,6 +259,7 @@ final class SearchModel: ObservableObject {
             if let manga = results.manga, !manga.isEmpty {
                 // Covers sit on the viewer's own server: its image auth must be known first.
                 if MangaStore.shared.state == nil { await MangaStore.shared.refresh() }
+                guard mine == requestId else { return }
                 out.append(BrowseRow(key: "manga", title: T("Manga"), metas: manga.map(\.meta)))
             }
             // use-bp-search: one franchise row per character hit (AniList), its titles as anime metas.
@@ -273,6 +277,7 @@ final class SearchModel: ObservableObject {
             rows = out
             channels = results.liveTv ?? []
             await CardMarksStore.shared.refresh(out.filter { $0.key != "manga" }.flatMap(\.metas))
+            guard mine == requestId else { return }
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
             status = .done

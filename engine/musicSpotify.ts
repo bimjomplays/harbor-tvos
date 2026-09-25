@@ -182,6 +182,10 @@ export function forget(): SpotifyStatus {
   webTokenCache = null;
   sessionToken = null;
   pending = null;
+  // (bug pass 2) A refresh still in flight belongs to the sign-in being forgotten: it must not save
+  // its token once it lands (refreshStored checks this), nor be shared with the next sign-in's calls.
+  signIn += 1;
+  refreshing = null;
   account = { connected: false, username: null, country: null, premium: false, accountType: null, error: null };
   health = "unknown";
   return status();
@@ -365,13 +369,20 @@ async function refresh(refreshToken: string): Promise<WebToken> {
 
 /** The refresh in flight and the refresh token it spends (webToken shares it between callers). */
 let refreshing: { token: string; work: Promise<string | null> } | null = null;
+/** Bumped by forget(): which sign-in a refresh started under. */
+let signIn = 0;
 /** tokens.rs web_token's refresh step: the new access token, or null (an expired grant is forgotten). */
 async function refreshStored(stored: WebToken, previous: string): Promise<string | null> {
+  const started = signIn;
   try {
     const granted = await refresh(previous);
+    // (bug pass 2) Disconnected while the refresh was on the wire: the result is dropped, or the
+    // forgotten sign-in's web token would be saved again (and used by the next account's calls).
+    if (started !== signIn) return null;
     // Refresh cannot grant new scopes; keep the ones the sign-in granted.
     return adopt({ ...granted, scopes: stored.scopes }, previous);
   } catch (cause) {
+    if (started !== signIn) return null;
     if (String(cause instanceof Error ? cause.message : cause).includes(EXPIRED)) {
       webTokenCache = null;
       write(KEYS.webToken, null);

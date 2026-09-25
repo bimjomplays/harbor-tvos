@@ -784,6 +784,8 @@ export const animeRoom = {
   topPicksSettled: topPicksGlue.topPicksSettled,
   /** use-bp-anime-watched isAnimeWatched over the CW watched maps (tests). */
   watchedFrom: animeGlue.animeWatchedFrom,
+  /** (bug pass) per-profile LRU of hero / picks ids for the hide-watched lookups (tests). */
+  lateIds: animeGlue.lateIdsForTest,
   resetTopPicks: topPicksGlue.resetAnimeTopPicks,
 };
 
@@ -1239,6 +1241,7 @@ export const music = {
   search: musicGlue.search,
   open: musicGlue.open,
   prepare: musicGlue.prepare,
+  started: musicGlue.started,
   stopped: musicGlue.stopped,
   library: musicGlue.library,
   addRecent: musicGlue.addRecent,

@@ -16,7 +16,7 @@ struct ContinueRowView: View {
                 .padding(.horizontal, BP.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
-                    ForEach(items) { item in
+                    ForEach(items.uniquedById()) { item in   // (bug pass) unique ids
                         Button { onSelect(item) } label: { ContinueCardView(item: item, focused: focusedId == item.id) }
                             .buttonStyle(BPTileStyle())
                             .focused($focusedId, equals: item.id)

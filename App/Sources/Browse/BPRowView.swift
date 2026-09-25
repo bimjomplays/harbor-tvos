@@ -43,7 +43,8 @@ struct BPRowView: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: BP.trackGap) {
-                        ForEach(Array(row.metas.enumerated()), id: \.element.id) { i, meta in
+                        // (bug pass) Unique ids: a catalog that repeats a title broke ForEach and focus.
+                        ForEach(Array(row.metas.uniquedById().enumerated()), id: \.element.id) { i, meta in
                             Button { onSelect(meta) } label: {
                                 BPTileView(meta: meta, shape: row.shape, rank: i + 1, focused: focusedId == meta.id)
                             }
@@ -109,7 +110,7 @@ struct BPRailView<Lead: View>: View {
                 LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                     Color.clear.frame(height: topInset)
                     lead().id("lead")
-                    ForEach(rows) { row in
+                    ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
                                   onSeeAll: onSeeAll.map { cb in { cb(row) } }, onQuick: onQuick,
                                   restoreRoute: restoreRoute, restoreCell: entry?.row == row.key ? entry?.cell : nil,

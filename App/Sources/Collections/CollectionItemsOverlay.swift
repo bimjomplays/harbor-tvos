@@ -163,7 +163,7 @@ struct CollectionItemsOverlay: View {
             if !results.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: BP.px(21)) {
-                        ForEach(results) { m in
+                        ForEach(results.uniquedById()) { m in   // (bug pass) unique ids
                             Button { Task { await toggle(m) } } label: {
                                 ZStack(alignment: .topTrailing) {
                                     BPTileView(meta: m, shape: .poster)
@@ -193,7 +193,7 @@ struct CollectionItemsOverlay: View {
             BPNote(text: emptyText)
         } else {
             LazyVGrid(columns: Self.columns, alignment: .leading, spacing: BP.px(24)) {
-                ForEach(card.items) { item in
+                ForEach(card.items.uniquedById()) { item in   // (bug pass) a list can repeat a title
                     Button {
                         if editing { Task { await removeItem(item) } } else { onOpen(item) }
                     } label: {
