@@ -5,7 +5,7 @@ import type { Meta } from "@/lib/cinemeta";
 import { mediaServerConnections, saveMediaServerConnection, removeMediaServerConnection, updateMediaServerConnection, mediaServerToken, mediaServerSyncDue } from "@/lib/media-server/connections";
 import { discoverAndAuthenticate } from "@/lib/media-server/discovery";
 import { synchronizeMediaServer, subscribeMediaServerSyncProgress, mediaServerAdapter } from "@/lib/media-server/sync";
-import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries, mediaServerMetadata, putMediaServerMetadata, pruneMediaServerMetadata } from "@/lib/media-server/index-store";
+import { mediaServerItems, removeMediaServerItems, mediaServerSyncSummaries, mediaServerMetadata, putMediaServerMetadata, pruneMediaServerMetadata, identityMatches } from "@/lib/media-server/index-store";
 import { hydrateLibraryMeta } from "@/views/library/hydrate-meta";
 import { createRequestScheduler } from "@/lib/request-scheduler";
 import { matchingServerItems, serverPlayableCopies, groupMediaServerTitles } from "@/lib/media-server/selectors";
@@ -414,6 +414,31 @@ export async function copies(meta: Meta, imdbId: string | null, season?: number 
     sizeBytes: (c.version as { sizeBytes?: number }).sizeBytes ?? null, resolution: (c.version as { resolution?: string }).resolution ?? null,
     progressMs: c.progress?.positionMs ?? 0,
   }));
+}
+
+/** media-server-brand.tsx mediaServerProviderName. */
+function providerName(provider: MediaServerProvider): string {
+  if (provider === "plex") return "Plex";
+  if (provider === "emby") return "Emby";
+  return "Jellyfin";
+}
+
+export type TitleServer = { id: string; name: string; provider: MediaServerProvider; providerName: string };
+
+/**
+ * hooks/use-title-media-servers.ts: the enabled connections whose index holds this title, for
+ * detail/bp-hero-notes.tsx BpHeroMarks ("Available in {name}" per server).
+ */
+export async function titleServers(metaId: string, imdbId: string | null): Promise<TitleServer[]> {
+  const tmdb = metaId.match(/^tmdb:(?:movie|tv|series):(\d+)$/);
+  const identity = { tmdbId: tmdb ? Number(tmdb[1]) : undefined, imdbId: imdbId ?? (metaId.startsWith("tt") ? metaId : undefined) };
+  if (identity.tmdbId == null && !identity.imdbId) return [];
+  const conns = mediaServerConnections().filter((c) => c.enabled);
+  if (conns.length === 0) return [];
+  const enabled = new Set(conns.map((c) => c.id));
+  const titles = groupMediaServerTitles((await mediaServerItems()).filter((item) => enabled.has(item.connectionId)));
+  const ids = new Set(titles.filter((t) => identityMatches(t.identity, identity)).flatMap((t) => t.connectionIds));
+  return conns.filter((c) => ids.has(c.id)).map((c) => ({ id: c.id, name: c.name, provider: c.provider, providerName: providerName(c.provider) }));
 }
 
 /** A playable URL for one copy (direct play or the server's transcode), with headers and subtitles. */

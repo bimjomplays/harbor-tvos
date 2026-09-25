@@ -590,6 +590,10 @@ export const streamsRoom = {
   setActiveStreamFilter: streamGlue.setActiveStreamFilter,
   /** bp-stream-filters setSort: settings.streamSort ("addon" | "harbor"). */
   setStreamSort: streamGlue.setStreamSort,
+  /** bp-stream-filters setStreamMode: settings.streamMode ("both" | "addons" | "p2p"). */
+  setStreamMode: streamGlue.setStreamMode,
+  pickerRowLabels: streamGlue.pickerRowLabels,
+  preferredStreamLangs: streamGlue.preferredStreamLangs,
   pickerRowText: streamGlue.pickerRowText,
   deadRef: streamGlue.deadRef,
   /** Smoke only: hold partial results until the returned function lets them land. */
@@ -880,6 +884,8 @@ export const homeServers = {
   sync: homeGlue.sync,
   titles: homeGlue.titles,
   copies: homeGlue.copies,
+  /** use-title-media-servers: the servers holding a title (the Detail hero's marks). */
+  titleServers: homeGlue.titleServers,
   play: homeGlue.play,
   runDueSyncs: homeGlue.runDueSyncs,
   startRunner: homeGlue.startRunner,

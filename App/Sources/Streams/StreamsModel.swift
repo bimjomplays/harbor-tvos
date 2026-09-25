@@ -41,6 +41,26 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     var tvSort: SortFlags?
     /// engine stampPickerRows: upstream's streamIdentity (bp-streams keys its rows by it).
     var tvKey: String?
+    /// engine pickerRowLabels: what bp-stream-row.tsx draws beside the text (the quality pill with
+    /// "No Label" / "Unverified", the format badges, DUB/SUB, the edition, "Cached on {name}" /
+    /// "In {name}" / External / P2P / Cache).
+    struct Labels: Decodable, Equatable {
+        struct CachedOn: Decodable, Equatable { var name: String; var owned: Bool }
+        var quality: String
+        var confidence: String
+        var badges: [String]
+        var dubSub: String?
+        var edition: String?
+        var cached: Bool
+        var cachedOn: CachedOn?
+        var availability: String?
+    }
+    var tvLabels: Labels?
+    /// bp-stream-filters base, filterStreamsByMode: whether "Direct/debrid only" and "P2P only" keep it.
+    struct Modes: Decodable, Equatable { var addons: Bool; var p2p: Bool }
+    var tvModes: Modes?
+    /// streamMatchesLangs against the preferred languages (the language chip keeps it).
+    var tvLang: Bool?
     var index: Int = 0   // position in picker.all, set after decoding
     /// (detail/search pass 2) The row's id, set after decoding: its streamIdentity (an index suffix
     /// only for a repeat). It was the index, which every partial result shifts as slower addons
@@ -57,6 +77,7 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters, tvCached, tvSort, tvKey
+        case tvLabels, tvModes, tvLang
         // stampAddonOrder's fields: the "addon order" sort ranks by these, so they must decode.
         case addonUrl, nativeIdx
     }
@@ -83,11 +104,34 @@ final class StreamsModel: ObservableObject {
         var seasonLock: Bool?
         /// bp-stream-filters sortForced: an AIOStreams-style addon ranks its own list.
         var addonRanked: Bool?
+        var setup: Setup?
         var result: Result?
         var error: String?
     }
 
     enum Phase: Equatable { case idle, searching, done, failed(String) }
+
+    /// engine PickerSetup (the `setup` event, sent once the addons are known): the addons that
+    /// serve streams (use-bp-streams pendingAddonCount) and the language chip (bp-stream-filters
+    /// preferredLangs, abbreviateLanguages, requirePreferredLanguage).
+    struct Setup: Decodable, Equatable {
+        var streamAddonIds: [String]
+        var preferredLangs: [String]
+        var langLabel: String
+        var langFilterDefault: Bool
+        var isAnime: Bool
+    }
+    @Published private(set) var setup: Setup?
+    /// settings.streamMode ("both" | "addons" | "p2p"): bp-stream-chips' Direct/debrid only / P2P only.
+    @Published private(set) var streamMode = "both"
+
+    /// use-bp-streams pendingAddonCount: stream addons that have not listed anything yet, while the
+    /// pipeline runs ("{n} addons loading").
+    var pendingAddonCount: Int {
+        guard phase == .searching, let ids = setup?.streamAddonIds, !ids.isEmpty else { return 0 }
+        let returned = Set(streams.map(\.addonId))
+        return ids.filter { !returned.contains($0) }.count
+    }
 
     @Published private(set) var streams: [ScoredStream] = []
     @Published private(set) var primary: ScoredStream?
@@ -153,11 +197,12 @@ final class StreamsModel: ObservableObject {
         subscribeOnce()
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
-        struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String?; var sort: String? }
+        struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String?; var sort: String?; var streamMode: String? }
         if let f: Filters = try? await HarborEngine.shared.call("streamsRoom.streamFilters", [p?.id ?? "default", p?.linked ?? true]), gen == searchGen {
             savedFilters = f.filters
             activeFilterId = f.activeId
             streamSort = f.sort ?? "addon"
+            streamMode = f.streamMode ?? "both"
         }
         Task { [weak self] in
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
@@ -175,6 +220,7 @@ final class StreamsModel: ObservableObject {
             debridCount = r.debridCount ?? 0
             seasonLock = r.seasonLock ?? false
             addonRanked = r.addonRanked ?? false
+            if let su = r.setup { setup = su }
             debridErrors = (r.result?.debridErrors ?? []).map { "\($0.name): \($0.code)" }
             apply(r.result?.picker)
             if r.result?.picker != nil { finalGen = gen }
@@ -198,6 +244,21 @@ final class StreamsModel: ObservableObject {
         } catch {
             // The pick still narrows this list; it just was not saved.
         }
+    }
+
+    /// bp-stream-filters setStreamMode: update({ streamMode }), so it sticks for next time.
+    func setStreamMode(_ mode: String) async {
+        streamMode = mode
+        let p = ProfilesStore.shared.active
+        if let saved: String = try? await HarborEngine.shared.call("streamsRoom.setStreamMode", [p?.id ?? "default", p?.linked ?? true, mode]) {
+            streamMode = saved
+        }
+    }
+
+    /// bp-stream-chips Refresh (use-pipeline-result refresh): the same search again.
+    func refresh() async {
+        guard let m = lastMeta else { return }
+        await search(meta: m, episode: lastEpisode)
     }
 
     /// bp-stream-filters setSort: update({ streamSort }), so the order sticks for next time.
@@ -360,6 +421,8 @@ final class StreamsModel: ObservableObject {
             switch detail?["phase"]?.string {
             case "progress":
                 self.progress = (Int(detail?["settled"]?.number ?? 0), Int(detail?["total"]?.number ?? 0))
+            case "setup":
+                if let json = detail, let su = try? json.decode(Setup.self) { self.setup = su }
             case "partial":
                 if self.finalGen != self.searchGen, let pickerJSON = detail?["picker"], let picker = try? pickerJSON.decode(RankedPicker.self) { self.apply(picker) }
                 if self.phase == .searching, !self.streams.isEmpty { /* keep searching state; UI shows rows already */ }

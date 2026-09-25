@@ -19,6 +19,8 @@ final class DetailModel: ObservableObject {
         var tag: String? = nil
         /// bp-anime-seasons.tsx facts: "Abs E{n}" when the absolute number is not the episode number.
         var absoluteLabel: String? = nil
+        /// bp-anime-seasons.tsx BpAnimeEpisodeCard: a filler episode wears the "Filler" pill.
+        var filler: Bool = false
     }
 
     @Published private(set) var meta: Meta
@@ -175,6 +177,16 @@ final class DetailModel: ObservableObject {
         struct Entry: Decodable, Identifiable { var type: String; var awardName: String; var category: String?; var year: Int?; var result: String; var recipient: String?; var id: String { "\(type)-\(awardName)-\(category ?? "")-\(year ?? 0)-\(result)" } }
         var groups: [Group]; var entries: [Entry]
     }
+    /// hooks/use-title-media-servers.ts: the connected home servers whose index holds this title
+    /// (detail/bp-hero-notes.tsx BpHeroMarks "Available in {name}").
+    struct TitleServer: Decodable, Identifiable, Equatable { var id: String; var name: String; var provider: String; var providerName: String }
+    @Published private(set) var titleServers: [TitleServer] = []
+    func loadTitleServers() async {
+        let list: [TitleServer]? = try? await HarborEngine.shared.call("homeServers.titleServers", [meta.id, imdbId])
+        // A failed read keeps the marks already drawn (the page reloads under every cover).
+        if let list, list != titleServers { titleServers = list }
+    }
+
     func loadAwards() async {
         // (detail pass) A failed reload keeps the row on screen (see loadExtras).
         if let a: TitleAwards = try? await HarborEngine.shared.call("detailRoom.awards", [meta]) { awards = a }
@@ -232,7 +244,7 @@ final class DetailModel: ObservableObject {
         // Keyed by the Kitsu / TVDB episode id: a TVDB-only card can share a season:episode pair with a Kitsu one.
         return Episode(id: "\(meta.id):k\(e.id)", season: e.season, episode: e.number, title: e.title.isEmpty ? T("Episode %lld", e.number) : e.title,
                        overview: e.synopsis.isEmpty ? nil : e.synopsis, thumbnail: e.thumbnail, released: released, playEpisode: e.playEpisode,
-                       watchMetaId: e.sourceMetaId, tag: tag, absoluteLabel: abs)
+                       watchMetaId: e.sourceMetaId, tag: tag, absoluteLabel: abs, filler: e.filler)
     }
 
     /// use-bp-anime-detail seasons / orderTypes: asked once the Kitsu episodes are in, again on every order change.
@@ -450,6 +462,7 @@ final class DetailModel: ObservableObject {
         await loadEpisodeFacts()
         await loadAwards()
         await loadTrackers()
+        await loadTitleServers()
     }
 
     /// use-bp-detail: TMDB lands independently of the meta; the franchise collection last.

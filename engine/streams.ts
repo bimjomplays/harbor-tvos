@@ -18,7 +18,11 @@ import { runPipeline, type PipelineResult } from "@/lib/streams/pipeline";
 import { resolveStream, type ResolveResult } from "@/lib/streams/resolve";
 import type { ScoredStream } from "@/lib/streams/types";
 import type { PlayEpisode } from "@/lib/view";
-import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure, displayTitle, torrentFilename, streamSummaryParts, contributorLabel, streamIdentity } from "@/views/play-picker/picker-utils";
+import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure, displayTitle, torrentFilename, streamSummaryParts, contributorLabel, streamIdentity, anyStreamCached, abbreviateLanguages, normalizeLangCode } from "@/views/play-picker/picker-utils";
+import { qualityConfidence, streamBadges, type BadgeKind } from "@/components/format-badge";
+import { streamDubSub, type DubSub } from "@/components/dub-sub-pill";
+import { QUALITY_LABEL, qualityKey } from "@/components/player/stream-switcher/quality";
+import { filterStreamsByMode } from "@/lib/streams/mode";
 import { isFilterEmpty, matchesCustomFilter } from "@/lib/streams/custom-filters";
 import { isVideoFile, trackersFromSources, type TorrentFile } from "@/lib/torrent/stremio-stream";
 import { magnetFromHash } from "@/lib/debrid/types";
@@ -110,9 +114,58 @@ export type StreamSearch = {
   seasonLock?: boolean;
   /** bp-stream-filters sortForced (anyAddonRanked): an AIOStreams-style addon ranks its own list. */
   addonRanked?: boolean;
+  /** The picker's setup (also sent as the `setup` event before the first partial); see PickerSetup. */
+  setup?: PickerSetup;
   result: PipelineResult | null;
   error?: string;
 };
+
+/**
+ * What the TV's picker needs once the addons are known, before any stream lands:
+ * - `streamAddonIds`: use-bp-streams pendingAddonCount counts these (the installed addons that
+ *   serve streams) minus the addon ids already in picker.all, until the pipeline is done.
+ * - `preferredLangs` / `langLabel` / `langFilterDefault`: bp-stream-filters preferredLangs, the
+ *   language chip's label (abbreviateLanguages) and its first state (requirePreferredLanguage with
+ *   at least one preferred language).
+ * - `isAnime`: use-bp-streams isAnime (the DUB/SUB pill only reads on anime).
+ */
+export type PickerSetup = { streamAddonIds: string[]; preferredLangs: string[]; langLabel: string; langFilterDefault: boolean; isAnime: boolean };
+
+const ANIME_ID_RE = /^(kitsu|mal|anilist|anidb):/;
+const kitsuOrMal = (streamIds: string[]) => streamIds.some((id) => id.startsWith("kitsu:") || id.startsWith("mal:"));
+
+/** bp-stream-filters preferredLangs: preferredLanguages, preferredAudioLangs, then Japanese for an
+ * anime request; one per language code, and Japanese only for anime. */
+export function preferredStreamLangs(settings: Settings, isAnimeRequest: boolean): string[] {
+  const baseLangs = settings.preferredLanguages ?? [];
+  const codes = settings.preferredAudioLangs ?? [];
+  const all = [...baseLangs, ...codes, ...(isAnimeRequest ? ["Japanese"] : [])];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const lang of all) {
+    const code = normalizeLangCode(lang);
+    if (!isAnimeRequest && code === "ja") continue;
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push(lang);
+  }
+  return out;
+}
+
+export function pickerSetup(settings: Settings, meta: Meta, streamIds: string[], addons: Addon[]): PickerSetup {
+  const preferredLangs = preferredStreamLangs(settings, kitsuOrMal(streamIds));
+  // use-bp-streams pendingAddonCount: addons whose manifest lists the stream resource.
+  const streamAddonIds = addons
+    .filter((a) => !!a.manifest?.id && (a.manifest?.resources ?? []).some((r) => (typeof r === "string" ? r === "stream" : r.name === "stream")))
+    .map((a) => a.manifest.id);
+  return {
+    streamAddonIds,
+    preferredLangs,
+    langLabel: abbreviateLanguages(preferredLangs),
+    langFilterDefault: settings.requirePreferredLanguage === true && (settings.preferredLanguages ?? []).length > 0,
+    isAnime: ANIME_ID_RE.test(meta.id) || kitsuOrMal(streamIds),
+  };
+}
 
 const searches = new Map<string, AbortController>();
 const lastResults = new Map<string, PipelineResult>();
@@ -196,6 +249,8 @@ export async function search(
     const streamIds = await buildStreamIdsWithIdentity(meta.id, episode ?? undefined, imdb.id, meta.behaviorHints?.defaultVideoId);
     if (streamIds.length === 0) return { token, imdb, streamIds, addonCount: 0, result: null, error: "no-stream-ids" };
     const addons = await gatherStreamAddons(authKey, settings);
+    const setup = pickerSetup(settings, meta, streamIds, addons);
+    if (!ac.signal.aborted) shims.events.emit("harbor-tvos:streams", { token, phase: "setup", ...setup });
     const input = buildEpisodePipelineInput({
       meta, episode: episode ?? undefined, imdbId: imdb.id, streamIds, addons, debrids: debridsFor(settings), settings,
       strictMode: opts.strictMode ?? false, filterDisabled: opts.filterDisabled ?? false, animeTitles: null,
@@ -207,7 +262,7 @@ export async function search(
         const land = () => {
           if (finished || ac.signal.aborted || partial.picker.all.length === 0) return;
           stampAddonOrder(partial.picker.all, partial.raw.addon);
-          stampPickerRows(partial.picker.all, settings, meta, episode, input.debrids);
+          stampPickerRows(partial.picker.all, settings, meta, episode, input.debrids, setup);
           lastResults.set(token, partial);
           shims.events.emit("harbor-tvos:streams", { token, phase: "partial", picker: partial.picker, rejected: partial.rejected.length, debridErrors: partial.debridErrors ?? [] });
         };
@@ -224,11 +279,11 @@ export async function search(
     // search's lastResults: resolve / deadRef / autoCandidates index into them.
     if (ac.signal.aborted) return { token, imdb, streamIds, addonCount: addons.length, result: null, error: "aborted" };
     stampAddonOrder(result.picker.all, result.raw.addon);
-    stampPickerRows(result.picker.all, settings, meta, episode, input.debrids);
+    stampPickerRows(result.picker.all, settings, meta, episode, input.debrids, setup);
     finished = true;
     lastResults.set(token, result);
     const seasonLock = !!settings.seasonSourceLock && (meta.type === "series" || /^(kitsu|mal|anilist|anidb):/.test(meta.id));
-    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock, addonRanked: addons.some((a) => isAddonRanked(a)) };
+    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock, addonRanked: addons.some((a) => isAddonRanked(a)), setup };
   } catch (e) {
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {
@@ -279,6 +334,81 @@ export function pickerRowText(stream: ScoredStream, showName: string, episode: P
   return { headline, detail: detailLine(rawDescription, streamSummaryParts(stream), headline), description, filename: torrentFilename(stream) };
 }
 
+/** bp-stream-row.tsx editionText. */
+function editionText(edition: string): string {
+  if (/director/i.test(edition)) return "Director's Cut";
+  if (/open[\s.]?matte/i.test(edition)) return "Open Matte";
+  return edition;
+}
+
+/** format-badge.tsx ALT, shortened where the image says less (upstream draws an image; the TV
+ * writes its name). */
+const BADGE_TEXT: Partial<Record<BadgeKind, string>> = {
+  "4k-uhd": "4K UHD", "1080p": "1080p", "720p": "720p", "480p": "480p", sd: "SD", dvd: "DVD",
+  imax: "IMAX", bluray: "Blu-ray", remux: "REMUX", webdl: "WEB-DL", hdtv: "HDTV", hevc: "HEVC", av1: "AV1",
+  hdr10: "HDR10", "hdr10-plus": "HDR10+", dv: "Dolby Vision", hlg: "HLG", atmos: "Atmos", truehd: "TrueHD",
+  "dts-hd": "DTS-HD", dts: "DTS", ddp: "DD+", flac: "FLAC", aac: "AAC", mono: "Mono", cam: "Cam",
+  telesync: "Telesync", telecine: "Telecine", extended: "Extended Cut", remastered: "Remastered", repack: "Repack",
+  "no-label": "No quality label", unknown: "Quality unverified",
+};
+const QUALITY_KINDS = new Set<BadgeKind>(["4k-uhd", "1080p", "720p", "480p", "sd", "no-label", "unknown"]);
+
+/**
+ * bp-stream-row.tsx BpStreamRow's labels:
+ * - `quality`: the quality pill, t("No Label") / t("Unverified") when qualityConfidence says so, else
+ *   QUALITY_LABEL[qualityKey] (English; the TV translates the first two).
+ * - `badges`: streamBadges as names, less the leading one the quality pill already says (a
+ *   resolution, No Label, Unverified; CAM / TS / TC when the pill names them). Both follow
+ *   settings.showQualityBadge on the TV side.
+ * - `dubSub`: streamDubSub(audioLanguages, isAnime), before settings.showDubBadge.
+ * - `cached` / `cachedOn`: bp-streams `cached={anyStreamCached(stream) || s.cachedOn(stream) != null}`
+ *   and use-bp-streams cachedOn (your own cloud first: "In {name}", else "Cached on {name}").
+ * - `availability`: the right-hand mark: "cached", else "external", "p2p" or "cache" (needsCache).
+ */
+export type PickerRowLabels = {
+  quality: string;
+  confidence: "labeled" | "unverified" | "unlabeled";
+  badges: string[];
+  dubSub: DubSub | null;
+  edition: string | null;
+  cached: boolean;
+  cachedOn: { name: string; owned: boolean } | null;
+  availability: "cached" | "external" | "p2p" | "cache" | null;
+};
+
+export function pickerRowLabels(stream: ScoredStream, debrids: DebridStore[], isAnime: boolean): PickerRowLabels {
+  const confidence = qualityConfidence(stream);
+  const quality = confidence === "unlabeled" ? "No Label" : confidence === "unverified" ? "Unverified" : QUALITY_LABEL[qualityKey(stream)];
+  const kinds = streamBadges(stream);
+  const lead = kinds[0];
+  const leadSaid = lead != null && (QUALITY_KINDS.has(lead) || (confidence === "labeled" && (lead === "cam" || lead === "telesync" || lead === "telecine")));
+  const badges = (leadSaid ? kinds.slice(1) : kinds).map((k) => BADGE_TEXT[k] ?? k.toUpperCase());
+  let cachedOn: PickerRowLabels["cachedOn"] = null;
+  for (const d of debrids) {
+    if (stream.inLibrary?.[d.slug] === true) { cachedOn = { name: d.name, owned: true }; break; }
+  }
+  if (!cachedOn) {
+    for (const d of debrids) {
+      if (stream.cached?.[d.slug] === true) { cachedOn = { name: d.name, owned: false }; break; }
+    }
+  }
+  const cached = anyStreamCached(stream) || cachedOn != null;
+  const s = stream as ScoredStream & { externalUrl?: string; ytId?: string };
+  const external = !s.url && !s.infoHash && Boolean(s.externalUrl || s.ytId);
+  const p2p = !cached && !external && s.infoHash != null;
+  const needsCache = !cached && !external && !s.url && s.infoHash == null;
+  return {
+    quality,
+    confidence,
+    badges,
+    dubSub: streamDubSub(stream.audioLanguages, isAnime),
+    edition: stream.edition ? editionText(stream.edition) : null,
+    cached,
+    cachedOn,
+    availability: cached ? "cached" : external ? "external" : p2p ? "p2p" : needsCache ? "cache" : null,
+  };
+}
+
 /** settings.customStreamFilters as the picker's filter menu lists them (bp-stream-chips filterMenuOptions). */
 export type SavedStreamFilter = { id: string; name: string; empty: boolean };
 
@@ -286,13 +416,26 @@ export type SavedStreamFilter = { id: string; name: string; empty: boolean };
  * bp-stream-filters.ts customFilters / activeFilterId: the saved filters (synced from the desktop's
  * Stream filters panel) and the active one. `activeId` is null unless it names a saved filter.
  */
-export function streamFilters(profileId: string, linked: boolean): { filters: SavedStreamFilter[]; activeId: string | null; sort: "harbor" | "addon" } {
+export function streamFilters(profileId: string, linked: boolean): { filters: SavedStreamFilter[]; activeId: string | null; sort: "harbor" | "addon"; streamMode: StreamModeValue } {
   const s = loadEffective(profileId, linked);
   const list = Array.isArray(s.customStreamFilters) ? s.customStreamFilters : [];
   const filters = list.map((f) => ({ id: f.id, name: (f.name ?? "").trim(), empty: isFilterEmpty(f) }));
   const activeId = filters.some((f) => f.id === s.activeStreamFilterId) ? s.activeStreamFilterId : null;
   // settings.streamSort (defaults.ts "addon"; load.ts moves an old "harbor" to "addon" once).
-  return { filters, activeId, sort: s.streamSort === "harbor" ? "harbor" : "addon" };
+  return { filters, activeId, sort: s.streamSort === "harbor" ? "harbor" : "addon", streamMode: streamModeOf(s.streamMode) };
+}
+
+/** bp-stream-filters BpStreamMode; an unknown stored value reads as "both" (mode.ts filterStreamsByMode). */
+export type StreamModeValue = "both" | "addons" | "p2p";
+const streamModeOf = (v: unknown): StreamModeValue => (v === "addons" || v === "p2p" ? v : "both");
+
+/** bp-stream-filters setStreamMode: update({ streamMode }) (the source chip's Direct/debrid only, P2P only). */
+export function setStreamMode(profileId: string, linked: boolean, mode: string): StreamModeValue {
+  const s = loadEffective(profileId, linked);
+  const next = streamModeOf(mode);
+  persistEffective({ ...s, streamMode: next }, profileId, linked);
+  markSettingsPatched(["streamMode"]);
+  return next;
 }
 
 /** bp-stream-filters setSort: update({ streamSort }). */
@@ -323,8 +466,14 @@ export function setActiveStreamFilter(profileId: string, linked: boolean, id: st
  * cache-checked), so the TV's own "any cached[] true" read left those unbadged, sorted behind
  * torrents, and hidden by the Cached chip. `tvSort` carries the flags bp-stream-filters sorts by.
  */
-export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: Meta, episode: PlayEpisode | null, debrids: DebridStore[] = debridsFor(settings)): void {
+export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: Meta, episode: PlayEpisode | null, debrids: DebridStore[] = debridsFor(settings), setup: PickerSetup | null = null): void {
   const filters = Array.isArray(settings.customStreamFilters) ? settings.customStreamFilters : [];
+  // bp-stream-filters base: filterStreamsByMode over the whole candidate pool (it keeps every stream
+  // when the mode would leave none), so each stream carries whether each mode keeps it.
+  const direct = new Set(filterStreamsByMode(all, "addons"));
+  const p2pOnly = new Set(filterStreamsByMode(all, "p2p"));
+  const langs = setup?.preferredLangs ?? [];
+  const isAnime = setup?.isAnime ?? ANIME_ID_RE.test(meta.id);
   for (const s of all) {
     const out = s as ScoredStream & { tvRow?: PickerRowText; tvFilters?: string[]; tvCached?: boolean; tvSort?: { watchHub: boolean; needsDownload: boolean; instant: boolean } };
     out.tvRow = pickerRowText(s, meta.name, episode);
@@ -333,6 +482,11 @@ export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: M
     out.tvSort = { watchHub: isWatchHub(s), needsDownload: needsDownload(s), instant: hasInstantMarker(s) };
     // (detail/search pass 2) The row's identity across re-ranks (bp-streams row key); see pickedStream.
     (out as { tvKey?: string }).tvKey = streamIdentity(s);
+    // bp-stream-row labels, the stream-mode chip's pools and the language chip's test.
+    const extra = out as { tvLabels?: PickerRowLabels; tvModes?: { addons: boolean; p2p: boolean }; tvLang?: boolean };
+    extra.tvLabels = pickerRowLabels(s, debrids, isAnime);
+    extra.tvModes = { addons: direct.has(s), p2p: p2pOnly.has(s) };
+    extra.tvLang = langs.length === 0 || streamMatchesLangs(s, langs);
   }
 }
 

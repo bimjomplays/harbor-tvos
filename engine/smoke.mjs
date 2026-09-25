@@ -1934,6 +1934,33 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
     r.ok("streamsRoom.search stamps tvCached: a debrid link is cached, an unchecked torrent is not", link?.tvCached === true && torrent?.tvCached === false && typeof link?.tvSort?.needsDownload === "boolean", JSON.stringify(all.map((s) => [s.name, s.tvCached, s.tvSort])));
   }
   e.settings.patch({ customStreamFilters: [] });
+  // (picker parity) bp-stream-row labels, the stream-mode pools, the language chip and the setup event.
+  {
+    const events = [];
+    const off = e.runtime.onEvent((type, d) => { if (type === "harbor-tvos:streams" && d?.token === "labels" && d.phase === "setup") events.push(d); });
+    e.settings.patch({ preferredLanguages: ["English"], preferredAudioLangs: ["jpn"], requirePreferredLanguage: true });
+    const found = await e.streamsRoom.search("labels", "default", true, null, film, null);
+    off?.();
+    const all = found.result?.picker.all ?? [];
+    const torrent = all.find((s) => s.infoHash === hash);
+    const link = all.find((s) => s.url && !s.infoHash);
+    r.eq("(picker parity) the setup event lands before the result: stream addons, preferred languages, the language chip's label and default", [events.length, events[0]?.streamAddonIds, events[0]?.preferredLangs, events[0]?.langLabel, events[0]?.langFilterDefault, events[0]?.isAnime, found.setup?.langLabel], [1, ["org.example.torrents"], ["English"], "EN", true, false, "EN"]);
+    r.eq("(picker parity) bp-stream-row: an uncached torrent reads 1080p, Blu-ray, P2P", [torrent?.tvLabels?.quality, torrent?.tvLabels?.confidence, torrent?.tvLabels?.badges, torrent?.tvLabels?.cached, torrent?.tvLabels?.availability, torrent?.tvLabels?.dubSub], ["1080p", "labeled", ["Blu-ray"], false, "p2p", null]);
+    r.eq("(picker parity) bp-stream-row: an [RD+] link reads cached, no service named without a debrid", [link?.tvLabels?.quality, link?.tvLabels?.badges, link?.tvLabels?.cached, link?.tvLabels?.cachedOn, link?.tvLabels?.availability], ["720p", ["WEB-DL"], true, null, "cached"]);
+    r.eq("(picker parity) filterStreamsByMode pools: the link is Direct/debrid, the torrent P2P", [link?.tvModes, torrent?.tvModes], [{ addons: true, p2p: false }, { addons: false, p2p: true }]);
+    r.eq("(picker parity) streamMatchesLangs: streams with no language pass the language chip", [link?.tvLang, torrent?.tvLang], [true, true]);
+    const labels = (over, anime = false) => e.streamsRoom.pickerRowLabels({ ...torrent, ...over }, [{ slug: "realdebrid", name: "Real-Debrid" }, { slug: "torbox", name: "TorBox" }], anime);
+    const onRd = labels({ cached: { realdebrid: true } }), inTb = labels({ cached: { realdebrid: true }, inLibrary: { torbox: true } });
+    r.eq("(picker parity) cachedOn: \"Cached on Real-Debrid\", your own TorBox cloud first", [onRd.cachedOn, onRd.availability, inTb.cachedOn], [{ name: "Real-Debrid", owned: false }, "cached", { name: "TorBox", owned: true }]);
+    const bare = labels({ resolution: "SD", source: "Other", codec: "Other", hdrFormat: undefined, audio: { codec: "Other", channels: 2 }, remux: false, repackIteration: 0 });
+    const guessed = labels({ resolution: "4K", source: "Other", size: undefined, reasons: [] });
+    r.eq("(picker parity) qualityConfidence: nothing detected reads No Label, a bare 4K claim Unverified (the pill says it, no duplicate badge)", [bare.quality, bare.badges, guessed.quality, guessed.confidence, guessed.badges.includes("Quality unverified")], ["No Label", [], "Unverified", "unverified", false]);
+    r.eq("(picker parity) streamDubSub on anime only: English + Japanese DUAL, English DUB, Japanese SUB", [labels({ audioLanguages: ["English", "Japanese"] }, true).dubSub, labels({ audioLanguages: ["English"] }, true).dubSub, labels({ audioLanguages: ["jpn"] }, true).dubSub, labels({ audioLanguages: ["English"] }, false).dubSub], ["dual", "dub", "sub", null]);
+    r.eq("(picker parity) an external-only stream reads External, a url-less hash-less one Cache", [labels({ infoHash: undefined, url: undefined, externalUrl: "https://example.invalid/watch" }).availability, labels({ infoHash: undefined, url: undefined }).availability], ["external", "cache"]);
+    r.eq("(picker parity) bp-stream-filters preferredLangs: Japanese only for an anime request, one per code", [e.streamsRoom.preferredStreamLangs({ preferredLanguages: ["English", "en"], preferredAudioLangs: ["Japanese"] }, false), e.streamsRoom.preferredStreamLangs({ preferredLanguages: ["English"], preferredAudioLangs: [] }, true)], [["English"], ["English", "Japanese"]]);
+    r.eq("(picker parity) streamsRoom.setStreamMode persists settings.streamMode; an unknown mode reads both", [e.streamsRoom.setStreamMode("default", true, "p2p"), e.settings.load().streamMode, e.streamsRoom.streamFilters("default", true).streamMode, e.streamsRoom.setStreamMode("default", true, "bogus")], ["p2p", "p2p", "p2p", "both"]);
+  }
+  e.settings.patch({ preferredLanguages: [], preferredAudioLangs: [], requirePreferredLanguage: false });
   // Bug pass: a search superseded on the same token answers "aborted" and leaves the newer
   // search's results (which resolve / deadRef index into) alone.
   {
@@ -2075,9 +2102,9 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const rowText = engine.streamsRoom.pickerRowText({ name: "", title: "\u{1F525} Line one\n\u{1F464} 12  \u{1F4BE}\nLine one", addonId: "x", addonName: "X", audio: { codec: "Other", channels: 2 }, codec: "Other", size: null, seeders: null, hdrFormat: null, audioLanguages: [], behaviorHints: { filename: "Movie.2020.mkv" } }, "Movie", null);
   r.eq("streamsRoom.pickerRowText: glyphs dropped, lines deduped, filename from behaviorHints", rowText, { headline: "Movie.2020.mkv", detail: "Line one · 12", description: "Line one\n12\nLine one", filename: "Movie.2020.mkv" });
   // bp-stream-filters.ts customStreamFilters / activeStreamFilterId.
-  r.eq("streamsRoom.streamFilters: none saved, upstream's default addon-order sort", engine.streamsRoom.streamFilters("default", true), { filters: [], activeId: null, sort: "addon" });
+  r.eq("streamsRoom.streamFilters: none saved, upstream's default addon-order sort", engine.streamsRoom.streamFilters("default", true), { filters: [], activeId: null, sort: "addon", streamMode: "both" });
   engine.settings.patch({ customStreamFilters: [{ id: "f4k", name: " 4K only ", resolution: ["4K"] }, { id: "fany", name: "Anything" }], activeStreamFilterId: "gone" });
-  r.eq("streamsRoom.streamFilters: saved filters, a dangling active id reads as none", engine.streamsRoom.streamFilters("default", true), { filters: [{ id: "f4k", name: "4K only", empty: false }, { id: "fany", name: "Anything", empty: true }], activeId: null, sort: "addon" });
+  r.eq("streamsRoom.streamFilters: saved filters, a dangling active id reads as none", engine.streamsRoom.streamFilters("default", true), { filters: [{ id: "f4k", name: "4K only", empty: false }, { id: "fany", name: "Anything", empty: true }], activeId: null, sort: "addon", streamMode: "both" });
   r.eq("streamsRoom.setActiveStreamFilter: an unknown id clears it", engine.streamsRoom.setActiveStreamFilter("default", true, "bogus"), null);
   r.eq("streamsRoom.setActiveStreamFilter: a saved id sticks", [engine.streamsRoom.setActiveStreamFilter("default", true, "f4k"), engine.settings.load().activeStreamFilterId, engine.streamsRoom.streamFilters("default", true).activeId], ["f4k", "f4k", "f4k"]);
   engine.settings.patch({ customStreamFilters: [], activeStreamFilterId: null });
@@ -2496,6 +2523,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     item("msA", "a4", "L1", "Movies", "movie", "Home Video", {}, 50),
     item("msB", "b1", "L9", "Films", "movie", "Star Film", { tmdbId: 11 }, 90),
   ], [conn("msA", "Den"), conn("msB", "Attic")]) });
+  // use-title-media-servers: the Detail hero's "Available in {name}" marks, per server holding the title.
+  r.eq("(picker parity) homeServers.titleServers: every enabled server that holds the title", (await ms.engine.homeServers.titleServers("tmdb:movie:11", null)).map((c) => [c.id, c.name, c.providerName]), [["msA", "Den", "Jellyfin"], ["msB", "Attic", "Jellyfin"]]);
+  r.eq("(picker parity) homeServers.titleServers by IMDb id; none for an unknown title or no identity", [(await ms.engine.homeServers.titleServers("tt0000002", null)).map((c) => c.id), await ms.engine.homeServers.titleServers("tt9999999", null), await ms.engine.homeServers.titleServers("kitsu:1", null)], [["msA"], [], []]);
   const hits = [];
   ms.node.host.fetch = async (req) => {
     hits.push(req.url);

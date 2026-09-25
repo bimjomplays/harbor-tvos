@@ -113,6 +113,10 @@ final class SettingsBridge: ObservableObject {
         /// addon's whole description in place of the one-line summary (on by default).
         var pickerShowFilename: Bool? = false
         var fullStreamDescription: Bool? = true
+        /// bp-stream-row.tsx: the quality pill and format badges (showQualityBadge) and the anime
+        /// DUB/SUB pill (showDubBadge), both on by default (settings/defaults.ts).
+        var showQualityBadge: Bool? = true
+        var showDubBadge: Bool? = true
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
@@ -384,6 +388,8 @@ extension SettingsBridge.Slice {
         // (bug pass 3: these two were missed, so the picker ignored the viewer's choice)
         pickerShowFilename = c.lenient("pickerShowFilename")
         fullStreamDescription = c.lenient("fullStreamDescription")
+        showQualityBadge = c.lenient("showQualityBadge")
+        showDubBadge = c.lenient("showDubBadge")
         mpvHwdec = c.lenient("mpvHwdec")
         posterQuality = c.lenient("posterQuality")
     }

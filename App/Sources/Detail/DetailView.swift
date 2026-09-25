@@ -28,6 +28,13 @@ struct DetailView: View {
     @State private var person: DetailModel.Extras.Cast?
     /// bp-status-dialog: the tracker whose list status is being changed.
     @State private var trackerDialog: DetailModel.Tracker?
+    /// detail/bp-synopsis.tsx useBpSynopsis: the overview opened in place ("Read more" / "Show less"),
+    /// and whether the clamp cut anything (measured, not counted: the full text's height against the
+    /// clamped one).
+    @State private var synopsisExpanded = false
+    @State private var synopsisCanExpand = false
+    @State private var synopsisClampedH: CGFloat = 0
+    @State private var synopsisFullH: CGFloat = 0
     @FocusState private var heroFocus: String?
     /// The season row: a Kitsu season button ("kitsu-<n>") or a TVDB chip ("chip-<key>").
     @FocusState private var seasonFocus: String?
@@ -76,6 +83,8 @@ struct DetailView: View {
         let icon: String
         var active = false
         var badge: String? = nil
+        /// Drawn dimmed and ignored: the cell is leaving but still holds the ring (a vanished button drops focus).
+        var dim = false
         let run: () -> Void
         var id: String { key }
     }
@@ -130,6 +139,17 @@ struct DetailView: View {
         }
         if let yt = model.trailerYtId {
             out.append(HeroAction(key: "trailer", label: "Watch trailer", icon: "film") { trailer = TrailerPick(ytId: yt, name: nil) })
+        }
+        // bp-detail-hero `trailing`: the synopsis toggle is the actions track's last cell (before the
+        // TV's Back), so Down from Play still goes to the episodes. It stays, dimmed, while it holds the
+        // ring after a new overview reset it.
+        if synopsisCanExpand || heroFocus == "synopsis" {
+            let open = synopsisExpanded
+            let usable = synopsisCanExpand
+            out.append(HeroAction(key: "synopsis", label: open ? "Show less" : "Read more", icon: "text.alignleft", active: open, dim: !usable) {
+                guard usable else { return }
+                synopsisExpanded.toggle()
+            })
         }
         out.append(HeroAction(key: "back", label: "Back", icon: "chevron.backward") { dismiss() })
         return out
@@ -495,6 +515,8 @@ struct DetailView: View {
                 // bp-detail: every provider the detail settings allow (use-bp-card-badges "detail").
                 ScoreChipsView(meta: model.meta, surface: "detail", limit: 6)
                 Text(model.meta.facts).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
+                // bp-hero-notes BpHeroMarks: one mark per connected server that has this title.
+                ForEach(model.titleServers) { server in MediaServerMark(server: server) }
             }
             HStack(spacing: BP.px(8)) {
                 Button {
@@ -531,6 +553,7 @@ struct DetailView: View {
                         }
                     }
                     .buttonStyle(DetailIconActionStyle(active: a.active))
+                    .opacity(a.dim ? 0.45 : 1)
                     .focused($heroFocus, equals: a.key)
                     .accessibilityLabel(T(a.label))
                     .bpSelected(a.active)
@@ -548,11 +571,59 @@ struct DetailView: View {
             if let tag = model.extras?.tagline, !tag.isEmpty {
                 Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(620), alignment: .leading)
             }
-            Text(model.meta.description ?? model.extras?.overview ?? "").font(BP.sans(13, .regular)).foregroundStyle(BP.inkMuted).lineSpacing(4).lineLimit(4)
-                .frame(maxWidth: BP.px(620), alignment: .leading)
+            synopsis
+            // bp-hero-notes BpTmdbKeyNote (bp-detail-hero; the anime hero has none).
+            if !model.isAnimeId, SettingsBridge.shared.slice.tmdbKey.isEmpty {
+                Text(verbatim: T("Add a TMDB key in Settings to see the cast, crew, and details."))
+                    .font(BP.sans(12.5, .medium)).foregroundStyle(BP.inkSubtle).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: BP.px(620), alignment: .leading)
+            }
             if let providers = model.extras?.watchOn, !providers.isEmpty { watchOn(providers) }
             credits
         }
+    }
+
+    private var overviewText: String { model.meta.description ?? model.extras?.overview ?? "" }
+
+    /// detail/bp-synopsis.tsx BpSynopsis: clamped (4 lines on the TV) until the actions row's "Read
+    /// more" opens it in place. A hidden unclamped copy at the same width measures whether the clamp
+    /// cut anything (useBpSynopsis: scrollHeight against clientHeight, more than 2 px).
+    private var synopsis: some View {
+        let text: String = overviewText
+        return Text(verbatim: text).font(BP.sans(13, .regular)).foregroundStyle(BP.inkMuted).lineSpacing(4)
+            .lineLimit(synopsisExpanded ? nil : 4)
+            .frame(maxWidth: BP.px(620), alignment: .leading)
+            .background(alignment: .topLeading) {
+                GeometryReader { g in
+                    ZStack(alignment: .topLeading) {
+                        Color.clear
+                            .onAppear { synopsisClampedH = g.size.height; measureSynopsis() }
+                            .onChange(of: g.size.height) { _, h in synopsisClampedH = h; measureSynopsis() }
+                        Text(verbatim: text).font(BP.sans(13, .regular)).lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: g.size.width, alignment: .leading)
+                            .background(GeometryReader { full in
+                                Color.clear
+                                    .onAppear { synopsisFullH = full.size.height; measureSynopsis() }
+                                    .onChange(of: full.size.height) { _, h in synopsisFullH = h; measureSynopsis() }
+                            })
+                            .opacity(0)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+            // useBpSynopsis: a new overview closes and re-measures.
+            .onChange(of: text) { _, _ in
+                synopsisExpanded = false
+                synopsisCanExpand = false
+            }
+    }
+
+    /// useBpSynopsis measure: only while clamped, and it only ever turns the toggle on.
+    private func measureSynopsis() {
+        guard !synopsisExpanded, synopsisFullH - synopsisClampedH > 2 else { return }
+        if !synopsisCanExpand { synopsisCanExpand = true }
     }
 
     // bp-watch-on-row: provider marks, not a picker.
@@ -1129,7 +1200,16 @@ struct EpisodeCell: View {
                     .scaleEffect(hideThumb ? 1.05 : 1)
                     .animation(BP.easeFast, value: hideThumb)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
-                Text(episode.tag ?? "E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink).padding(BP.px(8))
+                HStack(spacing: BP.px(6)) {
+                    Text(episode.tag ?? "E\(episode.episode)").font(BP.sans(12, .bold)).foregroundStyle(BP.ink)
+                    // bp-anime-seasons.tsx: t("Filler") beside the episode tag.
+                    if episode.filler {
+                        Text(verbatim: T("Filler")).font(BP.sans(9.8, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.ink)
+                            .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(1))
+                            .background(Capsule().fill(BP.void_.opacity(0.82)))
+                    }
+                }
+                .padding(BP.px(8))
                 // use-bp-episode-facts chip: rating (IMDb mark when it is IMDb's) and runtime.
                 if let f = fact, (f.rating != nil && showRating) || f.runtime != nil {
                     HStack(spacing: BP.px(4)) {
@@ -1226,5 +1306,58 @@ private struct DetailPageProbeView: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIView, context: Context) {
         if probe.view !== uiView { probe.view = uiView }
+    }
+}
+
+/// detail/bp-hero-notes.tsx BpHeroMarks home-server mark: the provider's glyph (media-server-brand.tsx
+/// ProviderMark, drawn from its 24-unit paths) in BP_METRIC_CHIP, named "Available in {name}".
+struct MediaServerMark: View {
+    let server: DetailModel.TitleServer
+
+    var body: some View {
+        glyph
+            .frame(width: BP.px(18), height: BP.px(18))
+            .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(4))
+            .background(RoundedRectangle(cornerRadius: BP.px(10), style: .continuous).fill(BP.void_.opacity(0.85)))
+            .overlay(RoundedRectangle(cornerRadius: BP.px(10), style: .continuous).stroke(BP.edge2, lineWidth: 1))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: T("Available in %@", server.providerName)))
+    }
+
+    @ViewBuilder private var glyph: some View {
+        if server.provider == "plex" {
+            MarkPolygon(points: [(7, 2), (13.2, 2), (21, 12), (13.2, 22), (7, 22), (14.8, 12)])
+                .fill(Color(red: 0.898, green: 0.627, blue: 0.051))
+        } else if server.provider == "emby" {
+            ZStack {
+                MarkPolygon(points: [(12, 1), (21.5, 6.5), (21.5, 17.5), (12, 23), (2.5, 17.5), (2.5, 6.5)])
+                    .fill(Color(red: 0.322, green: 0.710, blue: 0.294))
+                MarkPolygon(points: [(9, 7), (16, 12), (9, 17)]).fill(Color.white)
+            }
+        } else {
+            ZStack {
+                MarkPolygon(points: [(12, 2), (23, 21), (1, 21)]).fill(Color(red: 0.667, green: 0.361, blue: 0.765))
+                MarkPolygon(points: [(12, 8), (17.2, 17), (6.8, 17)]).fill(Color(red: 0.090, green: 0.090, blue: 0.090))
+                MarkPolygon(points: [(12, 12.1), (14.8, 17), (9.2, 17)]).fill(Color(red: 0.667, green: 0.361, blue: 0.765))
+            }
+        }
+    }
+}
+
+/// A closed polygon in a 24 x 24 box (media-server-brand.tsx's viewBox), scaled to the frame.
+struct MarkPolygon: Shape {
+    let points: [(CGFloat, CGFloat)]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        let sx: CGFloat = rect.width / 24
+        let sy: CGFloat = rect.height / 24
+        path.move(to: CGPoint(x: rect.minX + first.0 * sx, y: rect.minY + first.1 * sy))
+        for point in points.dropFirst() {
+            path.addLine(to: CGPoint(x: rect.minX + point.0 * sx, y: rect.minY + point.1 * sy))
+        }
+        path.closeSubpath()
+        return path
     }
 }

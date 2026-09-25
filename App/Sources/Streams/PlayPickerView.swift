@@ -12,9 +12,13 @@ struct PlayPickerView: View {
     /// preference opens on the Media servers list and plays the preferred server's copy.
     var applyPreference = false
     @StateObject private var model = StreamsModel()
-    /// bp-stream-chips BpSourceKind, the kinds the TV has: "all" or "media-server" (no Local Library,
-    /// and no streamMode chip, so "online" is never picked on its own).
+    /// bp-stream-chips BpSourceKind, the kinds the TV has: "all", "media-server" or "online" (the
+    /// source chip's Direct/debrid only and P2P only; no Local Library on a TV).
     @State private var sourceKind = "all"
+    /// bp-stream-filters langFilter: the preferred-language chip, first set from
+    /// requirePreferredLanguage once the engine has said which languages those are (model.setup).
+    @State private var langFilter = false
+    @State private var langSeeded = false
     /// bp-streams preferredSourceFired: the preference acts once per opening.
     @State private var preferenceFired = false
     /// The viewer picked a row by hand (the preference no longer auto-plays over it).
@@ -136,6 +140,12 @@ struct PlayPickerView: View {
             stubNotice = false
         }
         .onChange(of: model.streams.count) { _, n in if n > 0, firstResultAt == nil { firstResultAt = Date() } }
+        // bp-stream-filters useState(requirePreferredLanguage && preferredLanguages.length > 0): once per opening.
+        .onChange(of: model.setup) { _, setup in
+            guard !langSeeded, let setup else { return }
+            langSeeded = true
+            langFilter = setup.langFilterDefault
+        }
         .onChange(of: firstRowKey) { _, _ in seedRing() }
         .onChange(of: showAutoStep) { _, busy in
             guard !busy else { return }
@@ -222,7 +232,7 @@ struct PlayPickerView: View {
 
     /// bp-streams: the row that carries data-bp-autofocus (a home-server copy first, else the first stream).
     private var firstRowKey: String? {
-        if let c = model.copies.first { return "copy:" + c.key }
+        if showHomeServers, let c = model.copies.first { return "copy:" + c.key }
         guard showOnline, let s = visible.first else { return nil }
         return "stream:" + s.id
     }
@@ -423,24 +433,32 @@ struct PlayPickerView: View {
             }
         }
         switch model.phase {
-        case .searching:
-            HStack(spacing: BP.px(8)) {
-                ProgressView().tint(BP.inkMuted)
-                Text(model.progress.total > 0 ? "Asking addons… \(model.progress.settled)/\(model.progress.total)" : "Asking your addons…").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-            }
-        case .done:
-            Text(model.streams.isEmpty ? (model.addonCount == 0 ? "No stream addons installed. Sign in to Stremio or add addons." : "No streams found.") : "\(model.streams.count) streams from \(model.addonCount) addons")
-                .font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-            // bp-streams ladder: when the filters left nothing, widen the search, then show everything.
-            if model.streams.isEmpty, model.addonCount > 0, model.canLoosen {
-                HStack(spacing: BP.px(8)) {
-                    if model.strict { Button("Search wider") { Task { await model.searchWider() } }.buttonStyle(BPActionStyle(primary: true)) }
-                    if !model.showAll { Button("Show everything") { Task { await model.showEverything() } }.buttonStyle(BPActionStyle()) }
-                }
-            }
+        case .searching, .done:
+            // bp-streams header: "Searching" or "{shown} of {total} sources", then "{n} addons loading".
+            Text(verbatim: sourcesLine).font(BP.sans(14, .medium)).foregroundStyle(BP.inkSubtle)
+                .fixedSize(horizontal: false, vertical: true)
         case .failed(let why): BPNote(text: why, tone: BP.danger)
         case .idle: EmptyView()
         }
+    }
+
+    /// bp-streams s.loading: the pipeline is still running and nothing has passed the filters yet.
+    private var listLoading: Bool {
+        let running: Bool = model.phase == .searching || model.phase == .idle
+        return running && pool.isEmpty
+    }
+
+    /// bp-streams header counts: every kind the source chip shows (online streams after every
+    /// filter over the ones after the mode / language / cached / saved-filter pass, plus the
+    /// home-server copies).
+    private var sourcesLine: String {
+        let copies: Int = showHomeServers ? model.copies.count : 0
+        let shown: Int = (showOnline ? visible.count : 0) + copies
+        let total: Int = (showOnline ? pool.count : 0) + copies
+        var line: String = listLoading ? T("Searching") : T("%lld of %lld sources", shown, total)
+        let pending: Int = model.pendingAddonCount
+        if pending > 0 { line += " · " + T("%lld addons loading", pending) }
+        return line
     }
 
     /// Flat, cached-first list (the pipeline already ranked it), narrowed by the chips.
@@ -483,25 +501,88 @@ struct PlayPickerView: View {
 
     private func facetOptions(_ f: Facet) -> [(String, Int)] {
         var counts: [String: Int] = [:]
-        for s in pool where matchesFacets(s, except: f.key) && (!cachedOnly || s.isCached) {
+        for s in pool where matchesFacets(s, except: f.key) {
             if let v = f.valueOf(s) { counts[v, default: 0] += 1 }
         }
         return f.order.compactMap { k in counts[k].map { (k, $0) } }
     }
 
-    private var filtered: Bool { quality != "All" || cachedOnly || addonFilter != nil || !facet.isEmpty }
+    private var filtered: Bool { quality != "All" || cachedOnly || langFilter || addonFilter != nil || !facet.isEmpty }
 
-    /// bp-stream-filters `base`: the active saved filter narrows the pool the chips and the list
-    /// work on; when nothing passes it, every stream stays and the banner says so (filterFellBack).
+    /// bp-stream-filters `base`, in its order: the stream mode (settings.streamMode), the preferred
+    /// languages (langFilter), Cached only, then the active saved filter. Each step that would leave
+    /// nothing is skipped; a saved filter that matched nothing, or a pool left empty, brings every
+    /// stream back and the banner says so (filterFellBack).
     private var filterPool: (streams: [ScoredStream], fellBack: Bool) {
-        guard let id = model.activeFilterId, !model.streams.isEmpty else { return (model.streams, false) }
-        let matched = model.streams.filter { $0.tvFilters?.contains(id) ?? true }
-        return matched.isEmpty ? (model.streams, true) : (matched, false)
+        let candidates: [ScoredStream] = model.streams
+        guard !candidates.isEmpty else { return (candidates, false) }
+        var all: [ScoredStream] = candidates
+        // filterStreamsByMode (its own keep-everything fallback is in the engine's flags).
+        if model.streamMode == "addons" {
+            all = all.filter { $0.tvModes?.addons ?? true }
+        } else if model.streamMode == "p2p" {
+            all = all.filter { $0.tvModes?.p2p ?? true }
+        }
+        let langs: [String] = model.setup?.preferredLangs ?? []
+        if langFilter, !langs.isEmpty {
+            let matched = all.filter { $0.tvLang ?? true }
+            if !matched.isEmpty { all = matched }
+        }
+        if cachedOnly {
+            let cached = all.filter(\.isCached)
+            if !cached.isEmpty { all = cached }
+        }
+        var fellBack = false
+        if let id = model.activeFilterId {
+            let matched = all.filter { $0.tvFilters?.contains(id) ?? true }
+            if matched.isEmpty { fellBack = true } else { all = matched }
+        }
+        if all.isEmpty {
+            all = candidates
+            fellBack = true
+        }
+        return (all, fellBack)
     }
     private var pool: [ScoredStream] { filterPool.streams }
 
-    /// bp-streams showOnline / showHomeServers for the TV's two kinds.
-    private var showOnline: Bool { sourceKind == "all" }
+    /// bp-stream-filters langHiddenCount: streams (of every one listed) not in a preferred language.
+    private var langHiddenCount: Int {
+        guard !(model.setup?.preferredLangs.isEmpty ?? true) else { return 0 }
+        return model.streams.filter { !($0.tvLang ?? true) }.count
+    }
+
+    /// bp-stream-chips source chip label: Media servers, else the stream mode's name.
+    private var sourceChipLabel: String {
+        if sourceKind == "media-server" { return T("Media servers") }
+        switch model.streamMode {
+        case "addons": return T("Direct/debrid only")
+        case "p2p": return T("P2P only")
+        default: return T("All sources")
+        }
+    }
+
+    /// bp-stream-chips source menu value, and its options as one chip that steps through them:
+    /// All sources, Media servers (when this title has a home-server copy), Direct/debrid only, P2P only.
+    private func nextSource() {
+        let current: String = sourceKind == "online" || (sourceKind == "all" && model.streamMode != "both") ? model.streamMode : sourceKind
+        var ids: [String] = ["all"]
+        if !model.copies.isEmpty || sourceKind == "media-server" { ids.append("media-server") }
+        ids.append("addons")
+        ids.append("p2p")
+        let at: Int = ids.firstIndex(of: current) ?? 0
+        let next: String = ids[(at + 1) % ids.count]
+        if next == "addons" || next == "p2p" {
+            sourceKind = "online"
+            Task { await model.setStreamMode(next) }
+        } else {
+            if model.streamMode != "both" { Task { await model.setStreamMode("both") } }
+            sourceKind = next
+        }
+    }
+
+    /// bp-streams showOnline / showHomeServers.
+    private var showOnline: Bool { sourceKind == "all" || sourceKind == "online" }
+    private var showHomeServers: Bool { sourceKind == "all" || sourceKind == "media-server" }
 
     /// bp-stream-chips filter chip: the active filter's name (or "Filter" when it has none), else "Filters".
     private var filterChipLabel: String {
@@ -521,7 +602,6 @@ struct PlayPickerView: View {
         let wanted = Self.qualities.first { $0.0 == quality }?.1 ?? []
         let filtered = pool.filter { s in
             (wanted.isEmpty || wanted.contains(s.resolution ?? "")) &&
-            (!cachedOnly || s.isCached) &&
             (addonFilter == nil || s.addonName == addonFilter) &&
             matchesFacets(s)
         }
@@ -583,8 +663,10 @@ struct PlayPickerView: View {
                             .focused($chipFocus, equals: "q:" + q.0)
                     }
                 }
-                if pool.contains(where: \.isCached) {
-                    Button("Cached") { cachedOnly.toggle() }.buttonStyle(BPActionStyle(primary: cachedOnly))
+                // bp-stream-chips Cached chip with its count (cachedCount: every cached stream listed).
+                if cachedOnly || model.streams.contains(where: \.isCached) {
+                    let cachedCount: Int = model.streams.filter(\.isCached).count
+                    Button(T("Cached") + " \(cachedCount)") { cachedOnly.toggle() }.buttonStyle(BPActionStyle(primary: cachedOnly))
                         .bpSelected(cachedOnly)
                 }
                 if addons.count > 1 {
@@ -607,12 +689,23 @@ struct PlayPickerView: View {
                         }.buttonStyle(BPActionStyle(primary: facet[f.key] != nil))
                     }
                 }
-                // bp-stream-chips source-kind chip: every source, or only the home-server copies.
-                if !model.copies.isEmpty || sourceKind != "all" {
-                    Button(T(sourceKind == "media-server" ? "Media servers" : "All sources")) {
-                        sourceKind = sourceKind == "media-server" ? "all" : "media-server"
-                    }.buttonStyle(BPActionStyle(primary: sourceKind != "all"))
+                // bp-stream-chips preferred-language chip: the languages' codes and how many streams
+                // they hide, while any are hidden. (Parity pass) It can leave with the ring on it, so it
+                // stays drawn, dimmed and ignored, while it holds the ring (a vanished chip drops focus).
+                let langCount: Int = langHiddenCount
+                if langCount > 0 || chipFocus == "lang" {
+                    let label: String = model.setup?.langLabel ?? ""
+                    Button(label + " \(langCount)") {
+                        guard langCount > 0 else { return }
+                        langFilter.toggle()
+                    }
+                    .buttonStyle(BPActionStyle(primary: langFilter, busy: langCount == 0))
+                    .bpSelected(langFilter)
+                    .focused($chipFocus, equals: "lang")
                 }
+                // bp-stream-chips source chip: All sources, Media servers, Direct/debrid only, P2P only.
+                Button(sourceChipLabel) { nextSource() }
+                    .buttonStyle(BPActionStyle(primary: sourceKind != "all" || model.streamMode != "both"))
                 // bp-stream-chips filter chip: the saved stream filters (Settings → Stream filters on
                 // the desktop), No filter first.
                 if !model.savedFilters.isEmpty {
@@ -634,8 +727,13 @@ struct PlayPickerView: View {
                 if filtered {
                     // (detail/search pass 2) The chip goes with the filters: the ring moves to "All"
                     // instead of falling off the row.
-                    Button("Clear filters") { quality = "All"; cachedOnly = false; addonFilter = nil; facet = [:]; chipFocus = "q:All" }.buttonStyle(BPActionStyle())
+                    Button("Clear filters") { quality = "All"; cachedOnly = false; langFilter = false; addonFilter = nil; facet = [:]; chipFocus = "q:All" }.buttonStyle(BPActionStyle())
                 }
+                // bp-stream-chips Refresh (use-pipeline-result refresh): the search runs again.
+                Button { Task { await model.refresh() } } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(BPActionStyle())
             }
             .padding(.vertical, BP.px(6))
         }
@@ -652,23 +750,53 @@ struct PlayPickerView: View {
             }
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(10)) {
-                    if !model.copies.isEmpty {
+                    let rows: [ScoredStream] = showOnline ? visible : []
+                    if showHomeServers, !model.copies.isEmpty {
                         Text("On your home servers").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted)
                         ForEach(model.copies) { c in copyRow(c) }
-                        if showOnline, !model.streams.isEmpty { Text("Addons").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted).padding(.top, BP.px(6)) }
+                        if !rows.isEmpty { Text("Addons").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.6).foregroundStyle(BP.inkMuted).padding(.top, BP.px(6)) }
                     }
-                    if showOnline {
-                        ForEach(visible) { s in row(s, highlight: s.id == model.primary?.id) }
-                        if !model.streams.isEmpty && visible.isEmpty { BPNote(text: "Nothing matches these filters.") }
-                    } else if model.copies.isEmpty {
-                        BPNote(text: model.copiesLoaded ? "No sources match these filters" : "Looking for sources")
-                    }
+                    ForEach(rows) { s in row(s, highlight: s.id == model.primary?.id) }
+                    if rows.isEmpty, !showHomeServers || model.copies.isEmpty { emptyList }
                     Color.clear.frame(height: BP.px(60))
                 }
                 .padding(.vertical, BP.px(6))
             }
             .focusSection()
         }
+    }
+
+    /// bp-streams empty state: a spinner while the search runs, else "No sources found" (nothing
+    /// listed at all) with the loosen ladder, or "No sources match these filters".
+    private var emptyList: some View {
+        VStack(spacing: BP.px(12)) {
+            if listLoading {
+                ProgressView().tint(BP.inkSubtle)
+            } else {
+                Image(systemName: "shippingbox").font(.system(size: BP.px(30), weight: .regular)).foregroundStyle(BP.inkSubtle)
+                    .accessibilityHidden(true)
+            }
+            let note: String = listLoading ? "Looking for sources" : (pool.isEmpty ? "No sources found" : "No sources match these filters")
+            Text(verbatim: T(note))
+                .font(BP.sans(16, .semibold)).foregroundStyle(BP.inkSubtle)
+            // bp-streams ladder: nothing listed at all, so widen the search, then show everything. The
+            // pressed button goes with the list, so the ring waits on the "All" chip.
+            if !listLoading, pool.isEmpty, model.canLoosen {
+                HStack(spacing: BP.px(10)) {
+                    if model.strict {
+                        Button("Search wider") { chipFocus = "q:All"; Task { await model.searchWider() } }
+                            .buttonStyle(BPActionStyle(primary: true))
+                    }
+                    if !model.showAll {
+                        Button("Show everything") { chipFocus = "q:All"; Task { await model.showEverything() } }
+                            .buttonStyle(BPActionStyle())
+                    }
+                }
+                .focusSection()
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, BP.px(40))
     }
 
     private func row(_ s: ScoredStream, highlight: Bool) -> some View {
@@ -681,22 +809,34 @@ struct PlayPickerView: View {
             handPicked = true; resolving = s.id; Task { await pick(s) }
         } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
-                HStack(spacing: BP.px(8)) {
-                    ForEach(badges(s), id: \.self) { b in
-                        Text(b == "Cached" ? T("Cached") : b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4)
-                            .foregroundStyle(b == "Cached" ? BP.canvas : BP.ink)
-                            .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
-                            .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(b == "Cached" ? BP.live : BP.on))
+                HStack(alignment: .center, spacing: BP.px(10)) {
+                    // The pills take what the marks on the right leave (a Spacer beside a wrapping
+                    // row would be offered half and wrap early).
+                    Group {
+                        if let labels = s.tvLabels {
+                            rowMeta(s, labels)
+                        } else {
+                            HStack(spacing: BP.px(8)) {
+                                ForEach(badges(s), id: \.self) { b in
+                                    Text(b == "Cached" ? T("Cached") : b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4)
+                                        .foregroundStyle(b == "Cached" ? BP.canvas : BP.ink)
+                                        .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
+                                        .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(b == "Cached" ? BP.live : BP.on))
+                                }
+                                Text(s.addonName).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
+                            }
+                        }
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     // bp-stream-row: the remembered pick wears "Played last".
                     if model.rememberedIndex == s.index {
                         Label("Played last", systemImage: "clock.arrow.circlepath")
                             .font(BP.sans(10.5, .bold)).foregroundStyle(BP.ink)
                             .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(2))
                             .background(Capsule().fill(BP.glass))
+                            .fixedSize()
                     }
-                    Text(s.addonName).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
+                    if let labels = s.tvLabels { availabilityMark(labels) }
                     if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
                 }
                 let headline = s.tvRow?.headline ?? s.parsedTitle ?? s.title ?? s.name ?? "Stream"
@@ -737,6 +877,90 @@ struct PlayPickerView: View {
         // link failed ("Unavailable, try another."), a whole list away from the next row to try.
         .focused($rowFocus, equals: "stream:" + s.id)
         .accessibilityIdentifier("stream-\(s.index)")
+    }
+
+    /// bp-stream-row.tsx META: the quality pill (showQualityBadge), the addon's name, the DUB/SUB
+    /// pill (showDubBadge, anime only), the format badges (showQualityBadge) and the edition. It
+    /// wraps like upstream's flex-wrap rather than squeezing the pills.
+    private func rowMeta(_ s: ScoredStream, _ labels: ScoredStream.Labels) -> some View {
+        let slice = SettingsBridge.shared.slice
+        let showQuality: Bool = slice.showQualityBadge ?? true
+        let showDub: Bool = slice.showDubBadge ?? true
+        return PickerFlowRow(spacing: BP.px(8), lineSpacing: BP.px(6)) {
+            if showQuality {
+                // "No Label" and "Unverified" are catalog keys; QUALITY_LABEL values are not translated upstream.
+                let quality: String = labels.confidence == "labeled" ? labels.quality : T(labels.quality)
+                Text(verbatim: quality).font(BP.sans(12.5, .heavy)).foregroundStyle(BP.ink).lineLimit(1)
+                    .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(2))
+                    .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.glass))
+            }
+            Text(verbatim: s.addonName).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1.2).foregroundStyle(BP.inkMuted)
+                .lineLimit(1).frame(maxWidth: BP.px(240), alignment: .leading)
+            if showDub, let kind = labels.dubSub { dubSubPill(kind) }
+            if showQuality {
+                ForEach(labels.badges, id: \.self) { b in
+                    Text(verbatim: b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4).foregroundStyle(BP.ink).lineLimit(1)
+                        .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
+                        .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.on))
+                }
+            }
+            if let edition = labels.edition {
+                Text(verbatim: edition).font(BP.sans(10.5, .bold)).textCase(.uppercase).tracking(1.2).foregroundStyle(BP.inkMuted).lineLimit(1)
+                    .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(3))
+                    .background(Capsule().fill(BP.glass))
+            }
+        }
+    }
+
+    /// components/dub-sub-pill.tsx: SUB quiet, DUB in the accent, DUAL in emerald.
+    private func dubSubPill(_ kind: String) -> some View {
+        let text: String = kind == "dual" ? "DUAL" : (kind == "dub" ? "DUB" : "SUB")
+        let emerald300 = Color(red: 0.431, green: 0.906, blue: 0.718)
+        let emerald400 = Color(red: 0.204, green: 0.827, blue: 0.600)
+        let emerald500 = Color(red: 0.063, green: 0.725, blue: 0.506)
+        let fg: Color = kind == "dual" ? emerald300 : (kind == "dub" ? BP.accent : BP.inkSubtle)
+        let bg: Color = kind == "dual" ? emerald500.opacity(0.15) : (kind == "dub" ? BP.accent.opacity(0.15) : BP.canvas.opacity(0.7))
+        let ring: Color = kind == "dual" ? emerald400.opacity(0.3) : (kind == "dub" ? BP.accent.opacity(0.35) : BP.edge)
+        return Text(verbatim: text).font(BP.sans(10, .bold)).tracking(0.8).foregroundStyle(fg).lineLimit(1)
+            .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
+            .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(bg))
+            .overlay(RoundedRectangle(cornerRadius: BP.px(4)).stroke(ring, lineWidth: 1))
+    }
+
+    /// bp-stream-row.tsx right-hand mark: "In {name}" (your own cloud), "Cached on {name}", "Cached";
+    /// else External, P2P, or Cache (a source the debrid would have to fetch first).
+    @ViewBuilder private func availabilityMark(_ labels: ScoredStream.Labels) -> some View {
+        let kind: String = labels.availability ?? ""
+        if kind == "cached" {
+            HStack(spacing: BP.px(6)) {
+                Image(systemName: "checkmark").font(.system(size: BP.px(13), weight: .heavy)).foregroundStyle(BP.live)
+                Text(verbatim: cachedText(labels)).font(BP.sans(11.5, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+            }
+            .fixedSize()
+        } else if kind == "external" {
+            markPill(T("External"), icon: "arrow.up.right.square")
+        } else if kind == "p2p" {
+            markPill(T("P2P"), icon: "point.3.connected.trianglepath.dotted")
+        } else if kind == "cache" {
+            markPill(T("Cache"), icon: "arrow.down.to.line")
+        }
+    }
+
+    private func cachedText(_ labels: ScoredStream.Labels) -> String {
+        guard let on = labels.cachedOn else { return T("Cached") }
+        return on.owned ? T("In %@", on.name) : T("Cached on %@", on.name)
+    }
+
+    /// bp-stream-row PILL: an outlined capsule, muted.
+    private func markPill(_ text: String, icon: String) -> some View {
+        HStack(spacing: BP.px(5)) {
+            Image(systemName: icon).font(.system(size: BP.px(11), weight: .bold))
+            Text(verbatim: text).lineLimit(1)
+        }
+        .font(BP.sans(11, .bold)).foregroundStyle(BP.inkMuted)
+        .padding(.horizontal, BP.px(9)).padding(.vertical, BP.px(4))
+        .overlay(Capsule().stroke(BP.edge, lineWidth: 1))
+        .fixedSize()
     }
 
     /// A copy on a Plex/Jellyfin/Emby server (bp-streams home-server rows): direct play or transcode through the server.
@@ -890,6 +1114,50 @@ struct StreamDialogShell<Extra: View, Buttons: View>: View {
             .frame(width: BP.px(720), alignment: .leading)
             .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
             .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+        }
+    }
+}
+
+/// bp-stream-row.tsx META (`flex flex-wrap`): the row's pills left to right, wrapping onto another
+/// line when they run out of room instead of squeezing.
+struct PickerFlowRow: Layout {
+    var spacing: CGFloat
+    var lineSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth: CGFloat = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var widest: CGFloat = 0
+        for view in subviews {
+            let size: CGSize = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                y += lineHeight + lineSpacing
+                x = 0
+                lineHeight = 0
+            }
+            widest = max(widest, x + size.width)
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+        return CGSize(width: min(widest, maxWidth), height: y + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var lineHeight: CGFloat = 0
+        for view in subviews {
+            let size: CGSize = view.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                y += lineHeight + lineSpacing
+                x = bounds.minX
+                lineHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
         }
     }
 }
