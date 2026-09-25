@@ -50,8 +50,24 @@ struct DetailView: View {
     /// with the resume label and bar stood down (hintElsewhere).
     @State private var hintSpent = false
     /// (together pass 2) The page is on screen: any fullScreenCover over it (its own, or one a row
-    /// presents, like the gallery's lightbox) makes it disappear. followRoomInvite acts only then.
+    /// presents, like the gallery's lightbox) makes it disappear. The room invite acts only then.
     @State private var onScreen = false
+    /// (review 9 follow-up) The Watch Together invite to this page's own title while one is pending
+    /// (TogetherModel incomingInvite naming this title), its 4 s countdown, and the last one spent here.
+    @State private var ownInvite: TogetherModel.IncomingInvite?
+    @State private var inviteShownAt: Date?
+    @State private var inviteProgress: Double = 0
+    @State private var handledInviteAt: Double?
+    /// (review 9 follow-up) When the player over this page last closed, and on which episode: only
+    /// then (within followWindowS) is the room's invite joined at once, with no second Back.
+    @State private var playerClosed: ClosedPlay?
+    /// The page's own view, to tell whether something (a context menu, an alert) is over it.
+    @State private var pageProbe = DetailPageProbe()
+    struct ClosedPlay { let at: Date; let season: Int?; let episode: Int? }
+    struct OwnInviteKey: Equatable { let at: Double?; let onScreen: Bool }
+    /// together-invite-toast.tsx AUTO_JOIN_MS.
+    private static let inviteAutoJoinS = 4.0
+    private static let followWindowS = 5.0
 
     /// use-bp-detail-actions BpDetailAction.
     struct HeroAction: Identifiable {
@@ -167,7 +183,16 @@ struct DetailView: View {
                 .padding(.top, BP.px(250))
             }
         }
+        .background(DetailPageProbeView(probe: pageProbe))
         .ignoresSafeArea()
+        // (review 9 follow-up) together-invite-toast.tsx for an invite to this title: see runOwnInvite.
+        .overlay(alignment: .bottomLeading) {
+            if let inv = ownInvite, inv.at != handledInviteAt, inviteShownAt != nil {
+                TogetherInviteCard(invite: inv, progress: inviteProgress, onJoin: { joinOwnInvite(inv) },
+                                   onDismiss: { dismissOwnInvite(inv) })
+                    .padding(.leading, BP.gutter).padding(.bottom, BP.hintHeight + BP.px(16))
+            }
+        }
         .task {
             model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) } ?? episodeHint?.season
             // A Continue Watching one-press resume names its episode only for that one play (bp-detail
@@ -187,10 +212,17 @@ struct DetailView: View {
         // awards, trackers, recommendations and the rest keep loading under the picker.
         .onChange(of: model.loadStage) { _, _ in fireAutoPlayIfReady() }
         // (together pass 2) A Watch Together invite to this title (the host moved on to the next
-        // episode, or started it from here): see followRoomInvite.
-        .onReceive(TogetherModel.shared.$view.map(\.incomingInvite).removeDuplicates()) { _ in followRoomInvite() }
-        .onAppear { onScreen = true; followRoomInvite() }
-        .onDisappear { onScreen = false }
+        // episode, or started it from here): see runOwnInvite.
+        .onReceive(TogetherModel.shared.$view.map(\.incomingInvite).removeDuplicates()) { inv in
+            var mine: TogetherModel.IncomingInvite? = nil
+            if let i = inv, i.invite.mediaId == model.meta.id { mine = i }
+            if ownInvite != mine { ownInvite = mine }
+        }
+        // Keyed by the invite and by the page being on screen: a cover over the page stops the
+        // countdown, and the page coming back (the player closing) starts it again.
+        .task(id: OwnInviteKey(at: ownInvite?.at, onScreen: onScreen)) { await runOwnInvite() }
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false; hideOwnInvite() }
         // A Watch Together host who closed the player to reopen (Sources, Switch source, another
         // episode, a send-back) and leaves the picker with no pick has left the video (TogetherModel.abandonReopen).
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0; TogetherModel.shared.abandonReopen() }) {
@@ -256,6 +288,7 @@ struct DetailView: View {
                              let next = (t.pick?.attempt ?? 0) + 1
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAttempt = next; picker = (model.meta, t.episode) }
                          }, streamSubtitles: t.subtitles) { natural in
+                playerClosed = ClosedPlay(at: Date(), season: t.context.season, episode: t.context.episode)
                 playing = nil
                 hintSpent = true
                 model.episodeHint = nil
@@ -264,10 +297,13 @@ struct DetailView: View {
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
                 if natural, let s = t.context.season, let e = t.context.episode, let next = model.airedNext(season: s, episode: e) {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        // (review 9) followRoomInvite runs on the same return, 0.4 s later too: a room's
-                        // invite to the next episode may have opened the picker already (with the
-                        // room's guest-pick rule), and this replaced its episode and autoplay under it.
+                        // (review 9) The room invite follow runs on the same return: a room's invite
+                        // to the next episode may have opened the picker already (with the room's
+                        // guest-pick rule), and this replaced its episode and autoplay under it.
                         guard picker == nil else { return }
+                        // (review 9 follow-up) Or it is about to (it waits for the cover to go, then
+                        // 0.4 s): the room's invite to this title wins over the local next episode.
+                        guard !roomInviteToFollow() else { return }
                         pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; pickerPref = false; picker = (model.meta, next.playEpisode)
                     }
                 }
@@ -293,32 +329,122 @@ struct DetailView: View {
         } else if model.isSeries { picker = (model.meta, model.playTarget?.playEpisode ?? model.premiereEpisode) } else { picker = (model.meta, nil) }
     }
 
-    /// (together pass 2) together-invite-toast.tsx joins an invite with openPicker(meta, invite.episode,
-    /// {autoPlay: !guestPick}). The shell's toast waits while anything covers the shell, so a room
-    /// guest whose host moved on to the next episode had to leave the player and then this page
-    /// before the invite showed (the pass-1 open item). An invite to this page's own title is
-    /// joined here instead, once nothing is over the page (on arrival, or when the page comes back
-    /// from the player): its picker opens on the invited episode. After the 0.4 s a cover needs to
-    /// finish going (a present while dismissing is dropped).
-    private func followRoomInvite() {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            let room = TogetherModel.shared
-            guard room.view.inSession, let inv = room.view.incomingInvite, inv.invite.mediaId == model.meta.id else { return }
-            guard onScreen, ShellOverlay.shared.keyWindow == nil, picker == nil, playing == nil, related == nil, trailer == nil, person == nil,
-                  awardType == nil, trackerDialog == nil, !listDialog, !factsDialog, !seasonsSheet, !rateDialog else { return }
-            room.dismiss("invite")
-            let guestPick: Bool = inv.invite.guestPick == true
-            pickerAuto = guestPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
-            pickerPref = !guestPick
-            pickerAttempt = 0
-            switchFromSec = nil
-            var episode: AnyJSON? = inv.invite.episode
-            if let ref = inv.invite.episodeRef, let hit = model.episodes.first(where: { $0.season == ref.season && $0.episode == ref.episode }) {
-                episode = hit.playEpisode
-            }
-            picker = (model.meta, episode)
+    /// (together pass 2, review 9 follow-up) together-invite-toast.tsx: a 4 s toast with Join and
+    /// Dismiss, joined with openPicker(meta, invite.episode, {autoPlay: !guestPick}). The shell's
+    /// toast waits while anything covers the shell, and this page is a cover, so an invite to this
+    /// page's own title shows here instead, over the page (TogetherInviteCard, the same 4 s). It is
+    /// joined at once only when the page is coming back from its player (within followWindowS of
+    /// the player closing): the host moved on to the next episode, and the guest needs no second
+    /// Back. Pass 2 joined every invite to this title at once, so a guest reading the page (or the
+    /// relay's repeat invite on a join or a reconnect) got the picker with no Dismiss. The first
+    /// look waits 0.4 s after the page came back (a present while a cover is going is dropped).
+    private func runOwnInvite() async {
+        hideOwnInvite()
+        guard ownInvite != nil, onScreen else { return }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        while !Task.isCancelled {
+            guard tickOwnInvite() else { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
+    }
+
+    /// One look at the invite: false once it is spent (joined, dismissed, dropped or gone).
+    private func tickOwnInvite() -> Bool {
+        guard let inv = ownInvite, inv.at != handledInviteAt else {
+            hideOwnInvite()
+            return false
+        }
+        let room = TogetherModel.shared
+        let pending: Bool = room.view.inSession && room.view.incomingInvite?.at == inv.at
+        guard pending else {
+            hideOwnInvite()
+            return true
+        }
+        let now = Date()
+        var justClosed: ClosedPlay? = nil
+        if let c = playerClosed, now.timeIntervalSince(c.at) < Self.followWindowS { justClosed = c }
+        // The relay's repeat invite (someone joined, a reconnect) to the video the player over this
+        // page was just showing: the player drops those while it is up (TogetherPlayback), and one
+        // that landed while it was closing reopened the same episode here.
+        if let c = justClosed, Self.invites(inv.invite, sameVideoAs: c) {
+            dismissOwnInvite(inv)
+            return false
+        }
+        guard !ownInviteHeld() else {
+            hideOwnInvite()
+            return true
+        }
+        if justClosed != nil {
+            joinOwnInvite(inv)
+            return false
+        }
+        let start: Date = inviteShownAt ?? now
+        if inviteShownAt == nil { inviteShownAt = start }
+        inviteProgress = min(1, now.timeIntervalSince(start) / Self.inviteAutoJoinS)
+        if inviteProgress >= 1 {
+            joinOwnInvite(inv)
+            return false
+        }
+        return true
+    }
+
+    /// The invite waits (and its countdown restarts afterwards, as the shell's toast does under a
+    /// cover) while the viewer has something else up: a cover over the page or one about to
+    /// present, the screensaver or the curfew lock, a context menu (an episode's hold-Select menu)
+    /// or an alert over the page, or this page's own room autoplay still to open its picker.
+    private func ownInviteHeld() -> Bool {
+        if !onScreen || ShellOverlay.shared.keyWindow != nil { return true }
+        if picker != nil || playing != nil || related != nil || trailer != nil || person != nil { return true }
+        if awardType != nil || trackerDialog != nil { return true }
+        if listDialog || factsDialog || seasonsSheet || rateDialog { return true }
+        if autoPlay && !autoPlayFired { return true }
+        return pageProbe.somethingOver()
+    }
+
+    private func joinOwnInvite(_ inv: TogetherModel.IncomingInvite) {
+        handledInviteAt = inv.at
+        hideOwnInvite()
+        playerClosed = nil
+        TogetherModel.shared.dismiss("invite")
+        guard picker == nil else { return }
+        let guestPick: Bool = inv.invite.guestPick == true
+        pickerAuto = guestPick ? false : (SettingsBridge.shared.slice.instantPlay ?? true)
+        pickerPref = !guestPick
+        pickerAttempt = 0
+        switchFromSec = nil
+        var episode: AnyJSON? = inv.invite.episode
+        if let ref = inv.invite.episodeRef, let hit = model.episodes.first(where: { $0.season == ref.season && $0.episode == ref.episode }) {
+            episode = hit.playEpisode
+        }
+        picker = (model.meta, episode)
+    }
+
+    private func dismissOwnInvite(_ inv: TogetherModel.IncomingInvite) {
+        handledInviteAt = inv.at
+        hideOwnInvite()
+        TogetherModel.shared.dismiss("invite")
+    }
+
+    private func hideOwnInvite() {
+        if inviteShownAt != nil { inviteShownAt = nil }
+        if inviteProgress != 0 { inviteProgress = 0 }
+    }
+
+    /// A room invite to this title that the page will join or show (auto-advance leaves the next
+    /// episode to it): not one to the video that just closed, which is dropped.
+    private func roomInviteToFollow() -> Bool {
+        guard TogetherModel.shared.view.inSession, let inv = ownInvite, inv.at != handledInviteAt else { return false }
+        guard let c = playerClosed else { return true }
+        return !Self.invites(inv.invite, sameVideoAs: c)
+    }
+
+    /// TogetherPlayback.showsInvited for the player that closed (the invite already names this title).
+    private static func invites(_ i: TogetherModel.PlayInvite, sameVideoAs c: ClosedPlay) -> Bool {
+        if let ep = i.episodeRef {
+            guard let s = c.season, let e = c.episode else { return false }
+            return ep.season == s && ep.episode == e
+        }
+        return c.season == nil || c.episode == nil
     }
 
     /// bp-player-controls "Previous episode": the episode before this one opens its picker (after
@@ -1051,5 +1177,47 @@ struct EpisodeCell: View {
             }
         }
         .frame(width: Self.size.width, alignment: .leading)
+    }
+}
+
+/// (review 9 follow-up) Where a Detail page's views live, so its room invite can tell whether the
+/// viewer has something up over the page that is not one of the page's own covers: a context menu
+/// (the episode strip's hold-Select menu), an alert, or the focus somewhere outside the page.
+final class DetailPageProbe {
+    weak var view: UIView?
+
+    @MainActor func somethingOver() -> Bool {
+        guard let v = view, let window = v.window else { return true }
+        var responder: UIResponder? = v
+        var owner: UIViewController?
+        while let next = responder?.next {
+            if let vc = next as? UIViewController {
+                owner = vc
+                break
+            }
+            responder = next
+        }
+        guard var host = owner else { return false }
+        while let parent = host.parent { host = parent }
+        if host.presentedViewController != nil { return true }
+        let focused: UIView? = UIFocusSystem.focusSystem(for: window)?.focusedItem as? UIView
+        guard let focused else { return false }
+        return !focused.isDescendant(of: host.view)
+    }
+}
+
+private struct DetailPageProbeView: UIViewRepresentable {
+    let probe: DetailPageProbe
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        probe.view = v
+        return v
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        if probe.view !== uiView { probe.view = uiView }
     }
 }

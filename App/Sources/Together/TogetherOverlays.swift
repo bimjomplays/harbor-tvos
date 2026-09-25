@@ -92,26 +92,8 @@ struct TogetherToastHost: View {
     }
 
     private func inviteToast(_ inv: TogetherModel.IncomingInvite) -> some View {
-        let i = inv.invite
-        let ep = i.episodeRef.map { "S\($0.imdbSeason ?? $0.season) · E\(String(format: "%02d", $0.imdbEpisode ?? $0.episode))" }
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: BP.px(12)) {
-                RemoteImage(url: i.backgroundUrl ?? i.posterUrl).frame(width: BP.px(96), height: BP.px(54)).clipShape(RoundedRectangle(cornerRadius: BP.px(6)))
-                VStack(alignment: .leading, spacing: BP.px(2)) {
-                    Text(i.guestPick == true ? "Pick your source" : "\(inv.name) started watching").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
-                    Text(i.mediaTitle).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                    if let ep { Text(ep).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
-                }
-                Button { join(inv) } label: { Image(systemName: "arrow.forward") }.buttonStyle(BPActionStyle(primary: true)).accessibilityLabel("Join")
-                Button { handledInviteAt = inv.at; room.dismiss("invite") } label: { Image(systemName: "xmark") }.buttonStyle(BPActionStyle()).accessibilityLabel("Dismiss")
-            }
-            .padding(BP.px(12))
-            GeometryReader { g in Rectangle().fill(BP.accent).frame(width: g.size.width * progress) }.frame(height: BP.px(3))
-        }
-        .frame(width: BP.px(560))
-        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
-        .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
-        .focusSection()
+        TogetherInviteCard(invite: inv, progress: progress, onJoin: { join(inv) },
+                           onDismiss: { handledInviteAt = inv.at; room.dismiss("invite") })
     }
 
     // MARK: summon (together-summon-toast.tsx)
@@ -159,6 +141,43 @@ struct TogetherToastHost: View {
         .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
         .frame(maxWidth: BP.px(560), alignment: .leading)
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel.opacity(0.92)))
+    }
+}
+
+/// together-invite-toast.tsx's pill: the title, "{name} started watching" (guest pick: "Pick your
+/// source"), Join (guest pick: Choose), Dismiss and the 4 s auto-join bar. The shell's and the
+/// room screen's toast hosts show it, and a Detail page shows it over itself for an invite to its
+/// own title (the shell's toast waits while the page covers the shell).
+struct TogetherInviteCard: View {
+    let invite: TogetherModel.IncomingInvite
+    let progress: Double
+    let onJoin: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        let i: TogetherModel.PlayInvite = invite.invite
+        let guestPick: Bool = i.guestPick == true
+        let ep: String? = i.episodeRef.map { "S\($0.imdbSeason ?? $0.season) · E\(String(format: "%02d", $0.imdbEpisode ?? $0.episode))" }
+        let lead: String = guestPick ? T("Pick your source") : T("%@ started watching", invite.name)
+        let joinLabel: String = guestPick ? T("Choose") : T("Join")
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: BP.px(12)) {
+                RemoteImage(url: i.backgroundUrl ?? i.posterUrl).frame(width: BP.px(96), height: BP.px(54)).clipShape(RoundedRectangle(cornerRadius: BP.px(6)))
+                VStack(alignment: .leading, spacing: BP.px(2)) {
+                    Text(lead).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
+                    Text(i.mediaTitle).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                    if let ep { Text(ep).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
+                }
+                Button { onJoin() } label: { Image(systemName: "arrow.forward") }.buttonStyle(BPActionStyle(primary: true)).accessibilityLabel(joinLabel)
+                Button { onDismiss() } label: { Image(systemName: "xmark") }.buttonStyle(BPActionStyle()).accessibilityLabel(T("Dismiss"))
+            }
+            .padding(BP.px(12))
+            GeometryReader { g in Rectangle().fill(BP.accent).frame(width: g.size.width * progress) }.frame(height: BP.px(3))
+        }
+        .frame(width: BP.px(560))
+        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
+        .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+        .focusSection()
     }
 }
 
