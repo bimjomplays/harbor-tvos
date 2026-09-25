@@ -107,15 +107,12 @@ struct MusicPageView: View {
                 if !sub.isEmpty { Text(sub).font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 if let tracks = data?.tracks, !tracks.isEmpty {
                     HStack(spacing: BP.px(12)) {
-                        Button { player.play(tracks[0], queue: tracks) } label: { Label(copy("music.play", "Play"), systemImage: "play.fill") }
-                            .buttonStyle(BPActionStyle(primary: true))
+                        // music-collection-controls.tsx: Play (Play/Pause once it is the queue) and
+                        // the Shuffle mode toggle, offered from two tracks.
+                        MusicCollectionPlayButton(tracks: tracks)
                             .focused($playFocused)
                             .accessibilityIdentifier("music-page-play")
-                        Button {
-                            let shuffled = tracks.shuffled()
-                            player.play(shuffled[0], queue: shuffled)
-                        } label: { Label("Shuffle", systemImage: "shuffle") }
-                            .buttonStyle(BPActionStyle())
+                        if tracks.count > 1 { MusicCollectionShuffleButton() }
                         Text(copy("music.trackCount", "{count} tracks").replacingOccurrences(of: "{count}", with: "\(tracks.count)"))
                             .font(BP.sans(14)).foregroundStyle(BP.inkSubtle)
                     }
@@ -398,8 +395,11 @@ struct MusicNowPlayingView: View {
                     HStack(spacing: BP.px(18)) {
                         MusicTransportButtons(focusNamespace: focusNS)
                         Spacer()
-                        Button { player.close(); dismiss() } label: { Label(copy("music.player.close", "Stop and close player"), systemImage: "xmark") }
-                            .buttonStyle(BPActionStyle())
+                        // music-dock.tsx's close: an X titled "Stop and close player". Icon-only now
+                        // Shuffle and Repeat share the row (the labelled button no longer fit 560).
+                        Button { player.close(); dismiss() } label: { Image(systemName: "xmark").font(.system(size: BP.px(16), weight: .semibold)) }
+                            .buttonStyle(MusicIconStyle())
+                            .accessibilityLabel(copy("music.player.close", "Stop and close player"))
                     }
                     .focusSection()
                 }
@@ -580,6 +580,10 @@ final class MusicUpNextSuggestions: ObservableObject {
 
 /// music-queue.tsx: now playing, then up next; Select jumps, hold for Remove. On Now Playing
 /// (`suggests`), an empty queue offers radio suggestions instead (up-next.ts, upstream 770ca0bd).
+/// The rows are what will really play, in that order (music-now-playing.tsx
+/// `musicUpcoming(player.queue, player.queueIndex, 40)`): the shuffled order with Shuffle on, the
+/// wrap to the start with Repeat all; Repeat one has nothing next, so the suggestions show, as
+/// upstream's do. Move up / down change the stored order, so they are offered only without shuffle.
 struct MusicQueueList: View {
     var showsTitle = true
     var suggests = false
@@ -587,48 +591,33 @@ struct MusicQueueList: View {
     @ObservedObject private var copy = MusicCopy.shared
     @StateObject private var suggested = MusicUpNextSuggestions()
 
+    /// Upstream reads 40 ahead; the TV lists the whole queue (its rows carry the queue actions).
+    private var upNext: [Int] { player.upNext(max(40, player.queue.count)) }
     /// music-now-playing.tsx: `useUpNextSuggestions(current, panel === "queue" && next.length === 0)`.
-    private var suggesting: Bool { suggests && player.upcoming.isEmpty && player.current != nil }
-    /// `.task(id:)` key: the effect re-runs when the track or the enabled flag changes.
-    private var suggestionKey: String { suggesting ? (player.current?.queueKey ?? "") : "" }
+    private func suggesting(_ next: [Int]) -> Bool { suggests && next.isEmpty && player.current != nil }
 
     var body: some View {
-        let suggestions = suggesting ? suggested.tracks : []
+        let next: [Int] = upNext
+        let suggestingNow: Bool = suggesting(next)
+        let suggestionKey: String = suggestingNow ? (player.current?.queueKey ?? "") : ""
+        let suggestions: [MusicTrack] = suggestingNow ? suggested.tracks : []
         VStack(alignment: .leading, spacing: BP.px(10)) {
             if showsTitle {
                 Text(copy("music.row.upNext", "Up next")).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
             }
-            if player.upcoming.isEmpty, suggestions.isEmpty {
+            // music-queue.tsx: `shuffle && !priorityNext` → "Shuffle is on, so the next track is picked at random."
+            if player.shuffle, player.priorityNext == nil, !next.isEmpty {
+                BPNote(text: copy("music.queue.shuffleNote", "Shuffle is on, so the next track is picked at random."))
+            }
+            if next.isEmpty, suggestions.isEmpty {
                 // music-now-playing.tsx: "Building up next" while the suggestions load.
-                BPNote(text: suggesting && suggested.loading ? copy("music.now.queueBuilding", "Building up next") : copy("music.queue.empty", "Nothing is queued."))
+                BPNote(text: suggestingNow && suggested.loading ? copy("music.now.queueBuilding", "Building up next") : copy("music.queue.empty", "Nothing is queued."))
             }
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(6)) {
-                    ForEach(Array(player.queue.enumerated()), id: \.offset) { i, track in
-                        if i > player.index {
-                            Button { player.jump(to: i) } label: { MusicTrackLine(track: track, number: i - player.index) }
-                                .buttonStyle(BPTileStyle(radius: BP.rSM))
-                                .contextMenu {
-                                    // music-queue.tsx row actions: Play next, Move up / down, Remove.
-                                    if i > player.index + 1 {
-                                        Button { player.playQueuedNext(at: i) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
-                                        Button { player.move(from: i, to: i - 1) } label: {
-                                            Label(copy("music.queue.moveUp", "Move {title} up").replacingOccurrences(of: "{title}", with: track.title), systemImage: "arrow.up")
-                                        }
-                                    }
-                                    if i < player.queue.count - 1 {
-                                        Button { player.move(from: i, to: i + 1) } label: {
-                                            Label(copy("music.queue.moveDown", "Move {title} down").replacingOccurrences(of: "{title}", with: track.title), systemImage: "arrow.down")
-                                        }
-                                    }
-                                    Button(role: .destructive) { player.remove(at: i) } label: {
-                                        Label(copy("music.queue.remove", "Remove {title} from the queue").replacingOccurrences(of: "{title}", with: track.title), systemImage: "minus.circle")
-                                    }
-                                    Button { player.toggleLiked(track) } label: {
-                                        Label(player.isLiked(track) ? copy("music.unsaveTrack", "Remove from saved tracks") : copy("music.saveTrack", "Save track"),
-                                              systemImage: player.isLiked(track) ? "heart.slash" : "heart")
-                                    }
-                                }
+                    ForEach(Array(next.enumerated()), id: \.offset) { position, i in
+                        if player.queue.indices.contains(i) {
+                            row(player.queue[i], at: i, position: position)
                         }
                     }
                     // up-next.ts: a suggestion plays with [current, ...suggestions] as the queue.
@@ -643,7 +632,40 @@ struct MusicQueueList: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .focusSection()
-        .task(id: suggestionKey) { await suggested.load(player.current, enabled: suggesting) }
+        .task(id: suggestionKey) { await suggested.load(player.current, enabled: !suggestionKey.isEmpty) }
+    }
+
+    /// One upcoming entry: queue index `i`, `position` places from the current track.
+    private func row(_ track: MusicTrack, at i: Int, position: Int) -> some View {
+        let upcoming: Bool = i > player.index
+        let canMove: Bool = !player.shuffle && upcoming
+        return Button { player.jump(to: i) } label: { MusicTrackLine(track: track, number: position + 1) }
+            .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .contextMenu {
+                // music-queue.tsx row actions: Play next, Move up / down, Remove.
+                if position > 0 {
+                    Button { player.playQueuedNext(at: i) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
+                }
+                if canMove, i > player.index + 1 {
+                    Button { player.move(from: i, to: i - 1) } label: {
+                        Label(copy("music.queue.moveUp", "Move {title} up").replacingOccurrences(of: "{title}", with: track.title), systemImage: "arrow.up")
+                    }
+                }
+                if canMove, i < player.queue.count - 1 {
+                    Button { player.move(from: i, to: i + 1) } label: {
+                        Label(copy("music.queue.moveDown", "Move {title} down").replacingOccurrences(of: "{title}", with: track.title), systemImage: "arrow.down")
+                    }
+                }
+                if i != player.index {
+                    Button(role: .destructive) { player.remove(at: i) } label: {
+                        Label(copy("music.queue.remove", "Remove {title} from the queue").replacingOccurrences(of: "{title}", with: track.title), systemImage: "minus.circle")
+                    }
+                }
+                Button { player.toggleLiked(track) } label: {
+                    Label(player.isLiked(track) ? copy("music.unsaveTrack", "Remove from saved tracks") : copy("music.saveTrack", "Save track"),
+                          systemImage: player.isLiked(track) ? "heart.slash" : "heart")
+                }
+            }
     }
 
     /// music-now-playing.tsx `playMusic(track, upNextQueue)` with `upNextQueue = [current, ...suggested.tracks]`.

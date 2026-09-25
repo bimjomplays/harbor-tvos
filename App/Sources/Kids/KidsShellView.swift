@@ -20,7 +20,12 @@ struct KidsShellView: View {
     var body: some View {
         ZStack(alignment: .top) {
             KidsTheme.canvas.ignoresSafeArea()
+            // App.tsx mounts music-dock.tsx over every view, the kids surface included (visible
+            // whenever a track is loaded, top not player/picker): music started before the switch to
+            // a kid keeps its dock and Now Playing here. The shell ignores the safe area, so the dock
+            // keeps the TV's bottom inset itself.
             KidsView(openPlay: openPlay)
+                .musicDock(bottomPadding: BP.px(60))
                 .disabled(pinUp)
             KidsTopBar(onPlay: openPlay, onSwitch: requestSwitch)
                 .disabled(pinUp)

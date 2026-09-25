@@ -405,19 +405,22 @@ struct MusicDockView: View {
 /// no "Finding a source", no error when every source failed, and no way into Now Playing short of
 /// backing out to the room. A bottom inset, so the page scrolls above it rather than under it.
 struct MusicDockHost: ViewModifier {
+    /// Extra room under the dock where the host ignores the safe area (the kids shell).
+    var bottomPadding: CGFloat = 0
     @State private var nowPlayingOpen = false
     func body(content: Content) -> some View {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                MusicDockSlot(onExpand: { nowPlayingOpen = true })
+                MusicDockSlot(bottomPadding: bottomPadding, onExpand: { nowPlayingOpen = true })
             }
             .fullScreenCover(isPresented: $nowPlayingOpen) { MusicNowPlayingView() }
     }
 }
 
 /// The dock while something is loaded, else nothing (the inset closes up). It sits on the bottom
-/// safe area, which already keeps it off the screen edge.
+/// safe area, which already keeps it off the screen edge (`bottomPadding` where it does not).
 private struct MusicDockSlot: View {
+    let bottomPadding: CGFloat
     let onExpand: () -> Void
     @ObservedObject private var player = MusicPlayer.shared
     var body: some View {
@@ -425,12 +428,13 @@ private struct MusicDockSlot: View {
             MusicDockView(onExpand: onExpand)
                 .padding(.horizontal, BP.gutter)
                 .padding(.top, BP.px(8))
+                .padding(.bottom, bottomPadding)
         }
     }
 }
 
 extension View {
-    func musicDock() -> some View { modifier(MusicDockHost()) }
+    func musicDock(bottomPadding: CGFloat = 0) -> some View { modifier(MusicDockHost(bottomPadding: bottomPadding)) }
 }
 
 /// Elapsed / bar / length (music-dock.tsx time part).
@@ -467,7 +471,9 @@ struct MusicProgressBar: View {
     }
 }
 
-/// Previous / play-pause / next / save, shared by the dock and the Now Playing screen.
+/// Shuffle / previous / play-pause / next / repeat / save, shared by the dock and the Now Playing
+/// screen (music-dock.tsx's transport: Shuffle and Repeat either side, lit in the accent when on,
+/// Repeat drawn as Repeat1 in "one" and titled Repeat / Repeat all / Repeat one).
 struct MusicTransportButtons: View {
     var compact = false
     /// The screen's focus scope, when Play/Pause should take the focus as it opens (Now Playing).
@@ -477,23 +483,91 @@ struct MusicTransportButtons: View {
 
     var body: some View {
         HStack(spacing: BP.px(compact ? 8 : 14)) {
+            icon("shuffle", copy("music.transport.shuffle", "Shuffle"), on: player.shuffle) { player.toggleShuffle() }
+                .accessibilityIdentifier("music-shuffle")
             icon("backward.fill", copy("music.previous", "Previous track")) { player.previous() }
             icon(player.phase == .playing ? "pause.fill" : (player.phase == .error ? "arrow.clockwise" : "play.fill"),
                  player.phase == .playing ? copy("music.pause", "Pause") : copy("music.play", "Play"), big: true) { player.toggle() }
                 .accessibilityIdentifier("music-toggle")
                 .modifier(MusicPrefersFocus(namespace: focusNamespace))
             icon("forward.fill", copy("music.next", "Next track")) { player.next() }
+            icon(player.repeatMode == .one ? "repeat.1" : "repeat", repeatLabel, on: player.repeatMode != .off) { player.cycleRepeat() }
+                .accessibilityIdentifier("music-repeat")
             icon(player.isLiked(player.current) ? "heart.fill" : "heart",
                  player.isLiked(player.current) ? copy("music.unsaveTrack", "Remove from saved tracks") : copy("music.saveTrack", "Save track")) { player.toggleLiked() }
         }
     }
 
-    private func icon(_ name: String, _ label: String, big: Bool = false, action: @escaping () -> Void) -> some View {
+    /// music-dock.tsx repeatLabel
+    private var repeatLabel: String {
+        switch player.repeatMode {
+        case .one: return copy("music.transport.repeatOne", "Repeat one")
+        case .all: return copy("music.transport.repeatAll", "Repeat all")
+        case .off: return copy("music.transport.repeat", "Repeat")
+        }
+    }
+
+    /// `on`: a mode button's aria-pressed (drawn in the accent, read as selected).
+    private func icon(_ name: String, _ label: String, big: Bool = false, on: Bool? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: name).font(.system(size: BP.px(big ? 20 : 16), weight: .semibold))
         }
-        .buttonStyle(MusicIconStyle(big: big && !compact))
+        .buttonStyle(MusicIconStyle(big: big && !compact, on: on ?? false))
         .accessibilityLabel(label)
+        .bpSelected(on ?? false)
+    }
+}
+
+/// music-collection-controls.tsx Play: "Collection controls retain the stored order; shuffle
+/// belongs to playback." The queue is the collection as listed; with shuffle on the first track is
+/// a random one and the listening order deals the rest. When this collection is already the queue
+/// playing, Play is Play/Pause (upstream's sameQueue && selected), and dims while it resolves.
+struct MusicCollectionPlayButton: View {
+    let tracks: [MusicTrack]
+    @ObservedObject private var player = MusicPlayer.shared
+    @ObservedObject private var copy = MusicCopy.shared
+
+    var body: some View {
+        let selected: Bool = player.isPlayingCollection(tracks)
+        let playing: Bool = selected && player.phase == .playing
+        let busy: Bool = selected && player.phase == .resolving
+        let title: String = playing ? copy("music.pause", "Pause") : copy("music.play", "Play")
+        Button { play(selected: selected, busy: busy) } label: {
+            Label(title, systemImage: playing ? "pause.fill" : "play.fill")
+        }
+        .buttonStyle(BPActionStyle(primary: true, busy: busy))
+    }
+
+    private func play(selected: Bool, busy: Bool) {
+        guard !busy, let fallback = tracks.first else { return }
+        if selected, player.phase == .playing || player.phase == .paused {
+            player.toggle()
+            return
+        }
+        let first: MusicTrack = player.shuffle ? (tracks.randomElement() ?? fallback) : fallback
+        player.play(first, queue: tracks)
+    }
+}
+
+/// music-collection-controls.tsx Shuffle: toggles the shuffle mode (aria-pressed, the accent when
+/// on). It no longer plays a shuffled copy of the list: the mode applies to whatever plays.
+struct MusicCollectionShuffleButton: View {
+    @ObservedObject private var player = MusicPlayer.shared
+    @ObservedObject private var copy = MusicCopy.shared
+
+    var body: some View {
+        let on: Bool = player.shuffle
+        let title: String = copy("music.transport.shuffle", "Shuffle")
+        Button { player.toggleShuffle() } label: {
+            if on {
+                Label(title, systemImage: "shuffle").foregroundStyle(BP.accent)
+            } else {
+                Label(title, systemImage: "shuffle")
+            }
+        }
+        .buttonStyle(BPActionStyle())
+        .bpSelected(on)
+        .accessibilityIdentifier("music-page-shuffle")
     }
 }
 
@@ -553,10 +627,13 @@ struct MusicVolumeControl: View {
 /// Round icon button in the Big Picture focus language (ring + lift).
 struct MusicIconStyle: ButtonStyle {
     var big = false
+    /// A mode that is on (music-dock-icon-on: the accent colour).
+    var on = false
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader { focused in
+            let ink: Color = on ? BP.accent : BP.ink
             configuration.label
-                .foregroundStyle(focused ? BP.canvas : BP.ink)
+                .foregroundStyle(focused ? BP.canvas : ink)
                 .frame(width: BP.px(big ? 60 : 44), height: BP.px(big ? 60 : 44))
                 .background(Circle().fill(focused ? BP.ink : BP.panel2))
                 .scaleEffect(focused ? (configuration.isPressed ? 1.02 : 1.08) : 1)

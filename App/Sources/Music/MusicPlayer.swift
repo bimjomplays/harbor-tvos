@@ -100,9 +100,27 @@ final class MusicPlayer: ObservableObject {
     private var audibleVolume: Double = 0.82
     private static let volumeKey = "harbor.music.volume.v1"
 
+    /// music-queue.tsx MusicTransport: shuffle and repeat, remembered across launches
+    /// (SHUFFLE_KEY "1"/"0", REPEAT_KEY "off" | "all" | "one"). They belong to playback, not to a
+    /// collection: an album's Shuffle turns the mode on and the stored order stays as it is.
+    @Published private(set) var shuffle = false
+    @Published private(set) var repeatMode: MusicRepeatMode = .off
+    private static let shuffleKey = "harbor.music.shuffle.v1"
+    private static let repeatKey = "harbor.music.repeat.v1"
+    /// queue-order.ts: the listening order apart from the stored one (see MusicQueueOrder).
+    private let order = MusicQueueOrder()
+    /// music-queue.tsx priorityNext: a "Play next" pick, played next even under shuffle.
+    @Published private(set) var priorityNext: MusicTrack?
+    /// player.ts autoSkipped: tracks an automatic advance already skipped as unplayable, so a
+    /// repeat-all queue with nothing playable does not go round for ever.
+    private var autoSkipped = Set<String>()
+
     private init() {
         volume = Self.readVolume()
         if volume > 0 { audibleVolume = volume }
+        shuffle = KeyValueStore.shared.get(Self.shuffleKey) == "1"
+        let storedRepeat: String = KeyValueStore.shared.get(Self.repeatKey) ?? "off"
+        repeatMode = MusicRepeatMode(rawValue: storedRepeat) ?? MusicRepeatMode.off
         player.volume = Self.streamGain(volume)
         player.actionAtItemEnd = .advance
         // Every callback below is @Sendable (never actor-isolated) and hops to the main actor.
@@ -192,7 +210,71 @@ final class MusicPlayer: ObservableObject {
         manuallyQueued = []
         failed = []
         skipUnavailable = false
+        // player.ts playMusic (not continuing): resetOrder() and autoSkipped.clear().
+        resetOrder()
         start(at: at)
+    }
+
+    /// music-queue.tsx setMusicAdvance's reset: a fresh play starts a new listening order.
+    private func resetOrder() {
+        order.reset()
+        priorityNext = nil
+        autoSkipped = []
+    }
+
+    private var modes: MusicQueueOrder.Modes { MusicQueueOrder.Modes(shuffle: shuffle, repeatMode: repeatMode) }
+
+    // MARK: - shuffle / repeat (music-queue.tsx publishTransport)
+
+    /// music-queue.tsx toggleMusicShuffle
+    func toggleShuffle() { setShuffle(!shuffle) }
+
+    /// music-queue.tsx cycleMusicRepeat: off → all → one → off.
+    func cycleRepeat() { setRepeat(repeatMode.cycled) }
+
+    func setShuffle(_ on: Bool) {
+        guard on != shuffle else { syncRemoteModes(); return }
+        shuffle = on
+        try? KeyValueStore.shared.set(on ? "1" : "0", for: Self.shuffleKey)
+        // publishTransport: a shuffle change deals a new order (and forgets the shuffled history).
+        order.reset()
+        transportChanged()
+    }
+
+    func setRepeat(_ mode: MusicRepeatMode) {
+        guard mode != repeatMode else { syncRemoteModes(); return }
+        repeatMode = mode
+        try? KeyValueStore.shared.set(mode.rawValue, for: Self.repeatKey)
+        transportChanged()
+    }
+
+    /// The gapless successor was picked under the old modes: take it back out (it is resolved
+    /// again for the new order), and tell the system's Now Playing controls.
+    private func transportChanged() {
+        dropPreloaded()
+        syncRemoteModes()
+    }
+
+    /// queue-order.ts upcoming through music-queue.tsx musicUpcoming: the queue indices that will
+    /// really play next, shuffle and repeat included (Now Playing's Up next).
+    /// (TV) A Play next pick leads the list, since the advance takes it first (upstream's list
+    /// only shows it first without shuffle, where the pick also sits right after the current track).
+    func upNext(_ count: Int) -> [Int] {
+        guard current != nil, count > 0 else { return [] }
+        let ahead: [Int] = order.upcoming(queue, index, modes, count: count)
+        guard repeatMode != .one, let pick = priorityNext else { return ahead }
+        let pickKey: String = MusicQueueOrder.key(pick)
+        guard let at = queue.indices.first(where: { $0 != index && MusicQueueOrder.key(queue[$0]) == pickKey }) else { return ahead }
+        let rest: [Int] = ahead.filter { $0 != at }
+        return Array(([at] + rest).prefix(count))
+    }
+
+    /// setMusicAdvance's next: the entry after the current one under the modes. `commit` false only
+    /// reads it (the gapless preload), true moves the listening order on.
+    private func advance(auto: Bool, commit: Bool) -> Int? {
+        let n = order.next(queue, index, modes, auto: auto, priority: priorityNext, commit: commit)
+        if commit, !(auto && repeatMode == .one) { priorityNext = nil }
+        return n
     }
 
     /// Queue a track to play after the current one (music-track-menu "Play next").
@@ -204,6 +286,8 @@ final class MusicPlayer: ObservableObject {
             return
         }
         queue.insert(track, at: min(index + 1, queue.count))
+        // music-queue.tsx playNext: the pick plays next under shuffle too (priorityNext).
+        priorityNext = track
         dropPreloaded()
     }
 
@@ -235,9 +319,14 @@ final class MusicPlayer: ObservableObject {
         dropPreloaded()
     }
 
-    /// music-queue.tsx playNext(index): an upcoming entry moves to right after the current one.
+    /// music-queue.tsx playNext(index): an upcoming entry moves to right after the current one, and
+    /// is the priorityNext pick, so it plays next under shuffle too.
     func playQueuedNext(at i: Int) {
+        guard queue.indices.contains(i), i != index else { return }
+        let track = queue[i]
         move(from: i, to: max(0, index + 1))
+        priorityNext = track
+        dropPreloaded()
     }
 
     /// music-detail.tsx isCurrent: a row is the one playing when it is the current track or the
@@ -248,6 +337,16 @@ final class MusicPlayer: ObservableObject {
         if current.id == track.id, current.connectorId == track.connectorId { return true }
         if let origin = current.collectionOrigin, origin.id == track.id, origin.connectorId == track.connectorId { return true }
         return false
+    }
+
+    /// music-collection-controls.tsx sameQueue && selected: `tracks` is the queue as it stands
+    /// (by queueTrackKey, so a catalog entry and the source found for it match) and holds the
+    /// track now playing.
+    func isPlayingCollection(_ tracks: [MusicTrack]) -> Bool {
+        guard let current, !tracks.isEmpty, tracks.count == queue.count else { return false }
+        for (i, track) in tracks.enumerated() where MusicQueueOrder.key(track) != MusicQueueOrder.key(queue[i]) { return false }
+        let currentKey: String = MusicQueueOrder.key(current)
+        return tracks.contains { MusicQueueOrder.key($0) == currentKey }
     }
 
     func toggle() {
@@ -307,14 +406,19 @@ final class MusicPlayer: ObservableObject {
         if engine == .spotify { spotify.setPaused(true); phase = .paused; refreshNowPlaying() } else { player.pause(); refreshPhase() }
     }
 
-    /// player.ts nextMusic
+    /// player.ts nextMusic: the next entry of the listening order (queue-order.ts next). A track
+    /// ending by itself under Repeat one plays again; the manual Next moves on. At the end of the
+    /// order (Repeat off) the player stops on the last track, paused.
     func next(auto: Bool = false) {
         guard current != nil else { return }
-        if !auto { skipUnavailable = false }
-        if index + 1 < queue.count {
+        if !auto {
+            skipUnavailable = false
+            autoSkipped = []
+        }
+        if let n = advance(auto: auto, commit: true) {
             failed = []
             skipUnavailable = auto
-            start(at: index + 1)
+            start(at: n)
         } else {
             player.pause()
             if engine == .spotify { spotify.setPaused(true) }
@@ -324,11 +428,14 @@ final class MusicPlayer: ObservableObject {
         }
     }
 
-    /// player.ts previousMusic: past 5 s the track restarts, else the previous entry plays.
+    /// player.ts previousMusic: past 5 s the track restarts, else the previous entry plays: the
+    /// stored order's (no wrap under Repeat all, as upstream), or under shuffle the last one heard.
+    /// With none the track restarts (upstream does nothing there).
     func previous() {
-        if position > 5 || index <= 0 { seek(to: 0); return }
+        if position > 5 || index < 0 { seek(to: 0); return }
+        guard let p = order.previous(queue, index, shuffle: shuffle), queue.indices.contains(p) else { seek(to: 0); return }
         failed = []
-        start(at: index - 1)
+        start(at: p)
     }
 
     func seek(to seconds: Double) {
@@ -351,6 +458,8 @@ final class MusicPlayer: ObservableObject {
         guard queue.indices.contains(i) else { return }
         failed = []
         skipUnavailable = false
+        // music-queue.tsx / music-now-playing.tsx rows call playMusic(track, queue): a new order.
+        resetOrder()
         start(at: i)
     }
 
@@ -380,6 +489,7 @@ final class MusicPlayer: ObservableObject {
         current = nil
         queue = []
         manuallyQueued = []
+        resetOrder()
         index = -1
         position = 0
         duration = 0
@@ -561,14 +671,31 @@ final class MusicPlayer: ObservableObject {
     private func fail(_ message: String) {
         let text = message.hasPrefix("music.") ? MusicCopy.shared(message, "This source couldn’t play the song. Try another source.") : message
         // player.ts skipUnavailableTrack: during an automatic advance a dead track is skipped.
-        if skipUnavailable, index + 1 < queue.count {
+        if skipUnavailable, let n = skipUnavailableEntry() {
             failed = []
-            start(at: index + 1)
+            start(at: n)
             return
         }
         error = text
         phase = .error
         refreshNowPlaying()
+    }
+
+    /// player.ts skipUnavailableTrack: the next entry of the listening order that this automatic
+    /// run has not already given up on (a manual advance, a fresh play or 2 s of playback forget them).
+    private func skipUnavailableEntry() -> Int? {
+        guard queue.indices.contains(index) else { return nil }
+        autoSkipped.insert(MusicQueueOrder.key(queue[index]))
+        var at = index
+        for _ in 0..<queue.count {
+            guard let n = order.next(queue, at, modes, auto: false, priority: priorityNext, commit: true) else { return nil }
+            priorityNext = nil
+            guard queue.indices.contains(n) else { return nil }
+            at = n
+            if autoSkipped.contains(MusicQueueOrder.key(queue[n])) { continue }
+            return n
+        }
+        return nil
     }
 
     private func itemEnded(_ item: AVPlayerItem) {
@@ -577,13 +704,16 @@ final class MusicPlayer: ObservableObject {
         // engine.rs natural EOF: the finished entry scrobbles now, before anything else starts.
         if scrobbleTrack?.queueKey == entry.track.queueKey { finishScrobble() }
         // With a preloaded successor the AVQueuePlayer has already moved on (currentItemChanged).
-        if items.values.contains(where: { $0.index == entry.index + 1 }) { return }
+        // Only the successor can still be bound: the ended item was just forgotten.
+        if !items.isEmpty { return }
         next(auto: true)
     }
 
     /// The AVQueuePlayer advanced into a preloaded item: that entry is now current.
     private func currentItemChanged() {
         guard let item = player.currentItem, let entry = items[ObjectIdentifier(item)], entry.index != index else { return }
+        // The preload peeked this advance; the listening order moves on now it is heard.
+        _ = advance(auto: true, commit: true)
         finishScrobble()
         index = entry.index
         current = entry.track
@@ -600,10 +730,12 @@ final class MusicPlayer: ObservableObject {
         extendRadioIfDue()
     }
 
-    /// Resolve the next entry late in the current one and queue it behind (gapless).
+    /// Resolve the next entry late in the current one and queue it behind (gapless). The entry is
+    /// the one the listening order will advance to (shuffle, repeat all's wrap, a Play next pick);
+    /// Repeat one restarts the track through next(auto:) instead of preloading it again.
     private func preloadNextIfDue() {
         guard engine == .stream, phase == .playing, preloading == nil, duration > 0, duration - position < 30 else { return }
-        let n = index + 1
+        guard let n = advance(auto: true, commit: false), n != index else { return }
         let attempt = "\(request):\(n)"
         guard queue.indices.contains(n), preloadAttempt != attempt, !items.values.contains(where: { $0.index == n }) else { return }
         preloadAttempt = attempt
@@ -617,6 +749,8 @@ final class MusicPlayer: ObservableObject {
             guard ticket == self.request, let prepared, !Self.isSpotify(prepared), let current = self.player.currentItem, self.queue.indices.contains(n),
                   self.queue[n].queueKey == entry.queueKey, let item = self.makeItem(prepared) else { return }
             guard self.player.canInsert(item, after: current) else { return }
+            // The modes or a Play next pick changed while it resolved: the order has moved on.
+            guard self.advance(auto: true, commit: false) == n else { return }
             self.queue[n] = prepared.track
             self.items[ObjectIdentifier(item)] = (prepared.track, n)
             self.watch(item)
@@ -652,6 +786,8 @@ final class MusicPlayer: ObservableObject {
     /// count as heard.
     private func heard(at t: Double) {
         position = max(0, t)
+        // player.ts time-pos: two seconds of playback and the automatic skips start over.
+        if t >= 2, phase == .playing, !autoSkipped.isEmpty { autoSkipped = [] }
         if let previous = lastTick, scrobbleTrack != nil {
             let delta = t - previous
             if delta > 0, delta <= 2 { listened += delta }
@@ -946,12 +1082,47 @@ final class MusicPlayer: ObservableObject {
         _ = c.togglePlayPauseCommand.addTarget(handler: owned { if $0.mediaKeyGate() { $0.toggle() } })
         _ = c.nextTrackCommand.addTarget(handler: owned { $0.next() })
         _ = c.previousTrackCommand.addTarget(handler: owned { $0.previous() })
+        // (TV) The system's shuffle and repeat controls follow the player's modes. Upstream's MPRIS
+        // reports Shuffle false / LoopStatus None and ignores changes; these are tvOS 8+ commands.
+        _ = c.changeShuffleModeCommand.addTarget { @Sendable [weak self] event in
+            guard let self, let e = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+            let on = e.shuffleType != MPShuffleType.off
+            Task { @MainActor in if self.current != nil, !PlaybackState.shared.active { self.setShuffle(on) } }
+            return .success
+        }
+        _ = c.changeRepeatModeCommand.addTarget { @Sendable [weak self] event in
+            guard let self, let e = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+            let mode: MusicRepeatMode
+            switch e.repeatType {
+            case .one: mode = MusicRepeatMode.one
+            case .all: mode = MusicRepeatMode.all
+            default: mode = MusicRepeatMode.off
+            }
+            Task { @MainActor in if self.current != nil, !PlaybackState.shared.active { self.setRepeat(mode) } }
+            return .success
+        }
+        syncRemoteModes()
         _ = c.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let self, let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let at = e.positionTime
             Task { @MainActor in if self.current != nil, !PlaybackState.shared.active { self.seek(to: at) } }
             return .success
         }
+    }
+
+    /// The modes as the system's Now Playing controls show them.
+    private func syncRemoteModes() {
+        guard commandsReady else { return }
+        let c = MPRemoteCommandCenter.shared()
+        let shuffleType: MPShuffleType = shuffle ? MPShuffleType.items : MPShuffleType.off
+        let repeatType: MPRepeatType
+        switch repeatMode {
+        case .off: repeatType = MPRepeatType.off
+        case .all: repeatType = MPRepeatType.all
+        case .one: repeatType = MPRepeatType.one
+        }
+        c.changeShuffleModeCommand.currentShuffleType = shuffleType
+        c.changeRepeatModeCommand.currentRepeatType = repeatType
     }
 
     private func refreshNowPlaying() {

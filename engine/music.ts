@@ -60,6 +60,8 @@ const COPY_KEYS = [
   "music.library.loadMore", "music.playlist.none", "music.playlist.namePlaceholder", "music.playlist.nameLabel", "music.card.addToPlaylist",
   // music-dock.tsx volume (the mute button and the "Music volume" slider)
   "music.volume", "music.mute", "music.unmute",
+  // music-dock.tsx / music-collection-controls.tsx / music-queue.tsx: the Shuffle and Repeat modes
+  "music.transport.shuffle", "music.transport.repeat", "music.transport.repeatAll", "music.transport.repeatOne", "music.queue.shuffleNote",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */

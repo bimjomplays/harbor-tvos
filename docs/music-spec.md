@@ -153,9 +153,16 @@ the phone hand-off).
 - **Player** (`MusicPlayer.swift`, player.ts semantics): queue replaced on play, catalog tracks
   matched to a source first (preferring the source already playing), failed sources swapped for
   the next match (at most two alternatives, three failures), an automatic advance skips a track
-  nothing can play, Previous restarts after 5 s. **Gapless:** the next entry is resolved in the
+  nothing can play, Previous restarts after 5 s. **Shuffle and Repeat** (`music-queue.tsx` +
+  `queue-order.ts`, `MusicQueueOrder.swift`): modes of playback, remembered
+  (`harbor.music.shuffle.v1`, `harbor.music.repeat.v1`); shuffle deals the listening order up
+  front with the playing track at its head (the stored order is kept, so turning it off plays on
+  in album order), Previous under shuffle walks back through what was heard, Repeat cycles off →
+  all → one (one replays a track that ends by itself; Next still moves on), a Play next pick
+  plays next in any mode, and Now Playing's Up next lists what will really play. The album
+  page's Shuffle toggles the mode. **Gapless:** the next entry is resolved in the
   last 30 s and queued behind the current item in an `AVQueuePlayer`. **Now Playing** and
-  **remote commands** (play/pause/toggle/next/previous/seek) through `MPNowPlayingInfoCenter` /
+  **remote commands** (play/pause/toggle/next/previous/seek, change shuffle / repeat mode) through `MPNowPlayingInfoCenter` /
   `MPRemoteCommandCenter`. **Background audio:** `UIBackgroundModes: [audio]` in `project.yml`,
   `.playback` audio session; upstream keeps playing with its window hidden, so the TV keeps
   playing on the home screen. A film or channel starting pauses the music, and a film now

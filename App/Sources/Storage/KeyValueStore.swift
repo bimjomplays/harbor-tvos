@@ -31,6 +31,8 @@ final class KeyValueStore {
                                                    "harbor.music.liked.v1",
                                                    // lib/music/player.ts VOLUME_KEY: the music volume (MusicPlayer).
                                                    "harbor.music.volume.v1",
+                                                   // components/music/music-queue.tsx SHUFFLE_KEY / REPEAT_KEY: the play modes (MusicPlayer).
+                                                   "harbor.music.shuffle.v1", "harbor.music.repeat.v1",
                                                    // lib/player-prefs.ts + lib/subtitles/subtitle-memory.ts: per-show audio/subtitle
                                                    // language, subtitles off, subtitle delay (≤200 shows, ~20 KB); per-episode remembered
                                                    // subtitle (≤500 entries; past Prefs' 64 KB cap `set` moves it to Caches by itself).

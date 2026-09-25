@@ -143,13 +143,8 @@ struct MusicSpotifyLibraryView: View {
         if showsTracks, let tracks = page?.tracks, !tracks.isEmpty {
             // music-collection-controls.tsx: Play and Shuffle; "Open on Spotify" for a playlist.
             HStack(spacing: BP.px(12)) {
-                Button { player.play(tracks[0], queue: tracks) } label: { Label(copy("music.play", "Play"), systemImage: "play.fill") }
-                    .buttonStyle(BPActionStyle(primary: true))
-                Button {
-                    let shuffled = tracks.shuffled()
-                    player.play(shuffled[0], queue: shuffled)
-                } label: { Label("Shuffle", systemImage: "shuffle") }
-                    .buttonStyle(BPActionStyle())
+                MusicCollectionPlayButton(tracks: tracks)
+                if tracks.count > 1 { MusicCollectionShuffleButton() }
                 if let selected {
                     Button { webLink = MusicSpotifyWebLink(url: selected.webUrl) } label: { Label(text("music.spotifyLibrary.open"), systemImage: "arrow.up.right") }
                         .buttonStyle(BPActionStyle())

@@ -1053,6 +1053,9 @@ r.ok("benchmark still works", (() => {
   r.eq("music.upNext is empty (not an error) when no station can be built", noSuggestions, []);
   r.eq("music.copy carries up-next.ts's loading line", m.copy()["music.now.queueBuilding"], "Building up next");
   r.eq("music.copy carries music-queue.tsx's row actions (templates kept)", [m.copy()["music.queue.moveUp"], m.copy()["music.queue.moveDown"], m.copy()["music.queue.remove"]], ["Move {title} up", "Move {title} down", "Remove {title} from the queue"]);
+  r.eq("music.copy carries the Shuffle / Repeat mode labels (music-dock.tsx repeatLabel, music-queue.tsx shuffleNote)",
+    ["music.transport.shuffle", "music.transport.repeat", "music.transport.repeatAll", "music.transport.repeatOne", "music.queue.shuffleNote"].map((k) => m.copy()[k]),
+    ["Shuffle", "Repeat", "Repeat all", "Repeat one", "Shuffle is on, so the next track is picked at random."]);
 
   m.subsonicDisconnect();
   r.ok("music.subsonicDisconnect forgets the pairing", !store.has("harbor.subsonic.v1.token") && m.connections().find((c) => c.id === "subsonic").status === "disconnected");
