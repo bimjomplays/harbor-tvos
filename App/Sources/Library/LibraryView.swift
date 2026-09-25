@@ -270,8 +270,9 @@ struct LibraryView: View {
     @FocusState private var focusedKey: String?
     /// The Filters / Search / Repair chip that takes the ring back when Menu closes its panel.
     @FocusState private var focusedChip: String?
-    /// "Show more" was pressed at this many tiles: the tile at that index takes the ring once it lands.
-    @State private var focusAfterMore: Int?
+    /// (parity pass 3, L3) bp-library-sections: the page count the ring last asked more at, so one
+    /// page is asked for once however the ring walks the last rows while it loads.
+    @State private var pagedAt: Int?
     /// When the ring last left the grid by its tile going away (or moving off it).
     @State private var gridFocusLostAt: Date?
     /// Where in the grid the ring last was: a details re-sort that takes that tile off the page
@@ -347,13 +348,9 @@ struct LibraryView: View {
                             }
                             .focusSection()
                         }
-                        if f.hasMore {
-                            // The next page lands between the last tile and this button, so the focused
-                            // button slid a page down off screen and Up then landed at the new page's
-                            // end. The ring goes to the first new tile instead, where the viewer was
-                            // reading (bp-library pages under the grid's end, never past it).
-                            Button("Show more (\(f.shown) of \(f.matched))") { focusAfterMore = f.shown; model.more() }.buttonStyle(BPActionStyle())
-                        }
+                        // (parity pass 3, L3) bp-library-sections has no button: a sentinel under the
+                        // grid pages in as the ring nears the end (autoPage). The "Show more" button
+                        // it replaces is gone.
                     }
                 } else if model.loading {
                     ProgressView().tint(BP.inkMuted).padding(.top, BP.px(40))
@@ -380,6 +377,7 @@ struct LibraryView: View {
                 ringIndex = gridKeys.firstIndex(of: key)
                 ringKey = key
                 lastFilterChip = nil
+                autoPage(key)
             }
         }
         // use-bp-library re-sorts as media-server details land. A tile the re-sort moved past the
@@ -408,14 +406,16 @@ struct LibraryView: View {
                 focusedChip = "tab:" + model.tab
             }
         }
-        .onChange(of: model.feed?.shown) { _, _ in
-            guard let i = focusAfterMore, let f = model.feed else { return }
-            focusAfterMore = nil
-            let keys = f.sections.flatMap { $0.items.map(\.key) }
-            if i < keys.count { focusedKey = keys[i] }
+        // (parity pass 3, L3) A page that landed with the ring still in the last rows (a short page,
+        // or the ring walked on while it loaded) asks for the next one, as the sentinel's recheck.
+        .onChange(of: model.shownFeed?.shown) { _, _ in
+            // A new page count (a page landed, or a filter / sort / search started over) re-arms it.
+            pagedAt = nil
+            guard let key = focusedKey else { return }
+            autoPage(key)
         }
         // bp-library's [tab] effect clears the search; the field shows it.
-        .onChange(of: model.tab) { _, _ in draft = ""; focusAfterMore = nil }
+        .onChange(of: model.tab) { _, _ in draft = ""; pagedAt = nil }
         // bp-library-filters / bp-library-search are dialogs that Back closes (pushBpBack). Here they
         // open inline, and Menu inside one left the Library for Home; it now closes them and puts
         // the ring back on the chip row. With none open, the press goes on to the shell (Home).
@@ -607,6 +607,20 @@ struct LibraryView: View {
         return sections.flatMap { s in s.items.map { $0.key } }
     }
 
+    /// (parity pass 3, L3) bp-library-sections: a sentinel under the grid asks for the next page
+    /// (onMore) once it comes near the viewport. On the TV the ring is what moves the page, so the
+    /// ring on a tile in the grid's last two rows is "near": the next page is asked for once per
+    /// page (pagedAt), and lands under the ring without moving it.
+    private func autoPage(_ key: String) {
+        guard let f = model.shownFeed, f.hasMore, pagedAt != f.shown else { return }
+        let keys: [String] = gridKeys
+        guard let at = keys.firstIndex(of: key) else { return }
+        let near: Int = columns.count * 2
+        guard at >= keys.count - near else { return }
+        pagedAt = f.shown
+        model.more()
+    }
+
     /// Focus ids of the filter chips on screen ("filter:<row>:<option>"), in bp-library's order.
     private var filterChipIds: [String] {
         guard model.showFilters else { return [] }
@@ -751,6 +765,8 @@ struct LibraryView: View {
             case "watchlist": text = "Your watchlist is empty."
             case "history": text = "Nothing watched yet. Press play on something."
             case "lists": text = "You have no lists yet."
+            // bp-library emptyMessage: the character and manga favourites the grid does not draw.
+            case "favorites" where f.hidden > 0: text = T("Your %lld character and manga favorites live on the desktop Favorites tab.", f.hidden)
             case "favorites": text = "No favorites yet. Save a movie or show to see it here."
             case "library": text = "Nothing saved yet. Add a title from any details page."
             default: text = "Nothing here yet."

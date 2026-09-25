@@ -26,7 +26,10 @@ final class SportsEventModel: ObservableObject {
 
     @Published private(set) var rows: SportsEventRows?
     @Published private(set) var loading = false
-    @Published private(set) var note: String?
+    /// (parity pass 3, X2) use-match-detail: a summary has landed for this game (`detail !== null`,
+    /// kept when a later refresh fails), and whether the last read failed.
+    @Published private(set) var held = false
+    @Published private(set) var failed = false
     @Published private(set) var watch: Watch?
     @Published private(set) var watching = false
     @Published private(set) var actions: Actions?
@@ -83,14 +86,37 @@ final class SportsEventModel: ObservableObject {
         }
     }
 
+    /// use-match-detail's effect (also its retry): the read starts over, loading, with nothing held.
     func load(_ game: SportsModel.Game) async {
         loading = true; defer { loading = false }
-        // Only whether a summary exists matters here; the rows come shaped from `sports.eventRows`.
+        held = false
+        failed = false
+        await readDetail(game)
+        await loadRows(game)
+    }
+
+    /// use-match-detail's 30 s interval run for a game in progress: a failed read keeps what was held.
+    func refresh(_ game: SportsModel.Game) async {
+        await readDetail(game)
+        await loadRows(game)
+    }
+
+    /// use-match-detail run(): only whether a summary exists matters here (the rows come shaped from
+    /// `sports.eventRows`). An official promoter card is never asked (useMatchDetail(game,
+    /// !officialBoxing)).
+    private func readDetail(_ game: SportsModel.Game) async {
+        guard game.source != "official-boxing" else { return }
         do {
             let d = try await HarborEngine.shared.callJSON("sports.detail", [game.wire])
-            note = d.isNull ? "Match details are not available right now. The scoreboard above is still live." : nil
-        } catch { note = "Match details are not available right now. The scoreboard above is still live." }
-        await loadRows(game)
+            if d.isNull {
+                failed = true
+            } else {
+                held = true
+                failed = false
+            }
+        } catch {
+            failed = true
+        }
     }
 
     /// Stats + Lineups rows from the (25 s cached) summary.
@@ -142,13 +168,13 @@ struct SportsEventView: View {
                 VStack(alignment: .leading, spacing: BP.px(20)) {
                     hero
                     watchSection
+                    heroNotes
                     if let s = model.rows?.stats { SportsStatsRowView(stats: s) }
                     if let l = model.rows?.lineups { SportsLineupsRowView(lineups: l) }
                     if model.rows == nil && model.loading { ProgressView().tint(BP.inkMuted) }
                     StandingsSection(league: game.league, highlight: [game.home.id, game.away.id])
                     addonRow
                     SportsWhereRowView(game: game)
-                    if let n = model.note { BPNote(text: n) }
                     Button("Go back") { dismiss() }.buttonStyle(BPActionStyle())
                 }
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(40)).padding(.bottom, BP.hintHeight + BP.px(40))
@@ -165,7 +191,7 @@ struct SportsEventView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
-                await model.loadRows(game)
+                await model.refresh(game)
             }
         }
         .onExitCommand { if picker { picker = false } else { dismiss() } }
@@ -239,7 +265,7 @@ struct SportsEventView: View {
                 }
                 // (device-flow pass) bp-sports-event canRetry (failed && summary): "Match details are
                 // not available" had no way to ask again short of leaving the page.
-                if model.note != nil, ["espn", "thesportsdb", "api-sports"].contains(game.source ?? "espn") {
+                if model.failed && summarySource {
                     Button {
                         guard !model.loading else { return }
                         Task { await model.load(game) }
@@ -424,7 +450,7 @@ struct SportsEventView: View {
                 RemoteImage(url: game.leagueLogo.isEmpty ? nil : game.leagueLogo, contentMode: .fit).frame(width: BP.px(24), height: BP.px(24))
                 Text(game.leagueLabel).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkMuted)
                 if game.live { pill("Live", BP.live) } else if game.state == "post" { pill("Final", BP.inkMuted) }
-                if game.savedAt != nil { pill("Saved", BP.inkSubtle) }
+                if saved { pill("Saved", BP.inkSubtle) }
             }
             if game.single || game.faceOff {
                 Text(game.headline).font(BP.display(36)).foregroundStyle(BP.ink)
@@ -462,6 +488,37 @@ struct SportsEventView: View {
         parts.append(game.startLabel)
         if let b = game.broadcasts, !b.isEmpty { parts.append(b.prefix(3).joined(separator: ", ")) }
         return parts.joined(separator: " · ")
+    }
+
+    /// use-bp-sports-event SUMMARY_SOURCES: the feeds that have a match summary to read.
+    private var summarySource: Bool { ["espn", "thesportsdb", "api-sports"].contains(game.source ?? "espn") }
+
+    /// bp-sports-event-hero `saved`: a held summary the last read could not refresh, or a saved match.
+    private var saved: Bool { model.held && ((model.failed && summarySource) || game.savedAt != nil) }
+
+    /// bp-sports-event-hero `provenance`: where a promoter / ONE / TheSportsDB hub card comes from.
+    private var provenance: String {
+        let source: String = game.source ?? ""
+        switch source {
+        case "official-boxing":
+            return "Schedule published by the event promoter. Visit the official fight card for the latest lineup and broadcast details."
+        case "official-one":
+            return "Schedule from ONE Championship. Visit the official event page for the announced fight card."
+        case "thesportsdb-hub":
+            return "Schedule from TheSportsDB. Live scores and detailed statistics are not supplied by this feed."
+        default:
+            return ""
+        }
+    }
+
+    /// (parity pass 3, X2) bp-sports-event-hero's notes under the actions (NOTE): loading, saved,
+    /// the feed's provenance, and details not available. BPNote translates each key.
+    @ViewBuilder private var heroNotes: some View {
+        let unavailable: Bool = model.failed && summarySource && !model.held && !model.loading && provenance.isEmpty
+        if model.loading && !model.held && summarySource { BPNote(text: "Loading match details...") }
+        if saved { BPNote(text: "Showing saved match details.") }
+        if !provenance.isEmpty && !model.held { BPNote(text: provenance) }
+        if unavailable { BPNote(text: "Match details are not available right now. The scoreboard above is still live.") }
     }
 
     private func pill(_ text: String, _ color: Color) -> some View {

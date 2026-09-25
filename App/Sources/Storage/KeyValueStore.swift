@@ -42,6 +42,9 @@ final class KeyValueStore {
                                           "harbor.ebook.progress.v1.", "harbor.ebook.resume.v1.", "harbor.ebook.bookmarks.v1.",
                                           // engine/manga.ts FAV_PREFIX (lib/manga-favorites.tsx): manga favourites per profile.
                                           "harbor.mangafav.v1.",
+                                          // (parity pass 3) engine/characterFavorites.ts (lib/character-favorites.tsx):
+                                          // anime character favourites per profile.
+                                          "harbor.charfavorites.v1.",
                                           // (review 11) views/library/filter-preferences: Media Servers' saved type, server,
                                           // library, genres, sort and direction per profile (a Caches purge reset them).
                                           "harbor.library.filters."]

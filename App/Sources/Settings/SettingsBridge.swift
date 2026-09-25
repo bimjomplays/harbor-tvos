@@ -133,6 +133,11 @@ final class SettingsBridge: ObservableObject {
         var showDubBadge: Bool? = true
         /// bp-tile.tsx showTitle = !settings.hidePosterTitles: poster cards print no title (off by default).
         var hidePosterTitles: Bool? = false
+        /// (parity pass 3, H4) bp-poster-chain.ts: settings.rpdbKey (RPDB rating posters) and
+        /// settings.posterBaseUrl (lib/providers/rpdb setPosterBaseUrl: another poster host or a
+        /// "{imdbId}" template), both set on desktop.
+        var rpdbKey: String? = ""
+        var posterBaseUrl: String? = ""
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
@@ -422,6 +427,8 @@ extension SettingsBridge.Slice {
         showQualityBadge = c.lenient("showQualityBadge")
         showDubBadge = c.lenient("showDubBadge")
         hidePosterTitles = c.lenient("hidePosterTitles")
+        rpdbKey = c.lenient("rpdbKey")
+        posterBaseUrl = c.lenient("posterBaseUrl")
         mpvHwdec = c.lenient("mpvHwdec")
         posterQuality = c.lenient("posterQuality")
     }

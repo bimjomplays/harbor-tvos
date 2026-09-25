@@ -94,6 +94,31 @@ Still open in this scope:
 - Flag icons for stream languages (FlagStack): upstream's flags are SVGs plus the flag-icons set, which tvOS cannot draw without converting them first.
 - X3 Live band art (bp-live-split / use-bp-live-panels: TMDB backdrops per focused channel, the diagonal seam and the logo bridge), low.
 
+### Parity pass 3 (outside the player and picker)
+
+Ported after pass 2, outside `Player/*`, `Streams/*` and the row navigation files:
+
+| # | What landed | Where |
+|---|---|---|
+| D4 | lib/character-favorites: Select on an anime character card toggles it in `harbor.charfavorites.v1.<profile>` (upstream's key and entry shape, so the desktop Favorites tab and profile export read it; durable on the TV). The cell is bp-anime-characters' BpCharacterCell: a 2:3 portrait card, the name, the raw role and the compact AniList favourites count, a heart that shows the state always and the affordance under the ring. The Library's Favorites tab says "Your {n} character and manga favorites live on the desktop Favorites tab." when those are all it holds (use-bp-library `hidden`). | `engine/characterFavorites.ts`, `engine/library.ts`, `Detail/DetailModel.swift`, `Detail/DetailView.swift` `characterCell`, `Library/LibraryView.swift`, `Storage/KeyValueStore.swift` |
+| V3 | bp-discover-wash: the band holding the ring washes the page in its focused cell's colour (award tile tint, genre palette.from; the accent otherwise) at the band's angle, crossfading. bp-people-band: 2:3 cards with the rank chip and "{n} award wins" (else the first top title), closed by the "Start at number one" / "Top People" lead tile. | `engine/discover.ts` `people`, `Discover/DiscoverView.swift` `DiscoverWash`, `PeopleBandView` |
+| H4 | The URL-building half of bp-poster-chain: poster and rank tiles ask `rpdbPoster(settings.rpdbKey, meta.id, meta.poster)` under `settings.posterBaseUrl` (RPDB, BetterPosters, PostersPlus or a template), never resized, and fall back to the sized poster when it fails (usePosterChain onError). | `Browse/PosterChain.swift`, `Browse/BPTileView.swift`, `Browse/ImageLoader.swift` `RemoteImage.fallback`, `Settings/SettingsBridge.swift` |
+| H5 | The quick panel's global rows: Interface sounds (Off / Glass, "Sound pack: {name}") and Animated backdrop (On / Off). | `Browse/QuickPanelView.swift` |
+| L2 | bp-search-group slots: every addon the query announced keeps its place in installed order; a pending addon holds eight quiet poster plates (not focusable), a failed one says "Didn't answer" with a Try again tile that runs the search again (dimmed while it runs; the ring goes to the keyboard if the tile goes away), an empty one collapses. Addon rows are titled with the addon's name, as upstream. The empty state's Try again (bp-search-empty) is there too. | `Search/SearchModel.swift` `addonSlots` / `retry`, `Search/SearchView.swift` `addonSlotRows`, `SearchAddonPlate` |
+| L3 | bp-library-sections: the next page loads as the ring reaches the grid's last two rows (once per page); the "Show more" button is gone. | `Library/LibraryView.swift` `autoPage` |
+| X2 | bp-sports-event-hero notes under the actions: "Loading match details...", "Showing saved match details." (a held summary the last refresh could not renew, or a saved match; the Saved pill follows the same rule), the promoter / ONE Championship / TheSportsDB hub provenance, and "Match details are not available right now…" only when nothing is held. The 30 s refresh of a live game re-reads the summary. | `Sports/SportsEventView.swift` |
+| X3 | use-bp-live-panels + bp-live-split: 220 ms after a Live channel takes the ring, panel A (the programme's XMLTV icon, else TMDB's backdrop for the programme on now) and panel B (that title's second backdrop) are resolved once per channel (session memory); once both decode the band draws B full, A clipped to the diagonal, the hairline seam, both toned; otherwise the XMLTV icon is the still. | `engine/live.ts` `bandPanels`, `Browse/HomeBands.swift` `LiveSplitArt`, `Browse/RoomView.swift` |
+
+Offline smoke 1096 (14 new checks: character favourites, the Favorites hidden count, the people sub line, the Live panels ladder).
+
+Left in this scope:
+- V3: the "Picked for you" eyebrow and "{n} picks, refreshed daily" blurb belong to the rail headers (`BPRailView` in `Browse/BPRowView.swift`, a row navigation file). The Discovery Queue band's wash colour is a sampled glow of its bed art (use-art-glow); the TV samples no art colour, so that band washes in the accent.
+- H4: the poster pinned on the desktop detail page (lib/title-poster, a desktop-local store the TV never receives), the TMDB id lookups some hosts need (useRpdbAltId for tmdb ids on a BetterPosters / PostersPlus base, the anime kitsu → imdb/tvdb mapping) and TMDB's localized poster (useLocalizedPoster). Those ids show the plain poster.
+- H5: opening the panel with no title focused (upstream's Y / Tab; a Siri Remote has no spare button, so it needs a design decision) and the Controls legend (gamepad / keyboard bindings with no Siri Remote counterpart).
+- L2: the addon mark sits on the pending / failed plates only; a slot with titles is drawn by `BPRowView` (row navigation file), whose header has no mark.
+- X3: the sampled-glow wash over the split (no art colour sampling on the TV) and the metahub channel hydration ahead of the XMLTV icon (useChannelHydration).
+- O2 avatar and name write-back: not ported on purpose. It writes to the viewer's Harbor account, so it is left for the owner.
+
 ### Player (10)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
@@ -125,7 +150,7 @@ Still open in this scope:
 | D1 | Synopsis "Read more" | `detail/bp-synopsis.tsx` (the toggle is the last cell of the actions row) | A long overview that is cut off can be opened in place, and closed again with "Show less". | `DetailView.swift:551` uses `.lineLimit(4)` with nothing to open it. | S | Yes |
 | D3 | Anime "Filler" tag | `bp-anime-seasons.tsx:134` | Filler episodes carry a "Filler" pill in the episode strip. | `DetailModel.swift:186` decodes `filler`, but nothing draws it. | S | Yes |
 | D2 | Hero provenance marks | `detail/bp-hero-notes.tsx` `BpHeroMarks`, `BpTmdbKeyNote` | Marks on the hero: the addon that served the title (its logo and name), "Available in Plex/Jellyfin/Emby" for each connected server that has it, and "Add a TMDB key in Settings to see the cast, crew, and details." | None. Nothing in the port reads `addonOrigin`, and no per-title server availability is looked up. | S-M | Yes (media servers are already ported) |
-| D4 | Favourite an anime character | `bp-anime-characters.tsx:116` (`lib/character-favorites`) | Select on a character favourites them. The favourites sync to the desktop Favorites tab. | The ring is there, but Select does nothing (`DetailView.swift:659`: "that store is not ported"). | S-M | Low |
+| D4 (ported, pass 3) | Favourite an anime character | `bp-anime-characters.tsx:116` (`lib/character-favorites`) | Select on a character favourites them. The favourites sync to the desktop Favorites tab. | The ring is there, but Select does nothing (`DetailView.swift:659`: "that store is not ported"). | S-M | Low |
 | D5 | Crew and facts labels | `detail/bp-crew-row.tsx:65-71` (Director/Directors, Creator/Creators, Writer/Writers, Producers, Cinematography, Music, Editor/Editors); `bp-facts.tsx:30-35` (the facts card opens with Directed by, Created by, Written by, Music by, Cinematography); `bp-person.tsx:333` "Top {n}" department rank | The crew row uses role names with singular or plural forms. The facts card begins with the credit rows. A person's department rank shows as a badge. | `engine/detailRoom.ts:71-78` gives the crew row the facts-style labels ("Directed by", "Written by", "Music"), and the facts card starts at Status. No rank badge. | S | Low |
 
 ### Discover and Awards (3)
@@ -134,7 +159,7 @@ Still open in this scope:
 |---|---|---|---|---|---|---|
 | V2 | Collections band | `bp-discover.tsx:240-246`, `bp-collections-band.tsx` | "Sagas and series, gathered in the order they were meant to be watched." A Collections band between Genres and Top People. | `DiscoverView.swift` has sections for queue, awards, genres, voyage and people. No collections section. `HomeBands.swift` already has the collections band. | S | Yes |
 | V1 | Award page | `bp-award.tsx`, `use-bp-award-work.ts` | Year and category chips ("All years", "All categories"). Every winner is a poster tile that resolves to a TMDB title and opens its page ("Checking with TMDB…" / "No match found"). The whole list pages in. | `AwardDetailView` (`DiscoverView.swift:403-475`) is text only, 12 entries per category, with nothing to open. | M | Yes |
-| V3 | Discover finish | `bp-discover-wash.tsx`; `bp-discover.tsx:261-263` "{n} picks, refreshed daily"; `bp-people-band.tsx:52,74` "{n} award wins", "Start at number one" | A colour wash from the focused cell, headers on the "Picked for you" rails, and award counts on people. | None of these. | S | Low |
+| V3 (ported except the rail headers, pass 3) | Discover finish | `bp-discover-wash.tsx`; `bp-discover.tsx:261-263` "{n} picks, refreshed daily"; `bp-people-band.tsx:52,74` "{n} award wins", "Start at number one" | A colour wash from the focused cell, headers on the "Picked for you" rails, and award counts on people. | None of these. | S | Low |
 
 ### Home, rooms and cards (6)
 
@@ -143,8 +168,8 @@ Still open in this scope:
 | H1 | Row edge navigation | `bp-row-see-all.ts`, `use-bp-focus.ts` | Right on a row's last tile reaches the row's See all. Left from See all returns to that tile. Left at the start of a row reaches the tabs. | `BPRowView.swift` has no `onMoveCommand`. PROJECT_STATE lists this as open. | S | Yes |
 | H2 | Continue Watching time left | `bp-cw-row.tsx:46-65` | "42m left", "1h 5m left", "Almost done"; anime shows "Episode 12" rather than S/E. | "NN% left" (`ContinueCardView.swift:67`). | S | Yes |
 | H3 | Per-room empty and error states | `bp-movies.tsx`, `bp-shows.tsx`, `bp-anime.tsx`, `bp-service.tsx`, `bp-home.tsx` | Room-specific copy: "Add a TMDB key in Setup to power this view." with **Open Setup**, "Anime is hidden", "No movies to show yet", and the service-filter note. | One generic "Couldn't load this room." with Try again (`RoomView.swift:57`). | S | Yes |
-| H4 | Poster chain | `bp-poster-chain.ts` (`useTitlePoster`, `usePosterChain`, `rpdbKey`) | Shows the poster the viewer pinned on desktop, then RPDB rating posters, then localized TMDB art. | Tiles use `meta.poster`. `entry.ts:296` exports `rpdbPoster`, but no caller uses it. | M | Yes, for RPDB users |
-| H5 | Quick panel global rows | `bp-quick-panel.tsx:188-226` | Opens anywhere (Y or Tab), including with no title focused. It has Interface sounds (cycle the sound pack), Animated backdrop on/off, and a Controls legend. | `QuickPanelView.swift` opens only on a title and has only title actions. | S | Low |
+| H4 (RPDB / poster-host URLs ported, pass 3) | Poster chain | `bp-poster-chain.ts` (`useTitlePoster`, `usePosterChain`, `rpdbKey`) | Shows the poster the viewer pinned on desktop, then RPDB rating posters, then localized TMDB art. | Tiles use `meta.poster`. `entry.ts:296` exports `rpdbPoster`, but no caller uses it. | M | Yes, for RPDB users |
+| H5 (rows ported, pass 3) | Quick panel global rows | `bp-quick-panel.tsx:188-226` | Opens anywhere (Y or Tab), including with no title focused. It has Interface sounds (cycle the sound pack), Animated backdrop on/off, and a Controls legend. | `QuickPanelView.swift` opens only on a title and has only title actions. | S | Low |
 | H6 | Card options | `bp-tile.tsx:144,229` (`hidePosterTitles`, `cardBadgeLimit`) | Hide the title on poster cards; cap the score chips per card. | Titles always follow the tile rules. `ScoreChipsView.swift:8` has a fixed `limit = 4`. | S | Low |
 
 ### Search and Library (3)
@@ -152,16 +177,16 @@ Still open in this scope:
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
 | L1 | Keep state across tabs | `lib/search-context.tsx`, `bp-view-state.ts` | The query, results and Library tab survive a trip to another tab. | `ShellView.swift:119-124` rebuilds `SearchView()` and `LibraryView()` on every switch, so their `@StateObject`s reset. PROJECT_STATE lists this as open. | S | Yes |
-| L2 | Per-addon result plates | `search/bp-search-group.tsx`, `search/bp-search-results.tsx` | Every addon has a fixed slot: a quiet placeholder while it answers, "Didn't answer" with Try again when it fails. The rows do not jump. | Late rows are inserted in place. Failed addons only appear in the empty-state count (`SearchView.swift:371`). There is no retry. | S-M | Medium |
-| L3 | Library auto-paging | `bp-library-sections.tsx` (sentinel) | The grid loads more as the ring nears the bottom. | A "Show more (n of m)" button (`LibraryView.swift:339`). | S | Low (the button works well on a remote) |
+| L2 (ported, pass 3) | Per-addon result plates | `search/bp-search-group.tsx`, `search/bp-search-results.tsx` | Every addon has a fixed slot: a quiet placeholder while it answers, "Didn't answer" with Try again when it fails. The rows do not jump. | Late rows are inserted in place. Failed addons only appear in the empty-state count (`SearchView.swift:371`). There is no retry. | S-M | Medium |
+| L3 (ported, pass 3) | Library auto-paging | `bp-library-sections.tsx` (sentinel) | The grid loads more as the ring nears the bottom. | A "Show more (n of m)" button (`LibraryView.swift:339`). | S | Low (the button works well on a remote) |
 
 ### Live TV and Sports (3)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
 | X1 | Search playlists for a channel and pin it | `sports/bp-sports-broadcast-search.tsx` | Type a channel name, match it across every playlist, play it, and "Always use for {league}". | The picker lists only auto-matched channels (`SportsEventView.swift:300-340`). When nothing matches, its note tells the viewer to "Search your channels", but no text search exists. Only the addon panel has a field. | S-M | Yes |
-| X2 | Saved event and feed notes | `sports/bp-sports-event-hero.tsx:285-291` | "Showing saved match details." when offline, plus source notes for TheSportsDB, ONE Championship and promoter-published cards. | None. | S | Low |
-| X3 | Live band art | `bp-live-split.tsx`, `use-bp-live-panels.ts` | The Home Live band shows two channels' art side by side, plus a fallback ladder of panels. | `HomeBands.swift` shows a single still or mosaic. | S-M | Low |
+| X2 (ported, pass 3) | Saved event and feed notes | `sports/bp-sports-event-hero.tsx:285-291` | "Showing saved match details." when offline, plus source notes for TheSportsDB, ONE Championship and promoter-published cards. | None. | S | Low |
+| X3 (ported, pass 3) | Live band art | `bp-live-split.tsx`, `use-bp-live-panels.ts` | The Home Live band shows two channels' art side by side, plus a fallback ladder of panels. | `HomeBands.swift` shows a single still or mosaic. | S-M | Low |
 
 ### Profiles, onboarding and account (4)
 

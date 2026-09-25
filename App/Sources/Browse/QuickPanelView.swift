@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// bp-quick-panel.tsx: hold Select on a tile. Play, Watchlist, Details, Remove from Continue
-/// watching, Search by this title. Sound/backdrop toggles live in Settings on the TV.
+/// watching, Search by this title, then (parity pass 3, H5) the panel's global rows: Interface
+/// sounds and Animated backdrop. The panel still opens on a title only (there is no Y / Tab on a
+/// Siri Remote), and the Controls legend (gamepad / keyboard bindings) has no TV counterpart.
 struct QuickPanelView: View {
     let meta: Meta
     /// bp-quick-panel `cwItem` (readBpCwItem): opened on a Continue Watching card. Only then is
@@ -16,6 +18,8 @@ struct QuickPanelView: View {
     @State private var listDialog = false
     @State private var rateDialog = false
     @FocusState private var focus: String?
+    /// bp-quick-panel useSettings: the sound pack and the animated backdrop the rows read and flip.
+    @ObservedObject private var settings = SettingsBridge.shared
     struct Target: Identifiable { var meta: Meta; var autoPlay: Bool; var id: String { meta.id } }
 
     private var authKey: String? { ProfilesStore.shared.active.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey } }
@@ -44,6 +48,15 @@ struct QuickPanelView: View {
                 action("Rate", "star") { rateDialog = true }
                 if fromContinueWatching { action("Remove from Continue watching", "eye.slash") { Task { await removeCw() } } }
                 action("Search", "magnifyingglass") { app.searchSeed = meta.name; app.room = .search; dismiss() }
+                // bp-quick-panel: "Interface sounds" (Off ↔ Glass) and "Animated backdrop" (On / Off).
+                settingRow("Interface sounds", soundOn ? "speaker.wave.2" : "speaker.slash", detail: soundDetail, key: "sounds") {
+                    let next: String = soundOn ? "none" : "glass"
+                    Task { try? await settings.patch(["bigPictureSound": .string(next)]) }
+                }
+                settingRow("Animated backdrop", "photo.on.rectangle", detail: T(mosaicOn ? "On" : "Off"), key: "backdrop") {
+                    let next: Bool = !mosaicOn
+                    Task { try? await settings.patch(["bigPictureMosaic": .bool(next)]) }
+                }
                 if let note { BPNote(text: note, tone: BP.inkMuted) }
                 Spacer()
                 Text("Quick panel").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.inkSubtle)
@@ -66,6 +79,41 @@ struct QuickPanelView: View {
         Button(action: run) { Label(T(label), systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }
             .buttonStyle(BPActionStyle())
             .focused($focus, equals: key ?? label)
+    }
+
+    /// bp-quick-panel `soundOn = settings.bigPictureSound !== "none"`.
+    private var soundOn: Bool { (settings.slice.bigPictureSound ?? "cinematic") != "none" }
+    private var mosaicOn: Bool { settings.slice.bigPictureMosaic ?? true }
+
+    /// t("Sound pack: {name}", { name: bpSoundLabel(t, …) }), or t("Off").
+    private var soundDetail: String {
+        guard soundOn else { return T("Off") }
+        let pack: String = settings.slice.bigPictureSound ?? "cinematic"
+        return T("Sound pack: %@", T(Self.soundLabels[pack] ?? "Off"))
+    }
+
+    /// bp-settings-catalog SOUND_LABELS (proper-cased catalog words, never the stored enum).
+    private static let soundLabels: [String: String] = ["none": "Off", "glass": "Glass", "modern": "Modern", "cinematic": "Cinematic", "retro": "Retro"]
+
+    /// BpQuickAction with its `detail` line: the setting's current value under the label. The ring
+    /// stays on the row as its value changes (a fixed focus key).
+    private func settingRow(_ label: String, _ icon: String, detail: String, key: String, _ run: @escaping () -> Void) -> some View {
+        Button {
+            BPSound.shared.click()
+            run()
+        } label: {
+            HStack(spacing: BP.px(12)) {
+                Image(systemName: icon).frame(width: BP.px(22))
+                VStack(alignment: .leading, spacing: BP.px(2)) {
+                    Text(T(label))
+                    Text(detail).font(BP.sans(11, .medium)).foregroundStyle(BP.inkSubtle)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(BPActionStyle())
+        .focused($focus, equals: key)
     }
 
     private struct WatchlistState: Decodable { var watchlist: Bool? }

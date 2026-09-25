@@ -168,6 +168,22 @@ struct RoomView: View {
         .onChange(of: bandWanted) { _, next in
             if let next, band?.key == next.key { band = next }
         }
+        // (parity pass 3, X3) use-bp-live-panels: PANEL_DEBOUNCE_MS (220 ms) after a Live channel takes
+        // the ring, its panels are resolved (engine live.bandPanels: the XMLTV icon or TMDB's backdrop
+        // for the programme on now, and a second backdrop) and join the band's record.
+        .task(id: bandWanted?.key) {
+            guard let want = bandWanted, want.id == .live, want.key.hasPrefix("iptv:"), want.panels == nil else { return }
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            let p = ProfilesStore.shared.active
+            var input: [String: AnyJSON] = ["key": .string(want.key)]
+            if let title = want.title { input["title"] = .string(title) }
+            if let still = want.still { input["src"] = .string(still) }
+            let args: [AnyJSON] = [.object(input), .string(p?.id ?? "default"), .bool(p?.linked ?? true)]
+            let panels: HomeBand.LivePanels? = try? await HarborEngine.shared.call("live.bandPanels", args)
+            guard !Task.isCancelled, let panels, bandWanted?.key == panels.key else { return }
+            bandWanted?.panels = panels
+        }
         // Focus left every row (to the top bar): the band lets go. Row hand-offs report the old
         // row's release and the new row's hold in either order, so this waits a beat first.
         .task(id: model.tileHeld || liveHot != nil) {

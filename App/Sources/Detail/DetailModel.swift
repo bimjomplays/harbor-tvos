@@ -191,7 +191,33 @@ final class DetailModel: ObservableObject {
         // (detail pass) A failed reload keeps the row on screen (see loadExtras).
         if let a: TitleAwards = try? await HarborEngine.shared.call("detailRoom.awards", [meta]) { awards = a }
     }
-    struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String? }
+    struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String?; var favourites: Int? }
+
+    /// (parity pass 3, D4) lib/character-favorites: the ids this profile favourited (bp-anime-characters
+    /// `has(String(c.id))`), read with the characters and flipped on Select.
+    @Published private(set) var favoriteCharacters: Set<String> = []
+
+    func loadFavoriteCharacters() async {
+        let pid: String = ProfilesStore.shared.active?.id ?? "default"
+        if let ids: [String] = try? await HarborEngine.shared.call("characterFavorites.ids", [pid]) { favoriteCharacters = Set(ids) }
+    }
+
+    /// bp-anime-characters onToggle: toggle({ id: String(c.id), name: c.name, image: c.image }). The
+    /// heart flips at once; the store's answer settles it.
+    func toggleCharacter(_ c: AnimeCharacter) async {
+        let id = String(c.id)
+        let wasOn: Bool = favoriteCharacters.contains(id)
+        if wasOn { favoriteCharacters.remove(id) } else { favoriteCharacters.insert(id) }
+        let pid: String = ProfilesStore.shared.active?.id ?? "default"
+        var input: [String: AnyJSON] = ["id": .string(id), "name": .string(c.name)]
+        if let image = c.image { input["image"] = .string(image) }
+        let args: [AnyJSON] = [.string(pid), .object(input)]
+        guard let on = (try? await HarborEngine.shared.callJSON("characterFavorites.toggle", args))?.bool else {
+            if wasOn { favoriteCharacters.insert(id) } else { favoriteCharacters.remove(id) }
+            return
+        }
+        if on { favoriteCharacters.insert(id) } else { favoriteCharacters.remove(id) }
+    }
     private struct AnimeDetail: Decodable {
         struct D: Decodable { var name: String?; var overview: String?; var backdrop: String?; var poster: String?; var year: String?; var genres: [String] }
         struct Ep: Decodable {
@@ -421,6 +447,7 @@ final class DetailModel: ObservableObject {
                 seasons = Array(Set(episodes.map(\.season))).sorted()
                 if let first = seasons.first, !seasons.contains(season) { season = first }
                 characters = a.characters
+                if !a.characters.isEmpty { await loadFavoriteCharacters() }
                 canonicalId = a.canonicalId
                 // The TVDB panel lands after the Kitsu list, like use-anime-tvdb-panel's effects; until
                 // then (or when it never resolves) the strip groups by Kitsu season.

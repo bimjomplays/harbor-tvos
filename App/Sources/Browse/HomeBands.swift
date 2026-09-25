@@ -21,6 +21,10 @@ struct HomeBand: Equatable {
     var tint: String?
     /// logoScale "bug": the small mark beside the eyebrow (an addon's icon, a channel logo).
     var bug: String?
+    /// (parity pass 3, X3) use-bp-live-panels: a Live channel's two panels (engine live.bandPanels),
+    /// drawn by bp-live-split once both have decoded.
+    var panels: LivePanels?
+    struct LivePanels: Decodable, Equatable { var key: String; var a: String; var b: String? }
 
     // BP_BANDS copy.
     var eyebrow: String {
@@ -81,12 +85,15 @@ struct HomeBand: Equatable {
     }
 
     /// bp-live-band-art.ts bpLiveBandArt: the airing title (else the channel), "Started at {time}"
-    /// (else the group, else "Live"), the channel logo as the bug.
+    /// (else the group, else "Live"), the channel logo as the bug. (parity pass 3, X3) The still is
+    /// the programme's own XMLTV icon (use-bp-live useBpLiveArt `current.iconUrl`; the metahub
+    /// channel hydration ahead of it is not ported).
     @MainActor static func forChannel(_ c: LiveRowModel.Cell) -> HomeBand {
         let line = c.now.map { T("Started at %@", LiveChannelRow.time($0.startMs)) } ?? (c.channel.group ?? T("Live"))
         let logo = c.channel.logo ?? ""
+        let icon: String = c.now?.iconUrl ?? ""
         return HomeBand(id: .live, key: "iptv:\(c.playlistId):\(c.channel.id)", title: c.now?.title ?? c.channel.name, line: line,
-                        still: nil, bug: logo.isEmpty ? nil : logo)
+                        still: icon.isEmpty ? nil : icon, bug: logo.isEmpty ? nil : logo)
     }
 }
 
@@ -105,7 +112,19 @@ struct HomeBandBackdrop: View {
             // Up for every band (this void covers the page), so RootView's ambient mosaic stands
             // down under any band and at most this one runs, as upstream's single BpAmbient.
             BPStageMosaic(posters: band.mosaic && band.posters.count >= HomeBand.mosaicMin ? band.posters : [], key: band.key)
-            if let still = band.still, !still.isEmpty {
+            if let pair = band.panels, let b = pair.b, band.id == .live {
+                // (parity pass 3, X3) bp-ambient splitOn: the two panels in the same envelope as a still.
+                GeometryReader { g in
+                    LiveSplitArt(a: pair.a, b: b, still: band.still)
+                        .frame(width: g.size.width * 0.76, height: g.size.height)
+                        .clipped()
+                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.5), location: 0.17),
+                                                     .init(color: .black, location: 0.38)], startPoint: .leading, endPoint: .trailing))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .id(pair.key)
+                .transition(.opacity)
+            } else if let still = band.still, !still.isEmpty {
                 GeometryReader { g in
                     RemoteImage(url: still)
                         .frame(width: g.size.width * 0.76, height: g.size.height)
@@ -312,5 +331,93 @@ struct HomeCollectionView: View {
             loaded = true
         }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+    }
+}
+
+/// (parity pass 3, X3) bp-live-split.tsx BpLiveSplit: panel B full-bleed underneath, panel A clipped
+/// to the diagonal (58 % across the top to 50 % across the bottom, mirrored under RTL), a hairline
+/// seam in 10 % ink along the cut, both panels toned (saturate 0.72, contrast 1.06) at render time.
+/// bp-ambient commits the pair only once both have decoded (a half-painted split is worse than the
+/// still it replaces); until then, or when either fails, the band's still shows. Not ported: the
+/// sampled-glow wash over the split (the TV samples no art colour).
+struct LiveSplitArt: View {
+    let a: String
+    let b: String
+    var still: String?
+    @Environment(\.layoutDirection) private var direction
+    @State private var pair: Pair?
+
+    private struct Pair { var a: UIImage; var b: UIImage }
+
+    /// bp-live-split SEAM_TOP / SEAM_BOTTOM / SEAM_W (percent of the width).
+    private static let seamTop: CGFloat = 0.58
+    private static let seamBottom: CGFloat = 0.50
+    private static let seamWidth: CGFloat = 0.0014
+
+    var body: some View {
+        ZStack {
+            if let still, !still.isEmpty, pair == nil {
+                RemoteImage(url: still)
+            }
+            if let pair {
+                let rtl: Bool = direction == .rightToLeft
+                ZStack {
+                    panel(pair.b)
+                    panel(pair.a)
+                        .clipShape(SplitShape(top: Self.seamTop, bottom: Self.seamBottom, width: nil, rtl: rtl))
+                    SplitShape(top: Self.seamTop, bottom: Self.seamBottom, width: Self.seamWidth, rtl: rtl)
+                        .fill(BP.ink.opacity(0.1))
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.56), value: pair == nil)
+        .task(id: a + "|" + b) {
+            pair = nil
+            guard let ua = URL(string: a), let ub = URL(string: b) else { return }
+            let ia: UIImage? = await ImageLoader.shared.image(for: ua)
+            guard !Task.isCancelled else { return }
+            let ib: UIImage? = await ImageLoader.shared.image(for: ub)
+            guard !Task.isCancelled, let ia, let ib else { return }
+            pair = Pair(a: ia, b: ib)
+        }
+    }
+
+    private func panel(_ image: UIImage) -> some View {
+        GeometryReader { g in
+            Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
+                .frame(width: g.size.width, height: g.size.height)
+                .clipped()
+                .saturation(0.72)
+                .contrast(1.06)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// bp-live-split clipPanelA (width nil: from the start edge to the cut) and clipSeam (a band of
+/// `width` along the cut), in fractions of the frame; mirrored under RTL like pct().
+private struct SplitShape: Shape {
+    var top: CGFloat
+    var bottom: CGFloat
+    var width: CGFloat?
+    var rtl: Bool
+
+    func path(in rect: CGRect) -> Path {
+        func x(_ v: CGFloat) -> CGFloat { rect.minX + rect.width * (rtl ? 1 - v : v) }
+        var p = Path()
+        if let width {
+            p.move(to: CGPoint(x: x(top), y: rect.minY))
+            p.addLine(to: CGPoint(x: x(top + width), y: rect.minY))
+            p.addLine(to: CGPoint(x: x(bottom + width), y: rect.maxY))
+            p.addLine(to: CGPoint(x: x(bottom), y: rect.maxY))
+        } else {
+            p.move(to: CGPoint(x: x(0), y: rect.minY))
+            p.addLine(to: CGPoint(x: x(top), y: rect.minY))
+            p.addLine(to: CGPoint(x: x(bottom), y: rect.maxY))
+            p.addLine(to: CGPoint(x: x(0), y: rect.maxY))
+        }
+        p.closeSubpath()
+        return p
     }
 }

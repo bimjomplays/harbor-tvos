@@ -41,6 +41,8 @@ final class DiscoverModel: ObservableObject {
         var overview: Overview
     }
     struct Person: Decodable, Identifiable { var id: Int; var rank: Int; var name: String; var profilePath: String?; var country: String?
+        /// bp-people-band sub line (engine discover.people): major award wins, else the first top title.
+        var majorAwardWins: Int?; var topTitle: String?
         var portrait: String? { profilePath.map { "https://image.tmdb.org/t/p/w185\($0)" } }
     }
 

@@ -27,6 +27,8 @@ import { repairStremioLibrary, type RepairProgress, type RepairResult } from "@/
 import { findCorruptAnimeEntries, healCorruptAnimeEntries } from "@/lib/anime-cw-repair";
 import { clearResurfaceCache } from "@/lib/cw-resurface";
 import { readLibraryFilterPreferences, writeLibraryFilterPreferences } from "@/views/library/filter-preferences";
+import { count as characterFavoriteCount } from "./characterFavorites";
+import { favorites as mangaFavorites } from "./manga";
 
 export type Tab = "library" | "watchlist" | "history" | "lists" | "favorites" | "media-servers" | "trakt" | "anilist" | "mal" | "simkl" | "letterboxd";
 type Status = "loading" | "ready" | "error";
@@ -252,6 +254,9 @@ export async function feed(input: FeedInput) {
     groups = lists.map((l) => ({ id: l.id, label: l.name }));
   } else if (tab === "favorites") {
     entries = favorites(input.profileId);
+    // use-bp-library favorites `hidden: characters.items.size + manga.items.size`: the character
+    // and manga favourites the TV grid does not draw (bp-library "live on the desktop Favorites tab").
+    hidden = characterFavoriteCount(input.profileId) + mangaFavorites(input.profileId).length;
   } else if (tab === "trakt") {
     const tr = await traktItems(!!input.force);
     for (const item of tr.watchlist) {

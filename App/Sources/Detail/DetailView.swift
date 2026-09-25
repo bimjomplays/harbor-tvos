@@ -40,6 +40,8 @@ struct DetailView: View {
     @FocusState private var seasonFocus: String?
     /// The episode card holding the ring, if any (the strip parks on the resume card only without it).
     @FocusState private var stripFocus: String?
+    /// (parity pass 3) The character card under the ring (bp-anime-characters shows the heart there).
+    @FocusState private var characterFocus: Int?
     /// When a Kitsu season button last lost focus by vanishing (the TVDB chips replacing it).
     @State private var kitsuFocusLostAt: Date?
     @Environment(\.dismiss) private var dismiss
@@ -727,25 +729,17 @@ struct DetailView: View {
     }
 
     // bp-anime-characters: AniList characters, distinct from the cast row.
+    // (parity pass 3, D4) BpCharacterCell: the cell itself is the toggle (Select favourites the
+    // character in lib/character-favorites, the store the desktop Favorites tab reads). A 2:3
+    // portrait card, the name, then the raw role and the compact AniList favourites count; the heart
+    // shows the state always and the affordance only under the ring.
     private var charactersRow: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            Text("Characters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
+            Text(T("Characters")).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
-                    ForEach(model.characters.prefix(20)) { c in
-                        // (detail pass) A tile like the cast row's: the bare .focusable() cell took focus
-                        // with no ring. Upstream's Select favourites the character; that store is not ported.
-                        Button { } label: {
-                            VStack(spacing: BP.px(8)) {
-                                RemoteImage(url: c.image).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
-                                Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                if let r = c.role, !r.isEmpty { Text(r.capitalized).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
-                            }
-                            .frame(width: BP.px(130))
-                        }
-                        .buttonStyle(BPTileStyle(radius: BP.px(55)))
-                        // bp-anime-characters.tsx aria-label `${character.name}, ${role}`: one focus stop reads both.
-                        .accessibilityElement(children: .combine)
+                    ForEach(model.characters) { c in
+                        characterCell(c)
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
@@ -753,6 +747,66 @@ struct DetailView: View {
             .scrollClipDisabled()
         }
         .focusSection()
+    }
+
+    private func characterCell(_ c: DetailModel.AnimeCharacter) -> some View {
+        let favorite: Bool = model.favoriteCharacters.contains(String(c.id))
+        let focused: Bool = characterFocus == c.id
+        // Raw, like the desktop card: character.role is provider data, never a UI string.
+        let role: String = c.role ?? ""
+        let count: String = (c.favourites ?? 0) > 0 ? Self.compactCount(c.favourites ?? 0) : ""
+        let sub: String = [role, count].filter { !$0.isEmpty }.joined(separator: " · ")
+        let width: CGFloat = BP.px(114)
+        return Button {
+            BPSound.shared.click()
+            Task { await model.toggleCharacter(c) }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topTrailing) {
+                    ZStack {
+                        BP.panel2
+                        if let image = c.image, !image.isEmpty {
+                            RemoteImage(url: image)
+                        } else {
+                            Image(systemName: "person").font(.system(size: BP.px(22), weight: .regular)).foregroundStyle(BP.inkSubtle)
+                        }
+                    }
+                    .frame(width: width, height: width * 1.5)
+                    .clipped()
+                    Image(systemName: favorite ? "heart.fill" : "heart")
+                        .font(.system(size: BP.px(12), weight: .semibold))
+                        .foregroundStyle(favorite ? BP.ink : BP.inkMuted)
+                        .frame(width: BP.px(24), height: BP.px(24))
+                        .background(Circle().fill(favorite ? BP.on : BP.void_.opacity(0.92)))
+                        .padding(BP.px(5))
+                        .opacity(favorite || focused ? 1 : 0)
+                        .animation(.easeOut(duration: 0.16), value: favorite || focused)
+                }
+                VStack(alignment: .leading, spacing: BP.px(2)) {
+                    Text(c.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                    if !sub.isEmpty {
+                        Text(sub).font(BP.sans(11, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1).monospacedDigit()
+                    }
+                }
+                .padding(BP.px(8))
+                .frame(width: width, alignment: .leading)
+            }
+            .frame(width: width)
+            .background(BP.panel)
+            .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rMD))
+        .focused($characterFocus, equals: c.id)
+        // bp-anime-characters.tsx aria-label `${character.name}, ${role}` and aria-pressed.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: role.isEmpty ? c.name : "\(c.name), \(role)"))
+        .accessibilityAddTraits(favorite ? .isSelected : [])
+    }
+
+    /// bp-anime-characters formatCount: Intl compact notation, at most one decimal ("12.3K").
+    private static func compactCount(_ n: Int) -> String {
+        let style: IntegerFormatStyle<Int> = IntegerFormatStyle<Int>(locale: L10n.locale).notation(.compactName).precision(.fractionLength(0...1))
+        return n.formatted(style)
     }
 
     // bp-cast-row: round portraits, name over character, up to 20.

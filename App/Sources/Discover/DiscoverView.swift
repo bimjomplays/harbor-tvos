@@ -20,6 +20,9 @@ struct DiscoverView: View {
     /// (open-items sweep) A Try again that worked hands the ring to the Discovery Queue band (the
     /// button under it went away and the ring fell to the tab bar).
     @State private var seedQueue = false
+    /// (parity pass 3, V3) bp-discover `tint`: the focused cell's colour, keyed by the band that
+    /// supplied it (a Genres colour never follows the ring into another band).
+    @State private var tint: DiscoverWash.Tint?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -29,6 +32,9 @@ struct DiscoverView: View {
             // bp-discover has no title copy over its rail either (its header names the band).
             SpotlightView(meta: model.spotlight, boxHeight: BP.px(160) + BP.barHeight, layer: .backdrop)
                 .opacity(model.spotlight == nil ? 0 : 1)
+            // bp-discover-wash: the band holding the ring washes the page in its focused cell's
+            // colour (a "Picked for you" rail, or nothing held, is the 180° accent wash).
+            DiscoverWash(colour: washColour, bandId: leadHeld ?? "")
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load Discover").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
@@ -73,7 +79,8 @@ struct DiscoverView: View {
                         section("awards", "Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : T("%lld awards, %lld winners, %@, all offline", aw.overview.bodies, aw.overview.wins, aw.overview.span)) {
                             AwardsBandView(summaries: aw.summaries, anime: model.animeAwards,
                                            onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 },
-                                           onHold: { hold("awards", $0) })
+                                           onHold: { hold("awards", $0) },
+                                           onTint: { tint = DiscoverWash.Tint(band: "awards", colour: $0) })
                         }
                     }
                     // bp-discover.tsx t("{n} shelves, …", { n: BP_GENRES.length }): the literal "18 …"
@@ -83,7 +90,8 @@ struct DiscoverView: View {
                             genrePage = BrowseRow(key: "genre:\(genre)", title: T(genre), metas: [])
                         }, onFocus: {
                             Task { await model.loadGenreArt() }
-                        }, onHold: { hold("genres", $0) })
+                        }, onHold: { hold("genres", $0) },
+                        onTint: { tint = DiscoverWash.Tint(band: "genres", colour: $0) })
                     }
                     // discover.tsx: the Voyages banner follows the browse tiles, once its pool holds three.
                     if let pool = model.build?.voyagePool, pool.count >= 3 {
@@ -131,6 +139,13 @@ struct DiscoverView: View {
         .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
         .fullScreenCover(isPresented: $queueOpen, onDismiss: { Task { await model.reloadQueue() } }) { QueueDeckView() }
         .fullScreenCover(isPresented: $voyageOpen, onDismiss: { Task { await model.loadVoyage() } }) { VoyageView() }
+    }
+
+    /// bp-discover `tint && tint.band === band?.key ? tint.colour : null`, as a colour.
+    private var washColour: Color? {
+        guard let tint, tint.band == leadHeld else { return nil }
+        let parsed: Color? = Color(oklch: tint.colour) ?? Color(css: tint.colour)
+        return parsed
     }
 
     /// bp-discover.tsx `series = rail.metas[0]?.type === "series"`.
@@ -323,6 +338,8 @@ struct GenresBandView: View {
     let onFocus: () -> Void
     /// The band gained (true) or lost (false) the ring (the rail parks it).
     var onHold: ((Bool) -> Void)? = nil
+    /// bp-genre-tiles BpGenreTile onFocus: the genre's palette.from washes the page.
+    var onTint: ((String) -> Void)? = nil
     @FocusState private var focusedGenre: String?
     private let cell = BP.px(178)
 
@@ -356,7 +373,11 @@ struct GenresBandView: View {
         }
         .scrollClipDisabled()
         .focusSection()
-        .onChange(of: focusedGenre) { _, g in if g != nil { onFocus() } }
+        .onChange(of: focusedGenre) { _, g in
+            if g != nil { onFocus() }
+            // The "Surprise me" lead tile has no palette and leaves the wash as it was.
+            if let g, let genre = genres.first(where: { $0.genre == g }) { onTint?(genre.from) }
+        }
         .onChange(of: focusedGenre != nil) { _, held in onHold?(held) }
     }
 
@@ -397,6 +418,8 @@ struct AwardsBandView: View {
     var onOpenAnime: (DiscoverModel.AnimeAwardTile) -> Void = { _ in }
     /// The band gained (true) or lost (false) the ring (the rail parks it).
     var onHold: ((Bool) -> Void)? = nil
+    /// bp-award-tiles BpAwardTile onFocus={onTint}: an award tile's tint washes the page.
+    var onTint: ((String) -> Void)? = nil
     @FocusState private var focusedTile: String?
 
     var body: some View {
@@ -446,6 +469,12 @@ struct AwardsBandView: View {
         .scrollClipDisabled()
         .focusSection()
         .onChange(of: focusedTile != nil) { _, held in onHold?(held) }
+        .onChange(of: focusedTile) { _, key in
+            // Only the award bodies tint (the anime tiles and the lead tile leave the wash as it was).
+            guard let key, key.hasPrefix("award:") else { return }
+            let type = String(key.dropFirst("award:".count))
+            if let summary = summaries.first(where: { $0.type == type }) { onTint?(summary.tint) }
+        }
     }
 
     private var awardTiles: some View {
@@ -469,7 +498,9 @@ struct AwardsBandView: View {
     }
 }
 
-/// bp-people-band: portrait circles with rank and name.
+/// bp-people-band: 2:3 portrait cards with the rank chip (top-start), the name and the sub line
+/// ("{n} award wins", else the first top title), closed by the "Start at number one" lead tile
+/// (parity pass 3, V3; the band drew rank-and-name circles).
 struct PeopleBandView: View {
     let people: [DiscoverModel.Person]
     /// The band gained (true) or lost (false) the ring (the rail parks it).
@@ -477,23 +508,46 @@ struct PeopleBandView: View {
     /// bp-people-band: Select opens the person page (pushBigPicture kind "person").
     @State private var person: DiscoverModel.Person?
     @FocusState private var focusedPerson: Int?
+    /// bp-people-band BOX { min: 124, vw: 10, max: 196 } at 1920: 192 pt.
+    private let cell = BP.px(114)
+    /// The lead tile's focus id (never a TMDB person id).
+    private static let leadId = -1
+
     var body: some View {
+        let shown: [DiscoverModel.Person] = people.uniquedById()   // (bug pass) TMDB pages can repeat a person
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: BP.trackGap) {
-                ForEach(people.uniquedById()) { p in   // (bug pass) TMDB pages can repeat a person
-                    Button { person = p } label: {
-                        VStack(spacing: BP.px(8)) {
-                            ZStack(alignment: .bottomLeading) {
-                                RemoteImage(url: p.portrait).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
-                                Text("#\(p.rank)").font(BP.sans(10, .bold)).foregroundStyle(BP.canvas)
-                                    .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(Capsule().fill(BP.ink))
-                            }
-                            Text(p.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                        }
-                        .frame(width: BP.px(130))
-                    }
-                    .buttonStyle(BPTileStyle(radius: BP.px(55)))
+            LazyHStack(spacing: BP.px(12)) {
+                ForEach(shown) { p in
+                    Button {
+                        BPSound.shared.click()
+                        person = p
+                    } label: { personCell(p) }
+                    .buttonStyle(BPTileStyle(radius: BP.rMD))
                     .focused($focusedPerson, equals: p.id)
+                    // bp-people-band aria-label={person.name}.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: p.name))
+                }
+                // BpLeadTile label "Start at number one", action "Top People": the first person's page.
+                if let first = shown.first {
+                    Button {
+                        BPSound.shared.click()
+                        person = first
+                    } label: {
+                        VStack(alignment: .leading, spacing: BP.px(2)) {
+                            Spacer(minLength: 0)
+                            Text(T("Start at number one")).font(BP.display(17)).foregroundStyle(BP.ink).lineLimit(2)
+                            Text(T("Top People")).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.5)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                        }
+                        .padding(BP.px(14))
+                        .frame(width: cell, height: cell * 1.5, alignment: .topLeading)
+                        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+                        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+                    }
+                    .buttonStyle(BPTileStyle(radius: BP.rMD))
+                    .focused($focusedPerson, equals: Self.leadId)
+                    // bp-lead-tile aria-label `${label}, ${action}`.
+                    .accessibilityLabel(Text(verbatim: "\(T("Start at number one")), \(T("Top People"))"))
                 }
             }
             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
@@ -502,5 +556,94 @@ struct PeopleBandView: View {
         .focusSection()
         .onChange(of: focusedPerson != nil) { _, held in onHold?(held) }
         .fullScreenCover(item: $person) { p in PersonView(personId: p.id, name: p.name) }
+    }
+
+    private func personCell(_ p: DiscoverModel.Person) -> some View {
+        let wins: Int = p.majorAwardWins ?? 0
+        let sub: String = wins > 0 ? T("%lld award wins", wins) : (p.topTitle ?? "")
+        return VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                ZStack {
+                    BP.panel2
+                    if let portrait = p.portrait {
+                        RemoteImage(url: portrait)
+                    } else {
+                        Image(systemName: "person").font(.system(size: BP.px(22), weight: .regular)).foregroundStyle(BP.inkSubtle)
+                    }
+                }
+                .frame(width: cell, height: cell * 1.5)
+                .clipped()
+                Text("\(p.rank)").font(BP.sans(10, .bold)).foregroundStyle(BP.ink).monospacedDigit()
+                    .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(2))
+                    .background(Capsule().fill(BP.void_.opacity(0.85)))
+                    .padding(BP.px(7))
+            }
+            VStack(alignment: .leading, spacing: BP.px(2)) {
+                Text(p.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                Text(sub).font(BP.sans(10.5, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+            }
+            .padding(BP.px(8))
+            .frame(width: cell, alignment: .leading)
+        }
+        .frame(width: cell)
+        .background(BP.panel)
+        .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+    }
+}
+
+/// bp-discover-wash.tsx: each Discover band reads as its own portal while the page stays one
+/// surface. The wash is the only thing that changes: a radial bloom from the top-start corner and a
+/// linear wash at the band's own angle, both in the focused cell's colour (the accent when the band
+/// supplied none). A new colour or angle crossfades rather than interpolating the gradients.
+/// (parity pass 3, V3) The port's page and spotlight art stand in for upstream's BASE layer.
+struct DiscoverWash: View {
+    struct Tint: Equatable { var band: String; var colour: String }
+    let colour: Color?
+    let bandId: String
+
+    /// bp-discover-wash BAND_ANGLE (CSS degrees; anything else 180deg).
+    private static let angles: [String: Double] = ["queue": 120, "awards": 140, "genres": 200, "collections": 160, "people": 220]
+
+    private struct Wash: Hashable {
+        var colour: Color
+        var angle: Double
+    }
+
+    var body: some View {
+        let wash = Wash(colour: colour ?? BP.accent, angle: Self.angles[bandId] ?? 180)
+        ZStack {
+            layer(wash)
+                .id(wash)
+                .transition(.opacity)
+        }
+        .animation(BP.easeSlow, value: wash)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// washOf: radial-gradient(120% 78% at 12% 0%, colour 17% → transparent 58%) over
+    /// linear-gradient(angle, colour 9% → transparent 46%).
+    private func layer(_ w: Wash) -> some View {
+        GeometryReader { g in
+            let size: CGSize = g.size
+            let rad: Double = w.angle * Double.pi / 180
+            let dx: Double = sin(rad)
+            let dy: Double = -cos(rad)
+            let half: Double = 0.5 * (abs(dx) + abs(dy))
+            let start = UnitPoint(x: 0.5 - dx * half, y: 0.5 - dy * half)
+            let end = UnitPoint(x: 0.5 + dx * half, y: 0.5 + dy * half)
+            ZStack(alignment: .topLeading) {
+                LinearGradient(stops: [.init(color: w.colour.opacity(0.09), location: 0), .init(color: .clear, location: 0.46)],
+                               startPoint: start, endPoint: end)
+                // An ellipse 120 % × 78 % of the page, centred at 12 % across the top edge.
+                EllipticalGradient(stops: [.init(color: w.colour.opacity(0.17), location: 0), .init(color: .clear, location: 0.58)],
+                                   center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
+                    .frame(width: size.width * 2.4, height: size.height * 1.56)
+                    .offset(x: size.width * 0.12 - size.width * 1.2, y: -size.height * 0.78)
+            }
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .clipped()
+        }
     }
 }

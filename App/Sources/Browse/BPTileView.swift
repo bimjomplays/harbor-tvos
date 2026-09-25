@@ -59,7 +59,7 @@ struct BPTileView: View {
     /// hang under the poster, so the focus ring framed an extra caption strip, and a row parked
     /// under the hero put that caption under the hint bar (use-bp-rail's floor is the art's edge).
     private var poster: some View {
-        art(url: meta.poster ?? meta.background, size: Self.posterSize, caption: true)
+        art(url: meta.poster ?? meta.background, size: Self.posterSize, caption: true, chain: true)
     }
 
     private var wide: some View {
@@ -80,7 +80,7 @@ struct BPTileView: View {
                 .frame(width: Self.rankSize.width * 0.4, alignment: .trailing)
                 .offset(x: BP.px(6), y: Self.rankSize.height * 0.18)
                 .clipped()
-            art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height))
+            art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height), chain: true)
         }
         .frame(width: Self.rankSize.width, height: Self.rankSize.height, alignment: .bottomTrailing)
     }
@@ -129,13 +129,17 @@ struct BPTileView: View {
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
     }
 
-    private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false) -> some View {
+    private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false, chain: Bool = false) -> some View {
         // bp-tile.tsx showTitle = !settings.hidePosterTitles: no title on the plate or under the ring.
         let showTitle: Bool = SettingsBridge.shared.slice.hidePosterTitles != true
+        // components/poster.tsx: the art is asked for at the card's size × posterQuality.
+        let sized: String? = PosterSizing.sized(url, width: max(size.width, size.height * 2 / 3), scale: displayScale,
+                                                quality: SettingsBridge.shared.slice.posterQuality)
+        // (parity pass 3, H4) bp-poster-chain useBpPosterChain: a poster-shaped tile asks the viewer's
+        // poster service first (never resized), and falls back to the sized poster when it fails.
+        let override: String? = chain ? PosterChain.override(for: meta) : nil
         return ZStack(alignment: .topLeading) {
-            // components/poster.tsx: the art is asked for at the card's size × posterQuality.
-            RemoteImage(url: PosterSizing.sized(url, width: max(size.width, size.height * 2 / 3), scale: displayScale,
-                                                quality: SettingsBridge.shared.slice.posterQuality))
+            RemoteImage(url: override ?? sized, fallback: override == nil ? nil : sized)
             if url == nil && plateText && showTitle {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))

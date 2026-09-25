@@ -214,13 +214,16 @@ enum PosterSizing {
 struct RemoteImage: View {
     let url: String?
     var contentMode: ContentMode = .fill
+    /// (parity pass 3, H4) components/poster.tsx usePosterChain onError: when `url` cannot be
+    /// loaded, the next candidate (the plain poster behind an RPDB / poster-service url) is shown.
+    var fallback: String? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
     @State private var failed = false
     @State private var box: CGSize = .zero
     @State private var shownURL: String?
 
-    private struct LoadKey: Hashable { var url: String?; var width: Int; var height: Int }
+    private struct LoadKey: Hashable { var url: String?; var fallback: String?; var width: Int; var height: Int }
 
     /// The box in pixels, rounded up to 64 px steps so small layout changes reuse the cached decode.
     private var loadKey: LoadKey {
@@ -230,7 +233,7 @@ struct RemoteImage: View {
             guard d.isFinite, d > 0 else { return 0 }
             return (Int(min(d, 16_384)) / 64 + 1) * 64
         }
-        return LoadKey(url: url, width: px(box.width), height: px(box.height))
+        return LoadKey(url: url, fallback: fallback, width: px(box.width), height: px(box.height))
     }
 
     var body: some View {
@@ -254,8 +257,13 @@ struct RemoteImage: View {
             if shownURL != key.url { image = nil; failed = false; shownURL = key.url }
             // Nothing is asked for until the plate has a size (the first layout pass sets it).
             guard let url = key.url, let u = URL(string: url), key.width > 0, key.height > 0 else { return }
-            let img = await ImageLoader.shared.image(for: u, target: ImageLoader.Target(width: key.width, height: key.height, fit: contentMode == .fit))
+            let target = ImageLoader.Target(width: key.width, height: key.height, fit: contentMode == .fit)
+            var img = await ImageLoader.shared.image(for: u, target: target)
             guard !Task.isCancelled else { return }
+            if img == nil, let next = key.fallback, next != url, let nu = URL(string: next) {
+                img = await ImageLoader.shared.image(for: nu, target: target)
+                guard !Task.isCancelled else { return }
+            }
             if image == nil { withAnimation(BP.easeFast) { image = img } } else if let img { image = img }
             failed = img == nil
         }

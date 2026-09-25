@@ -104,6 +104,7 @@ import * as calendarGlue from "./calendar";
 import * as wrappedGlue from "./wrapped";
 import * as musicGlue from "./music";
 import * as mangaGlue from "./manga";
+import * as characterFavoritesGlue from "./characterFavorites";
 import * as ebookGlue from "./ebook";
 import * as socialGlue from "./social";
 import * as togetherGlue from "./together";
@@ -1051,6 +1052,7 @@ export const live = {
   setEpgUrl: liveGlue.setEpgUrl,
   loadShortEpg: liveGlue.loadShortEpg,
   homeRow: liveGlue.homeRow,
+  bandPanels: liveGlue.bandPanels,
   toggleGroupHidden: liveGlue.toggleGroupHidden,
   toggleChannelPin: liveGlue.toggleChannelPin,
   removePlaylist: liveGlue.removePlaylist,
@@ -1167,6 +1169,13 @@ export const wrapped = {
  * favourites and reader prefs. Plugin, Mangayomi and HTML sources need a Worker / IndexedDB /
  * DOMParser and are not offered on tvOS.
  */
+/** lib/character-favorites (bp-anime-characters.tsx): Select on an anime character favourites it. */
+export const characterFavorites = {
+  ids: characterFavoritesGlue.ids,
+  count: characterFavoritesGlue.count,
+  toggle: characterFavoritesGlue.toggle,
+};
+
 export const manga = {
   state: mangaGlue.state,
   addServer: mangaGlue.addServer,

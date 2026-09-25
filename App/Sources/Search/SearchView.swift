@@ -25,6 +25,10 @@ struct SearchView: View {
     @FocusState private var recentFocus: String?
     /// bp-restore: the result cell to put the ring back on when Search opens again (set once, on appear).
     @State private var resume: ShellViewState.SearchSpot?
+    /// (parity pass 3, L2) The addon slot whose Try again tile was pressed: while the search runs
+    /// again the tile stays (dimmed) under the ring; once the slot is no longer failed the tile goes,
+    /// and the ring is handed to the keyboard rather than dropped.
+    @State private var retriedSlot: String?
 
     init(views: ShellViewState) {
         self.views = views
@@ -87,7 +91,21 @@ struct SearchView: View {
         // Once per visit: this re-ran on every cover close (a Detail page closing), refetching the
         // model catalog, and a failed read there turned AI mode off under the viewer's AI picks.
         .task { if ai.state == nil { await ai.load() } }
-        .onChange(of: model.query) { _, q in ai.queryChanged(q) }
+        .onChange(of: model.query) { _, q in
+            ai.queryChanged(q)
+            retriedSlot = nil
+        }
+        .onChange(of: model.addonSlots) { _, slots in
+            guard let id = retriedSlot else { return }
+            let state: String? = slots.first(where: { $0.id == id })?.state
+            if state == "failed" {
+                // Still failed after the new answer: the tile (and the ring on it) stays.
+                if model.status == .done { retriedSlot = nil }
+                return
+            }
+            retriedSlot = nil
+            keyboardFocus += 1
+        }
         .onChange(of: fieldFocused) { _, on in if on { views.searchSpot = nil } }
         .onPlayPauseCommand { phoneOpen.toggle() }
         .fullScreenCover(isPresented: $phoneOpen) {
@@ -350,8 +368,37 @@ struct SearchView: View {
     private var titleRows: [BrowseRow] { model.rows.filter { ($0.key == "movies" || $0.key == "series") && model.shows(SearchModel.group(ofRow: $0.key)) } }
     /// Anime and Manga rows under the active chip.
     private var mediaRows: [BrowseRow] { model.rows.filter { ($0.key == "anime" || $0.key == "manga") && model.shows(SearchModel.group(ofRow: $0.key)) } }
-    /// Franchise and per-addon rows under the active chip.
-    private var laterRows: [BrowseRow] { model.rows.filter { !Self.isCoreRow($0.key) && model.shows(SearchModel.group(ofRow: $0.key)) } }
+    /// Franchise rows under the active chip (the per-addon rows go through their slots, addonSlotRows).
+    private var laterRows: [BrowseRow] { model.rows.filter { !Self.isCoreRow($0.key) && !$0.key.hasPrefix("addon:") && model.shows(SearchModel.group(ofRow: $0.key)) } }
+    /// Addon rows that answered with no announced slot (an engine without addonQueries).
+    private var unslottedAddonRows: [BrowseRow] {
+        let slotted: Set<String> = Set(model.addonSlots.map { "addon:" + $0.id })
+        return model.rows.filter { $0.key.hasPrefix("addon:") && !slotted.contains($0.key) }
+    }
+
+    /// (parity pass 3, L2) bp-search-results: one fixed slot per addon, in installed order. A slot
+    /// with titles is its row; pending holds quiet plates, failed says "Didn't answer" with Try
+    /// again; one that settled empty collapses (bpGroupRenders).
+    @ViewBuilder private var addonSlotRows: some View {
+        if model.shows(.addons) {
+            ForEach(model.addonSlots) { slot in
+                if let row = model.rows.first(where: { $0.key == "addon:" + slot.id }) {
+                    BPRowView(row: row, onFocus: { note(row.key, $0) }, onSelect: { select($0) }, restoreCell: resumeCell(row.key))
+                        .id(row.key)
+                } else if slot.state == "pending" || slot.state == "failed" {
+                    SearchAddonPlate(slot: slot, retrying: model.status == .loading, onRetry: {
+                        retriedSlot = slot.id
+                        model.retry()
+                    })
+                        .id("addon:" + slot.id)
+                }
+            }
+            ForEach(unslottedAddonRows) { row in
+                BPRowView(row: row, onFocus: { note(row.key, $0) }, onSelect: { select($0) }, restoreCell: resumeCell(row.key))
+                    .id(row.key)
+            }
+        }
+    }
 
     // bp-search-rows BpChannelCell: a channel from your Live TV sources, Select tunes it.
     private var channelRow: some View {
@@ -384,7 +431,20 @@ struct SearchView: View {
         switch model.status {
         case .loading: BPNote(text: "Searching…")
         case .failed(let why): BPNote(text: why, tone: BP.danger)
-        case .done where model.settled && model.distinctCount(nil) == 0: BPNote(text: emptyMessage)
+        case .done where model.settled && model.distinctCount(nil) == 0:
+            VStack(alignment: .leading, spacing: BP.px(10)) {
+                BPNote(text: emptyMessage)
+                // bp-search-empty action: t("Try again") when addons did not answer (onAction retry).
+                if !model.addonsFailed.isEmpty {
+                    // The note and this button give way to "Searching…": the ring goes to the keyboard
+                    // first (as Clear does) instead of wherever tvOS resets it.
+                    Button {
+                        keyboardFocus += 1
+                        model.retry()
+                    } label: { Label(T("Try again"), systemImage: "arrow.clockwise") }
+                        .buttonStyle(BPActionStyle())
+                }
+            }
         default: EmptyView()
         }
     }
@@ -524,6 +584,7 @@ struct SearchView: View {
             BPRowView(row: row, onFocus: { note(row.key, $0) }, onSelect: { select($0) }, restoreCell: resumeCell(row.key))
                 .id(row.key)
         }
+        addonSlotRows
         if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
     }
 
@@ -701,5 +762,76 @@ struct SearchStageBackdrop: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .task { await pool.load() }
+    }
+}
+
+/// (parity pass 3, L2) bp-search-group.tsx for an addon slot with nothing to show yet: the head (the
+/// addon's mark and name, "Didn't answer" once it failed) over the track. Pending draws eight quiet
+/// poster plates (never focusable, so the ring steps over the row); failed draws the Try again
+/// tile, which asks the whole search again (search-context retry). While that runs the tile dims
+/// and keeps the ring rather than going away under it.
+struct SearchAddonPlate: View {
+    let slot: SearchModel.AddonSlot
+    var retrying = false
+    let onRetry: () -> Void
+    /// bp-search-group SHAPE.poster.n.
+    private static let plates = 8
+
+    private var failed: Bool { slot.state == "failed" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            HStack(spacing: BP.px(10)) {
+                AddonLogoView(url: slot.logo, name: slot.name, side: BP.px(24))
+                    .accessibilityHidden(true)
+                Text(slot.name).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
+                if failed {
+                    Text(T("Didn't answer"))
+                        .font(BP.sans(10, .semibold)).textCase(.uppercase).tracking(BP.px(1.4)).foregroundStyle(BP.inkSubtle)
+                        .padding(.horizontal, BP.px(9)).padding(.vertical, BP.px(2))
+                        .overlay(Capsule().stroke(BP.edge, lineWidth: 1))
+                }
+            }
+            .padding(.horizontal, BP.gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: BP.trackGap) {
+                    if failed {
+                        retryTile
+                    } else {
+                        ForEach(0..<Self.plates, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)
+                                .fill(BP.panel)
+                                .frame(width: BPTileView.posterSize.width, height: BPTileView.posterSize.height)
+                        }
+                        .accessibilityHidden(true)
+                    }
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
+    }
+
+    /// BpGroupRetry: a poster-sized tile with RotateCw and t("Try again").
+    private var retryTile: some View {
+        Button {
+            guard !retrying else { return }
+            BPSound.shared.click()
+            onRetry()
+        } label: {
+            HStack(spacing: BP.px(8)) {
+                Image(systemName: "arrow.clockwise").font(.system(size: BP.px(14), weight: .semibold))
+                Text(T("Try again")).font(BP.sans(13, .semibold))
+            }
+            .foregroundStyle(BP.inkMuted)
+            .padding(.horizontal, BP.px(14))
+            .frame(width: BPTileView.posterSize.width, height: BPTileView.posterSize.height)
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+            .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+            .opacity(retrying ? 0.45 : 1)
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rMD))
     }
 }

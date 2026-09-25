@@ -349,7 +349,11 @@ export async function people(limit = 24) {
   const fresh = await fetchRankList("harbor", "Acting", null).catch(() => null);
   const result = fresh ?? snap;
   if (!result || result.source !== "harbor") return [];
-  return result.list.slice(0, limit).map((p) => ({ id: p.id, rank: p.rank, name: p.name, profilePath: p.profilePath, department: p.department, country: p.country, score: p.score }));
+  // bp-people-band BpPersonCell sub line: "{n} award wins" (majorAwardWins), else the first top title.
+  return result.list.slice(0, limit).map((p) => ({
+    id: p.id, rank: p.rank, name: p.name, profilePath: p.profilePath, department: p.department, country: p.country, score: p.score,
+    majorAwardWins: p.majorAwardWins ?? 0, topTitle: p.topTitles?.[0]?.title ?? null,
+  }));
 }
 
 // ------------------------------------------------------------------ genre grid page

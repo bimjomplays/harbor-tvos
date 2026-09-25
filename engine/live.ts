@@ -26,6 +26,9 @@ import { bpChannelLabel, bpGroupLabel } from "@/views/big-picture/bp-guide-title
 import { bpGuideOrder } from "@/views/big-picture/bp-guide-order";
 import type { EpgChannelMeta, EpgIndex, EpgProgram, IptvChannel, XmltvParseResult } from "@/lib/iptv/types";
 import { loadStoredSettings } from "@/lib/settings/load";
+import { loadEffective } from "@/lib/settings/profile-store";
+import { get as tmdbGet, IMG as TMDB_IMG } from "@/lib/providers/tmdb/tmdb-client";
+import { lruSet } from "@/lib/cache";
 import { Gunzip } from "fflate";
 import { clearVodCache } from "./liveVod";
 
@@ -850,4 +853,96 @@ export function setMultiviewLayout(layout: string): { layout: MultiviewLayout; s
 export function dismissMultiviewBanner(): boolean {
   try { localStorage.setItem(MV_BANNER_KEY, "1"); } catch { /* ignore */ }
   return true;
+}
+
+// ------------------------------------------------------------------ Home Live band art (X3)
+// use-bp-live-panels.ts resolvePanels / useBpLivePanels without React: the two panels bp-live-split
+// draws behind a focused channel of the Home Live band. Panel A is the viewer's own XMLTV icon, else
+// TMDB's backdrop for the programme on now (search/multi), else the band still; panel B is that
+// title's second TMDB backdrop. Session memory only (never localStorage), as upstream: TMDB's terms
+// forbid a stored copy, and the toning stays a render-time effect in Swift.
+
+const PANEL_QUERY_MAX = 300;
+const PANEL_MAX = 300;
+const PANEL_METAHUB = "images.metahub.space";
+const PANEL_WIDTH = "w1280";
+
+export type LiveBandPanels = { key: string; a: string; b: string | null };
+type PanelMultiResult = { id: number; media_type?: string; backdrop_path?: string | null };
+type PanelTmdbHit = { kind: "tv" | "movie"; id: number; backdrop: string };
+
+const panelHits = new Map<string, PanelTmdbHit | null>();
+const panelSeconds = new Map<string, string | null>();
+const panelsBySlot = new Map<string, LiveBandPanels | null>();
+const panelsInflight = new Map<string, Promise<LiveBandPanels | null>>();
+
+async function panelFindHit(tmdbKey: string, query: string): Promise<PanelTmdbHit | null> {
+  const trimmed = query.trim();
+  const slot = trimmed.toLowerCase();
+  if (!slot) return null;
+  const cached = panelHits.get(slot);
+  if (cached !== undefined) return cached;
+  const page = await tmdbGet<{ results?: PanelMultiResult[] }>(tmdbKey, "search/multi", { query: trimmed, include_adult: "false" });
+  const found = (page?.results ?? []).find((r) => (r.media_type === "tv" || r.media_type === "movie") && Boolean(r.backdrop_path));
+  const hit: PanelTmdbHit | null = found
+    ? { kind: found.media_type === "tv" ? "tv" : "movie", id: found.id, backdrop: `${TMDB_IMG}/${PANEL_WIDTH}${found.backdrop_path}` }
+    : null;
+  lruSet(panelHits, slot, hit, PANEL_QUERY_MAX);
+  return hit;
+}
+
+async function panelSecondBackdrop(tmdbKey: string, hit: PanelTmdbHit): Promise<string | null> {
+  const slot = `${hit.kind}/${hit.id}`;
+  const cached = panelSeconds.get(slot);
+  if (cached !== undefined) return cached;
+  const data = await tmdbGet<{ backdrops?: Array<{ file_path?: string }> }>(tmdbKey, `${slot}/images`, { include_image_language: "en,null" });
+  const path = data?.backdrops?.[1]?.file_path;
+  const url = path ? `${TMDB_IMG}/${PANEL_WIDTH}${path}` : null;
+  lruSet(panelSeconds, slot, url, PANEL_QUERY_MAX);
+  return url;
+}
+
+async function resolveBandPanels(art: { key: string; src?: string | null; title?: string | null }, tmdbKey: string): Promise<LiveBandPanels | null> {
+  const src = art.src ?? "";
+  const own = src && !src.includes(PANEL_METAHUB) ? src : "";
+  const title = art.title?.trim() ?? "";
+  const hitA = tmdbKey && title ? await panelFindHit(tmdbKey, title) : null;
+  const a = own || hitA?.backdrop || src || "";
+  if (!a) return null;
+  // Both panels are the programme on right now (a second backdrop of the same title).
+  let b: string | null = null;
+  if (hitA) {
+    const second = await panelSecondBackdrop(tmdbKey, hitA);
+    if (second && second !== a) b = second;
+  }
+  return { key: art.key, a, b };
+}
+
+/**
+ * useBpLivePanels for one focused channel (`iptv:` keys only). The first answer for a key commits
+ * and is served from then on (a second answer landing under a live key would swap the art under
+ * the eye); a key with or without a TMDB key is its own slot. The Swift band debounces the call
+ * (PANEL_DEBOUNCE_MS).
+ */
+export async function bandPanels(
+  art: { key: string; src?: string | null; title?: string | null },
+  profileId: string | null,
+  linked: boolean,
+): Promise<LiveBandPanels | null> {
+  const key = typeof art?.key === "string" && art.key.startsWith("iptv:") ? art.key : "";
+  if (!key) return null;
+  const tmdbKey = String(loadEffective(profileId || "default", linked !== false).tmdbKey ?? "").trim();
+  const slot = `${tmdbKey ? "k" : "n"}:${key}`;
+  if (panelsBySlot.has(slot)) return panelsBySlot.get(slot) ?? null;
+  const running = panelsInflight.get(slot);
+  if (running) return running;
+  const task = resolveBandPanels({ ...art, key }, tmdbKey)
+    .catch(() => null)
+    .then((out) => {
+      if (!panelsBySlot.has(slot)) lruSet(panelsBySlot, slot, out, PANEL_MAX);
+      return panelsBySlot.get(slot) ?? null;
+    })
+    .finally(() => panelsInflight.delete(slot));
+  panelsInflight.set(slot, task);
+  return task;
 }

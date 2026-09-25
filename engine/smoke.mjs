@@ -4515,6 +4515,70 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   ob.dispose();
 }
 
+// ------------------- parity pass 3: D4 character favourites, V3 people sub line, X3 Live band panels
+{
+  const pf = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "p1", profiles: [{ id: "p1", isPrimary: true }] })],
+    // lib/harbor-rank snapshotKey("harbor", "Acting", null): the snapshot Discover reads first.
+    ["harbor.rank.harbor:Acting:all.v1", JSON.stringify({ at: 1, result: { source: "harbor", list: [
+      { id: 1, rank: 1, name: "Winner Person", profilePath: "/w.jpg", department: "Acting", country: null, score: 90, majorAwardWins: 3, topTitles: [{ metaId: "tt1", title: "First Film", year: 2001, role: "Lead" }] },
+      { id: 2, rank: 2, name: "Plain Person", profilePath: null, department: "Acting", country: null, score: 80, majorAwardWins: 0, topTitles: [{ metaId: "tt2", title: "Known For", year: 2002, role: "Lead" }] },
+      { id: 3, rank: 3, name: "No Titles", profilePath: null, department: "Acting", country: null, score: 70, majorAwardWins: 0, topTitles: [] },
+    ] } })],
+  ]) });
+  const tmdbHits = [];
+  pf.node.host.fetch = async (req) => {
+    tmdbHits.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const u = new URL(req.url);
+    if (u.hostname === "api.themoviedb.org" && u.pathname === "/3/search/multi") {
+      const q = u.searchParams.get("query");
+      if (q === "Evening News") return json({ results: [{ id: 5, media_type: "person" }, { id: 77, media_type: "tv", backdrop_path: "/a77.jpg" }] });
+      if (q === "Lonely Film") return json({ results: [{ id: 88, media_type: "movie", backdrop_path: "/a88.jpg" }] });
+      return json({ results: [] });
+    }
+    if (u.hostname === "api.themoviedb.org" && u.pathname === "/3/tv/77/images") return json({ backdrops: [{ file_path: "/a77.jpg" }, { file_path: "/b77.jpg" }] });
+    if (u.hostname === "api.themoviedb.org" && u.pathname === "/3/movie/88/images") return json({ backdrops: [{ file_path: "/a88.jpg" }] });
+    throw new Error("offline");
+  };
+  const E = pf.engine;
+
+  // D4 lib/character-favorites: the per-profile store under harbor.charfavorites.v1.<pid>.
+  r.eq("characterFavorites.toggle adds, then removes (answers the new state)", [E.characterFavorites.toggle("p1", { id: "42", name: "Spike", image: "https://img.example.invalid/s.jpg" }), E.characterFavorites.toggle("p1", { id: "7", name: "Faye" }), E.characterFavorites.toggle("p1", { id: "7" })], [true, true, false]);
+  r.eq("characterFavorites.ids / count per profile", [E.characterFavorites.ids("p1"), E.characterFavorites.count("p1"), E.characterFavorites.count("other")], [["42"], 1, 0]);
+  const storedChars = JSON.parse(pf.node.storage.get("harbor.charfavorites.v1.p1") ?? "[]");
+  r.ok("characterFavorites writes upstream's entry shape (id, name, image, addedAt)", storedChars.length === 1 && storedChars[0].id === "42" && storedChars[0].name === "Spike" && storedChars[0].image === "https://img.example.invalid/s.jpg" && typeof storedChars[0].addedAt === "number", JSON.stringify(storedChars));
+  r.eq("characterFavorites: no profile id is upstream's \"default\"", [E.characterFavorites.toggle(null, { id: "1" }), E.characterFavorites.ids("default")], [true, ["1"]]);
+  pf.node.storage.set("harbor.mangafav.v1.p1", JSON.stringify([{ id: "m1", title: "Manga", addedAt: 1 }, { id: "m2", title: "Other", addedAt: 2 }]));
+  E.runtime.syncStorage("harbor.mangafav.v1.p1", pf.node.storage.get("harbor.mangafav.v1.p1"));
+  const favFeed = await E.libraryRoom.feed({ tab: "favorites", profileId: "p1", linked: true, authKey: null });
+  r.eq("libraryRoom.feed(favorites) hidden = character + manga favourites (use-bp-library)", favFeed.hidden, 3);
+
+  // V3 bp-people-band: "{n} award wins" when majorAwardWins > 0, else the first top title.
+  const people = await E.discoverRoom.people(24);
+  r.eq("discoverRoom.people carries majorAwardWins and the first top title", people.map((p) => [p.name, p.majorAwardWins, p.topTitle]), [["Winner Person", 3, "First Film"], ["Plain Person", 0, "Known For"], ["No Titles", 0, null]]);
+
+  // X3 use-bp-live-panels resolvePanels.
+  const L = E.live;
+  r.eq("live.bandPanels: only iptv: keys", await L.bandPanels({ key: "tmdb:1", title: "Evening News" }, "p1", true), null);
+  const noKey = await L.bandPanels({ key: "iptv:pl:c1", title: "Evening News", src: "https://epg.example.invalid/icon.png" }, "p1", true);
+  r.eq("live.bandPanels without a TMDB key: the channel's own icon is panel A, no panel B, no TMDB call", [noKey, tmdbHits.filter((h) => h.includes("themoviedb")).length], [{ key: "iptv:pl:c1", a: "https://epg.example.invalid/icon.png", b: null }, 0]);
+  E.settings.saveForProfile({ ...E.settings.loadForProfile("p1", true), tmdbKey: "0123456789abcdef0123456789abcdef" }, "p1", true);
+  const both = await L.bandPanels({ key: "iptv:pl:c2", title: "Evening News" }, "p1", true);
+  r.eq("live.bandPanels: TMDB's first tv/movie hit with a backdrop is A, its second backdrop B (w1280)", both, { key: "iptv:pl:c2", a: "https://image.tmdb.org/t/p/w1280/a77.jpg", b: "https://image.tmdb.org/t/p/w1280/b77.jpg" });
+  const own = await L.bandPanels({ key: "iptv:pl:c3", title: "Evening News", src: "https://epg.example.invalid/own.png" }, "p1", true);
+  r.eq("live.bandPanels: the viewer's own XMLTV icon leads; B is still the title's backdrop", own, { key: "iptv:pl:c3", a: "https://epg.example.invalid/own.png", b: "https://image.tmdb.org/t/p/w1280/b77.jpg" });
+  const metahub = await L.bandPanels({ key: "iptv:pl:c4", title: "Nothing Here", src: "https://images.metahub.space/background/medium/tt1/img" }, "p1", true);
+  r.eq("live.bandPanels: a metahub still is not the viewer's own; it only fills a TMDB gap", metahub, { key: "iptv:pl:c4", a: "https://images.metahub.space/background/medium/tt1/img", b: null });
+  const single = await L.bandPanels({ key: "iptv:pl:c5", title: "Lonely Film" }, "p1", true);
+  r.eq("live.bandPanels: a title with one backdrop has no panel B (B never repeats A)", single, { key: "iptv:pl:c5", a: "https://image.tmdb.org/t/p/w1280/a88.jpg", b: null });
+  r.eq("live.bandPanels: nothing to show is null", await L.bandPanels({ key: "iptv:pl:c6", title: "Nothing Here" }, "p1", true), null);
+  const before = tmdbHits.length;
+  const again = await L.bandPanels({ key: "iptv:pl:c2", title: "Something Else Now" }, "p1", true);
+  r.ok("live.bandPanels: a key that committed is served as it was, with no second lookup", JSON.stringify(again) === JSON.stringify(both) && tmdbHits.length === before, JSON.stringify({ again, calls: tmdbHits.length - before }));
+  pf.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());

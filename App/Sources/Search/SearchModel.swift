@@ -69,6 +69,12 @@ final class SearchModel: ObservableObject {
     @Published private(set) var promotePerson = false
     /// (search pass 3) The addon slots in the order the fan-out announced them (installed order).
     private var addonOrder: [String] = []
+    /// (parity pass 3, L2) bp-search-group: every addon slot the query announced, in installed order,
+    /// with the engine's own state ("pending" | "ok" | "empty" | "failed"). A pending slot holds its
+    /// place with quiet plates, a failed one says "Didn't answer" with Try again, an empty one
+    /// collapses (bpGroupRenders), so rows never jump as addons answer.
+    struct AddonSlot: Identifiable, Equatable { var id: String; var name: String; var logo: String?; var state: String }
+    @Published private(set) var addonSlots: [AddonSlot] = []
 
     // MARK: kind chips (use-bp-search.ts BpSearchFilter, GROUP_ORDER, GROUP_LABEL)
 
@@ -246,7 +252,8 @@ final class SearchModel: ObservableObject {
         let key = "addon:\(g.id)"
         var out = rows.filter { $0.key != key }
         if !g.metas.isEmpty {
-            let row = BrowseRow(key: key, title: T("From %@", g.name), metas: g.metas)
+            // use-bp-search addon slot label: the addon's own name (bp-search-group heads it with the mark).
+            let row = BrowseRow(key: key, title: g.name, metas: g.metas)
             // (search pass 3) use-bp-search: addon slots keep the order the fan-out announced
             // (installed order). A late answer went in ahead of every addon row already up, so the
             // addon rows reshuffled by answer speed on each query.
@@ -263,11 +270,29 @@ final class SearchModel: ObservableObject {
         rows = out
         addonsPending.remove(g.id)
         if g.state == "failed" { addonsFailed.insert(g.id) } else { addonsFailed.remove(g.id) }
+        let state: String = g.state ?? (g.metas.isEmpty ? "empty" : "ok")
+        if let at = addonSlots.firstIndex(where: { $0.id == g.id }) {
+            addonSlots[at].state = state
+        } else {
+            addonSlots.append(AddonSlot(id: g.id, name: g.name, logo: g.logo, state: state))
+        }
         latchGroups()
         Task { await CardMarksStore.shared.refresh(g.metas) }
     }
 
     enum Status: Equatable { case idle, typing, loading, done, failed(String) }
+
+    /// (parity pass 3, L2) search-context retry (bp-search onRetry / the empty state's Try again):
+    /// the same query is asked again from the top; its rows stay up until the answer replaces them.
+    func retry() {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, status != .loading else { return }
+        timer?.cancel()
+        requestId += 1
+        timer = Task { [weak self] in
+            await self?.run(q)
+        }
+    }
 
     private var timer: Task<Void, Never>?
     private var requestId = 0
@@ -285,11 +310,11 @@ final class SearchModel: ObservableObject {
         if q != latchedQuery {
             latchedQuery = q; latched = []; filter = .all; engineRequestId = 0; addonsPending = []
             rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; people = []; early = []
-            addonsFailed = []; addonOrder = []; tmdbUnavailable = false; promotePerson = false
+            addonsFailed = []; addonOrder = []; addonSlots = []; tmdbUnavailable = false; promotePerson = false
         }
         guard !q.isEmpty else {
             status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; addonsPending = []; people = []; early = []; engineRequestId = 0
-            addonsFailed = []; addonOrder = []; tmdbUnavailable = false; promotePerson = false
+            addonsFailed = []; addonOrder = []; addonSlots = []; tmdbUnavailable = false; promotePerson = false
             return
         }
         status = .typing
@@ -315,6 +340,10 @@ final class SearchModel: ObservableObject {
             addonsPending = Set((results.addonQueries ?? []).filter { $0.state == "pending" }.map(\.id))
             addonsFailed = Set((results.addonQueries ?? []).filter { $0.state == "failed" }.map(\.id))
             addonOrder = (results.addonQueries ?? results.addonGroups ?? []).map(\.id)
+            addonSlots = (results.addonQueries ?? []).map { q in
+                let state: String = q.state ?? (q.metas.isEmpty ? "empty" : "ok")
+                return AddonSlot(id: q.id, name: q.name, logo: q.logo, state: state)
+            }
             tmdbUnavailable = results.tmdbUnavailable ?? false
             var out: [BrowseRow] = []
             if !results.movies.isEmpty { out.append(BrowseRow(key: "movies", title: T("Movies"), metas: results.movies)) }
@@ -338,7 +367,7 @@ final class SearchModel: ObservableObject {
             // bp-search-rows: one row per addon that answered ("From <addon>"), after the catalogs.
             // addonQueries keeps every slot's own hits (never stripped against the fused rows).
             for g in results.addonQueries ?? results.addonGroups ?? [] where !g.metas.isEmpty {
-                out.append(BrowseRow(key: "addon:\(g.id)", title: T("From %@", g.name), metas: g.metas))
+                out.append(BrowseRow(key: "addon:\(g.id)", title: g.name, metas: g.metas))
             }
             addonHits = results.addons ?? []
             collections = results.collections ?? []
