@@ -53,6 +53,15 @@ final class MusicQueueOrder {
         queue.firstIndex { Self.key($0) == key }
     }
 
+    /// (review 13) Where a "Play next" pick sits: the copy after the current entry first (Play next
+    /// inserts it right there), else any other. Upstream's first match took an earlier copy of a
+    /// track already heard, so the pick jumped back to it and the album replayed from there.
+    static func pickIndex(of key: String, in queue: [MusicTrack], current index: Int) -> Int? {
+        let start: Int = max(0, index + 1)
+        if start < queue.count, let after = (start..<queue.count).first(where: { Self.key(queue[$0]) == key }) { return after }
+        return queue.indices.first { $0 != index && Self.key(queue[$0]) == key }
+    }
+
     /// queue-order.ts byKey: each key's first queue index, built in one pass per call.
     private static func positions(_ queue: [MusicTrack]) -> [String: Int] {
         var out: [String: Int] = [:]
@@ -177,10 +186,21 @@ final class MusicQueueOrder {
             return next
         }
         if hasCurrent { visited.insert(currentKey) }
-        if let priority {
+        // (review 13) The pick counts under shuffle only: without it the pick already sits right
+        // after the current entry, and honouring it anyway skipped a track after Previous and ignored
+        // a Move down (plain playback plays the next stored entry, as before the modes).
+        if let priority, modes.shuffle {
             let wanted = Self.key(priority)
-            if let i = queue.indices.first(where: { $0 != index && Self.key(queue[$0]) == wanted }) {
+            if let i = Self.pickIndex(of: wanted, in: queue, current: index) {
                 forward = []
+                // (review 13) The pick joins the dealt order right after the current track, so the
+                // order carries on from there: from its own dealt place, the tracks dealt between were
+                // never played (Repeat off stopped early, Repeat all replayed heard ones first).
+                if commit, !currentKey.isEmpty, wanted != currentKey, let from = self.order.firstIndex(of: wanted) {
+                    self.order.remove(at: from)
+                    let at: Int = self.order.firstIndex(of: currentKey).map { $0 + 1 } ?? from
+                    self.order.insert(wanted, at: at)
+                }
                 return remember(i)
             }
         }
