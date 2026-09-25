@@ -144,7 +144,7 @@ struct BPRailView<Lead: View>: View {
                             .background(alignment: .top) {
                                 // The park marker: parkOffset above the row's top edge.
                                 Color.clear.frame(width: 1, height: 1)
-                                    .alignmentGuide(.top) { _ in parkOffset }
+                                    .alignmentGuide(.top) { [off = parkOffset] _ in off }
                                     .id(Self.parkID(row.key))
                                     .accessibilityHidden(true)
                             }
