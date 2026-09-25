@@ -40,7 +40,14 @@ struct AddonPageView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: BP.px(8)) {
                                 ForEach(catalogs) { c in
-                                    Button("\(c.name) · \(c.type)") { Task { await open(c) } }.buttonStyle(BPActionStyle(primary: active?.key == c.key)).bpSelected(active?.key == c.key)
+                                    Button("\(c.name) · \(c.type)") {
+                                        // (sports/addons pass 2) bp-addon setPickedKey: the chip already
+                                        // shown does nothing. Pressed again mid-scroll, it restarted at page
+                                        // 1 while the next page was loading, which then landed as the first.
+                                        guard active?.key != c.key else { return }
+                                        Task { await open(c) }
+                                    }
+                                    .buttonStyle(BPActionStyle(primary: active?.key == c.key)).bpSelected(active?.key == c.key)
                                 }
                             }
                             .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))

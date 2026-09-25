@@ -404,13 +404,24 @@ struct SportsEventView: View {
                 if let c = game.context, !c.name.isEmpty { Text(c.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
                 HStack(spacing: BP.px(24)) {
                     side(game.away, key: "away", opens: model.whoSides.away)
-                    Text(game.state == "pre" ? "vs" : "\(game.away.score.isEmpty ? "0" : game.away.score) : \(game.home.score.isEmpty ? "0" : game.home.score)")
+                    Text(scores ? "\(game.away.score.isEmpty ? "0" : game.away.score) : \(game.home.score.isEmpty ? "0" : game.home.score)" : "vs")
                         .font(BP.display(40)).foregroundStyle(BP.ink).monospacedDigit()
                     side(game.home, key: "home", opens: model.whoSides.home)
                 }
             }
             Text(facts).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
         }
+    }
+
+    /// (sports/addons pass 2) use-bp-sports-event `scores`: both sides named (not TBD / Winner of…),
+    /// under way or over, and a score published. A postponed game read "0 : 0" as if played.
+    private var scores: Bool {
+        let unnamed: String = "^(tbd|tba|winner|loser)\\b"
+        let named: (String) -> Bool = { name in
+            !name.trimmingCharacters(in: .whitespaces).isEmpty && name.range(of: unnamed, options: [.regularExpression, .caseInsensitive]) == nil
+        }
+        let published: Bool = !game.home.score.isEmpty || !game.away.score.isEmpty
+        return named(game.home.name) && named(game.away.name) && game.state != "pre" && published
     }
 
     private var facts: String {

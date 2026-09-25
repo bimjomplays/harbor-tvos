@@ -69,6 +69,11 @@ r.ok("benchmark still works", (() => {
       { name: "Web", externalUrl: "https://watch.example.invalid/ev1" },
       { name: "P2P", infoHash: "0123456789abcdef0123456789abcdef01234567" },
     ] });
+    // A slow listing (the stream-race check below).
+    if (req.url === `${base}/stream/tv/ev2.json`) {
+      await new Promise((done) => setTimeout(done, 80));
+      return json({ streams: [{ name: "Slow", url: "https://cdn.example.invalid/ev2.m3u8" }] });
+    }
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
   const game = { id: "g-addon", league: "NBA", state: "in", detail: "Q2", home: { id: "1", name: "Boston Celtics", abbr: "BOS", logo: "", score: "50", winner: false }, away: { id: "2", name: "Los Angeles Lakers", abbr: "LAL", logo: "", score: "48", winner: false }, startMs: Date.now() - 3600000 };
@@ -88,6 +93,14 @@ r.ok("benchmark still works", (() => {
   const ext = await rec.engine.sports.addonPlay(src.rows[0].key, 1);
   r.eq("sports.addonPlay sends an external page to the phone", [ext.kind, ext.url], ["external", "https://watch.example.invalid/ev1"]);
   r.eq("sports.addonPlay hands a torrent off to the stream list", (await rec.engine.sports.addonPlay(src.rows[0].key, 2)).kind, "handoff");
+  // (sports/addons pass 2) The viewer opens a slow listing, backs out and picks another: the slow
+  // answer landing last must not replace the streams of the listing now on screen.
+  const other = src.rows.find((x) => /other channel/i.test(x.name));
+  const slow = other ? rec.engine.sports.addonStreams(other.key) : Promise.resolve(null);
+  const fast = await rec.engine.sports.addonStreams(src.rows[0].key);
+  await slow;
+  const late = await rec.engine.sports.addonPlay(src.rows[0].key, 0);
+  r.ok("sports.addonStreams: a slower earlier pick landing last leaves the newest pick playable", !!other && fast.status === "ok" && late.kind === "play" && late.url === "https://cdn.example.invalid/ev1.m3u8", JSON.stringify({ other: other?.key, late }));
   const post = await rec.engine.sports.addonSources({ ...game, id: "g-post", state: "post" }, null);
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }

@@ -440,6 +440,15 @@ struct AddonsView: View {
         }
     }
 
+    /// (sports/addons pass 2) A configurable addon's Install answers with its setup page, sometimes
+    /// only after the manifest was fetched. When the viewer has opened another page meanwhile
+    /// (Details, Reorder, the age check), a second cover can't present over it: the setup page
+    /// never showed and the target was left set behind the page the viewer is on.
+    private func offerSetup(_ target: AddonsModel.ConfigureTarget?) {
+        guard let target, detail == nil, configure == nil, !organizeOpen, !ageGateOpen else { return }
+        configure = target
+    }
+
     private func tabButton(_ t: AddonsModel.Tab, _ title: String) -> some View {
         Button(title) { model.select(t) }.buttonStyle(BPActionStyle(primary: model.tab == t)).bpSelected(model.tab == t)
     }
@@ -493,7 +502,7 @@ struct AddonsView: View {
                         Label(T("Installed"), systemImage: "checkmark").font(BP.sans(14, .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, BP.px(18)).frame(minHeight: BP.tabItem).background(Capsule().fill(.white.opacity(0.15)))
                     } else {
-                        Button { Task { if let c = await model.install(a) { configure = c } } } label: {
+                        Button { Task { let setup = await model.install(a); offerSetup(setup) } } label: {
                             Label(model.busy.contains(a.key) ? T("Installing…") : T("Install"), systemImage: "plus")
                         }
                         .buttonStyle(BPActionStyle(primary: true, busy: model.busy.contains(a.key)))
@@ -535,7 +544,7 @@ struct AddonsView: View {
                             ForEach(rail) { c in
                                 AddonTile(card: c) { detail = .init(id: c.addonId) }
                                     .contextMenu {
-                                        Button(T("Install")) { Task { if let t = await model.install(c) { configure = t } } }
+                                        Button(T("Install")) { Task { let setup = await model.install(c); offerSetup(setup) } }
                                         Button(T("Details")) { detail = .init(id: c.addonId) }
                                     }
                             }
@@ -685,7 +694,7 @@ struct AddonsView: View {
                 Text(T("Installed")).font(BP.sans(13, .semibold)).foregroundStyle(BP.accent)
                     .padding(.horizontal, BP.px(14)).frame(minHeight: BP.tabItem).background(Capsule().fill(BP.accent.opacity(0.15)))
             } else if !c.addonId.isEmpty {
-                Button { Task { if let t = await model.install(c) { configure = t } } } label: {
+                Button { Task { let setup = await model.install(c); offerSetup(setup) } } label: {
                     Label(model.busy.contains(c.key) ? T("Installing…") : T("Install"), systemImage: "plus")
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: model.busy.contains(c.key)))
