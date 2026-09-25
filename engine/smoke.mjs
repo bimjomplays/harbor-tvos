@@ -1951,6 +1951,11 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   let refused = "";
   try { engine.live.addStructured("xtream", "Half", "", "", "http://xt.example.invalid", "user", ""); } catch (e) { refused = String(e.message ?? e); }
   r.ok("live.addStructured refuses an Xtream login without a password", /incomplete/.test(refused) && !engine.live.playlists().some((p) => p.name === "Half"), refused);
+  const firstAdd = engine.live.addPlaylist("Same list", "https://same.example.invalid/list.m3u", null);
+  const againAdd = engine.live.addPlaylist("Same list renamed", "https://same.example.invalid/list.m3u", null);
+  const sameRows = engine.live.playlists().filter((p) => p.url === "https://same.example.invalid/list.m3u");
+  r.ok("live.addPlaylist of a known address keeps its id (favourites and pins stay filed)", againAdd.id === firstAdd.id && sameRows.length === 1 && sameRows[0].name === "Same list renamed", JSON.stringify(sameRows));
+  engine.live.removePlaylist(firstAdd.id);
   const aw2 = await engine.detailRoom.awards({ id: "kitsu:1", type: "anime", name: "Cowboy Bebop", releaseInfo: "1998" });
   r.ok("detailRoom.awards answers without an imdb id", aw2 && Array.isArray(aw2.groups) && Array.isArray(aw2.entries), JSON.stringify(aw2.groups));
   r.ok("sports.teamLeagues keeps team sports only", engine.sports.teamLeagues(["nba", "ufc"]).every((l) => l.key !== "ufc"), JSON.stringify(engine.sports.teamLeagues(["nba", "ufc"])));

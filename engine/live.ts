@@ -113,7 +113,11 @@ export function setActiveSource(id: string): string | null {
  */
 export function addPlaylist(name: string, url: string, epgUrl?: string | null): StoredPlaylist {
   const trimmed = url.trim();
-  const id = `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  // (live sources device pass) Adding an address that is already a source replaces that entry;
+  // it keeps its id, so the favourites, pins, stats and EPG matches filed under it still apply
+  // (a new id orphaned them all, and the remembered active source pointed at nothing).
+  const existing = readPlaylists().find((p) => p.url === trimmed);
+  const id = existing?.id ?? `pl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const probe = detectProviderShape({ id, name: name.trim() || trimmed, url: trimmed });
   if (probe.kind === "invalid") throw new Error(probe.reason);
   const entry: StoredPlaylist = { id, name: name.trim() || trimmed, url: trimmed, kind: probe.kind === "xtream" ? "xtream" : probe.kind === "epg" ? "epg" : "m3u" };
