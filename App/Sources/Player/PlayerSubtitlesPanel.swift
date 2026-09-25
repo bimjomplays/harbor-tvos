@@ -153,7 +153,12 @@ struct PlayerSubtitlesPanel: View {
                     // (device-flow pass 11) Opened before the file's tracks were read, the ring was
                     // seeded on "No subtitles": once they arrive with one on, it moves there while
                     // the viewer has not moved it.
-                    if seededEmpty, !tracks.isEmpty, lane == .tracks, focus == "line-off" { seedFocus() }
+                    // (review 34) One chance only: the first arrival spends it even when the viewer
+                    // had moved, so a later track change never pulls the ring off "No subtitles".
+                    if seededEmpty, !tracks.isEmpty {
+                        seededEmpty = false
+                        if lane == .tracks, focus == "line-off" { seedFocus() }
+                    }
                 }
             }
         }
@@ -452,7 +457,12 @@ struct PlayerSubtitlesPanel: View {
                     // first row it revealed instead of wherever the focus engine put it.
                     let from: Int = limit
                     limit += Self.page
-                    if from < list.count, list.count <= from + Self.page { focus = "find-\(list[from].key)" }
+                    // (review 34) Once the revealed row is drawn: set in the press itself, the ring
+                    // aimed at a row the list did not have yet.
+                    if from < list.count, list.count <= from + Self.page {
+                        let ring: String = "find-\(list[from].key)"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focus = ring }
+                    }
                 }
             }
         }

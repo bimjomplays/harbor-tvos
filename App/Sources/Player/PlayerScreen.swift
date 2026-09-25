@@ -360,7 +360,11 @@ struct PlayerScreen: View {
             if chromeShown {
                 // transport.tsx: a kid profile gets TransportKids instead of the full transport
                 // (`kid && !pipMode`; TransportKids has no PiP control, so a kid never leaves for PiP).
-                Group { if isKid { kidsChrome } else { chromeView } }.transition(.opacity)
+                // (review 34) The Anime4K sidebar keeps the transport on screen beside it, but out of
+                // the ring's reach while it is open (Left from the sidebar reached the rail).
+                Group { if isKid { kidsChrome } else { chromeView } }
+                    .disabled(panel == .anime4k)
+                    .transition(.opacity)
             }
             if let resumePending {
                 Group { if isKid { kidsResumePrompt } else { resumePrompt(resumePending) } }.transition(.opacity)
