@@ -8,15 +8,15 @@ final class KidsModel: ObservableObject {
     struct Row: Codable, Identifiable, Equatable {
         var key: String
         var title: String
-        var metas: [Meta]
+        @LossyArray var metas: [Meta]   // (bug pass 2) lossy
         var hasMore: Bool
         var id: String { key }
     }
 
     struct Page: Codable {
         var hasTmdb: Bool
-        var hero: [Meta]
-        var rows: [Row]
+        @LossyArray var hero: [Meta]
+        @LossyArray var rows: [Row]
         var failed: Bool
     }
 

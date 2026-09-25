@@ -6,7 +6,7 @@ import UIKit
 @MainActor
 final class KidsDetailModel: ObservableObject {
     struct Season: Decodable, Hashable { var seasonNumber: Int; var name: String }
-    struct Collection: Decodable { var id: Int; var name: String; var metas: [Meta] }
+    struct Collection: Decodable { var id: Int; var name: String; @LossyArray var metas: [Meta] }   // (bug pass 2) lossy
     struct Detail: Decodable {
         var name: String
         var backdrop: String?
@@ -18,7 +18,7 @@ final class KidsDetailModel: ObservableObject {
         var tvId: Int?
         var seasons: [Season]
         var collection: Collection?
-        var recs: [Meta]
+        @LossyArray var recs: [Meta]
     }
     struct Episode: Decodable, Identifiable, Equatable {
         var id: Int
@@ -130,7 +130,7 @@ struct KidsDetailView: View {
         .fullScreenCover(item: $related) { m in KidsDetailView(meta: m) }
         .fullScreenCover(item: $picker) { target in
             PlayPickerView(meta: target.meta, episode: target.episode, onPlay: { _, resolved in
-                guard let link = resolved.data, let url = URL(string: link.url) else { return }
+                guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
                 self.picker = nil
                 let pick = PlayerPickInfo(autoPicked: resolved.autoPicked ?? false, attempt: target.attempt, streamRef: resolved.streamRef)
                 let ep = target.episode

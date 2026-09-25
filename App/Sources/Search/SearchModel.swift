@@ -17,7 +17,7 @@ final class SearchModel: ObservableObject {
         }
         struct AnimeHit: Decodable { var name: String; var poster: String?; var background: String?; var malId: Int?; var kitsuId: Int?; var year: String?; var overview: String? }
         struct LiveTvHit: Decodable, Identifiable { var channelId: String; var name: String; var logo: String?; var url: String; var group: String?; var playlistId: String; var playlistName: String; var id: String { channelId } }
-        struct AddonGroup: Decodable, Identifiable { var id: String; var name: String; var logo: String?; var metas: [Meta]; var state: String? }
+        struct AddonGroup: Decodable, Identifiable { var id: String; var name: String; var logo: String?; @LossyArray var metas: [Meta]; var state: String? }   // (bug pass 2) lossy
         struct CharacterRef: Decodable { var anilistId: Int; var malId: Int?; var type: String; var name: String; var poster: String?; var background: String?; var year: String?; var overview: String?; var score: Double? }
         struct Character: Decodable, Identifiable { var id: Int; var name: String; var image: String?; var anime: [CharacterRef]; var manga: [CharacterRef]? }
         struct AddonHit: Decodable, Identifiable { var id: String; var name: String; var logo: String?; var transportUrl: String?; var blurb: String?; var installed: Bool }
@@ -26,8 +26,8 @@ final class SearchModel: ObservableObject {
         var query: String
         var topMatch: TopMatch?
         var people: [Person]?
-        var movies: [Meta]
-        var series: [Meta]
+        @LossyArray var movies: [Meta]
+        @LossyArray var series: [Meta]
         var anime: [AnimeHit]?
         var liveTv: [LiveTvHit]?
         var addonGroups: [AddonGroup]?
@@ -150,7 +150,7 @@ final class SearchModel: ObservableObject {
     func loadSuggestions() async {
         guard suggestions.isEmpty else { return }
         // bp-search: the first 60 unique posters across the Home rows, in row order.
-        struct Build: Decodable { struct Row: Decodable { var metas: [Meta] }; var rows: [Row] }
+        struct Build: Decodable { struct Row: Decodable { @LossyArray var metas: [Meta] }; @LossyArray var rows: [Row] }
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
         var metas: [Meta] = []

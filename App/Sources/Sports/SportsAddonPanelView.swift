@@ -95,7 +95,7 @@ struct SportsAddonPanelView: View {
         .fullScreenCover(item: $external) { e in ExternalLinkView(url: e.url) { external = nil } }
         .fullScreenCover(item: $handoff) { meta in
             PlayPickerView(meta: meta, episode: nil) { _, resolved in
-                guard let link = resolved.data, let url = URL(string: link.url) else { return }
+                guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
                 handoff = nil
                 onPlay(Play(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: picked?.addonName, isLive: !["movie", "series"].contains(meta.type)))
             }

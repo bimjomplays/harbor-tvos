@@ -88,6 +88,91 @@ export type AddonCard = {
   position: number;
 };
 
+// (bug pass 2) Community-directory and account manifests are whatever their authors wrote: a
+// numeric name, an object description or a `types` entry that is not a string threw inside
+// upstream's string helpers (normalizeAddonName, subtitleFromManifest, resolveAddonLogo) or
+// reached Swift as the wrong type, and either way the whole list failed to load. Manifests are
+// coerced where they enter this module, and every card is coerced to AddonCard's types on the
+// way out.
+const strOf = (v: unknown): string | undefined =>
+  typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : undefined;
+const strList = (v: unknown): string[] =>
+  Array.isArray(v) ? v.map(strOf).filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+const numOf = (v: unknown): number | null => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+};
+
+/** A copy of `m` whose fields the cards and detail page read have the types the Manifest type claims. */
+export function cleanManifest<M>(m: M): M {
+  if (!m || typeof m !== "object" || Array.isArray(m)) return (null as unknown) as M;
+  const o = m as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...o };
+  for (const k of ["id", "name", "description", "logo", "background", "version"]) {
+    if (!(k in o)) continue;
+    // A number is a fine name or version, never an image URL.
+    const v = k === "logo" || k === "background" ? (typeof o[k] === "string" ? (o[k] as string) : undefined) : strOf(o[k]);
+    if (v === undefined) delete out[k];
+    else out[k] = v;
+  }
+  if ("types" in o) out.types = strList(o.types);
+  if ("idPrefixes" in o) out.idPrefixes = strList(o.idPrefixes);
+  if ("resources" in o) {
+    out.resources = Array.isArray(o.resources)
+      ? o.resources.filter((r) => typeof r === "string" || (!!r && typeof r === "object" && typeof (r as { name?: unknown }).name === "string"))
+      : [];
+  }
+  if ("catalogs" in o) out.catalogs = Array.isArray(o.catalogs) ? o.catalogs.filter((c) => !!c && typeof c === "object") : [];
+  if ("behaviorHints" in o && (!o.behaviorHints || typeof o.behaviorHints !== "object")) delete out.behaviorHints;
+  return out as unknown as M;
+}
+
+/** Addons with an object manifest, cleaned (a stored or directory entry without one is left out). */
+function cleanAddons<T extends { manifest?: unknown }>(list: T[] | null | undefined): T[] {
+  if (!Array.isArray(list)) return [];
+  const out: T[] = [];
+  for (const a of list) {
+    if (!a || typeof a !== "object") continue;
+    const tu = (a as { transportUrl?: unknown }).transportUrl;
+    if (tu !== undefined && typeof tu !== "string") continue;
+    const manifest = cleanManifest(a.manifest);
+    if (!manifest) continue;
+    out.push({ ...a, manifest });
+  }
+  return out;
+}
+
+/** AddonCard with every field of its declared type (the Swift decode is strict per card). */
+function safeCard(c: AddonCard): AddonCard {
+  const str = (v: unknown) => strOf(v) ?? "";
+  const strOrNull = (v: unknown) => strOf(v) || null;
+  return {
+    key: str(c.key),
+    id: str(c.id),
+    name: str(c.name),
+    description: str(c.description),
+    subtitle: str(c.subtitle),
+    logo: strOrNull(c.logo),
+    background: strOrNull(c.background),
+    transportUrl: str(c.transportUrl),
+    configureUrl: str(c.configureUrl),
+    installed: c.installed === true,
+    configurable: c.configurable === true,
+    types: strList(c.types).slice(0, 4),
+    stars: numOf(c.stars) ?? 0,
+    rising: numOf(c.rising),
+    risingWindow: numOf(c.risingWindow),
+    isNew: c.isNew === true,
+    slug: strOrNull(c.slug),
+    enabled: c.enabled !== false,
+    position: Math.trunc(numOf(c.position) ?? 0),
+  };
+}
+
 function hintsOf(m: Manifest | null | undefined): { configurable: boolean; required: boolean } {
   const h = (m as { behaviorHints?: { configurable?: boolean; configurationRequired?: boolean } } | null | undefined)?.behaviorHints;
   return { configurable: h?.configurable === true, required: h?.configurationRequired === true };
@@ -114,8 +199,8 @@ let catalogState: CatalogState | null = null;
 let catalogInflight: { sig: string; p: Promise<CatalogState> } | null = null;
 
 async function buildCatalog(authKey: string | null, adultsAllowed: boolean): Promise<CatalogState> {
-  const local = await fetchInstalledAddons().catch(() => [] as Addon[]);
-  const stremio = authKey ? await userAddons(authKey).catch(() => [] as Addon[]) : [];
+  const local = cleanAddons(await fetchInstalledAddons().catch(() => [] as Addon[]));
+  const stremio = cleanAddons(authKey ? await userAddons(authKey).catch(() => [] as Addon[]) : []);
   const installed = new Set<string>([...local.map((a) => a.manifest.id), ...stremio.map((a) => a.manifest.id)]);
   const map = new Map<string, ResolvedAddon>();
   for (const e of CURATED_ADDONS) {
@@ -130,9 +215,9 @@ async function buildCatalog(authKey: string | null, adultsAllowed: boolean): Pro
     map.set(a.manifest.id, { curated: existing?.curated, manifest: a.manifest, transportUrl: a.transportUrl, source: existing ? existing.source : "harbor-local", installed: true });
   }
   const [community, saList] = await Promise.all([
-    fetchCommunityAddons(),
+    fetchCommunityAddons().then(cleanAddons, () => [] as Addon[]),
     listAddons({ limit: 200, sort_by: "stars", order: "desc" })
-      .then((r) => r.addons.map((a): Addon => ({ manifest: a.manifest, transportUrl: a.manifestUrl })))
+      .then((r) => cleanAddons(r.addons.map((a): Addon => ({ manifest: a.manifest, transportUrl: a.manifestUrl }))))
       .catch(() => [] as Addon[]),
   ]);
   const saIds = new Set<string>();
@@ -177,7 +262,7 @@ async function buildCatalog(authKey: string | null, adultsAllowed: boolean): Pro
   const curatedNeedingFetch = [...map.values()].filter((r) => !r.manifest && r.source === "curated");
   await Promise.all(
     curatedNeedingFetch.map(async (r) => {
-      const m = await fetchManifest(r.transportUrl);
+      const m = cleanManifest(await fetchManifest(r.transportUrl).catch(() => null));
       if (m) r.manifest = m;
     }),
   );
@@ -264,7 +349,7 @@ function installedIdSet(): Set<string> {
 function cardFromResolved(r: ResolvedAddon, installedIds: Set<string>, position = 0): AddonCard {
   const m = r.manifest;
   const id = idOf(r);
-  return {
+  return safeCard({
     key: addonKey(r),
     id,
     name: nameOf(r),
@@ -284,7 +369,7 @@ function cardFromResolved(r: ResolvedAddon, installedIds: Set<string>, position 
     slug: communityFor(m?.id)?.slug ?? null,
     enabled: isAddonEnabled(r.transportUrl),
     position,
-  };
+  });
 }
 
 const NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
@@ -298,15 +383,17 @@ function isNewlyAdded(createdAt: string | undefined): boolean {
 const seenCommunity = new Map<string, { manifestUrl: string; manifest: unknown }>();
 
 function cardFromSA(a: SAAddon, installedIds: Set<string>, extra: Partial<AddonCard> = {}): AddonCard {
-  const m = a.manifest;
+  // (bug pass 2) cleaned: see cleanManifest.
+  const m = cleanManifest(a.manifest);
+  a = { ...a, manifest: m, manifestUrl: strOf(a.manifestUrl) ?? "", slug: strOf(a.slug) ?? "" } as SAAddon;
   const id = m?.id ?? "";
   if (id) {
     seenCommunity.set(id, { manifestUrl: a.manifestUrl, manifest: a.manifest });
     if (seenCommunity.size > 400) seenCommunity.delete(seenCommunity.keys().next().value as string);
   }
   const name = m?.name ?? a.slug;
-  return {
-    key: a.uuid || `${id}:${a.manifestUrl}`,
+  return safeCard({
+    key: strOf(a.uuid) || `${id}:${a.manifestUrl}`,
     id,
     name,
     description: m?.description ?? "",
@@ -326,7 +413,7 @@ function cardFromSA(a: SAAddon, installedIds: Set<string>, extra: Partial<AddonC
     enabled: true,
     position: 0,
     ...extra,
-  };
+  });
 }
 
 /**
@@ -408,9 +495,10 @@ export async function browse(mode: BrowseMode, category: string | null, search: 
       if (cat && !a.categories.some((c) => c.slug === cat)) return false;
       if (ql) {
         const m = a.manifest as { name?: string; description?: string } | undefined;
-        const name = (m?.name ?? "").toLowerCase();
-        const desc = (m?.description ?? "").toLowerCase();
-        if (!name.includes(ql) && !a.slug.toLowerCase().includes(ql) && !desc.includes(ql)) return false;
+        // (bug pass 2) String(): directory fields are not always strings.
+        const name = String(m?.name ?? "").toLowerCase();
+        const desc = String(m?.description ?? "").toLowerCase();
+        if (!name.includes(ql) && !String(a.slug ?? "").toLowerCase().includes(ql) && !desc.includes(ql)) return false;
       }
       return true;
     });
@@ -423,9 +511,9 @@ export async function browse(mode: BrowseMode, category: string | null, search: 
       // The velocity fallback's index is fetched without nsfw=exclude: gate it here (review 30).
       if (!adultsAllowed && cat !== "nsfw" && m.community.categories.some((c) => c.slug === "nsfw")) return false;
       if (ql) {
-        const name = (m.community.name ?? "").toLowerCase();
-        const slug = m.community.slug.toLowerCase();
-        const desc = (m.community.description ?? "").toLowerCase();
+        const name = String(m.community.name ?? "").toLowerCase();
+        const slug = String(m.community.slug ?? "").toLowerCase();
+        const desc = String(m.community.description ?? "").toLowerCase();
         if (!name.includes(ql) && !slug.includes(ql) && !desc.includes(ql)) return false;
       }
       return true;
@@ -548,7 +636,7 @@ export async function detail(addonId: string, authKey: string | null, adultsAllo
   if (!resolved) {
     const carried = recallPendingAddon(addonId);
     if (carried) {
-      const manifest = (carried.manifest as Manifest | null) ?? ((await fetchManifestAt(carried.manifestUrl).catch(() => null)) as Manifest | null);
+      const manifest = cleanManifest((carried.manifest as Manifest | null) ?? ((await fetchManifestAt(carried.manifestUrl).catch(() => null)) as Manifest | null));
       if (manifest) resolved = { manifest, transportUrl: carried.manifestUrl, source: "community", installed: s.installedIds.has(addonId) };
     }
   }
@@ -558,7 +646,7 @@ export async function detail(addonId: string, authKey: string | null, adultsAllo
     if (!community) return null;
     try {
       const d = await getAddon(community.slug);
-      resolved = { manifest: d.manifest as Manifest, transportUrl: d.manifestUrl, source: "community", installed: s.installedIds.has(addonId) };
+      resolved = { manifest: cleanManifest(d.manifest as Manifest), transportUrl: d.manifestUrl, source: "community", installed: s.installedIds.has(addonId) };
     } catch {
       return null;
     }
@@ -606,8 +694,8 @@ export async function detail(addonId: string, authKey: string | null, adultsAllo
   const hints = hintsOf(m);
   const card = cardFromResolved(r, s.installedIds);
   if (community) {
-    card.stars = community.stars;
-    card.slug = community.slug;
+    card.stars = numOf(community.stars) ?? 0;
+    card.slug = strOf(community.slug) || null;
   }
   const kind = r.curated?.tags.includes("official") ? t("Official") : t("Community");
   return {
@@ -782,8 +870,12 @@ type OrganizeState = { authKey: string | null; cloud: Addon[]; device: Installed
 let organizeState: OrganizeState | null = null;
 
 type OrganizeRow = { key: string; name: string; host: string; addonId: string; logo: string | null };
+// (bug pass 2) Cleaned manifests (the keys depend on transportUrl only) and string fields: a stray
+// numeric name failed the whole Organize load in Swift.
 const rowsOf = (items: Array<{ transportUrl: string; manifest?: Manifest }>): OrganizeRow[] =>
-  entriesOf(items).map((e) => ({ key: e.key, name: e.name, host: e.host, addonId: e.addonId, logo: e.logo ?? null }));
+  entriesOf(items.map((it) => ({ ...it, manifest: cleanManifest(it.manifest) ?? undefined }))).map((e) => ({
+    key: String(e.key), name: strOf(e.name) ?? String(e.host ?? ""), host: String(e.host ?? ""), addonId: strOf(e.addonId) ?? "", logo: strOf(e.logo) || null,
+  }));
 
 export async function organizeLoad(authKey: string | null, reset = false): Promise<{ ok: boolean; signedIn: boolean; cloud: OrganizeRow[]; device: OrganizeRow[]; backups: number }> {
   if (!authKey) {

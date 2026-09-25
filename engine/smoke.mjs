@@ -3066,6 +3066,58 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   rec.dispose();
 }
 
+// --------------------- (bug pass 2) odd community manifests; Detail's one-call local resume read
+{
+  const SA = "https://stremio-addons.net/api/v0";
+  const good = { id: "org.example.good", version: "1.0.0", name: "Good Addon", description: "Fine. More.", resources: ["stream"], types: ["movie"], catalogs: [] };
+  // A directory entry as a careless author could publish it: every field the cards read has the wrong type.
+  const odd = { id: "org.example.odd", version: 2, name: 42, description: { text: "object" }, logo: 7, background: ["x"], resources: ["stream", 5, { name: "meta" }], types: ["movie", 5, null, { t: 1 }], idPrefixes: "tt", catalogs: [null, { type: "movie", id: "c", name: "C" }], behaviorHints: "yes" };
+  const listing = [
+    { uuid: "u-good", url: "", manifestUrl: "https://good.example.invalid/manifest.json", manifest: good, slug: "good", stars: 10, categories: [], configureUrl: null, createdAt: "", updatedAt: "" },
+    { uuid: 77, url: "", manifestUrl: "https://odd.example.invalid/manifest.json", manifest: odd, slug: 99, stars: "12", categories: [], configureUrl: null, createdAt: "", updatedAt: "" },
+  ];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.resume", JSON.stringify({
+      "tt1|s1e1": { ms: 60000, t: 5, pct: 0.1 },
+      "tt1|s1e2": { ms: 90000, t: 9 },
+      "tt1|s2e1": { ms: 0, t: 12 },
+      "tt1|sXe1": { ms: 1000, t: 20 },
+      "tt10|s1e1": { ms: 1000, t: 30 },
+      "tt1": { ms: 5000, t: 40 },
+    })],
+  ]) });
+  const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+  rec.node.host.fetch = async (req) => {
+    if (req.url.startsWith(`${SA}/addons?`)) return json(req, { addons: listing, pagination: { page: 1, limit: 50, total: 2, totalPages: 1, hasNextPage: false, hasPreviousPage: false } });
+    if (req.url === `${SA}/rising`) return json(req, { addons: [] });
+    if (req.url === `${SA}/categories`) return json(req, { categories: [] });
+    if (new URL(req.url).host === "v3-cinemeta.strem.io" || req.url === "https://api.strem.io/addonsofficialcollection.json") return json(req, { addons: [] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const am = rec.engine.addonsManager;
+  // Every AddonCard field has the type engine/addonsManager.ts declares (the Swift Card decode is strict).
+  const cardOk = (c) => ["key", "id", "name", "description", "subtitle", "transportUrl", "configureUrl"].every((k) => typeof c[k] === "string")
+    && ["logo", "background", "slug"].every((k) => c[k] === null || typeof c[k] === "string")
+    && ["installed", "configurable", "isNew", "enabled"].every((k) => typeof c[k] === "boolean")
+    && Array.isArray(c.types) && c.types.every((x) => typeof x === "string")
+    && typeof c.stars === "number" && Number.isInteger(c.position)
+    && (c.rising === null || typeof c.rising === "number") && (c.risingWindow === null || typeof c.risingWindow === "number");
+  const top = await am.browse("top", null, null, true, 1);
+  const oddCard = top.items.find((c) => c.id === odd.id);
+  r.ok("addonsManager.browse survives a manifest with odd field types (bug pass 2)", top.items.length === 2 && top.items.every(cardOk) && oddCard && oddCard.name === "42" && oddCard.description === "" && oddCard.logo === null && oddCard.stars === 12 && oddCard.slug === "99" && oddCard.types.join(",") === "movie,5", JSON.stringify(top.items));
+  const railCards = await am.rail("stars", true);
+  r.ok("addonsManager.rail survives it too", railCards.length === 2 && railCards.every(cardOk), JSON.stringify(railCards));
+  const loaded = await am.load(null, true, true);
+  r.ok("addonsManager.load: the catalog build survives it (normalizeAddonName on a numeric name)", loaded && loaded.total >= 2, JSON.stringify(loaded));
+  const det = await am.detail(odd.id, null, true);
+  r.ok("addonsManager.detail: odd manifest gives string types / resources and a clean card", det && cardOk(det.card) && det.types.every((x) => typeof x === "string") && det.resources.every((x) => typeof x === "string") && det.stats.every((s) => typeof s.value === "string"), JSON.stringify(det && { types: det.types, resources: det.resources, card: det.card }));
+  const res = rec.engine.player.localResumes("tt1");
+  r.eq("player.localResumes: one title's episode entries with a position, newest first (bug pass 2)", res.map((x) => [x.season, x.episode, x.ms, x.t, x.pct ?? null]), [[1, 2, 90000, 9, null], [1, 1, 60000, 5, 0.1]]);
+  r.eq("player.localResumes: nothing for an unknown title", rec.engine.player.localResumes("tt404"), []);
+  rec.dispose();
+}
+
 // ------------------------------------------ AI search (lib/ai-search.ts, mocked provider, no network)
 {
   const store = new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]);

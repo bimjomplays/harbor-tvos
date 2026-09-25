@@ -70,7 +70,7 @@ struct CatalogPageView: View {
         let next: [Meta]
         if row.key.hasPrefix("genre:") {
             // bp-genre-grid: TMDB discover pages for one genre shelf (use-bp-genre-grid).
-            struct Page: Decodable { var metas: [Meta]; var status: String }
+            struct Page: Decodable { @LossyArray var metas: [Meta]; var status: String }   // (bug pass 2) lossy
             let p = ProfilesStore.shared.active
             let genre = String(row.key.dropFirst("genre:".count))
             var got: Page = (try? await HarborEngine.shared.call("discoverRoom.genrePage", [p?.id ?? "default", p?.linked ?? true, genre, page + 1])) ?? Page(metas: [], status: "failed")

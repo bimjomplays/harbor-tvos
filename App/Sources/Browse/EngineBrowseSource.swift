@@ -7,12 +7,12 @@ struct EngineBrowseSource: BrowseSource {
             var key: String
             var type: String
             var name: String
-            var metas: [Meta]
+            @LossyArray var metas: [Meta]
             var hasMore: Bool
             var shape: String
         }
-        var rows: [Row]
-        var hero: [Meta]
+        @LossyArray var rows: [Row]
+        @LossyArray var hero: [Meta]
         var failed: Bool
     }
 
@@ -46,8 +46,9 @@ struct EngineBrowseSource: BrowseSource {
 
     /// bp-home "Your addons": one brand card per installed addon; Select opens its catalogs.
     private func addonsBand(_ authKey: String?) async -> BrowseRow? {
-        struct Card: Decodable { var key: String; var name: String; var base: String; var logo: String?; var hasCatalogs: Bool; var posters: [String] }
-        let cards: [Card] = (try? await HarborEngine.shared.call("addonsRoom.cards", [authKey, true])) ?? []
+        struct Card: Decodable { var key: String; var name: String; var base: String; var logo: String?; var hasCatalogs: Bool; @LossyArray var posters: [String] }
+        let cardsLossy: LossyArray<Card>? = try? await HarborEngine.shared.call("addonsRoom.cards", [authKey, true])   // (bug pass 2) lossy
+        let cards = cardsLossy?.wrappedValue ?? []
         guard !cards.isEmpty else { return nil }
         let metas = cards.map { c in
             Meta(id: "addon:\(c.base)", type: "addon", name: c.name, poster: c.posters.first, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
@@ -60,7 +61,8 @@ struct EngineBrowseSource: BrowseSource {
     /// bp-home "Collections" (bp-collections-row.tsx): TMDB's curated franchises as 16:9 cards; the
     /// engine returns nothing without a TMDB key or when the synced layout hides "collections".
     private func collectionsRow(_ profileId: String, _ linked: Bool) async -> BrowseRow? {
-        let cards: [CollectionsModel.Card] = (try? await HarborEngine.shared.call("collectionsRoom.curatedRow", [profileId, linked, 30])) ?? []
+        let cardsLossy: LossyArray<CollectionsModel.Card>? = try? await HarborEngine.shared.call("collectionsRoom.curatedRow", [profileId, linked, 30])   // (bug pass 2) lossy
+        let cards = cardsLossy?.wrappedValue ?? []
         guard !cards.isEmpty else { return nil }
         let metas = cards.map { c in
             // bp-collection-card metaLine for a TMDB entry: "{count} films", else "Collection".
@@ -92,7 +94,7 @@ struct EngineBrowseSource: BrowseSource {
             // bp-home.tsx: "Your streaming" brand tiles sit after the first two catalog rows
             // (SERVICES_SLOT = 2); upstream also slots CW, addon, live and collection bands
             // around them, which this room renders elsewhere or not yet.
-            struct Services: Decodable { struct Tile: Decodable { var id: String; var name: String; var tint: String }; var hasKey: Bool; var services: [Tile] }
+            struct Services: Decodable { struct Tile: Decodable { var id: String; var name: String; var tint: String }; var hasKey: Bool; @LossyArray var services: [Tile] }
             if let svc: Services = try? await HarborEngine.shared.call("services.list", [p.id, p.linked]), !svc.services.isEmpty {
                 let metas = svc.services.map { t in
                     Meta(id: "service:\(t.id)", type: "service", name: t.name, poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
@@ -116,8 +118,9 @@ struct EngineBrowseSource: BrowseSource {
             if room == .movies {
                 // use-bp-movies.ts: Letterboxd rows (public username through Stremboxd) sit right
                 // after the Top 10 row, or first when there is none.
-                struct LetterboxdRow: Decodable { var key: String; var name: String; var metas: [Meta] }
-                let extra: [LetterboxdRow] = (try? await HarborEngine.shared.call("letterboxd.movieRows", [p.id, p.linked])) ?? []
+                struct LetterboxdRow: Decodable { var key: String; var name: String; @LossyArray var metas: [Meta] }
+                let extraLossy: LossyArray<LetterboxdRow>? = try? await HarborEngine.shared.call("letterboxd.movieRows", [p.id, p.linked])   // (bug pass 2) lossy
+                let extra = extraLossy?.wrappedValue ?? []
                 if !extra.isEmpty {
                     var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
                     let at = build.rows.first?.shape == "rank" ? 1 : 0
@@ -139,8 +142,8 @@ struct EngineBrowseSource: BrowseSource {
     }
 
     struct AnimeBuild: Decodable {
-        struct Row: Decodable { var key: String; var name: String; var metas: [Meta]; var shape: String; var loading: Bool }
-        var rows: [Row]; var hero: [Meta]; var loading: Bool; var ready: Int; var total: Int; var failed: Bool
+        struct Row: Decodable { var key: String; var name: String; @LossyArray var metas: [Meta]; var shape: String; var loading: Bool }
+        @LossyArray var rows: [Row]; @LossyArray var hero: [Meta]; var loading: Bool; var ready: Int; var total: Int; var failed: Bool
     }
 
     func continueWatching(for room: Room) async throws -> [ContinueItem] {
@@ -149,11 +152,12 @@ struct EngineBrowseSource: BrowseSource {
         // the anime room gets upstream's anime-only Continue Watching (one per franchise).
         let items: [LibraryItem]
         if room == .anime {
-            struct Page: Decodable { var cw: [LibraryItem] }
+            struct Page: Decodable { @LossyArray var cw: [LibraryItem] }
             let page: Page = try await HarborEngine.shared.call("animeRoom.page", [p.id, p.linked, p.authKey])
             items = page.cw
         } else {
-            items = try await HarborEngine.shared.call("rooms.continueWatchingWithExtras", [p.id, p.linked, p.authKey])
+            let all: LossyArray<LibraryItem> = try await HarborEngine.shared.call("rooms.continueWatchingWithExtras", [p.id, p.linked, p.authKey])
+            items = all.wrappedValue   // (bug pass 2) one odd synced item no longer empties the row
         }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -196,14 +200,15 @@ struct ServiceBrowseSource: BrowseSource {
     var cacheId: String? { "service.\(service)" }
 
     struct Build: Decodable {
-        struct Row: Decodable { var key: String; var name: String; var type: String; var metas: [Meta]; var hasMore: Bool }
-        var hasKey: Bool; var name: String; var tint: String; var rows: [Row]
+        struct Row: Decodable { var key: String; var name: String; var type: String; @LossyArray var metas: [Meta]; var hasMore: Bool }
+        var hasKey: Bool; var name: String; var tint: String; @LossyArray var rows: [Row]
     }
 
     /// bp-home "Your addons": one brand card per installed addon; Select opens its catalogs.
     private func addonsBand(_ authKey: String?) async -> BrowseRow? {
-        struct Card: Decodable { var key: String; var name: String; var base: String; var logo: String?; var hasCatalogs: Bool; var posters: [String] }
-        let cards: [Card] = (try? await HarborEngine.shared.call("addonsRoom.cards", [authKey, true])) ?? []
+        struct Card: Decodable { var key: String; var name: String; var base: String; var logo: String?; var hasCatalogs: Bool; @LossyArray var posters: [String] }
+        let cardsLossy: LossyArray<Card>? = try? await HarborEngine.shared.call("addonsRoom.cards", [authKey, true])   // (bug pass 2) lossy
+        let cards = cardsLossy?.wrappedValue ?? []
         guard !cards.isEmpty else { return nil }
         let metas = cards.map { c in
             Meta(id: "addon:\(c.base)", type: "addon", name: c.name, poster: c.posters.first, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
@@ -226,5 +231,43 @@ struct ServiceBrowseSource: BrowseSource {
     enum ServiceError: Error, LocalizedError {
         case noKey
         var errorDescription: String? { "Add a TMDB key in Settings to browse this service." }
+    }
+}
+
+// (bug pass 2) Library items come from the Stremio sync as other clients wrote them; a stray
+// `name: null`, a string `season` or an odd `_cw` no longer drops the item (or, with the
+// array decoded strictly, the whole Continue Watching row). An item still needs `_id` and
+// `type` to open. In extensions so the memberwise initializers stay.
+extension EngineBrowseSource.LibraryItem {
+    private enum LenientKeys: String, CodingKey { case _cw, _id, type, name, poster, background, state, _mtime }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LenientKeys.self)
+        func str(_ k: LenientKeys) -> String? { try? c.decodeIfPresent(String.self, forKey: k) }
+        guard let id = str(._id), !id.isEmpty, let type = str(.type), !type.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: LenientKeys._id, in: c, debugDescription: "library item without _id or type")
+        }
+        self.init(_cw: try? c.decodeIfPresent(CwExtras.self, forKey: ._cw),
+                  _id: id, type: type, name: str(.name) ?? "",
+                  poster: str(.poster), background: str(.background),
+                  state: try? c.decodeIfPresent(State.self, forKey: .state),
+                  _mtime: str(._mtime))
+    }
+}
+
+extension EngineBrowseSource.LibraryItem.State {
+    private enum LenientKeys: String, CodingKey { case timeOffset, duration, season, episode, video_id, lastWatched }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LenientKeys.self)
+        func num(_ k: LenientKeys) -> Double? {
+            if let n = try? c.decodeIfPresent(Double.self, forKey: k) { return n.isFinite ? n : nil }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k) { return Double(s).flatMap { $0.isFinite ? $0 : nil } }
+            return nil
+        }
+        func int(_ k: LenientKeys) -> Int? { num(k).flatMap { abs($0) < 1e9 ? Int($0) : nil } }
+        self.init(timeOffset: num(.timeOffset), duration: num(.duration), season: int(.season), episode: int(.episode),
+                  video_id: try? c.decodeIfPresent(String.self, forKey: .video_id),
+                  lastWatched: try? c.decodeIfPresent(String.self, forKey: .lastWatched))
     }
 }

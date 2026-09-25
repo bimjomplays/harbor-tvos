@@ -91,7 +91,8 @@ struct AddonPageView: View {
     private func loadMore() async {
         guard let c = active, !loading, !done else { return }
         loading = true; defer { loading = false }
-        let next: [Meta] = (try? await HarborEngine.shared.call("addonsRoom.feed", [c.cursor, page, metas.count])) ?? []
+        let nextLossy: LossyArray<Meta>? = try? await HarborEngine.shared.call("addonsRoom.feed", [c.cursor, page, metas.count])   // (bug pass 2) lossy
+        let next = nextLossy?.wrappedValue ?? []
         // (bug pass) A catalog chip pressed while this page loaded: its own first load bounced off
         // `loading`, so it runs now instead of leaving the grid on "This catalog came back empty".
         guard active?.key == c.key else { loading = false; await loadMore(); return }

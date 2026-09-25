@@ -5,10 +5,10 @@ import Combine
 @MainActor
 final class DiscoverModel: ObservableObject {
     struct Build: Decodable {
-        struct Rail: Decodable { var key: String; var name: String; var kicker: String?; var metas: [Meta] }
+        struct Rail: Decodable { var key: String; var name: String; var kicker: String?; @LossyArray var metas: [Meta] }   // (bug pass 2) lossy
         struct Queue: Decodable { var status: String; var total: Int; var posters: [String]; var backdrop: String? }
         struct Genre: Decodable { var genre: String; var from: String; var to: String; var ink: String }
-        var rails: [Rail]
+        @LossyArray var rails: [Rail]
         var queue: Queue
         var genres: [Genre]
         /// discover.tsx voyageBannerPool: the Voyages banner shows once it holds three titles.
@@ -65,8 +65,8 @@ final class DiscoverModel: ObservableObject {
         guard let build, genreArt.isEmpty, !SettingsBridge.shared.slice.tmdbKey.isEmpty else { return }
         let p = profile
         for g in build.genres {
-            if let metas: [Meta] = try? await HarborEngine.shared.call("discoverRoom.genreArtFor", [p.id, p.linked, g.genre]) {
-                genreArt[g.genre] = metas
+            if let metas: LossyArray<Meta> = try? await HarborEngine.shared.call("discoverRoom.genreArtFor", [p.id, p.linked, g.genre]) {
+                genreArt[g.genre] = metas.wrappedValue
             }
         }
     }

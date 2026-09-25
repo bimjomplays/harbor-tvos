@@ -172,7 +172,7 @@ struct DetailView: View {
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0 }) {
             if let picker {
                 PlayPickerView(meta: picker.meta, episode: picker.episode, onPlay: { stream, resolved in
-                    guard let link = resolved.data, let url = URL(string: link.url) else { return }
+                    guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
                     let ep = picker.episode
                     let sub = ep.flatMap { e -> String? in
                         guard let s = e["season"]?.number, let n = e["episode"]?.number else { return nil }

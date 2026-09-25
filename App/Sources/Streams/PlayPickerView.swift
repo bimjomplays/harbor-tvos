@@ -292,12 +292,13 @@ struct PlayPickerView: View {
             return
         }
         resolving = nil
-        if r.ok, r.data != nil {
+        // (bug pass 2) A link no URL can be made of counts as a failed candidate, not a silent no-op.
+        if r.ok, let ready = Self.playable(r) {
             debridFailStreak = 0
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
             // use-pick-handler: PlayerSrc.autoFired + streamRef, so a stall or a failed open can
             // mark this stream dead and bring the picker back on the next candidate (views/player.tsx).
-            var handed = r
+            var handed = ready
             handed.autoPicked = true
             handed.streamRef = await model.deadRef(s)
             onPlay(s, handed)
@@ -666,7 +667,9 @@ struct PlayPickerView: View {
         resolving = copy.key; resolveError = nil
         let r = await model.play(copy: copy, meta: meta)
         resolving = nil
-        if r.ok, r.data != nil { onPlay(nil, r) } else { resolveError = "This server couldn't start playback (\(r.code ?? "unknown"))." }
+        if r.ok, let ready = Self.playable(r) { onPlay(nil, ready) }
+        else if r.ok, r.data != nil { resolveError = Self.badLinkMessage }   // (bug pass 2)
+        else { resolveError = "This server couldn't start playback (\(r.code ?? "unknown"))." }
     }
 
     private func badges(_ s: ScoredStream) -> [String] {
@@ -694,19 +697,56 @@ struct PlayPickerView: View {
         let r = await resolveRetrying(s, forceP2p: forceP2p, sameSource: true) { resolving == s.id }
         guard alive, resolving == s.id else { return }
         resolving = nil
-        if r.ok, r.data != nil {
+        if r.ok, let ready = Self.playable(r) {
             debridFailStreak = 0
             await model.remember(s, meta: meta, episode: episode, url: r.data?.url)
             // PlayerSrc.streamRef for use-stub-detection.ts; a pick by hand is never autoFired.
-            var handed = r
+            var handed = ready
             handed.autoPicked = false
             handed.streamRef = await model.deadRef(s)
             onPlay(s, handed)
+        } else if r.ok, r.data != nil {
+            // (bug pass 2) The addon answered with a link no URL can be made of: say so (the call
+            // sites used to drop it on `URL(string:)` and the picker just sat there).
+            failedIds.insert(s.id)
+            resolveError = Self.badLinkMessage
         } else {
             failedIds.insert(s.id)
             if countDebridFailure(r) { dialog = .debridDown; return }
             resolveError = r.message ?? "Couldn't get a playable link (\(r.code ?? "unknown")). Try another stream."
         }
+    }
+
+    static let badLinkMessage = "This stream's link isn't a valid address. Try another stream."
+
+    /// (bug pass 2) The resolved result with its link as the player will open it (PlayableURL), or
+    /// nil when there is no link or no URL can be made of it.
+    static func playable(_ r: StreamsModel.Resolved) -> StreamsModel.Resolved? {
+        guard var link = r.data, let url = PlayableURL.make(link.url) else { return nil }
+        link.url = url.absoluteString
+        var out = r
+        out.data = link
+        return out
+    }
+}
+
+/// (bug pass 2) A resolved stream link as a URL. Some addons hand back links with spaces or other
+/// characters a URL can't hold. The tvOS 17 SDK's `URL(string:)` already escapes most of those;
+/// this also escapes a stray `%` and trims whitespace, keeping the `%XX` escapes already in the
+/// link so nothing is encoded twice. nil when no absolute URL can be made of it.
+enum PlayableURL {
+    static func make(_ raw: String) -> URL? {
+        if let u = URL(string: raw), u.scheme != nil { return u }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let u = URL(string: trimmed), u.scheme != nil { return u }
+        // A `%` that does not start an escape is itself escaped; existing escapes stay as they are.
+        let percents = trimmed.replacingOccurrences(of: "%(?![0-9A-Fa-f]{2})", with: "%25", options: .regularExpression)
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.insert(charactersIn: "%#[]")
+        guard let encoded = percents.addingPercentEncoding(withAllowedCharacters: allowed),
+              let u = URL(string: encoded), u.scheme != nil else { return nil }
+        return u
     }
 }
 

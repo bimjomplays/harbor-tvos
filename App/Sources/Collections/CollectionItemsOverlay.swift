@@ -24,7 +24,7 @@ struct CollectionItemsOverlay: View {
     enum Panel { case rename, add }
 
     private struct NewItem: Encodable { var id: String; var type: String; var name: String; var poster: String? }
-    private struct TvdbDetail: Decodable { var name: String; var overview: String?; var image: String?; var items: [CollectionsModel.Item]; var failed: Bool }
+    private struct TvdbDetail: Decodable { var name: String; var overview: String?; var image: String?; @LossyArray var items: [CollectionsModel.Item]; var failed: Bool }
 
     init(card: CollectionsModel.Card, limits: CollectionsModel.Limits, onClose: @escaping () -> Void,
          onChanged: @escaping (String) -> Void, onOpen: @escaping (CollectionsModel.Item) -> Void) {

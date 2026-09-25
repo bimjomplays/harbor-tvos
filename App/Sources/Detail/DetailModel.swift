@@ -289,7 +289,7 @@ final class DetailModel: ObservableObject {
         struct Collection: Decodable { var id: Int; var name: String }
         var kind: String; var tmdbId: Int; var imdbId: String?; var tagline: String; var overview: String
         var rating: String?; var runtime: String?; var status: String; var genres: [String]
-        var cast: [Cast]; var crew: [Crew]; var recommendations: [Meta]; var similar: [Meta]
+        var cast: [Cast]; var crew: [Crew]; @LossyArray var recommendations: [Meta]; @LossyArray var similar: [Meta]   // (bug pass 2) lossy
         var trailerYtId: String?; var collection: Collection?; var facts: [Fact]; var watchOn: [Provider]
         struct Video: Decodable, Identifiable { var ytId: String; var name: String; var type: String; var id: String { ytId } }
         var videos: [Video]?
@@ -380,7 +380,7 @@ final class DetailModel: ObservableObject {
             await CardMarksStore.shared.refresh(x.recommendations + x.similar)
         }
         if let c = x?.collection {
-            struct Col: Decodable { var name: String; var metas: [Meta] }
+            struct Col: Decodable { var name: String; @LossyArray var metas: [Meta] }
             let col: Col? = try? await HarborEngine.shared.call("detailRoom.collection", [c.id, p?.id ?? "default", p?.linked ?? true])
             if let col { collectionRow = BrowseRow(key: "collection", title: col.name, metas: col.metas) }
         }
@@ -505,12 +505,16 @@ final class DetailModel: ObservableObject {
         if !isSeries, let local: Local? = try? await HarborEngine.shared.call("player.localResume", [meta.id, AnyJSON.null, AnyJSON.null]), let l = local {
             resume = Resume(season: nil, episode: nil, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)
         } else if isSeries {
-            // Scan this season's episodes for the most recent local entry.
+            // (bug pass 2) One engine read for every local entry of the title (newest first), not one
+            // bridge call per episode (~1000 for a long anime). The newest entry on this page wins,
+            // as upstream's lastPlayedEpisode picks by time (views/detail.tsx lastPlay).
+            struct EpisodeResume: Decodable { var season: Int; var episode: Int; var ms: Double; var t: Double; var pct: Double? }
+            let loaded: LossyArray<EpisodeResume>? = try? await HarborEngine.shared.call("player.localResumes", [meta.id])
+            var byKey: [String: Episode] = [:]
+            for ep in episodes where byKey["\(ep.season):\(ep.episode)"] == nil { byKey["\(ep.season):\(ep.episode)"] = ep }
             var best: (Episode, Local)?
-            for ep in episodes {
-                if let l: Local? = try? await HarborEngine.shared.call("player.localResume", [meta.id, ep.season, ep.episode]), let l, l.ms > 0 {
-                    best = (ep, l)
-                }
+            for r in loaded?.wrappedValue ?? [] where r.ms > 0 {
+                if let ep = byKey["\(r.season):\(r.episode)"] { best = (ep, Local(ms: r.ms, pct: r.pct)); break }
             }
             if let (ep, l) = best {
                 resume = Resume(season: ep.season, episode: ep.episode, positionMs: l.ms, durationMs: l.pct.map { $0 > 0 ? l.ms / $0 : 0 } ?? 0)

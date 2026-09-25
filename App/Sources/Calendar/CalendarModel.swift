@@ -39,7 +39,7 @@ final class CalendarModel: ObservableObject {
         var day: Int
         var inMonth: Bool
         var isToday: Bool
-        var items: [Entry]
+        @LossyArray var items: [Entry]   // (bug pass 2) lossy: synced titles
         var id: String { iso }
     }
 

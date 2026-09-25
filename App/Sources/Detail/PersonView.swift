@@ -8,7 +8,7 @@ final class PersonModel: ObservableObject {
     struct Person: Decodable { var id: Int; var name: String; var department: String; var portrait: String?; var imdbId: String?; var biography: String; var facts: [String] }
     struct Collaborator: Decodable, Identifiable { var id: Int; var name: String; var portrait: String?; var role: String?; var titles: Int }
     struct Award: Decodable, Identifiable { var type: String; var wins: Int; var nominations: Int; var id: String { type } }
-    struct Section: Decodable, Identifiable { var id: String; var title: String; var metas: [Meta] }
+    struct Section: Decodable, Identifiable { var id: String; var title: String; @LossyArray var metas: [Meta] }   // (bug pass 2) lossy
     struct Page: Decodable {
         var hasKey: Bool; var person: Person?
         var knownFor: [Meta]?; var topRated: [Meta]?; var collaborators: [Collaborator]?; var awards: [Award]?

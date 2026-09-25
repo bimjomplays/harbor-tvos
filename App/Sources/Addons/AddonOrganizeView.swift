@@ -30,6 +30,12 @@ struct AddonOrganizeView: View {
     @State private var grabbed: String?
     @State private var backupsOpen = false
     @State private var backups: [Backup] = []
+    /// (bug pass 2) Focus is bound to the row key, not its index, so a picked-up row keeps focus as
+    /// it moves; `moved` scrolls the list after it (the focus engine only scrolls on focus changes,
+    /// so a row carried past the screen edge used to leave the view behind).
+    @FocusState private var focusedRow: String?
+    private struct MoveMark: Equatable { var key: String; var tick: Int }
+    @State private var moved: MoveMark?
 
     private var dirty: Bool { cloud != baselineCloud || device != baselineDevice }
     private var locked: Bool { saving != nil || moving }
@@ -37,6 +43,7 @@ struct AddonOrganizeView: View {
     var body: some View {
         ZStack {
             BP.canvas.ignoresSafeArea()
+            ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(24)) {
                     header
@@ -65,6 +72,11 @@ struct AddonOrganizeView: View {
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(50))
+            }
+            .onChange(of: moved) { _, mark in
+                guard let mark else { return }
+                withAnimation(BP.easeFast) { proxy.scrollTo(mark.key) }
+            }
             }
         }
         .ignoresSafeArea()
@@ -164,6 +176,7 @@ struct AddonOrganizeView: View {
                 .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(isGrabbed ? BP.accent.opacity(0.6) : BP.edge, lineWidth: isGrabbed ? 2 : 1))
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .focused($focusedRow, equals: row.key)
             .onMoveCommand { dir in
                 guard isGrabbed else { return }
                 switch dir {
@@ -192,6 +205,10 @@ struct AddonOrganizeView: View {
         withAnimation(BP.easeFast) {
             if which == .cloud { cloud = list } else { device = list }
         }
+        // (bug pass 2) The ForEach is keyed by row id, so the moved row keeps its focus; say so
+        // explicitly for a picked-up row, and bring the row's new place into view.
+        if grabbed == item.key { focusedRow = item.key }
+        moved = MoveMark(key: item.key, tick: (moved?.tick ?? 0) + 1)
     }
 
     private var moveAllButton: some View {

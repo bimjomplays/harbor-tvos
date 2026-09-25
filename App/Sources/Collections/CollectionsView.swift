@@ -18,11 +18,11 @@ final class CollectionsModel: ObservableObject {
         /// The collection's own id (uuid for mine/community, TMDB/TVDB id otherwise).
         var ref: String
         var handle: String?; var saved: Bool?
-        var name: String; var image: String?; var count: Int?; var byline: String?; var description: String?; var items: [Item]
+        var name: String; var image: String?; var count: Int?; var byline: String?; var description: String?; @LossyArray var items: [Item]   // (bug pass 2) lossy
         var hidden: Int?
         var id: String { key }
     }
-    struct All: Decodable { var mine: [Card]; var community: [Card] }
+    struct All: Decodable { @LossyArray var mine: [Card]; @LossyArray var community: [Card] }
     struct Limits: Decodable { var collections: Int; var items: Int }
 
     @Published private(set) var mine: [Card] = []
@@ -63,11 +63,11 @@ final class CollectionsModel: ObservableObject {
     }
 
     func reloadMine() async {
-        if let m: [Card] = try? await HarborEngine.shared.call("collectionsRoom.mine", []) { mine = m }
+        if let m: LossyArray<Card> = try? await HarborEngine.shared.call("collectionsRoom.mine", []) { mine = m.wrappedValue }
     }
 
     func reloadCommunity() async {
-        if let c: [Card] = try? await HarborEngine.shared.call("collectionsRoom.community", []) { community = c }
+        if let c: LossyArray<Card> = try? await HarborEngine.shared.call("collectionsRoom.community", []) { community = c.wrappedValue }   // (bug pass 2) lossy
     }
 
     func set(source s: String) {
@@ -86,7 +86,7 @@ final class CollectionsModel: ObservableObject {
         if reset { tmdb = []; tmdbPage = 0; tmdbDone = false }
         guard !tmdbLoading, !tmdbDone, hasKey else { return }
         tmdbLoading = true; defer { tmdbLoading = false }
-        struct Page: Decodable { var cards: [Card]; var done: Bool }
+        struct Page: Decodable { @LossyArray var cards: [Card]; var done: Bool }
         let p = ProfilesStore.shared.active
         let want = category
         let got: Page? = try? await HarborEngine.shared.call("collectionsRoom.tmdb", [p?.id ?? "default", p?.linked ?? true, category, tmdbPage + 1])
@@ -112,7 +112,7 @@ final class CollectionsModel: ObservableObject {
         guard !tvdbLoading, !tvdbDone else { return }
         tvdbLoading = true
         let run = tvdbRun
-        struct Page: Decodable { var cards: [Card]; var next: Int; var done: Bool; var failed: Bool; var capped: Bool }
+        struct Page: Decodable { @LossyArray var cards: [Card]; var next: Int; var done: Bool; var failed: Bool; var capped: Bool }
         var added = 0
         var steps = 0
         while added == 0 && steps < 3 && !tvdbDone {

@@ -710,8 +710,9 @@ struct KidsStreamSwitcher: View {
         failure = nil
         let r = await model.resolve(s)
         resolving = nil
-        guard r.ok, let link = r.data, let url = URL(string: link.url) else {
-            failure = r.message ?? r.code
+        guard r.ok, let link = r.data, let url = PlayableURL.make(link.url) else {
+            // (bug pass 2) An ok answer with a link no URL can be made of has no message: say so.
+            failure = r.message ?? r.code ?? (r.ok && r.data != nil ? Optional(PlayPickerView.badLinkMessage) : nil)
             return
         }
         await model.remember(s, meta: meta, episode: episode, url: link.url)

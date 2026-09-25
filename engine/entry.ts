@@ -1044,6 +1044,8 @@ export const player = {
   startPosition: playerGlue.startPosition,
   saveProgress: playerGlue.saveProgress,
   localResume: playerGlue.localResume,
+  /** (bug pass 2) Every local episode resume of one title, newest first (Detail reads them in one call). */
+  localResumes: playerGlue.localResumes,
   watchedEpisodes: playerGlue.watchedEpisodes,
   decodeWatchedField: playerGlue.decodeWatchedField,
   encodeWatchedField: playerGlue.encodeWatchedField,

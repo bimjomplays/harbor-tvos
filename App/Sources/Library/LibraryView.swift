@@ -12,7 +12,7 @@ final class LibraryModel: ObservableObject {
         var progress: Double?; var season: Int?; var episode: Int?; var watched: Bool?
         var id: String { key }
     }
-    struct Section: Decodable, Identifiable { var label: String; var items: [Entry]; var total: Int; var id: String { label } }
+    struct Section: Decodable, Identifiable { var label: String; @LossyArray var items: [Entry]; var total: Int; var id: String { label } }   // (bug pass 2) lossy: synced library
     struct Group: Decodable, Identifiable { var id: String; var label: String }
     struct Counts: Decodable { var all: Int; var movie: Int; var series: Int }
     struct Feed: Decodable {

@@ -25,7 +25,7 @@ final class AddonsModel: ObservableObject {
         var configureUrl: String
         var installed: Bool
         var configurable: Bool
-        var types: [String]
+        @LossyArray var types: [String]   // (bug pass 2) lossy
         var stars: Double
         var rising: Double?
         var risingWindow: Double?
@@ -100,7 +100,7 @@ final class AddonsModel: ObservableObject {
     /// useAddonsCatalog + the Installed tab's order (addons.tsx `installed`).
     func loadCatalog(fresh: Bool = false) async {
         catalogLoading = true; defer { catalogLoading = false; catalogLoaded = true }
-        struct Loaded: Decodable { var installed: [Card]; var installedCount: Int; var total: Int }
+        struct Loaded: Decodable { @LossyArray var installed: [Card]; var installedCount: Int; var total: Int }   // (bug pass 2) lossy
         if let r: Loaded = try? await HarborEngine.shared.call("addonsManager.load", [authKey, adultAllowed, fresh]) {
             installed = r.installed
             installedCount = r.installedCount
@@ -128,7 +128,8 @@ final class AddonsModel: ObservableObject {
     private func loadRail() async {
         rail = nil
         let m = railMode
-        let list: [Card] = (try? await HarborEngine.shared.call("addonsManager.rail", [m.rawValue, adultAllowed])) ?? []
+        let loaded: LossyArray<Card>? = try? await HarborEngine.shared.call("addonsManager.rail", [m.rawValue, adultAllowed])   // (bug pass 2) lossy
+        let list = loaded?.wrappedValue ?? []
         guard m == railMode else { return }
         rail = list
     }
@@ -188,7 +189,7 @@ final class AddonsModel: ObservableObject {
         guard !browseLoading, hasMore else { return }
         let gen = browseGeneration
         browseLoading = true
-        struct Page: Decodable { var items: [Card]; var hasMore: Bool; var empty: String }
+        struct Page: Decodable { @LossyArray var items: [Card]; var hasMore: Bool; var empty: String }   // (bug pass 2) lossy
         let q = trimmedQuery
         let search: String? = q.isEmpty ? nil : q
         let r: Page? = try? await HarborEngine.shared.call("addonsManager.browse", [mode.rawValue, category, search, adultAllowed, page])

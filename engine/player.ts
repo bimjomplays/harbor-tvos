@@ -155,6 +155,35 @@ export function localResume(metaId: string, season: number | null, episode: numb
   return readResumeEntry(metaId, season ?? undefined, episode ?? undefined);
 }
 
+/**
+ * (bug pass 2) Every local episode resume entry of one title in one read, newest first (lib/resume.ts
+ * entryKey `${id}|s${season}e${episode}` + readAll, not exported). Detail asked localResume once per
+ * episode — a thousand bridge calls for a long anime. Entries without a position are left out.
+ */
+export function localResumes(metaId: string): Array<{ season: number; episode: number; ms: number; t: number; pct?: number }> {
+  let all: Record<string, { ms?: unknown; t?: unknown; pct?: unknown }> = {};
+  try {
+    const raw = localStorage.getItem("harbor.resume");
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) all = parsed;
+  } catch {
+    return [];
+  }
+  const prefix = `${metaId}|s`;
+  const out: Array<{ season: number; episode: number; ms: number; t: number; pct?: number }> = [];
+  for (const [key, value] of Object.entries(all)) {
+    if (!key.startsWith(prefix)) continue;
+    const m = /^(\d+)e(\d+)$/.exec(key.slice(prefix.length));
+    if (!m || !value || typeof value !== "object") continue;
+    const ms = typeof value.ms === "number" && Number.isFinite(value.ms) ? value.ms : 0;
+    if (ms <= 0) continue;
+    const t = typeof value.t === "number" && Number.isFinite(value.t) ? value.t : 0;
+    const pct = typeof value.pct === "number" && Number.isFinite(value.pct) ? value.pct : undefined;
+    out.push({ season: Number.parseInt(m[1], 10), episode: Number.parseInt(m[2], 10), ms, t, ...(pct !== undefined ? { pct } : {}) });
+  }
+  return out.sort((a, b) => b.t - a.t);
+}
+
 
 /**
  * Which episodes the Stremio library marks watched, as "season:episode" keys.
