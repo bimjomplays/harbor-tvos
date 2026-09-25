@@ -2986,6 +2986,17 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("ebook.openChapter: paragraphs (single newlines joined), line 0, a text identity; the resume points at the chapter", o1.paragraphs.length === 3 && o1.paragraphs[1] === "However little known the feelings." && o1.line === 0 && /^\d+:\d+$/.test(o1.identity) && eb.resume("default", route)?.chapterId === chs[0].id, JSON.stringify(o1));
   const saved = eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity);
   r.ok("ebook.savePosition: harbor-reader's chapter and book progress", saved.chapterProgress === 50 && saved.bookProgress === 25 && saved.textIdentity === o1.identity && eb.openChapter("default", route, chs[0], text).line === 1, JSON.stringify(saved));
+  // (bug pass) The TV's page anchor: a page deep inside a long paragraph reopens there, not on the
+  // paragraph's first page; it is dropped when the line or the chapter's text no longer match.
+  r.eq("ebook.openChapter: no page anchor for a save without one", eb.openChapter("default", route, chs[0], text).offset, null);
+  eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity, 1840);
+  const anchored = eb.openChapter("default", route, chs[0], text);
+  const edited = eb.openChapter("default", route, chs[0], `${text}\n\nA new closing paragraph.`);
+  eb.savePosition("default", route, chs[0], 2, 3, 0, 2, o1.identity, null);
+  r.ok("ebook.savePosition keeps the page anchor beside the line; a changed text or a save without it drops it",
+    anchored.line === 1 && anchored.offset === 1840 && edited.offset === null && eb.openChapter("default", route, chs[0], text).offset === null,
+    JSON.stringify([anchored.offset, edited.offset]));
+  eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity);
   r.eq("ebook.statuses: a started book is partial", eb.statuses("default", [route, "source:x:2"]), { [route]: "partial" });
   eb.savePosition("default", route, chs[1], 2, 3, 1, 2, o1.identity);
   r.eq("ebook.statuses: the last chapter at its end is read", eb.statuses("default", [route])[route], "read");

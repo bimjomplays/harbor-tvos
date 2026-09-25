@@ -56,12 +56,16 @@ final class PlayerXRayModel: ObservableObject {
 
     @Published private(set) var payload: Payload?
     @Published private(set) var loading = false
+    /// (bug pass) The engine call failed (an engine error or an answer that would not decode): the
+    /// rail and the browser said "Reading the cast" with a spinner for as long as the pause lasted.
+    @Published private(set) var failed = false
     /// The overlay is rebuilt on every pause; the last title's answer shows at once.
     private static var last: (metaId: String, payload: Payload)?
 
     func load(_ meta: Meta) async {
-        if let hit = Self.last, hit.metaId == meta.id { payload = hit.payload; return }
+        if let hit = Self.last, hit.metaId == meta.id { payload = hit.payload; failed = false; return }
         loading = true
+        failed = false
         defer { loading = false }
         let p = ProfilesStore.shared.active
         let got: Payload? = try? await HarborEngine.shared.call("xray.load", [meta, p?.id ?? "default", p?.linked ?? true])
@@ -70,6 +74,8 @@ final class PlayerXRayModel: ObservableObject {
             // Only a full answer is kept: a failed TMDB lookup or a missing key must be asked again
             // (the engine caches its own successes for ten minutes) (review 34).
             if got.hasDetails && !got.needsTmdbKey { Self.last = (meta.id, got) }
+        } else if payload == nil {
+            failed = true
         }
     }
 }
@@ -192,7 +198,11 @@ struct PlayerXRayOverlay: View {
             .focusSection()
             if people.isEmpty {
                 HStack(spacing: BP.px(8)) {
-                    if model.loading || model.payload == nil {
+                    if model.failed && model.payload == nil {
+                        // engine/xray.ts assemble's own copy for a title with nobody listed.
+                        Text(T("No cast information for this title.")).font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if model.loading || model.payload == nil {
                         ProgressView().tint(BP.inkMuted)
                         Text("Reading the cast").font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
                     } else if let status = model.payload?.railStatus {
@@ -291,6 +301,8 @@ struct PlayerXRayOverlay: View {
                         case "crew": grid(data.crew, empty: data.empty.crew)
                         default: grid(data.cast, empty: data.empty.cast)
                         }
+                    } else if data == nil && model.failed {
+                        emptyNote(T("No cast information for this title."))
                     } else if data == nil {
                         ProgressView().tint(BP.inkMuted).frame(maxWidth: .infinity, minHeight: BP.px(220))
                     } else {

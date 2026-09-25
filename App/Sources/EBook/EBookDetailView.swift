@@ -43,7 +43,15 @@ final class EBookDetailModel: ObservableObject {
         self.candidates = candidates
     }
 
+    private var started = false
+
     func load() async {
+        // (bug pass) Once per page: `.task` runs again whenever the reader or a nested detail cover
+        // closes, which re-fetched the detail, re-resolved the sources and reloaded both rails over
+        // the network after every read. The reader's onDismiss already refreshes the flags and the
+        // resume.
+        guard !started else { return }
+        started = true
         // views/ebook.tsx: the list's copy shows at once while the detail loads.
         let cached = candidates.first { $0.id == id || ($0.books ?? []).contains { $0.id == id } }
             ?? (EBookStore.shared.favorites + EBookStore.shared.shelf).first { $0.id == id }

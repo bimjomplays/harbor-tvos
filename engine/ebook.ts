@@ -292,11 +292,39 @@ function volumeLabel(chapter: EBookChapter): string | undefined {
 export function openChapter(pid: string, bookId: string, chapter: EBookChapter, raw: string) {
   saveEBookResume(pid, bookId, { chapterId: chapter.id, chapterTitle: chapter.title, chapterLabel: chapter.chapter, volumeLabel: volumeLabel(chapter) });
   const text = cleanSourceText(raw ?? "");
+  const line = loadEBookProgress(pid, bookId, `${chapter.id}:harbor`);
+  const identity = ebookTextIdentity(text);
   return {
     paragraphs: ebookParagraphs(text),
-    line: loadEBookProgress(pid, bookId, `${chapter.id}:harbor`),
-    identity: ebookTextIdentity(text),
+    line,
+    identity,
+    offset: loadPageAnchor(pid, bookId, chapter.id, line, identity),
   };
+}
+
+/**
+ * (bug pass) TV-only page anchor beside upstream's paragraph line: where the saved page began, in
+ * characters from the saved paragraph's start (negative when the page opens on the tail of the
+ * paragraph before it). A paragraph longer than a screen page spans several pages, and the line
+ * alone reopened the book on the first of them. Stored under upstream's progress prefix (durable on
+ * the TV) with a suffix upstream's savedEBookChapters skips (it only reads ids ending in
+ * ":harbor"); used only while the saved line and the chapter's text identity still match.
+ */
+function pageAnchorKey(pid: string, bookId: string, chapterId: string): string {
+  const safe = (value: string) => encodeURIComponent(value);
+  return `harbor.ebook.progress.v1.${safe(pid)}.${safe(bookId)}.${safe(`${chapterId}:harbor:tv-anchor`)}`;
+}
+
+function loadPageAnchor(pid: string, bookId: string, chapterId: string, line: number, identity: string): number | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(pageAnchorKey(pid, bookId, chapterId)) || "null") as
+      | { line?: unknown; offset?: unknown; identity?: unknown }
+      | null;
+    if (!stored || stored.line !== line || stored.identity !== identity) return null;
+    return typeof stored.offset === "number" && Number.isInteger(stored.offset) ? stored.offset : null;
+  } catch {
+    return null;
+  }
 }
 
 /** harbor-reader persistReadingPosition. */
@@ -309,12 +337,23 @@ export function savePosition(
   chapterIndex: number,
   totalChapters: number,
   identity: string,
+  offset?: number | null,
 ) {
   if (!count || (!chapter.legacy && chapterIndex < 0) || !totalChapters) return null;
   const safeLine = Math.max(0, Math.min(count - 1, line));
   const chapterProgress = count <= 1 ? 100 : Math.round((safeLine / (count - 1)) * 100);
   const bookProgress = Math.round(((chapterIndex + chapterProgress / 100) / totalChapters) * 100);
   saveEBookProgress(pid, bookId, `${chapter.id}:harbor`, safeLine);
+  try {
+    const key = pageAnchorKey(pid, bookId, chapter.id);
+    if (typeof offset === "number" && Number.isFinite(offset)) {
+      localStorage.setItem(key, JSON.stringify({ line: safeLine, offset: Math.round(offset), identity }));
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    /* the line alone still restores the paragraph */
+  }
   return saveEBookResume(pid, bookId, {
     chapterId: chapter.id,
     chapterTitle: chapter.title,

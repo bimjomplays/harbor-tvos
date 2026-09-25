@@ -43,9 +43,16 @@ struct CalendarDayView: View {
         }
         .onExitCommand { dismiss() }
         .onReceive(tick) { now = $0 }
-        .task { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = cell.items.first?.id } }
+        // (bug pass) Only on arrival: `.task` runs again when a release's title cover closes, and
+        // focus jumped from that row back to the first one.
+        .task {
+            guard !focusPlaced else { return }
+            focusPlaced = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = cell.items.first?.id }
+        }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
     }
+    @State private var focusPlaced = false
 
     private func row(_ item: CalendarModel.Entry) -> some View {
         HStack(alignment: .top, spacing: BP.px(12)) {
@@ -148,6 +155,9 @@ struct RemindersManagerView: View {
         }
         .onExitCommand { dismiss() }
         .task {
+            // (bug pass) Once: `.task` runs again when a show's cover closes (onDismiss already
+            // re-reads the rows), and focus jumped from that show back to the first row.
+            guard !loaded else { return }
             rows = await ReminderCenter.shared.list()
             loaded = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = rows.first?.id ?? "close" }

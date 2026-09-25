@@ -60,6 +60,7 @@ struct WrappedView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = WrappedModel()
     @State private var detail: Meta?
+    @State private var focusPlaced = false
     @FocusState private var focus: String?
 
     private enum Card: String, CaseIterable { case hero, highlights, split, titles, actors, genres, heatmap }
@@ -92,6 +93,10 @@ struct WrappedView: View {
         .onExitCommand { dismiss() }
         .task {
             await model.load()
+            // (bug pass) Only on arrival: `.task` runs again when a top title's detail cover
+            // closes, and focus jumped from that title back to the first card.
+            guard !focusPlaced else { return }
+            focusPlaced = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = cards.first.map { "card-\($0.rawValue)" } ?? "back" }
         }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }

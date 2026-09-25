@@ -33,7 +33,10 @@ struct SharedListView: View {
         }
         .ignoresSafeArea()
         .onExitCommand { dismiss() }
-        .task { await load() }
+        // (bug pass) Once: `.task` runs again when a title or the maker's profile closes, and a
+        // refetch that failed (offline, a timeout) swapped the list the viewer was browsing for
+        // "Could not load this list". Try again still reloads.
+        .task { if data == nil { await load() } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $profile) { h in ProfilePageView(handle: h.handle) }
     }

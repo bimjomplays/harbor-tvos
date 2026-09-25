@@ -15,6 +15,7 @@ struct CalendarView: View {
     @State private var showRail = false
     @State private var fired: [ReminderCenter.Fired] = []
     @State private var now = Date()
+    @State private var mounted = false
     private let tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -30,7 +31,13 @@ struct CalendarView: View {
         }
         .task {
             // calendar.tsx: useEffect(() => clearUnseenReminders(), []). What fired is shown once.
-            fired = await reminders.takeUnseen()
+            // (bug pass) Once per visit: `.task` runs again when a title, day or reminders cover
+            // closes, and the second take came back empty, so opening a fired reminder's title
+            // wiped the banner behind it.
+            if !mounted {
+                mounted = true
+                fired = await reminders.takeUnseen()
+            }
             await model.load()
         }
         .onReceive(tick) { now = $0 }

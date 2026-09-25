@@ -62,6 +62,11 @@ struct EBookReaderView: View {
             focus = .surface
             await model.start(pageSize: textSize)
         }
+        // (bug pass) The reader can go without Close / Back (Switch profile or a roster change
+        // returning to Who's watching, a language or theme change rebuilding the tree): the voice
+        // is stopped explicitly then too (only Close / Back stopped it before; the synthesizer was
+        // left to whenever the model happened to deallocate). close() runs once.
+        .onDisappear { model.close() }
         .onChange(of: model.prefs.width) { _, _ in model.resize(textSize) }
         .onChange(of: model.page) { _, _ in showCounter() }
         .animation(BP.easeFast, value: menuOpen)
