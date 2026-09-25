@@ -261,8 +261,11 @@ export async function page(input: PageInput) {
   // bp-sports.tsx:142-153 status note.
   // bp-sports.tsx:141-149: one label per league, "Soccer" for the aggregate board.
   const failedLabels = [...new Set(failedKeys.map((k) => k.split("@")[0]))].map((k) => (k === "SOCCER_ALL" ? "Soccer" : hubLeague(k) ? getLeagueLabel(hubLeague(k)!) : k));
-  const note = busy ? null : stale ? "Showing saved schedules while feeds reconnect."
-    : failed ? `Some feeds did not respond. Available events are still shown. (${failedLabels.slice(0, 3).join(", ")}${failedLabels.length > 3 ? ` +${failedLabels.length - 3}` : ""})`
+  // (device-flow pass) Through t() and in upstream's shape ("… · NBA, NHL +2"): the English text
+  // with the names in brackets was no catalog key, so the note never translated.
+  const brokenNames = failedLabels.slice(0, 3).join(", ") + (failedLabels.length > 3 ? ` +${failedLabels.length - 3}` : "");
+  const note = busy ? null : stale ? t("Showing saved schedules while feeds reconnect.")
+    : failed ? `${t("Some feeds did not respond. Available events are still shown.")}${brokenNames ? ` · ${brokenNames}` : ""}`
     : null;
 
   return {
@@ -278,19 +281,20 @@ export async function page(input: PageInput) {
 }
 
 /**
- * Day strip for schedule mode: 3 days back, 10 ahead (date-band). Weekdays in Harbor's UI language
- * like bp-sports-date-band.tsx (`toLocaleDateString(lang, …)`); "Today" stays the English source
- * string, which Swift translates.
+ * Day strip for schedule mode: date-bar.tsx buildDays, 7 days back and 7 ahead. Each cell is a
+ * weekday over the day of the month like bp-sports-date-band.tsx (the weekday alone left two
+ * "Mon" cells nobody could tell apart). Weekdays in Harbor's UI language (`toLocaleDateString(lang,
+ * …)`); "Today" stays the English source string, which Swift translates.
  */
-export function days(anchor?: string | null, locale?: string | null): Array<{ key: string; label: string; today: boolean }> {
+export function days(anchor?: string | null, locale?: string | null): Array<{ key: string; label: string; number: number; today: boolean }> {
   const lang = locale || "en";
   const base = anchor ? new Date(+anchor.slice(0, 4), +anchor.slice(4, 6) - 1, +anchor.slice(6, 8)) : new Date();
   const today = dayStamp(new Date());
-  const out: Array<{ key: string; label: string; today: boolean }> = [];
-  for (let i = -3; i <= 10; i++) {
-    const d = new Date(base); d.setDate(base.getDate() + i);
+  const out: Array<{ key: string; label: string; number: number; today: boolean }> = [];
+  for (let i = -7; i <= 7; i++) {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
     const key = dayStamp(d);
-    out.push({ key, label: key === today ? "Today" : weekdayShort(d, lang), today: key === today });
+    out.push({ key, label: key === today ? "Today" : weekdayShort(d, lang), number: d.getDate(), today: key === today });
   }
   return out;
 }
@@ -303,14 +307,21 @@ function weekdayShort(d: Date, lang: string): string {
   }
 }
 
-/** Game detail (espn summary and provider branches), 25 s cache like use-match-detail.ts. */
+/**
+ * Game detail (espn summary and provider branches), 25 s cache like use-match-detail.ts. Only a
+ * summary is kept (use-match-detail load: `if (detail) cache.set`, at most 24): a failed fetch was
+ * cached as null, so the event page's Try again said "not available" again for 25 s.
+ */
 const detailCache = new Map<string, { at: number; value: unknown }>();
 export async function detail(game: SportsGame): Promise<unknown> {
   const key = gameKey(game);
   const hit = detailCache.get(key);
   if (hit && Date.now() - hit.at < 25_000) return hit.value;
   const value = await fetchGameSummary(game);
-  detailCache.set(key, { at: Date.now(), value });
+  if (value) {
+    detailCache.set(key, { at: Date.now(), value });
+    if (detailCache.size > 24) detailCache.delete(detailCache.keys().next().value!);
+  }
   return value;
 }
 

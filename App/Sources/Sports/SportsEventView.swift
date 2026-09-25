@@ -116,6 +116,8 @@ final class SportsEventModel: ObservableObject {
 struct SportsEventView: View {
     let game: SportsModel.Game
     let dismiss: () -> Void
+    /// bp-sports-watch openSetup (goBigPictureTab("live")): closes the event and opens Live TV.
+    var openLive: (() -> Void)? = nil
     @StateObject private var model = SportsEventModel()
     @State private var playing: SportsEventModel.WatchOption?
     @State private var picker = false
@@ -139,7 +141,7 @@ struct SportsEventView: View {
                     if let s = model.rows?.stats { SportsStatsRowView(stats: s) }
                     if let l = model.rows?.lineups { SportsLineupsRowView(lineups: l) }
                     if model.rows == nil && model.loading { ProgressView().tint(BP.inkMuted) }
-                    StandingsSection(league: game.league).padding(.top, BP.px(10))
+                    StandingsSection(league: game.league, highlight: [game.home.id, game.away.id])
                     addonRow
                     SportsWhereRowView(game: game)
                     if let n = model.note { BPNote(text: n) }
@@ -184,6 +186,7 @@ struct SportsEventView: View {
                 onAir: model.watch?.onAir ?? false,
                 channels: broadcastChannelsAction,
                 addons: broadcastAddonsAction,
+                setup: broadcastSetupAction,
                 onClose: { broadcastsOpen = false })
         }
         .fullScreenCover(item: $link) { l in SportsLinkView(link: l) { link = nil } }
@@ -222,6 +225,15 @@ struct SportsEventView: View {
                     ProgressView().tint(BP.inkMuted)
                     Text("Checking your channels…").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
                 }
+                // (device-flow pass) bp-sports-event canRetry (failed && summary): "Match details are
+                // not available" had no way to ask again short of leaving the page.
+                if model.note != nil, ["espn", "thesportsdb", "api-sports"].contains(game.source ?? "espn") {
+                    Button {
+                        guard !model.loading else { return }
+                        Task { await model.load(game) }
+                    } label: { Label("Try again", systemImage: "arrow.clockwise") }
+                    .buttonStyle(BPActionStyle(busy: model.loading))
+                }
                 heroActions
             }
             if game.state != "post", let w = model.watch {
@@ -248,6 +260,10 @@ struct SportsEventView: View {
             Button(w.channels.isEmpty ? T("Search your channels") : w.channels.count == 1 ? T("Watch · 1 channel found") : T("Watch · %lld channels found", w.channels.count)) { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
         case "addons":
             Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle(primary: true))
+        case "setup":
+            // (device-flow pass) bp-sports-watch press on "setup" opens Live TV; the plan drew no
+            // button at all, so the page offered nothing to do about "Add a Live TV source".
+            if let openLive { Button(T("Set up Live TV")) { openLive() }.buttonStyle(BPActionStyle(primary: true)) }
         default:
             EmptyView()
         }
@@ -315,8 +331,11 @@ struct SportsEventView: View {
                      : T("None of your channels match this fixture. Search your channels and pin the one that carries it.") + " (\(w.scanned) sports channels scanned)")
                     .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
-            // bp-sports-picker onAddons: offered whenever an addon has any listing.
-            if (model.addons?.available ?? 0) > 0 { Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle()) }
+            // bp-sports-picker onAddons: offered whenever an addon has any listing; onSetup always.
+            HStack(spacing: BP.px(10)) {
+                if (model.addons?.available ?? 0) > 0 { Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle()) }
+                if let openLive { Button(T("Set up Live TV")) { openLive() }.buttonStyle(BPActionStyle()) }
+            }
         }
         .frame(maxWidth: BP.px(900), alignment: .leading)
     }
@@ -334,6 +353,15 @@ struct SportsEventView: View {
         }
     }
 
+    /// bp-sports-broadcast-picker "Set up Live TV" (onSetup): the list closes with the event.
+    private var broadcastSetupAction: (() -> Void)? {
+        guard let openLive else { return nil }
+        return {
+            broadcastsOpen = false
+            openLive()
+        }
+    }
+
     private func broadcastLink(_ b: SportsEventModel.Broadcast) -> SportsLink {
         SportsLink(title: b.title, url: b.url, app: b.app, message: T("Official broadcast. It plays in the %@ app, or scan to watch on your phone.", b.platformLabel))
     }
@@ -347,6 +375,8 @@ struct SportsEventView: View {
     }
 
     private func play(_ opt: SportsEventModel.WatchOption) {
+        // bp-sports-watch pick: setPicking(false) — the list is closed when the player hands back.
+        picker = false
         model.recordPlay(opt, game: game)
         playing = opt
     }
