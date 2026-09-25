@@ -102,7 +102,20 @@ function notify(): void {
 async function feed(keys: string[], mode: FeedMode, force: boolean, wait: boolean): Promise<SportsSnapshot> {
   if (keys.length === 0) return EMPTY;
   const maxAge = force ? 0 : mode === "upcoming" ? 15 * 60_000 : 15_000;
-  const due = keys.some((k) => { const hit = readSlice(k); return !hit || Date.now() - hit.at >= maxAge; });
+  // (bug pass) A feed that failed has no newer slice, so it read as due on the very next call —
+  // and every load ends in `harbor:sports-updated`, which makes the host read the page again.
+  // Offline (or with one league's feed erroring) that was a load every few hundred ms for as long
+  // as the room stayed open. use-hub.ts retries on its interval (60 s, 15 min for upcoming): a
+  // key that failed within that window waits for it, unless the viewer forces a refresh.
+  const retryAfter = mode === "upcoming" ? 15 * 60_000 : 60_000;
+  const now = Date.now();
+  const due = keys.some((k) => {
+    const hit = readSlice(k);
+    if (hit && now - hit.at < maxAge) return false;
+    const failedAt = lastFailed.get(k);
+    if (!force && failedAt !== undefined && now - failedAt < retryAfter && (!hit || hit.at < failedAt)) return false;
+    return true;
+  });
   const signature = keys.join(",") + "|" + mode;
   let running = inflight.get(signature);
   if (due && !running) {
@@ -250,17 +263,30 @@ export async function page(input: PageInput) {
   };
 }
 
-/** Day strip for schedule mode: 3 days back, 10 ahead (date-band). */
-export function days(anchor?: string): Array<{ key: string; label: string; today: boolean }> {
+/**
+ * Day strip for schedule mode: 3 days back, 10 ahead (date-band). Weekdays in Harbor's UI language
+ * like bp-sports-date-band.tsx (`toLocaleDateString(lang, …)`); "Today" stays the English source
+ * string, which Swift translates.
+ */
+export function days(anchor?: string | null, locale?: string | null): Array<{ key: string; label: string; today: boolean }> {
+  const lang = locale || "en";
   const base = anchor ? new Date(+anchor.slice(0, 4), +anchor.slice(4, 6) - 1, +anchor.slice(6, 8)) : new Date();
   const today = dayStamp(new Date());
   const out: Array<{ key: string; label: string; today: boolean }> = [];
   for (let i = -3; i <= 10; i++) {
     const d = new Date(base); d.setDate(base.getDate() + i);
     const key = dayStamp(d);
-    out.push({ key, label: key === today ? "Today" : d.toLocaleDateString("en", { weekday: "short" }), today: key === today });
+    out.push({ key, label: key === today ? "Today" : weekdayShort(d, lang), today: key === today });
   }
   return out;
+}
+
+function weekdayShort(d: Date, lang: string): string {
+  try {
+    return d.toLocaleDateString(lang, { weekday: "short" });
+  } catch {
+    return d.toLocaleDateString("en", { weekday: "short" });
+  }
 }
 
 /** Game detail (espn summary and provider branches), 25 s cache like use-match-detail.ts. */

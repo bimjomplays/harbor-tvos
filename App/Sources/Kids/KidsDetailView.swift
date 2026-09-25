@@ -42,9 +42,14 @@ final class KidsDetailModel: ObservableObject {
         return (p?.id ?? "default", p?.linked ?? true)
     }
 
+    /// (bug pass) The page's `.task` runs again whenever a cover over it closes (the picker, the
+    /// player, a related title). Reloading reset the season to the first one, so after an episode
+    /// of Season 3 the grid jumped back to Season 1. Once loaded, keep what is there.
     func load() async {
+        guard detail == nil else { return }
         let p = profile
         let d: Detail? = try? await HarborEngine.shared.call("kidsRoom.detail", [meta, p.id, p.linked])
+        guard detail == nil else { return }
         detail = d
         if let d {
             await CardMarksStore.shared.refresh(d.recs + (d.collection?.metas ?? []))
@@ -121,6 +126,9 @@ struct KidsDetailView: View {
         .background(KidsTheme.canvas.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .task {
+            // (bug pass) Seed Play only on the first visit: after the player or picker closes the
+            // ring stays where the viewer left it (an episode card) instead of jumping to Play.
+            guard model.detail == nil else { return }
             await model.load()
             playFocused = true
         }

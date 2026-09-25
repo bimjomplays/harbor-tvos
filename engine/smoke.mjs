@@ -1316,6 +1316,29 @@ r.ok("benchmark still works", (() => {
   rec.dispose();
 }
 
+// ---------------------------------------- sports feeds that fail back off (Kids/Sports bug pass)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  let hits = 0;
+  rec.node.host.fetch = async (req) => { hits++; return { status: 503, statusText: "Unavailable", headers: {}, url: req.url, body: "" }; };
+  const S = rec.engine.sports;
+  S.accept();
+  const first = await S.page({ mode: "live", group: "all", wait: true });
+  const afterFirst = hits;
+  // Every load ends in harbor:sports-updated and the TV reads the page again; a failed feed must
+  // not start another load on that read (it did, back to back, while offline).
+  await S.page({ mode: "live", group: "all" });
+  await S.page({ mode: "live", group: "all", wait: true });
+  const afterRepeat = hits;
+  await S.page({ mode: "live", group: "all", force: true, wait: true });
+  r.ok("sports.page: failed feeds wait for the retry window instead of reloading on every read; Retry (force) still reloads",
+    afterFirst > 0 && first.status.failed === true && afterRepeat === afterFirst && hits > afterRepeat,
+    JSON.stringify({ afterFirst, afterRepeat, hits, failed: first.status.failed }));
+  rec.dispose();
+}
+
 // ------------------------------------------------------------------------ settings
 const defaults = engine.settings.DEFAULT;
 r.ok("settings.DEFAULT is a populated object", Object.keys(defaults).length > 50, `${Object.keys(defaults).length} keys`);
@@ -1327,6 +1350,21 @@ r.eq("settings.patch writes through", [patched.cinemetaEnabled, JSON.parse(app.n
 r.eq("cinemeta honours the stored flag", engine.cinemeta.enabled(), false);
 engine.settings.patch({ cinemetaEnabled: true });
 r.eq("cinemeta re-enabled", engine.cinemeta.enabled(), true);
+{
+  // (bug pass) SettingsBridge: patchFor saves through persistEffective (source key + the mirror
+  // upstream modules read); activate reads loadEffective and points the mirror at the profile.
+  const get = (k) => run(`localStorage.getItem(${JSON.stringify(k)})`);
+  const set = (k, v) => run(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+  const keep = ["harbor.settings", "harbor.settings.shared", "harbor.settings.smoke-kid"].map((k) => [k, get(k)]);
+  const out = engine.settings.patchFor({ simklScrobbleEnabled: false, cinemetaEnabled: false }, "default", true);
+  r.eq("settings.patchFor writes the shared source key and the mirror", [out.simklScrobbleEnabled, JSON.parse(get("harbor.settings.shared")).simklScrobbleEnabled, JSON.parse(get("harbor.settings")).simklScrobbleEnabled, engine.cinemeta.enabled()], [false, false, false, false]);
+  set("harbor.settings", JSON.stringify({ ...JSON.parse(get("harbor.settings")), region: "DE" }));
+  const sharedRegion = JSON.parse(get("harbor.settings.shared")).region;
+  const act = engine.settings.activate("smoke-kid", false);
+  r.eq("settings.activate: an unlinked profile without its own blob reads the shared one and the mirror follows it", [act.simklScrobbleEnabled, act.region, JSON.parse(get("harbor.settings")).region, get("harbor.settings.smoke-kid")], [false, sharedRegion, sharedRegion, null]);
+  for (const [k, v] of keep) set(k, v);
+  engine.settings.patch({ cinemetaEnabled: true });
+}
 
 // --------------------------------------------------------------- pure browse helpers
 r.eq("narrowMediaType", [engine.cinemeta.narrowMediaType("series"), engine.cinemeta.narrowMediaType("anime")], ["series", "movie"]);
@@ -3470,6 +3508,8 @@ if (!OFFLINE) {
   const quick = await r.timed("sports.page(for-you, no wait) returns from cache at once", () => engine.sports.page({ mode: "for-you", group: "all" }));
   r.ok("sports.page without wait reports busy while feeds load", quick.status.busy === true && Array.isArray(quick.rows), JSON.stringify(quick.status));
   const sdays = engine.sports.days();
+  const fdays = engine.sports.days(null, "fr");
+  r.ok("sports.days: weekdays follow the UI language", fdays.length === 14 && fdays[3].label === "Today" && fdays[4].label !== sdays[4].label, JSON.stringify([sdays[4].label, fdays[4].label]));
   r.ok("sports.days: 14 cells with Today at index 3", sdays.length === 14 && sdays[3].today && sdays[3].label === "Today", JSON.stringify(sdays.slice(2, 5)));
   const spg = await r.timed("sports.page(for-you)", () => engine.sports.page({ mode: "for-you", group: "all", wait: true }));
   r.ok("sports.page for-you returns groups, rows and a status", Array.isArray(spg.rows) && spg.groups.length > 3 && spg.status && typeof spg.status.failed === "boolean", JSON.stringify({ rows: spg.rows.map((x) => [x.key, x.games.length]), heroes: spg.heroes.length, note: spg.status.note, failed: spg.status.failedKeys.slice(0, 4) }));

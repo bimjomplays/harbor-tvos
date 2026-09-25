@@ -26,7 +26,11 @@ struct SportsPersonalizeView: View {
 
     private func loadTeams(_ key: String, force: Bool = false) async {
         teamLeague = key; teamsLoading = true; teamList = nil
-        teamList = try? await HarborEngine.shared.call("sports.teams", [key, force])
+        let list: Teams? = try? await HarborEngine.shared.call("sports.teams", [key, force])
+        // (bug pass) A league's team fetch can take up to its 10 s cap: an answer for a chip the
+        // viewer has already left (often the timed-out empty list) replaced the newer league's.
+        guard teamLeague == key else { return }
+        teamList = list
         teamsLoading = false
         let all: [Team] = (try? await HarborEngine.shared.call("sports.favouriteTeams", [])) ?? []
         followedCount = all.count
@@ -34,7 +38,15 @@ struct SportsPersonalizeView: View {
 
     private func toggle(_ t: Team) async {
         _ = try? await HarborEngine.shared.callJSON("sports.toggleTeam", [(try? JSONDecoder().decode(AnyJSON.self, from: JSONEncoder().encode(TeamOut(id: t.id, leagueKey: t.leagueKey, group: t.group, name: t.name, abbr: t.abbr, logo: t.logo)))) ?? .null])
-        await loadTeams(teamLeague)
+        // (bug pass) Was a full loadTeams, which blanked the grid ("Loading teams…") under the
+        // focused team, so every pick threw the focus out of the grid. Update the ticks in place
+        // (engine teams(): followed = the favourites in this league).
+        let all: [Team] = (try? await HarborEngine.shared.call("sports.favouriteTeams", [])) ?? []
+        followedCount = all.count
+        if var list = teamList {
+            list.followed = all.filter { $0.leagueKey == teamLeague }.map(\.id)
+            teamList = list
+        }
     }
     private struct TeamOut: Encodable { var id: String; var leagueKey: String; var group: String; var name: String; var abbr: String; var logo: String }
 

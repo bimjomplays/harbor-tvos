@@ -10,13 +10,23 @@ struct SportsView: View {
 
     @State private var directPlay: SportsEventModel.WatchOption?
     @State private var directStream: SportsAddonPanelView.Play?
+    /// The live game whose watch plan is being worked out (open()).
+    @State private var opening: String?
 
     /// useBpWatchGame: a live game with an attached stream, or an exact (or pinned) channel match,
     /// plays at once; anything else opens the event.
     private func open(_ g: SportsModel.Game) {
         guard g.state == "in" else { event = g; return }
+        // (bug pass) `sports.watch` scans every Live TV source first (seconds on a big playlist) and
+        // the card gives no sign of it, so a second press started a second scan and both answers
+        // presented: a player and the event page, or two players, stacked. One at a time.
+        guard opening == nil else { return }
+        opening = g.key
         Task {
+            defer { opening = nil }
             let w: SportsEventModel.Watch? = try? await HarborEngine.shared.call("sports.watch", [g.wire])
+            // Something else took the screen meanwhile (the hero's own press, Make it yours).
+            guard event == nil, directPlay == nil, directStream == nil, !personalize else { return }
             if let s = w?.attachedStream, let url = URL(string: s.url) {
                 directStream = SportsAddonPanelView.Play(url: url, headers: s.headers ?? [:], title: w?.fixture ?? g.headline, subtitle: URL(string: s.page)?.host, isLive: s.kind != "file")
             } else if let best = w?.channels.first, best.tier == "exact" || best.attached {
@@ -35,6 +45,7 @@ struct SportsView: View {
             }
         }
         .task { await model.start() }
+        .onDisappear { model.stopPolling() }
         .fullScreenCover(item: $event) { g in SportsEventView(game: g, dismiss: { event = nil }) }
         .fullScreenCover(item: $directPlay) { opt in
             PlayerScreen(title: opt.name, subtitle: opt.label, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in directPlay = nil }
@@ -126,7 +137,7 @@ struct SportsView: View {
                         model.setDay(d.key)
                     } label: {
                         VStack(spacing: BP.px(3)) {
-                            Text(d.label).font(BP.sans(13, .semibold))
+                            Text(d.today ? L10n.lookup(d.label) : d.label).font(BP.sans(13, .semibold))
                             Circle().fill(p.liveDays.contains(d.key) ? BP.live : .clear).frame(width: BP.px(5), height: BP.px(5))
                         }
                     }
