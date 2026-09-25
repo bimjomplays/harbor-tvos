@@ -14,6 +14,8 @@ final class SportsEventModel: ObservableObject {
     struct Watch: Decodable {
         var plan: String; var label: String?; var fixture: String; var channels: [WatchOption]; var providers: [Provider]; var broadcasts: [Broadcast]
         var onAir: Bool?; var attachedStream: AttachedStream?; var sources: Int; var scanned: Int
+        /// bp-sports-broadcast-picker canSearch (the index has channels), the league's pins and label.
+        var searchable: Bool?; var attachedIds: [String]?; var leagueLabel: String?
     }
 
     // use-bp-sports-event useBpSportsEventActions (engine `sports.actions`).
@@ -128,6 +130,8 @@ struct SportsEventView: View {
     @State private var addonPanel: AddonOpen?
     @State private var addonPlaying: SportsAddonPanelView.Play?
     @State private var broadcastsOpen = false
+    /// bp-sports-broadcast-search: "Search your channels" over every playlist.
+    @State private var searchOpen = false
     @State private var link: SportsLink?
     @State private var webhookSetup = false
 
@@ -190,6 +194,14 @@ struct SportsEventView: View {
                 onClose: { broadcastsOpen = false })
         }
         .fullScreenCover(item: $link) { l in SportsLinkView(link: l) { link = nil } }
+        .fullScreenCover(isPresented: $searchOpen, onDismiss: { Task { await model.resolveWatch(game) } }) {
+            SportsChannelSearchView(game: game, onPlay: { opt in
+                // BpSportsBroadcastSearch onPlay: setSearching(false), then playSearched. Present
+                // after this cover has gone; a present-while-dismissing is dropped on tvOS.
+                searchOpen = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { play(opt) }
+            }, onClose: { searchOpen = false })
+        }
         .fullScreenCover(isPresented: $webhookSetup) {
             ZStack {
                 BP.void_.opacity(0.94).ignoresSafeArea()
@@ -257,7 +269,11 @@ struct SportsEventView: View {
         case "channel":
             if let first = w.channels.first { Button((w.label.map { T($0) } ?? T("Watch")) + " · " + first.name) { play(first) }.buttonStyle(BPActionStyle(primary: true)) }
         case "picker":
-            Button(w.channels.isEmpty ? T("Search your channels") : w.channels.count == 1 ? T("Watch · 1 channel found") : T("Watch · %lld channels found", w.channels.count)) { picker.toggle() }.buttonStyle(BPActionStyle(primary: true))
+            // With no match the button's own copy promises the search, so it opens it when it can.
+            Button(w.channels.isEmpty ? T("Search your channels") : w.channels.count == 1 ? T("Watch · 1 channel found") : T("Watch · %lld channels found", w.channels.count)) {
+                if w.channels.isEmpty && w.searchable == true { searchOpen = true } else { picker.toggle() }
+            }
+            .buttonStyle(BPActionStyle(primary: true))
         case "addons":
             Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle(primary: true))
         case "setup":
@@ -333,10 +349,19 @@ struct SportsEventView: View {
                      : T("None of your channels match this fixture. Search your channels and pin the one that carries it.") + " (\(w.scanned) sports channels scanned)")
                     .font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
-            // bp-sports-picker onAddons: offered whenever an addon has any listing; onSetup always.
+            // bp-sports-broadcast-picker action row: Search your channels (canSearch), Addon sources
+            // (onAddons: an addon has any listing), Set up Live TV (onSetup).
             HStack(spacing: BP.px(10)) {
+                if w.searchable == true {
+                    Button { searchOpen = true } label: { Label("Search your channels", systemImage: "magnifyingglass") }.buttonStyle(BPActionStyle())
+                }
                 if (model.addons?.available ?? 0) > 0 { Button("Addon sources") { addonPanel = AddonOpen(row: nil) }.buttonStyle(BPActionStyle()) }
                 if let openLive { Button(T("Set up Live TV")) { openLive() }.buttonStyle(BPActionStyle()) }
+            }
+            // attachedIds.length > 0: the pinned-channel note under the actions.
+            if let pins = w.attachedIds, !pins.isEmpty {
+                Label(T("Pinned channels are tried first for %@.", w.leagueLabel ?? game.leagueLabel), systemImage: "pin")
+                    .font(BP.sans(12, .semibold)).foregroundStyle(BP.inkSubtle)
             }
         }
         .frame(maxWidth: BP.px(900), alignment: .leading)
@@ -344,8 +369,11 @@ struct SportsEventView: View {
 
     // bp-sports-broadcast-picker action chips: "Search your channels" (Live TV sources exist) and "Addon sources".
     private var broadcastChannelsAction: (() -> Void)? {
-        guard (model.watch?.sources ?? 0) > 0 else { return nil }
-        return { broadcastsOpen = false; picker = true }
+        guard model.watch?.searchable == true else { return nil }
+        return {
+            broadcastsOpen = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { searchOpen = true }
+        }
     }
     private var broadcastAddonsAction: (() -> Void)? {
         guard (model.addons?.available ?? 0) > 0 else { return nil }

@@ -753,6 +753,11 @@ r.ok("benchmark still works", (() => {
   r.ok("xray.load about: title, tagline, rating + votes, year, runtime, status, genres", a.title === "The Matrix" && a.tagline === "Welcome to the Real World." && a.rating === "8.2" && a.votes === "27K" && a.year === "1999" && a.runtime === "136 min" && a.status === "Released" && a.genres.join() === "Action", JSON.stringify(a));
   r.eq("xray.load about: facts (Director, Writers, Network, Language, Country)", a.facts.map((f) => f.label), ["Director", "Writers", "Network", "Language", "Country"]);
   r.ok("xray.load about: lead trailer then extras; the backdrop leads the stills", a.videos.map((v) => v.ytId).join() === "vKQi3bBA1y8,extra123" && a.videos[0].name === "The Matrix trailer" && a.videos[0].thumb === "https://img.youtube.com/vi/vKQi3bBA1y8/mqdefault.jpg" && a.hero.endsWith("/bd.jpg") && a.strip[0] === a.hero && a.showStrip, JSON.stringify({ v: a.videos, hero: a.hero, strip: a.strip }));
+  // D5 bp-crew-row / bp-facts on the same fixture: role names with singular/plural, credit rows first.
+  const dx = await E.detailRoom.extras(movie, "default", true);
+  r.eq("detailRoom.extras crew: bp-crew-row role names (Directors for two, Writer for one, Music)", dx && dx.crew.map((c) => [c.label, c.names]), [["Directors", ["Lana Wachowski", "Lilly Wachowski"]], ["Writer", ["Lana Wachowski"]], ["Music", ["Don Davis"]]]);
+  r.eq("detailRoom.extras facts: bpFactRows opens with the credit rows, then Status and Released", dx && dx.facts.slice(0, 5).map((f) => f.label), ["Directed by", "Written by", "Music by", "Status", "Released"]);
+  r.ok("detailRoom.extras facts: the credit values are bpFactRows' names", dx && dx.facts[0].value === "Lana Wachowski, Lilly Wachowski" && dx.facts.some((f) => f.label === "Rating" && /^8\.2 · /.test(f.value)), JSON.stringify(dx && dx.facts));
   const before = hits.length;
   await E.xray.load(movie, "default", true);
   r.eq("xray.load: a second pause is served from the cache", hits.length, before);
@@ -2294,6 +2299,39 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   await new Promise((res) => setTimeout(res, 200));
   r.eq("personRoom: section titles and department follow the UI language", [first.sections?.[0]?.title, first.person?.department], ["Film · 3", "Recitazione"]);
   r.ok("personRoom: a failed collaborators run answers once and the re-read does not fetch again", first.person?.name === "Brad Pitt" && pings.length === 1 && Array.isArray(second.collaborators) && second.collaborators.length === 0 && creditHits.length > 0 && creditHits.length <= 3, JSON.stringify({ pings: pings.length, hits: creditHits.length }));
+  r.eq("personRoom: no rank while TMDB's popular list has not answered", [first.person?.deptRank, first.person?.topLabel], [null, null]);
+  pr.dispose();
+}
+// D5 bp-person.tsx "Top {n}" (lib/rankings RankingsProvider): person/popular pages bucketed by department.
+{
+  const pr = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  const popular = [];
+  pr.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (/\/3\/person\/popular/.test(req.url)) {
+      popular.push(req.url);
+      if (!/page=1\b/.test(req.url)) return json({ results: [] });
+      const kf = [{ vote_count: 900 }];
+      return json({ results: [
+        { id: 1, known_for_department: "Acting", known_for: [{ vote_count: 50 }] },
+        { id: 2, known_for_department: "Acting", known_for: kf, adult: true },
+        { id: 3, known_for_department: "Directing", known_for: kf },
+        { id: 4, known_for_department: "Acting", known_for: kf },
+        { id: 287, known_for_department: "Acting", known_for: kf },
+      ] });
+    }
+    if (/\/3\/person\/287\b/.test(req.url)) return json({ id: 287, name: "Brad Pitt", known_for_department: "Acting", biography: "", combined_credits: { cast: [], crew: [] } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  pr.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, pr.engine.settings.sourceKeyFor("default", true));
+  const pings = [];
+  pr.engine.runtime.onEvent((type) => { if (type === "harbor:person-updated") pings.push(type); });
+  await pr.engine.personRoom.page(287, "default", true);
+  for (let i = 0; i < 120 && pings.length === 0; i++) await new Promise((res) => setTimeout(res, 25));
+  const ranked = await pr.engine.personRoom.page(287, "default", true);
+  r.eq("personRoom: the department rank skips adult and low-vote entries and counts per department (Top 2)", [ranked.person?.deptRank, ranked.person?.topLabel, popular.length], [2, "Top 2", 5]);
+  await pr.engine.personRoom.page(287, "default", true);
+  r.eq("personRoom: the rankings are kept (no second fetch of the five pages)", popular.length, 5);
   pr.dispose();
 }
 
@@ -3339,6 +3377,14 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     r.eq("sports.toggleAttachedChannel pins", rec.engine.sports.toggleAttachedChannel("NBA", w.channels[0].channelId), true);
     const w2 = await rec.engine.sports.watch(game);
     r.ok("an attached channel is exact-tier and plans direct play", w2.plan === "channel" && w2.channels[0].attached === true && w2.channels[0].copy === "Your pick for this competition", JSON.stringify(w2.channels[0]));
+    // X1 bp-sports-broadcast-search: search the playlists' sports channels by name, pin one for the league.
+    r.ok("sports.watch says the picker can search and carries the league's pins + label", w2.searchable === true && w2.attachedIds.includes(w.channels[0].channelId) && w2.leagueLabel === "NBA", JSON.stringify({ s: w2.searchable, a: w2.attachedIds, l: w2.leagueLabel }));
+    const found = await rec.engine.sports.searchChannels("lakers", "NBA");
+    r.ok("sports.searchChannels finds the channel by name with its group and pin", found.searchable && found.rows.length === 1 && /lakers/i.test(found.rows[0].name) && found.rows[0].group === "Sports" && found.rows[0].attached === true && found.leagueLabel === "NBA", JSON.stringify(found));
+    const none = await rec.engine.sports.searchChannels("zzzz nothing", "NBA");
+    r.eq("sports.searchChannels: no match is an empty list", none.rows.length, 0);
+    r.eq("sports.searchChannels: the pin toggles off from the search", [rec.engine.sports.toggleAttachedChannel("NBA", found.rows[0].channelId), (await rec.engine.sports.searchChannels("LAKERS", "NBA")).rows[0].attached], [false, false]);
+    r.eq("sports.searchChannels without a league has no pins", (await rec.engine.sports.searchChannels("lakers", "")).leagueLabel, "");
   }
   r.ok("xtream login URL is detected and stored with creds + derived EPG", (() => {
     const x = rec.engine.live.addPlaylist("X", "http://host.invalid:8080/get.php?username=u&password=p&type=m3u_plus");
@@ -4357,7 +4403,55 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const firstWin = oscar.groups[0] && oscar.groups[0].entries[0];
   // AwardDetailView reads workTitle (awards-history CategoryWinner); it read a `title` that never comes.
   r.ok("discoverRoom.awardDetail entries name the work as workTitle (no title field)", !!firstWin && typeof firstWin.workTitle === "string" && firstWin.workTitle.length > 0 && typeof firstWin.year === "number" && !("title" in firstWin), JSON.stringify(firstWin));
+
+  // V1 bp-award.tsx: decade + category chips, header counts of what the filters leave, 90 a page.
+  const D = aw.engine.discoverRoom;
+  const all = D.awardPage("oscar", null, "all");
+  const count = (p) => p.groups.reduce((n, g) => n + g.entries.length, 0);
+  r.ok("discoverRoom.awardPage: every Oscar winner counted, the first 90 mounted, more to page in", all.wins > 90 && all.mounted === 90 && count(all) === 90 && all.more === true && all.decades.length > 1 && all.categories.length > 1 && all.shorthand.length > 0 && all.tint.length > 0, JSON.stringify({ wins: all.wins, mounted: all.mounted, d: all.decades.length, c: all.categories.length }));
+  r.eq("discoverRoom.awardPage: the next page mounts 180", count(D.awardPage("oscar", null, "all", 180)), 180);
+  r.eq("discoverRoom.awardPage: the category chips count every winner", all.categories.reduce((n, c) => n + c.count, 0), all.wins);
+  const dec = all.decades[1];
+  const inDec = D.awardPage("oscar", dec, "all", 100000);
+  r.ok("discoverRoom.awardPage: a decade keeps only its years; chips count what it leaves", inDec.wins > 0 && inDec.wins < all.wins && inDec.groups.every((g) => g.entries.every((e) => e.year >= dec && e.year < dec + 10)) && inDec.categories.reduce((n, c) => n + c.count, 0) === inDec.wins && inDec.more === false, JSON.stringify({ dec, wins: inDec.wins }));
+  const cat0 = all.categories[0];
+  const one = D.awardPage("oscar", null, cat0.key, 100000);
+  r.ok("discoverRoom.awardPage: a category chip shows that category alone", one.categoryCount === 1 && one.groups.length === 1 && one.groups[0].key === cat0.key && one.wins === cat0.count, JSON.stringify({ n: one.categoryCount, k: one.groups.map((g) => g.key) }));
+  const emmy = D.awardPage("emmy", null, "all", 100000);
+  r.ok("discoverRoom.awardPage: TV categories prefer series (TV_CATEGORY), film ones do not", emmy.groups.some((g) => g.preferTv) && !all.groups[0].preferTv, JSON.stringify(emmy.groups.map((g) => [g.name, g.preferTv]).slice(0, 4)));
+  const withImdb = all.groups.flatMap((g) => g.entries).find((e) => e.imdb);
+  r.ok("discoverRoom.awardPage: a winner with an IMDb id carries metahub's small poster", !!withImdb && withImdb.poster === `https://images.metahub.space/poster/small/${withImdb.imdb}/img`, JSON.stringify(withImdb));
+  r.eq("discoverRoom.awardOpen: an IMDb id opens at once as a film", await D.awardOpen(withImdb.workTitle, withImdb.year, withImdb.imdb, false, "default", true), { status: "open", meta: { id: withImdb.imdb, type: "movie", name: withImdb.workTitle } });
+  r.eq("discoverRoom.awardOpen: no id and no TMDB key goes to Settings", await D.awardOpen("Some Old Film", 1931, null, false, "default", true), { status: "nokey", meta: null });
+  aw.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, aw.engine.settings.sourceKeyFor("default", true));
+  const asked = [];
+  aw.node.host.fetch = async (req) => {
+    asked.push(req.url);
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.includes("/search/movie") && req.url.includes("Grand+Hotel")) return json({ results: [{ id: 11, title: "Grand Hotel", release_date: "2014-01-01" }, { id: 12, title: "Grand Hotel", release_date: "1932-04-12" }] });
+    if (req.url.includes("/search/tv") && req.url.includes("Grand+Hotel")) return json({ results: [{ id: 13, name: "Grand Hotel", first_air_date: "2019-06-17" }] });
+    if (req.url.includes("/movie/12/external_ids")) return json({ imdb_id: "tt0022958" });
+    return json({ results: [] });
+  };
+  r.eq("discoverRoom.awardOpen: resolveBpAwardWork scores title, year and medium, then opens the IMDb id", await D.awardOpen("Grand Hotel", 1932, null, false, "default", true), { status: "open", meta: { id: "tt0022958", type: "movie", name: "Grand Hotel" } });
+  r.eq("discoverRoom.awardOpen: nothing on TMDB is 'No match found'", (await D.awardOpen("Nothing Like It", 1950, null, false, "default", true)).status, "missing");
   aw.dispose();
+}
+
+// ------------------- O4 bp-step-tmdb verify(): rejected vs unreachable, offline
+{
+  const ob = loadEngine({ storage: new Map() });
+  const seen = [];
+  ob.node.host.fetch = async (req) => {
+    seen.push(req.url);
+    if (req.url.includes("api_key=good")) return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: "{}" };
+    if (req.url.includes("api_key=bad")) return { status: 401, statusText: "Unauthorized", headers: { "content-type": "application/json" }, url: req.url, body: "{}" };
+    throw new Error("offline");
+  };
+  const O = ob.engine.onboarding;
+  r.eq("onboarding.checkTmdbKey: TMDB's configuration answers ok / 401 rejected / no answer unreachable", [await O.checkTmdbKey(" good "), await O.checkTmdbKey("bad"), await O.checkTmdbKey("down")], ["ok", "rejected", "unreachable"]);
+  r.ok("onboarding.checkTmdbKey asks the configuration endpoint with the trimmed key", seen[0] === "https://api.themoviedb.org/3/configuration?api_key=good", JSON.stringify(seen));
+  ob.dispose();
 }
 
 // ------------------------------------------------------------------- live network

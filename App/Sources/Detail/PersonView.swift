@@ -5,7 +5,11 @@ import SwiftUI
 /// Rating filter rows. Needs a TMDB key.
 @MainActor
 final class PersonModel: ObservableObject {
-    struct Person: Decodable { var id: Int; var name: String; var department: String; var portrait: String?; var imdbId: String?; var biography: String; var facts: [String] }
+    struct Person: Decodable {
+        var id: Int; var name: String; var department: String; var portrait: String?; var imdbId: String?; var biography: String; var facts: [String]
+        /// bp-person.tsx deptRank (lib/rankings): the place in the department's TMDB top 100, and its "Top {n}" label.
+        var deptRank: Int?; var topLabel: String?
+    }
     struct Collaborator: Decodable, Identifiable { var id: Int; var name: String; var portrait: String?; var role: String?; var titles: Int }
     struct Award: Decodable, Identifiable { var type: String; var wins: Int; var nominations: Int; var id: String { type } }
     struct Section: Decodable, Identifiable { var id: String; var title: String; @LossyArray var metas: [Meta] }   // (bug pass 2) lossy
@@ -142,6 +146,23 @@ struct PersonView: View {
         .fullScreenCover(item: $other) { c in PersonView(personId: c.id, name: c.name) }
     }
 
+    /// bp-person.tsx: the department as the eyebrow, then "Top {n}" as a quiet pill. A rank is
+    /// neither actionable nor live, so it never takes focus.
+    private func eyebrow(_ p: PersonModel.Person) -> some View {
+        HStack(spacing: BP.px(10)) {
+            if !p.department.isEmpty {
+                Text(verbatim: p.department).font(BP.sans(13, .semibold)).textCase(.uppercase).tracking(BP.px(2.1)).foregroundStyle(BP.inkSubtle)
+            }
+            if let top = p.topLabel {
+                Text(verbatim: top).font(BP.sans(12, .bold)).textCase(.uppercase).tracking(BP.px(1.7)).monospacedDigit()
+                    .foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(3))
+                    .background(Capsule().fill(BP.void_.opacity(0.85)))
+                    .overlay(Capsule().stroke(BP.edge2, lineWidth: 1))
+            }
+        }
+    }
+
     private var hero: some View {
         HStack(alignment: .top, spacing: BP.px(24)) {
             ZStack {
@@ -150,9 +171,11 @@ struct PersonView: View {
             }
             .frame(width: BP.px(160), height: BP.px(160))
             VStack(alignment: .leading, spacing: BP.px(8)) {
+                if let p = model.page?.person, !p.department.isEmpty || p.topLabel != nil { eyebrow(p) }
                 Text(model.page?.person?.name ?? name).font(BP.display(40)).foregroundStyle(BP.ink)
                 if let p = model.page?.person {
-                    Text(([p.department] + p.facts).filter { !$0.isEmpty }.joined(separator: " · ")).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
+                    let factLine: String = p.facts.filter { !$0.isEmpty }.joined(separator: " · ")
+                    if !factLine.isEmpty { Text(factLine).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted) }
                     if let a = model.page?.awards, !a.isEmpty {
                         Text(a.prefix(4).map(Self.awardLine).joined(separator: " · "))
                             .font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1)

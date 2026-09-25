@@ -88,3 +88,20 @@ export function facts(profileId: string, linked: boolean) {
     art: mine.length > 0 ? mine : FALLBACK.map((p) => `${IMG}${p}`),
   };
 }
+
+/**
+ * bp-step-tmdb.tsx verify(): TMDB's configuration endpoint with the typed key. A refusal
+ * (any non-2xx answer) is "rejected"; a request that never answers (captive portal, a region
+ * that blocks TMDB) is "unreachable", where the step offers "Save it anyway". Nothing is saved
+ * here: the step writes the key only once TMDB has accepted it (or the viewer keeps it anyway).
+ */
+export async function checkTmdbKey(key: string): Promise<"ok" | "rejected" | "unreachable"> {
+  const k = typeof key === "string" ? key.trim() : "";
+  if (!k) return "rejected";
+  try {
+    const res = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(k)}`);
+    return res.ok ? "ok" : "rejected";
+  } catch {
+    return "unreachable";
+  }
+}

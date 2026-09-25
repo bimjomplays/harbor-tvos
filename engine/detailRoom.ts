@@ -8,6 +8,7 @@ import { tmdbCollection } from "@/lib/providers/tmdb/tmdb-collection";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { metaLooksAnime } from "@/lib/anime-detect";
 import { getUiLanguage, t } from "@/lib/i18n";
+import { bpFactRows } from "@/views/big-picture/bp-facts";
 
 const IMG = "https://image.tmdb.org/t/p/w342";
 const portrait = (path: string | null | undefined): string | null => (!path ? null : path.startsWith("http") ? path : `${IMG}${path}`);
@@ -62,37 +63,25 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
   if (hit && Date.now() - hit.at < 10 * 60_000) return shown(hit.value);
   const d = await tmdbDetails(s.tmdbKey, meta).catch(() => null);
   if (!d) { cache.set(key, { at: Date.now(), value: null }); return null; }
-  // bp-crew-row: Director/Creator/Writer/Producers/Cinematography/Music/Editor, capped 2-4 each.
+  // bp-crew-row.tsx BpCrewRow add(single, plural, people, max): Director(s) 3, Creator(s) 3,
+  // Writer(s) 4, Producers 4, Cinematography 2, Music 2, Editor(s) 2, the label singular when the
+  // list holds one person. The TV groups a label's people in one line (the Swift UI translates
+  // every label with T()); each name keeps its TMDB id so the cell opens the Person page.
   const crew: DetailExtras["crew"] = [];
-  // bp-crew-row cells open the Person page, so each name keeps its TMDB id when the detail carried one.
-  const push = (label: string, list: Array<{ name: string; id?: number }>, cap: number) => {
-    if (list.length) crew.push({ label, names: list.slice(0, cap).map((p) => p.name), people: list.slice(0, cap).map((p) => ({ id: typeof p.id === "number" ? p.id : null, name: p.name })) });
+  const push = (single: string, plural: string, list: Array<{ name: string; id?: number }>, cap: number) => {
+    if (list.length) crew.push({ label: list.length === 1 ? single : plural, names: list.slice(0, cap).map((p) => p.name), people: list.slice(0, cap).map((p) => ({ id: typeof p.id === "number" ? p.id : null, name: p.name })) });
   };
-  push(d.kind === "tv" ? "Created by" : "Directed by", d.kind === "tv" ? d.creators : d.directors, 3);
-  if (d.kind === "tv") push("Directed by", d.directors, 2);
-  push("Written by", d.writers, 3);
-  // bp-crew-row.tsx labels (the Swift UI translates every label with T()).
-  push("Producers", d.producers, 4);
-  push("Cinematography", d.cinematography, 2);
-  push("Music", d.composer, 2);
-  push(d.editor.length === 1 ? "Editor" : "Editors", d.editor, 2);
-  // bp-facts: the first rows of the facts card.
-  const facts: DetailExtras["facts"] = [];
-  const fact = (label: string, value: string | number | undefined | null) => { if (value !== undefined && value !== null && String(value).trim() !== "") facts.push({ label, value: String(value) }); };
-  fact("Status", d.status);
-  fact(d.kind === "tv" ? "First aired" : "Released", d.kind === "tv" ? d.firstAirDate : d.releaseDate);
-  if (d.kind === "tv") fact("Last aired", d.lastAirDate);
-  fact(d.kind === "tv" ? "Length" : "Runtime", d.runtime);
-  fact("Network", d.networks.join(", "));
-  fact("Studio", d.productionCompanies.slice(0, 3).join(", "));
-  fact("Country", d.productionCountries.join(", "));
-  fact("Language", d.spokenLanguages.join(", "));
-  fact("Genres", d.genres.join(", "));
-  if (d.originalTitle && d.originalTitle !== d.title) fact("Original title", d.originalTitle);
-  if (d.budget) fact("Budget", `$${Math.round(d.budget / 1e6)}M`);
-  if (d.revenue) fact("Box office", `$${Math.round(d.revenue / 1e6)}M`);
-  // bp-facts.tsx: "{rating} · {n} votes".
-  fact("Rating", d.rating ? (d.voteCount > 0 ? `${d.rating} · ${t("{n} votes", { n: d.voteCount.toLocaleString() })}` : d.rating) : undefined);
+  push("Director", "Directors", d.directors, 3);
+  push("Creator", "Creators", d.creators, 3);
+  push("Writer", "Writers", d.writers, 4);
+  push("Producers", "Producers", d.producers, 4);
+  push("Cinematography", "Cinematography", d.cinematography, 2);
+  push("Music", "Music", d.composer, 2);
+  push("Editor", "Editors", d.editor, 2);
+  // bp-facts.tsx bpFactRows, as upstream builds them: the credit rows (Directed by, Created by,
+  // Written by, Music by, Cinematography) first, then Status, dates, Length / Runtime, Network,
+  // Studio, Country, Language, Genres, Original title, Budget, Box office, Rating.
+  const facts: DetailExtras["facts"] = bpFactRows(d, t).map(([label, value]) => ({ label, value }));
   let watchOn: DetailExtras["watchOn"] = [];
   try { watchOn = (await tmdbWatchProviders(s.tmdbKey, d.kind, d.id, s.region)).map((p) => ({ name: p.name, logo: p.logo })); } catch { /* optional */ }
   const value: DetailExtras = {

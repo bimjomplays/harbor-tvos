@@ -55,6 +55,59 @@ function loadCollaborators(person: PersonDetail, key: string): void {
     .catch(() => undefined);   // (bug pass) a throw in the ranking must not surface as an unhandled rejection
 }
 
+// lib/rankings.tsx RankingsProvider (use-bp-person deptRank = rank(person.id, knownForDepartment
+// || "Acting")): TMDB's person/popular pages 1-5, bucketed by known_for_department (Acting,
+// Directing, Production, Writing), skipping adult entries and anyone with no known-for title of
+// 200+ votes, the first 100 of each ranked in order; kept 6 h. Upstream loads it once for the
+// app; fetchPopular is not exported, so it is repeated here. The page reads what is cached and
+// starts a load when there is none; harbor:person-updated re-reads the page when it lands.
+const RANK_PAGES = 5;
+const RANK_TOP = 100;
+const RANK_STALE_MS = 6 * 60 * 60 * 1000;
+let rankCache: { loadedAt: number; buckets: Record<string, number[]> } | null = null;
+let rankInflight: Promise<boolean> | null = null;
+
+function loadRankings(key: string): Promise<boolean> {
+  if (rankCache && Date.now() - rankCache.loadedAt < RANK_STALE_MS) return Promise.resolve(false);
+  if (rankInflight) return rankInflight;
+  rankInflight = (async () => {
+    type Popular = { results?: Array<{ id: number; adult?: boolean; known_for_department?: string; known_for?: Array<{ adult?: boolean; vote_count?: number }> }> };
+    const pages = await Promise.all(Array.from({ length: RANK_PAGES }, (_, i) => i + 1).map((p) =>
+      fetch(`https://api.themoviedb.org/3/person/popular?api_key=${key}&page=${p}`)
+        .then((r) => (r.ok ? (r.json() as Promise<Popular>) : null))
+        .catch(() => null)));
+    const answered = pages.filter((p): p is Popular => p !== null);
+    const buckets: Record<string, number[]> = { Acting: [], Directing: [], Production: [], Writing: [] };
+    const seen = new Set<number>();
+    for (const p of answered.flatMap((x) => x.results ?? [])) {
+      const dept = p.known_for_department;
+      if (!dept || !(dept in buckets)) continue;
+      if (p.adult) continue;
+      const kf = Array.isArray(p.known_for) ? p.known_for : [];
+      if (kf.some((k) => k.adult)) continue;
+      if (!kf.some((k) => (k.vote_count ?? 0) >= 200)) continue;
+      if (seen.has(p.id)) continue;
+      if (buckets[dept].length >= RANK_TOP) continue;
+      seen.add(p.id);
+      buckets[dept].push(p.id);
+    }
+    // Only a load that heard from TMDB is kept (the next Person page tries again otherwise) and
+    // worth a re-read of the open page, so an offline run never loops.
+    if (answered.length === 0) return false;
+    rankCache = { loadedAt: Date.now(), buckets };
+    return true;
+  })().finally(() => { rankInflight = null; });
+  return rankInflight;
+}
+
+/** RankingsProvider rank(id, dept): Directing, Production and Writing have their own lists; any other department reads the actors'. */
+function deptRankOf(id: number, dept: string): number | null {
+  if (!rankCache) return null;
+  const bucket = dept === "Directing" || dept === "Production" || dept === "Writing" ? dept : "Acting";
+  const at = rankCache.buckets[bucket].indexOf(id);
+  return at >= 0 ? at + 1 : null;
+}
+
 export async function page(personId: number, profileId: string, linked: boolean, sort: FilmographySort = "popularity", minRating = 0) {
   const s = loadEffective(profileId, linked);
   if (!s.tmdbKey) return { hasKey: false, person: null };
@@ -96,9 +149,17 @@ export async function page(personId: number, profileId: string, linked: boolean,
   const department = person.knownForDepartment && departmentKey ? t(departmentKey) : person.knownForDepartment;
   if (person.placeOfBirth) facts.push(person.placeOfBirth);
   const metas = (list: PersonCredit[]): Meta[] => list.map(creditToMeta);
+  // bp-person.tsx "Top {n}" beside the department: this person's place in their department's list.
+  if (!rankCache || Date.now() - rankCache.loadedAt >= RANK_STALE_MS) {
+    const id = person.id;
+    void loadRankings(s.tmdbKey).then((heard) => {
+      if (heard) window.dispatchEvent(new CustomEvent("harbor:person-updated", { detail: { personId: id } }));
+    }).catch(() => undefined);
+  }
+  const deptRank = deptRankOf(person.id, person.knownForDepartment || "Acting");
   return {
     hasKey: true,
-    person: { id: person.id, name: person.name, department, portrait: portrait(person.profilePath), imdbId: person.imdbId, biography: person.biography?.trim() ?? "", facts },
+    person: { id: person.id, name: person.name, department, portrait: portrait(person.profilePath), imdbId: person.imdbId, biography: person.biography?.trim() ?? "", facts, deptRank, topLabel: deptRank != null ? t("Top {n}", { n: deptRank }) : null },
     knownFor: metas(knownFor),
     topRated: metas(topRated),
     collaborators: collaborators.map((c) => ({ id: c.id, name: c.name, portrait: portrait(c.profilePath), role: c.role ?? null, titles: c.titles })),

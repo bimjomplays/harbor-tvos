@@ -126,6 +126,8 @@ final class SettingsBridge: ObservableObject {
         /// DUB/SUB pill (showDubBadge), both on by default (settings/defaults.ts).
         var showQualityBadge: Bool? = true
         var showDubBadge: Bool? = true
+        /// bp-tile.tsx showTitle = !settings.hidePosterTitles: poster cards print no title (off by default).
+        var hidePosterTitles: Bool? = false
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
@@ -403,6 +405,7 @@ extension SettingsBridge.Slice {
         fullStreamDescription = c.lenient("fullStreamDescription")
         showQualityBadge = c.lenient("showQualityBadge")
         showDubBadge = c.lenient("showDubBadge")
+        hidePosterTitles = c.lenient("hidePosterTitles")
         mpvHwdec = c.lenient("mpvHwdec")
         posterQuality = c.lenient("posterQuality")
     }

@@ -517,6 +517,8 @@ struct DetailView: View {
                 Text(model.meta.facts).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
                 // bp-hero-notes BpHeroMarks: one mark per connected server that has this title.
                 ForEach(model.titleServers) { server in MediaServerMark(server: server) }
+                // BpHeroMarks origin?.name: the addon that served this title, its logo and name.
+                if let origin = model.meta.addonOrigin, !origin.name.isEmpty { AddonOriginMark(origin: origin) }
             }
             HStack(spacing: BP.px(8)) {
                 Button {
@@ -1311,6 +1313,29 @@ private struct DetailPageProbeView: UIViewRepresentable {
 
     func updateUIView(_ uiView: UIView, context: Context) {
         if probe.view !== uiView { probe.view = uiView }
+    }
+}
+
+/// detail/bp-hero-notes.tsx BpHeroMarks addon mark: the addon's own logo (when it ships one) and its
+/// name in BP_METRIC_CHIP at 0.86em, so a title served by the viewer's addon does not read as a
+/// Cinemeta record.
+struct AddonOriginMark: View {
+    let origin: Meta.AddonOrigin
+
+    var body: some View {
+        HStack(spacing: BP.px(6)) {
+            if let logo = origin.logo {
+                RemoteImage(url: logo, contentMode: .fit)
+                    .frame(width: BP.px(15), height: BP.px(15))
+                    .clipShape(RoundedRectangle(cornerRadius: BP.px(5), style: .continuous))
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: origin.name).font(BP.sans(11.5, .bold)).foregroundStyle(BP.ink).lineLimit(1)
+        }
+        .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(4))
+        .background(RoundedRectangle(cornerRadius: BP.px(10), style: .continuous).fill(BP.void_.opacity(0.85)))
+        .overlay(RoundedRectangle(cornerRadius: BP.px(10), style: .continuous).stroke(BP.edge2, lineWidth: 1))
+        .accessibilityElement(children: .combine)
     }
 }
 

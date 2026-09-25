@@ -28,6 +28,11 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
     /// Cinemeta's YouTube trailers; bp-detail falls back to the first when TMDB has none.
     var trailerStreams: [TrailerStream]?
     struct TrailerStream: Codable, Equatable, Hashable { var ytId: String?; var title: String? }
+    /// cinemeta.ts AddonOrigin: the addon that served this meta (lib/addons, catalog-browse,
+    /// search-addons stamp it). bp-hero-notes BpHeroMarks draws it on the Detail hero; it
+    /// round-trips through the engine so watchlist/list writes keep it (persistableAddonOrigin).
+    var addonOrigin: AddonOrigin? = nil
+    struct AddonOrigin: Codable, Equatable, Hashable { var id: String; var name: String; var logo: String?; var base: String? }
 
     struct ProviderBadge: Codable, Equatable, Hashable { var name: String; var logo: String; var tint: String }
 
@@ -53,6 +58,7 @@ extension Meta {
     private enum LenientKeys: String, CodingKey {
         case id, type, name, poster, background, logo, description, releaseInfo, releaseDate, inTheaters, imdbRating, tmdbScore
         case runtime, genres, adult, isCollection, providerBadge, videos, cast, director, writer, trailerStreams
+        case addonOrigin
     }
 
     init(from decoder: Decoder) throws {
@@ -89,7 +95,21 @@ extension Meta {
                   providerBadge: try? c.decodeIfPresent(ProviderBadge.self, forKey: .providerBadge),
                   videos: try? c.decodeIfPresent([AnyJSON].self, forKey: .videos),
                   cast: strings(.cast), director: strings(.director), writer: strings(.writer),
-                  trailerStreams: try? c.decodeIfPresent([TrailerStream].self, forKey: .trailerStreams))
+                  trailerStreams: try? c.decodeIfPresent([TrailerStream].self, forKey: .trailerStreams),
+                  addonOrigin: Self.origin(try? c.decodeIfPresent(AnyJSON.self, forKey: .addonOrigin)))
+    }
+
+    /// An origin the addon mark can use: a name is required (BpHeroMarks checks origin?.name);
+    /// the id, logo and base are kept when they are strings.
+    private static func origin(_ raw: AnyJSON?) -> AddonOrigin? {
+        guard case .object(let o)? = raw, case .string(let name)? = o["name"], !name.isEmpty else { return nil }
+        var id = ""
+        if case .string(let s)? = o["id"] { id = s }
+        var logo: String? = nil
+        if case .string(let s)? = o["logo"], !s.isEmpty { logo = s }
+        var base: String? = nil
+        if case .string(let s)? = o["base"], !s.isEmpty { base = s }
+        return AddonOrigin(id: id, name: name, logo: logo, base: base)
     }
 }
 
