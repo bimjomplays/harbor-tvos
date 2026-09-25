@@ -164,6 +164,16 @@ struct MangaPageImage: View {
             image = img
             failed = img == nil
             if let img, img.size.width > 0 { onAspect?(Double(img.size.height / img.size.width)) }
+            // (device-flow pass 8) page-image.tsx autoRetried: an error is retried once by itself after
+            // 1.5 s. Nothing retried here (the page is not focusable, so there is no Retry to press):
+            // a page that failed on a network blip stayed "Page failed to load" for as long as it was
+            // on screen, which in the long strip is until it scrolls well away. A failed fetch is not
+            // cached (the disk cache only keeps answers), so the retry goes to the network again.
+            if img == nil, attempt == 0 {
+                try? await Task.sleep(for: .milliseconds(1500))
+                guard !Task.isCancelled else { return }
+                attempt = 1
+            }
         }
     }
 }

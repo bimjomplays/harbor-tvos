@@ -55,7 +55,11 @@ struct MangaReaderView: View {
             if menuOpen { readerBar.transition(.opacity) }
         }
         .ignoresSafeArea()
-        .onPlayPauseCommand { cycleZoom() }
+        .onPlayPauseCommand {
+            // (device-flow pass 8) The press is the zoom's, not the loaded music's (MusicPlayer.claimMediaKey).
+            MusicPlayer.shared.claimMediaKey()
+            cycleZoom()
+        }
         .onExitCommand {
             if menuOpen { closeMenu() } else { closeReader() }
         }
@@ -98,6 +102,9 @@ struct MangaReaderView: View {
         let maxY = max(0, size.height - Self.screen.height)
         let stepX = Self.screen.width * 0.6
         let stepY = Self.screen.height * 0.6
+        // The pan as drawn (pagedStage clamps a pan left over from before the page was measured).
+        if panX > maxX { panX = maxX }
+        if panY > maxY { panY = maxY }
         switch dir {
         case .down:
             if panY < maxY - 1 { withAnimation(.easeOut(duration: 0.22)) { panY = min(maxY, panY + stepY) } }
@@ -214,8 +221,14 @@ struct MangaReaderView: View {
 
     private var pagedStage: some View {
         let size = pagedContentSize
-        let ox = size.width <= Self.screen.width ? (Self.screen.width - size.width) / 2 : -panX
-        let oy = size.height <= Self.screen.height ? (Self.screen.height - size.height) / 2 : -panY
+        // (device-flow pass 8) The pan is kept inside the page as drawn now: it was set from the size
+        // the page had before its aspect was measured (1.4 until the image lands), and a page that
+        // came out narrower or shorter (fit height, zoomed; a right-to-left page starts at its right
+        // edge) was drawn pushed past its edge with bare background beside it.
+        let maxPanX: CGFloat = max(0, size.width - Self.screen.width)
+        let maxPanY: CGFloat = max(0, size.height - Self.screen.height)
+        let ox = size.width <= Self.screen.width ? (Self.screen.width - size.width) / 2 : -min(panX, maxPanX)
+        let oy = size.height <= Self.screen.height ? (Self.screen.height - size.height) / 2 : -min(panY, maxPanY)
         return ZStack(alignment: .topLeading) {
             if model.complete {
                 completeCard.frame(width: Self.screen.width, height: Self.screen.height)
@@ -224,7 +237,11 @@ struct MangaReaderView: View {
                     ForEach(spread, id: \.self) { i in
                         let s = pageSize(i, double: model.double)
                         MangaPageImage(page: model.pages[i], width: s.width) { a in
+                            let first: Bool = model.aspects[i] == nil
                             if model.aspects[i] != a { model.aspects[i] = a }
+                            // (device-flow pass 8) The pan starts again from the page's real size once
+                            // it is known (a right-to-left page opens on its right edge).
+                            if first { resetPan() }
                         }
                         .frame(width: s.width, height: s.height)
                     }

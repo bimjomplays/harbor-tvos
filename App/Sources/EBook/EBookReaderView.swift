@@ -58,7 +58,11 @@ struct EBookReaderView: View {
             if let panel { panelView(panel).transition(.move(edge: .trailing).combined(with: .opacity)) }
         }
         .ignoresSafeArea()
-        .onPlayPauseCommand { model.toggleNarration() }
+        .onPlayPauseCommand {
+            // (device-flow pass 8) The press is the narration's, not the loaded music's (MusicPlayer.claimMediaKey).
+            MusicPlayer.shared.claimMediaKey()
+            model.toggleNarration()
+        }
         .onExitCommand {
             if panel != nil { closePanel() } else if menuOpen { closeMenu() } else { closeReader() }
         }

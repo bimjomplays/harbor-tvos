@@ -200,12 +200,19 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         switch prefs.direction {
         case "rtl": return true
         case "ltr": return false
-        default:
-            let sample = paragraphs.prefix(40).joined(separator: " ")
-            let arabic = sample.unicodeScalars.filter { (0x0600...0x06ff).contains($0.value) || (0x0750...0x077f).contains($0.value) }.count
-            let latin = sample.unicodeScalars.filter { ($0.value >= 0x41 && $0.value <= 0x5a) || ($0.value >= 0x61 && $0.value <= 0x7a) }.count
-            return arabic > latin
+        default: return textRTL
         }
+    }
+
+    /// (device-flow pass 8) The text's own direction, worked out once per chapter: `rtl` is read on
+    /// every Left / Right press, and each read filtered the first 40 paragraphs' characters twice.
+    private var textRTL = false
+
+    private static func detectRTL(_ paragraphs: [String]) -> Bool {
+        let sample = paragraphs.prefix(40).joined(separator: " ")
+        let arabic = sample.unicodeScalars.filter { (0x0600...0x06ff).contains($0.value) || (0x0750...0x077f).contains($0.value) }.count
+        let latin = sample.unicodeScalars.filter { ($0.value >= 0x41 && $0.value <= 0x5a) || ($0.value >= 0x61 && $0.value <= 0x7a) }.count
+        return arabic > latin
     }
 
     func start(pageSize: CGSize) async {
@@ -247,6 +254,7 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
             return
         }
         paragraphs = opened.paragraphs
+        textRTL = Self.detectRTL(opened.paragraphs)
         identity = opened.identity
         self.landing = landing ?? opened.offset.map { Landing.anchor(line: opened.line, offset: $0) } ?? Landing.line(opened.line)
         await relayout()
@@ -271,6 +279,11 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         }.value
         guard seq == layoutSeq else { return }
         pages = built
+        // (device-flow pass 8) A new layout is a new text storage without the narration's mark: a
+        // text size, font, width or paper change while reading aloud lost the lit paragraph until
+        // the voice reached the next one. It is lit again on the new storage.
+        highlighted = nil
+        if speaking, spokenLine >= 0 { setSpokenLine(spokenLine) }
         loading = false
         let target: Int
         switch landing {
@@ -303,13 +316,25 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
     func retry() {
         guard failed != nil, !loading else { return }
         let i = index
+        leaveFailedState()
         Task { await openChapter(i, landing: nil) }
     }
 
     func goToChapter(_ i: Int, line: Int? = nil) {
         guard chapters.indices.contains(i) else { return }
         if i == index, let line, let pages = pages { page = pages.page(forLine: line); return }
+        if failed != nil { leaveFailedState() }
         Task { await openChapter(i, landing: line.map { .line($0) }) }
+    }
+
+    /// (device-flow pass 8) Out of the failed state at once, as the manga reader's reload() and
+    /// changeIndex() do: the page surface stays disabled while `failed` holds, and the card's Try
+    /// again / Next chapter hand the ring back to it in the same moment. openChapter cleared the
+    /// flag only once its Task ran, so the hand-off could find the surface still disabled and the
+    /// ring would not land on the page.
+    private func leaveFailedState() {
+        failed = nil
+        loading = true
     }
 
     /// What persistReadingPosition gets for the page in view: its line, plus the TV's page anchor
@@ -439,7 +464,14 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
     }
 
     func toggleNarration() {
-        if !speaking { speak(from: currentLine); return }
+        // (device-flow pass 8) Not while a chapter opens or after it failed: `paragraphs` still held
+        // the chapter being left (pages nil, so the voice started at its line 0), and once the new
+        // text landed the next utterance read the new chapter's paragraph at the old index.
+        if !speaking {
+            guard !loading, failed == nil, pages != nil else { return }
+            speak(from: currentLine)
+            return
+        }
         if narrationPaused {
             synth.continueSpeaking()
             narrationPaused = false
@@ -488,17 +520,30 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         setSpokenLine(-1)
     }
 
+    /// The paragraph painted on the current `pages.storage` (nil when none).
+    private var highlighted: NSRange?
+
     private func setSpokenLine(_ line: Int) {
-        guard let pages = pages else { spokenLine = line; return }
-        let full = NSRange(location: 0, length: pages.storage.length)
+        guard let pages = pages else { spokenLine = line; highlighted = nil; return }
+        let storage = pages.storage
+        let next: NSRange? = pages.paragraphRanges.indices.contains(line) ? pages.paragraphRanges[line] : nil
         // NSLayoutManager's temporary attributes are macOS-only; a background colour on the storage
         // changes no glyph positions, so the pagination stays as it was.
-        pages.storage.beginEditing()
-        pages.storage.removeAttribute(NSAttributedString.Key.backgroundColor, range: full)
-        if pages.paragraphRanges.indices.contains(line) {
-            pages.storage.addAttribute(NSAttributedString.Key.backgroundColor, value: UIColor(rgb: 0xff9f4d, alpha: 0.22), range: pages.paragraphRanges[line])
+        // (device-flow pass 8) Only the paragraph that was lit and the one to light are edited. The
+        // attribute was removed over the whole chapter on every paragraph, and a storage edit
+        // invalidates the layout from the edit on: a long chapter could be laid out again from its
+        // first page, on the main thread, each time the voice moved on.
+        if highlighted != next {
+            storage.beginEditing()
+            if let old = highlighted, NSMaxRange(old) <= storage.length {
+                storage.removeAttribute(NSAttributedString.Key.backgroundColor, range: old)
+            }
+            if let next {
+                storage.addAttribute(NSAttributedString.Key.backgroundColor, value: UIColor(rgb: 0xff9f4d, alpha: 0.22), range: next)
+            }
+            storage.endEditing()
+            highlighted = next
         }
-        pages.storage.endEditing()
         spokenLine = line
         paint += 1
     }
