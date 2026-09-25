@@ -24,8 +24,10 @@ final class QueueDeckModel: ObservableObject {
     /// opened again then, back on its first card with a fresh fetch.
     private var opened = false
 
-    func open() async {
-        guard !opened else { return }
+    /// True for the call that opened the deck (the view seeds focus only then).
+    @discardableResult
+    func open() async -> Bool {
+        guard !opened else { return false }
         opened = true
         let p = profile
         if let d: Deck = try? await HarborEngine.shared.call("discoverRoom.queueOpen", [p.id, p.linked]) {
@@ -33,6 +35,7 @@ final class QueueDeckModel: ObservableObject {
         } else { status = "unreachable" }
         index = 0
         await CardMarksStore.shared.refresh(entries.map(\.meta))
+        return true
     }
 
     func step(_ delta: Int) {
@@ -52,12 +55,12 @@ final class QueueDeckModel: ObservableObject {
         entries += more.filter { !have.contains($0.id) }
     }
 
-    /// Drop the current pick and land on the next one (or the previous when it was last).
-    private func remove(_ fn: String) async {
-        guard let c = current else { return }
-        _ = try? await HarborEngine.shared.callJSON("discoverRoom.\(fn)", [.string(c.id)])
+    /// Drop the pick (the current one unless named) and land on the next one (or the previous when it was last).
+    private func remove(_ fn: String, id: String? = nil) async {
+        guard let target = id ?? current?.id else { return }
+        _ = try? await HarborEngine.shared.callJSON("discoverRoom.\(fn)", [.string(target)])
         // (bug pass) Left / Right may have moved the deck while the engine answered: drop that pick by id.
-        guard let at = entries.firstIndex(where: { $0.id == c.id }) else { return }
+        guard let at = entries.firstIndex(where: { $0.id == target }) else { return }
         entries.remove(at: at)
         if at < index { index -= 1 }
         if index >= entries.count { index = max(0, entries.count - 1) }
@@ -65,15 +68,37 @@ final class QueueDeckModel: ObservableObject {
         if entries.count - index - 1 <= 6 { await extend() }
     }
     func snooze() async { await remove("queueSnooze") }
-    func block() async { await remove("queueBlock") }
+    /// bp-queue.tsx: Not interested runs only from the "Hide this permanently?" confirm, on the
+    /// title it named.
+    func block(_ id: String) async { await remove("queueBlock", id: id) }
 
-    func save() async {
-        guard let c = current, let authKey = profile.authKey, !saved.contains(c.id) else { return }
-        _ = try? await HarborEngine.shared.callJSON("stremio.saveBookmark", [.string(authKey), .string(c.id), .object(["type": .string(c.meta.type), "name": .string(c.meta.name), "poster": c.meta.poster.map { .string($0) } ?? .null])])
-        saved.insert(c.id)
-        await CardMarksStore.shared.refreshWatchlist()
+    private struct WatchlistState: Decodable { var watchlist: Bool? }
+    private var saving = false
+
+    /// bp-queue-rail useInWatchlist(meta.id): Save / Saved follows Harbor's watchlist (and the synced
+    /// Stremio/Trakt/Simkl aggregate) for the card on screen.
+    func readSaved() async {
+        guard let c = current else { return }
+        let p = profile
+        let noImdb: String? = nil
+        guard let s: WatchlistState = try? await HarborEngine.shared.call("actions.heroState", [c.meta, noImdb, p.id, p.linked]) else { return }
+        if s.watchlist == true { saved.insert(c.id) } else { saved.remove(c.id) }
     }
-    var canSave: Bool { profile.authKey != nil }
+
+    /// bp-queue-rail Save: toggleWatchlist({ id, type, name, poster }) (engine actions.setWatchlist).
+    /// (device-flow pass) It wrote a Stremio library bookmark, so it was missing without a Stremio
+    /// account, could not be undone, never showed a title already saved elsewhere as Saved, and
+    /// never reached Trakt, Simkl or the Library room's watchlist.
+    func toggleSave() async {
+        guard let c = current, !saving else { return }
+        saving = true
+        defer { saving = false }
+        let on = !saved.contains(c.id)
+        let noImdb: String? = nil
+        let _: Bool? = try? await HarborEngine.shared.call("actions.setWatchlist", [profile.authKey, c.meta, noImdb, on])
+        if on { saved.insert(c.id) } else { saved.remove(c.id) }
+        await CardMarksStore.shared.remark()
+    }
 }
 
 struct QueueDeckView: View {
@@ -81,6 +106,8 @@ struct QueueDeckView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var app: AppModel
     @State private var detail: DetailTarget?
+    /// bp-queue.tsx `confirming`: the title Not interested would hide for good.
+    @State private var confirmBlock: QueueDeckModel.Entry?
     @FocusState private var focus: String?
     struct DetailTarget: Identifiable { var meta: Meta; var autoPlay: Bool; var id: String { meta.id } }
 
@@ -105,7 +132,8 @@ struct QueueDeckView: View {
                             RemoteImage(url: c.meta.poster).frame(width: BP.px(180), height: BP.px(270))
                                 .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                             VStack(alignment: .leading, spacing: BP.px(8)) {
-                                if !c.tag.isEmpty { Text(c.tag).font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkMuted) }
+                                // bp-queue.tsx BpQueuePosition tag={t(copy.shown.tag)}: pool tags are English keys.
+                                if !c.tag.isEmpty { Text(T(c.tag)).font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkMuted) }
                                 Text(c.meta.name).font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
                                 Text(c.meta.facts).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
                                 if let d = c.meta.description, !d.isEmpty { Text(d).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(3).frame(maxWidth: BP.px(900), alignment: .leading) }
@@ -120,10 +148,10 @@ struct QueueDeckView: View {
                     .accessibilityLabel(Text(verbatim: c.meta.name))
                     HStack(spacing: BP.px(10)) {
                         chip("Play now", "play.fill") { detail = DetailTarget(meta: c.meta, autoPlay: true) }
-                        if model.canSave { chip(model.saved.contains(c.id) ? "Saved" : "Save", model.saved.contains(c.id) ? "bookmark.fill" : "bookmark") { Task { await model.save() } } }
+                        chip(model.saved.contains(c.id) ? "Saved" : "Save", model.saved.contains(c.id) ? "bookmark.fill" : "bookmark", key: "save") { Task { await model.toggleSave() } }
                         chip("Details", "info.circle") { detail = DetailTarget(meta: c.meta, autoPlay: false) }
                         chip("Skip", "forward.end") { Task { await model.snooze() } }
-                        chip("Not interested", "hand.thumbsdown") { Task { await model.block() } }
+                        chip("Not interested", "hand.thumbsdown") { confirmBlock = c }
                         chip("Back to Discover", "chevron.backward") { dismiss() }
                     }
                     .focusSection()
@@ -149,7 +177,26 @@ struct QueueDeckView: View {
             model.step((dir == .right) != L10n.isRTL ? 1 : -1)
         }
         .onExitCommand { dismiss() }
-        .task { await model.open(); focus = model.current == nil ? "Back to Discover" : "deck" }
+        .task {
+            // (device-flow pass) Seed focus on the first open only: the task runs again whenever a
+            // Details / Play now cover closes, and threw the ring from the chip used back to the deck
+            // (bp-queue restores the ring by data-bp-restore-key).
+            guard await model.open() else { return }
+            focus = model.current == nil ? "Back to Discover" : "deck"
+        }
+        // bp-queue-rail useInWatchlist: Save / Saved for the card on screen.
+        .task(id: model.current?.id) { await model.readSaved() }
+        // bp-queue.tsx recoverBpFocus: the last pick skipped or hidden takes the deck and the rail
+        // with it; the ring goes to Back to Discover instead of nowhere.
+        .onChange(of: model.current == nil) { _, empty in
+            if empty, model.status != "loading" { focus = "Back to Discover" }
+        }
+        .alert(Text(T("Hide this permanently?")), isPresented: Binding(get: { confirmBlock != nil }, set: { if !$0 { confirmBlock = nil } }), presenting: confirmBlock) { c in
+            Button(T("Not interested"), role: .destructive) { Task { await model.block(c.id) } }
+            Button(T("Keep"), role: .cancel) {}
+        } message: { c in
+            Text(T("%@ will not come back in the Discovery Queue.", c.meta.name))
+        }
         .fullScreenCover(item: $detail) { t in DetailView(meta: t.meta, autoPlay: t.autoPlay) }
     }
 
@@ -166,10 +213,11 @@ struct QueueDeckView: View {
         }
     }
 
-    private func chip(_ label: String, _ icon: String, action: @escaping () -> Void) -> some View {
+    /// `key` names the focus spot when the label changes under the ring (Save / Saved).
+    private func chip(_ label: String, _ icon: String, key: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) { Label(T(label), systemImage: icon) }
             .buttonStyle(BPActionStyle(primary: label == "Play now"))
-            .focused($focus, equals: label)
+            .focused($focus, equals: key ?? label)
     }
 }
 

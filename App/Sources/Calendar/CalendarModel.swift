@@ -113,6 +113,8 @@ final class CalendarModel: ObservableObject {
             filter = out.filter
             watchlistOnly = out.watchlistOnly
         }
+        // The picked source's month (or a failure, which must not leave the skeleton up for good).
+        if out.map({ $0.source == pendingSource }) ?? true { pendingSource = nil }
         loading = false
     }
 
@@ -130,10 +132,16 @@ final class CalendarModel: ObservableObject {
     func toggleWatchlist() { guard data?.signedIn == true else { return }; watchlistOnly.toggle(); Task { await load() } }
     func set(animeDub dub: Bool) { animeDub = dub; Task { await load() } }
 
+    /// The source just picked while its first month loads (use-calendar-data: rows cleared, loading).
+    @Published private(set) var pendingSource: String?
+
     /// update({ calendarSource }) — use-calendar-data clears the rows when the source changes.
+    /// (device-flow pass) Only the rows: dropping the whole month build also emptied the source and
+    /// option chip rows, so the chip just pressed vanished under the ring (focus fell to the header
+    /// or the tab bar) until the new source answered. The grid shows the skeleton meanwhile.
     func set(source id: String) {
-        guard id != data?.source else { return }
-        data = nil
+        guard id != (pendingSource ?? data?.source) else { return }
+        pendingSource = id
         Task { await pref(["calendarSource": .string(id)]) }
     }
     func toggleWeekStart() { Task { await pref(["weekStartsMonday": .bool(!(data?.weekStartsMonday ?? false))]) } }

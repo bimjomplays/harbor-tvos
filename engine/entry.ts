@@ -530,6 +530,7 @@ export const discoverRoom = {
   buildFor: discoverBuilders.buildFor,
   rails: discoverBuilders.rails,
   queuePeek: discoverBuilders.queuePeek,
+  queuePeekFor: discoverBuilders.queuePeekFor,
   queueFor: discoverBuilders.queueFor,
   genres: discoverBuilders.genres,
   genreArtFor: discoverBuilders.genreArtFor,

@@ -69,17 +69,33 @@ function buildOrder(source: FeedItem[]): FeedItem[] {
   return rankByAffinity(shuffleQueuePool(kept));
 }
 
+// use-bp-queue.ts `order` / orderedPool: one order per pool build, shared by the Discover band and
+// the deck ("the Discover band and the queue have to name the same titles in the same places").
+// (device-flow pass) The band built its own shuffle (shuffleQueuePool is Math.random), so its fan
+// and backdrop named other titles than the deck opened on, and it kept counting what the deck had
+// skipped; and the deck was kept per key only, so the next day's pool (getPool memoises per day)
+// never reached it on an Apple TV left running. `source` is getPool's array: identity is the
+// "same pool" test, as upstream's.
+const FIRST_EXTENSION_PAGE = 2;
+let deck: { key: string; source: FeedItem[]; items: FeedItem[]; page: number } | null = null;
+
+function orderedPool(source: FeedItem[], key: string): FeedItem[] {
+  if (deck && deck.source === source && deck.key === key) return deck.items;
+  deck = { key, source, items: buildOrder(source), page: FIRST_EXTENSION_PAGE };
+  return deck.items;
+}
+
 export async function queuePeek(settings: Settings, count = 4): Promise<QueuePeek> {
   const key = settings.tmdbKey;
-  let pool: FeedItem[] = [];
+  let entries: FeedItem[] = [];
   let raw = 0;
   try {
-    pool = await getPool(key);
+    const pool = await getPool(key);
     raw = pool.length;
+    entries = orderedPool(pool, key);
   } catch {
-    pool = [];
+    entries = [];
   }
-  const entries = buildOrder(pool);
   const status: QueuePeek["status"] = entries.length > 0 ? "ready" : !key ? "nokey" : raw === 0 ? "unreachable" : "empty";
   return {
     status,
@@ -128,6 +144,11 @@ export async function buildFor(profileId: string, linked: boolean): Promise<Disc
   const settings = loadEffective(profileId, linked);
   const [r, q] = await Promise.all([rails(settings), queuePeek(settings)]);
   return { rails: r, queue: q, genres: genres(), voyagePool: voyagePool(r) };
+}
+
+/** The band's peek on its own: Discover reads it again when the deck closes (skips and blocks). */
+export function queuePeekFor(profileId: string, linked: boolean): Promise<QueuePeek> {
+  return queuePeek(loadEffective(profileId, linked));
 }
 
 export function queueFor(profileId: string, linked: boolean, limit = 40): Promise<Meta[]> {
@@ -269,16 +290,13 @@ export async function genrePage(profileId: string, linked: boolean, genre: strin
 // once the viewer nears the end, entries dropped as they are snoozed (two weeks) or blocked.
 export type QueueEntry = { meta: Meta; tag: string };
 export type QueueDeck = { status: "loading" | "nokey" | "unreachable" | "empty" | "ready"; entries: QueueEntry[] };
-const FIRST_EXTENSION_PAGE = 2;
-let deck: { key: string; items: FeedItem[]; page: number } | null = null;
-
 export async function queueOpen(profileId: string, linked: boolean): Promise<QueueDeck> {
   const key = loadEffective(profileId, linked).tmdbKey;
-  let pool: FeedItem[] = [];
+  let items: FeedItem[] = [];
   let raw = 0;
-  try { pool = await getPool(key); raw = pool.length; } catch { pool = []; }
-  if (!deck || deck.key !== key) deck = { key, items: buildOrder(pool), page: FIRST_EXTENSION_PAGE };
-  const entries = deck.items.map((it) => ({ meta: it.meta, tag: it.tag }));
+  // use-bp-queue: a failed getPool shows an empty deck and leaves the order alone.
+  try { const pool = await getPool(key); raw = pool.length; items = orderedPool(pool, key); } catch { items = []; }
+  const entries = items.map((it) => ({ meta: it.meta, tag: it.tag }));
   const status: QueueDeck["status"] = entries.length > 0 ? "ready" : !key ? "nokey" : raw === 0 ? "unreachable" : "empty";
   return { status, entries };
 }

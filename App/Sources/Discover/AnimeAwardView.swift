@@ -60,7 +60,11 @@ struct AnimeAwardView: View {
             // viewer's year filter and the loaded award then.
             if data?.id == source { return }
             year = nil
-            data = try? await HarborEngine.shared.call("discoverRoom.animeAward", [source])
+            let got: Award? = try? await HarborEngine.shared.call("discoverRoom.animeAward", [source])
+            // (device-flow pass) Engine calls don't stop when the task is cancelled: a source chip
+            // pressed while the previous source still loaded got that source's winners under its name.
+            guard !Task.isCancelled else { return }
+            data = got
         }
         .onExitCommand { dismiss() }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
@@ -180,10 +184,14 @@ struct AnimeAwardView: View {
         guard busy == nil else { return }
         if !w.mapped && !hasKey { return }
         busy = key
+        let from = source
         Task {
             let p = ProfilesStore.shared.active
             let meta: Meta? = try? await HarborEngine.shared.call("discoverRoom.animeAwardOpen", [w.title, w.year, p?.id ?? "default", p?.linked ?? true])
             busy = nil
+            // (device-flow pass) A TMDB search answering after the viewer moved to another source
+            // opened a title from a list no longer on screen.
+            guard source == from else { return }
             if let meta { detail = meta }
         }
     }
