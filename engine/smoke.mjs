@@ -1312,6 +1312,21 @@ r.eq("settings.patch writes through", [patched.cinemetaEnabled, JSON.parse(app.n
 r.eq("cinemeta honours the stored flag", engine.cinemeta.enabled(), false);
 engine.settings.patch({ cinemetaEnabled: true });
 r.eq("cinemeta re-enabled", engine.cinemeta.enabled(), true);
+{
+  // (bug pass) SettingsBridge: patchFor saves through persistEffective (source key + the mirror
+  // upstream modules read); activate reads loadEffective and points the mirror at the profile.
+  const get = (k) => run(`localStorage.getItem(${JSON.stringify(k)})`);
+  const set = (k, v) => run(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
+  const keep = ["harbor.settings", "harbor.settings.shared", "harbor.settings.smoke-kid"].map((k) => [k, get(k)]);
+  const out = engine.settings.patchFor({ simklScrobbleEnabled: false, cinemetaEnabled: false }, "default", true);
+  r.eq("settings.patchFor writes the shared source key and the mirror", [out.simklScrobbleEnabled, JSON.parse(get("harbor.settings.shared")).simklScrobbleEnabled, JSON.parse(get("harbor.settings")).simklScrobbleEnabled, engine.cinemeta.enabled()], [false, false, false, false]);
+  set("harbor.settings", JSON.stringify({ ...JSON.parse(get("harbor.settings")), region: "DE" }));
+  const sharedRegion = JSON.parse(get("harbor.settings.shared")).region;
+  const act = engine.settings.activate("smoke-kid", false);
+  r.eq("settings.activate: an unlinked profile without its own blob reads the shared one and the mirror follows it", [act.simklScrobbleEnabled, act.region, JSON.parse(get("harbor.settings")).region, get("harbor.settings.smoke-kid")], [false, sharedRegion, sharedRegion, null]);
+  for (const [k, v] of keep) set(k, v);
+  engine.settings.patch({ cinemetaEnabled: true });
+}
 
 // --------------------------------------------------------------- pure browse helpers
 r.eq("narrowMediaType", [engine.cinemeta.narrowMediaType("series"), engine.cinemeta.narrowMediaType("anime")], ["series", "movie"]);

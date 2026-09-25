@@ -96,9 +96,14 @@ struct BPSettingsView: View {
     @State private var depth = BPSettingsView.initialDepth()
     /// A theme change rebuilds the tree mid-visit (ThemeStore.revision): the column comes back at
     /// the depth it was on; a fresh visit still opens on the categories (review 17).
-    private static var saved: (depth: Int, revision: Int)?
+    /// (bug pass) RootView's `.id` is "theme revision|language": picking a language in Settings
+    /// rebuilds the tree just as a theme does, and the column fell back to the category list.
+    private static var saved: (depth: Int, revision: String)?
+    private static var treeToken: String {
+        "\(ThemeStore.shared.revision)|\(L10n.normalize(SettingsBridge.shared.slice.uiLanguage))"
+    }
     private static func initialDepth() -> Int {
-        let now = ThemeStore.shared.revision
+        let now = treeToken
         guard let s = saved, s.revision != now else { return 1 }
         saved = (s.depth, now)
         return s.depth
@@ -136,7 +141,7 @@ struct BPSettingsView: View {
 
     private func goBack() {
         depth = 1
-        Self.saved = (1, ThemeStore.shared.revision)
+        Self.saved = (1, Self.treeToken)
         let id = model.active
         DispatchQueue.main.async { focus = "cat:\(id)" }
     }
@@ -144,7 +149,7 @@ struct BPSettingsView: View {
     private func open(_ id: String) {
         model.select(id)
         depth = 2
-        Self.saved = (2, ThemeStore.shared.revision)
+        Self.saved = (2, Self.treeToken)
         // bp-settings.tsx: a depth change moves the ring into the swapped column.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focus = "first" }
     }

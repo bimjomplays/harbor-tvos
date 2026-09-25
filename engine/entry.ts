@@ -429,6 +429,38 @@ export const settings = {
     syncGlue.markSettingsPatched(Object.keys(patch));
     return next;
   },
+  /**
+   * (bug pass) SettingsBridge.load: lib/settings.tsx reads the active profile through
+   * loadEffective (an unlinked profile with no blob of its own falls back to the shared one; a
+   * bare `load(sourceKeyFor(…))` gave it the defaults) and switchProfile's persistEffective makes
+   * the `harbor.settings` mirror follow the profile. Upstream modules read that mirror
+   * (loadStoredSettings(): TMDB language, cinemetaEnabled, simklScrobbleEnabled, Live TV region…),
+   * so it has to hold the active profile's settings. Writes the mirror only when it differs.
+   */
+  activate(profileId: string, linked: boolean): Settings {
+    const s = loadEffective(profileId || "default", linked !== false);
+    const json = serializeSettings(s);
+    try {
+      if (globalThis.localStorage.getItem(MIRROR_KEY) !== json) globalThis.localStorage.setItem(MIRROR_KEY, json);
+    } catch {
+      /* the next persistEffective writes it */
+    }
+    return s;
+  },
+  /**
+   * (bug pass) SettingsBridge.patch: lib/settings.tsx update() for the active profile — merged
+   * into loadEffective and saved with persistEffective, so the source key AND the mirror change.
+   * `patch(…, sourceKey)` wrote the source key only: a Simkl "Scrobbling off", a TMDB key or
+   * showAdultAddons set from the TV never reached the modules reading the mirror.
+   */
+  patchFor(patch: Partial<Settings>, profileId: string, linked: boolean): Settings {
+    const id = profileId || "default";
+    const l = linked !== false;
+    const next = { ...loadEffective(id, l), ...patch } as Settings;
+    persistEffective(next, id, l);
+    syncGlue.markSettingsPatched(Object.keys(patch));
+    return next;
+  },
 };
 
 /** Region profiles: which TMDB language and watch-provider region a locale implies. */
