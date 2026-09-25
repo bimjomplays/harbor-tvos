@@ -21,6 +21,8 @@ struct CollectionItemsOverlay: View {
     @State private var results: [Meta] = []
     @State private var searching = false
     @State private var saving = false
+    /// (review 12) Why Save to my collections did nothing (the 24-collection limit).
+    @State private var saveNote: String?
     @FocusState private var focus: String?
 
     enum Panel { case rename, add }
@@ -160,6 +162,7 @@ struct CollectionItemsOverlay: View {
                           systemImage: card.saved == true ? "checkmark" : "bookmark")
                 }
                 .buttonStyle(BPActionStyle(primary: card.saved != true, busy: saving || card.saved == true))
+                if let saveNote { Text(saveNote).font(BP.sans(14, .semibold)).foregroundStyle(BP.danger) }
             }
         }
         .focusSection()
@@ -318,6 +321,11 @@ struct CollectionItemsOverlay: View {
         saving = true
         defer { saving = false }
         let c: CollectionsModel.Card? = try? await HarborEngine.shared.call("collectionsRoom.saveCommunity", [handle, card.ref])
-        if c != nil { card.saved = true; onChanged("community") }
+        if c != nil { card.saved = true; saveNote = nil; onChanged("community"); return }
+        // (review 12) lib/collections saveCommunityCollection refuses at MAX_COLLECTIONS, and the press
+        // did nothing and said nothing: say the limit is reached, with the count beside New collection.
+        let mine: LossyArray<CollectionsModel.Card>? = try? await HarborEngine.shared.call("collectionsRoom.mine", [])
+        let count: Int = mine?.wrappedValue.count ?? 0
+        if count >= limits.collections { saveNote = T("Limit reached") + " · \(count) / \(limits.collections)" }
     }
 }

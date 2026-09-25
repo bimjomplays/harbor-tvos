@@ -9,6 +9,10 @@ final class AppModel: ObservableObject {
 
     @Published var stage: Stage = .boot
     @Published var room: Room = .home
+    /// (review 12) A layer drawn in place over the room is up (the Collections room's collection
+    /// overlay): bp-shell passes no onTab while a layer is up, and the layer holds the focus, so the
+    /// top bar takes no focus and LB/RB turn no tabs until it closes.
+    @Published var roomLayer = false
     /// Quick panel "Search": the Search room opens with this query.
     @Published var searchSeed: String?
     /// lib/deep-link.ts: a title opened from another app (harbor:// or stremio://).

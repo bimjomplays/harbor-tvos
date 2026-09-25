@@ -35,7 +35,8 @@ struct ShellView: View {
     var body: some View {
         ZStack(alignment: .top) {
             room
-            TopBarView()
+            // (review 12) Up from an in-place layer (Collections' overlay) reached the bar behind it.
+            TopBarView().disabled(app.roomLayer)
             VStack { Spacer(); HintBarView(actions: hints) }
         }
         // bp-shell.tsx fallback → popBigPicture: a tab is [home, tab], so Back from a tab lands on
@@ -159,7 +160,7 @@ struct ShellView: View {
         switch app.room {
         case .home: return inBrowseLayer ? [.select, .back, .tabs] : [.select, .exit, .tabs]
         case .search: return [.type, .back, .tabs]
-        default: return [.select, .back, .tabs]
+        default: return app.roomLayer ? [.select, .back] : [.select, .back, .tabs]
         }
     }
 
@@ -172,7 +173,8 @@ struct ShellView: View {
         if ScreensaverModel.shared.active { ScreensaverModel.shared.wake(); return }
         // The PiP browse layer's shell turns over the player in PiP: only its own covers count there.
         let clear = inBrowseLayer ? PiPBrowse.shared.noCoverPresented : (!PlaybackState.shared.active && Self.noCoverPresented)
-        guard app.stage == .shell, clear, !CurfewState.shared.locked else { return }
+        // (review 12) Nor while a room's in-place layer is up (AppModel.roomLayer).
+        guard app.stage == .shell, clear, !CurfewState.shared.locked, !app.roomLayer else { return }
         let order = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)
         guard !order.isEmpty else { return }
         // A room off the strip (Settings, or a hidden tab opened from Search) steps onto its ends.

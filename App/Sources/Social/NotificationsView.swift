@@ -12,6 +12,10 @@ struct NotificationsView: View {
     @State private var busy: String?
     /// The first refresh has answered (or failed): offline, "Loading…" otherwise stayed up for good.
     @State private var tried = false
+    /// (review 12) Where the ring goes when the row holding it leaves (Accept, Decline, Dismiss).
+    @FocusState private var focus: String?
+    /// The notification whose detail is up, and where its row sat.
+    @State private var opened: (id: String, index: Int)?
 
     private var noUnread: Bool { (center.notifications?.unread ?? 0) == 0 }
     private var noItems: Bool { center.notifications?.items.isEmpty ?? true }
@@ -27,12 +31,14 @@ struct NotificationsView: View {
                     Task { await center.markAllRead() }
                 } label: { Label("Mark all read", systemImage: "checkmark.circle") }
                     .buttonStyle(BPActionStyle(busy: noUnread))
+                    .focused($focus, equals: "mark-read")
                 Button {
                     guard !noItems else { return }
                     let ids: [String] = center.notifications?.items.map(\.id) ?? []
                     Task { await center.dismiss(ids, markRead: true) }
                 } label: { Label("Clear all", systemImage: "xmark.circle") }
                     .buttonStyle(BPActionStyle(busy: noItems))
+                    .focused($focus, equals: "clear-all")
             }
             .focusSection()
             if let n = center.notifications {
@@ -44,7 +50,8 @@ struct NotificationsView: View {
                     SocialEmpty(title: "You are all caught up.", message: "Friend requests, comments, badges and group news land here.")
                 }
                 ForEach(n.items) { item in
-                    SocialRow(title: item.title, subtitle: item.body, trailing: Social.ago(ms: item.createdAt), unread: !item.read) {
+                    SocialRow(title: item.title, subtitle: item.body, trailing: Social.ago(ms: item.createdAt), unread: !item.read,
+                              seat: (binding: $focus, value: "item:" + item.id)) {
                         icon(item)
                     } action: {
                         open(item)
@@ -64,7 +71,33 @@ struct NotificationsView: View {
         .task { await center.refresh(); tried = true }
         .fullScreenCover(item: $group) { g in GroupPageView(id: g.id) }
         .fullScreenCover(item: $profile) { h in ProfilePageView(handle: h.handle) }
-        .fullScreenCover(item: $detail) { n in NotificationDetailView(notif: n) }
+        .fullScreenCover(item: $detail, onDismiss: { settleAfterDetail() }) { n in NotificationDetailView(notif: n) }
+    }
+
+    /// (review 12) A dismissed notification's row is gone when its detail closes, and tvOS had nowhere
+    /// to put the ring back: it goes to the row now in its place (else the first request, else the
+    /// header's first action).
+    private func settleAfterDetail() {
+        guard let o = opened else { return }
+        opened = nil
+        let items: [Social.Notif] = center.notifications?.items ?? []
+        guard !items.contains(where: { $0.id == o.id }) else { return }
+        let firstRequest: String? = center.notifications?.pending.first.map { (p: Social.Pending) -> String in "req:" + p.edgeId }
+        let target: String = items.isEmpty ? (firstRequest ?? "mark-read") : "item:" + items[min(o.index, items.count - 1)].id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { focus = target }
+    }
+
+    /// (review 12) An answered request's row goes at once (SocialCenter.respond is optimistic) with the
+    /// ring on its Accept or Decline: the next request's profile tile takes it (not its Accept, where a
+    /// double press would answer that one too), else the first notification, else the header's first action.
+    private func seatAfterAnswering(_ edgeId: String) -> String {
+        let pending: [Social.Pending] = center.notifications?.pending ?? []
+        let rest: [Social.Pending] = pending.filter { $0.edgeId != edgeId }
+        if let at = pending.firstIndex(where: { $0.edgeId == edgeId }), !rest.isEmpty {
+            return "req:" + rest[min(at, rest.count - 1)].edgeId
+        }
+        if let first = center.notifications?.items.first { return "item:" + first.id }
+        return "mark-read"
     }
 
     /// notification-rows.tsx RequestRow.
@@ -83,14 +116,19 @@ struct NotificationsView: View {
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel.opacity(0.85)))
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .focused($focus, equals: "req:" + p.edgeId)
             Button {
                 guard busy != p.edgeId else { return }
+                let next: String = seatAfterAnswering(p.edgeId)
                 busy = p.edgeId; Task { await center.respond(edgeId: p.edgeId, accept: true); busy = nil }
+                DispatchQueue.main.async { focus = next }
             } label: { Label("Accept", systemImage: "checkmark") }
                 .buttonStyle(BPActionStyle(primary: true, busy: busy == p.edgeId))
             Button {
                 guard busy != p.edgeId else { return }
+                let next: String = seatAfterAnswering(p.edgeId)
                 busy = p.edgeId; Task { await center.respond(edgeId: p.edgeId, accept: false); busy = nil }
+                DispatchQueue.main.async { focus = next }
             } label: { Label("Decline", systemImage: "xmark") }
                 .buttonStyle(BPActionStyle(busy: busy == p.edgeId))
         }
@@ -125,7 +163,10 @@ struct NotificationsView: View {
     private func open(_ n: Social.Notif) {
         switch n.target.open {
         case "group": if let id = n.target.id { group = Social.GroupRef(id: id) }
-        default: detail = n
+        default:
+            let index: Int = center.notifications?.items.firstIndex(where: { $0.id == n.id }) ?? 0
+            opened = (id: n.id, index: index)
+            detail = n
         }
     }
 }

@@ -343,6 +343,8 @@ struct SocialRow<Leading: View>: View {
     var subtitle: String? = nil
     var trailing: String? = nil
     var unread = false
+    /// (review 12) The page's focus seat for this row, for pages that hand the ring on when a row goes.
+    var seat: (binding: FocusState<String?>.Binding, value: String)? = nil
     @ViewBuilder var leading: () -> Leading
     let action: () -> Void
 
@@ -363,6 +365,20 @@ struct SocialRow<Leading: View>: View {
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel.opacity(0.85)))
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .modifier(SocialRowSeat(seat: seat))
+    }
+}
+
+/// SocialRow's optional focus seat, bound on the row's own button.
+private struct SocialRowSeat: ViewModifier {
+    let seat: (binding: FocusState<String?>.Binding, value: String)?
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let seat {
+            content.focused(seat.binding, equals: seat.value)
+        } else {
+            content
+        }
     }
 }
 
