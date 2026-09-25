@@ -60,6 +60,10 @@ final class LibraryModel: ObservableObject {
     /// Set when Media Servers is picked: the next feed takes type, server, sort and direction from
     /// the saved preferences (bp-library's [tab] effect) instead of the fresh-tab defaults.
     private var restoreOwned = false
+    /// (review 12) Restore reads still out, and the filter picks made meanwhile: each shows at once
+    /// and goes again on top of the restored filters when the read lands (see `pick`).
+    private var restoreReads = 0
+    private var restorePicks: [@MainActor (LibraryModel) -> Void] = []
     /// bp-library "Episodes / Posters" for History (harbor.history.view).
     @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") == "episodes"
     @Published var group: String?
@@ -119,6 +123,8 @@ final class LibraryModel: ObservableObject {
         ]
         // Media Servers: its own sort and direction, and whether to restore the saved filters.
         let restore: Bool = restoreOwned && tab == "media-servers"
+        if restore { restoreReads += 1 }
+        defer { if restore { restoreReads -= 1 } }
         fields["ownedSort"] = AnyJSON.string(ownedSort)
         fields["sortDir"] = AnyJSON.string(sortDir)
         fields["restore"] = AnyJSON.bool(restore)
@@ -129,6 +135,7 @@ final class LibraryModel: ObservableObject {
             feed = f
             sort = f.sort
             sortKnown = true
+            var restored = false
             if let o = f.owned, f.tab == tab {
                 restoreOwned = false
                 type = o.type
@@ -138,9 +145,41 @@ final class LibraryModel: ObservableObject {
                 genres = o.genres ?? []
                 ownedSort = o.sort
                 sortDir = o.dir
+                restored = true
             }
+            if restore { finishRestore(restored: restored) }
             await CardMarksStore.shared.refresh(f.sections.flatMap { $0.items.map(\.meta) })
+        } else if restore && mine == generation {
+            finishRestore(restored: false)
         }
+    }
+
+    /// (review 12) A filter pick. While the Media Servers restore read is out it shows at once and
+    /// is kept for that read: a pick used to start its own read with the fresh-tab defaults for
+    /// everything else, which dropped the restore's answer and saved those defaults over the
+    /// viewer's server, library and genres.
+    private func pick(_ change: @escaping @MainActor (LibraryModel) -> Void) {
+        change(self)
+        limit = 60
+        if restoreOwned && restoreReads > 0 && tab == "media-servers" {
+            restorePicks.append(change)
+            return
+        }
+        restoreOwned = false
+        Task { await load() }
+    }
+
+    /// (review 12) The restore read landed (or failed): the picks made meanwhile go again on top of
+    /// the restored filters (a genre toggles against the saved set) and the feed is read with them.
+    /// After a failed read they are already on screen and go through as they are.
+    private func finishRestore(restored: Bool) {
+        guard !restorePicks.isEmpty else { return }
+        let picks = restorePicks
+        restorePicks = []
+        if restored { for change in picks { change(self) } }
+        restoreOwned = false
+        limit = 60
+        Task { await load() }
     }
 
     /// bp-library's [tab] effect: a new tab starts unfiltered (group, type and search cleared). The
@@ -148,13 +187,13 @@ final class LibraryModel: ObservableObject {
     /// with the search row closed and nothing on screen saying so.
     func select(tab id: String) {
         tab = id; group = nil; library = nil; genres = []; type = "all"; query = ""; limit = 60
-        ownedSort = "added"; sortDir = "desc"; restoreOwned = id == "media-servers"
+        ownedSort = "added"; sortDir = "desc"; restoreOwned = id == "media-servers"; restorePicks = []
         // Loading from this frame on: the new tab has no feed yet (shownFeed), so the page shows
         // the spinner, not the failed-read note, until the load below starts.
         loading = true
         Task { await load() }
     }
-    func set(type t: String) { type = t; restoreOwned = false; limit = 60; Task { await load() } }
+    func set(type t: String) { pick { $0.type = t } }
     func set(sort s: String) {
         sort = s; sortKnown = true; limit = 60
         // A feed already in flight (the first one asks with no sort and answers with the saved one)
@@ -163,17 +202,17 @@ final class LibraryModel: ObservableObject {
         let p = profile
         Task { _ = try? await HarborEngine.shared.callJSON("libraryRoom.setSort", [.string(s), .string(p.id), .bool(p.linked)]); await load() }
     }
-    func set(ownedSort k: String) { ownedSort = k; restoreOwned = false; limit = 60; Task { await load() } }
-    func set(sortDir d: String) { sortDir = d; restoreOwned = false; limit = 60; Task { await load() } }
+    func set(ownedSort k: String) { pick { $0.ownedSort = k } }
+    func set(sortDir d: String) { pick { $0.sortDir = d } }
     func toggleFlat() { flat.toggle(); Task { await load() } }
     func set(episodes on: Bool) { episodes = on; try? Prefs.set(on ? "episodes" : "posters", for: "harbor.history.view"); Task { await load() } }
-    func set(group g: String?) { group = g; restoreOwned = false; limit = 60; Task { await load() } }
-    func set(library l: String?) { library = l; restoreOwned = false; limit = 60; Task { await load() } }
+    func set(group g: String?) { pick { $0.group = g } }
+    func set(library l: String?) { pick { $0.library = l } }
     /// bp-library Genre group: each chip toggles its genre (a title must carry every picked one).
     func toggle(genre g: String) {
-        if let i = genres.firstIndex(of: g) { genres.remove(at: i) } else { genres.append(g) }
-        restoreOwned = false; limit = 60
-        Task { await load() }
+        pick { model in
+            if let i = model.genres.firstIndex(of: g) { model.genres.remove(at: i) } else { model.genres.append(g) }
+        }
     }
     /// (review 11) A details read is running; a batch landing meanwhile asks for one more after it.
     private var detailsReading = false

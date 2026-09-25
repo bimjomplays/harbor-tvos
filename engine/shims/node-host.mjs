@@ -2,6 +2,7 @@
 // same bundle Swift will load. Swift's implementation must match the semantics documented
 // in docs/engine-report.md.
 import { randomBytes, randomUUID } from "node:crypto";
+import { LAZY_PREFIXES } from "./storage.js";
 
 /**
  * @param {{storage?: Map<string,string>, log?: (level: string, msg: string) => void,
@@ -65,8 +66,9 @@ export function createNodeHost(options = {}) {
     },
 
     // ---- storage ----
+    // Like KeyValueStore.snapshot(): the lazy namespaces are read with storageGet when asked for.
     storageSnapshot() {
-      return Object.fromEntries(storage);
+      return Object.fromEntries([...storage].filter(([k]) => !LAZY_PREFIXES.some((p) => k.startsWith(p))));
     },
     storageGet(key) {
       return storage.has(key) ? storage.get(key) : null;

@@ -98,7 +98,7 @@ anything else is called. Reference implementation for Node: `engine/shims/node-h
 |---|---|---|
 | `fetch` | `(req: HostRequest) => Promise<HostResponse>` | performs the HTTP request. **Must** follow redirects unless `req.redirect` is `"manual"`/`"error"`, transparently decompress `Content-Encoding`, and reject (not resolve) on a transport failure. Resolving with a 4xx/5xx is correct and normal |
 | `abort` | `(requestId: number) => void` | cancels the in-flight request with that id. Called when an `AbortSignal` fires |
-| `storageSnapshot` | `() => Record<string, string>` | **every** `harbor.*` key/value at boot. Optional but strongly preferred: it makes `localStorage` reads pure memory. Without it the shim falls back to `storageGet` per key |
+| `storageSnapshot` | `() => Record<string, string>` | **every** `harbor.*` key/value at boot except the lazy namespaces (`shims/storage.js` LAZY_PREFIXES: media-server details, read with `storageGet` on first use). Optional but strongly preferred: it makes `localStorage` reads pure memory. Without it the shim falls back to `storageGet` per key |
 | `storageGet` | `(key: string) => string \| null` | **synchronous.** Upstream reads settings and caches synchronously; there is no async escape |
 | `storageSet` | `(key: string, value: string) => void` | synchronous write-through. May persist lazily, but a later `storageGet` must see it |
 | `storageRemove` | `(key: string) => void` | synchronous |
