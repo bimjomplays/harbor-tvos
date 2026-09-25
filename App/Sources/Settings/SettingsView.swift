@@ -16,6 +16,10 @@ struct SettingsView: View {
     @State private var coversClosed = 0
     /// The Artwork and rows section's first button (Connect TMDB / Use a different key).
     @FocusState private var tmdbLead: Bool
+    /// (device-flow pass 3) The Harbor / Stremio section's Sign in ("harbor" / "stremio"). Sign out
+    /// asks nothing first, like upstream (account-identity-card / stremio-card signOut), and takes
+    /// its own button away; the ring follows to Sign in (stremio-card returnRing → signInRef).
+    @FocusState private var accountLead: String?
 
     @EnvironmentObject private var settings: SettingsBridge
     /// The eBook tab (EBook/EBookModels.swift EBookGate): a choice for this TV.
@@ -36,20 +40,22 @@ struct SettingsView: View {
                 section("Harbor account") {
                     if let s = account.session {
                         row(T("Signed in as %@", s.user.username), detail: s.user.stremioLinked == true ? "Stremio linked" : "Stremio not linked")
-                        Button("Sign out") { app.signOutHarbor() }.buttonStyle(BPActionStyle())
+                        Button("Sign out") { app.signOutHarbor(); returnRing(to: "harbor") }.buttonStyle(BPActionStyle())
                     } else {
                         row("Not signed in", detail: "Sync, themes and friends")
                         Button("Sign in") { sheet = .harbor }.buttonStyle(BPActionStyle(primary: true))
+                            .focused($accountLead, equals: "harbor")
                     }
                 }
                 section("Stremio") {
                     if let p = profiles.active {
                         if let s = profiles.stremioSession(for: p.id) {
                             row(T("Signed in as %@", s.user.fullname ?? s.user.email), detail: "For the \(p.name) profile")
-                            Button("Sign out") { profiles.setStremioSession(nil, for: p.id) }.buttonStyle(BPActionStyle())
+                            Button("Sign out") { profiles.setStremioSession(nil, for: p.id); returnRing(to: "stremio") }.buttonStyle(BPActionStyle())
                         } else {
                             row("Not signed in", detail: "Your Stremio library for the \(p.name) profile")
                             Button("Sign in") { sheet = .stremio }.buttonStyle(BPActionStyle(primary: true))
+                                .focused($accountLead, equals: "stremio")
                         }
                     }
                 }
@@ -222,6 +228,11 @@ struct SettingsView: View {
             }
             .environmentObject(app).environmentObject(account).environmentObject(profiles).environmentObject(sync).environmentObject(settings)
         }
+    }
+
+    /// The section's Sign in, once the sign-out has put it on screen.
+    private func returnRing(to key: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { accountLead = key }
     }
 
     private func testSavedKey() async {

@@ -57,6 +57,9 @@ struct PersonView: View {
     @State private var detail: Meta?
     @State private var other: PersonModel.Collaborator?
     @State private var bioExpanded = false
+    /// The Sort / Rating chips ("Sort:popularity", "Rating:0" …), so the empty state's "Any rating"
+    /// can hand the ring to the Rating row's "Any rating" before it goes away.
+    @FocusState private var chipFocus: String?
     @Environment(\.dismiss) private var dismiss
 
     /// Set when the page is drawn inside the player (PlayerXRay.swift, xray-overlay.tsx CastModal
@@ -101,7 +104,15 @@ struct PersonView: View {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
                                 if (pg.total ?? 0) > 0 {
                                     BPNote(text: "No titles clear that rating.")
-                                    Button("Any rating") { model.minRating = 0; Task { await model.load() } }.buttonStyle(BPActionStyle(primary: true))
+                                    // (device-flow pass 3) The button leaves with the empty state the
+                                    // moment the load starts; the ring goes to the Rating row's
+                                    // "Any rating" chip, which stays (total > 0).
+                                    Button("Any rating") {
+                                        model.minRating = 0
+                                        chipFocus = "Rating:0"
+                                        Task { await model.load() }
+                                    }
+                                    .buttonStyle(BPActionStyle(primary: true))
                                 } else {
                                     BPNote(text: "No filmography on record.")
                                 }
@@ -200,7 +211,10 @@ struct PersonView: View {
     private func filterRow(_ heading: String, _ options: [(String, String)], active: String, trailing: String?, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
             Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
-            ForEach(options, id: \.0) { o in Button(T(o.1)) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)).bpSelected(active == o.0) }
+            ForEach(options, id: \.0) { o in
+                Button(T(o.1)) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)).bpSelected(active == o.0)
+                    .focused($chipFocus, equals: heading + ":" + o.0)
+            }
             if let trailing { Text(trailing).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
         }
         .focusSection()

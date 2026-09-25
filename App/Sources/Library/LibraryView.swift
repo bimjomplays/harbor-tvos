@@ -18,6 +18,8 @@ final class LibraryModel: ObservableObject {
     struct Feed: Decodable {
         var tab: String; var sections: [Section]; var shown: Int; var matched: Int; var total: Int; var hasMore: Bool
         var groups: [Group]; var status: String; var hidden: Int; var signedIn: Bool; var sort: String; var counts: Counts
+        /// bp-library `dated` / `years` over the filtered set: the View row and the Year sort.
+        var dated: Bool?; var years: Bool?
     }
 
     @Published private(set) var tabs: [Tab] = []
@@ -280,16 +282,36 @@ struct LibraryView: View {
     // bp-library-filters: one labelled row per kind (Up/Down between kinds, Left/Right within).
     private var filters: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
-            filterRow("Type", [("all", T("All") + " \(model.feed?.counts.all ?? 0)"), ("movie", T("Movies") + " \(model.feed?.counts.movie ?? 0)"), ("series", T("Series") + " \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
-            filterRow("Sort", [("recent", T("Recent")), ("title", T("Title")), ("year", T("Year"))], active: model.sort) { model.set(sort: $0) }
-            filterRow("View", [("grouped", T("Grouped")), ("flat", T("One list"))], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
+            // (device-flow pass 3) bp-library TYPES / SORTS labels ("Shows", "A-Z"); Year only when a
+            // shown title has a release year; View only for the Recent sort with a dated title,
+            // outside the owned (Media Servers) tab; the History row is upstream's "Episodes" group.
+            filterRow("Type", [("all", T("All") + " \(model.feed?.counts.all ?? 0)"), ("movie", T("Movies") + " \(model.feed?.counts.movie ?? 0)"), ("series", T("Shows") + " \(model.feed?.counts.series ?? 0)")], active: model.type) { model.set(type: $0) }
+            filterRow("Sort", sortOptions, active: model.sort) { model.set(sort: $0) }
+            if showViewRow {
+                filterRow("View", [("grouped", T("Grouped")), ("flat", T("One list"))], active: model.flat ? "flat" : "grouped") { _ in model.toggleFlat() }
+            }
             if model.tab == "history" {
-                filterRow("Show", [("episodes", T("Episodes")), ("posters", T("Posters"))], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
+                filterRow("Episodes", [("posters", T("Posters")), ("episodes", T("Episodes"))], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
             }
             if let groups = model.feed?.groups, !groups.isEmpty {
                 filterRow(model.tab == "lists" ? "List" : "Group", [("", T("All"))] + groups.map { ($0.id, T($0.label)) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
             }
         }
+    }
+
+    /// bp-library `sorts`: Year only while a shown title has a release year.
+    private var sortOptions: [(String, String)] {
+        var out: [(String, String)] = [("recent", T("Recent")), ("title", T("A-Z"))]
+        let years: Bool = model.shownFeed?.years ?? true
+        if years { out.append(("year", T("Year"))) }
+        return out
+    }
+
+    /// bp-library: the View group needs the Recent sort and a dated title, on a tab that is not
+    /// owned media (local / media-servers).
+    private var showViewRow: Bool {
+        let dated: Bool = model.shownFeed?.dated ?? true
+        return model.tab != "media-servers" && model.sort == "recent" && dated
     }
 
     private func filterRow(_ heading: String, _ options: [(String, String)], active: String, pick: @escaping (String) -> Void) -> some View {

@@ -238,7 +238,11 @@ export async function feed(input: FeedInput) {
     capped.push({ label: sec.label, items, total: sec.total });
   }
   const counts = { all: scoped.length, movie: scoped.filter((e) => e.meta.type === "movie").length, series: scoped.filter((e) => e.meta.type === "series").length };
-  return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts };
+  // bp-library.tsx:220-221: the View row needs a dated entry and the Year sort a release year,
+  // both over the filtered (visible) set.
+  const dated = filtered.some((e) => e.date != null);
+  const years = filtered.some((e) => !!e.meta.releaseInfo);
+  return { tab, sections: capped, shown, matched: filtered.length, total, hasMore: shown < filtered.length, groups, status, hidden, signedIn, sort, counts, dated, years };
 }
 
 // ----------------------------------------------------------------------------- repair

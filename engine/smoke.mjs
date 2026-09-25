@@ -2306,6 +2306,8 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("libraryRoom.feed filters by type and sorts by title", onlySeries.matched === 1 && onlySeries.sections[0].label === "A to Z" && onlySeries.sections[0].items[0].meta.name === "Breaking Bad", JSON.stringify(onlySeries.sections));
   const q = await engine.libraryRoom.feed({ tab: "favorites", profileId: "default", linked: true, authKey: null, query: "shaw" });
   r.eq("libraryRoom.feed search", q.matched, 1);
+  // bp-library dated / years: the View row needs a dated title, the Year sort a release year.
+  r.ok("libraryRoom.feed says whether a shown title is dated or has a year (bp-library View / Year)", fav.dated === true && fav.years === false && empty.dated === false && empty.years === false, JSON.stringify({ dated: fav.dated, years: fav.years }));
   engine.libraryRoom.setSort("year", "default", true);
   r.eq("libraryRoom.setSort persists", engine.settings.load().librarySort, "year");
   engine.libraryRoom.setSort("recent", "default", true);
@@ -2498,6 +2500,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("libraryRoom.tabs shows Letterboxd once connected", E.libraryRoom.tabs("default", true).some((t) => t.id === "letterboxd"), true);
   const lbFeed = await E.libraryRoom.feed({ tab: "letterboxd", profileId: "default", linked: true, authKey: null });
   r.ok("libraryRoom.feed(letterboxd) lists the watchlist", lbFeed.status === "ready" && lbFeed.total === 5 && lbFeed.sections[0].items[0].meta.type === "movie", JSON.stringify({ status: lbFeed.status, total: lbFeed.total }));
+  r.eq("libraryRoom.feed(letterboxd) is undated, so the Library has no View row (bp-library dated)", lbFeed.dated, false);
   const lbRows = await E.letterboxd.movieRows("default", true);
   r.ok("letterboxd.movieRows keeps rows with four titles or more, named from the manifest", lbRows.length === 1 && lbRows[0].key === "letterboxd-letterboxd-watchlist" && lbRows[0].name === "smoke's Watchlist" && lbRows[0].metas.length === 5, JSON.stringify(lbRows.map((x) => [x.key, x.name, x.metas.length])));
   E.letterboxd.disable("default", true);
