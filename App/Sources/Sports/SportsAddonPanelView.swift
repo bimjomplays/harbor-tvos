@@ -52,7 +52,7 @@ struct SportsAddonPanelView: View {
         var id: String { url.absoluteString }
     }
     struct StreamRow: Decodable, Identifiable { var index: Int; var name: String; var title: String; var external: Bool; var id: Int { index } }
-    struct Streams: Decodable { var status: String; var rows: [StreamRow] }
+    struct Streams: Decodable { var status: String; var pick: Int?; var rows: [StreamRow] }
     struct Outcome: Decodable { var kind: String; var url: String?; var headers: [String: String]?; var title: String?; var subtitle: String?; var subtitles: [SeedSubtitle]?; var meta: Meta? }
     struct External: Identifiable { let url: String; var id: String { url } }
 
@@ -78,6 +78,10 @@ struct SportsAddonPanelView: View {
     @FocusState private var seat: Seat?
     @State private var placed: Seat?
     @State private var placedFor: String?
+    /// (review 14) The pick number of the streams on screen. The engine keeps each listing's streams
+    /// (sports.ts addonPicked) and answers with what it holds for the listing, numbered by pick, so
+    /// an answer below the one shown is stale. Play names the listing, so the streams shown play.
+    @State private var shownPick = 0
 
     static func matchCopy(_ row: SportsEventModel.AddonRow) -> String {
         switch row.match {
@@ -238,10 +242,14 @@ struct SportsAddonPanelView: View {
     }
 
     private func choose(_ row: SportsEventModel.AddonRow) {
-        picked = row; streams = []; pending = true; playing = nil; fault = ""
+        picked = row; streams = []; pending = true; playing = nil; fault = ""; shownPick = 0
         Task {
             let out: Streams? = try? await HarborEngine.shared.call("sports.addonStreams", [row.key])
             guard picked?.key == row.key else { return }
+            if out?.status == "ok", let p = out?.pick {
+                guard p >= shownPick else { return }
+                shownPick = p
+            }
             pending = false
             switch out?.status {
             case "ok": streams = out?.rows ?? []

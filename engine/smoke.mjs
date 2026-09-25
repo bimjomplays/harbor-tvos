@@ -64,6 +64,8 @@ r.ok("benchmark still works", (() => {
       { id: "ev1", type: "tv", name: "Los Angeles Lakers vs Boston Celtics" },
       { id: "ev2", type: "tv", name: "Some Other Channel" },
       { id: "ev3", type: "tv", name: "Late Night Channel" },
+      { id: "ev4", type: "tv", name: "Morning Replay Channel" },
+      { id: "ev5", type: "tv", name: "Evening Replay Channel" },
     ] });
     if (req.url === `${base}/stream/tv/ev1.json`) return json({ streams: [
       { name: "HD", title: "Main feed", url: "https://cdn.example.invalid/ev1.m3u8", subtitles: [{ id: "s1", url: "https://subs.example.invalid/ev1.srt", lang: "eng" }] },
@@ -81,9 +83,20 @@ r.ok("benchmark still works", (() => {
       await new Promise((done) => setTimeout(done, ev3Asks === 1 ? 10 : 200));
       return json({ streams: [{ name: "Late", url: "https://cdn.example.invalid/ev3.m3u8" }] });
     }
+    // (review 14) Listing A (first answer slow, second slower) and listing B (slow, but quicker than A's first).
+    if (req.url === `${base}/stream/tv/ev4.json`) {
+      const ask = ++ev4Asks;
+      await new Promise((done) => setTimeout(done, [60, 250, 150, 10][ask - 1] ?? 10));
+      return json({ streams: [{ name: "Replay", url: `https://cdn.example.invalid/ev4-${ask}.m3u8` }] });
+    }
+    if (req.url === `${base}/stream/tv/ev5.json`) {
+      await new Promise((done) => setTimeout(done, 20));
+      return json({ streams: [{ name: "Evening", url: "https://cdn.example.invalid/ev5.m3u8" }] });
+    }
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
   let ev3Asks = 0;
+  let ev4Asks = 0;
   const game = { id: "g-addon", league: "NBA", state: "in", detail: "Q2", home: { id: "1", name: "Boston Celtics", abbr: "BOS", logo: "", score: "50", winner: false }, away: { id: "2", name: "Los Angeles Lakers", abbr: "LAL", logo: "", score: "48", winner: false }, startMs: Date.now() - 3600000 };
   const before = await rec.engine.sports.addonSources(game, null);
   r.eq("sports.addonSources is empty before sports consent", [before.available, before.installed], [0, false]);
@@ -119,6 +132,36 @@ r.ok("benchmark still works", (() => {
   const early = third ? await rec.engine.sports.addonPlay(third.key, 0) : null;
   await secondPick;
   r.ok("sports.addonStreams: a listing picked twice plays from its first answer while the second loads", !!third && firstAnswer?.status === "ok" && ev3Asks === 2 && early?.kind === "play" && early.url === "https://cdn.example.invalid/ev3.m3u8", JSON.stringify({ third: third?.key, ev3Asks, early }));
+  // (review 14) Pick A, then B, then A again, all slow. B's answer lands first, then A's first answer
+  // (the TV shows it, A being picked again) while A's second is still loading: A's shown streams have
+  // to play. One global pick list held B's streams there, and every Play said "Could not start".
+  const listA = src.rows.find((x) => /morning replay/i.test(x.name));
+  const listB = src.rows.find((x) => /evening replay/i.test(x.name));
+  const aFirst = listA ? rec.engine.sports.addonStreams(listA.key) : Promise.resolve(null);
+  await new Promise((done) => setTimeout(done, 2));
+  const bPick = listB ? rec.engine.sports.addonStreams(listB.key) : Promise.resolve(null);
+  await new Promise((done) => setTimeout(done, 2));
+  const aSecond = listA ? rec.engine.sports.addonStreams(listA.key) : Promise.resolve(null);
+  const bAnswer = await bPick;
+  const aAnswer = await aFirst;
+  const aShown = listA ? await rec.engine.sports.addonPlay(listA.key, 0) : null;
+  const bStill = listB ? await rec.engine.sports.addonPlay(listB.key, 0) : null;
+  const aLate = await aSecond;
+  const aLatest = listA ? await rec.engine.sports.addonPlay(listA.key, 0) : null;
+  r.ok("sports.addonStreams: A, B, A again (all slow) plays A's shown answer while A's second loads", !!listA && !!listB && bAnswer?.status === "ok" && aAnswer?.status === "ok" && ev4Asks === 2
+    && aShown?.kind === "play" && aShown.url === "https://cdn.example.invalid/ev4-1.m3u8"
+    && bStill?.kind === "play" && bStill.url === "https://cdn.example.invalid/ev5.m3u8"
+    && aLatest?.kind === "play" && aLatest.url === "https://cdn.example.invalid/ev4-2.m3u8", JSON.stringify({ a: listA?.key, b: listB?.key, aShown, bStill, aLatest }));
+  r.ok("sports.addonStreams: each answer names its pick, later picks higher (the TV keeps the newest shown)", typeof aAnswer?.pick === "number" && typeof aLate?.pick === "number" && aLate.pick > aAnswer.pick, JSON.stringify({ first: aAnswer?.pick, second: aLate?.pick }));
+  // (review 14) An earlier pick of a listing answering after a later one has landed answers with the
+  // later pick's streams and number (what the engine holds), so the TV never shows the stale list.
+  const aSlow = listA ? rec.engine.sports.addonStreams(listA.key) : Promise.resolve(null);
+  await new Promise((done) => setTimeout(done, 2));
+  const aQuick = await (listA ? rec.engine.sports.addonStreams(listA.key) : Promise.resolve(null));
+  const aStale = await aSlow;
+  const aHeld = listA ? await rec.engine.sports.addonPlay(listA.key, 0) : null;
+  r.ok("sports.addonStreams: a stale answer of a listing returns the streams its later pick holds", ev4Asks === 4 && aQuick?.status === "ok" && aStale?.status === "ok" && aStale.pick === aQuick.pick
+    && aHeld?.kind === "play" && aHeld.url === "https://cdn.example.invalid/ev4-4.m3u8", JSON.stringify({ quick: aQuick?.pick, stale: aStale?.pick, aHeld }));
   const post = await rec.engine.sports.addonSources({ ...game, id: "g-post", state: "post" }, null);
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }

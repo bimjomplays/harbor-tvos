@@ -707,7 +707,29 @@ export type AddonSourcesView = { installed: boolean; failed: boolean; rows: Addo
 const ADDON_HTTP = /^https?:\/\//i;
 const ADDON_CATALOGUE = /^(movie|series)$/i;
 let addonHeld: { identity: string; at: number; providers: Addon[]; rows: SportsAddonListing[]; view: AddonSourcesView } | null = null;
-let addonPicked: { key: string; streams: Stream[] } | null = null;
+/** (review 14) The streams each recently picked listing answered, by listing key: per listing the
+ *  answer of its newest pick that has landed, for the last few listings. One global list (even
+ *  with pass 2's and review 12's order rules) could hold another listing's streams while the TV
+ *  showed this one's: pick A, B, then A again (all slow), B answered first, A's first answer was
+ *  dropped, and every Play of the A streams on screen said "Could not start" until A's second
+ *  answer landed. addonPlay names the listing it plays from and looks its streams up here. */
+const addonPicked = new Map<string, { pick: number; streams: Stream[] }>();
+const ADDON_PICKED_KEEP = 8;
+/** Keeps a landed answer and returns what the listing now holds: an answer lands unless a later
+ *  pick of the same listing has already landed (review 12), in which case that one is returned. */
+function keepAddonPicked(key: string, pick: number, streams: Stream[]): { pick: number; streams: Stream[] } {
+  const held = addonPicked.get(key);
+  if (held && held.pick > pick) return held;
+  const kept = { pick, streams };
+  addonPicked.delete(key);
+  addonPicked.set(key, kept);
+  while (addonPicked.size > ADDON_PICKED_KEEP) {
+    const oldest = addonPicked.keys().next();
+    if (oldest.done) break;
+    addonPicked.delete(oldest.value);
+  }
+  return kept;
+}
 
 function addonIdentity(game: SportsGame, authKey: string | null): string {
   return JSON.stringify([game.id, game.startMs, game.home.name, game.away.name, game.context?.name ?? null, game.broadcasts ?? null, authKey]);
@@ -742,27 +764,26 @@ export async function addonSources(game: SportsGame, authKey: string | null = nu
   }
 }
 
-/** bp-sports-addon-play choose: the streams one listing offers (inline, its addon, then others that accept the id). */
+/** bp-sports-addon-play choose: the streams one listing offers (inline, its addon, then others that
+ *  accept the id). The answer is what addonPicked holds for the listing once this pick lands (a
+ *  later pick's streams when that landed first), and `pick` numbers it (later picks are higher),
+ *  so the TV can keep the highest it has seen per listing and always show streams that play. */
 let addonStreamsSeq = 0;
-/** (review 12) The pick whose streams `addonPicked` holds: a later answer never gives way to an earlier one. */
-let addonPickedSeq = 0;
-export async function addonStreams(key: string): Promise<{ status: "ok" | "listing" | "reload"; rows: Array<{ index: number; name: string; title: string; external: boolean }> }> {
+export async function addonStreams(key: string): Promise<{ status: "ok" | "listing" | "reload"; pick?: number; rows: Array<{ index: number; name: string; title: string; external: boolean }> }> {
   const row = addonHeld?.rows.find((r) => r.key === key);
   if (!row || !isAddonEnabled(row.addon.transportUrl)) { addonHeld = null; return { status: "reload", rows: [] }; }
-  // (sports/addons pass 2) Only the newest pick is kept (bp-sports-addon-play choose: a new pick
-  // aborts the last one). A slow listing the viewer backed out of used to land after the one they
-  // chose next and replace its streams, so every Play on the shown list said "Could not start".
-  const seq = ++addonStreamsSeq;
+  // (review 14) Kept per listing (addonPicked): a slow answer for a listing the viewer backed out
+  // of never replaces the streams of the one on screen (pass 2), a listing picked twice plays from
+  // its first answer while the second loads (review 12), and A, B, A again plays A's shown answer
+  // whichever of B's and A's answers lands first.
+  const pick = ++addonStreamsSeq;
   try {
     const providers = (addonHeld?.providers ?? []).filter((a) => isAddonEnabled(a.transportUrl));
     const streams = await loadSportsAddonStreams(row, new AbortController().signal, providers);
-    // (review 12) An answer lands unless a later pick's already has. "Only the newest pick" dropped
-    // the first answer of a listing picked twice (Back, then the same listing) while the second was
-    // still loading: the TV showed that answer's streams and every Play said "Could not start".
-    if (seq > addonPickedSeq) { addonPickedSeq = seq; addonPicked = { key, streams }; }
+    const held = keepAddonPicked(key, pick, streams);
     return {
-      status: "ok",
-      rows: streams.map((st, index) => ({
+      status: "ok", pick: held.pick,
+      rows: held.streams.map((st, index) => ({
         index, name: st.name || st.addonName || "Play stream", title: st.title || st.description || st.addonName || "",
         external: !st.url && !!(st.externalUrl || st.ytId),
       })),
@@ -782,9 +803,10 @@ export async function addonPlay(key: string, index: number): Promise<
   | { kind: "error" }
 > {
   const row = addonHeld?.rows.find((r) => r.key === key);
-  const stream = addonPicked && addonPicked.key === key ? addonPicked.streams[index] : undefined;
+  // (review 14) The streams of the listing the TV plays from, by its key.
+  const stream = addonPicked.get(key)?.streams[index];
   if (!row || !stream) return { kind: "error" };
-  if (!isAddonEnabled(row.addon.transportUrl) || (stream.addonUrl && !isAddonEnabled(stream.addonUrl))) { addonHeld = null; addonPicked = null; return { kind: "reload" }; }
+  if (!isAddonEnabled(row.addon.transportUrl) || (stream.addonUrl && !isAddonEnabled(stream.addonUrl))) { addonHeld = null; addonPicked.clear(); return { kind: "reload" }; }
   if (!stream.url && (stream.externalUrl || stream.ytId)) {
     const url = stream.externalUrl || `https://www.youtube.com/watch?v=${encodeURIComponent(stream.ytId ?? "")}`;
     return ADDON_HTTP.test(url) ? { kind: "external", url } : { kind: "error" };
