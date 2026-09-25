@@ -33,10 +33,16 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     var tvRow: RowText?
     /// The ids of the saved stream filters (settings.customStreamFilters) this stream passes.
     var tvFilters: [String]?
+    /// engine stampPickerRows: use-bp-streams isCached (streamIsCached over the configured debrids),
+    /// which also counts a debrid-resolved link (url, no hash) and a cached marker as instant.
+    var tvCached: Bool?
+    /// The flags bp-stream-filters sorts the Harbor order by.
+    struct SortFlags: Decodable, Equatable { var watchHub: Bool; var needsDownload: Bool; var instant: Bool }
+    var tvSort: SortFlags?
     var index: Int = 0   // position in picker.all, set after decoding
 
     var id: String { "\(index)-\(addonId)-\(url ?? infoHash ?? parsedTitle ?? "")" }
-    var isCached: Bool { cached?.values.contains(true) ?? false }
+    var isCached: Bool { tvCached ?? (cached?.values.contains(true) ?? false) }
     var sizeText: String? {
         guard let s = size, s > 0 else { return nil }
         let gb = s / 1_073_741_824
@@ -44,7 +50,7 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters
+        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters, tvCached, tvSort
         // stampAddonOrder's fields: the "addon order" sort ranks by these, so they must decode.
         case addonUrl, nativeIdx
     }
@@ -69,6 +75,8 @@ final class StreamsModel: ObservableObject {
         var addonOrder: [String]?
         var debridCount: Int?
         var seasonLock: Bool?
+        /// bp-stream-filters sortForced: an AIOStreams-style addon ranks its own list.
+        var addonRanked: Bool?
         var result: Result?
         var error: String?
     }
@@ -87,6 +95,11 @@ final class StreamsModel: ObservableObject {
     @Published private(set) var debridCount = 0
     /// use-bp-stream-play seasonLock: auto-fire retries the same source too.
     @Published private(set) var seasonLock = false
+    /// settings.streamSort: "addon" (upstream's default: each addon's own order, addons in install
+    /// order) or "harbor". The TV picker used to open in Harbor order and forget the choice.
+    @Published private(set) var streamSort = "addon"
+    /// bp-stream-filters sortForced (anyAddonRanked): addon order regardless of the setting.
+    @Published private(set) var addonRanked = false
     /// use-bp-streams rememberedStream: index into `streams` of the last pick (or season-locked source).
     @Published private(set) var rememberedIndex: Int?
     /// Home-server copies of this title (use-bp-streams homeServerCopies), loaded beside the addon search.
@@ -131,10 +144,11 @@ final class StreamsModel: ObservableObject {
         subscribeOnce()
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
-        struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String? }
+        struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String?; var sort: String? }
         if let f: Filters = try? await HarborEngine.shared.call("streamsRoom.streamFilters", [p?.id ?? "default", p?.linked ?? true]), gen == searchGen {
             savedFilters = f.filters
             activeFilterId = f.activeId
+            streamSort = f.sort ?? "addon"
         }
         Task { [weak self] in
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
@@ -151,6 +165,7 @@ final class StreamsModel: ObservableObject {
             addonOrder = r.addonOrder ?? []
             debridCount = r.debridCount ?? 0
             seasonLock = r.seasonLock ?? false
+            addonRanked = r.addonRanked ?? false
             debridErrors = (r.result?.debridErrors ?? []).map { "\($0.name): \($0.code)" }
             apply(r.result?.picker)
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
@@ -172,6 +187,15 @@ final class StreamsModel: ObservableObject {
             activeFilterId = saved
         } catch {
             // The pick still narrows this list; it just was not saved.
+        }
+    }
+
+    /// bp-stream-filters setSort: update({ streamSort }), so the order sticks for next time.
+    func setStreamSort(_ sort: String) async {
+        streamSort = sort
+        let p = ProfilesStore.shared.active
+        if let saved: String = try? await HarborEngine.shared.call("streamsRoom.setStreamSort", [p?.id ?? "default", p?.linked ?? true, sort]) {
+            streamSort = saved
         }
     }
 

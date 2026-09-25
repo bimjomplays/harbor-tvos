@@ -48,6 +48,7 @@ final class PlaylistVodModel: ObservableObject {
     @Published private(set) var seriesError: String?
 
     private var pageGeneration = 0
+    private var loadGeneration = 0
     private var pagingInFlight = false
 
     var activeSource: Source? { sources.first { $0.id == activeId } }
@@ -73,6 +74,10 @@ final class PlaylistVodModel: ObservableObject {
     /// current while a big Xtream catalogue is still being read.
     func load(force: Bool) async {
         guard let id = activeId else { return }
+        // (bug pass) Only the newest load drives the loading line: switching source mid-load let the
+        // old source's poll overwrite the new one's progress and its end clear the new spinner.
+        loadGeneration += 1
+        let generation = loadGeneration
         loading = true
         error = nil
         let poll = Task { [weak self] in
@@ -80,6 +85,7 @@ final class PlaylistVodModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
                 guard let self, let s: Status = try? await HarborEngine.shared.call("liveVod.status", [id]) else { continue }
+                guard !Task.isCancelled, self.loadGeneration == generation, self.activeId == id else { return }
                 self.status = s
                 // Batches keep arriving: fill the first screen as soon as there is something to show.
                 if self.items.count < Self.pageSize { await self.reloadPage() }
@@ -92,6 +98,7 @@ final class PlaylistVodModel: ObservableObject {
             if activeId == id { self.error = error.localizedDescription }
         }
         poll.cancel()
+        guard loadGeneration == generation else { return }
         loading = false
         if activeId == id { await reloadPage() }
     }
