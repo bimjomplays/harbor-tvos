@@ -57,6 +57,15 @@ final class LiveModel: ObservableObject {
 
     deinit { tick?.cancel() }
 
+    /// `.task` runs again whenever a cover over Live TV closes (every channel the viewer backs out
+    /// of): the sources are re-read, but channels and guide reload only when they changed.
+    func appear() async {
+        let all: [Playlist] = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
+        let key = { (list: [Playlist]) in list.map { "\($0.id)|\($0.url)|\($0.epgUrl ?? "")|\($0.kind ?? "")" } }
+        if !channels.isEmpty, error == nil, key(all) == key(allSources) { return }
+        await load()
+    }
+
     func load() async {
         let all: [Playlist] = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
         allSources = all
@@ -350,7 +359,7 @@ struct LiveView: View {
                 .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16))
             }
         }
-        .task { await model.load() }
+        .task { await model.appear() }
         .fullScreenCover(item: $playing, onDismiss: {
             guard let ch = pendingMultiview else { return }
             pendingMultiview = nil
