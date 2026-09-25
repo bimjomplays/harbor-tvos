@@ -121,6 +121,19 @@ actor ImageLoader {
         urlCache.memoryCapacity = Self.urlCacheMemory
     }
 
+    /// (review 21) Poster-service urls (RemoteImage `url` with a `fallback`) that failed while their
+    /// fallback loaded. A failed load is never cached, so with a bad or rate-limited RPDB key every
+    /// poster tile scrolled back into view asked RPDB again and sat on the bare plate for that round
+    /// trip before its plain poster came back: the art blinked on every return. Session only, bounded.
+    private var deadPrimaries = Set<String>()
+
+    func isDead(_ raw: String) -> Bool { deadPrimaries.contains(raw) }
+
+    func markDead(_ raw: String) {
+        if deadPrimaries.count >= 4096 { deadPrimaries.removeAll() }
+        deadPrimaries.insert(raw)
+    }
+
     /// Decoded bytes of the bitmap (what the cache limit is about).
     private static func cost(of img: UIImage) -> Int {
         if let cg = img.cgImage { return cg.bytesPerRow * cg.height }
@@ -256,13 +269,20 @@ struct RemoteImage: View {
             // A new URL clears the old art; a new size keeps it up until the sharper decode lands.
             if shownURL != key.url { image = nil; failed = false; shownURL = key.url }
             // Nothing is asked for until the plate has a size (the first layout pass sets it).
-            guard let url = key.url, let u = URL(string: url), key.width > 0, key.height > 0 else { return }
+            guard let url = key.url, key.width > 0, key.height > 0 else { return }
             let target = ImageLoader.Target(width: key.width, height: key.height, fit: contentMode == .fit)
-            var img = await ImageLoader.shared.image(for: u, target: target)
+            // (review 21) A primary that cannot be a URL (a poster template or key with a stray
+            // character) went straight to the empty plate without trying the fallback; one that
+            // already failed with its fallback loading is skipped (ImageLoader.deadPrimaries).
+            var dead = false
+            if key.fallback != nil { dead = await ImageLoader.shared.isDead(url) }
+            var img: UIImage?
+            if !dead, let u = URL(string: url) { img = await ImageLoader.shared.image(for: u, target: target) }
             guard !Task.isCancelled else { return }
             if img == nil, let next = key.fallback, next != url, let nu = URL(string: next) {
                 img = await ImageLoader.shared.image(for: nu, target: target)
                 guard !Task.isCancelled else { return }
+                if img != nil, !dead { await ImageLoader.shared.markDead(url) }
             }
             if image == nil { withAnimation(BP.easeFast) { image = img } } else if let img { image = img }
             failed = img == nil

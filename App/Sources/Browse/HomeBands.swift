@@ -112,19 +112,7 @@ struct HomeBandBackdrop: View {
             // Up for every band (this void covers the page), so RootView's ambient mosaic stands
             // down under any band and at most this one runs, as upstream's single BpAmbient.
             BPStageMosaic(posters: band.mosaic && band.posters.count >= HomeBand.mosaicMin ? band.posters : [], key: band.key)
-            if let pair = band.panels, let b = pair.b, band.id == .live {
-                // (parity pass 3, X3) bp-ambient splitOn: the two panels in the same envelope as a still.
-                GeometryReader { g in
-                    LiveSplitArt(a: pair.a, b: b, still: band.still)
-                        .frame(width: g.size.width * 0.76, height: g.size.height)
-                        .clipped()
-                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.5), location: 0.17),
-                                                     .init(color: .black, location: 0.38)], startPoint: .leading, endPoint: .trailing))
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .id(pair.key)
-                .transition(.opacity)
-            } else if let still = band.still, !still.isEmpty {
+            if let still = band.still, !still.isEmpty {
                 GeometryReader { g in
                     RemoteImage(url: still)
                         .frame(width: g.size.width * 0.76, height: g.size.height)
@@ -134,6 +122,23 @@ struct HomeBandBackdrop: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .id(still)
+                .transition(.opacity)
+            }
+            if let pair = band.panels, let b = pair.b, band.id == .live {
+                // (parity pass 3, X3) bp-ambient splitOn: the two panels in the same envelope as a still.
+                // (review 21) Drawn over the still, which stays put: the split used to replace the
+                // still's branch and redraw it inside LiveSplitArt, so the still blinked to the bare
+                // plate and faded back in the moment the panels resolved. The split is clear until
+                // both panels decode, then fades in over it.
+                GeometryReader { g in
+                    LiveSplitArt(a: pair.a, b: b)
+                        .frame(width: g.size.width * 0.76, height: g.size.height)
+                        .clipped()
+                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.5), location: 0.17),
+                                                     .init(color: .black, location: 0.38)], startPoint: .leading, endPoint: .trailing))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .id(pair.key)
                 .transition(.opacity)
             }
             LinearGradient(colors: [BP.void_.opacity(0.82), BP.void_.opacity(0.52), BP.void_.opacity(0.16), .clear],
@@ -356,6 +361,9 @@ struct LiveSplitArt: View {
 
     var body: some View {
         ZStack {
+            // (review 21) HomeBandBackdrop draws the still underneath now (still: nil here); the clear
+            // layer keeps this view laid out, and its .task running, before either panel decodes.
+            Color.clear
             if let still, !still.isEmpty, pair == nil {
                 RemoteImage(url: still)
             }

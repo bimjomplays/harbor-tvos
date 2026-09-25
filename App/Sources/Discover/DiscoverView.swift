@@ -22,7 +22,9 @@ struct DiscoverView: View {
     @State private var seedQueue = false
     /// (parity pass 3, V3) bp-discover `tint`: the focused cell's colour, keyed by the band that
     /// supplied it (a Genres colour never follows the ring into another band).
-    @State private var tint: DiscoverWash.Tint?
+    /// (review 21) Held in a box only DiscoverWash observes: as @State here, every step along the
+    /// Genres or Awards band re-ran this whole page's body (every band and rail) to change one colour.
+    @State private var washTint = DiscoverWashTint()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -34,7 +36,7 @@ struct DiscoverView: View {
                 .opacity(model.spotlight == nil ? 0 : 1)
             // bp-discover-wash: the band holding the ring washes the page in its focused cell's
             // colour (a "Picked for you" rail, or nothing held, is the 180° accent wash).
-            DiscoverWash(colour: washColour, bandId: leadHeld ?? "")
+            DiscoverWash(tint: washTint, bandId: leadHeld ?? "")
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
                     Text("Couldn't load Discover").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
@@ -80,7 +82,7 @@ struct DiscoverView: View {
                             AwardsBandView(summaries: aw.summaries, anime: model.animeAwards,
                                            onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 },
                                            onHold: { hold("awards", $0) },
-                                           onTint: { tint = DiscoverWash.Tint(band: "awards", colour: $0) })
+                                           onTint: { washTint.set(DiscoverWash.Tint(band: "awards", colour: $0)) })
                         }
                     }
                     // bp-discover.tsx t("{n} shelves, …", { n: BP_GENRES.length }): the literal "18 …"
@@ -91,7 +93,7 @@ struct DiscoverView: View {
                         }, onFocus: {
                             Task { await model.loadGenreArt() }
                         }, onHold: { hold("genres", $0) },
-                        onTint: { tint = DiscoverWash.Tint(band: "genres", colour: $0) })
+                        onTint: { washTint.set(DiscoverWash.Tint(band: "genres", colour: $0)) })
                     }
                     // discover.tsx: the Voyages banner follows the browse tiles, once its pool holds three.
                     if let pool = model.build?.voyagePool, pool.count >= 3 {
@@ -139,13 +141,6 @@ struct DiscoverView: View {
         .fullScreenCover(item: $genrePage) { r in CatalogPageView(room: .discover, row: r) }
         .fullScreenCover(isPresented: $queueOpen, onDismiss: { Task { await model.reloadQueue() } }) { QueueDeckView() }
         .fullScreenCover(isPresented: $voyageOpen, onDismiss: { Task { await model.loadVoyage() } }) { VoyageView() }
-    }
-
-    /// bp-discover `tint && tint.band === band?.key ? tint.colour : null`, as a colour.
-    private var washColour: Color? {
-        guard let tint, tint.band == leadHeld else { return nil }
-        let parsed: Color? = Color(oklch: tint.colour) ?? Color(css: tint.colour)
-        return parsed
     }
 
     /// bp-discover.tsx `series = rail.metas[0]?.type === "series"`.
@@ -591,6 +586,16 @@ struct PeopleBandView: View {
     }
 }
 
+/// (review 21) DiscoverView's wash colour, set from the Awards / Genres focus callbacks. DiscoverView
+/// keeps it in @State (which does not observe a reference), so a new colour re-renders the wash alone.
+final class DiscoverWashTint: ObservableObject {
+    @Published private(set) var tint: DiscoverWash.Tint?
+
+    func set(_ next: DiscoverWash.Tint) {
+        if tint != next { tint = next }
+    }
+}
+
 /// bp-discover-wash.tsx: each Discover band reads as its own portal while the page stays one
 /// surface. The wash is the only thing that changes: a radial bloom from the top-start corner and a
 /// linear wash at the band's own angle, both in the focused cell's colour (the accent when the band
@@ -598,8 +603,16 @@ struct PeopleBandView: View {
 /// (parity pass 3, V3) The port's page and spotlight art stand in for upstream's BASE layer.
 struct DiscoverWash: View {
     struct Tint: Equatable { var band: String; var colour: String }
-    let colour: Color?
+    /// (review 21) The focused cell's colour (DiscoverWashTint); only this view re-renders on it.
+    @ObservedObject var tint: DiscoverWashTint
     let bandId: String
+
+    /// bp-discover `tint && tint.band === band?.key ? tint.colour : null`, as a colour.
+    private var colour: Color? {
+        guard let t = tint.tint, t.band == bandId else { return nil }
+        let parsed: Color? = Color(oklch: t.colour) ?? Color(css: t.colour)
+        return parsed
+    }
 
     /// bp-discover-wash BAND_ANGLE (CSS degrees; anything else 180deg).
     private static let angles: [String: Double] = ["queue": 120, "awards": 140, "genres": 200, "collections": 160, "people": 220]

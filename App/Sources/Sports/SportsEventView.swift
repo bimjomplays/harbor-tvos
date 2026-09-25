@@ -98,6 +98,10 @@ final class SportsEventModel: ObservableObject {
     /// use-match-detail's 30 s interval run for a game in progress: a failed read keeps what was held.
     func refresh(_ game: SportsModel.Game) async {
         await readDetail(game)
+        // (review 21) A failed read keeps the held rows too: eventRows went to the network a second
+        // time for the summary that had just failed, answered empty, and took Stats and Lineups off
+        // the page under "Showing saved match details." (a failed summary is not cached).
+        guard !failed else { return }
         await loadRows(game)
     }
 
