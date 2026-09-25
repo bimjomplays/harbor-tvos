@@ -33,10 +33,33 @@ struct HomeRowsPanel: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "rename-save" }
     }
 
-    /// The editor closes under the ring: it goes back to that row's Rename.
+    /// The editor closes under the ring: it goes back to that row's Rename. (review 7) Not when a
+    /// sync already closed this editor (its row went away while Save / Reset waited on the engine).
     private func endRename(_ key: String) {
+        guard renaming?.key == key else { return }
         renaming = nil
         focus = "rename:\(key)"
+    }
+
+    /// (review 7) Every new state goes through here: a sync (SettingsFieldWatch re-read) that removed
+    /// the row being renamed closed nothing, and the editor's close aimed the ring at a Rename that
+    /// no longer exists. The editor closes, and a ring on its buttons goes to the Rename of the row
+    /// now in the removed one's place (the one above at the end; nowhere named when no row is left).
+    private func apply(_ next: RowsState) {
+        let before = layout?.rows ?? []
+        layout = next
+        guard let r = renaming, !next.rows.contains(where: { $0.key == r.key }) else { return }
+        renaming = nil
+        // Only a ring on one of the editor's buttons is moved; one on the field (untagged, as is
+        // the rest of the panel) is left to tvOS, which finds the nearest button that exists.
+        let inEditor = focus == "rename-save" || focus == "rename-reset" || focus == "rename-cancel"
+        guard inEditor else { return }
+        let was = before.firstIndex(where: { $0.key == r.key }) ?? 0
+        if next.rows.isEmpty {
+            focus = nil
+        } else {
+            focus = "rename:\(next.rows[min(was, next.rows.count - 1)].key)"
+        }
     }
 
     /// Menu while the rename editor is open closes it; nil otherwise, so Menu still leaves Settings.
@@ -112,7 +135,9 @@ struct HomeRowsPanel: View {
                             .focused($focus, equals: "rename-save")
                         // row-controls.tsx
                         Button(T("Reset to original name")) { Task { await call("homeRowRename", [.string(r.key), .string("")]); endRename(r.key) } }.buttonStyle(BPActionStyle())
+                            .focused($focus, equals: "rename-reset")
                         Button(T("Cancel")) { endRename(r.key) }.buttonStyle(BPActionStyle())
+                            .focused($focus, equals: "rename-cancel")
                     }
                 }
                 if !s.rows.isEmpty { Button(T("Reset rows")) { Task { await call("homeRowsReset", []) } }.buttonStyle(BPActionStyle()) }
@@ -141,13 +166,13 @@ struct HomeRowsPanel: View {
         let p = profile
         // (review 7) A failed re-read (SettingsFieldWatch now re-reads while the panel is open) keeps
         // what is on screen: it blanked the panel to "Loading…" under the ring.
-        if let next: RowsState = try? await HarborEngine.shared.call("rooms.homeRowsState", [p.id, p.linked]) { layout = next }
+        if let next: RowsState = try? await HarborEngine.shared.call("rooms.homeRowsState", [p.id, p.linked]) { apply(next) }
     }
 
     /// Every edit returns the new state; the engine raises `harbor:home-updated` for Home.
     private func call(_ fn: String, _ args: [AnyJSON]) async {
         let p = profile
-        if let out = try? await HarborEngine.shared.callJSON("rooms.\(fn)", [.string(p.id), .bool(p.linked)] + args), let next = try? out.decode(RowsState.self) { layout = next }
+        if let out = try? await HarborEngine.shared.callJSON("rooms.\(fn)", [.string(p.id), .bool(p.linked)] + args), let next = try? out.decode(RowsState.self) { apply(next) }
     }
 }
 

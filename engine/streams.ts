@@ -118,6 +118,22 @@ const searches = new Map<string, AbortController>();
 const lastResults = new Map<string, PipelineResult>();
 
 /**
+ * Smoke only: holds every partial's landing until the returned function lets them land, the way
+ * an anime partial whose enhanceAnimeStreams ran long lands after the search's final result.
+ * Returns how many were held.
+ */
+let heldPartials: Array<() => void> | null = null;
+export function holdPartials(): () => number {
+  const held: Array<() => void> = [];
+  heldPartials = held;
+  return () => {
+    if (heldPartials === held) heldPartials = null;
+    for (const land of held) land();
+    return held.length;
+  };
+}
+
+/**
  * (detail/search pass 2) The stream a picker row names. `key` is the row's streamIdentity (bp-streams
  * keys its rows by it and hands the stream itself to use-pick-handler); `streamIndex` is where the
  * row sat in the list the TV drew. Every partial result re-ranks picker.all as slower addons answer,
@@ -170,6 +186,11 @@ export async function search(
   const ac = new AbortController();
   searches.get(token)?.abort();
   searches.set(token, ac);
+  // (review 7) Set once this search has answered (final, error or abort). runPipeline builds
+  // each partial through the async enhanceAnimeStreams without awaiting it, so an anime partial
+  // can land after the final result; it must not replace the final lastResults that resolve /
+  // deadRef / autoCandidates read (Swift already ignores it via finalGen).
+  let finished = false;
   try {
     const imdb = await resolveImdb(meta, settings.tmdbKey || undefined);
     const streamIds = await buildStreamIdsWithIdentity(meta.id, episode ?? undefined, imdb.id, meta.behaviorHints?.defaultVideoId);
@@ -183,11 +204,15 @@ export async function search(
       input,
       ac.signal,
       (partial) => {
-        if (ac.signal.aborted || partial.picker.all.length === 0) return;
-        stampAddonOrder(partial.picker.all, partial.raw.addon);
-        stampPickerRows(partial.picker.all, settings, meta, episode, input.debrids);
-        lastResults.set(token, partial);
-        shims.events.emit("harbor-tvos:streams", { token, phase: "partial", picker: partial.picker, rejected: partial.rejected.length, debridErrors: partial.debridErrors ?? [] });
+        const land = () => {
+          if (finished || ac.signal.aborted || partial.picker.all.length === 0) return;
+          stampAddonOrder(partial.picker.all, partial.raw.addon);
+          stampPickerRows(partial.picker.all, settings, meta, episode, input.debrids);
+          lastResults.set(token, partial);
+          shims.events.emit("harbor-tvos:streams", { token, phase: "partial", picker: partial.picker, rejected: partial.rejected.length, debridErrors: partial.debridErrors ?? [] });
+        };
+        if (heldPartials) heldPartials.push(land);
+        else land();
       },
       (progress) => {
         if (ac.signal.aborted) return;
@@ -200,12 +225,14 @@ export async function search(
     if (ac.signal.aborted) return { token, imdb, streamIds, addonCount: addons.length, result: null, error: "aborted" };
     stampAddonOrder(result.picker.all, result.raw.addon);
     stampPickerRows(result.picker.all, settings, meta, episode, input.debrids);
+    finished = true;
     lastResults.set(token, result);
     const seasonLock = !!settings.seasonSourceLock && (meta.type === "series" || /^(kitsu|mal|anilist|anidb):/.test(meta.id));
     return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock, addonRanked: addons.some((a) => isAddonRanked(a)) };
   } catch (e) {
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {
+    finished = true;
     if (searches.get(token) === ac) searches.delete(token);
   }
 }

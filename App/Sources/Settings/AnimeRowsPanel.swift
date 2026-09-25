@@ -27,10 +27,35 @@ struct AnimeRowsPanel: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "rename-save" }
     }
 
-    /// The editor closes under the ring: it goes back to that row's Rename.
+    /// The editor closes under the ring: it goes back to that row's Rename. (review 7) Not when a
+    /// sync already closed this editor (its row went away while Save / the reset waited).
     private func endRename(_ key: String) {
+        guard renaming?.key == key else { return }
         renaming = nil
         focus = "rename:\(key)"
+    }
+
+    /// (review 7) Every new row list goes through here: a sync (SettingsFieldWatch re-read) that
+    /// removed the row being renamed left its editor open, and closing it aimed the ring at a Rename
+    /// that no longer exists. The editor closes, and a ring on its buttons goes to the Rename of the
+    /// row now in the removed one's place (the one above at the end), or Tune's Hide-watched switch.
+    private func apply(_ next: [Row]) {
+        let before = rows
+        rows = next
+        guard let r = renaming, !next.contains(where: { $0.key == r.key }) else { return }
+        renaming = nil
+        // Only a ring on one of the editor's buttons is moved; one on the field (untagged, as is
+        // the rest of the panel) is left to tvOS, which finds the nearest button that exists.
+        let inEditor = focus == "rename-save" || focus == "rename-reset" || focus == "rename-cancel"
+        guard inEditor else { return }
+        let was = before.firstIndex(where: { $0.key == r.key }) ?? 0
+        if !next.isEmpty {
+            focus = "rename:\(next[min(was, next.count - 1)].key)"
+        } else if tune != nil {
+            focus = "tune-hide"
+        } else {
+            focus = nil
+        }
     }
 
     /// Menu while the rename editor is open closes it; nil otherwise, so Menu still leaves Settings.
@@ -66,7 +91,9 @@ struct AnimeRowsPanel: View {
                     Button("Save") { Task { await call("animeRowRename", [.string(r.key), .string(newName)]); endRename(r.key) } }.buttonStyle(BPActionStyle(primary: true))
                         .focused($focus, equals: "rename-save")
                     Button("Use original name") { Task { await call("animeRowRename", [.string(r.key), .string("")]); endRename(r.key) } }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "rename-reset")
                     Button("Cancel") { endRename(r.key) }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "rename-cancel")
                 }
             }
             if !rows.isEmpty { Button("Reset rows") { Task { await call("animeRowsReset", []) } }.buttonStyle(BPActionStyle()) }
@@ -125,7 +152,7 @@ struct AnimeRowsPanel: View {
         // (review 7) A failed re-read (SettingsFieldWatch) keeps what is on screen instead of
         // dropping the Tune section and emptying the rows under the ring.
         if let t: Tune = try? await HarborEngine.shared.call("actions.animeTune", [p.id, p.linked]) { tune = t }
-        if let list: [Row] = try? await HarborEngine.shared.call("actions.animeRows", [p.id, p.linked]) { rows = list }
+        if let list: [Row] = try? await HarborEngine.shared.call("actions.animeRows", [p.id, p.linked]) { apply(list) }
         loaded = true
     }
 
@@ -137,7 +164,7 @@ struct AnimeRowsPanel: View {
 
     private func call(_ fn: String, _ args: [AnyJSON]) async {
         let p = profile
-        if let out = try? await HarborEngine.shared.callJSON("actions.\(fn)", [.string(p.id), .bool(p.linked)] + args), let list = try? out.decode([Row].self) { rows = list }
+        if let out = try? await HarborEngine.shared.callJSON("actions.\(fn)", [.string(p.id), .bool(p.linked)] + args), let list = try? out.decode([Row].self) { apply(list) }
         HarborEngine.shared.emitEvent("harbor:anime-updated")
     }
 }
