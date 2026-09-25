@@ -207,7 +207,7 @@ struct KidsDetailView: View {
                 HStack(spacing: BP.px(8)) {
                     if let y = d?.year ?? meta.releaseInfo, !y.isEmpty { chip(y) }
                     if let r = d?.runtime, !r.isEmpty { chip(r) }
-                    ForEach(d?.genres ?? [], id: \.self) { chip($0) }
+                    ForEach(d?.genres ?? [], id: \.self) { chip(T($0)) }
                 }
                 Button { onPlay() } label: {
                     HStack(spacing: BP.px(12)) {

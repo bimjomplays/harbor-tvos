@@ -236,7 +236,7 @@ struct CalendarView: View {
             case "error":
                 VStack(spacing: BP.px(8)) {
                     Text("Couldn't load the calendar").font(BP.sans(14, .semibold)).foregroundStyle(Color(hex: 0xffe4e6))
-                    Text(d.error ?? "Failed to load").font(BP.sans(12.5)).foregroundStyle(Color(hex: 0xffe4e6).opacity(0.85))
+                    Text(d.error ?? T("Failed to load")).font(BP.sans(12.5)).foregroundStyle(Color(hex: 0xffe4e6).opacity(0.85))
                     // (device-flow pass) The remote has no reload: the error card had nothing to press.
                     Button("Try again") { Task { await model.load() } }
                         .buttonStyle(BPActionStyle(primary: true)).padding(.top, BP.px(4))

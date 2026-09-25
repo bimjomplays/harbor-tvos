@@ -171,7 +171,7 @@ struct PlayPickerView: View {
             StreamDialogShell(title: "Stream this via peer-to-peer?",
                               message: "This source isn't cached on your debrid, so Harbor would pull it directly from peers. It can take a moment to start and may buffer on low-seed torrents.") {
                 VStack(alignment: .leading, spacing: BP.px(6)) {
-                    Text(s.parsedTitle ?? s.title ?? s.name ?? "This source").font(.system(size: BP.px(14), design: .monospaced)).foregroundStyle(BP.ink).lineLimit(2)
+                    Text(s.parsedTitle ?? s.title ?? s.name ?? T("This source")).font(.system(size: BP.px(14), design: .monospaced)).foregroundStyle(BP.ink).lineLimit(2)
                     HStack(spacing: BP.px(12)) {
                         if let seeds = s.seeders { Label("\(Int(seeds)) seeders", systemImage: "person.2") }
                         if let sz = s.sizeText { Text(sz) }
@@ -589,7 +589,7 @@ struct PlayPickerView: View {
                 }
                 if addons.count > 1 {
                     Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(24))
-                    Button(addonFilter ?? "All addons") {
+                    Button(addonFilter ?? T("All addons")) {
                         let list = [nil] + addons.map { Optional($0) }
                         let i = list.firstIndex { $0 == addonFilter } ?? 0
                         addonFilter = list[(i + 1) % list.count]
@@ -599,7 +599,7 @@ struct PlayPickerView: View {
                 ForEach(Self.facets, id: \.key) { f in
                     let opts = facetOptions(f)
                     if opts.count > 1 || facet[f.key] != nil {
-                        Button(facet[f.key].map { v in "\(f.label): \(v) \(opts.first { $0.0 == v }?.1 ?? 0)" } ?? f.label) {
+                        Button(facet[f.key].map { v in "\(T(f.label)): \(v) \(opts.first { $0.0 == v }?.1 ?? 0)" } ?? T(f.label)) {
                             let keys = opts.map(\.0)
                             if let cur = facet[f.key], let i = keys.firstIndex(of: cur) {
                                 if i + 1 < keys.count { facet[f.key] = keys[i + 1] } else { facet[f.key] = nil }
@@ -683,7 +683,7 @@ struct PlayPickerView: View {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
                     ForEach(badges(s), id: \.self) { b in
-                        Text(b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4)
+                        Text(b == "Cached" ? T("Cached") : b).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(0.4)
                             .foregroundStyle(b == "Cached" ? BP.canvas : BP.ink)
                             .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2))
                             .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(b == "Cached" ? BP.live : BP.on))

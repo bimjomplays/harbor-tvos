@@ -139,7 +139,7 @@ struct SharedListOpenView: View {
 
     var body: some View {
         SocialPage(eyebrow: "Lists", title: T("Open a shared list"),
-                   subtitle: "Paste the list's share link on your phone, or type the maker's handle and the list id as handle/list.") {
+                   subtitle: T("Paste the list's share link on your phone, or type the maker's handle and the list id as handle/list.")) {
             HStack(spacing: BP.px(10)) {
                 Button { typing = true } label: { Label(text.isEmpty ? T("Type the link on your phone") : text, systemImage: "iphone") }
                     .buttonStyle(BPActionStyle(primary: true))

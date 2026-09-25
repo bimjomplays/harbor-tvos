@@ -546,7 +546,7 @@ struct LiveView: View {
                 } label: {
                     HStack(spacing: BP.px(6)) {
                         Image(systemName: "antenna.radiowaves.left.and.right")
-                        Text(model.playlists.first { $0.id == model.selectedPlaylist }?.name ?? "Sources")
+                        Text(model.playlists.first { $0.id == model.selectedPlaylist }?.name ?? T("Sources"))
                         if model.loading && !model.channels.isEmpty {
                             // (live sources device pass) Refresh now closes Sources at once: the
                             // reload shows here while the current channels stay up.

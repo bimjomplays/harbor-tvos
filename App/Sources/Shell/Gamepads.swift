@@ -83,7 +83,7 @@ struct ControllerToastView: View {
                 HStack(spacing: BP.px(18)) {
                     ControllerArt(kind: t.kind).frame(width: BP.px(90), height: BP.px(64))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(Self.label(t.kind)).font(BP.sans(19, .semibold)).foregroundStyle(BP.ink)
+                        Text(T(Self.label(t.kind))).font(BP.sans(19, .semibold)).foregroundStyle(BP.ink)
                         Text("Ready to play").font(BP.sans(13.5, .medium)).foregroundStyle(BP.inkSubtle)
                     }
                     .padding(.trailing, BP.px(6))

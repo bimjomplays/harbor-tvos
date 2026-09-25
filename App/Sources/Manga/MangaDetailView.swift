@@ -222,7 +222,7 @@ struct MangaDetailView: View {
                 .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
             VStack(alignment: .leading, spacing: BP.px(12)) {
                 VStack(alignment: .leading, spacing: BP.px(4)) {
-                    Text(model.detail?.title ?? "Untitled").font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
+                    Text(model.detail?.title ?? T("Untitled")).font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
                     if let alt = model.detail?.altTitle, !alt.isEmpty { Text(alt).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                     if let a = model.detail?.author, !a.isEmpty { Text("by \(a)").font(BP.sans(14)).foregroundStyle(BP.inkMuted) }
                 }

@@ -225,7 +225,7 @@ struct GroupPageView: View {
             ForEach(p.posts) { post in
                 SocialRow(title: post.author?.alias ?? T("Someone"),
                           subtitle: post.text,
-                          trailing: "\(post.pinned ? "Pinned · " : "")\(Social.ago(iso: post.createdAt))\(post.likeCount > 0 ? " · ♥ \(Int(post.likeCount))" : "")",
+                          trailing: "\(post.pinned ? T("Pinned") + " · " : "")\(Social.ago(iso: post.createdAt))\(post.likeCount > 0 ? " · ♥ \(Int(post.likeCount))" : "")",
                           unread: post.liked) {
                     SocialAvatar(url: post.author?.avatarUrl, name: post.author?.alias ?? "?", size: BP.px(40))
                 } action: {
