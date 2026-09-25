@@ -157,6 +157,7 @@ struct EBookView: View {
     @State private var continueRows: [EBookContinue] = []
     @State private var loadedFor: String?
     @FocusState private var gridFocus: String?
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -372,10 +373,11 @@ struct EBookView: View {
                     .font(BP.sans(13)).foregroundStyle(BP.inkSubtle)
             }
             HStack(alignment: .bottom, spacing: BP.px(12)) {
-                BPField(label: "Search eBooks", placeholder: "Title or author", text: $model.query, phone: true)
+                BPField(label: "Search eBooks", placeholder: "Title or author", text: $model.query, phone: true, focus: $searchFocused)
                     .frame(width: BP.px(420))
                 if !model.query.isEmpty {
-                    Button("Clear") { model.query = "" }.buttonStyle(BPActionStyle())
+                    // (review 24) Clear leaves with the query it clears: the ring goes to the field.
+                    Button("Clear") { searchFocused = true; model.query = "" }.buttonStyle(BPActionStyle())
                 }
                 Button { refresh() } label: { Label("Refresh source", systemImage: "arrow.clockwise") }
                     .buttonStyle(BPActionStyle())

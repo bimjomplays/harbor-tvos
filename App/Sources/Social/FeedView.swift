@@ -10,6 +10,9 @@ struct FeedView: View {
     @State private var loadingMore = false
     @State private var detail: Meta?
     @State private var profile: Social.HandleRef?
+    /// (review 24) "more" on Load more, "row:<id>" on a row's title. The last page takes Load more
+    /// away under the ring: it goes to the first row that page added (else the last row).
+    @FocusState private var feedFocus: String?
 
     var body: some View {
         SocialPage(eyebrow: "Friends", title: T("Activity"),
@@ -26,6 +29,7 @@ struct FeedView: View {
                     if p.nextCursor != nil {
                         Button(loadingMore ? "Loading" : "Load more") { Task { await more() } }
                             .buttonStyle(BPActionStyle(busy: loadingMore))
+                            .focused($feedFocus, equals: "more")
                     }
                 } else if (page?.friendCount ?? 0) == 0 {
                     SocialEmpty(title: "No friends yet", message: "Add a few friends and their watching, ratings, and favorites land here.")
@@ -98,7 +102,8 @@ struct FeedView: View {
             .accessibilityLabel(Text(verbatim: item.actor.alias))
             SocialRow(title: item.title,
                       subtitle: "\(item.actor.alias) \(verb)\(item.subtitle.map { " · \($0)" } ?? "")",
-                      trailing: "\(item.rating.map { "★ \(Int($0)) · " } ?? "")\(Social.ago(iso: item.at))") {
+                      trailing: "\(item.rating.map { "★ \(Int($0)) · " } ?? "")\(Social.ago(iso: item.at))",
+                      seat: (binding: $feedFocus, value: "row:" + item.id)) {
                 RemoteImage(url: item.posterUrl).frame(width: BP.px(40), height: BP.px(60)).clipShape(RoundedRectangle(cornerRadius: BP.px(4)))
             } action: {
                 guard item.type != "manga" else { return }
@@ -127,8 +132,12 @@ struct FeedView: View {
             // repeats: a row shifted across the page edge would give ForEach two rows with one id.
             guard page?.nextCursor == cursor else { return }
             let have = Set(page?.items.map(\.id) ?? [])
-            page?.items.append(contentsOf: next.items.filter { !have.contains($0.id) })
+            let added: [Social.FeedItem] = next.items.filter { !have.contains($0.id) }
+            page?.items.append(contentsOf: added)
             page?.nextCursor = next.nextCursor
+            if next.nextCursor == nil, feedFocus == "more", let target = added.first?.id ?? page?.items.last?.id {
+                DispatchQueue.main.async { feedFocus = "row:" + target }
+            }
         }
     }
 }

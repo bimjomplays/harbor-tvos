@@ -977,7 +977,12 @@ struct LiveSourcesSheet: View {
         .onChange(of: model.allSources.map(\.id)) { _, ids in
             guard let after = afterRemove, !ids.contains(after.removed) else { return }
             afterRemove = nil
-            if let n = after.neighbour, ids.contains(n) { focus = "rm:" + n } else if !firstRun { focus = "close" }
+            // (review 24) After the alert has gone: the sources can be read again before it finishes
+            // dismissing, and a focus set under a presented alert is dropped.
+            var target: String?
+            if let n = after.neighbour, ids.contains(n) { target = "rm:" + n } else if !firstRun { target = "close" }
+            guard let target else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focus = target }
         }
         .task {
             guard !firstRun else { return }

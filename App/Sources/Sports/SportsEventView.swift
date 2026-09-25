@@ -91,18 +91,19 @@ final class SportsEventModel: ObservableObject {
     /// ("Loading match details..." flashed, the Saved pill dropped) and every addon catalog was
     /// asked again. use-match-detail and use-bp-sports-addon-sources read once per game; the
     /// 30 s interval and Try again / Refresh ask again.
-    private var detailStarted = false
-    private var addonsStarted = false
+    /// (review 24) Keyed by the game: another game in the same page reads again.
+    private var detailStarted: String?
+    private var addonsStarted: String?
 
     func loadOnce(_ game: SportsModel.Game) async {
-        guard !detailStarted else { return }
-        detailStarted = true
+        guard detailStarted != game.id else { return }
+        detailStarted = game.id
         await load(game)
     }
 
     func loadAddonsOnce(_ game: SportsModel.Game) async {
-        guard !addonsStarted else { return }
-        addonsStarted = true
+        guard addonsStarted != game.id else { return }
+        addonsStarted = game.id
         await loadAddons(game)
     }
 

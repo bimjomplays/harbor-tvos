@@ -129,6 +129,9 @@ struct BPField: View {
     var keyboard: UIKeyboardType = .default
     /// nil: offered for URL fields only. Secret fields never get it unless a caller asks.
     var phone: Bool? = nil
+    /// (review 24) Optional: binds the text field's focus, so a caller can hand it the ring (a
+    /// Clear beside it that leaves with the query it clears). nil leaves the field as it was.
+    var focus: FocusState<Bool>.Binding? = nil
     @State private var phoneOpen = false
 
     private var offersPhone: Bool { phone ?? (keyboard == .URL && !secure) }
@@ -145,6 +148,7 @@ struct BPField: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .textFieldStyle(.plain)
+                .modifier(BPFieldFocus(focus: focus))
                 .padding(.horizontal, BP.px(14))
                 .frame(height: BP.px(50))
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
@@ -163,6 +167,14 @@ struct BPField: View {
                              purpose: "Scan this with your phone camera, then type straight into “\(label)” on your phone.",
                              onClose: { phoneOpen = false })
         }
+    }
+}
+
+/// BPField's optional focus binding: applied only when a caller passes one.
+private struct BPFieldFocus: ViewModifier {
+    let focus: FocusState<Bool>.Binding?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let focus { content.focused(focus) } else { content }
     }
 }
 
