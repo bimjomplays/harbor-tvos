@@ -106,7 +106,14 @@ final class MPVPlayerController: UIViewController {
         mpv = nil
         guard let handle else { return }
         mpv_set_wakeup_callback(handle, nil, nil)
-        queue.async { mpv_terminate_destroy(handle) }
+        // (bug pass) `wid` hands mpv the layer unretained and the vo thread keeps drawing into it
+        // until the destroy below returns; the controller (and its view) can be released before
+        // that, so the layer stays alive until mpv is gone, and is let go on main.
+        let layer = self.layer
+        queue.async {
+            mpv_terminate_destroy(handle)
+            DispatchQueue.main.async { withExtendedLifetime(layer) {} }
+        }
     }
 
     /// settings.mpvHwdec as mpv's hwdec (lib/player/mpv-tuning.ts: "on" → hwdec=yes, "off" → hwdec=no,
@@ -198,6 +205,8 @@ final class MPVPlayerController: UIViewController {
 
     func load(_ url: URL) {
         displayCriteriaApplied = false
+        fileLoaded = false
+        endedSent = false
         if let mpv {
             // http-header-fields is a comma list: escape like mpv.rs mpv_header_field().
             let rest = headers.filter { $0.key.lowercased() != "user-agent" }
@@ -220,7 +229,17 @@ final class MPVPlayerController: UIViewController {
     }
 
     func seek(_ seconds: Double) { command("seek", [String(seconds), "relative"]) }
-    func seek(to seconds: Double) { command("seek", [String(seconds), "absolute"]) }
+    func seek(to seconds: Double) {
+        // (bug pass) mpv refuses `seek` until the file is open, so "Pick up where you left off"
+        // pressed while a slow source still connects was lost and playback began at 0: hold the
+        // spot as the start FILE_LOADED applies.
+        guard fileLoaded else { startAtSeconds = seconds; return }
+        command("seek", [String(seconds), "absolute"])
+    }
+    /// (bug pass) FILE_LOADED has arrived for the current `loadfile` (main thread only).
+    private var fileLoaded = false
+    /// (bug pass) onEnded went out for this file (the poll's eof-reached and END_FILE never both fire it).
+    private var endedSent = false
 
     /// Position and duration in seconds, and whether playback is paused.
     func snapshot() -> (position: Double, duration: Double, paused: Bool) {
@@ -561,16 +580,38 @@ final class MPVPlayerController: UIViewController {
         status.dropped = "dropped \(string("frame-drop-count") ?? "0") · cache \(string("demuxer-cache-duration") ?? "?")s"
         if let core = string("core-idle"), let eof = string("eof-reached"), string("time-pos") != nil {
             status.state = eof == "yes" ? "ended" : (core == "yes" ? "buffering/paused" : "playing")
+            // (bug pass) keep-open=yes holds a finished file paused on its last frame and mpv never
+            // sends END_FILE(eof) for it, so onEnded (next episode, watched-at-end save) never fired.
+            // Upstream reads eof-reached as "ended" (lib/player/mpv.ts) and acts on a natural end
+            // only (playback-end.ts isNaturalEnd: no duration, or at least 85 % through). A live
+            // channel keeps its old behaviour (it never closes on its own here).
+            if eof == "yes", !isLive, !endedSent {
+                let s = snapshot()
+                if !s.duration.isFinite || s.duration <= 0 || s.position / s.duration >= 0.85 { sendEnded() }
+            }
         }
         report()
     }
 
+    /// (bug pass) onEnded once per file, from the poll's eof-reached or an END_FILE(eof).
+    private func sendEnded() {
+        guard !tornDown, !endedSent else { return }
+        endedSent = true
+        onEnded?()
+    }
+
     private func push(_ line: String) {
+        // (bug pass) `status` is main-thread state (poll, load, the END_FILE error hop), but
+        // readEvents and setShaders push from the mpv queue: an unsynchronised append racing the
+        // poll's writes can corrupt the log array. Everything lands on main.
+        guard Thread.isMainThread else { DispatchQueue.main.async { self.push(line) }; return }
         status.log.append(line)
         if status.log.count > 8 { status.log.removeFirst() }
     }
 
     private func report() {
+        // (bug pass) Read `status` on main only (see push).
+        guard Thread.isMainThread else { DispatchQueue.main.async { self.report() }; return }
         let s = status
         DispatchQueue.main.async { self.onStatus?(s) }
     }
@@ -588,8 +629,15 @@ final class MPVPlayerController: UIViewController {
                     }
                 case MPV_EVENT_FILE_LOADED:
                     self.push("file loaded")
-                    if self.startAtSeconds > 1 { self.seek(to: self.startAtSeconds); self.startAtSeconds = 0 }
-                    DispatchQueue.main.async { self.applyTrackPlan() }
+                    // (bug pass) On main, like every other read of startAtSeconds / fileLoaded, so a
+                    // seek the viewer made while the file was opening lands here instead of being refused.
+                    DispatchQueue.main.async {
+                        guard !self.tornDown else { return }
+                        self.fileLoaded = true
+                        if self.startAtSeconds > 1 { self.command("seek", [String(self.startAtSeconds), "absolute"]) }
+                        self.startAtSeconds = 0
+                        self.applyTrackPlan()
+                    }
                 case MPV_EVENT_END_FILE:
                     if let ef = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data)) {
                         if ef.pointee.error < 0 {
@@ -597,7 +645,7 @@ final class MPVPlayerController: UIViewController {
                             self.push("end: \(why)")
                             DispatchQueue.main.async { self.status.state = "error"; self.status.error = why }
                         }
-                        if ef.pointee.reason == MPV_END_FILE_REASON_EOF { DispatchQueue.main.async { self.onEnded?() } }
+                        if ef.pointee.reason == MPV_END_FILE_REASON_EOF { DispatchQueue.main.async { self.sendEnded() } }
                     }
                 default:
                     break
