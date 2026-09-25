@@ -4438,6 +4438,22 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   aw.dispose();
 }
 
+// ------------------- O4 bp-step-tmdb verify(): rejected vs unreachable, offline
+{
+  const ob = loadEngine({ storage: new Map() });
+  const seen = [];
+  ob.node.host.fetch = async (req) => {
+    seen.push(req.url);
+    if (req.url.includes("api_key=good")) return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: "{}" };
+    if (req.url.includes("api_key=bad")) return { status: 401, statusText: "Unauthorized", headers: { "content-type": "application/json" }, url: req.url, body: "{}" };
+    throw new Error("offline");
+  };
+  const O = ob.engine.onboarding;
+  r.eq("onboarding.checkTmdbKey: TMDB's configuration answers ok / 401 rejected / no answer unreachable", [await O.checkTmdbKey(" good "), await O.checkTmdbKey("bad"), await O.checkTmdbKey("down")], ["ok", "rejected", "unreachable"]);
+  r.ok("onboarding.checkTmdbKey asks the configuration endpoint with the trimmed key", seen[0] === "https://api.themoviedb.org/3/configuration?api_key=good", JSON.stringify(seen));
+  ob.dispose();
+}
+
 // ------------------------------------------------------------------- live network
 if (!OFFLINE) {
   const self = await r.timed("runtime.selfTest()", () => engine.runtime.selfTest());

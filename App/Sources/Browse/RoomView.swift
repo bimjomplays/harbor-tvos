@@ -36,6 +36,8 @@ struct RoomView: View {
     @State private var visitStart = Date()
     @Environment(\.shellFocusNamespace) private var shellNS
     @Namespace private var localNS
+    /// A streaming-service page is a cover (ServicePageView): Open settings closes it first.
+    @Environment(\.dismiss) private var dismissPage
 
     init(room: Room, source: BrowseSource) {
         _model = StateObject(wrappedValue: BrowseModel(room: room, source: source))
@@ -53,19 +55,23 @@ struct RoomView: View {
             if model.isHomePage {
                 LiveHeroPreview(channel: liveHot?.channel, suspended: previewSuspended)
             }
-            if let failed = model.failed {
-                VStack(spacing: BP.px(10)) {
-                    Text("Couldn't load this room.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
-                    BPNote(text: failed)
-                    // (home device pass) The failure had nothing to press: Home stayed empty until the
-                    // app was restarted (Back at Home closes it), another room until the tab was left.
-                    Button("Try again") { Task { await model.load() } }
-                        .buttonStyle(BPActionStyle(primary: true))
-                        .padding(.top, BP.px(6))
+            if model.failed != nil {
+                // (parity) bp-home / bp-movies / bp-shows / bp-anime: each room's own failure copy.
+                // (home device pass) The failure had nothing to press: Home stayed empty until the
+                // app was restarted (Back at Home closes it), another room until the tab was left.
+                let copy: (title: String, body: String) = failureCopy
+                pageMessage(title: copy.title, body: copy.body, action: T("Try again"), icon: "arrow.clockwise") {
+                    Task { await model.load() }
                 }
-                .padding(.top, BP.px(300)).padding(.horizontal, BP.gutter)
             } else if model.loading && model.rows.isEmpty {
                 ProgressView().tint(BP.inkMuted).padding(.top, BP.px(320))
+            } else if let empty = emptyCopy {
+                // bp-movies / bp-shows / bp-service: a page that settles with nothing says why and
+                // offers the one thing that fixes it (BpEmptyState: never a dead end on a remote).
+                pageMessage(title: empty.title, body: empty.body, action: T("Open settings"), icon: "slider.horizontal.3") {
+                    if model.isServicePage { dismissPage() }
+                    app.room = .settings
+                }
             } else {
                 BPRailView(rows: model.rows, onFocus: { m, row in focusTile(m, row: row) },
                            onSelect: { m in
@@ -207,6 +213,52 @@ struct RoomView: View {
                                         if held { model.focus(lead) }
                                     })
             .padding(.horizontal, BP.gutter)
+    }
+
+    /// Each room's failure copy (bp-home, bp-movies, bp-shows, bp-anime; a service page reads as Home's).
+    private var failureCopy: (title: String, body: String) {
+        switch model.room {
+        case .movies: return (T("Couldn't load movies"), T("Harbor couldn't reach the catalog servers."))
+        case .shows: return (T("Couldn't load series"), T("Harbor couldn't reach the catalog servers."))
+        case .anime: return (T("Couldn't load anime"), T("Harbor couldn't reach MyAnimeList or AniList. Check the connection and reopen Big Picture."))
+        default: return (T("Couldn't load your catalogs"), T("Harbor couldn't reach the catalog servers. Check the connection and reopen Big Picture."))
+        }
+    }
+
+    /// bp-movies / bp-shows / bp-service: the page answered with nothing to show (no TMDB key, or a
+    /// filter that left nothing). nil while loading, with rows, or on a room with no such state.
+    private var emptyCopy: (title: String, body: String)? {
+        guard model.settled, !model.loading, model.rows.isEmpty, model.continueWatching.isEmpty else { return nil }
+        let hasKey: Bool = !SettingsBridge.shared.slice.tmdbKey.isEmpty
+        if model.isServicePage {
+            // The service's name is the page's own heading (ServicePageView).
+            let body: String = hasKey ? T("Nothing matched this filter. Try another category or change your region in Settings.") : T("Add a TMDB key in Setup to power this view.")
+            return ("", body)
+        }
+        switch model.room {
+        case .movies: return (T("No movies to show yet"), T("Add a TMDB key in Setup to power this view."))
+        case .shows: return (T("No series to show yet"), T("Add a TMDB key in Settings to fill this page with curated series rows."))
+        default: return nil
+        }
+    }
+
+    /// BpPageMessage / BpEmptyState: a heading, a sentence, and the one action that fixes the state,
+    /// on a solid plate that takes the ring.
+    private func pageMessage(title: String, body: String, action: String, icon: String, perform: @escaping () -> Void) -> some View {
+        VStack(spacing: BP.px(12)) {
+            if !title.isEmpty {
+                Text(verbatim: title).font(BP.display(26)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Text(verbatim: body).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted)
+                .multilineTextAlignment(.center).frame(maxWidth: BP.px(560))
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: perform) { Label(action, systemImage: icon) }
+                .buttonStyle(BPActionStyle(primary: true))
+                .padding(.top, BP.px(6))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, BP.px(280)).padding(.horizontal, BP.gutter)
     }
 
     /// bp-home / bp-shows Continue Watching lead: the "Your library" see-all (tab "library").

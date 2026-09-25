@@ -1031,6 +1031,8 @@ export const onboarding = {
   upvoted: onboardingGlue.upvoted,
   /** use-bp-onboard-facts + bp-done-flourish: counts for the recap and the five posters it deals. */
   facts: onboardingGlue.facts,
+  /** bp-step-tmdb verify(): "ok" | "rejected" | "unreachable" from TMDB's configuration endpoint. */
+  checkTmdbKey: onboardingGlue.checkTmdbKey,
 };
 
 /** Skip intro/outro/recap segments (AniSkip, SkipDB, TheIntroDB, IntroDB App). */

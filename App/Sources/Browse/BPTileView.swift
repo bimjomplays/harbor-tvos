@@ -130,11 +130,13 @@ struct BPTileView: View {
     }
 
     private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false) -> some View {
-        ZStack(alignment: .topLeading) {
+        // bp-tile.tsx showTitle = !settings.hidePosterTitles: no title on the plate or under the ring.
+        let showTitle: Bool = SettingsBridge.shared.slice.hidePosterTitles != true
+        return ZStack(alignment: .topLeading) {
             // components/poster.tsx: the art is asked for at the card's size × posterQuality.
             RemoteImage(url: PosterSizing.sized(url, width: max(size.width, size.height * 2 / 3), scale: displayScale,
                                                 quality: SettingsBridge.shared.slice.posterQuality))
-            if url == nil && plateText {
+            if url == nil && plateText && showTitle {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))
                     .frame(width: size.width, height: size.height)
@@ -150,12 +152,14 @@ struct BPTileView: View {
                     .frame(width: size.width, height: size.height, alignment: .bottom)
                     .opacity(focused ? 1 : 0)
                     .animation(.easeOut(duration: 0.26), value: focused)
-                Text(meta.name)
-                    .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.leading)
-                    .padding(.horizontal, BP.px(10)).padding(.bottom, BP.px(8))
-                    .frame(width: size.width, height: size.height, alignment: .bottomLeading)
-                    .opacity(focused ? 1 : 0)
-                    .animation(.easeOut(duration: 0.26), value: focused)
+                if showTitle {
+                    Text(meta.name)
+                        .font(BP.sans(10.5, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.leading)
+                        .padding(.horizontal, BP.px(10)).padding(.bottom, BP.px(8))
+                        .frame(width: size.width, height: size.height, alignment: .bottomLeading)
+                        .opacity(focused ? 1 : 0)
+                        .animation(.easeOut(duration: 0.26), value: focused)
+                }
             }
             CardMarksOverlay(marks: marks.byId[meta.id], fallbackChip: marks.byId[meta.id] == nil ? CardMark.identity(for: meta) : nil, size: size)
         }
