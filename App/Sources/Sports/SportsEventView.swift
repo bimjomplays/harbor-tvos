@@ -299,7 +299,7 @@ struct SportsEventView: View {
                             RemoteImage(url: opt.logo, contentMode: .fit).frame(width: BP.px(48), height: BP.px(28))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(opt.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                Text(T(opt.copy) + (opt.reasons.isEmpty ? "" : " · " + opt.reasons.prefix(2).map { T($0) }.joined(separator: ", "))).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                                Text(Self.matchLine(opt)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                             }
                             Spacer()
                             Text(opt.tier.capitalized).font(BP.sans(11, .bold)).foregroundStyle(opt.tier == "exact" ? BP.live : BP.inkSubtle)
@@ -336,6 +336,14 @@ struct SportsEventView: View {
 
     private func broadcastLink(_ b: SportsEventModel.Broadcast) -> SportsLink {
         SportsLink(title: b.title, url: b.url, app: b.app, message: T("Official broadcast. It plays in the %@ app, or scan to watch on your phone.", b.platformLabel))
+    }
+
+    /// The channel-match line: its copy, then up to two reasons (split out of the view body for the type checker).
+    private static func matchLine(_ opt: SportsEventModel.WatchOption) -> String {
+        let copy: String = T(opt.copy)
+        guard !opt.reasons.isEmpty else { return copy }
+        let reasons: [String] = opt.reasons.prefix(2).map { T($0) }
+        return copy + " · " + reasons.joined(separator: ", ")
     }
 
     private func play(_ opt: SportsEventModel.WatchOption) {
