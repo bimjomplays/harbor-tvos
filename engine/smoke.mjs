@@ -709,6 +709,29 @@ r.ok("benchmark still works", (() => {
   r.eq("settingsRoom.controls: X-Ray is a Playback row only", E.settingsRoom.controls("interface", "default", true).some((c) => c.id === "xray"), false);
   r.eq("settingsRoom.commit xray on writes settings.xrayEnabled", [E.settingsRoom.commit("xray", "on", "default", true).ok, E.xray.enabled("default", true), E.settings.loadForProfile("default", true).xrayEnabled], [true, true, true]);
   r.ok("settingsRoom.pane(playback) reports X-Ray", E.settingsRoom.pane("default", true).playback.some(([k, v]) => k === "X-Ray" && v === "On"));
+  // (player parity pass) audio-tab.tsx Normalize loudness / Sound profile, subtitle-section.tsx Font / Styled (ASS) subtitles.
+  const ids = pb().map((c) => c.id);
+  r.ok("settingsRoom.controls(playback): Normalize loudness then Sound profile follow X-Ray", ids.indexOf("audioNormalize") === ids.indexOf("xray") + 1 && ids.indexOf("audioProfile") === ids.indexOf("xray") + 2, JSON.stringify(ids));
+  const an = pb().find((c) => c.id === "audioNormalize");
+  const ap = pb().find((c) => c.id === "audioProfile");
+  r.eq("settingsRoom.controls: audio rows read settings.audioNormalize (off) / audioProfile (off) with audio-tab labels", [an.label, an.value, ap.label, ap.value, ap.options.map((o) => o.value), ap.options.map((o) => o.label)], ["Normalize loudness", "off", "Sound profile", "off", ["off", "bass", "voice", "bass-reduce", "night"], ["Flat", "Bass boost", "Vocal clarity", "Less bass", "Night mode"]]);
+  r.eq("settingsRoom.commit audioNormalize / audioProfile write the upstream keys", [E.settingsRoom.commit("audioNormalize", "on", "default", true).ok, E.settingsRoom.commit("audioProfile", "night", "default", true).ok, E.settings.loadForProfile("default", true).audioNormalize, E.settings.loadForProfile("default", true).audioProfile], [true, true, true, "night"]);
+  E.settingsRoom.commit("audioProfile", "loud", "default", true);
+  r.eq("settingsRoom.commit audioProfile ignores a value audio-tab does not offer", E.settings.loadForProfile("default", true).audioProfile, "night");
+  r.ok("settingsRoom.pane(playback) reports the audio rows", E.settingsRoom.pane("default", true).playback.some(([k, v]) => k === "Normalize loudness" && v === "On") && E.settingsRoom.pane("default", true).playback.some(([k, v]) => k === "Sound profile" && v === "Night mode"));
+  const sub = () => E.settingsRoom.controls("subtitles", "default", true);
+  r.eq("settingsRoom.controls(subtitles): Font and Styled (ASS) subtitles after upstream's two rows", sub().map((c) => c.id), ["subLang", "subSize", "subFont", "subAssOverride"]);
+  const sf = sub().find((c) => c.id === "subFont");
+  const sa = sub().find((c) => c.id === "subAssOverride");
+  r.eq("settingsRoom.controls: Font presets and ASS modes (defaults inter / no)", [sf.value, sf.options.map((o) => o.value), sf.options.map((o) => o.label), sa.value, sa.options.map((o) => [o.value, o.label])], ["inter", ["inter", "system", "rounded", "serif", "arabic"], ["Inter", "System", "Rounded", "Serif", "Arabic"], "no", [["no", "Keep original"], ["scale", "Resize only"], ["force", "Use my style"]]]);
+  r.eq("settingsRoom.commit subFont / subAssOverride write subFontFamily / subAssOverride", [E.settingsRoom.commit("subFont", "arabic", "default", true).ok, E.settingsRoom.commit("subAssOverride", "force", "default", true).ok, E.settings.loadForProfile("default", true).subFontFamily, E.settings.loadForProfile("default", true).subAssOverride], [true, true, "arabic", "force"]);
+  E.settingsRoom.commit("subFont", "custom:nope", "default", true);
+  E.settingsRoom.commit("subAssOverride", "strip", "default", true);
+  r.eq("settingsRoom.commit: a font or ASS mode the rows do not offer is ignored", [E.settings.loadForProfile("default", true).subFontFamily, E.settings.loadForProfile("default", true).subAssOverride], ["arabic", "force"]);
+  E.settingsRoom.commit("audioNormalize", "off", "default", true);
+  E.settingsRoom.commit("audioProfile", "off", "default", true);
+  E.settingsRoom.commit("subFont", "inter", "default", true);
+  E.settingsRoom.commit("subAssOverride", "no", "default", true);
 
   // No TMDB key: use-xray-cast still asks TVDB (no key needed), sorted by TVDB's sort, actors only.
   const series = { id: "tt9100001", type: "series", name: "Fixture Show", description: "A crew in space." };
@@ -3039,7 +3062,7 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.eq("installUiCatalog registers a host-fed catalog and t() follows it", [engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.installUiCatalog("fr", JSON.stringify({ "This is how a subtitle will look.": "Voici un sous-titre." })), engine.settingsRoom.uiCatalogInstalled("fr"), engine.settingsRoom.pane("default", true).subtitle.text], [false, true, true, "Voici un sous-titre."]);
   engine.settingsRoom.commit("uiLanguage", "en", "default", true);
   const pane =engine.settingsRoom.pane("default", true);
-  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 7, 4, 1, "Off"]); // playback: six upstream lines + the TV's X-Ray; setup: + AI search
+  r.eq("settingsRoom.pane: subtitle sample at 0.55x, flags, line groups", [pane.subtitle.px, pane.subtitle.flags.length > 0, pane.playback.length, pane.setup.length, pane.interface.length, pane.overscanLabel], [18, true, 9, 4, 1, "Off"]); // playback: six upstream lines + the TV's X-Ray, Normalize loudness and Sound profile; setup: + AI search
   r.ok("settingsRoom.pane: services carry name and tint", pane.services.length > 0 && pane.services.every((s) => s.label && s.tint.startsWith("#")));
   const setupKey = engine.settings.sourceKeyFor("default", true);
   const before = engine.settingsRoom.pane("default", true).setup[1][1];

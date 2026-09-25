@@ -113,9 +113,19 @@ struct NativeSubtitleOverlay: View {
         }
     }
 
+    /// sub-style.ts settings.subFontFamily, the face mpv gets (MPVPlayerController.subFont). Switzer
+    /// keeps its bundled cuts; any other family goes by name (Font.custom falls back to the system
+    /// font when the TV has no such face), bold through the family's weight.
+    private func subtitleFont(_ look: Look) -> Font {
+        let family: String = MPVPlayerController.subFont(settings.slice.subFontFamily)
+        if family == "Switzer" { return .custom(look.bold ? "Switzer-Bold" : "Switzer-Regular", fixedSize: look.fontSize) }
+        let base: Font = .custom(family, fixedSize: look.fontSize)
+        return look.bold ? base.weight(.bold) : base
+    }
+
     private func text(_ s: String, _ look: Look, color: Color) -> some View {
         Text(verbatim: s)
-            .font(.custom(look.bold ? "Switzer-Bold" : "Switzer-Regular", fixedSize: look.fontSize))
+            .font(subtitleFont(look))
             .tracking(look.tracking)
             .lineSpacing(look.fontSize * 0.08)
             .multilineTextAlignment(look.textAlignment)
