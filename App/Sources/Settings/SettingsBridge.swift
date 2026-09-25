@@ -33,6 +33,15 @@ final class SettingsBridge: ObservableObject {
         var subShowInPip: Bool? = true
         /// sub-style.ts sub-filter-sdh on mpv (the AVPlayer overlay strips SDH in subtitles.cues).
         var subHideSdh: Bool? = false
+        /// (player parity pass) sub-style.ts mpvFontFor(subFontFamily) → mpv sub-font
+        /// ("inter" | "system" | "rounded" | "serif" | "arabic" | "custom:<id>").
+        var subFontFamily: String? = "inter"
+        /// sub-style.ts sub-ass-override ("no" | "yes" | "force" | "scale" | "strip").
+        var subAssOverride: String? = "no"
+        /// (player parity pass) mpv.ts applyAudioFilters: settings.audioNormalize (dynaudnorm) and
+        /// settings.audioProfile ("off" | "bass" | "voice" | "bass-reduce" | "night"), mpv only.
+        var audioNormalize: Bool? = false
+        var audioProfile: String? = "off"
         // Anime4K (settings/defaults.ts:235-261), applied by the player through the engine's gates.
         var playerAnime4k: Bool? = false
         var playerAnime4kAnimeOnly: Bool? = true
@@ -339,6 +348,10 @@ extension SettingsBridge.Slice {
         subLineSpacing = c.lenient("subLineSpacing")
         subShowInPip = c.lenient("subShowInPip")
         subHideSdh = c.lenient("subHideSdh")
+        subFontFamily = c.lenient("subFontFamily")
+        subAssOverride = c.lenient("subAssOverride")
+        audioNormalize = c.lenient("audioNormalize")
+        audioProfile = c.lenient("audioProfile")
         playerAnime4k = c.lenient("playerAnime4k")
         playerAnime4kAnimeOnly = c.lenient("playerAnime4kAnimeOnly")
         playerAnime4kIndicator = c.lenient("playerAnime4kIndicator")

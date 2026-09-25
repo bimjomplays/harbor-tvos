@@ -134,8 +134,57 @@ function aiSearchDetail(profileId: string, linked: boolean): string {
  * switch after Instant play so a viewer on the couch can turn it on. Off by default.
  */
 export function tvExtraControls(id: BpCatId, s: Settings): BpControl[] {
+  const onOff = [{ value: "on", label: t("On") }, { value: "off", label: t("Off") }];
+  if (id === "subtitles") {
+    // (player parity pass) views/settings/player-panel/subtitle-section.tsx FontPicker and the
+    // "Styled (ASS) subtitles" group: desktop-only rows (Big Picture has none), yet the ten-foot
+    // player applies both (use-sub-style-apply.ts → sub-style.ts sub-font / sub-ass-override).
+    // Custom fonts are files on the desktop that never reach the TV, so only the presets are offered.
+    return [
+      { kind: "options", id: "subFont", label: t("Font"), value: s.subFontFamily ?? "inter", options: TV_SUB_FONTS.map((f) => ({ value: f.id, label: t(f.label) })) },
+      { kind: "options", id: "subAssOverride", label: t("Styled (ASS) subtitles"), value: s.subAssOverride ?? "no", options: TV_ASS_MODES.map((m) => ({ value: m.id, label: t(m.label) })) },
+    ];
+  }
   if (id !== "playback") return [];
-  return [{ kind: "options", id: "xray", label: t("X-Ray"), value: s.xrayEnabled ? "on" : "off", options: [{ value: "on", label: t("On") }, { value: "off", label: t("Off") }] }];
+  return [
+    { kind: "options", id: "xray", label: t("X-Ray"), value: s.xrayEnabled ? "on" : "off", options: onOff },
+    // (player parity pass) views/settings/quality-panel/audio-tab.tsx "Normalize loudness" and
+    // "Sound profile": desktop Settings → Audio rows the mpv player applies (mpv.ts
+    // applyAudioFilters). The TV has no desktop page, so they sit in Playback beside X-Ray.
+    { kind: "options", id: "audioNormalize", label: t("Normalize loudness"), value: s.audioNormalize ? "on" : "off", options: onOff },
+    { kind: "options", id: "audioProfile", label: t("Sound profile"), value: s.audioProfile ?? "off", options: TV_AUDIO_PROFILES.map((p) => ({ value: p.value, label: t(p.label) })) },
+  ];
+}
+
+/** subtitle-section.tsx PRESET_FONTS (ids and labels). */
+export const TV_SUB_FONTS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "inter", label: "Inter" },
+  { id: "system", label: "System" },
+  { id: "rounded", label: "Rounded" },
+  { id: "serif", label: "Serif" },
+  { id: "arabic", label: "Arabic" },
+];
+
+/** subtitle-section.tsx assModes. */
+export const TV_ASS_MODES: ReadonlyArray<{ id: Settings["subAssOverride"]; label: string }> = [
+  { id: "no", label: "Keep original" },
+  { id: "scale", label: "Resize only" },
+  { id: "force", label: "Use my style" },
+];
+
+/** audio-tab.tsx "Sound profile" Segmented options. */
+export const TV_AUDIO_PROFILES: ReadonlyArray<{ value: Settings["audioProfile"]; label: string }> = [
+  { value: "off", label: "Flat" },
+  { value: "bass", label: "Bass boost" },
+  { value: "voice", label: "Vocal clarity" },
+  { value: "bass-reduce", label: "Less bass" },
+  { value: "night", label: "Night mode" },
+];
+
+/** Upstream's label for a stored value, or the value itself (a custom font, a synced "yes"). */
+function optionLabel(list: ReadonlyArray<{ value?: string; id?: string; label: string }>, value: string): string {
+  const hit = list.find((o) => (o.value ?? o.id) === value);
+  return hit ? t(hit.label) : value;
 }
 
 export function controls(id: BpCatId, profileId: string, linked: boolean): TvControl[] {
@@ -191,6 +240,16 @@ export function commit(id: string, value: string, profileId: string, linked: boo
     case "autoNext": patch.autoPlayNextEpisode = on; break;
     case "instantPlay": patch.instantPlay = on; break;
     case "xray": patch.xrayEnabled = on; break;
+    case "audioNormalize": patch.audioNormalize = on; break;
+    case "audioProfile":
+      if (TV_AUDIO_PROFILES.some((p) => p.value === value)) patch.audioProfile = value as Settings["audioProfile"];
+      break;
+    case "subFont":
+      if (TV_SUB_FONTS.some((f) => f.id === value)) patch.subFontFamily = value;
+      break;
+    case "subAssOverride":
+      if (TV_ASS_MODES.some((m) => m.id === value)) patch.subAssOverride = value as Settings["subAssOverride"];
+      break;
     case "homeMode": patch.homeMode = value as Settings["homeMode"]; break;
     case "hideWatched": patch.hideWatchedInCatalogs = on; break;
     case "service": patch.streaming = { ...s.streaming, [value]: !s.streaming[value as StreamingService] }; break;
@@ -314,6 +373,9 @@ export function pane(profileId: string, linked: boolean) {
       [t("Instant play"), t(s.instantPlay ? "On" : "Off")],
       // The TV's X-Ray row (tvExtraControls).
       [t("X-Ray"), t(s.xrayEnabled ? "On" : "Off")],
+      // The TV's audio rows (tvExtraControls).
+      [t("Normalize loudness"), t(s.audioNormalize ? "On" : "Off")],
+      [t("Sound profile"), optionLabel(TV_AUDIO_PROFILES, s.audioProfile ?? "off")],
     ],
     setup: [
       ["TMDB", s.tmdbKey.trim() ? t("On") : t("None")],
