@@ -277,7 +277,7 @@ struct KidsFranchiseTile: View {
                     .shadow(color: .black.opacity(0.5), radius: 8, y: 2)
                 HStack(spacing: BP.px(4)) {
                     Text("Explore")
-                    Image(systemName: "arrow.right")
+                    Image(systemName: "arrow.forward")
                 }
                 .font(KidsTheme.font(11, .semibold)).foregroundStyle(.white.opacity(0.9))
             }

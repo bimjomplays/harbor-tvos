@@ -136,7 +136,7 @@ struct HomeServersPanel: View {
                 HStack(spacing: BP.px(10)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(c.name)").font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
-                        Text(model.progress[c.id] ?? summary(c)).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                        Text(model.progress[c.id].map { T($0) } ?? summary(c)).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
                     }
                     .frame(width: BP.px(420), alignment: .leading)
                     Button(model.progress[c.id] == nil ? "Sync now" : "Syncing…") { Task { await model.sync(c.id) } }.buttonStyle(BPActionStyle()).disabled(model.progress[c.id] != nil)
@@ -144,8 +144,8 @@ struct HomeServersPanel: View {
                     Button("Remove") { Task { await model.remove(c.id) } }.buttonStyle(BPActionStyle())
                 }
                 HStack(spacing: BP.px(10)) {
-                    Button("Quality: " + Self.label(HomeServersModel.qualities, c.preferredQuality ?? "original")) { Task { await model.cycle(c, field: "preferredQuality", options: HomeServersModel.qualities, current: c.preferredQuality) } }.buttonStyle(BPActionStyle())
-                    Button("Refresh: " + Self.label(HomeServersModel.intervals, c.refreshInterval ?? "launch")) { Task { await model.cycle(c, field: "refreshInterval", options: HomeServersModel.intervals, current: c.refreshInterval) } }.buttonStyle(BPActionStyle())
+                    Button(T("Quality") + ": " + T(Self.label(HomeServersModel.qualities, c.preferredQuality ?? "original"))) { Task { await model.cycle(c, field: "preferredQuality", options: HomeServersModel.qualities, current: c.preferredQuality) } }.buttonStyle(BPActionStyle())
+                    Button(T("Refresh") + ": " + T(Self.label(HomeServersModel.intervals, c.refreshInterval ?? "launch"))) { Task { await model.cycle(c, field: "refreshInterval", options: HomeServersModel.intervals, current: c.refreshInterval) } }.buttonStyle(BPActionStyle())
                     if let r = c.lastSyncResult, !r.ok { Text("Last sync failed: \(r.message)").font(BP.sans(12)).foregroundStyle(BP.danger).lineLimit(1) }
                 }
                 .padding(.bottom, BP.px(6))

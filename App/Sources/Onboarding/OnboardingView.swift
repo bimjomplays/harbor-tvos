@@ -143,7 +143,7 @@ struct OnboardingView: View {
                     Button("Continue") { advance() }.buttonStyle(BPActionStyle(primary: true))
                     Button("Skip") { advance() }.buttonStyle(BPActionStyle())
                 }
-                BPNote(text: "In order: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
+                BPNote(text: T("In order: %@", settings.slice.preferredSubLangs.joined(separator: ", ")))
             }
         case .taste:
             TasteStep { advance() }
@@ -152,14 +152,14 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: BP.px(16)) {
                 RecapRow(ok: !settings.slice.tmdbKey.isEmpty, text: settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta. Add a TMDB key in Settings whenever you want." : "TMDB connected")
                 if let f = facts {
-                    RecapRow(ok: f.servicesOn > 0, text: "\(f.servicesOn) streaming services on")
+                    RecapRow(ok: f.servicesOn > 0, text: T("%lld streaming services on", f.servicesOn))
                 }
-                RecapRow(ok: stremioName != nil, text: stremioName.map { "Signed in as \($0)" } ?? "Not signed in to Stremio. Your library stays local.")
-                RecapRow(ok: account.isSignedIn, text: account.session.map { "Harbor account linked as \($0.user.username)" } ?? "No Harbor account yet")
+                RecapRow(ok: stremioName != nil, text: stremioName.map { T("Signed in as %@", $0) } ?? "Not signed in to Stremio. Your library stays local.")
+                RecapRow(ok: account.isSignedIn, text: account.session.map { T("Harbor account linked as %@", $0.user.username) } ?? "No Harbor account yet")
                 RecapRow(ok: !settings.slice.preferredSubLangs.isEmpty,
-                         text: settings.slice.preferredSubLangs.isEmpty ? "No subtitle languages set" : "Subtitles: \(settings.slice.preferredSubLangs.joined(separator: ", "))")
+                         text: settings.slice.preferredSubLangs.isEmpty ? "No subtitle languages set" : T("Subtitles: %@", settings.slice.preferredSubLangs.joined(separator: ", ")))
                 if let f = facts, f.tastePicks > 0 {
-                    RecapRow(ok: true, text: "\(f.tastePicks) titles you like")
+                    RecapRow(ok: true, text: T("%lld titles you like", f.tastePicks))
                 }
                 Button("Start watching") { app.finishOnboarding() }
                     .buttonStyle(BPActionStyle(primary: true))
@@ -366,7 +366,7 @@ struct StreamingServicesStep: View {
                 }
                 .focusSection()
             }
-            BPNote(text: hasKey ? "\(items.filter(\.on).count) on" : "These rows need a TMDB key before they show anything.")
+            BPNote(text: hasKey ? T("%lld on", items.filter(\.on).count) : "These rows need a TMDB key before they show anything.")
             HStack(spacing: BP.px(12)) {
                 Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
                 Button("Skip") { done() }.buttonStyle(BPActionStyle())
@@ -431,7 +431,7 @@ struct TasteStep: View {
                 .frame(height: BP.px(500))
                 .focusSection()
             }
-            BPNote(text: onScreen >= Self.max ? "That is five. Deselect one to swap it out." : "\(onScreen) of \(Self.max) picked")
+            BPNote(text: onScreen >= Self.max ? "That is five. Deselect one to swap it out." : T("%lld of %lld picked", onScreen, Self.max))
             HStack(spacing: BP.px(12)) {
                 Button("Continue") { done() }.buttonStyle(BPActionStyle(primary: true))
                 Button("Skip") { done() }.buttonStyle(BPActionStyle())

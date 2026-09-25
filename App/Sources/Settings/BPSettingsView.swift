@@ -162,7 +162,7 @@ struct BPSettingsView: View {
                     Text(c.summary).font(BP.sans(12, .medium)).foregroundStyle(BP.ink.opacity(0.65)).lineLimit(1)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: BP.px(12), weight: .bold)).foregroundStyle(BP.ink.opacity(0.55))
+                Image(systemName: "chevron.forward").font(.system(size: BP.px(12), weight: .bold)).foregroundStyle(BP.ink.opacity(0.55))
             }
             .padding(.horizontal, BP.px(14))
             .frame(width: BP.px(368), height: BP.px(54), alignment: .leading)
@@ -245,7 +245,7 @@ struct BPSettingsView: View {
                         Text(T(c.detail ?? "")).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "chevron.forward")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -277,7 +277,7 @@ struct CalendarConfigRailView: View {
                     if open.contains(g.id) { _ = open.remove(g.id) } else { _ = open.insert(g.id) }
                 } label: {
                     HStack(spacing: BP.px(8)) {
-                        Image(systemName: open.contains(g.id) ? "chevron.down" : "chevron.right")
+                        Image(systemName: open.contains(g.id) ? "chevron.down" : "chevron.forward")
                         Text(g.title)
                         if g.count > 0 { Text("\(g.count)").foregroundStyle(BP.accent) }
                         if !g.summary.isEmpty && !open.contains(g.id) {

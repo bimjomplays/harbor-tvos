@@ -173,7 +173,7 @@ struct PlayPickerView: View {
         case .noSources:
             // Upstream's second button ("Leave Big Picture and open settings") has no TV equivalent.
             StreamDialogShell(title: "No streaming sources yet",
-                              message: "Harbor needs at least one streaming source before it can play \(meta.name). Install a stream addon or add a debrid key in settings.") {
+                              message: T("Harbor needs at least one streaming source before it can play %@. Install a stream addon or add a debrid key in settings.", meta.name)) {
                 EmptyView()
             } buttons: {
                 Button("Back") { closePicker() }.buttonStyle(BPActionStyle(primary: true))
@@ -181,7 +181,7 @@ struct PlayPickerView: View {
             .onExitCommand { closePicker() }
         case .exhausted(let n):
             StreamDialogShell(title: "We could not find a working stream",
-                              message: "Harbor tried \(n) sources for \(exhaustedLabel) and none of them played. Usually that means a debrid key has expired, no stream addon is installed yet, or nothing has this title cached.") {
+                              message: T("Harbor tried %lld sources for %@ and none of them played. Usually that means a debrid key has expired, no stream addon is installed yet, or nothing has this title cached.", n, exhaustedLabel)) {
                 EmptyView()
             } buttons: {
                 Button("Browse sources") { browseManually() }.buttonStyle(BPActionStyle(primary: true))

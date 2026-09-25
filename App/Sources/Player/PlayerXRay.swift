@@ -188,7 +188,7 @@ struct PlayerXRayOverlay: View {
                 Label("X-Ray", systemImage: "faceid")
                     .font(BP.sans(11, .bold)).tracking(BP.px(11) * 0.22).textCase(.uppercase)
                     .foregroundStyle(BP.ink)
-                Button { showBrowser() } label: { Label("View all", systemImage: "chevron.right") }
+                Button { showBrowser() } label: { Label("View all", systemImage: "chevron.forward") }
                     .buttonStyle(BPActionStyle())
                     .focused(focus, equals: people.isEmpty ? Self.entry : PlayerScreen.FocusTarget.chip("xray-all"))
                 Button { railClosed = true; focusSoon(Self.entry) } label: { Label("Close", systemImage: "xmark") }

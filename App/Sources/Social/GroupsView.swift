@@ -17,7 +17,7 @@ struct GroupsView: View {
                    subtitle: T("Find people who watch what you watch. Join a group to share lists, post, and watch together.")) {
             HStack(spacing: BP.px(10)) {
                 Button { searching = true } label: {
-                    Label(query.isEmpty ? "Search groups by name or tag" : "“\(query)”", systemImage: "magnifyingglass")
+                    Label(query.isEmpty ? T("Search groups by name or tag") : "“\(query)”", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(BPActionStyle())
                 if !query.isEmpty {
@@ -171,7 +171,7 @@ struct GroupPageView: View {
 
     @ViewBuilder private func actions(_ g: Social.Group) -> some View {
         HStack(spacing: BP.px(10)) {
-            Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+            Button { dismiss() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
             if g.isPending {
                 // group-invite-banner.tsx
                 Button("Accept") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)

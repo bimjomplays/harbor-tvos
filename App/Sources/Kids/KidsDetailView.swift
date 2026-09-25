@@ -278,7 +278,7 @@ struct KidsDetailView: View {
             let idx = seasons.firstIndex { $0.seasonNumber == model.season } ?? 0
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 HStack(spacing: BP.px(8)) {
-                    Button { if idx > 0 { model.choose(seasons[idx - 1].seasonNumber) } } label: { Image(systemName: "chevron.left") }
+                    Button { if idx > 0 { model.choose(seasons[idx - 1].seasonNumber) } } label: { Image(systemName: "chevron.backward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))
                         .disabled(idx <= 0)
                     Button { seasonGrid.toggle() } label: {
@@ -289,7 +289,7 @@ struct KidsDetailView: View {
                         .frame(minWidth: BP.px(150))
                     }
                     .buttonStyle(KidsPillStyle(fill: KidsTheme.teal, ink: .white))
-                    Button { if idx < seasons.count - 1 { model.choose(seasons[idx + 1].seasonNumber) } } label: { Image(systemName: "chevron.right") }
+                    Button { if idx < seasons.count - 1 { model.choose(seasons[idx + 1].seasonNumber) } } label: { Image(systemName: "chevron.forward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))
                         .disabled(idx >= seasons.count - 1)
                 }

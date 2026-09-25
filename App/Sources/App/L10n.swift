@@ -74,3 +74,9 @@ func T(_ key: String) -> String { L10n.lookup(key) }
 func T(_ key: String, _ args: CVarArg...) -> String {
     String(format: L10n.lookup(key), locale: L10n.locale, arguments: args)
 }
+
+/// A count key whose plural forms live in the catalogs' .stringsdict ("%lld wins" → "1 Sieg"):
+/// English has no catalog, so its singular ("%lld win") is spelled here instead of "1 wins".
+func TCount(_ n: Int, one: String, _ key: String) -> String {
+    n == 1 && L10n.language == "en" ? String(format: one, n) : T(key, n)
+}

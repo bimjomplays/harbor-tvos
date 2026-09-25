@@ -20,7 +20,7 @@ struct AppearancePanel: View {
                 ForEach(["Built-in", "Featured"], id: \.self) { group in
                     let presets = s.presets.filter { $0.category == group }
                     if !presets.isEmpty {
-                        Text(group.uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle)
+                        Text(T(group).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle)
                         LazyVGrid(columns: columns, spacing: BP.px(10)) {
                             ForEach(presets) { p in tile(p, active: s.active == p.id) }
                         }

@@ -263,7 +263,7 @@ struct PlaylistVodView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             HStack(spacing: BP.px(8)) {
-                Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+                Button { dismiss() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
                 Text("Playlists").font(BP.display(30)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(10))
                 if model.sources.count > 1 {
                     ForEach(model.sources) { s in
@@ -424,7 +424,7 @@ struct VodSeriesDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(18)) {
             HStack(alignment: .top, spacing: BP.px(18)) {
-                Button(action: onBack) { Image(systemName: "chevron.left") }
+                Button(action: onBack) { Image(systemName: "chevron.backward") }
                     .buttonStyle(BPActionStyle())
                     .accessibilityLabel("Back to library")
                 RemoteImage(url: series.logo)

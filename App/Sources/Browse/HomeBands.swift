@@ -83,7 +83,7 @@ struct HomeBand: Equatable {
     /// bp-live-band-art.ts bpLiveBandArt: the airing title (else the channel), "Started at {time}"
     /// (else the group, else "Live"), the channel logo as the bug.
     @MainActor static func forChannel(_ c: LiveRowModel.Cell) -> HomeBand {
-        let line = c.now.map { "Started at \(LiveChannelRow.time($0.startMs))" } ?? (c.channel.group ?? "Live")
+        let line = c.now.map { T("Started at %@", LiveChannelRow.time($0.startMs)) } ?? (c.channel.group ?? T("Live"))
         let logo = c.channel.logo ?? ""
         return HomeBand(id: .live, key: "iptv:\(c.playlistId):\(c.channel.id)", title: c.now?.title ?? c.channel.name, line: line,
                         still: nil, bug: logo.isEmpty ? nil : logo)
@@ -119,6 +119,8 @@ struct HomeBandBackdrop: View {
             }
             LinearGradient(colors: [BP.void_.opacity(0.82), BP.void_.opacity(0.52), BP.void_.opacity(0.16), .clear],
                            startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
+                // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
+                .flipsForRightToLeftLayoutDirection(true)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.3), BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom)
         }
         .animation(.easeInOut(duration: 0.26), value: band.posters.count >= HomeBand.mosaicMin)
@@ -140,14 +142,14 @@ struct BandIdentityView: View {
                 Spacer(minLength: 0)
                 HStack(spacing: BP.px(9)) {
                     if let bug = band.bug { BandMark(url: bug, height: BP.px(20), maxWidth: BP.px(80)) }
-                    Text(band.eyebrow).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.8)).foregroundStyle(BP.inkSubtle)
+                    Text(T(band.eyebrow)).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.8)).foregroundStyle(BP.inkSubtle)
                 }
                 Rectangle().fill(BP.edge2).frame(width: BP.px(46), height: 1).padding(.top, BP.px(6))
-                Text(band.title ?? band.bandTitle)
+                Text(band.title ?? T(band.bandTitle))
                     .font(BP.display(34.6)).foregroundStyle(BP.ink).lineLimit(2)
                     .shadow(color: .black.opacity(0.6), radius: 16, y: 3)
                     .padding(.top, BP.px(10))
-                Text(band.line ?? band.bandLine)
+                Text(band.line ?? T(band.bandLine))
                     .font(BP.sans(12.5)).foregroundStyle(BP.inkMuted).lineSpacing(BP.px(5)).lineLimit(2)
                     .frame(maxWidth: BP.px(500), alignment: .leading)
                     .padding(.top, BP.px(8))

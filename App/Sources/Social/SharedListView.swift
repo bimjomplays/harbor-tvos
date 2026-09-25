@@ -55,7 +55,7 @@ struct SharedListView: View {
                 Text(desc).font(BP.sans(16)).foregroundStyle(BP.inkMuted).frame(maxWidth: BP.px(900), alignment: .leading)
             }
             HStack(spacing: BP.px(10)) {
-                Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+                Button { dismiss() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
                 let canLike = (d.signedIn ?? false) && !owner.isOwner
                 Button { Task { await toggleLike(list) } } label: {
                     Label("\(Int(list.likeCount))", systemImage: list.liked ? "heart.fill" : "heart")
@@ -65,7 +65,7 @@ struct SharedListView: View {
                     Button { Task { await save() } } label: { Label("Save to my lists", systemImage: "square.and.arrow.down") }
                         .buttonStyle(BPActionStyle()).disabled(busy)
                 }
-                Button { profile = Social.HandleRef(handle: owner.handle) } label: { Label("View all", systemImage: "chevron.right") }
+                Button { profile = Social.HandleRef(handle: owner.handle) } label: { Label("View all", systemImage: "chevron.forward") }
                     .buttonStyle(BPActionStyle())
             }
             .focusSection()
@@ -139,7 +139,7 @@ struct SharedListOpenView: View {
         SocialPage(eyebrow: "Lists", title: T("Open a shared list"),
                    subtitle: "Paste the list's share link on your phone, or type the maker's handle and the list id as handle/list.") {
             HStack(spacing: BP.px(10)) {
-                Button { typing = true } label: { Label(text.isEmpty ? "Type the link on your phone" : text, systemImage: "iphone") }
+                Button { typing = true } label: { Label(text.isEmpty ? T("Type the link on your phone") : text, systemImage: "iphone") }
                     .buttonStyle(BPActionStyle(primary: true))
                 Button("Open") { Task { await go() } }.buttonStyle(BPActionStyle()).disabled(text.isEmpty)
                 Button("Back") { dismiss() }.buttonStyle(BPActionStyle())

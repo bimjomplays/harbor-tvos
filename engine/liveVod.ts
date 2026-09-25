@@ -11,6 +11,7 @@ import { iptvSourceSignature, isPersistentCacheFresh } from "@/lib/iptv/persiste
 import { normalizeArabic } from "@/lib/iptv/rtl";
 import { clearResume, readResumeEntry, saveResumeMs } from "@/lib/resume";
 import type { IptvChannel, IptvPlaylist } from "@/lib/iptv/types";
+import { t } from "@/lib/i18n";
 
 // ------------------------------------------------------------------------------ sources
 // use-vod-sources.ts: every playlist except guide-only ones; the active one is remembered.
@@ -267,8 +268,11 @@ function movieView(m: VodMovie): VodItemView {
 }
 
 function seriesView(s: VodSeries): VodItemView {
-  // playlist-vod.tsx: an Xtream series says its category (or "Open to load episodes"), an M3U one its episode count.
-  const subtitle = s.xtreamSeriesId ? (s.group ?? "Open to load episodes") : s.episodes.length === 1 ? "1 episode" : `${s.episodes.length} episodes`;
+  // playlist-vod.tsx: an Xtream series says its category (or "Open to load episodes"), an M3U one its
+  // episode count, through t() like upstream.
+  const subtitle = s.xtreamSeriesId
+    ? (s.group ?? t("Open to load episodes"))
+    : s.episodes.length === 1 ? t("{n} episode", { n: 1 }) : t("{n} episodes", { n: s.episodes.length });
   return { id: s.id, kind: "series", title: s.title, year: null, logo: s.logo, group: s.group, subtitle, url: null, playlistName: s.playlistName, resumeSec: null };
 }
 

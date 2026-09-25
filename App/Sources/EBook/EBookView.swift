@@ -351,7 +351,7 @@ struct EBookView: View {
                         .font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
                 Spacer(minLength: BP.px(20))
-                Image(systemName: "chevron.right").foregroundStyle(BP.inkSubtle)
+                Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle)
             }
             .padding(.horizontal, BP.px(20)).padding(.vertical, BP.px(14))
             .frame(width: BP.px(420), alignment: .leading)

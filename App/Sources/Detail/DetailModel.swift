@@ -658,7 +658,7 @@ final class DetailModel: ObservableObject {
             if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }
             if r.positionMs > 60_000 { return T("Resume") }
         }
-        if isSeries, let t = playTarget { return "Play S\(t.season) E\(t.episode)" }
+        if isSeries, let t = playTarget { return "\(T("Play")) S\(t.season) E\(t.episode)" }
         return T("Play")
     }
 
@@ -673,7 +673,7 @@ final class DetailModel: ObservableObject {
         for v in videos {
             guard let s = v["season"]?.number, let e = (v["episode"] ?? v["number"])?.number else { continue }
             let id = v["id"]?.string ?? "\(meta.id):\(Int(s)):\(Int(e))"
-            let title = v["name"]?.string ?? v["title"]?.string ?? "Episode \(Int(e))"
+            let title = v["name"]?.string ?? v["title"]?.string ?? T("Episode %lld", Int(e))
             let rel = (v["released"] ?? v["firstAired"])?.string
             let date = rel.flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) }
             let play: AnyJSON = .object([

@@ -44,7 +44,7 @@ struct SportsWhereRowView: View {
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(m.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                    if !m.note.isEmpty { Text(m.note).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                                    if !m.note.isEmpty { Text(T(m.note)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: "arrow.up.right.square").font(.system(size: BP.px(16))).foregroundStyle(BP.inkSubtle)
@@ -159,7 +159,7 @@ struct SportsBroadcastsView: View {
                                         .frame(width: BP.px(44), height: BP.px(44)).background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(b.title).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                        Text(b.platformLabel).font(BP.sans(11)).foregroundStyle(BP.inkMuted)
+                                        Text(T(b.platformLabel)).font(BP.sans(11)).foregroundStyle(BP.inkMuted)
                                     }
                                     Spacer(minLength: 0)
                                     Image(systemName: b.app != nil ? "arrow.up.forward.app" : "qrcode").foregroundStyle(BP.inkSubtle)

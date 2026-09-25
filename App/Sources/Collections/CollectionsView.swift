@@ -356,7 +356,7 @@ struct CollectionMoreCard: View {
         ZStack {
             RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.panel2)
             VStack(spacing: BP.px(8)) {
-                Image(systemName: "arrow.right.circle").font(.system(size: BP.px(26), weight: .semibold)).foregroundStyle(BP.inkMuted)
+                Image(systemName: "arrow.forward.circle").font(.system(size: BP.px(26), weight: .semibold)).foregroundStyle(BP.inkMuted)
                 Text(label).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
             }
             .padding(BP.px(12))

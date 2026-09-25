@@ -84,9 +84,10 @@ struct CatalogPageView: View {
             if next.isEmpty, metas.isEmpty {
                 switch got.status {
                 case "no-key": emptyNote = "Genre shelves are built from TMDB. Add a key in Setup to fill this one."
-                case "filtered": emptyNote = "Everything on this page of \(genre) is hidden by your anime filter."
-                case "empty": emptyNote = "Nothing in \(genre) right now."
-                default: emptyNote = "Couldn't reach TMDB for \(genre) titles."
+                // bp-genre-grid.tsx: format keys with the genre through t().
+                case "filtered": emptyNote = T("Everything on this page of %@ is hidden by your anime filter.", T(genre))
+                case "empty": emptyNote = T("Nothing in %@ right now.", T(genre))
+                default: emptyNote = T("Couldn't reach TMDB for %@ titles.", T(genre))
                 }
             }
         } else if row.key.hasPrefix("svc:") {

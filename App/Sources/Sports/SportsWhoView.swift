@@ -26,7 +26,7 @@ struct SportsWhoView: View {
             if let w = stack.last {
                 HStack(alignment: .top, spacing: BP.px(30)) {
                     VStack(alignment: .leading, spacing: BP.px(12)) {
-                        Text([w.eyebrow, game.leagueLabel].filter { !$0.isEmpty }.joined(separator: " · ")).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.accent)
+                        Text([T(w.eyebrow), game.leagueLabel].filter { !$0.isEmpty }.joined(separator: " · ")).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.accent)
                         Text(w.name).font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
                         if !w.lead.isEmpty { Text(w.lead).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted) }
                         if !w.figures.isEmpty {
@@ -44,7 +44,7 @@ struct SportsWhoView: View {
                                 if !w.body.isEmpty { Text(w.body).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(8).focusable() }
                                 ForEach(Array(w.facts.enumerated()), id: \.offset) { _, f in
                                     HStack(alignment: .top, spacing: BP.px(8)) {
-                                        Text(f.label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(150), alignment: .leading)
+                                        Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(150), alignment: .leading)
                                         Text(f.value).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
                                     }
                                 }
@@ -68,7 +68,7 @@ struct SportsWhoView: View {
                                     }
                                 }
                                 if !w.note.isEmpty { BPNote(text: w.note) }
-                                if let l = w.link { Text(l.label + ": " + l.url).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
+                                if let l = w.link { Text(T(l.label) + ": " + l.url).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }
                             }
                         }
                         HStack(spacing: BP.px(10)) {

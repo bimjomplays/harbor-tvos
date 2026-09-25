@@ -15,8 +15,8 @@ struct AwardsDialogView: View {
                 Text(group.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: BP.px(12)) {
-                        if !wins.isEmpty { section("\(wins.count) win\(wins.count == 1 ? "" : "s")", wins) }
-                        if !noms.isEmpty { section("\(noms.count) nomination\(noms.count == 1 ? "" : "s")", noms) }
+                        if !wins.isEmpty { section(TCount(wins.count, one: "%lld win", "%lld wins"), wins) }
+                        if !noms.isEmpty { section(TCount(noms.count, one: "%lld nomination", "%lld nominations"), noms) }
                     }
                 }
                 Button("Close") { dismiss() }.buttonStyle(BPActionStyle(primary: true))

@@ -56,7 +56,7 @@ struct EngineBrowseSource: BrowseSource {
                  inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil,
                  providerBadge: Meta.ProviderBadge(name: c.name, logo: c.logo ?? "", tint: "#2a2b2d"), videos: nil)
         }
-        return BrowseRow(key: "addons", title: "Your addons", metas: metas, shape: .brand)
+        return BrowseRow(key: "addons", title: T("Your addons"), metas: metas, shape: .brand)
     }
 
     /// bp-home "Collections" (bp-collections-row.tsx): TMDB's curated franchises as 16:9 cards; the
@@ -68,10 +68,10 @@ struct EngineBrowseSource: BrowseSource {
         let metas = cards.map { c in
             // bp-collection-card metaLine for a TMDB entry: "{count} films", else "Collection".
             Meta(id: "collection:tmdb:\(c.ref)", type: "collection", name: c.name, poster: nil, background: c.image, logo: nil,
-                 description: c.count.map { "\($0) films" } ?? "Collection", releaseInfo: nil, releaseDate: nil, inTheaters: nil,
+                 description: c.count.map { T("%lld films", $0) } ?? T("Collection"), releaseInfo: nil, releaseDate: nil, inTheaters: nil,
                  imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: true, providerBadge: nil, videos: nil)
         }
-        return BrowseRow(key: "collections", title: "Collections", metas: metas, shape: .collection)
+        return BrowseRow(key: "collections", title: T("Collections"), metas: metas, shape: .collection)
     }
 
     /// bp-home.tsx: `head` (the first SERVICES_SLOT = 2 catalog rows), then the Collections row,
@@ -103,7 +103,7 @@ struct EngineBrowseSource: BrowseSource {
                          providerBadge: Meta.ProviderBadge(name: t.name, logo: "", tint: t.tint), videos: nil)
                 }
                 var rows = build.rows.map { BrowseRow(key: $0.key, title: $0.name, metas: $0.metas, shape: $0.shape == "rank" ? .rank : .poster) }
-                rows.insert(BrowseRow(key: "services", title: "Your streaming", metas: metas, shape: .brand), at: min(2, rows.count))
+                rows.insert(BrowseRow(key: "services", title: T("Your streaming"), metas: metas, shape: .brand), at: min(2, rows.count))
                 if let addons = await addonsBand(p.authKey) { rows.insert(addons, at: min(3, rows.count)) }
                 Self.insertCollections(await curated, into: &rows, build: build)
                 if build.failed && rows.isEmpty { throw BrowseError.empty }
@@ -217,7 +217,7 @@ struct ServiceBrowseSource: BrowseSource {
                  inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil,
                  providerBadge: Meta.ProviderBadge(name: c.name, logo: c.logo ?? "", tint: "#2a2b2d"), videos: nil)
         }
-        return BrowseRow(key: "addons", title: "Your addons", metas: metas, shape: .brand)
+        return BrowseRow(key: "addons", title: T("Your addons"), metas: metas, shape: .brand)
     }
 
     func rows(for room: Room) async throws -> [BrowseRow] {

@@ -1935,14 +1935,40 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
   pr.engine.settings.patch({ tmdbKey: "0123456789abcdef0123456789abcdef" }, pr.engine.settings.sourceKeyFor("default", true));
+  // Localization pass: bp-person.tsx section titles and the department go through t().
+  pr.engine.settingsRoom.commit("uiLanguage", "it", "default", true);
+  pr.engine.settingsRoom.installUiCatalog("it", JSON.stringify({ "Movies · {n}": "Film · {n}", Acting: "Recitazione" }));
   const pings = [];
   pr.engine.runtime.onEvent((type) => { if (type === "harbor:person-updated") pings.push(type); });
   const first = await pr.engine.personRoom.page(287, "default", true);
   for (let i = 0; i < 120 && pings.length === 0; i++) await new Promise((res) => setTimeout(res, 25));
   const second = await pr.engine.personRoom.page(287, "default", true);
   await new Promise((res) => setTimeout(res, 200));
+  r.eq("personRoom: section titles and department follow the UI language", [first.sections?.[0]?.title, first.person?.department], ["Film · 3", "Recitazione"]);
   r.ok("personRoom: a failed collaborators run answers once and the re-read does not fetch again", first.person?.name === "Brad Pitt" && pings.length === 1 && Array.isArray(second.collaborators) && second.collaborators.length === 0 && creditHits.length > 0 && creditHits.length <= 3, JSON.stringify({ pings: pings.length, hits: creditHits.length }));
   pr.dispose();
+}
+
+// Localization pass: bp-card-marks.tsx runs every identity chip through t().
+{
+  const lc = loadEngine({ storage: new Map([["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })]]) });
+  lc.node.host.fetch = async (req) => ({ status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" });
+  const yr = String(new Date().getFullYear());
+  const metas = [
+    { id: "tt9999999", type: "series", name: "Brand New Show", releaseInfo: yr },
+    { id: "tt8888888", type: "movie", name: "Cinema Now", releaseInfo: yr, releaseDate: new Date().toISOString(), inTheaters: true },
+    { id: "tt7777777", type: "movie", name: "Old Rerun", releaseInfo: "2015", releaseDate: "2015-01-01", inTheaters: true },
+  ];
+  const en = lc.engine.cards.marks(metas, "default", true).map((m) => m.chip);
+  lc.engine.settingsRoom.commit("uiLanguage", "it", "default", true);
+  lc.engine.settingsRoom.installUiCatalog("it", JSON.stringify({ New: "Nuovo", "In Cinema": "Al cinema", Rerun: "Replica", "S{s} E{e}": "S{s} Ep{e}", "{n} min left": "ancora {n} min" }));
+  const it = lc.engine.cards.marks(metas, "default", true).map((m) => m.chip);
+  r.eq("cards.marks: chips follow the UI language (New / In Cinema / Rerun)", [en, it], [["New", "In Cinema", "Rerun · 2015"], ["Nuovo", "Al cinema", "Replica · 2015"]]);
+  // bp-anime-hero-meta.tsx: the episode and minutes-left pills go through t() too.
+  lc.engine.settings.patch({ showDubBadge: false }, lc.engine.settings.sourceKeyFor("default", true));
+  const hmIt = await lc.engine.animeRoom.heroMeta({ id: "tt0388629", type: "anime", name: "One Piece", releaseInfo: "1999" }, "default", true, { season: 2, episode: 5, duration: 1_440_000, timeOffset: 240_000 });
+  r.eq("animeRoom.heroMeta: episode and minutes-left pills follow the UI language", [hmIt.episode, hmIt.minutesLeft], ["S2 Ep5", "ancora 20 min"]);
+  lc.dispose();
 }
 
 // --------------------------------------------------------------------- anilist / mal

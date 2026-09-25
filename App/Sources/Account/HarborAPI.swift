@@ -98,7 +98,7 @@ enum HarborAPI {
 enum HarborErrorMessages {
     static func message(code: String?, reason: String?, status: Int) -> String {
         switch code {
-        case "bad_credentials": return "Wrong username or password."
+        case "bad_credentials": return T("Wrong username or password")
         case "username_taken": return "That username is taken."
         case "banned": return "This account is banned."
         case "rate_limited", "slow_down": return "Too many attempts. Wait a moment and try again."

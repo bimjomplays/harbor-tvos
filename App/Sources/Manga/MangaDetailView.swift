@@ -172,7 +172,7 @@ struct MangaDetailView: View {
             HStack(spacing: BP.px(10)) {
                 Button { Task { await model.load() } } label: { Label("Try again", systemImage: "arrow.counterclockwise") }
                     .buttonStyle(BPActionStyle(primary: true))
-                Button { dismiss() } label: { Label("Back to browse", systemImage: "chevron.left") }
+                Button { dismiss() } label: { Label("Back to browse", systemImage: "chevron.backward") }
                     .buttonStyle(BPActionStyle())
             }
         }

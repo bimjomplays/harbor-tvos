@@ -71,7 +71,7 @@ struct WrappedView: View {
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Button { dismiss() } label: {
-                        Label("My library", systemImage: "arrow.left").textCase(.uppercase).font(BP.sans(10, .bold)).tracking(2.5)
+                        Label("My library", systemImage: "arrow.backward").textCase(.uppercase).font(BP.sans(10, .bold)).tracking(2.5)
                     }
                     .buttonStyle(BPActionStyle())
                     .focused($focus, equals: "back")

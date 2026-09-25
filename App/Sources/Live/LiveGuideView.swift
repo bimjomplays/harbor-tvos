@@ -370,10 +370,10 @@ struct LiveGuideView: View {
         return Button { if canReplay { replay?(ch, p) } else { play(ch) } } label: {
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 HStack(spacing: BP.px(4)) {
-                    if p.startMs < cell.startMs { Image(systemName: "chevron.left").font(.system(size: BP.px(9), weight: .bold)) }
+                    if p.startMs < cell.startMs { Image(systemName: "chevron.backward").font(.system(size: BP.px(9), weight: .bold)) }
                     if tier > 0 { Text(p.title).font(BP.sans(tier == 2 ? 13 : 11, .semibold)).lineLimit(1) }
                     if canReplay && tier == 2 { Text("Replay").textCase(.uppercase).font(BP.sans(9, .bold)).foregroundStyle(BP.live) }
-                    if p.endMs > cell.endMs { Image(systemName: "chevron.right").font(.system(size: BP.px(9), weight: .bold)) }
+                    if p.endMs > cell.endMs { Image(systemName: "chevron.forward").font(.system(size: BP.px(9), weight: .bold)) }
                 }
                 if tier == 2 {
                     Text(LiveChannelRow.range(p)).font(BP.sans(10)).lineLimit(1)

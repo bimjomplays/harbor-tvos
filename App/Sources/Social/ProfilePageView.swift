@@ -124,7 +124,7 @@ struct ProfilePageView: View {
                 }
             }
             HStack(spacing: BP.px(10)) {
-                Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }
+                Button { dismiss() } label: { Label("Back", systemImage: "chevron.backward") }
                     .buttonStyle(BPActionStyle()).focused($focus, equals: "back")
                 if !s.isOwner { friendButton(s) }
             }

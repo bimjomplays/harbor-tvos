@@ -34,7 +34,7 @@ struct AnimeRowsPanel: View {
                 }
             }
             if let r = renaming {
-                BPField(label: "Rename \(r.originalName)", placeholder: r.originalName, text: $newName)
+                BPField(label: T("Rename %@", r.originalName), placeholder: r.originalName, text: $newName)
                 HStack(spacing: BP.px(8)) {
                     Button("Save") { Task { await call("animeRowRename", [.string(r.key), .string(newName)]); renaming = nil } }.buttonStyle(BPActionStyle(primary: true))
                     Button("Use original name") { Task { await call("animeRowRename", [.string(r.key), .string("")]); renaming = nil } }.buttonStyle(BPActionStyle())

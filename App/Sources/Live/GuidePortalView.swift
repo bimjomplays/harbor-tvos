@@ -51,7 +51,7 @@ struct GuidePortalView: View {
                     Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
                     Text("Live").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.ink)
                 }
-                Text(program.map { $0.title.isEmpty ? "No program info" : $0.title } ?? "No program info")
+                Text(program.map { $0.title.isEmpty ? T("No program info") : $0.title } ?? T("No program info"))
                     .font(BP.sans(16, .bold)).foregroundStyle(BP.ink).lineLimit(1)
                 Text(range).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 if let d = program?.description, !d.isEmpty { Text(d).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2) }

@@ -134,13 +134,13 @@ enum CardMark {
     static func identity(for meta: Meta) -> String? {
         let year = Calendar.current.component(.year, from: Date())
         let inCinema = meta.type == "movie" && meta.inTheaters == true
-        if !inCinema, meta.releaseInfo == String(year) { return "New" }
+        if !inCinema, meta.releaseInfo == String(year) { return T("New") }
         if inCinema {
             if let d = meta.releaseDate, let released = Self.isoFormatter.date(from: d) ?? Self.dayFormatter.date(from: d),
                Date().timeIntervalSince(released) / (60 * 60 * 24 * 30.44) > 9 {
-                return meta.releaseInfo.map { "Rerun · \($0)" } ?? "Rerun"
+                return meta.releaseInfo.map { T("Rerun") + " · \($0)" } ?? T("Rerun")
             }
-            return "In Cinema"
+            return T("In Cinema")
         }
         return nil
     }

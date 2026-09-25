@@ -3,6 +3,7 @@
 // absent: upstream's TV tile surface carries none ("a ten-foot card carries no score plate",
 // use-bp-card-badges.ts badgeGates), and the hero shows the score of the focused title.
 import { CR_CATEGORY_SHORT, shortCategory } from "@/lib/anime-award-labels";
+import { t } from "@/lib/i18n";
 import { findTopAward, parseAwardYear, type AwardWin } from "@/lib/anime-awards";
 import { ensureAwardMaster } from "@/lib/anime-awards-source";
 import { mergeBundledAwards } from "@/lib/awards-history";
@@ -48,15 +49,17 @@ const NOUN: Record<string, string> = {
   bafta_tv: "BAFTA", cesar: "Cesar", goya: "Goya", blue_dragon: "Blue Dragon", baeksang: "Baeksang", bifa: "BIFA", other: "Award",
 };
 
+// bp-award-mark.tsx bpClassicAwardLabel: body names stay English; the count form is translated.
 function classicLabel(type: AwardType, wins: number): string {
   const noun = NOUN[type] ?? NOUN.other;
   if (wins <= 1) return noun;
-  return noun.endsWith("s") ? `${wins} ${noun}` : `${wins} ${noun}s`;
+  return noun.endsWith("s") ? t("{n} {award}", { n: wins, award: noun }) : t("{n} {award}s", { n: wins, award: noun });
 }
 
 function animeAwardLabel(win: AwardWin): string {
   const known = CR_CATEGORY_SHORT[win.categoryKey];
-  return `${win.year} ${known ?? shortCategory(win)}`;
+  // bp-card-marks.tsx bpAwardShortLabel: the short category goes through t().
+  return `${win.year} ${known ? t(known) : shortCategory(win)}`;
 }
 
 function isInCinema(m: CardMeta): boolean {
@@ -81,10 +84,10 @@ function chipFor(m: CardMeta, s: Settings): string | null {
     const won = awardSummary(mergeBundledAwards(null, m.name, year)).find((x) => x.wins > 0);
     if (won) return classicLabel(won.type, won.wins);
   }
-  if (s.showDubBadge && isAnime && dubSetReady() && animeHasDub(m.id)) return "DUB";
+  if (s.showDubBadge && isAnime && dubSetReady() && animeHasDub(m.id)) return t("DUB");
   const cinema = isInCinema(m);
-  if (!cinema && !!m.releaseInfo && m.releaseInfo === String(new Date().getFullYear())) return "New";
-  if (cinema) return isRerun(m) ? `Rerun${m.releaseInfo ? ` · ${m.releaseInfo}` : ""}` : "In Cinema";
+  if (!cinema && !!m.releaseInfo && m.releaseInfo === String(new Date().getFullYear())) return t("New");
+  if (cinema) return isRerun(m) ? `${t("Rerun")}${m.releaseInfo ? ` · ${m.releaseInfo}` : ""}` : t("In Cinema");
   return null;
 }
 

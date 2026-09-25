@@ -175,7 +175,7 @@ struct SportsAddonPanelView: View {
             .padding(.vertical, BP.px(8))
         }
         .scrollClipDisabled()
-        Button { back() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+        Button { back() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
     }
 
     private func choose(_ row: SportsEventModel.AddonRow) {

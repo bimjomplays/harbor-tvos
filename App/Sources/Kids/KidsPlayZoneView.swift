@@ -92,7 +92,7 @@ struct KidsPlayZoneView: View {
         HStack(spacing: BP.px(16)) {
             Button(action: goBack) {
                 HStack(spacing: BP.px(10)) {
-                    Image(systemName: "arrow.left")
+                    Image(systemName: "arrow.backward")
                     Text("Back")
                 }
             }
