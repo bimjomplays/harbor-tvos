@@ -75,7 +75,8 @@ struct TmdbKeyForm: View {
         guard !candidate.isEmpty, !busy else { return }
         check = "checking"
         saveError = nil
-        let answer: String = (try? await HarborEngine.shared.call("onboarding.checkTmdbKey", [candidate])) ?? "unreachable"
+        let raw: String? = try? await HarborEngine.shared.call("onboarding.checkTmdbKey", [candidate])
+        let answer: String = raw ?? "unreachable"
         // The viewer typed on while TMDB answered: that answer is for another key.
         guard candidate == draft else { check = "idle"; return }
         if answer == "ok" {

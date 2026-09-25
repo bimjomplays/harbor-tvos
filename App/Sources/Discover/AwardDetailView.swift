@@ -298,7 +298,8 @@ struct AwardDetailView: View {
             busy = nil
             // A lookup answering after the filters changed must not open a title off screen.
             guard from == filterKey else { return }
-            switch out?.status {
+            let status: String = out?.status ?? "missing"
+            switch status {
             case "open":
                 if let m = out?.meta { detail = m }
             case "nokey":
