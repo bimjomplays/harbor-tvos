@@ -420,7 +420,7 @@ final class MPVPlayerController: UIViewController {
     /// tvOS's own Arabic, system and rounded faces. A custom font is a file on the desktop that
     /// never reaches the TV, so it reads as the default. A face libass cannot find falls back to
     /// the system font per glyph.
-    static func subFont(_ family: String?) -> String {
+    nonisolated static func subFont(_ family: String?) -> String {
         switch family ?? "inter" {
         case "arabic": return "Geeza Pro"
         case "system": return "Helvetica Neue"
