@@ -250,6 +250,11 @@ struct SportsAddonPanelView: View {
                 guard p >= shownPick else { return }
                 shownPick = p
             }
+            // (review 14) A failed answer of this listing's other pick (Back, then the same listing
+            // again) landing after streams are up said "Could not load the streams" over streams
+            // that still play (the engine keeps them): once streams show, only a reload changes them.
+            let status: String = out?.status ?? ""
+            if shownPick > 0, status != "ok", status != "reload" { return }
             pending = false
             switch out?.status {
             case "ok": streams = out?.rows ?? []

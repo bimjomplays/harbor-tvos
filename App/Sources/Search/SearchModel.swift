@@ -42,7 +42,15 @@ final class SearchModel: ObservableObject {
         var tmdbUnavailable: Bool?
     }
 
-    @Published var query = "" { didSet { schedule() } }
+    /// (review 14) Only a real edit searches: the query line is a system TextField now, and a write
+    /// of the same text (the tvOS keyboard handing its text back as it closes) retired the search
+    /// in flight and ran the whole fan-out again ("Searching…", the late addon rows dropped).
+    @Published var query = "" {
+        didSet {
+            guard query != oldValue else { return }
+            schedule()
+        }
+    }
     @Published private(set) var status: Status = .idle
     @Published private(set) var rows: [BrowseRow] = []
     @Published private(set) var channels: [Results.LiveTvHit] = []

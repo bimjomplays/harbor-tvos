@@ -66,6 +66,8 @@ r.ok("benchmark still works", (() => {
       { id: "ev3", type: "tv", name: "Late Night Channel" },
       { id: "ev4", type: "tv", name: "Morning Replay Channel" },
       { id: "ev5", type: "tv", name: "Evening Replay Channel" },
+      // (review 14) Nine more listings for the eviction check (addonPicked keeps 8).
+      ...Array.from({ length: 9 }, (_, i) => ({ id: `evf${i}`, type: "tv", name: `Filler Channel ${i}` })),
     ] });
     if (req.url === `${base}/stream/tv/ev1.json`) return json({ streams: [
       { name: "HD", title: "Main feed", url: "https://cdn.example.invalid/ev1.m3u8", subtitles: [{ id: "s1", url: "https://subs.example.invalid/ev1.srt", lang: "eng" }] },
@@ -92,6 +94,11 @@ r.ok("benchmark still works", (() => {
     if (req.url === `${base}/stream/tv/ev5.json`) {
       await new Promise((done) => setTimeout(done, 20));
       return json({ streams: [{ name: "Evening", url: "https://cdn.example.invalid/ev5.m3u8" }] });
+    }
+    // (review 14) The fillers answer slowly (listings the viewer backed out of).
+    if (/\/stream\/tv\/evf\d\.json$/.test(req.url)) {
+      await new Promise((done) => setTimeout(done, 60));
+      return json({ streams: [{ name: "Filler", url: req.url.replace(/\.json$/, ".m3u8") }] });
     }
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
@@ -162,6 +169,16 @@ r.ok("benchmark still works", (() => {
   const aHeld = listA ? await rec.engine.sports.addonPlay(listA.key, 0) : null;
   r.ok("sports.addonStreams: a stale answer of a listing returns the streams its later pick holds", ev4Asks === 4 && aQuick?.status === "ok" && aStale?.status === "ok" && aStale.pick === aQuick.pick
     && aHeld?.kind === "play" && aHeld.url === "https://cdn.example.invalid/ev4-4.m3u8", JSON.stringify({ quick: aQuick?.pick, stale: aStale?.pick, aHeld }));
+  // (review 14) Nine slow listings picked and backed out of, then a quick one: the nine late answers
+  // land after it and must not evict the streams on screen from the 8-listing store.
+  const fillers = src.rows.filter((x) => /filler channel/i.test(x.name));
+  const fillerPicks = fillers.map((x) => rec.engine.sports.addonStreams(x.key));
+  await new Promise((done) => setTimeout(done, 2));
+  const shownNow = await rec.engine.sports.addonStreams(src.rows[0].key);
+  await Promise.all(fillerPicks);
+  const afterFillers = await rec.engine.sports.addonPlay(src.rows[0].key, 0);
+  r.ok("sports.addonStreams: late answers of listings backed out of never evict the listing on screen", fillers.length === 9 && shownNow.status === "ok"
+    && afterFillers.kind === "play" && afterFillers.url === "https://cdn.example.invalid/ev1.m3u8", JSON.stringify({ fillers: fillers.length, afterFillers }));
   const post = await rec.engine.sports.addonSources({ ...game, id: "g-post", state: "post" }, null);
   r.eq("sports.addonSources is empty for a finished game", post.available, 0);
 }

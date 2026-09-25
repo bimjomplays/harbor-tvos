@@ -715,6 +715,8 @@ let addonHeld: { identity: string; at: number; providers: Addon[]; rows: SportsA
  *  answer landed. addonPlay names the listing it plays from and looks its streams up here. */
 const addonPicked = new Map<string, { pick: number; streams: Stream[] }>();
 const ADDON_PICKED_KEEP = 8;
+/** (review 14) The listing of the newest pick: what the TV shows, never evicted from addonPicked. */
+let addonPickedLatest: string | null = null;
 /** Keeps a landed answer and returns what the listing now holds: an answer lands unless a later
  *  pick of the same listing has already landed (review 12), in which case that one is returned. */
 function keepAddonPicked(key: string, pick: number, streams: Stream[]): { pick: number; streams: Stream[] } {
@@ -723,10 +725,16 @@ function keepAddonPicked(key: string, pick: number, streams: Stream[]): { pick: 
   const kept = { pick, streams };
   addonPicked.delete(key);
   addonPicked.set(key, kept);
+  // (review 14) Never the listing picked last (the one on screen): the late answers of listings the
+  // viewer backed out of land after it and were each kept as newest, so nine quick picks followed by
+  // a fast one evicted the streams on screen and every Play said "Could not start".
   while (addonPicked.size > ADDON_PICKED_KEEP) {
-    const oldest = addonPicked.keys().next();
-    if (oldest.done) break;
-    addonPicked.delete(oldest.value);
+    let victim: string | null = null;
+    for (const k of addonPicked.keys()) {
+      if (k !== addonPickedLatest) { victim = k; break; }
+    }
+    if (victim === null) break;
+    addonPicked.delete(victim);
   }
   return kept;
 }
@@ -777,6 +785,7 @@ export async function addonStreams(key: string): Promise<{ status: "ok" | "listi
   // its first answer while the second loads (review 12), and A, B, A again plays A's shown answer
   // whichever of B's and A's answers lands first.
   const pick = ++addonStreamsSeq;
+  addonPickedLatest = key;
   try {
     const providers = (addonHeld?.providers ?? []).filter((a) => isAddonEnabled(a.transportUrl));
     const streams = await loadSportsAddonStreams(row, new AbortController().signal, providers);

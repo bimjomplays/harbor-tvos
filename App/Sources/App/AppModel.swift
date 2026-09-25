@@ -149,8 +149,32 @@ final class AppModel: ObservableObject {
             stage = fixed
             return
         }
-        if !onboardingDone { stage = .onboarding; return }
+        // (review 14) After Finish later the app runs on profiles while setup stays unfinished. A kid
+        // profile active at launch never gets setup (App.tsx pins a kid to the Kids surface, where
+        // bp-shell's onboarding gate is not mounted): it opened adult setup over the kid's profile,
+        // before the curfew lock started. A setup resumed over existing profiles hands off to the
+        // launch path when it closes (resumedOverProfiles), so Who's watching still comes up.
+        if !onboardingDone, profiles.active?.kid == nil {
+            resumedOverProfiles = !profiles.profiles.isEmpty
+            stage = .onboarding
+            return
+        }
         await goToWhoOrShellAtLaunch()
+    }
+
+    /// (review 14) This launch opened setup over profiles a Finish later (or a roster pull) left.
+    private var resumedOverProfiles = false
+
+    /// (review 14) Setup closing: a setup resumed over existing profiles takes the launch path
+    /// (the "Start as" default, Who's watching at launch, a kid's PIN lock) instead of opening the
+    /// shell straight into whoever was active last, which Finish later made the usual relaunch.
+    private func leaveSetup() {
+        guard resumedOverProfiles else {
+            goToWhoOrShell()
+            return
+        }
+        resumedOverProfiles = false
+        Task { @MainActor in await self.goToWhoOrShellAtLaunch() }
     }
 
     /// (profiles device pass) lib/profiles.tsx at launch (engine `profilesRoom.launchPicker`): a
@@ -183,7 +207,7 @@ final class AppModel: ObservableObject {
         OnboardingView.clearResume()
         if profiles.profiles.isEmpty { profiles.seedIfEmpty(name: account.session?.user.username ?? "Harbor") }
         attachPendingStremio()
-        goToWhoOrShell()
+        leaveSetup()
     }
 
     /// (onboarding pass 3) bp-onboarding.tsx BpOnboardingGate.suspend, "Finish later": setup closes
@@ -192,7 +216,7 @@ final class AppModel: ObservableObject {
     func suspendOnboarding() {
         if profiles.profiles.isEmpty { profiles.seedIfEmpty(name: account.session?.user.username ?? "Harbor") }
         attachPendingStremio()
-        goToWhoOrShell()
+        leaveSetup()
     }
 
     /// A Stremio sign-in made before profiles existed goes to the primary profile.
