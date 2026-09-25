@@ -167,7 +167,8 @@ struct RemindersManagerView: View {
 
     private func remove(_ r: ReminderCenter.Row) async {
         let index = rows.firstIndex(of: r) ?? 0
-        rows = await ReminderCenter.shared.remove(r.id)
+        let next: [ReminderCenter.Row]? = await ReminderCenter.shared.remove(r.id)
+        rows = next ?? rows.filter { $0.id != r.id }
         note = "Reminder removed"
         focus = rows.isEmpty ? "close" : rows[min(index, rows.count - 1)].id
     }

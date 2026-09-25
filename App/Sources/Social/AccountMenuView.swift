@@ -68,10 +68,25 @@ final class SocialCenter: ObservableObject {
             badge = n.badge
         }
         _ = try? await HarborEngine.shared.callJSON("social.notificationsMarkRead")
+        // (social pass) A poll that started while the server was still marking read the old unread
+        // state; it would bring the badge back for a minute.
+        generation += 1
     }
 
     /// dismiss / clearAll (clearAll also marks everything read).
+    /// (social pass) Optimistic like use-notification-center.ts (dismissNotifs hides the rows at once):
+    /// the row stayed until the refresh answered, and offline, where that refresh fails, for good.
     func dismiss(_ ids: [String], markRead: Bool) async {
+        generation += 1
+        if var n = notifications {
+            let gone = Set(ids)
+            n.items.removeAll { gone.contains($0.id) }
+            if markRead { for i in n.items.indices { n.items[i].read = true } }
+            n.unread = n.items.filter { !$0.read }.count
+            n.badge = n.unread + n.pending.count
+            notifications = n
+            badge = n.badge
+        }
         _ = try? await HarborEngine.shared.callJSON("social.notificationsDismiss", [.array(ids.map { .string($0) }), .bool(markRead)])
         await refresh()
     }
@@ -176,7 +191,12 @@ struct AccountMenuView: View {
         }
         .onExitCommand { dismiss() }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") } }
-        .task { await center.refresh() }
+        .task {
+            await center.refresh()
+            // (social pass) The refresh can change which items exist (signed out elsewhere: "View my
+            // profile" goes, taking the seeded ring with it); seed again when nothing holds it.
+            if focus == nil && sheet == nil { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") }
+        }
         .fullScreenCover(item: $sheet, onDismiss: {
             // (settings/social bug pass) notification-center.tsx: closing the center marks everything
             // read (`if (!open && wasOpen.current) void nc.markRead()`). The TV never did, so the bell

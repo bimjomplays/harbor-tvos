@@ -3433,11 +3433,21 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
       { id: "p1", groupId: "g2", body: "plain", pinned: false, createdAt: "2026-02-02T00:00:00Z", likeCount: 0, liked: false, canDelete: false, canPin: false },
       { id: "p2", groupId: "g2", body: "[b]Welcome[/b] aboard & hi", pinned: true, createdAt: "2026-02-01T00:00:00Z", likeCount: 3, liked: true, canDelete: false, canPin: false },
     ], canPost: true });
+    if (p === "/themes/api/social/collections/community") return json({ collections: [
+      { id: "c1", name: "My shared picks", handle: "Skipper", items: [{ id: "tt1", type: "movie", name: "One" }] },
+      { id: "c2", name: "Mate's picks", handle: "mate", displayName: "Mate", items: [{ id: "tt2", type: "movie", name: "Two" }] },
+    ] });
     return json({ error: "not_found" }, 404);
   };
 
   // ---- social
   r.ok("social.me reads the signed-in author", S.me().signedIn === true && S.me().handle === "skipper", JSON.stringify(S.me()));
+  // (social pass) community-hub SaveButton isOwn: the member's own shared collection offers no Save.
+  const comm = await rec.engine.collectionsRoom.community();
+  r.ok("collectionsRoom.community marks the signed-in member's own collections", comm.length === 2 && comm[0].own === true && comm[1].own === false && comm[1].byline === "Mate", JSON.stringify(comm.map((c) => [c.handle, c.own])));
+  r.ok("collectionsRoom.saveCommunity refuses the member's own collection and saves another's once",
+    rec.engine.collectionsRoom.saveCommunity("Skipper", "c1") === null && rec.engine.collectionsRoom.saveCommunity("mate", "c2")?.name === "Mate's picks" && rec.engine.collectionsRoom.saveCommunity("mate", "c2")?.ref === rec.engine.collectionsRoom.mine()[0]?.ref && rec.engine.collectionsRoom.mine().length === 1,
+    JSON.stringify(rec.engine.collectionsRoom.mine().map((c) => c.name)));
   const own = await S.profile(null);
   r.ok("social.profile(null) opens the member's own profile with friends, badges, activity", own.state === "ready" && own.summary.isOwner && own.friends.length === 1 && own.badges[0].iconUrl.endsWith("/badges/og.webp") && own.activity[0].rating === 9, JSON.stringify(own).slice(0, 300));
   r.eq("social.profile hero stats follow STAT_ORDER minus the default-hidden friends/badges", own.stats.map((s) => s.key), ["watchTime", "episodes", "movies", "read"]);
