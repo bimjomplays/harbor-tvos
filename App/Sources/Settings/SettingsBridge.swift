@@ -31,6 +31,8 @@ final class SettingsBridge: ObservableObject {
         var subLineSpacing: Double? = 0
         /// stage-overlays.tsx `!pipMode || subShowInPip`: subtitles stay on in Picture in Picture.
         var subShowInPip: Bool? = true
+        /// sub-style.ts sub-filter-sdh on mpv (the AVPlayer overlay strips SDH in subtitles.cues).
+        var subHideSdh: Bool? = false
         // Anime4K (settings/defaults.ts:235-261), applied by the player through the engine's gates.
         var playerAnime4k: Bool? = false
         var playerAnime4kAnimeOnly: Bool? = true
@@ -271,6 +273,7 @@ extension SettingsBridge.Slice {
         subOpacity = c.lenient("subOpacity")
         subLineSpacing = c.lenient("subLineSpacing")
         subShowInPip = c.lenient("subShowInPip")
+        subHideSdh = c.lenient("subHideSdh")
         playerAnime4k = c.lenient("playerAnime4k")
         playerAnime4kAnimeOnly = c.lenient("playerAnime4kAnimeOnly")
         playerAnime4kIndicator = c.lenient("playerAnime4kIndicator")

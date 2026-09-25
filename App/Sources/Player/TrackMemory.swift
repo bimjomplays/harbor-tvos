@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Which title a player shows, for lib/player-prefs.ts and lib/subtitles/subtitle-memory.ts
 /// (engine/player.ts TrackMemoryKey). Upstream keys the per-show prefs (audio language, subtitle
@@ -84,8 +85,32 @@ enum TrackPlanner {
         send("player.noteSubtitleSource", [file.path, source])
     }
 
+    /// (player tracks pass) The prepared (decoded, unzipped) copy of a subtitle URL: one name per
+    /// URL, whatever format it turned out to be. Find more writes it and a remembered subtitle's
+    /// restore reads it, so reopening an episode no longer downloads the file again every time
+    /// (upstream keeps the picked subtitle in selected-subtitle-cache.ts; provider download
+    /// quotas are small). Caches may be purged; the restore then downloads it once more.
+    static func subtitleFile(source: String, format: String) -> URL {
+        let digest = String(SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined().prefix(20))
+        return subsDir.appendingPathComponent("sub_\(digest).\(format)")
+    }
+
+    /// The prepared copy of `source` still in the cache, if any.
+    static func cachedSubtitleFile(source: String) -> URL? {
+        for format in ["srt", "vtt", "ass", "ssa"] {
+            let file = subtitleFile(source: source, format: format)
+            if let size = try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int, size > 0 { return file }
+        }
+        return nil
+    }
+
+    /// added-subs.ts markAddedSub: the URLs added this session (Find more's "Added" check stays
+    /// when the dialog is opened again, and a restored subtitle counts too, as upstream).
+    static var addedSources: Set<String> = []
+
     /// use-track-autoload's restore of a remembered added subtitle ("re-adding remembered sub from
-    /// source"): downloaded again through the engine (subtitles.prepare), as Find more does, and
+    /// source"): the prepared copy in the cache (subtitleFile), else downloaded again through the
+    /// engine (subtitles.prepare) as Find more does, and
     /// shown. A source that is a local file (its URL was not known) is re-added while it is still in
     /// the cache. Returns whether a track was added.
     /// `stillWanted` is asked again once the download is done: a viewer who chose meanwhile keeps
@@ -95,20 +120,24 @@ enum TrackPlanner {
         let lang = r.lang ?? ""
         let title = r.title ?? lang
         if r.source.lowercased().hasPrefix("http") {
-            let prepared: Prepared? = try? await HarborEngine.shared.call("subtitles.prepare", [r.source])
-            guard let prep = prepared else { return false }
-            let dir = subsDir
-            let safe = String(String(r.source.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "_" }).suffix(80))
-            let file = dir.appendingPathComponent("restore_\(safe).\(prep.format)")
-            do {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                try prep.text.write(to: file, atomically: true, encoding: .utf8)
-            } catch {
-                return false
+            let file: URL
+            if let cached = cachedSubtitleFile(source: r.source) {
+                file = cached
+            } else {
+                let prepared: Prepared? = try? await HarborEngine.shared.call("subtitles.prepare", [r.source])
+                guard let prep = prepared else { return false }
+                file = subtitleFile(source: r.source, format: prep.format)
+                do {
+                    try FileManager.default.createDirectory(at: subsDir, withIntermediateDirectories: true)
+                    try prep.text.write(to: file, atomically: true, encoding: .utf8)
+                } catch {
+                    return false
+                }
             }
             guard stillWanted() else { return false }
             c.addSubtitle(file: file, title: title, lang: lang)
             noteSource(file: file, source: r.source)
+            addedSources.insert(r.source)
             return true
         }
         // mpv lists the full path, AVPlayer the file name; the container path can move between

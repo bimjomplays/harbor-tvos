@@ -424,6 +424,8 @@ final class NativePlayerController: UIViewController {
     }
 
     func videoWidth() -> Int { Int(player.currentItem?.presentationSize.width ?? 0) }
+    /// The html5 bridge reports no chapters (its snap.chapters stays empty).
+    func chapters() -> [PlayerChapter] { [] }
 
     // MARK: tracks (AVMediaSelectionGroup)
 

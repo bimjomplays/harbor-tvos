@@ -5,6 +5,7 @@ import { loadEffective } from "@/lib/settings/profile-store";
 import { searchSubtitles, deduplicateAndRankSubtitleResults } from "@/lib/subtitles/search";
 import { normalizeLang, languageName, filterTracksByPreferredLanguage } from "@/lib/subtitles/language";
 import { prepareSubtitle } from "@/lib/subtitles/prepare";
+import { safeFetchBytes } from "@/lib/safe-fetch";
 import { parseSubtitle, type SubCue, type SubFormat } from "@/lib/subtitles/parser";
 import { stripSdhText } from "@/lib/subtitles/sdh-filter";
 import type { SubResult } from "@/lib/subtitles/types";
@@ -60,9 +61,20 @@ export async function search(
   return deduplicateAndRankSubtitleResults(results, langs).slice(0, 40);
 }
 
+/**
+ * prepare.ts defaultFetchBytes, with the raw bytes asked of the host. Without
+ * `harborResponseType: "base64"` the host hands every body over as (lossy) UTF-8 text, which
+ * destroyed zipped subtitles (SubDL / SubSource / OpenSubtitles archives: "invalid path") and
+ * any non-UTF-8 file (a Latin-1 SRT turned into U+FFFD and failed as "decode-unhealthy")
+ * before upstream's archive reader and encoding sniffing ever saw them (player tracks pass).
+ */
+function fetchSubtitleBytes(url: string, signal: AbortSignal, timeoutMs: number, headers?: Record<string, string>, maxBytes?: number): Promise<Response> {
+  return safeFetchBytes(url, { method: "GET", signal, headers, harborResponseType: "base64", harborTimeoutMs: timeoutMs } as RequestInit, timeoutMs, maxBytes);
+}
+
 export async function prepare(url: string): Promise<{ text: string; format: string; encoding: string }> {
   // No blob: URLs in JavaScriptCore; the native side writes `text` to a file for mpv.
-  const p = await prepareSubtitle({ url }, { createPlayable: () => ({ url: "harbor-tvos://subtitle", cleanup: () => {} }) });
+  const p = await prepareSubtitle({ url }, { fetchBytes: fetchSubtitleBytes, createPlayable: async () => ({ url: "harbor-tvos://subtitle", cleanup: () => {} }) });
   return { text: p.text, format: p.format, encoding: p.encoding };
 }
 

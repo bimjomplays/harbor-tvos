@@ -343,6 +343,33 @@ final class MPVPlayerController: UIViewController {
         if type == "sub" { subPicks += 1 } else { audioPicks += 1 }
         let prop = type == "sub" ? "sid" : "aid"
         mpv_set_property_string(mpv, prop, track.map { String($0.id) } ?? "no")
+        if type == "sub" { sdhTrack = track.map { (forced: $0.forced, lang: $0.lang) }; applySdhFilter() }
+    }
+
+    /// (player tracks pass) sub-style.ts sub-filter-sdh: settings.subHideSdh, but only while the
+    /// shown subtitle allows it (use-player-media.ts sdhFilterAllowed: not a forced track, and a
+    /// Latin-script language, sdh-filter.ts sdhSafeForLanguage). The option was never set, so
+    /// "Hide SDH" (synced from desktop) stripped [DOOR SLAMS] on AVPlayer but not on mpv.
+    private var sdhTrack: (forced: Bool, lang: String?)?
+    private static let sdhUnsafeLangs: Set<String> = [
+        "ar", "arb", "he", "heb", "iw", "fa", "per", "fas", "ur", "urd",
+        "ru", "rus", "uk", "ukr", "bg", "bul", "sr", "srp", "mk", "mkd", "be", "bel",
+        "el", "gre", "ell", "hy", "hye", "ka", "kat", "th", "tha", "km", "khm", "lo", "lao",
+        "ja", "jpn", "zh", "zho", "chi", "yue", "ko", "kor",
+        "hi", "hin", "bn", "ben", "ta", "tam", "te", "tel", "ml", "mal", "kn", "kan",
+        "mr", "mar", "gu", "guj", "pa", "pan", "si", "sin", "am", "amh", "yi", "yid",
+    ]
+    private var sdhFilterOn: Bool {
+        guard SettingsBridge.shared.slice.subHideSdh ?? false else { return false }
+        guard let t = sdhTrack else { return true }
+        if t.forced { return false }
+        let code = (t.lang ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            .split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? ""
+        return !Self.sdhUnsafeLangs.contains(code)
+    }
+    private func applySdhFilter() {
+        guard let mpv else { return }
+        check(mpv_set_property_string(mpv, "sub-filter-sdh", sdhFilterOn ? "yes" : "no"))
     }
 
     /// `sub-add <file> select <title> <lang>` (mpv.rs:1063 uses "auto"; we select the one the viewer picked).
@@ -369,9 +396,27 @@ final class MPVPlayerController: UIViewController {
         Int(string("video-params/w") ?? "") ?? 0
     }
 
+    /// lib/player/mpv.ts chapter-list → snap.chapters: title ("" when none) and start, sorted,
+    /// negative or unreadable starts dropped. Upstream's skip-intro turns "Opening" / "Ending" /
+    /// "Recap" chapters into skip segments (chapters.ts).
+    func chapters() -> [PlayerChapter] {
+        guard let mpv else { return [] }
+        var count: Int64 = 0
+        mpv_get_property(mpv, "chapter-list/count", MPV_FORMAT_INT64, &count)
+        guard count > 0 else { return [] }
+        var out: [PlayerChapter] = []
+        for i in 0..<Int(min(count, 500)) {
+            guard let start = Double(string("chapter-list/\(i)/time") ?? ""), start.isFinite, start >= 0 else { continue }
+            out.append(PlayerChapter(title: string("chapter-list/\(i)/title") ?? "", startSec: start))
+        }
+        return out.sorted { $0.startSec < $1.startSec }
+    }
+
     func addSubtitle(file: URL, title: String, lang: String) {
         subPicks += 1
         command("sub-add", [file.path, "select", title, lang])
+        sdhTrack = (forced: false, lang: lang.isEmpty ? nil : lang)
+        applySdhFilter()
     }
 
     /// src/lib/player/sub-style.ts applySubStyle → mpv sub-* options, from the viewer's settings.
@@ -405,6 +450,8 @@ final class MPVPlayerController: UIViewController {
         set("sub-spacing", String(s.subLineSpacing ?? 0))
         set("sub-bold", (s.subBold ?? false) ? "yes" : "no")
         set("sub-pos", String(Int(min(max(100 - (s.subMarginY ?? 12), 0), 100))))
+        set("sub-filter-sdh", sdhFilterOn ? "yes" : "no")
+        set("sub-filter-sdh-harder", "no")
     }
 
     /// use-track-autoload.ts's track choice, made by the engine (player.trackPlan): the preferred

@@ -1,7 +1,10 @@
-// UTF-8 TextEncoder / TextDecoder. JavaScriptCore has neither.
+// TextEncoder / TextDecoder. JavaScriptCore has neither.
 // Encoder follows the WHATWG algorithm including lone-surrogate -> U+FFFD.
 // Decoder implements UTF-8 with the spec's error handling (invalid sequences -> U+FFFD,
-// rejecting overlongs, surrogates and > U+10FFFF), plus `fatal` and `ignoreBOM`.
+// rejecting overlongs, surrogates and > U+10FFFF), plus `fatal` and `ignoreBOM`, and the
+// WHATWG UTF-16LE/BE and single-byte legacy encodings (legacy-text.js).
+
+import { SINGLE_BYTE, SINGLE_BYTE_LABELS } from "./legacy-text.js";
 
 export class TextEncoderShim {
   get encoding() {
@@ -60,20 +63,84 @@ function viewOf(input) {
   throw new TypeError("TextDecoder.decode expects a BufferSource");
 }
 
+const UTF8_LABELS = new Set(["unicode-1-1-utf-8", "unicode11utf8", "unicode20utf8", "utf-8", "utf8", "x-unicode20utf8"]);
+const UTF16LE_LABELS = new Set(["csunicode", "iso-10646-ucs-2", "ucs-2", "unicode", "unicodefeff", "utf-16", "utf-16le"]);
+const UTF16BE_LABELS = new Set(["unicodefffe", "utf-16be"]);
+
+// (player tracks pass) Beside UTF-8, the WHATWG UTF-16 and single-byte legacy decoders: upstream's
+// lib/subtitles/encoding.ts tries windows-1252 / windows-1256 / iso-8859-6 (and a provider's
+// declared encoding, a UTF-16 BOM) with `new TextDecoder(label)`. With UTF-8 only, every one of
+// those threw, so a Latin-1 / Cyrillic / Arabic / UTF-16 subtitle was "decode-unhealthy" and
+// could not be added at all.
 export class TextDecoderShim {
   constructor(label = "utf-8", options = {}) {
-    const enc = String(label).toLowerCase();
-    if (enc !== "utf-8" && enc !== "utf8" && enc !== "unicode-1-1-utf-8") {
-      throw new RangeError(`TextDecoder: only utf-8 is supported, got ${label}`);
-    }
+    const enc = String(label).trim().toLowerCase();
+    if (UTF8_LABELS.has(enc)) this._enc = "utf-8";
+    else if (UTF16LE_LABELS.has(enc)) this._enc = "utf-16le";
+    else if (UTF16BE_LABELS.has(enc)) this._enc = "utf-16be";
+    else if (Object.prototype.hasOwnProperty.call(SINGLE_BYTE_LABELS, enc)) this._enc = SINGLE_BYTE_LABELS[enc];
+    else throw new RangeError(`TextDecoder: the encoding ${label} is not supported`);
     this.fatal = !!options.fatal;
     this.ignoreBOM = !!options.ignoreBOM;
   }
   get encoding() {
-    return "utf-8";
+    return this._enc;
   }
   decode(input) {
-    const b = viewOf(input);
+    if (this._enc === "utf-16le" || this._enc === "utf-16be") return this._decodeUtf16(viewOf(input), this._enc === "utf-16be");
+    if (this._enc !== "utf-8") return this._decodeSingleByte(viewOf(input), SINGLE_BYTE[this._enc]);
+    return this._decodeUtf8(viewOf(input));
+  }
+  _decodeSingleByte(b, table) {
+    let out = "";
+    let chunk = [];
+    for (let i = 0; i < b.length; i++) {
+      const byte = b[i];
+      const cp = byte < 0x80 ? byte : table.charCodeAt(byte - 0x80);
+      if (cp === 0xfffd && this.fatal) throw new TypeError("TextDecoder: invalid byte (fatal)");
+      chunk.push(cp);
+      if (chunk.length > 4096) {
+        out += String.fromCharCode.apply(null, chunk);
+        chunk = [];
+      }
+    }
+    if (chunk.length) out += String.fromCharCode.apply(null, chunk);
+    return out;
+  }
+  _decodeUtf16(b, bigEndian) {
+    let i = 0;
+    if (!this.ignoreBOM && b.length >= 2 && (bigEndian ? b[0] === 0xfe && b[1] === 0xff : b[0] === 0xff && b[1] === 0xfe)) i = 2;
+    let out = "";
+    let chunk = [];
+    const bad = () => {
+      if (this.fatal) throw new TypeError("TextDecoder: invalid UTF-16 (fatal)");
+      chunk.push(0xfffd);
+    };
+    let lead = -1;
+    for (; i + 1 < b.length; i += 2) {
+      const unit = bigEndian ? (b[i] << 8) | b[i + 1] : b[i] | (b[i + 1] << 8);
+      if (lead >= 0) {
+        if (unit >= 0xdc00 && unit <= 0xdfff) {
+          chunk.push(lead, unit);
+          lead = -1;
+          continue;
+        }
+        lead = -1;
+        bad();
+      }
+      if (unit >= 0xd800 && unit <= 0xdbff) lead = unit;
+      else if (unit >= 0xdc00 && unit <= 0xdfff) bad();
+      else chunk.push(unit);
+      if (chunk.length > 4096) {
+        out += String.fromCharCode.apply(null, chunk);
+        chunk = [];
+      }
+    }
+    if (lead >= 0 || i < b.length) bad();
+    if (chunk.length) out += String.fromCharCode.apply(null, chunk);
+    return out;
+  }
+  _decodeUtf8(b) {
     let i = 0;
     if (!this.ignoreBOM && b.length >= 3 && b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) i = 3;
     let out = "";

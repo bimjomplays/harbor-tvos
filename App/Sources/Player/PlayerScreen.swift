@@ -105,7 +105,10 @@ struct PlayerScreen: View {
     @State private var snap: (position: Double, duration: Double, paused: Bool) = (0, 0, false)
     @State private var panel: Panel?
     @State private var segments: [SkipSegment] = []
-    @State private var segmentsLoadedFor: Double = 0
+    /// What the skip segments were last asked for: the duration and the file's chapter count.
+    @State private var segmentsLoadedFor = ""
+    /// Only the newest skip.segments answer lands (an older duration's lookup can finish last).
+    @State private var segmentsRun = 0
     /// skip-pill-container.tsx autoSkippedRef: the segment already auto-skipped (never twice, even
     /// when the viewer seeks back into it).
     @State private var autoSkippedId: String?
@@ -175,6 +178,8 @@ struct PlayerScreen: View {
     @State private var anime4k: Anime4KChoice?
     @State private var anime4kAppliedFor: Int = -1
     @State private var anime4kNote: String?
+    /// Only the newest anime4k.choose run hands mpv its chain.
+    @State private var anime4kRun = 0
     enum FocusTarget: Hashable { case surface, chip(String), track(Int) }
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -201,7 +206,9 @@ struct PlayerScreen: View {
                                      // replaced meanwhile (a reload, the engine switch) must not claim it.
                                      guard engine == .native, token == reloadToken else { return }
                                      controller = c
-                                     pipActive = false
+                                     engineReplaced()
+                                     // AVPlayer has no audio offset (BpAudioLane locked): the readout says 0 again.
+                                     audioDelay = 0
                                      applyRate(c)
                                      if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                                  },
@@ -222,7 +229,11 @@ struct PlayerScreen: View {
                                   // not made current, and does not use up pausedAfterSwitch.
                                   guard engine != .native, token == reloadToken else { return }
                                   controller = c
-                                  pipActive = false
+                                  engineReplaced()
+                                  // (player tracks pass) A retry, a quality / kid switch or the move to mpv
+                                  // starts a new mpv at audio-delay 0 while the Audio dialog still read the
+                                  // viewer's offset: it carries over, as it does in upstream's one mpv.
+                                  if audioDelay != 0 { c.setAudioDelay(audioDelay) }
                                   applyRate(c)
                                   if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                               })
@@ -258,9 +269,13 @@ struct PlayerScreen: View {
                 Group { if isKid { kidsResumePrompt } else { resumePrompt(resumePending) } }.transition(.opacity)
             }
             if leaveConfirm { leaveConfirmView.transition(.opacity) }
-            if status.state == "error", !isLive, !roomOpen, !pipActive { sourceErrorCard.transition(.opacity) }
+            // (player tracks pass) Not under an open dialog, like the live error card and the no-audio
+            // card: each card's onAppear takes the ring, which went to a chip hidden behind the
+            // Subtitles / Audio dialog when the stream failed (or kept connecting) while it was open.
+            // The card comes up once the dialog closes.
+            if status.state == "error", !isLive, !roomOpen, !pipActive, panel == nil { sourceErrorCard.transition(.opacity) }
             if status.state == "error", isLive, liveGuide != nil, panel == nil, !roomOpen, !pipActive { liveErrorCard.transition(.opacity) }
-            if status.state == "loading", !isKid, !isLive, !roomOpen, !pipActive, resumePending == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
+            if status.state == "loading", !isKid, !isLive, !roomOpen, !pipActive, resumePending == nil, panel == nil, Date().timeIntervalSince(loadingSince) >= 2 { connectingCard.transition(.opacity) }
             // cinematic-player-loader.tsx: a kid gets the sea loader over everything until the first frame.
             if kidsLoading { kidsLoader.transition(.opacity) }
             if noAudioWarning, engine == .native, panel == nil, !leaveConfirm, !roomOpen, !pipActive, resumePending == nil, status.state != "error" {
@@ -417,7 +432,12 @@ struct PlayerScreen: View {
                 scrobbleTick()
                 together.tick(controller: controller, context: isLive ? nil : context, url: url)
             }
-            if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
+            // (player tracks pass) useSkipSegments also reads the file's chapters (mpv chapter-list).
+            if snap.duration > 0, let c = controller {
+                let chapters = c.chapters()
+                let key = "\(snap.duration)|\(chapters.count)"
+                if segmentsLoadedFor != key { segmentsLoadedFor = key; Task { await loadSegments(chapters: chapters) } }
+            }
             skipTick()
             nowPlayingTick()
             stallTick()
@@ -430,7 +450,13 @@ struct PlayerScreen: View {
             if state == "ended", isLive { liveEnded() }
         }
         // A retry or the switch to mpv starts the stall wait over (review 31).
-        .onChange(of: reloadToken) { _, _ in openedAt = Date() }
+        .onChange(of: reloadToken) { _, _ in
+            openedAt = Date()
+            // (player tracks pass) The new mpv starts with no shaders: the tick keyed the chain to the
+            // picture's width only, so a Try again (or a live-style reload) at the same width never
+            // handed the new engine its Anime4K chain while the indicator still claimed the mode.
+            anime4kAppliedFor = -1
+        }
         .animation(.easeOut(duration: 0.32), value: chrome)
         .animation(.easeOut(duration: 0.32), value: panel == nil)
         .animation(.easeOut(duration: 0.32), value: roomOpen)
@@ -601,15 +627,18 @@ struct PlayerScreen: View {
     }
 
     /// AniSkip / SkipDB / TheIntroDB / IntroDB App / chapters through the engine (lib/skip-intro).
-    private func loadSegments() async {
+    private func loadSegments(chapters: [PlayerChapter]) async {
         guard let context, !context.playlistVod, snap.duration > 0 else { return }
+        segmentsRun += 1
+        let run = segmentsRun
         let p = ProfilesStore.shared.active
         let ep: AnyJSON = context.season.map { s in
             .object(["season": .number(Double(s)), "episode": .number(Double(context.episode ?? 1)),
                      "imdbId": context.imdbId.map { .string($0) } ?? .null,
                      "imdbSeason": .number(Double(s)), "imdbEpisode": .number(Double(context.episode ?? 1))])
         } ?? .null
-        let segs: [SkipSegment] = (try? await HarborEngine.shared.call("skip.segments", [p?.id ?? "default", p?.linked ?? true, context.meta, ep, snap.duration])) ?? []
+        let segs: [SkipSegment] = (try? await HarborEngine.shared.call("skip.segments", [p?.id ?? "default", p?.linked ?? true, context.meta, ep, snap.duration, chapters] as [any Encodable])) ?? []
+        guard run == segmentsRun else { return }
         // skip-pill-container: new segments start over (auto-skip memory, hidden pills).
         if segs.map(\.id) != segments.map(\.id) {
             autoSkippedId = nil
@@ -1042,13 +1071,21 @@ struct PlayerScreen: View {
     /// use-anime4k.ts: ask the engine which chain applies, then hand mpv the shader paths.
     private func applyAnime4k(srcWidth: Int) async {
         guard let context, let c = controller else { return }
+        // (player tracks pass) A run that is overtaken (the viewer picks a mode or Off in the panel
+        // while the first run still downloads the shaders, a reload) must not land its older chain
+        // on mpv afterwards, nor on a controller that has been replaced.
+        anime4kRun += 1
+        let run = anime4kRun
+        let current = { run == anime4kRun && (controller as AnyObject?) === (c as AnyObject) }
         let display = Int(UIScreen.main.nativeBounds.width)
         let meta: AnyJSON = .object(["id": .string(context.meta.id), "genres": .array((context.meta.genres ?? []).map { .string($0) })])
         let p = ProfilesStore.shared.active
         guard let choice: Anime4KChoice = try? await HarborEngine.shared.call("anime4k.choose", [p?.id ?? "default", p?.linked ?? true, meta, srcWidth, display]) else { return }
+        guard current() else { return }
         if choice.active {
             // (bug pass 2) The shaders live in Caches now: a set the system purged is fetched again here.
             if Anime4KStore.shared.paths(for: choice.files) == nil { await Anime4KStore.shared.ensure() }
+            guard current() else { return }
             if let paths = Anime4KStore.shared.paths(for: choice.files) {
                 anime4k = choice
                 anime4kNote = nil
@@ -1589,6 +1626,16 @@ struct PlayerScreen: View {
             focus = .surface
             wake()
         }
+    }
+
+    /// (player tracks pass) A new engine took over from one that was in Picture in Picture (a live
+    /// channel that ran out and reloads, the native engine's failure handing the stream to mpv).
+    /// The old controller's teardown stops its PiP with its delegate already gone, so no "exited"
+    /// ever came: the browse layer stayed up over a player whose sound went on unseen, and the
+    /// placard's Exit did nothing on mpv. The player screen comes back to the front instead.
+    private func engineReplaced() {
+        if PiPBrowse.shared.owns(nowPlayingId) { PiPBrowse.shared.release(nowPlayingId, keepBrowsing: false) }
+        if pipActive { pipChanged(false) }
     }
 
     /// PiPBrowse is open to this player: an adult's AVPlayer in the app's own window.

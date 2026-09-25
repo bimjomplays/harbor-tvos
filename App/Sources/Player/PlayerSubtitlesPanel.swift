@@ -115,6 +115,7 @@ struct PlayerSubtitlesPanel: View {
         }
         .onAppear {
             if target == nil { target = home; query = context?.meta.name ?? title }
+            added.formUnion(TrackPlanner.addedSources)
             // The show's remembered delay was applied when the file opened.
             if let d = controller?.currentSubDelay() { subDelay = (d * 10).rounded() / 10 }
             Task {
@@ -450,15 +451,23 @@ struct PlayerSubtitlesPanel: View {
     private func add(_ r: Found) async {
         struct Prepared: Decodable { var text: String; var format: String }
         do {
-            let prep: Prepared = try await HarborEngine.shared.call("subtitles.prepare", [r.url])
-            let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("subs", isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let safe = r.id.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ":", with: "_")
-            let file = dir.appendingPathComponent("\(safe).\(prep.format)")
-            try prep.text.write(to: file, atomically: true, encoding: .utf8)
+            // (player tracks pass) One cache name per URL (TrackPlanner.subtitleFile), shared with the
+            // remembered-subtitle restore: a result already prepared is not downloaded again, and
+            // the next visit to this episode reuses the file. (The name was the provider's result
+            // id, which can be long or carry characters a file name cannot.)
+            let file: URL
+            if let cached = TrackPlanner.cachedSubtitleFile(source: r.url) {
+                file = cached
+            } else {
+                let prep: Prepared = try await HarborEngine.shared.call("subtitles.prepare", [r.url])
+                try FileManager.default.createDirectory(at: TrackPlanner.subsDir, withIntermediateDirectories: true)
+                file = TrackPlanner.subtitleFile(source: r.url, format: prep.format)
+                try prep.text.write(to: file, atomically: true, encoding: .utf8)
+            }
             controller?.addSubtitle(file: file, title: r.title, lang: r.lang)
             controller?.rememberAddedSubtitle(file: file, source: r.url, title: r.title, lang: r.lang)
             added.insert(r.url)
+            TrackPlanner.addedSources.insert(r.url)
             findNote = nil
             refreshSoon()
         } catch {

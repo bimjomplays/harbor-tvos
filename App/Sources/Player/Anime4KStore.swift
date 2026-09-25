@@ -39,8 +39,22 @@ final class Anime4KStore: ObservableObject {
         return required.allSatisfy { present.contains($0) && ((try? fm.attributesOfItem(atPath: dir.appendingPathComponent($0).path)[.size] as? Int) ?? 0) > 0 }
     }
 
+    /// The download under way: a second caller waits for it.
+    private var inFlight: Task<Void, Never>?
+
     /// Download the missing shaders (about 3 MB in total). Safe to call repeatedly.
+    /// (player tracks pass) A call while a download runs waits for it instead of returning at
+    /// once: the player's second look (a mode picked while the first download ran) read "not
+    /// downloaded" and played without shaders although they were arriving.
     func ensure(force: Bool = false) async {
+        if let running = inFlight { await running.value; return }
+        let task = Task { await self.download(force: force) }
+        inFlight = task
+        await task.value
+        inFlight = nil
+    }
+
+    private func download(force: Bool) async {
         guard !busy else { return }
         busy = true; defer { busy = false }
         note = nil

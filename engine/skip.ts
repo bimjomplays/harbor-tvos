@@ -8,6 +8,8 @@ import { fetchAniSkipSegments, kitsuToMal } from "@/lib/skip-intro/aniskip";
 import { fetchIntroDbSegments, readTheIntroDbKey, setTheIntroDbApiKey } from "@/lib/skip-intro/theintrodb";
 import { fetchSkipDbSegments } from "@/lib/skip-intro/skipdb";
 import { fetchIntroDbAppSegments } from "@/lib/skip-intro/introdb-app";
+import { chaptersToSegments } from "@/lib/skip-intro/chapters";
+import type { Chapter } from "@/lib/player/bridge";
 
 const MIN_OUTRO_START_FRACTION = 0.5;
 const MAX_SEGMENT_SEC = 360;
@@ -24,6 +26,7 @@ export async function segments(
   meta: Meta,
   episode: PlayEpisode | null,
   durationSec: number,
+  chapters?: Chapter[] | null,
 ): Promise<SkipSegment[]> {
   if (durationSec <= 0) return [];
   const settings = loadEffective(profileId, linked);
@@ -50,8 +53,13 @@ export async function segments(
     skipImdbId && ep ? quiet(fetchIntroDbAppSegments(skipImdbId, ep), [] as SkipSegment[]) : Promise.resolve([] as SkipSegment[]),
   ]);
 
+  // (player tracks pass) useSkipSegments' fromChapters: the file's own "Opening" / "Ending" /
+  // "Recap" chapters (mpv chapter-list) are the last source, as upstream merges them.
+  const list = (chapters ?? []).filter((c) => c && typeof c.startSec === "number" && Number.isFinite(c.startSec) && c.startSec >= 0)
+    .map((c) => ({ title: typeof c.title === "string" ? c.title : "", startSec: c.startSec }));
+  const fromChapters = chaptersToSegments(list, durationSec);
   const minOutroStart = durationSec * MIN_OUTRO_START_FRACTION;
-  return mergeSegments([aniSkip, skipDb, introDb, introDbApp])
+  return mergeSegments([aniSkip, skipDb, introDb, introDbApp, fromChapters])
     .filter((s) => s.startSec < durationSec)
     .map((s) => (s.endSec > durationSec ? { ...s, endSec: durationSec } : s))
     .filter((s) => { const len = s.endSec - s.startSec; return len >= 2 && len <= MAX_SEGMENT_SEC; })

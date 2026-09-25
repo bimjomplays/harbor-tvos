@@ -37,6 +37,8 @@ protocol PlayerEngineControlling: AnyObject {
     var trackMemory: TrackMemory? { get }
     func setShaders(_ paths: [String])
     func videoWidth() -> Int
+    /// bridge.ts snap.chapters (mpv chapter-list), for skip-intro/chapters.ts; the html5 bridge has none.
+    func chapters() -> [PlayerChapter]
     func addSubtitle(file: URL, title: String, lang: String)
     /// bridge.ts capabilities().pictureInPicture: the overlay shows its PiP control only when true.
     var supportsPictureInPicture: Bool { get }
@@ -61,6 +63,12 @@ extension PlayerEngineControlling {
     /// engine's own (sideloaded) tracks. Sync and Look apply to every track on both engines: the
     /// AVPlayer engine draws the file's own tracks too (NativePlayerController, NativeSubtitleOverlay).
     var supportsMpvExtras: Bool { engineKind == .mpv }
+}
+
+/// lib/player/bridge.ts Chapter: a chapter's title and where it starts.
+struct PlayerChapter: Encodable, Equatable {
+    var title: String
+    var startSec: Double
 }
 
 /// The stream facts the Auto rule reads (engine/player.ts EngineHints), from the picked stream.

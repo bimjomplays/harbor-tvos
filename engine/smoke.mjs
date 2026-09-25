@@ -6,6 +6,7 @@
 //   node smoke.mjs            full run
 //   node smoke.mjs --offline  skip the live-network section
 import { loadEngine, createReporter } from "./test/harness.mjs";
+import { zipSync } from "fflate";
 
 const OFFLINE = process.argv.includes("--offline");
 const r = createReporter("smoke");
@@ -2690,6 +2691,43 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const found = await e.subtitles.find("default", true, null, target, null, null, null);
   r.ok("subtitles.find searches the other title's episode with provider details and HI flags", found.tooNew === false && found.results.length === 3 && found.results[1].hearingImpaired === true && found.results[1].tags.join() === "HI/SDH" && found.results[0].provider === "OpenSubtitles" && found.results[2].langName === "French" && hits.includes("https://opensubtitles-v3.strem.io/subtitles/series/tt0903747:2:5.json"), JSON.stringify(found));
   rec.dispose();
+}
+
+// ---------------------------------------- subtitle bytes and encodings (player tracks pass)
+// The host returns text bodies as lossy UTF-8 (as EngineHost.swift does), so subtitles.prepare
+// must ask for the raw bytes; the TextDecoder shim must know upstream's legacy encodings.
+{
+  const sub = loadEngine({ storage: new Map() });
+  const srt = "1\r\n00:00:01,000 --> 00:00:02,500\r\nCafé déjà vu, garçon!\r\n\r\n2\r\n00:00:03,000 --> 00:00:05,000\r\nÇa va très bien.\r\n\r\n3\r\n00:00:06,000 --> 00:00:08,000\r\nÀ bientôt.\r\n";
+  const files = {
+    "https://subs.example.invalid/latin1.srt": Buffer.from(srt, "latin1"),
+    "https://subs.example.invalid/pack.zip": Buffer.from(zipSync({ "Film.2020.1080p.srt": new TextEncoder().encode(srt) })),
+    "https://subs.example.invalid/utf16.srt": Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(srt, "utf16le")]),
+  };
+  sub.node.host.fetch = async (req) => {
+    const buf = files[req.url];
+    if (!buf) return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    const raw = req.responseType === "base64";
+    return { status: 200, statusText: "OK", headers: {}, url: req.url, body: raw ? null : buf.toString("utf8"), bodyBase64: raw ? buf.toString("base64") : null };
+  };
+  const prep = async (u) => { try { return await sub.engine.subtitles.prepare(u); } catch (e) { return { error: String(e && e.message) }; } };
+  const latin = await prep("https://subs.example.invalid/latin1.srt");
+  r.ok("subtitles.prepare decodes a windows-1252 SRT (raw bytes + legacy TextDecoder)", latin.encoding === "windows-1252" && latin.text.includes("Café déjà vu, garçon!") && latin.format === "srt", JSON.stringify(latin).slice(0, 200));
+  const zipped = await prep("https://subs.example.invalid/pack.zip");
+  r.ok("subtitles.prepare opens a zipped subtitle (bytes not mangled by the text bridge)", zipped.text && zipped.text.includes("Ça va très bien.") && zipped.format === "srt", JSON.stringify(zipped).slice(0, 200));
+  const wide = await prep("https://subs.example.invalid/utf16.srt");
+  r.ok("subtitles.prepare decodes a UTF-16LE (BOM) SRT", wide.encoding === "utf-16le" && wide.text && wide.text.includes("À bientôt."), JSON.stringify(wide).slice(0, 200));
+  r.eq("TextDecoder shim: cp1251 / latin1 / koi8-r labels and canonical names",
+    sub.run(`[new TextDecoder("cp1251").decode(new Uint8Array([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2])), new TextDecoder("latin1").encoding, new TextDecoder("KOI8-R").decode(new Uint8Array([0xf0, 0xd2, 0xc9, 0xd7, 0xc5, 0xd4])), new TextDecoder("utf-16be").decode(new Uint8Array([0x00, 0x41, 0xd8, 0x3d, 0xde, 0x00]))]`),
+    ["Привет", "windows-1252", "Привет", "A😀"]);
+  r.ok("TextDecoder shim: unknown labels still throw, fatal single-byte rejects unmapped bytes",
+    sub.run(`(() => { let a = false, b = false; try { new TextDecoder("x-nope"); } catch { a = true; } try { new TextDecoder("iso-8859-6", { fatal: true }).decode(new Uint8Array([0xa1])); } catch { b = true; } return a && b; })()`), "");
+  // skip-intro chapters.ts: mpv's chapter list feeds skip segments (no provider is asked for a local id).
+  const chapters = [{ title: "Prologue", startSec: 0 }, { title: "Opening", startSec: 90 }, { title: "Part A", startSec: 180 }, { title: "Ending", startSec: 1290 }, { title: "Preview", startSec: 1380 }];
+  const segs = await sub.engine.skip.segments("default", true, { id: "local:chapters-test", type: "series", name: "Chaptered" }, { season: 1, episode: 3 }, 1420, chapters);
+  r.eq("skip.segments turns Opening / Ending chapters into intro / outro segments", segs.map((s) => [s.kind, s.startSec, s.endSec, s.source]), [["intro", 90, 180, "chapters"], ["outro", 1290, 1380, "chapters"]]);
+  r.eq("skip.segments without chapters (older callers) still answers", await sub.engine.skip.segments("default", true, { id: "local:chapters-test", type: "series", name: "Chaptered" }, { season: 1, episode: 3 }, 1420), []);
+  sub.dispose();
 }
 
 // ------------------------------- Stage 10: social + Watch Together (recorded host, mock relay)
