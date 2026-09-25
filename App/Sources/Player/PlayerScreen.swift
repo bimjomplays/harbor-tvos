@@ -41,6 +41,11 @@ struct PlayerScreen: View {
     /// Picture in Picture may step this screen aside for the browse layer (Player/PiPBrowse.swift).
     /// Multiview's full-screen player keeps the placard instead: its grid is under it.
     var browseDuringPiP: Bool = true
+    /// view.ts PlayerSrc.subtitles: the subtitles the resolved stream came with (an addon stream's
+    /// `subtitles`, a home server's external files). Each player this screen makes adds them
+    /// unselected once the file is open (mpv.ts addSeedSubtitles), so a retry or the move to mpv
+    /// brings them again (use-auto-retry passes src.subtitles on every reload).
+    var streamSubtitles: [SeedSubtitle] = []
     /// use-live-channel-overlay switchChannel: the channel tuned in place (nil = the one opened).
     @State private var tuned: LiveModel.Channel?
     /// goPrevChannel: the channels tuned before, newest last, 12 at most.
@@ -51,7 +56,12 @@ struct PlayerScreen: View {
     @State private var pausedAfterSwitch = false
     /// Whether the stream was swapped in place (the kid switcher, a quality change): TrackMemory keys by the original release otherwise.
     var switchedInPlace: Bool { switched != nil }
-    struct SwitchedStream { var url: URL; var headers: [String: String] }
+    struct SwitchedStream {
+        var url: URL
+        var headers: [String: String]
+        /// The swapped-in stream's own subtitles (use-stream-switcher / switchMediaServerQuality `subtitles: next.subtitles`).
+        var subtitles: [SeedSubtitle] = []
+    }
     /// TransportKids' subtitle toggle reads the subtitle tracks (refreshed while its chrome is up).
     @State private var kidSubs: [MPVPlayerController.Track] = []
     @State private var subDelay: Double = 0
@@ -214,6 +224,7 @@ struct PlayerScreen: View {
                                  preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                                  preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                                  trackMemory: trackMemory,
+                                 seedSubtitles: playSeeds,
                                  onStatus: { s in if engine == .native { status = s } },
                                  onEnded: { if engine == .native { endedNaturally() } },
                                  onUnsupported: { nativeUnsupported($0) },
@@ -238,6 +249,7 @@ struct PlayerScreen: View {
                               preferredAudio: SettingsBridge.shared.slice.preferredAudioLangs ?? ["English", "Japanese"],
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               trackMemory: trackMemory,
+                              seedSubtitles: playSeeds,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
                               onReady: { [token = reloadToken] c in
                                   // (bug pass 2) onReady lands a main-queue turn after the controller is
@@ -1324,12 +1336,12 @@ struct PlayerScreen: View {
         case .homeServerQuality:
             if let h = context?.homeServer {
                 HomeServerQualityPanel(session: h, positionSec: snap.position, playing: !snap.paused,
-                                       onSwitched: { next, headers in pausedAfterSwitch = snap.paused; switchStream(to: next, headers: headers) }, onClose: { closePanel() })
+                                       onSwitched: { next, headers, subs in pausedAfterSwitch = snap.paused; switchStream(to: next, headers: headers, subtitles: subs) }, onClose: { closePanel() })
             }
         case .kidsSources:
             if let context {
                 KidsStreamSwitcher(meta: context.meta, episode: kidsEpisode(context), currentURL: playURL,
-                                   onPicked: { next, headers in switchStream(to: next, headers: headers) }, onClose: { closePanel() })
+                                   onPicked: { next, headers, subs in switchStream(to: next, headers: headers, subtitles: subs) }, onClose: { closePanel() })
             }
         case .speed:
             PlayerSpeedPanel(rate: rate, isLive: isLive, onRate: { setRate($0) }, onClose: { closePanel() })
@@ -1428,14 +1440,14 @@ struct PlayerScreen: View {
     /// stream-switcher onPick: the picked stream replaces this one in place at the same position
     /// (use-bridge-load hasExplicitStart), through the engine rule again; a torrent stays owned by
     /// the player while it plays (use-player-media).
-    private func switchStream(to next: URL, headers nextHeaders: [String: String]) {
+    private func switchStream(to next: URL, headers nextHeaders: [String: String], subtitles nextSubtitles: [SeedSubtitle] = []) {
         let at = snap.position > 5 ? snap.position : 0
         let owned = switched?.url ?? url
         if next != owned {
             TorrentEngine.shared.playerOpened(url: next)
             TorrentEngine.shared.playerClosed(url: owned)
         }
-        switched = SwitchedStream(url: next, headers: nextHeaders)
+        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles)
         // use-auto-retry.ts resets its early-end reload per source.
         truncatedReloaded = false
         status = MPVPlayerController.Status()
@@ -1461,6 +1473,13 @@ struct PlayerScreen: View {
     private var currentChannel: LiveModel.Channel? { tuned ?? liveChannel }
     private var playURL: URL { tuned.flatMap { URL(string: $0.url) } ?? switched?.url ?? url }
     private var playHeaders: [String: String] { tuned.map { $0.headers ?? [:] } ?? switched?.headers ?? headers }
+    /// PlayerSrc.subtitles of what plays now: a tuned channel has none, a stream swapped in place
+    /// brings its own (not the opened stream's), otherwise the opened stream's.
+    private var playSeeds: [SeedSubtitle] {
+        if tuned != nil { return [] }
+        if let switched { return switched.subtitles }
+        return streamSubtitles
+    }
     private var shownTitle: String { tuned?.name ?? title }
     private var shownSubtitle: String? {
         guard let t = tuned else { return subtitle }

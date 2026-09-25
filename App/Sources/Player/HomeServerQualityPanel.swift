@@ -9,12 +9,13 @@ struct HomeServerQualityPanel: View {
     let session: HomeServerSession
     let positionSec: Double
     let playing: Bool
-    let onSwitched: (URL, [String: String]) -> Void
+    /// The new URL, its headers and the server's subtitle files (switchMediaServerQuality `subtitles`).
+    let onSwitched: (URL, [String: String], [SeedSubtitle]) -> Void
     let onClose: () -> Void
 
     struct Option: Decodable, Identifiable { var id: String; var label: String }
     private struct Options: Decodable { var current: String; var options: [Option] }
-    private struct Switched: Decodable { var url: String; var headers: [String: String]?; var quality: String }
+    private struct Switched: Decodable { var url: String; var headers: [String: String]?; var quality: String; var subtitles: [SeedSubtitle]? }
 
     @State private var options: [Option] = []
     @State private var current = "original"
@@ -94,7 +95,7 @@ struct HomeServerQualityPanel: View {
                 return
             }
             current = r.quality
-            onSwitched(url, r.headers ?? [:])
+            onSwitched(url, r.headers ?? [:], r.subtitles ?? [])
         } catch {
             self.error = "\(error.localizedDescription) \(T("The current stream is still playing. Original remains available."))"
         }

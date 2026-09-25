@@ -594,7 +594,8 @@ struct KidsStreamSwitcher: View {
     let meta: Meta
     let episode: AnyJSON?
     let currentURL: URL
-    let onPicked: (URL, [String: String]) -> Void
+    /// The stream's URL, headers and own subtitles (use-stream-switcher `subtitles: r.data.subtitles`).
+    let onPicked: (URL, [String: String], [SeedSubtitle]) -> Void
     let onClose: () -> Void
 
     @StateObject private var model = StreamsModel()
@@ -731,7 +732,7 @@ struct KidsStreamSwitcher: View {
             return
         }
         await model.remember(s, meta: meta, episode: episode, url: link.url)
-        onPicked(url, link.headers ?? [:])
+        onPicked(url, link.headers ?? [:], link.subtitles ?? [])
     }
 }
 

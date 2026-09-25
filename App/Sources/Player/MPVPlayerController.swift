@@ -31,6 +31,14 @@ final class MPVPlayerController: UIViewController {
     /// lib/player-prefs.ts / subtitle-memory.ts key for this playback (PlayerScreen); nil for
     /// previews, tiles and channels, which remember nothing.
     var trackMemory: TrackMemory?
+    /// view.ts PlayerSrc.subtitles: the stream's own subtitles, added unselected once the file
+    /// is open (mpv.ts addSeedSubtitles). Set before the view loads; one batch per controller
+    /// (a retry, a switch or the move to mpv makes a new controller with its own).
+    var seedSubtitles: [SeedSubtitle] = []
+    /// The seed batch has started for this controller (never twice).
+    private var seedsStarted = false
+    /// File names of the seed tracks added (their track-list rows are flagged `seeded`).
+    private var seedFiles: Set<String> = []
     /// Bumped by every audio / subtitle selection (the viewer's or the plan's): a track plan or a
     /// remembered-subtitle restore that lands after the viewer already chose leaves that choice
     /// alone (use-track-autoload's userPicked / subRestoreAddRef, review 26).
@@ -271,6 +279,8 @@ final class MPVPlayerController: UIViewController {
         var secondary = false
         var externalFilename: String?
         var channels: String?
+        /// One of the stream's own subtitles, prepared and added (engine autoSelectionEligible).
+        var seeded = false
         var label: String {
             // lib/subtitles/language.ts languageName: upstream's English names (as PlayerPanelParts
             // does), not the Apple TV's own language, which leaked into an otherwise Harbor-language panel.
@@ -303,6 +313,9 @@ final class MPVPlayerController: UIViewController {
             t.secondary = isSecondary
             t.externalFilename = string("track-list/\(i)/external-filename")
             t.channels = string("track-list/\(i)/demux-channels")
+            if t.external, let f = t.externalFilename, !seedFiles.isEmpty {
+                t.seeded = seedFiles.contains(URL(fileURLWithPath: f).lastPathComponent)
+            }
             out.append(t)
         }
         return out
@@ -421,6 +434,37 @@ final class MPVPlayerController: UIViewController {
         applySdhFilter()
     }
 
+    /// mpv.rs mpv_sub_add(select: false): `sub-add <file> auto <title> <lang>` lists the track
+    /// without showing it ('auto' = don't select; the sid slot keeps what Harbor chose).
+    func addSeedSubtitle(file: URL, title: String, lang: String) {
+        guard mpv != nil else { return }
+        seedFiles.insert(file.lastPathComponent)
+        command("sub-add", [file.path, "auto", title, lang])
+    }
+
+    /// mpv.ts load → `void addSeedSubtitles(src.subtitles, activeLoadId)`, after the first track
+    /// plan (so its audio / subtitle choice never waits on a download), then the plan once more
+    /// with the seeds in (TrackPlanner.applySeedPlan).
+    private func addSeeds() {
+        guard !preview, !tile, !seedsStarted, !seedSubtitles.isEmpty else { return }
+        seedsStarted = true
+        let seeds = seedSubtitles
+        let memory = trackMemory
+        let streamURL = url
+        let streamHeaders = headers
+        Task { [weak self] in
+            guard let self, !self.tornDown else { return }
+            let settled = self.subPicks
+            let added = await TrackPlanner.addSeeds(seeds, streamURL: streamURL, streamHeaders: streamHeaders, into: self,
+                                                    alive: { !self.tornDown && self.mpv != nil })
+            guard added > 0, !self.tornDown else { return }
+            self.push("subs: \(added) stream subtitle\(added == 1 ? "" : "s") added")
+            if let label = await TrackPlanner.applySeedPlan(memory: memory, into: self, settled: settled) {
+                self.push("subs: \(label) (stream subtitle)")
+            }
+        }
+    }
+
     /// src/lib/player/sub-style.ts applySubStyle → mpv sub-* options, from the viewer's settings.
     /// `live`: the player is running, so the values go through mpv_set_property_string.
     private func applySubtitleStyle(_ handle: OpaquePointer, live: Bool = false) {
@@ -471,8 +515,13 @@ final class MPVPlayerController: UIViewController {
             guard let self, !self.tornDown, self.mpv != nil else { return }
             // What the viewer picked while the plan was on its way stays (review 26).
             let userAudio = self.audioPicks != picks.0, userSub = self.subPicks != picks.1
-            guard let plan else { if !userAudio && !userSub { self.applyTrackPreferences() }; return }
+            guard let plan else {
+                if !userAudio && !userSub { self.applyTrackPreferences() }
+                self.addSeeds()
+                return
+            }
             self.apply(plan, to: list, audio: !userAudio, subs: !userSub)
+            self.addSeeds()
         }
     }
 
@@ -492,7 +541,9 @@ final class MPVPlayerController: UIViewController {
         // Multiview tiles and kid profiles get no automatic second subtitle (the kid toggle can't clear it).
         if !tile, ProfilesStore.shared.active?.kid == nil, let s = find(plan.secondaryId, "sub") { setSecondarySub(s) }
         if plan.subDelaySec != 0 { setSubDelay(plan.subDelaySec) }
-        if let r = plan.restore {
+        // A remembered subtitle that is one of the stream's own comes with the seeds (addSeeds),
+        // and the plan after them selects it: restoring it here too would list it twice.
+        if let r = plan.restore, !TrackPlanner.isSeed(r.source, in: seedSubtitles) {
             let settled = subPicks
             Task { [weak self] in
                 guard let self, !self.tornDown else { return }

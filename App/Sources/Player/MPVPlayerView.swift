@@ -9,6 +9,8 @@ struct MPVPlayerView: UIViewControllerRepresentable {
     var preferredSubs: [String] = []
     /// Per-show track memory key (TrackMemory.swift); nil remembers nothing.
     var trackMemory: TrackMemory? = nil
+    /// view.ts PlayerSrc.subtitles: the stream's own subtitles, added unselected once it opens.
+    var seedSubtitles: [SeedSubtitle] = []
     /// Muted guide preview (see MPVPlayerController.preview).
     var preview = false
     /// A Multiview tile (see MPVPlayerController.tile): never touches the display mode.
@@ -31,6 +33,7 @@ struct MPVPlayerView: UIViewControllerRepresentable {
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
         c.trackMemory = trackMemory
+        c.seedSubtitles = seedSubtitles
         c.onStatus = onStatus
         c.onEnded = onEnded
         DispatchQueue.main.async { onReady?(c) }

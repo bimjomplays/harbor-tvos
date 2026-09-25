@@ -23,6 +23,11 @@ final class NativePlayerController: UIViewController {
     var preferredSubs: [String] = []
     /// lib/player-prefs.ts / subtitle-memory.ts key for this playback (PlayerScreen); nil remembers nothing.
     var trackMemory: TrackMemory?
+    /// view.ts PlayerSrc.subtitles: the stream's own subtitles, added unselected once the item is
+    /// open (html5/bridge.ts load → the seeds as custom tracks; mpv.ts addSeedSubtitles). One batch
+    /// per controller: a retry or a switch makes a new controller with its own.
+    var seedSubtitles: [SeedSubtitle] = []
+    private var seedsStarted = false
     /// Bumped by every audio / subtitle selection (the viewer's or the plan's): a track plan or a
     /// remembered-subtitle restore that lands after the viewer already chose leaves that choice
     /// alone (use-track-autoload's userPicked / subRestoreAddRef, review 26).
@@ -50,7 +55,16 @@ final class NativePlayerController: UIViewController {
     // engine, the cues are parsed (engine `subtitles.cues`) and drawn by NativeSubtitleOverlay.
     /// External tracks get ids from here up, clear of the legible options (1…n) they sit beside.
     static let externalSubBase = 1000
-    private struct ExternalSub { var id: Int; var title: String; var lang: String; var format: String; var file: URL; var cues: [SubtitleCue] }
+    private struct ExternalSub {
+        var id: Int
+        var title: String
+        var lang: String
+        var format: String
+        var file: URL
+        var cues: [SubtitleCue]
+        /// One of the stream's own subtitles (engine autoSelectionEligible), not a Find more add.
+        var seed = false
+    }
     private var externalSubs: [ExternalSub] = []
     private var nextExternalId = NativePlayerController.externalSubBase
     private var activeExternal: Int?
@@ -318,6 +332,7 @@ final class NativePlayerController: UIViewController {
         legibleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
         guard !tornDown, player.currentItem === item else { return }
         await applyTrackPlan(item)
+        addSeeds(item)
         if let video = try? await asset.loadTracks(withMediaType: .video).first,
            let desc = try? await video.load(.formatDescriptions).first {
             codecName = Self.codecName(CMFormatDescriptionGetMediaSubType(desc))
@@ -447,6 +462,7 @@ final class NativePlayerController: UIViewController {
             t.external = true
             t.secondary = s.id == secondaryExternal
             t.externalFilename = s.file.lastPathComponent
+            t.seeded = s.seed
             out.append(t)
         }
         return out
@@ -525,7 +541,9 @@ final class NativePlayerController: UIViewController {
         // setSecondarySub keeps to the sideloaded tracks by itself; kid profiles get none (the kid toggle can't clear it).
         if ProfilesStore.shared.active?.kid == nil, let s = find(plan.secondaryId, "sub") { setSecondarySub(s) }
         if plan.subDelaySec != 0 { setSubDelay(plan.subDelaySec) }
-        if let r = plan.restore {
+        // A remembered subtitle that is one of the stream's own comes with the seeds (addSeeds),
+        // and the plan after them selects it: restoring it here too would list it twice.
+        if let r = plan.restore, !TrackPlanner.isSeed(r.source, in: seedSubtitles) {
             let settled = subPicks
             Task { [weak self] in
                 guard let self, !self.tornDown else { return }
@@ -596,6 +614,55 @@ final class NativePlayerController: UIViewController {
             }
             self.lastCueKey = "-"
             self.tickCues()
+        }
+    }
+
+    /// html5/bridge.ts load → addSubtitle for each seed without selecting it (mpv's `sub-add …
+    /// auto`): the track joins the list with its cues, and the overlay keeps what it shows. Not a
+    /// pick (`subPicks` stays). A file whose cues come back empty is dropped again.
+    func addSeedSubtitle(file: URL, title: String, lang: String) {
+        guard !tornDown else { return }
+        let id = nextExternalId
+        nextExternalId += 1
+        let format = file.pathExtension.lowercased()
+        externalSubs.append(ExternalSub(id: id, title: title, lang: lang, format: format, file: file, cues: [], seed: true))
+        let p = ProfilesStore.shared.active
+        Task { [weak self] in
+            let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+            let cues: [SubtitleCue] = (try? await HarborEngine.shared.call("subtitles.cues", [p?.id ?? "default", p?.linked ?? true, text, format])) ?? []
+            guard let self, !self.tornDown, let i = self.externalSubs.firstIndex(where: { $0.id == id }) else { return }
+            if cues.isEmpty {
+                self.externalSubs.remove(at: i)
+                if self.activeExternal == id { self.activeExternal = nil }
+                if self.secondaryExternal == id { self.secondaryExternal = nil }
+                self.push("subtitle: no cues in \(file.lastPathComponent)")
+            } else {
+                self.externalSubs[i].cues = cues
+            }
+            self.lastCueKey = "-"
+            self.tickCues()
+        }
+    }
+
+    /// The seed batch for the item that just opened, after the first track plan, then the plan
+    /// once more with the seeds in (TrackPlanner.applySeedPlan), as on mpv.
+    private func addSeeds(_ item: AVPlayerItem) {
+        guard !seedsStarted, !seedSubtitles.isEmpty, !tornDown else { return }
+        seedsStarted = true
+        let seeds = seedSubtitles
+        let memory = trackMemory
+        let streamURL = url
+        let streamHeaders = headers
+        Task { [weak self] in
+            guard let self, !self.tornDown else { return }
+            let settled = self.subPicks
+            let added = await TrackPlanner.addSeeds(seeds, streamURL: streamURL, streamHeaders: streamHeaders, into: self,
+                                                    alive: { !self.tornDown && self.player.currentItem === item })
+            guard added > 0, !self.tornDown, self.player.currentItem === item else { return }
+            self.push("subs: \(added) stream subtitle\(added == 1 ? "" : "s") added")
+            if let label = await TrackPlanner.applySeedPlan(memory: memory, into: self, settled: settled) {
+                self.push("subs: \(label) (stream subtitle)")
+            }
         }
     }
 
@@ -950,6 +1017,8 @@ struct NativePlayerView: UIViewControllerRepresentable {
     var preferredSubs: [String] = []
     /// Per-show track memory key (TrackMemory.swift); nil remembers nothing.
     var trackMemory: TrackMemory? = nil
+    /// view.ts PlayerSrc.subtitles: the stream's own subtitles, added unselected once it opens.
+    var seedSubtitles: [SeedSubtitle] = []
     let onStatus: (MPVPlayerController.Status) -> Void
     var onEnded: (() -> Void)? = nil
     var onUnsupported: ((String) -> Void)? = nil
@@ -970,6 +1039,7 @@ struct NativePlayerView: UIViewControllerRepresentable {
         c.preferredAudio = preferredAudio
         c.preferredSubs = preferredSubs
         c.trackMemory = trackMemory
+        c.seedSubtitles = seedSubtitles
         c.onStatus = onStatus
         c.onEnded = onEnded
         c.onUnsupported = onUnsupported

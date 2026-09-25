@@ -40,6 +40,11 @@ protocol PlayerEngineControlling: AnyObject {
     /// bridge.ts snap.chapters (mpv chapter-list), for skip-intro/chapters.ts; the html5 bridge has none.
     func chapters() -> [PlayerChapter]
     func addSubtitle(file: URL, title: String, lang: String)
+    /// mpv.ts addSeedSubtitles → mpv_sub_add(select: false): one of the stream's own subtitles,
+    /// listed but not shown (mpv `sub-add … auto`). Not a pick: `subPicks` stays as it is.
+    func addSeedSubtitle(file: URL, title: String, lang: String)
+    /// Bumped by every subtitle selection (the viewer's or the plan's), never by a seed's add.
+    var subPicks: Int { get }
     /// bridge.ts capabilities().pictureInPicture: the overlay shows its PiP control only when true.
     var supportsPictureInPicture: Bool { get }
     var isPictureInPictureActive: Bool { get }

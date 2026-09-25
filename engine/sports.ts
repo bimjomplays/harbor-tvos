@@ -765,7 +765,7 @@ export async function addonStreams(key: string): Promise<{ status: "ok" | "listi
 /** bp-sports-addon-play play: a direct link plays live; an external page goes to the phone; a
  *  torrent, non-http link or catalogue title hands off to the regular stream list for its meta. */
 export async function addonPlay(key: string, index: number): Promise<
-  | { kind: "play"; url: string; headers: Record<string, string> | null; title: string; subtitle: string }
+  | { kind: "play"; url: string; headers: Record<string, string> | null; title: string; subtitle: string; subtitles: Array<{ url: string; lang: string | null }> }
   | { kind: "external"; url: string }
   | { kind: "handoff"; meta: unknown }
   | { kind: "reload" }
@@ -784,7 +784,9 @@ export async function addonPlay(key: string, index: number): Promise<
     const result = await resolveStream(parseStream(stream), [], new AbortController().signal, true, false, undefined, false, false);
     if (!result.ok) return { kind: "error" };
     const headers = result.data.headers && Object.keys(result.data.headers).length > 0 ? result.data.headers : null;
-    return { kind: "play", url: result.data.url, headers, title: row.meta.name, subtitle: row.addon.manifest.name };
+    // bp-sports-addon-play openPlayer({ …, subtitles: result.data.subtitles }).
+    const subtitles = (result.data.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang ?? null }));
+    return { kind: "play", url: result.data.url, headers, title: row.meta.name, subtitle: row.addon.manifest.name, subtitles };
   } catch {
     return { kind: "error" };
   }

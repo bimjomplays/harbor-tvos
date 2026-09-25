@@ -154,7 +154,8 @@ struct KidsDetailView: View {
                 // Present after the picker's cover has dismissed; a present-while-dismissing is dropped on tvOS.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     let upNext: String? = nextEpisode(after: ctx).map { n in "S\(n.season) E\(n.episode) · \(n.name)" }
-                    playing = KidsPlayTarget(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, pick: pick)
+                    playing = KidsPlayTarget(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, pick: pick,
+                                             subtitles: link.subtitles ?? [])
                 }
             }, autoPlay: pickerAuto)
         }
@@ -167,7 +168,7 @@ struct KidsDetailView: View {
                              pickerAuto = auto
                              let next = (t.pick?.attempt ?? 0) + 1
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { picker = KidsPickerTarget(meta: meta, episode: t.episode, attempt: next) }
-                         }) { natural in
+                         }, streamSubtitles: t.subtitles) { natural in
                 playing = nil
                 // A finished episode opens the next one of the loaded season, straight to its best source.
                 if natural, let next = nextEpisode(after: t.context) {
@@ -370,6 +371,8 @@ struct KidsPlayTarget: Identifiable {
     var episode: AnyJSON?
     /// PlayerSrc autoFired / attempt / streamRef (views/player.tsx next-stream skip).
     var pick: PlayerPickInfo? = nil
+    /// PlayerSrc.subtitles (use-pick-handler `subtitles: r.data.subtitles`): the stream's own subtitles.
+    var subtitles: [SeedSubtitle] = []
 }
 
 /// kids-episodes.tsx EpisodeCard: 16:9 still, "Ep n" badge, the star rating badge, name below.

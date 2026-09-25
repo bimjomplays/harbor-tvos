@@ -222,7 +222,10 @@ final class StreamsModel: ObservableObject {
             var headers: [String: String]?
             var notWebReady: Bool?
             var subtitles: [Sub]?
-            struct Sub: Decodable { var url: String; var lang: String? }
+            /// view.ts PlayerSrc.subtitles: a subtitle the stream came with (an addon stream's
+            /// `subtitles`, a home server's external files). `trustedSource`: the home server's own
+            /// file (media-server/playback.ts), which skips upstream's public-URL check.
+            struct Sub: Decodable { var url: String; var lang: String?; var trustedSource: Bool? = nil }
         }
         var ok: Bool
         var data: Link?

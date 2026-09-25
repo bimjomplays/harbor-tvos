@@ -21,6 +21,8 @@ import { rankByRelease } from "@/components/player/subtitle-menu/best-match";
 import { isVeryNewRelease } from "@/components/player/subtitle-menu/utils";
 import { loadSubPresets } from "@/lib/player/sub-presets";
 import { gatherStreamAddons } from "./streams";
+import { isSafeProviderSubtitleUrl } from "@/lib/subtitles/provider-url";
+import { subtitleTrackDownloadHeaders } from "@/lib/subtitles/provider-auth";
 
 function langCodes(names: string[] | undefined): string[] {
   const out = (names ?? ["English"]).map((n) => normalizeLang(n)).filter(Boolean);
@@ -75,6 +77,45 @@ function fetchSubtitleBytes(url: string, signal: AbortSignal, timeoutMs: number,
 export async function prepare(url: string): Promise<{ text: string; format: string; encoding: string }> {
   // No blob: URLs in JavaScriptCore; the native side writes `text` to a file for mpv.
   const p = await prepareSubtitle({ url }, { fetchBytes: fetchSubtitleBytes, createPlayable: async () => ({ url: "harbor-tvos://subtitle", cleanup: () => {} }) });
+  return { text: p.text, format: p.format, encoding: p.encoding };
+}
+
+/**
+ * mpv.ts addSeedSubtitles' gate for a stream-bundled subtitle (PlayerSrc.subtitles: an addon
+ * stream's `subtitles`, a home server's external files): `subtitle.trustedSource !== true &&
+ * !isSafeProviderSubtitleUrl(url)` skips it, so an addon's subtitle must be a public http(s) URL
+ * with no user name or password. A trusted (home-server) one passes, but only over http(s): the
+ * TV has no local library, so a file path could only point into the app's own container.
+ */
+export function seedAllowed(url: string, trusted: boolean | null | undefined): boolean {
+  if (typeof url !== "string" || !/^https?:\/\//i.test(url.trim())) return false;
+  return trusted === true || isSafeProviderSubtitleUrl(url.trim());
+}
+
+/**
+ * mpv.ts addSeedSubtitles' preparation of one seed: prepareSubtitle({ url, language,
+ * requestHeaders: subtitleTrackDownloadHeaders(undefined, url, !trusted) }). An addon's subtitle
+ * carries the public-network marker, so safeFetchBytes refuses a redirect to a private host too.
+ * null when the gate refuses it; a failed download throws (the player skips that seed, as
+ * upstream's "seed subtitle preparation failed" does).
+ */
+export async function prepareSeed(
+  url: string,
+  trusted: boolean | null,
+  lang: string | null,
+  serverHeaders?: Record<string, string> | null,
+): Promise<{ text: string; format: string; encoding: string } | null> {
+  if (!seedAllowed(url, trusted)) return null;
+  const target = url.trim();
+  // (TV) A home server's subtitle file answers only with the server's token (Plex /library/streams,
+  // Jellyfin/Emby Subtitles/…/Stream): Swift hands over the stream's own headers for a trusted
+  // seed on the stream's origin. An addon's seed never gets them.
+  const extra = trusted === true && serverHeaders ? serverHeaders : {};
+  const requestHeaders = { ...extra, ...(subtitleTrackDownloadHeaders(undefined, target, trusted !== true) ?? {}) };
+  const p = await prepareSubtitle(
+    { url: target, language: lang ?? undefined, requestHeaders },
+    { fetchBytes: fetchSubtitleBytes, createPlayable: async () => ({ url: "harbor-tvos://subtitle", cleanup: () => {} }) },
+  );
   return { text: p.text, format: p.format, encoding: p.encoding };
 }
 

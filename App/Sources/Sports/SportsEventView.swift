@@ -177,7 +177,7 @@ struct SportsEventView: View {
             }, onClose: { addonPanel = nil })
         }
         .fullScreenCover(item: $addonPlaying) { p in
-            PlayerScreen(title: p.title, subtitle: p.subtitle, url: p.url, headers: p.headers, isLive: p.isLive) { _ in addonPlaying = nil }
+            PlayerScreen(title: p.title, subtitle: p.subtitle, url: p.url, headers: p.headers, isLive: p.isLive, streamSubtitles: p.subtitles) { _ in addonPlaying = nil }
         }
         .fullScreenCover(isPresented: $broadcastsOpen) {
             SportsBroadcastsView(

@@ -424,6 +424,12 @@ export type TrackIn = {
   selected?: boolean;
   secondary?: boolean;
   externalFilename?: string | null;
+  /**
+   * mpv.ts addSeedSubtitles: a stream-bundled subtitle (PlayerSrc.subtitles) the player prepared
+   * and added unselected. Once the whole seed batch is in, upstream flags those tracks
+   * `prepared` + `autoSelectionEligible`, so the language preference may pick them.
+   */
+  autoSelectionEligible?: boolean;
 };
 
 type PlanTrack = {
@@ -438,6 +444,9 @@ type PlanTrack = {
   default: boolean;
   selected: boolean;
   secondary: boolean;
+  /** track-selection.ts isAutoSelectableSubtitleTrack: an external track needs both. */
+  prepared?: boolean;
+  autoSelectionEligible?: boolean;
 };
 
 /** lib/player/mpv.ts track-list mapping: label = title || lang || "type id", then the tags. */
@@ -466,6 +475,8 @@ function toPlanTrack(t: TrackIn): PlanTrack {
     default: t.default === true,
     selected: t.selected === true && t.secondary !== true,
     secondary: t.secondary === true,
+    // mpv.ts addSeedSubtitles seedBatch.commit: { ...track, prepared: true, autoSelectionEligible: true }.
+    ...(t.external === true && t.autoSelectionEligible === true ? { prepared: true, autoSelectionEligible: true } : {}),
   };
 }
 
@@ -522,6 +533,11 @@ export type TrackPlan = {
   secondaryId: string | null;
   /** player-prefs subDelaySec (0 when none is saved). */
   subDelaySec: number;
+  /**
+   * settings.subtitleAutoUpgrade (use-track-autoload lockedToAuto): a later pass may replace the
+   * subtitle the automatic choice already put on (seed subtitles arriving after the first plan).
+   */
+  autoUpgrade: boolean;
   /** Why, for the player's log lines. */
   notes: string[];
 };
@@ -529,7 +545,8 @@ export type TrackPlan = {
 /**
  * One pass of use-track-autoload's track effect for a freshly opened file (no user pick yet, no
  * subtitle preselect), plus its subtitle-memory restore effect and use-secondary-sub's auto pick.
- * External tracks are never auto-selected: upstream only auto-picks prepared autoload results.
+ * External tracks are only auto-selected when flagged `autoSelectionEligible` (the stream's own
+ * seed subtitles, mpv.ts addSeedSubtitles): upstream auto-picks prepared, eligible tracks only.
  */
 export function planTracks(settings: Settings, key: TrackMemoryKey | null, tracksIn: TrackIn[]): TrackPlan {
   const tracks = (tracksIn ?? []).map(toPlanTrack);
@@ -630,7 +647,7 @@ export function planTracks(settings: Settings, key: TrackMemoryKey | null, track
   }
 
   const delay = typeof prefs?.subDelaySec === "number" && Number.isFinite(prefs.subDelaySec) ? prefs.subDelaySec : 0;
-  return { audioId, sub, subId, restore, secondaryId, subDelaySec: delay, notes };
+  return { audioId, sub, subId, restore, secondaryId, subDelaySec: delay, autoUpgrade: settings.subtitleAutoUpgrade === true, notes };
 }
 
 /** Swift's entry: the profile's settings applied to one file's tracks. */

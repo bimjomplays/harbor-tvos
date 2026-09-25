@@ -1071,6 +1071,9 @@ export const liveVod = {
 export const subtitles = {
   search: subtitleGlue.search,
   prepare: subtitleGlue.prepare,
+  /** mpv.ts addSeedSubtitles: the stream's own subtitles (safe-URL gate + preparation). */
+  seedAllowed: subtitleGlue.seedAllowed,
+  prepareSeed: subtitleGlue.prepareSeed,
   /** html5 bridge ensureLoaded: parsed cues for the AVPlayer engine's own subtitle overlay. */
   cues: subtitleGlue.cues,
   /** bp-player-subtitles: track rows (language groups, badges, best-match order). */

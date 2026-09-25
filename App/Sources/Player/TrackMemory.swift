@@ -14,6 +14,10 @@ struct TrackMemory: Encodable, Equatable {
     var filename: String?
 }
 
+/// view.ts PlayerSrc.subtitles: a subtitle the resolved stream came with, handed to the player
+/// (mpv.ts addSeedSubtitles), which adds it unselected once the file is open.
+typealias SeedSubtitle = StreamsModel.Resolved.Link.Sub
+
 /// engine player.trackPlan: use-track-autoload's choice for a file that just opened.
 struct TrackPlan: Decodable {
     struct Restore: Decodable {
@@ -30,6 +34,8 @@ struct TrackPlan: Decodable {
     /// use-secondary-sub.ts autoPick (settings.secondarySubLang).
     var secondaryId: String?
     var subDelaySec: Double
+    /// settings.subtitleAutoUpgrade: a later pass may replace the automatic subtitle (lockedToAuto).
+    var autoUpgrade: Bool?
     var notes: [String]
 }
 
@@ -48,11 +54,15 @@ struct EngineTrack: Encodable {
     var selected: Bool
     var secondary: Bool
     var externalFilename: String?
+    /// mpv.ts addSeedSubtitles: a stream-bundled subtitle, prepared and added (engine TrackIn).
+    var autoSelectionEligible: Bool? = nil
 
     static func from(_ t: MPVPlayerController.Track) -> EngineTrack {
-        EngineTrack(id: t.id, type: t.type, lang: t.lang, title: t.title, codec: t.codec, channels: t.channels,
-                    external: t.external, forced: t.forced, hearingImpaired: t.hearingImpaired, default: t.isDefault,
-                    selected: t.selected, secondary: t.secondary, externalFilename: t.externalFilename)
+        let eligible: Bool? = t.seeded ? true : nil
+        return EngineTrack(id: t.id, type: t.type, lang: t.lang, title: t.title, codec: t.codec, channels: t.channels,
+                           external: t.external, forced: t.forced, hearingImpaired: t.hearingImpaired, default: t.isDefault,
+                           selected: t.selected, secondary: t.secondary, externalFilename: t.externalFilename,
+                           autoSelectionEligible: eligible)
     }
 }
 
@@ -146,6 +156,107 @@ enum TrackPlanner {
         guard FileManager.default.fileExists(atPath: file.path), stillWanted() else { return false }
         c.addSubtitle(file: file, title: title, lang: lang)
         return true
+    }
+
+    // MARK: the stream's own subtitles (mpv.ts addSeedSubtitles)
+
+    /// A remembered subtitle whose URL is one of the stream's own: the seeds bring it (see restore).
+    static func isSeed(_ source: String, in seeds: [SeedSubtitle]) -> Bool {
+        let wanted = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        return seeds.contains { $0.url.trimmingCharacters(in: .whitespacesAndNewlines) == wanted }
+    }
+
+    /// Both URLs on the same scheme, host and port: a home server's subtitle file is fetched with
+    /// the stream's own headers (its token) only there.
+    private static func sameOrigin(_ a: String, _ b: URL?) -> Bool {
+        guard let b, let u = URL(string: a), let ha = u.host?.lowercased(), let hb = b.host?.lowercased() else { return false }
+        let sa = (u.scheme ?? "").lowercased()
+        let sb = (b.scheme ?? "").lowercased()
+        let pa: Int = u.port ?? (sa == "https" ? 443 : 80)
+        let pb: Int = b.port ?? (sb == "https" ? 443 : 80)
+        return sa == sb && ha == hb && pa == pb
+    }
+
+    /// mpv.ts addSeedSubtitles for a file that just opened: each of the stream's subtitles, in
+    /// order, through upstream's gate (trustedSource, else isSafeProviderSubtitleUrl: public
+    /// http(s) only) and prepareSubtitle (engine subtitles.prepareSeed; the prepared copy is
+    /// cached by URL like Find more's), then added UNSELECTED (`sub-add … auto`; the AVPlayer
+    /// overlay's list without selecting it), so it shows in the Subtitles dialog and the plan can
+    /// pick it. One that fails to download is skipped ("one unavailable subtitle must not block
+    /// media startup"). A file already listed (a restore of the same URL) is not added again.
+    /// `alive` is asked after every wait: a player that closed or was replaced adds nothing more.
+    /// Returns how many were added.
+    static func addSeeds(_ seeds: [SeedSubtitle], streamURL: URL?, streamHeaders: [String: String],
+                         into c: any PlayerEngineControlling, alive: () -> Bool) async -> Int {
+        struct Prepared: Decodable { var text: String; var format: String }
+        var added = 0
+        var seen: Set<String> = []
+        for seed in seeds {
+            guard alive() else { return added }
+            let source = seed.url.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !source.isEmpty, !seen.contains(source) else { continue }
+            seen.insert(source)
+            let trusted = seed.trustedSource == true
+            let lang = (seed.lang ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let allowed: Bool = (try? await HarborEngine.shared.call("subtitles.seedAllowed", [source, trusted])) ?? false
+            guard allowed, alive() else { continue }
+            let file: URL
+            if let cached = cachedSubtitleFile(source: source) {
+                file = cached
+            } else {
+                let serverHeaders: [String: String]? = trusted && sameOrigin(source, streamURL) ? streamHeaders : nil
+                let langArg: String? = lang.isEmpty ? nil : lang
+                let args: [any Encodable] = [source, trusted, langArg, serverHeaders]
+                let prepared: Prepared? = try? await HarborEngine.shared.call("subtitles.prepareSeed", args)
+                guard let prep = prepared, alive() else { continue }
+                let out = subtitleFile(source: source, format: prep.format)
+                do {
+                    try FileManager.default.createDirectory(at: subsDir, withIntermediateDirectories: true)
+                    try prep.text.write(to: out, atomically: true, encoding: .utf8)
+                } catch {
+                    continue
+                }
+                file = out
+            }
+            guard alive() else { return added }
+            let name = file.lastPathComponent
+            let listed = c.tracks().contains { t in
+                guard t.type == "sub", t.external, let f = t.externalFilename else { return false }
+                return URL(fileURLWithPath: f).lastPathComponent == name
+            }
+            if listed { continue }
+            // noteSubtitleOrigin first: a pick of this track remembers the URL, and the plan below
+            // finds a remembered one by it.
+            let _: Bool? = try? await HarborEngine.shared.call("player.noteSubtitleSource", [file.path, source])
+            guard alive() else { return added }
+            // mpv.rs mpv_sub_add: title = the language, else "Subtitle" (upstream passes none), so
+            // the dialog reads "<Language> · External subtitle" (subtitleTrackTitle).
+            c.addSeedSubtitle(file: file, title: lang.isEmpty ? "Subtitle" : lang, lang: lang)
+            added += 1
+        }
+        return added
+    }
+
+    /// use-track-autoload's track effect again, once the seeds are in (seedBatch.commit flags them
+    /// autoSelectionEligible and the track list changed). Nothing changes when a subtitle was
+    /// chosen since the first plan (`settled`: the viewer's pick, a remembered restore; userPicked),
+    /// or when one is on and settings.subtitleAutoUpgrade is off (lockedToAuto). Otherwise the
+    /// plan's subtitle is put on: the preferred language's best track (a seed only when no track
+    /// of the file's own ranks above it), or the episode's remembered seed. Returns its label.
+    static func applySeedPlan(memory: TrackMemory?, into c: any PlayerEngineControlling, settled: Int) async -> String? {
+        guard c.subPicks == settled else { return nil }
+        let list = c.tracks()
+        let planned = await plan(memory: memory, tracks: list)
+        guard let plan = planned, c.subPicks == settled else { return nil }
+        guard plan.sub == "select", let id = plan.subId else { return nil }
+        guard let want = list.first(where: { $0.type == "sub" && String($0.id) == id }) else { return nil }
+        let current = list.first { $0.type == "sub" && $0.selected }
+        if let current {
+            if current.id == want.id { return nil }
+            if plan.autoUpgrade != true { return nil }
+        }
+        c.select(track: want, type: "sub")
+        return want.label
     }
 }
 

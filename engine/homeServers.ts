@@ -260,7 +260,8 @@ export async function play(meta: Meta, connectionId: string, itemId: string, ver
   if (src.homeServer) playing.set(sessionKey(connectionId, item.id), { versionId: src.homeServer.versionId, quality: src.homeServer.quality, playbackSessionId: src.homeServer.playbackSessionId ?? null });
   return {
     url: src.url, headers: src.headers ?? null, subtitle: src.subtitle ?? null,
-    subtitles: (src.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang ?? null })),
+    // media-server/playback.ts mediaServerPlayerSrc: the server's own files are trustedSource.
+    subtitles: (src.subtitles ?? []).map((s) => ({ url: s.url, lang: s.lang ?? null, trustedSource: true })),
     resumeMs: item.progress?.positionMs ?? 0,
     session: { connectionId, itemId: item.id, versionId: src.homeServer?.versionId ?? versionId ?? null, playbackSessionId: src.homeServer?.playbackSessionId ?? null },
   };
@@ -368,6 +369,6 @@ export async function switchQuality(connectionId: string, itemId: string, versio
   playing.set(key, { versionId: hs.versionId, quality: hs.quality, playbackSessionId: hs.playbackSessionId ?? null });
   return {
     url: next.url, headers: next.headers ?? null, quality: hs.quality, subtitle: next.subtitle ?? null,
-    subtitles: (next.subtitles ?? []).map((sub) => ({ url: sub.url, lang: sub.lang ?? null })),
+    subtitles: (next.subtitles ?? []).map((sub) => ({ url: sub.url, lang: sub.lang ?? null, trustedSource: true })),
   };
 }

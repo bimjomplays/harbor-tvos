@@ -64,7 +64,7 @@ struct SportsView: View {
             PlayerScreen(title: opt.name, subtitle: opt.label, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in directPlay = nil }
         }
         .fullScreenCover(item: $directStream) { p in
-            PlayerScreen(title: p.title, subtitle: p.subtitle, url: p.url, headers: p.headers, isLive: p.isLive) { _ in directStream = nil }
+            PlayerScreen(title: p.title, subtitle: p.subtitle, url: p.url, headers: p.headers, isLive: p.isLive, streamSubtitles: p.subtitles) { _ in directStream = nil }
         }
         .fullScreenCover(isPresented: $personalize) { SportsPersonalizeView(model: model, dismiss: { personalize = false }) }
     }

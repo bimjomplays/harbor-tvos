@@ -65,7 +65,7 @@ r.ok("benchmark still works", (() => {
       { id: "ev2", type: "tv", name: "Some Other Channel" },
     ] });
     if (req.url === `${base}/stream/tv/ev1.json`) return json({ streams: [
-      { name: "HD", title: "Main feed", url: "https://cdn.example.invalid/ev1.m3u8" },
+      { name: "HD", title: "Main feed", url: "https://cdn.example.invalid/ev1.m3u8", subtitles: [{ id: "s1", url: "https://subs.example.invalid/ev1.srt", lang: "eng" }] },
       { name: "Web", externalUrl: "https://watch.example.invalid/ev1" },
       { name: "P2P", infoHash: "0123456789abcdef0123456789abcdef01234567" },
     ] });
@@ -84,6 +84,7 @@ r.ok("benchmark still works", (() => {
   r.ok("sports.addonStreams lists the listing's streams", st.status === "ok" && st.rows.length === 3 && st.rows[0].name === "HD" && st.rows[0].title === "Main feed" && st.rows[1].external === true, JSON.stringify(st));
   const play = await rec.engine.sports.addonPlay(src.rows[0].key, 0);
   r.ok("sports.addonPlay resolves a direct link to play", play.kind === "play" && play.url === "https://cdn.example.invalid/ev1.m3u8" && play.subtitle === "Sports Live", JSON.stringify(play));
+  r.eq("sports.addonPlay carries the stream's own subtitles (bp-sports-addon-play subtitles: result.data.subtitles)", play.subtitles, [{ url: "https://subs.example.invalid/ev1.srt", lang: "eng" }]);
   const ext = await rec.engine.sports.addonPlay(src.rows[0].key, 1);
   r.eq("sports.addonPlay sends an external page to the phone", [ext.kind, ext.url], ["external", "https://watch.example.invalid/ev1"]);
   r.eq("sports.addonPlay hands a torrent off to the stream list", (await rec.engine.sports.addonPlay(src.rows[0].key, 2)).kind, "handoff");
@@ -3072,6 +3073,22 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     r.eq("player.trackPlan: a remembered added subtitle is fetched again (same release)", again.restore && again.restore.source, "https://subs.example.invalid/os_1.srt");
     const otherRelease = e.player.trackPlan("default", true, { ...film, filename: "Film.2020.2160p.BluRay.x265-OTHER.mkv" }, [S(1, "fre", "French")]);
     r.eq("player.trackPlan: another release does not restore it (subtitle-memory streamKey)", otherRelease.restore, null);
+    // Stream-bundled subtitles (mpv.ts addSeedSubtitles): eligible once the seed batch is in.
+    const seed = (id, lang, extra = {}) => S(id, lang, lang, { external: true, externalFilename: `/caches/subs/seed_${id}.srt`, ...extra });
+    const seedOnly = e.player.planTracks(D, null, [A(1, "eng", null, { selected: true }), S(1, "spa", "Spanish"), seed(2, "eng", { autoSelectionEligible: true })]);
+    r.eq("player.planTracks: an eligible seed subtitle in the preferred language is picked", [seedOnly.sub, seedOnly.subId], ["select", "2"]);
+    const notEligible = e.player.planTracks(D, null, [A(1, "eng", null, { selected: true }), S(1, "spa", "Spanish"), seed(2, "eng")]);
+    r.eq("player.planTracks: an external track that is not an eligible seed is never auto-picked", notEligible.sub, "none");
+    const embeddedFirst = e.player.planTracks(D, null, [S(1, "eng", "English"), seed(2, "eng", { autoSelectionEligible: true })]);
+    r.eq("player.planTracks: the file's own track in the same language beats a seed (track-selection confidence)", embeddedFirst.subId, "1");
+    r.eq("player.planTracks: autoUpgrade follows settings.subtitleAutoUpgrade", [embeddedFirst.autoUpgrade, e.player.planTracks({ ...D, subtitleAutoUpgrade: true }, null, []).autoUpgrade], [false, true]);
+    const seedFilm = { metaId: "tt7000006" };
+    e.player.noteSubtitleSource("/caches/subs/seed_7.srt", "https://addon.example.invalid/subs/en.srt");
+    e.player.rememberSubtitle(seedFilm, seed(7, "eng"));
+    const seedBefore = e.player.trackPlan("default", true, seedFilm, [S(1, "fre", "French")]);
+    r.eq("player.trackPlan: a remembered seed subtitle names its URL before the seeds are in (the player skips that restore)", seedBefore.restore && seedBefore.restore.source, "https://addon.example.invalid/subs/en.srt");
+    const seedAfter = e.player.trackPlan("default", true, seedFilm, [S(1, "fre", "French"), seed(7, "eng", { autoSelectionEligible: true })]);
+    r.eq("player.trackPlan: once the seeds are in, the remembered seed is selected, not fetched again", [seedAfter.sub, seedAfter.subId, seedAfter.restore], ["select", "7", null]);
     // Per-show speed (shell-layer.tsx onRate → player-prefs rate; use-track-autoload applies it on load).
     const rateShow = { metaId: "tt7000004", season: 1, episode: 1 };
     r.eq("player.startRate: nothing remembered → 1 at the default settings", e.player.startRate("default", true, rateShow), 1);
@@ -3165,6 +3182,33 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("subtitles.prepare opens a zipped subtitle (bytes not mangled by the text bridge)", zipped.text && zipped.text.includes("Ça va très bien.") && zipped.format === "srt", JSON.stringify(zipped).slice(0, 200));
   const wide = await prep("https://subs.example.invalid/utf16.srt");
   r.ok("subtitles.prepare decodes a UTF-16LE (BOM) SRT", wide.encoding === "utf-16le" && wide.text && wide.text.includes("À bientôt."), JSON.stringify(wide).slice(0, 200));
+  // mpv.ts addSeedSubtitles: trustedSource || isSafeProviderSubtitleUrl, then prepareSubtitle.
+  const gate = (u, t) => sub.engine.subtitles.seedAllowed(u, t);
+  r.eq("subtitles.seedAllowed: an addon's subtitle must be a public http(s) URL without credentials", [
+    gate("https://subs.example.invalid/a.srt", false), gate("http://subs.example.invalid/a.srt", null),
+    gate("http://192.168.1.10:8096/a.srt", false), gate("http://localhost:11470/a.srt", false), gate("http://10.0.0.2/a.srt", false),
+    gate("https://user:pw@subs.example.invalid/a.srt", false), gate("file:///etc/passwd", false), gate("ftp://subs.example.invalid/a.srt", false), gate("javascript:alert(1)", false),
+  ], [true, true, false, false, false, false, false, false, false]);
+  r.eq("subtitles.seedAllowed: a home server's (trusted) subtitle may be on the LAN, still http(s) only", [
+    gate("http://192.168.1.10:8096/Videos/1/2/Subtitles/3/Stream.srt", true), gate("file:///var/mobile/a.srt", true),
+  ], [true, false]);
+  const seenHeaders = [];
+  const baseFetch = sub.node.host.fetch;
+  sub.node.host.fetch = async (req) => {
+    seenHeaders.push([req.url, JSON.stringify(req.headers ?? {})]);
+    if (req.url === "http://192.168.1.10:8096/sub.srt") return baseFetch({ ...req, url: "https://subs.example.invalid/latin1.srt" });
+    return baseFetch(req);
+  };
+  const seedPrep = async (...a) => { try { return await sub.engine.subtitles.prepareSeed(...a); } catch (e) { return { error: String(e && e.message) }; } };
+  r.eq("subtitles.prepareSeed refuses an unsafe addon subtitle without downloading it", [await seedPrep("http://192.168.1.10:8096/sub.srt", false, "en", { "X-Emby-Token": "t" }), seenHeaders.length], [null, 0]);
+  const addonSeed = await seedPrep("https://subs.example.invalid/latin1.srt", false, "fr", { "X-Emby-Token": "t" });
+  r.ok("subtitles.prepareSeed prepares an addon seed (decoded text) and never sends it the server's token",
+    addonSeed && addonSeed.format === "srt" && addonSeed.text.includes("Café") && seenHeaders.length === 1 && !/emby/i.test(seenHeaders[0][1]) && !/public-network/i.test(seenHeaders[0][1]),
+    JSON.stringify([addonSeed && addonSeed.format, seenHeaders]));
+  const serverSeed = await seedPrep("http://192.168.1.10:8096/sub.srt", true, "fr", { "X-Emby-Token": "t" });
+  r.ok("subtitles.prepareSeed fetches a home server's seed with the server's headers",
+    serverSeed && serverSeed.format === "srt" && seenHeaders.length === 2 && seenHeaders[1][0] === "http://192.168.1.10:8096/sub.srt" && /x-emby-token/i.test(seenHeaders[1][1]),
+    JSON.stringify([serverSeed, seenHeaders]));
   r.eq("TextDecoder shim: cp1251 / latin1 / koi8-r labels and canonical names",
     sub.run(`[new TextDecoder("cp1251").decode(new Uint8Array([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2])), new TextDecoder("latin1").encoding, new TextDecoder("KOI8-R").decode(new Uint8Array([0xf0, 0xd2, 0xc9, 0xd7, 0xc5, 0xd4])), new TextDecoder("utf-16be").decode(new Uint8Array([0x00, 0x41, 0xd8, 0x3d, 0xde, 0x00]))]`),
     ["Привет", "windows-1252", "Привет", "A😀"]);

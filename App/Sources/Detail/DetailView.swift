@@ -128,6 +128,8 @@ struct DetailView: View {
         var hints: PlayerStreamHints? = nil
         /// PlayerSrc autoFired / attempt / streamRef (views/player.tsx next-stream skip).
         var pick: PlayerPickInfo? = nil
+        /// PlayerSrc.subtitles (use-pick-handler `subtitles: r.data.subtitles`): the stream's own subtitles.
+        var subtitles: [SeedSubtitle] = []
     }
 
     /// Quick panel / Discovery Queue "Play now": open the picker as soon as the page knows what to play.
@@ -211,7 +213,8 @@ struct DetailView: View {
                             }
                             let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
                                                           hdrFormat: stream?.hdrFormat, filename: link.filename)
-                            playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints, pick: pick)
+                            playing = PlayTarget(url: url, headers: link.headers ?? [:], title: model.meta.name, subtitle: sub, context: ctx, upNext: upNext, episode: ep, hints: hints, pick: pick,
+                                                 subtitles: link.subtitles ?? [])
                         }
                     }
                 }, autoPlay: pickerAuto, applyPreference: pickerPref)
@@ -243,7 +246,7 @@ struct DetailView: View {
                              pickerAuto = auto; pickerPref = false
                              let next = (t.pick?.attempt ?? 0) + 1
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAttempt = next; picker = (model.meta, t.episode) }
-                         }) { natural in
+                         }, streamSubtitles: t.subtitles) { natural in
                 playing = nil
                 hintSpent = true
                 model.episodeHint = nil

@@ -41,10 +41,19 @@ struct SportsAddonPanelView: View {
     let onPlay: (Play) -> Void
     let onClose: () -> Void
 
-    struct Play: Identifiable { let url: URL; let headers: [String: String]; let title: String; let subtitle: String?; let isLive: Bool; var id: String { url.absoluteString } }
+    struct Play: Identifiable {
+        let url: URL
+        let headers: [String: String]
+        let title: String
+        let subtitle: String?
+        let isLive: Bool
+        /// bp-sports-addon-play openPlayer `subtitles: result.data.subtitles`: the stream's own subtitles.
+        var subtitles: [SeedSubtitle] = []
+        var id: String { url.absoluteString }
+    }
     struct StreamRow: Decodable, Identifiable { var index: Int; var name: String; var title: String; var external: Bool; var id: Int { index } }
     struct Streams: Decodable { var status: String; var rows: [StreamRow] }
-    struct Outcome: Decodable { var kind: String; var url: String?; var headers: [String: String]?; var title: String?; var subtitle: String?; var meta: Meta? }
+    struct Outcome: Decodable { var kind: String; var url: String?; var headers: [String: String]?; var title: String?; var subtitle: String?; var subtitles: [SeedSubtitle]?; var meta: Meta? }
     struct External: Identifiable { let url: String; var id: String { url } }
 
     private static let page = 24
@@ -102,7 +111,8 @@ struct SportsAddonPanelView: View {
             PlayPickerView(meta: meta, episode: nil) { _, resolved in
                 guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
                 handoff = nil
-                onPlay(Play(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: picked?.addonName, isLive: !["movie", "series"].contains(meta.type)))
+                onPlay(Play(url: url, headers: link.headers ?? [:], title: meta.name, subtitle: picked?.addonName, isLive: !["movie", "series"].contains(meta.type),
+                            subtitles: link.subtitles ?? []))
             }
         }
     }
@@ -209,7 +219,8 @@ struct SportsAddonPanelView: View {
             switch out?.kind {
             case "play":
                 if let s = out?.url, let url = URL(string: s) {
-                    onPlay(Play(url: url, headers: out?.headers ?? [:], title: out?.title ?? row.name, subtitle: out?.subtitle, isLive: true))
+                    onPlay(Play(url: url, headers: out?.headers ?? [:], title: out?.title ?? row.name, subtitle: out?.subtitle, isLive: true,
+                                subtitles: out?.subtitles ?? []))
                 } else { fault = "stream" }
             case "external":
                 if let u = out?.url { external = External(url: u) } else { fault = "stream" }
