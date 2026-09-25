@@ -18,7 +18,7 @@ import { runPipeline, type PipelineResult } from "@/lib/streams/pipeline";
 import { resolveStream, type ResolveResult } from "@/lib/streams/resolve";
 import type { ScoredStream } from "@/lib/streams/types";
 import type { PlayEpisode } from "@/lib/view";
-import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure, displayTitle, torrentFilename, streamSummaryParts, contributorLabel } from "@/views/play-picker/picker-utils";
+import { cinemetaImdbFallback, stampAddonOrder, hasInstantMarker, isWatchHub, needsDownload, streamMatchesLangs, streamIsCached, playError, translatePickerError, isDebridFailure, displayTitle, torrentFilename, streamSummaryParts, contributorLabel, streamIdentity } from "@/views/play-picker/picker-utils";
 import { isFilterEmpty, matchesCustomFilter } from "@/lib/streams/custom-filters";
 import { isVideoFile, trackersFromSources, type TorrentFile } from "@/lib/torrent/stremio-stream";
 import { magnetFromHash } from "@/lib/debrid/types";
@@ -116,6 +116,23 @@ export type StreamSearch = {
 
 const searches = new Map<string, AbortController>();
 const lastResults = new Map<string, PipelineResult>();
+
+/**
+ * (detail/search pass 2) The stream a picker row names. `key` is the row's streamIdentity (bp-streams
+ * keys its rows by it and hands the stream itself to use-pick-handler); `streamIndex` is where the
+ * row sat in the list the TV drew. Every partial result re-ranks picker.all as slower addons answer,
+ * so the index alone could name another stream by the time a resolve, a remember or a dead mark
+ * reached the engine (the wrong source played, was remembered or was marked dead). Without a key
+ * the index is used as before; a key no longer in the list names nothing.
+ */
+function pickedStream(token: string, streamIndex: number, key: string | null | undefined): ScoredStream | undefined {
+  const all = lastResults.get(token)?.picker.all;
+  if (!all) return undefined;
+  const at = all[streamIndex];
+  if (key == null || key === "") return at;
+  if (at && streamIdentity(at) === key) return at;
+  return all.find((s) => streamIdentity(s) === key);
+}
 
 /**
  * Runs the whole picker pipeline for a title. Partial results arrive as
@@ -269,6 +286,8 @@ export function stampPickerRows(all: ScoredStream[], settings: Settings, meta: M
     out.tvFilters = filters.filter((f) => isFilterEmpty(f) || matchesCustomFilter(s, f)).map((f) => f.id);
     out.tvCached = streamIsCached(s, debrids);
     out.tvSort = { watchHub: isWatchHub(s), needsDownload: needsDownload(s), instant: hasInstantMarker(s) };
+    // (detail/search pass 2) The row's identity across re-ranks (bp-streams row key); see pickedStream.
+    (out as { tvKey?: string }).tvKey = streamIdentity(s);
   }
 }
 
@@ -385,9 +404,10 @@ export async function resolve(
   afterP2p = false,
   season: number | null = null,
   episode: number | null = null,
+  key: string | null = null,
 ): Promise<ResolveOutcome> {
   const settings = loadEffective(profileId, linked);
-  const stream: ScoredStream | undefined = lastResults.get(token)?.picker.all[streamIndex];
+  const stream: ScoredStream | undefined = pickedStream(token, streamIndex, key);
   if (!stream) return { ok: false, code: "no-such-stream", tried: [], message: null, debridFailure: false };
   const ac = new AbortController();
   const debrids = debridsFor(settings);
@@ -428,9 +448,9 @@ export async function resolve(
  * asks first (BpP2pDialog) unless p2pAutoConsent is on or a kid profile is watching.
  * engineP2pEligible's Tauri check is the TV's librqbit engine here (tvEngineP2pEligible).
  */
-export function p2pConsentNeeded(token: string, profileId: string, linked: boolean, streamIndex: number, kid = false): boolean {
+export function p2pConsentNeeded(token: string, profileId: string, linked: boolean, streamIndex: number, kid = false, key: string | null = null): boolean {
   const settings = loadEffective(profileId, linked);
-  const stream = lastResults.get(token)?.picker.all[streamIndex];
+  const stream = pickedStream(token, streamIndex, key);
   if (!stream) return false;
   const debrids = debridsFor(settings);
   const eligible = tvEngineP2pEligible(stream, settings);
@@ -479,8 +499,8 @@ export function remembered(token: string, profileId: string, linked: boolean, me
  * marks by addon + title is never matched by isStreamDead on the picker's side; with the url the
  * auto candidates skip it as intended).
  */
-export function deadRef(token: string, streamIndex: number): Record<string, unknown> | null {
-  const stream = lastResults.get(token)?.picker.all[streamIndex];
+export function deadRef(token: string, streamIndex: number, key: string | null = null): Record<string, unknown> | null {
+  const stream = pickedStream(token, streamIndex, key);
   if (!stream) return null;
   return {
     infoHash: stream.infoHash ?? null,
@@ -575,10 +595,22 @@ export function autoCandidates(token: string, profileId: string, linked: boolean
   return out;
 }
 
+/**
+ * (detail/search pass 2) autoCandidates as row identities (streamIdentity), not indexes: the TV's
+ * list can be one partial result behind the engine's, so an index named another stream there.
+ */
+export function autoCandidateKeys(token: string, profileId: string, linked: boolean, meta: Meta, season: number | null, episode: number | null, isAnime: boolean, expectedTitles: string[] | null, prefer1080 = false): string[] {
+  const all = lastResults.get(token)?.picker.all ?? [];
+  return autoCandidates(token, profileId, linked, meta, season, episode, isAnime, expectedTitles, prefer1080)
+    .map((i) => all[i])
+    .filter((s): s is ScoredStream => !!s)
+    .map((s) => streamIdentity(s));
+}
+
 /** use-pick-handler: remember what played so the next visit can fire it without asking. */
-export function rememberPlayback(token: string, profileId: string, linked: boolean, meta: Meta, streamIndex: number, resolvedUrl: string | null, season: number | null, episode: number | null): boolean {
+export function rememberPlayback(token: string, profileId: string, linked: boolean, meta: Meta, streamIndex: number, resolvedUrl: string | null, season: number | null, episode: number | null, key: string | null = null): boolean {
   const settings = loadEffective(profileId, linked);
-  const stream = lastResults.get(token)?.picker.all[streamIndex];
+  const stream = pickedStream(token, streamIndex, key);
   if (!stream || !settings.rememberLastStream) return false;
   const entry = {
     infoHash: stream.infoHash ?? null, fileIdx: stream.fileIdx ?? null, addonId: stream.addonId ?? null, url: resolvedUrl ?? stream.url ?? null,

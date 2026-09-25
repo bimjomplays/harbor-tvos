@@ -1893,6 +1893,17 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const refA = e.streamsRoom.deadRef("dead", ia), refC = e.streamsRoom.deadRef("dead", ic);
   r.ok("streamsRoom.deadRef carries what dead-streams fingerprints (url, infoHash + fileIdx, addon, title)", refA?.url === "https://cdn.example.invalid/a.mp4" && refA.infoHash === null && refA.addonId === manifest.id && typeof refA.title === "string" && refC?.infoHash === hash && refC.fileIdx === 2, JSON.stringify({ refA, refC }));
   r.eq("streamsRoom.deadRef with an unknown token or index", [e.streamsRoom.deadRef("nope", 0), e.streamsRoom.deadRef("dead", 99)], [null, null]);
+  // (detail/search pass 2) Rows carry their streamIdentity; a key wins over a stale index (partial
+  // results re-rank picker.all under the TV's list), and a key no longer listed names nothing.
+  r.ok("(detail/search pass 2) picker rows carry tvKey = streamIdentity", all.length === 3 && all.every((s) => typeof s.tvKey === "string" && s.tvKey.startsWith(`${manifest.id}:`)) && all[ic].tvKey === `${manifest.id}:h:${hash}:2`, JSON.stringify(all.map((s) => s.tvKey)));
+  r.ok("(detail/search pass 2) deadRef follows the key over a stale index", e.streamsRoom.deadRef("dead", ib, all[ia].tvKey)?.url === "https://cdn.example.invalid/a.mp4" && e.streamsRoom.deadRef("dead", ia, "gone:u:x") === null && e.streamsRoom.deadRef("dead", ia, null)?.url === "https://cdn.example.invalid/a.mp4", "");
+  r.eq("(detail/search pass 2) autoCandidateKeys = autoCandidates as row keys", e.streamsRoom.autoCandidateKeys("dead", "default", true, film, null, null, false, null), auto().map((i) => all[i].tvKey));
+  {
+    const viaKey = await e.streamsRoom.resolve("default", true, "dead", ib, true, false, false, null, null, all[ia].tvKey);
+    const gone = await e.streamsRoom.resolve("default", true, "dead", ib, true, false, false, null, null, "gone:u:x");
+    r.ok("(detail/search pass 2) resolve plays the keyed row, not whatever sits at its old index", viaKey.ok === true && viaKey.data?.url === "https://cdn.example.invalid/a.mp4" && gone.ok === false && gone.code === "no-such-stream", JSON.stringify({ viaKey, gone: gone.code }));
+    r.eq("(detail/search pass 2) p2pConsentNeeded with a key no longer listed", e.streamsRoom.p2pConsentNeeded("dead", "default", true, ic, false, "gone:u:x"), false);
+  }
   r.eq("deadStreams.markDead refuses a ref with nothing to fingerprint", [e.deadStreams.markDead(null), e.deadStreams.markDead({ addonId: "x" })], [false, false]);
   r.eq("deadStreams.isDead before any mark", e.deadStreams.isDead(refA), false);
   r.eq("deadStreams.markDead (the player's stall / load-failed skip)", e.deadStreams.markDead(refA, "load-failed"), true);

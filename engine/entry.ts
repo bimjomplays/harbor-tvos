@@ -579,6 +579,7 @@ export const streamsRoom = {
   resolve: streamGlue.resolve,
   forget: streamGlue.forget,
   autoCandidates: streamGlue.autoCandidates,
+  autoCandidateKeys: streamGlue.autoCandidateKeys,
   rememberPlayback: streamGlue.rememberPlayback,
   remembered: streamGlue.remembered,
   p2pConsentNeeded: streamGlue.p2pConsentNeeded,

@@ -7,6 +7,9 @@ struct AISearchSection: View {
     @ObservedObject var ai: AISearchModel
     let query: String
     let onOpen: (AISearchModel.Result) -> Void
+    /// (detail/search pass 2) Ask AI / the retry card turn into the thinking state, which has nothing
+    /// to focus: the page puts the ring back on its keyboard (upstream's focus stays in the field).
+    var onRun: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
@@ -20,7 +23,7 @@ struct AISearchSection: View {
                     VStack(spacing: BP.px(12)) {
                         Text(T("Searches when you stop typing")).font(BP.sans(19, .medium)).foregroundStyle(BP.accent)
                         // search-overlay.tsx: Enter searches now; the phone sheet's Go does the same.
-                        Button { ai.runNow() } label: { Label(T("Ask AI"), systemImage: "sparkles") }
+                        Button { onRun?(); ai.runNow() } label: { Label(T("Ask AI"), systemImage: "sparkles") }
                             .buttonStyle(BPActionStyle(primary: true))
                             .accessibilityIdentifier("search-ai-run")
                         Text(T("Hold Select on AI search to choose a model"))
@@ -31,7 +34,7 @@ struct AISearchSection: View {
                 case .loading:
                     AIThinkingView(label: ai.state?.label.isEmpty == false ? (ai.state?.label ?? "") : T("AI search"), phrases: ai.thinkingPhrases)
                 case .error:
-                    Button { ai.runNow() } label: {
+                    Button { onRun?(); ai.runNow() } label: {
                         VStack(alignment: .leading, spacing: BP.px(4)) {
                             Text(T("AI search failed. Tap to retry.")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
                             Text(ai.errorMessage ?? T("AI search failed.")).font(BP.sans(13)).foregroundStyle(BP.inkMuted)

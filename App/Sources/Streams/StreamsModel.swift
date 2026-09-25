@@ -39,9 +39,15 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     /// The flags bp-stream-filters sorts the Harbor order by.
     struct SortFlags: Decodable, Equatable { var watchHub: Bool; var needsDownload: Bool; var instant: Bool }
     var tvSort: SortFlags?
+    /// engine stampPickerRows: upstream's streamIdentity (bp-streams keys its rows by it).
+    var tvKey: String?
     var index: Int = 0   // position in picker.all, set after decoding
+    /// (detail/search pass 2) The row's id, set after decoding: its streamIdentity (an index suffix
+    /// only for a repeat). It was the index, which every partial result shifts as slower addons
+    /// answer, so the focused row was rebuilt under the ring and the resolve spinner lost its row.
+    var rowId: String = ""
 
-    var id: String { "\(index)-\(addonId)-\(url ?? infoHash ?? parsedTitle ?? "")" }
+    var id: String { rowId.isEmpty ? "\(index)-\(addonId)-\(url ?? infoHash ?? parsedTitle ?? "")" : rowId }
     var isCached: Bool { tvCached ?? (cached?.values.contains(true) ?? false) }
     var sizeText: String? {
         guard let s = size, s > 0 else { return nil }
@@ -50,7 +56,7 @@ struct ScoredStream: Decodable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters, tvCached, tvSort
+        case parsedTitle, title, name, resolution, hdrFormat, codec, source, audio, audioLanguages, size, seeders, cached, container, releaseGroup, remux, score, tier, addonName, addonId, url, infoHash, tvRow, tvFilters, tvCached, tvSort, tvKey
         // stampAddonOrder's fields: the "addon order" sort ranks by these, so they must decode.
         case addonUrl, nativeIdx
     }
@@ -134,6 +140,9 @@ final class StreamsModel: ObservableObject {
     /// (bug pass) Each search() bumps this; an older call ("Search wider" pressed mid-search reuses
     /// the token) returns without touching the list, the phase or the remembered pin.
     private var searchGen = 0
+    /// (detail/search pass 2) The search whose final list is on screen: a partial event delivered
+    /// after it (events and the call's answer reach main separately) must not put an older list back.
+    private var finalGen = 0
 
     func search(meta: Meta, episode: AnyJSON?) async {
         searchGen += 1
@@ -168,6 +177,7 @@ final class StreamsModel: ObservableObject {
             addonRanked = r.addonRanked ?? false
             debridErrors = (r.result?.debridErrors ?? []).map { "\($0.name): \($0.code)" }
             apply(r.result?.picker)
+            if r.result?.picker != nil { finalGen = gen }
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
             let pinned: Int? = try? await HarborEngine.shared.call("streamsRoom.remembered", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep])
             guard gen == searchGen else { return }
@@ -252,13 +262,21 @@ final class StreamsModel: ObservableObject {
         let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
         let anime = meta.type == "anime" || ["kitsu:", "mal:", "anilist:", "anidb:"].contains { meta.id.hasPrefix($0) }
         // use-bp-stream-play prefer1080: !!kid.
-        return (try? await HarborEngine.shared.call("streamsRoom.autoCandidates", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep, anime, nil as [String]?, p?.kid != nil])) ?? []
+        // (detail/search pass 2) As row keys, mapped onto this list: the engine's list can be one
+        // partial result ahead of the one on screen, so its indexes named other rows here.
+        let keys: [String] = (try? await HarborEngine.shared.call("streamsRoom.autoCandidateKeys", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep, anime, nil as [String]?, p?.kid != nil])) ?? []
+        var byKey: [String: Int] = [:]
+        for (i, s) in streams.enumerated() {
+            if let k = s.tvKey, byKey[k] == nil { byKey[k] = i }
+        }
+        return keys.compactMap { byKey[$0] }
     }
 
     /// use-pick-handler streamRef: what lib/dead-streams fingerprints for this stream, so the player
     /// can mark it dead after this search is gone (nil when the search no longer has it).
     func deadRef(_ stream: ScoredStream) async -> AnyJSON? {
-        guard let ref = try? await HarborEngine.shared.callJSON("streamsRoom.deadRef", [.string(token), .number(Double(stream.index))]) else { return nil }
+        let key: AnyJSON = stream.tvKey.map { AnyJSON.string($0) } ?? AnyJSON.null
+        guard let ref = try? await HarborEngine.shared.callJSON("streamsRoom.deadRef", [.string(token), .number(Double(stream.index)), key]) else { return nil }
         if case .null = ref { return nil }
         return ref
     }
@@ -270,7 +288,7 @@ final class StreamsModel: ObservableObject {
         // (perf pass) The meta crosses as itself (encoded off the main thread by `call`), not through a
         // JSONEncoder → AnyJSON round trip on main: a series' meta carries its whole episode list, and
         // this runs just as the player starts.
-        let args: [any Encodable] = [token, p?.id ?? "default", p?.linked ?? true, meta, stream.index, url, season, ep]
+        let args: [any Encodable] = [token, p?.id ?? "default", p?.linked ?? true, meta, stream.index, url, season, ep, stream.tvKey]
         let _: AnyJSON? = try? await HarborEngine.shared.call("streamsRoom.rememberPlayback", args)
     }
 
@@ -298,7 +316,7 @@ final class StreamsModel: ObservableObject {
         // The episode hint picks the file inside a season pack (resolve.ts selectEngineFileIdx, debrids).
         let season = lastEpisode?["season"]?.number.map { Int($0) }, ep = lastEpisode?["episode"]?.number.map { Int($0) }
         do {
-            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true, forceP2p, afterP2p, season, ep])
+            return try await HarborEngine.shared.call("streamsRoom.resolve", [p?.id ?? "default", p?.linked ?? true, token, stream.index, true, forceP2p, afterP2p, season, ep, stream.tvKey])
         } catch {
             return Resolved(ok: false, data: nil, via: nil, code: error.localizedDescription)
         }
@@ -307,7 +325,7 @@ final class StreamsModel: ObservableObject {
     /// use-pick-handler onPlay: whether this pick needs BpP2pDialog's consent first.
     func p2pConsentNeeded(_ stream: ScoredStream) async -> Bool {
         let p = ProfilesStore.shared.active
-        let needed: Bool? = try? await HarborEngine.shared.call("streamsRoom.p2pConsentNeeded", [token, p?.id ?? "default", p?.linked ?? true, stream.index, p?.kid != nil])
+        let needed: Bool? = try? await HarborEngine.shared.call("streamsRoom.p2pConsentNeeded", [token, p?.id ?? "default", p?.linked ?? true, stream.index, p?.kid != nil, stream.tvKey])
         return needed ?? false
     }
 
@@ -320,7 +338,13 @@ final class StreamsModel: ObservableObject {
     private func apply(_ picker: RankedPicker?) {
         guard let picker else { return }
         var all = picker.all
-        for i in all.indices { all[i].index = i }
+        var seen = Set<String>()
+        for i in all.indices {
+            all[i].index = i
+            // (detail/search pass 2) Stable across re-ranks; a repeated identity keeps its position too.
+            let base: String = all[i].tvKey ?? "\(i)-\(all[i].addonId)-\(all[i].url ?? all[i].infoHash ?? all[i].parsedTitle ?? "")"
+            all[i].rowId = seen.insert(base).inserted ? base : "\(base)#\(i)"
+        }
         streams = all
         primary = picker.primary.flatMap { prim in all.first { $0.url == prim.url && $0.infoHash == prim.infoHash && $0.addonId == prim.addonId } } ?? all.first
     }
@@ -334,7 +358,7 @@ final class StreamsModel: ObservableObject {
             case "progress":
                 self.progress = (Int(detail?["settled"]?.number ?? 0), Int(detail?["total"]?.number ?? 0))
             case "partial":
-                if let pickerJSON = detail?["picker"], let picker = try? pickerJSON.decode(RankedPicker.self) { self.apply(picker) }
+                if self.finalGen != self.searchGen, let pickerJSON = detail?["picker"], let picker = try? pickerJSON.decode(RankedPicker.self) { self.apply(picker) }
                 if self.phase == .searching, !self.streams.isEmpty { /* keep searching state; UI shows rows already */ }
             default: break
             }

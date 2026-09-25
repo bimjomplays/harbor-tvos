@@ -114,7 +114,12 @@ struct PlayPickerView: View {
             // use-auto-fire: settle windows (1.5 s after the first result, 4 s when no cached exact episode,
             // 10 s cap) so a fast addon does not beat a better one by a few hundred milliseconds.
             guard autoEnabled else { return }
-            while !Task.isCancelled, autoState == .waiting {
+            // (detail/search pass 2) Ticks until auto is over, not only while it waits: when the
+            // search-done tick fired a candidate this loop saw `.firing` and ended, so a failed first
+            // candidate set `.waiting` with nothing left to tick, and the auto step sat on screen for
+            // good. It also runs from before the first task sets `.waiting` (`.off`).
+            while !Task.isCancelled {
+                if autoState == .cancelled || autoState == .exhausted { return }
                 try? await Task.sleep(for: .milliseconds(400))
                 await autoTick(done: false)
             }
@@ -323,7 +328,9 @@ struct PlayPickerView: View {
         let allowed = Set(pool.map(\.id))
         let candidates = await model.autoCandidates(meta: meta, episode: episode).filter { model.streams.indices.contains($0) && allowed.contains(model.streams[$0].id) }
         guard autoState == .waiting else { return }
-        guard let first = candidates.dropFirst(autoTried).first, model.streams.indices.contains(first) else {
+        // (detail/search pass 2) The next candidate that has not failed yet: rows keep their ids now,
+        // while a candidate list that grew between ticks shifted what dropFirst(autoTried) skipped.
+        guard let first = candidates.first(where: { !failedIds.contains(model.streams[$0].id) }), model.streams.indices.contains(first) else {
             if done || model.phase == .done || sinceStart >= 10 { autoState = .exhausted }
             return
         }
@@ -614,7 +621,9 @@ struct PlayPickerView: View {
                 .buttonStyle(BPActionStyle())
                 .disabled(model.addonRanked)
                 if filtered {
-                    Button("Clear filters") { quality = "All"; cachedOnly = false; addonFilter = nil; facet = [:] }.buttonStyle(BPActionStyle())
+                    // (detail/search pass 2) The chip goes with the filters: the ring moves to "All"
+                    // instead of falling off the row.
+                    Button("Clear filters") { quality = "All"; cachedOnly = false; addonFilter = nil; facet = [:]; chipFocus = "q:All" }.buttonStyle(BPActionStyle())
                 }
             }
             .padding(.vertical, BP.px(6))
@@ -655,7 +664,10 @@ struct PlayPickerView: View {
         Button {
             // (focus pass) One pick at a time, guarded here rather than by disabling every row.
             guard resolving == nil else { return }
-            handPicked = true; Task { await pick(s) }
+            // (detail/search pass 2) Held from the press: the Task starts a beat later and the P2P
+            // consent read awaits, so a double press got past the guard and resolved the row twice
+            // (two debrid unrestricts, or two torrent adds).
+            handPicked = true; resolving = s.id; Task { await pick(s) }
         } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
@@ -720,7 +732,7 @@ struct PlayPickerView: View {
     private func copyRow(_ c: StreamsModel.HomeCopy) -> some View {
         Button {
             guard resolving == nil else { return }
-            handPicked = true; Task { await pick(copy: c) }
+            handPicked = true; resolving = c.key; Task { await pick(copy: c) }
         } label: {
             VStack(alignment: .leading, spacing: BP.px(5)) {
                 HStack(spacing: BP.px(8)) {
@@ -770,7 +782,11 @@ struct PlayPickerView: View {
     private func pick(_ s: ScoredStream) async {
         if autoState == .waiting || { if case .firing = autoState { return true }; return false }() { autoState = .cancelled }
         // use-pick-handler onPlay: an uncached torrent the P2P engine could stream asks first.
-        if await model.p2pConsentNeeded(s) { dialog = .p2p(s); return }
+        if await model.p2pConsentNeeded(s) {
+            if resolving == s.id { resolving = nil }
+            dialog = .p2p(s)
+            return
+        }
         await start(s, forceP2p: false)
     }
 
