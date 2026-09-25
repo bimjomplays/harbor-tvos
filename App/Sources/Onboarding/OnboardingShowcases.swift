@@ -33,6 +33,8 @@ struct OnboardLanguageStep: View {
     var ring: FocusState<String?>.Binding
     let done: () -> Void
     @State private var list: Languages?
+    /// False while the intro wall is up (RootView disables the tree under it).
+    @Environment(\.isEnabled) private var enabled
     /// (onboarding device pass) A new language rebuilds the whole tree (RootView's `.id` carries the
     /// language), so this screen comes back as a fresh view and `pick`'s move to Continue landed on
     /// the old one: the ring opened on the new language's row instead of advanceBpOnboardRing's
@@ -67,6 +69,16 @@ struct OnboardLanguageStep: View {
             } else if let cur = list?.current {
                 ring.wrappedValue = "lang:\(cur)"
             }
+        }
+        // (discover/onboarding pass 2) At launch the intro wall stands over setup for up to 8 s and
+        // RootView disables everything under it, so the seed above landed on a disabled row and was
+        // dropped: when the wall left, tvOS put the ring on the first row (English), and one OK
+        // switched a viewer reading another language away from it (bp-step-language: the ring
+        // opens on the current language). Seed again the moment the screen takes presses.
+        .onChange(of: enabled) { _, on in
+            guard on, let cur = list?.current else { return }
+            let target = "lang:\(cur)"
+            DispatchQueue.main.async { ring.wrappedValue = target }
         }
     }
 

@@ -64,6 +64,14 @@ struct OnboardingView: View {
         .onChange(of: handoff.done) { _, d in
             if d.contains(.stremio), stremioName == nil, let s = PendingStremio.session { stremioName = s.user.fullname ?? s.user.email }
         }
+        // (discover/onboarding pass 2) A new account's one-time recovery code lands after a network
+        // round trip; "Later" or Back pressed while "Create account" was still working left the
+        // Harbor step, and the code (shown only there) was never seen: the account could never be
+        // recovered. Setup returns to the Harbor step, whose form reveals it; its Continue moves on.
+        .onChange(of: account.unsavedRecoveryCode) { _, code in
+            guard code != nil, step != .harbor else { return }
+            withAnimation(BP.easeSlow) { step = .harbor }
+        }
         .onDisappear { handoff.stop() }
     }
 
@@ -137,14 +145,22 @@ struct OnboardingView: View {
                            harborName: account.session?.user.username,
                            advance: { advance() })
         case .tmdb:
-            TmdbKeyForm(done: { advance() }, skip: { advance() })
+            // (discover/onboarding pass 2) The key check and the Stremio sign-in answer after a network
+            // round trip, by when Back or the step's own skip button may have moved on: their late
+            // done() advanced from wherever the viewer was, passing over a step they never saw (Use
+            // Cinemeta instead mid-check jumped past Stremio). Only a press made on this screen
+            // advances, as the Harbor form below already did; the result itself is kept either way.
+            TmdbKeyForm(done: { if step == .tmdb { advance() } }, skip: { advance() })
         case .stremio:
             // (onboarding device pass) bp-step-stremio.tsx: once signed in (here, or by the phone while
             // this screen was up) the screen says so and offers Continue; the empty form stayed up.
             if let stremioName {
                 StepConfirmed(title: T("Signed in as %@", stremioName), detail: nil) { advance() }
             } else {
-                StremioSignInForm(profileId: nil) { name in stremioName = name; advance() } skip: { advance() }
+                StremioSignInForm(profileId: nil) { name in
+                    stremioName = name
+                    if step == .stremio { advance() }
+                } skip: { advance() }
             }
         case .harbor:
             // bp-step-harbor.tsx: a linked account shows "Signed in as" in place of the form.

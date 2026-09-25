@@ -107,7 +107,10 @@ struct VoyageView: View {
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(14)), count: 3), spacing: BP.px(14)) {
                 ForEach(model.themes) { theme in
-                    Button { Task { await model.start(theme); settleFocus() } } label: {
+                    // (discover/onboarding pass 2) Only a route that charted moves the ring: a theme that
+                    // would not (offline, a thin pool) threw it from the tile just pressed, next to its
+                    // error line, to the first theme.
+                    Button { Task { await model.start(theme); if model.active != nil { settleFocus() } } } label: {
                         VoyageThemeTile(theme: theme, busy: model.busy == theme.id)
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rSM))
