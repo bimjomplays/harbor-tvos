@@ -38,6 +38,8 @@ final class AppModel: ObservableObject {
         let raw = url.absoluteString
         let scheme = (url.scheme ?? "").lowercased()
         guard scheme == "harbor" || scheme == "stremio" else { return }
+        // (review 16) A page that never showed is not "already on top": the same link sent again opens.
+        requeueDroppedLink()
         let path = raw.dropFirst(scheme.count + 3)   // "scheme://"
         let parts = path.split(separator: "/").map { String($0).removingPercentEncoding ?? String($0) }.filter { !$0.isEmpty }
         if parts.first == "detail", parts.count >= 3 {
@@ -75,9 +77,15 @@ final class AppModel: ObservableObject {
     /// kid never gets the install dialog).
     @discardableResult
     func showWaitingLink(kidShell: Bool, clear: Bool) -> Bool {
+        // (review 16) Not taken again in the same turn: the binding must land as nil first, or the
+        // cover would read the same item as unchanged and never present it.
+        if requeueDroppedLink(kidShell: kidShell) { return false }
         guard stage == .shell, clear, deepLinkMeta == nil, deepLinkList == nil, deepLinkInstall == nil,
-              let link = DeepLinkQueue.shared.take(kidShell: kidShell) else { return false }
-        switch link {
+              let entry = DeepLinkQueue.shared.take(kidShell: kidShell) else { return false }
+        linkAppeared = false
+        linkSetAt = Date()
+        linkQueuedAt = entry.at
+        switch entry.link {
         case .title(let type, let id):
             deepLinkMeta = Meta(id: id, type: type, name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
                                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
@@ -85,6 +93,59 @@ final class AppModel: ObservableObject {
             deepLinkList = ref
         case .install(let raw):
             deepLinkInstall = DeepLinkInstall(url: raw)
+        }
+        return true
+    }
+
+    /// (review 16) Whether the deep-link page last asked for has come on screen (its cover content's
+    /// onAppear), when its binding was set and when its link first arrived. Setting the binding was
+    /// taken as showing it, and nothing went back in the queue when it did not show: tvOS drops a
+    /// present that races another (a tile pressed in the same instant, a cover still animating
+    /// away), and a kid's shell has no cover at all for a list or an install an adult shell had up
+    /// when a profile sync turned the profile into a kid's. The binding then stayed set with nothing
+    /// on screen: every later link waited behind it for good, and the same link sent again read as
+    /// "already on top" and was ignored.
+    private var linkAppeared = false
+    private var linkSetAt = Date.distantPast
+    private var linkQueuedAt = Date()
+
+    /// (review 16) The deep-link page is on screen (ShellView / KidsShellView cover content).
+    func deepLinkCoverAppeared() { linkAppeared = true }
+
+    /// (review 16) A deep-link binding is set and its page has not come up yet: the shell keeps
+    /// checking (`showWaitingLink`) until it has, or until the link is put back in the queue.
+    var deepLinkUnconfirmed: Bool {
+        !linkAppeared && (deepLinkMeta != nil || deepLinkList != nil || deepLinkInstall != nil)
+    }
+
+    /// (review 16) Nothing is presented over this model's shell: the main window's root, or the PiP
+    /// browse layer's while this is the layer's model and its window is up.
+    private var shellUncovered: Bool {
+        if isBrowseLayer { return PiPBrowse.shared.layerApp === self && PiPBrowse.shared.noCoverPresented }
+        return HarborOverlayWindow.noCoverPresented
+    }
+
+    /// (review 16) A binding set over 2 s ago whose page never appeared, with nothing presented over
+    /// the shell, was dropped: clear it and put its link back to wait again (a list or an install
+    /// under a kid's shell waits for an adult shell), keeping the link's age. `kidShell`: a kid's
+    /// shell has no cover for a list or an install at all, so one of those is put back even after
+    /// it appeared (in the adult shell the profile was before a sync made it a kid's).
+    @discardableResult
+    private func requeueDroppedLink(kidShell: Bool = false) -> Bool {
+        let kidCannotShow = kidShell && (deepLinkList != nil || deepLinkInstall != nil)
+        guard kidCannotShow || (deepLinkUnconfirmed && Date().timeIntervalSince(linkSetAt) > 2 && shellUncovered) else { return false }
+        let queue = DeepLinkQueue.shared
+        if let m = deepLinkMeta {
+            deepLinkMeta = nil
+            queue.add(.title(type: m.type, id: m.id), at: linkQueuedAt)
+        }
+        if let r = deepLinkList {
+            deepLinkList = nil
+            queue.add(.list(r), at: linkQueuedAt)
+        }
+        if let i = deepLinkInstall {
+            deepLinkInstall = nil
+            queue.add(.install(i.url), at: linkQueuedAt)
         }
         return true
     }
@@ -105,8 +166,9 @@ final class AppModel: ObservableObject {
     }
     @Published var deepLinkInstall: DeepLinkInstall?
 
-    /// A link this shell may show is waiting (ShellView / KidsShellView poll while one is).
-    func hasWaitingLink(kidShell: Bool) -> Bool { DeepLinkQueue.shared.hasWaiting(kidShell: kidShell) }
+    /// A link this shell may show is waiting, or (review 16) the one just shown has not come on
+    /// screen yet (ShellView / KidsShellView poll while either holds).
+    func hasWaitingLink(kidShell: Bool) -> Bool { DeepLinkQueue.shared.hasWaiting(kidShell: kidShell) || deepLinkUnconfirmed }
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
     var browseSource: BrowseSource = (Fixtures.active && !Fixtures.liveRooms) ? FixtureBrowseSource() : EngineBrowseSource()
@@ -408,25 +470,49 @@ final class DeepLinkQueue: ObservableObject {
         }
     }
 
-    @Published private(set) var waiting: [Link] = []
+    /// A waiting link and when it arrived.
+    struct Entry: Equatable {
+        let link: Link
+        let at: Date
+    }
+
+    @Published private(set) var waiting: [Entry] = []
     /// A burst of links keeps its newest few.
     private static let cap = 8
+    /// (review 16) How long a link may wait. Upstream opens a link at once (openMeta even unmounts
+    /// the player), so it never waits at all; here one sent during a film waited for the player,
+    /// then for the film's own detail page to close, and popped up over Home hours later, long after
+    /// anyone remembered sending it. The wait still covers a cold launch through boot, the intro,
+    /// Who's watching and a PIN.
+    private static let maxWait: TimeInterval = 10 * 60
 
-    /// A link sent again moves up to newest instead of waiting twice.
-    func add(_ link: Link) {
-        waiting.removeAll { $0 == link }
-        waiting.append(link)
+    /// A link sent again moves up to newest instead of waiting twice. `at`: when it first arrived
+    /// (review 16: a link put back after a dropped present keeps its age, so it still expires; one
+    /// sent again starts its wait afresh).
+    func add(_ link: Link, at: Date = Date()) {
+        let latest = waiting.first(where: { $0.link == link }).map { max($0.at, at) } ?? at
+        waiting.removeAll { $0.link == link }
+        waiting.append(Entry(link: link, at: latest))
         if waiting.count > Self.cap { waiting.removeFirst(waiting.count - Self.cap) }
     }
 
     func hasWaiting(kidShell: Bool) -> Bool {
-        waiting.contains { !kidShell || $0.kidSafe }
+        dropStale()
+        return waiting.contains { !kidShell || $0.link.kidSafe }
     }
 
     /// The newest link a shell may show, out of the queue.
-    func take(kidShell: Bool) -> Link? {
-        guard let i = waiting.lastIndex(where: { !kidShell || $0.kidSafe }) else { return nil }
+    func take(kidShell: Bool) -> Entry? {
+        dropStale()
+        guard let i = waiting.lastIndex(where: { !kidShell || $0.link.kidSafe }) else { return nil }
         return waiting.remove(at: i)
+    }
+
+    /// (review 16) Links older than `maxWait` are dropped unshown.
+    private func dropStale() {
+        let now = Date()
+        guard waiting.contains(where: { now.timeIntervalSince($0.at) > Self.maxWait }) else { return }
+        waiting.removeAll { now.timeIntervalSince($0.at) > Self.maxWait }
     }
 }
 

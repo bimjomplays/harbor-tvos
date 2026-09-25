@@ -59,7 +59,10 @@ struct KidsShellView: View {
         }
         .fullScreenCover(isPresented: $playOpen) { KidsPlayZoneView() }
         // lib/deep-link.ts: a title handed to the TV opens as the kids detail page (App.tsx meta → KidsDetailView).
-        .fullScreenCover(item: $app.deepLinkMeta) { m in KidsDetailView(meta: m) }
+        // (review 16) The page reports that it came on screen (AppModel.requeueDroppedLink).
+        .fullScreenCover(item: $app.deepLinkMeta) { m in
+            KidsDetailView(meta: m).onAppear { app.deepLinkCoverAppeared() }
+        }
         // (deep links over covers) A title link waits until nothing is presented over the kids
         // surface (a kids page, the Play Zone, the player) and the parent PIN pad is down; a shared
         // list or an addon install keeps waiting for an adult shell.

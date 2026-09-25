@@ -81,13 +81,20 @@ struct ShellView: View {
         // lib/deep-link.ts links (AppModel.handle) wait in DeepLinkQueue until nothing is presented
         // over this shell, then open here: a present from a view already presenting is dropped.
         .task(id: links.waiting) { await showWaitingLinks() }
-        .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
+        // (review 16) Each deep-link page reports that it came on screen: one that never does is put
+        // back in the queue (AppModel.requeueDroppedLink) instead of blocking every later link.
+        .fullScreenCover(item: $app.deepLinkMeta) { m in
+            DetailView(meta: m).onAppear { app.deepLinkCoverAppeared() }
+        }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
-        .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
+        .fullScreenCover(item: $app.deepLinkList) { r in
+            SharedListView(ref: r).onAppear { app.deepLinkCoverAppeared() }
+        }
         // addons.tsx installModal for a stremio://…/manifest.json link (AppModel.handle): nothing
         // installs until the viewer confirms. Kid profiles get KidsShellView, never this dialog.
         .fullScreenCover(item: $app.deepLinkInstall) { link in
             DeepLinkInstallCover(url: link.url, onClose: { app.deepLinkInstall = nil })
+                .onAppear { app.deepLinkCoverAppeared() }
         }
         // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
         .overlay(alignment: .top) { ReminderToastHost() }
