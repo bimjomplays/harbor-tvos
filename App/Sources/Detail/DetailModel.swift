@@ -121,7 +121,8 @@ final class DetailModel: ObservableObject {
 
     func loadTrackers() async {
         let list: [Tracker]? = try? await HarborEngine.shared.call("actions.trackers", [trackerMeta, isMovie])
-        trackers = list ?? []
+        // (detail pass) A failed reload keeps the tracker cells (one could hold the ring).
+        if let list { trackers = list }
     }
 
     /// bp-status-dialog choice: the label flips at once (use-bp-trackers set), the service's answer wins.
@@ -175,7 +176,8 @@ final class DetailModel: ObservableObject {
         var groups: [Group]; var entries: [Entry]
     }
     func loadAwards() async {
-        awards = try? await HarborEngine.shared.call("detailRoom.awards", [meta])
+        // (detail pass) A failed reload keeps the row on screen (see loadExtras).
+        if let a: TitleAwards = try? await HarborEngine.shared.call("detailRoom.awards", [meta]) { awards = a }
     }
     struct AnimeCharacter: Decodable, Identifiable { var id: Int; var name: String; var nativeName: String?; var image: String?; var role: String? }
     private struct AnimeDetail: Decodable {
@@ -433,7 +435,10 @@ final class DetailModel: ObservableObject {
     private func loadExtras() async {
         let p = ProfilesStore.shared.active
         let x: Extras? = try? await HarborEngine.shared.call("detailRoom.extras", [meta, p?.id ?? "default", p?.linked ?? true])
-        extras = x
+        // (detail pass) The page reloads every time a cover over it closes: a TMDB miss on a reload
+        // (offline, or the 10-minute cache running out mid-visit) no longer takes the cast,
+        // recommendations and facts rows away from under the viewer's focus.
+        if let x { extras = x }
         if let x, !x.recommendations.isEmpty || !x.similar.isEmpty {
             await CardMarksStore.shared.refresh(x.recommendations + x.similar)
         }
