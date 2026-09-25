@@ -29,6 +29,8 @@ struct ShellView: View {
     /// Per-profile tab locks and hidden anime (Profiles/ParentalGate.swift).
     @ObservedObject private var parental = ParentalGate.shared
     @ObservedObject private var pipBrowse = PiPBrowse.shared
+    /// Deep links waiting to be shown (AppModel.showWaitingLink).
+    @ObservedObject private var links = DeepLinkQueue.shared
     /// The eBook tab, off until Settings turns it on (EBook/EBookModels.swift EBookGate).
     @AppStorage(EBookGate.key) private var ebookOn = false
 
@@ -76,6 +78,9 @@ struct ShellView: View {
         .onDisappear {
             if !inBrowseLayer, !PiPBrowse.shared.stashMainHooks(request: nil, onTab: nil, appearing: false) { GamepadMonitor.shared.onTab = nil }
         }
+        // lib/deep-link.ts links (AppModel.handle) wait in DeepLinkQueue until nothing is presented
+        // over this shell, then open here: a present from a view already presenting is dropped.
+        .task(id: links.waiting) { await showWaitingLinks() }
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
         .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
@@ -147,6 +152,26 @@ struct ShellView: View {
             return { PiPBrowse.shared.backToPlayer() }
         }
         return { app.room = .home }
+    }
+
+    /// (deep links over covers) While a link waits, look twice a second for this shell to be clear
+    /// and show it. Over a page, a Settings or Addons cover, a collection page or the account menu
+    /// it opens once they close; over the player, once the player closes (upstream's openMeta pushes
+    /// over the player and unmounts it; here the film is never stopped for a link). The task
+    /// restarts whenever the queue changes, so a link that arrives later is picked up at once.
+    private func showWaitingLinks() async {
+        while !Task.isCancelled, app.hasWaitingLink(kidShell: false) {
+            if app.showWaitingLink(kidShell: false, clear: linkClear) { return }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+    }
+
+    /// Nothing is presented over this shell, so a deep-link cover can go up. The app's own shell
+    /// never takes one while the PiP browse layer is up over it (the layer's shell does, on its
+    /// own window); the layer's shell only while its window is still up.
+    private var linkClear: Bool {
+        if inBrowseLayer { return PiPBrowse.shared.layerApp === app && PiPBrowse.shared.noCoverPresented }
+        return !PiPBrowse.shared.isUp && !PlaybackState.shared.active && Self.noCoverPresented
     }
 
     /// This shell is the Picture in Picture browse layer's (Player/PiPBrowse.swift), over a player.

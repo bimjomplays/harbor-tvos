@@ -16,6 +16,8 @@ struct KidsShellView: View {
     @State private var playOpen = false
     /// account-menu requestSwitch: leaving a kid profile that has a parent PIN asks for it first.
     @State private var parentPin = false
+    /// Deep links waiting to be shown (AppModel.showWaitingLink): titles only here.
+    @ObservedObject private var links = DeepLinkQueue.shared
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -58,11 +60,23 @@ struct KidsShellView: View {
         .fullScreenCover(isPresented: $playOpen) { KidsPlayZoneView() }
         // lib/deep-link.ts: a title handed to the TV opens as the kids detail page (App.tsx meta → KidsDetailView).
         .fullScreenCover(item: $app.deepLinkMeta) { m in KidsDetailView(meta: m) }
+        // (deep links over covers) A title link waits until nothing is presented over the kids
+        // surface (a kids page, the Play Zone, the player) and the parent PIN pad is down; a shared
+        // list or an addon install keeps waiting for an adult shell.
+        .task(id: links.waiting) { await showWaitingLinks() }
     }
 
     /// (bug pass) The keypad is actually on screen. A profile sync that clears the parent PIN while
     /// it is up removes the keypad; disabling on `parentPin` alone then left nothing focusable.
     private var pinUp: Bool { parentPin && profiles.active?.kid?.parentPinHash != nil }
+
+    private func showWaitingLinks() async {
+        while !Task.isCancelled, app.hasWaitingLink(kidShell: true) {
+            let clear = !pinUp && !PiPBrowse.shared.isUp && !PlaybackState.shared.active && HarborOverlayWindow.noCoverPresented
+            if app.showWaitingLink(kidShell: true, clear: clear) { return }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+    }
 
     /// use-account-menu.ts requestSwitch: a kid profile with a parent PIN needs it to switch away.
     private func requestSwitch() {
