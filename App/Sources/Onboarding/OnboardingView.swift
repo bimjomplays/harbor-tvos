@@ -100,6 +100,15 @@ struct OnboardingView: View {
             leaveOpen = false
             withAnimation(BP.easeSlow) { step = .harbor }
         }
+        // (review 15) The hand-off's apply named the profile active when the phone step first
+        // opened. A Harbor sign-in whose roster drops that profile (a resumed setup over the
+        // bootstrap profile), or a first run's seed, changes it: a phone Stremio sign-in then went
+        // to a dropped profile's key and was lost. It follows the profile setup now edits.
+        .onChange(of: profiles.activeId) { _, _ in
+            guard handoff.onPayload != nil else { return }
+            let a = app
+            handoff.onPayload = HandoffApply.make(profileId: editingProfileId, afterHarbor: { await a.refreshRoster() })
+        }
         .onDisappear { handoff.stop() }
     }
 

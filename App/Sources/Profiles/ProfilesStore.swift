@@ -131,9 +131,16 @@ final class ProfilesStore: ObservableObject {
     /// Used only when the account has no roster yet: one primary profile named after the account.
     func seedIfEmpty(name: String) {
         guard profiles.isEmpty else { return }
-        profiles = [Profile(id: Self.newId(), syncId: nil, name: name, avatar: nil, color: Self.colors[0], isPrimary: true,
-                            kid: nil, passwordHash: nil, createdAt: Date().timeIntervalSince1970 * 1000, bootstrap: true)]
+        let seed = Profile(id: Self.newId(), syncId: nil, name: name, avatar: nil, color: Self.colors[0], isPrimary: true,
+                           kid: nil, passwordHash: nil, createdAt: Date().timeIntervalSince1970 * 1000, bootstrap: true)
+        profiles = [seed]
         persist()
+        // (review 15) lib/profiles.tsx makes the first profile active as it creates it
+        // ({ profiles: [primary], activeId: primary.id }), so a one-profile household never sees
+        // the chooser. The seed stayed inactive: "Start watching" (and Finish later) on a first
+        // run landed on a "Who's watching?" with one face, and so did every launch until it was
+        // picked (launchPicker opens with no active profile).
+        select(seed.id)
     }
 
     // MARK: Management (lib/profiles.tsx createProfile / updateProfile / deleteProfile)

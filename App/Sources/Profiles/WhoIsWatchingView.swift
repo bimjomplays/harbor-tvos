@@ -175,6 +175,9 @@ struct WhoIsWatchingView: View {
             Button("Continue with a local profile") {
                 profiles.seedIfEmpty(name: account.session?.user.username ?? "Harbor")
                 app.attachPendingStremio()
+                // (review 15) The seed is active now: continue into it, as the button says (the
+                // chooser stayed up with its one face to pick).
+                if profiles.active != nil { app.pickedOnWho() }
             }.buttonStyle(BPActionStyle(primary: true))
         }
     }

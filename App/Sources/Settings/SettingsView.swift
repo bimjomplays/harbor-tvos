@@ -167,15 +167,19 @@ struct SettingsView: View {
                 // walkthrough" re-opens setup (useOnboarding resetOnboarding); after "Do not show
                 // this again" it was the only way back in. Upstream's "Restore dismissed hints"
                 // row has nothing to restore on the TV (no dismissible tips), so it is not here.
-                section("Onboarding") {
-                    row("Replay walkthrough", detail: "Re-runs the welcome flow and clears every dismissed tip.")
-                    Button {
-                        app.replayOnboarding()
-                    } label: {
-                        Label(T("Replay"), systemImage: "arrow.clockwise")
+                // (review 15) Not in the Picture in Picture browse layer: its model declines the
+                // replay (setup can't open over a film in PiP), so Replay there did nothing.
+                if !PiPBrowse.shared.isBrowseApp(app) {
+                    section("Onboarding") {
+                        row("Replay walkthrough", detail: "Re-runs the welcome flow and clears every dismissed tip.")
+                        Button {
+                            app.replayOnboarding()
+                        } label: {
+                            Label(T("Replay"), systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(BPActionStyle())
+                        .accessibilityIdentifier("settings-replay-walkthrough")
                     }
-                    .buttonStyle(BPActionStyle())
-                    .accessibilityIdentifier("settings-replay-walkthrough")
                 }
                 section("About") {
                     row("Harbor for Apple TV", detail: "Build \(build) · upstream beta-branch")

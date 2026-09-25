@@ -177,8 +177,12 @@ final class AppModel: ObservableObject {
 
     /// Where the app goes once a profile is active: setup when it waits for an adult profile,
     /// else the shell.
+    /// (review 15) With no profile active (the pick was removed by a roster sync while
+    /// pickedOnWho loaded its settings) it is Who's watching: `active?.kid == nil` read true for a
+    /// missing profile, so setup opened for nobody.
     private var stageAfterPick: Stage {
-        setupWaiting && !onboardingDone && profiles.active?.kid == nil ? .onboarding : .shell
+        guard let active = profiles.active else { return .whoIsWatching }
+        return setupWaiting && !onboardingDone && active.kid == nil ? .onboarding : .shell
     }
 
     /// Setup closing (Start watching, Finish later, Do not show this again). A setup resumed over
@@ -219,6 +223,12 @@ final class AppModel: ObservableObject {
         if let id = launch.defaultId, id != profiles.activeId,
            let target = profiles.profiles.first(where: { $0.id == id }), target.passwordHash == nil {
             profiles.select(id)
+            // (review 15) Boot loaded the restored profile's settings and theme; the "Start as"
+            // profile's arrived only through the activeId sink, after the stage below was set. The
+            // shell painted the previous profile's theme and language, then rebuilt; a resumed
+            // setup opened in the old theme (held until setup ends) and flipped language mid-step.
+            await SettingsBridge.shared.load()
+            await ThemeStore.shared.load()
         }
         if launch.open, profiles.active != nil {
             stage = .whoIsWatching
