@@ -130,6 +130,13 @@ final class KidsFranchiseModel: ObservableObject {
 
     init(franchise: KidsModel.Franchise) { self.franchise = franchise }
 
+    /// (open-items sweep) The first page only. The view's `.task` runs again whenever a cover over
+    /// the grid closes, and it called `more()`: each detail page closed loaded one more page.
+    func start() async {
+        guard page == 0 else { return }
+        await more()
+    }
+
     func more() async {
         guard !busy, !done else { return }
         busy = true

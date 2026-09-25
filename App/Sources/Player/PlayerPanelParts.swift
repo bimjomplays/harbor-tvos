@@ -210,11 +210,27 @@ struct PlayerAudioPanel: View {
 
     /// bp-player-sources.tsx trackLines: the track's own name (or its language), then language · codec · channels · Default.
     private func lines(_ t: MPVPlayerController.Track) -> (String, String) {
-        let lang = t.lang.map { Locale(identifier: "en").localizedString(forLanguageCode: $0) ?? $0.uppercased() } ?? ""
+        // (open-items sweep) Through languageName's 639-2 aliases ("ger" → German, not "GER").
+        let lang = t.lang.map { TrackLanguage.englishName($0) ?? $0.uppercased() } ?? ""
         let trimmed = t.title?.trimmingCharacters(in: .whitespaces) ?? ""
         let named = (trimmed.isEmpty || trimmed == t.lang) ? "" : trimmed
         let detail = [lang, t.codec?.uppercased() ?? "", t.channels ?? "", t.isDefault ? T("Default") : ""].filter { !$0.isEmpty }.joined(separator: " · ")
         let head = !named.isEmpty ? named : (!lang.isEmpty ? lang : T("Track"))
         return (head, detail)
+    }
+}
+
+/// (open-items sweep) The chrome's second line for a channel tuned in the player: what is on now,
+/// else its group. PlayerScreen does not observe the Live model, so the line kept the answer from
+/// the tune (usually the group, before now/next landed) until something else redrew the player.
+struct TunedChannelSubtitle: View {
+    @ObservedObject var live: LiveModel
+    let channel: LiveModel.Channel
+
+    var body: some View {
+        let line: String? = live.guide[channel.id]?.now?.title ?? channel.group
+        if let line {
+            Text(line).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
+        }
     }
 }

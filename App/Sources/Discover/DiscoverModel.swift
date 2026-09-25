@@ -46,10 +46,13 @@ final class DiscoverModel: ObservableObject {
 
     func load() async {
         guard build == nil, !loading else { return }
-        loading = true; failed = nil
+        // (open-items sweep) A Try again keeps the failure card (and the ring on its button) up until
+        // the answer: clearing it at once swapped in the spinner and the ring fell to the tab bar.
+        loading = true
         do {
             let p = profile
             build = try await HarborEngine.shared.call("discoverRoom.buildFor", [p.id, p.linked])
+            failed = nil
         } catch {
             failed = error.localizedDescription
         }

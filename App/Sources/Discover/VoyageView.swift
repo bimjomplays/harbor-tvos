@@ -169,7 +169,7 @@ struct VoyageView: View {
                 }
                 .focusSection()
                 if let m = focused ?? a.headings.first {
-                    VoyagePortCard(meta: m, credits: model.credits[m.id], loaded: model.credits.keys.contains(m.id))
+                    VoyagePortCard(meta: m, credits: model.credits[m.id], loaded: model.credits.keys.contains(m.id) || model.creditsFailed.contains(m.id))
                         .task(id: m.id) { await model.loadCredits(m) }
                 }
             }

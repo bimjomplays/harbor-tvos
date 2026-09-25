@@ -54,6 +54,9 @@ final class LiveModel: ObservableObject {
     private(set) var lastPlayedId: String?
     struct FocusRequest: Equatable { let channelId: String; let token = UUID() }
     @Published var focusRequest: FocusRequest?
+    /// (open-items sweep) The channel whose guide cell holds the ring (nil when the ring is elsewhere):
+    /// a guide note that lands late swaps the grid for the list under the ring, and the list rings it.
+    var guideFocusChannel: String?
 
     init(sourcesOnly: Bool = false) { self.sourcesOnly = sourcesOnly }
 
@@ -487,6 +490,16 @@ struct LiveView: View {
             }
         }
         .task { await model.appear() }
+        .onChange(of: model.guideNote) { old, new in
+            // (open-items sweep) The grid and the list swap when the guide note comes or goes (a guide
+            // that fails late, an Xtream short EPG that lands). The view under the ring went away and
+            // the ring fell back to the band; it now lands on the same channel in the other view.
+            guard grid else { return }
+            let from: String? = old == nil ? model.guideFocusChannel : listFocus
+            guard (old == nil) != (new == nil), let id = from else { return }
+            model.guideFocusChannel = nil
+            DispatchQueue.main.async { model.focusRequest = LiveModel.FocusRequest(channelId: id) }
+        }
         .fullScreenCover(item: $playing, onDismiss: {
             // (live sources device pass) Back from the player puts the ring on the channel that was
             // playing: after zapping in the player's TV Guide it stayed on the first channel's row.

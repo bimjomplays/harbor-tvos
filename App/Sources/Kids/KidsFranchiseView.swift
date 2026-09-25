@@ -25,7 +25,7 @@ struct KidsFranchiseView: View {
         }
         .background(KidsTheme.canvas.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
-        .task { await model.more() }
+        .task { await model.start() }
         .onExitCommand { dismiss() }
         .fullScreenCover(item: $detail) { m in KidsDetailView(meta: m) }
     }

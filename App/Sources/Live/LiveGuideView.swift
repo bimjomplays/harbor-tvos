@@ -280,6 +280,8 @@ struct LiveGuideView: View {
             }
         }
         .onChange(of: focused) { old, id in
+            // (open-items sweep) Which channel holds the ring, for the grid → list swap (LiveView).
+            live.guideFocusChannel = id.map { Self.channelOf($0) }
             // (live sources device pass) use-bp-guide-nav: Right from the channel cell lands on what is
             // airing now. The focus engine took the ring to the lane's left edge (an hour back at
             // first, wherever the lane had been scrolled after that): no way back to now.

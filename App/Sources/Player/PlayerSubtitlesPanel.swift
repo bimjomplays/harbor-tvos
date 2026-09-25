@@ -59,6 +59,9 @@ struct PlayerSubtitlesPanel: View {
     @FocusState private var focus: String?
     @ObservedObject private var settings = SettingsBridge.shared
     @State private var presets: [Preset] = []
+    /// (open-items sweep) Look values asked for and not saved yet. The steppers stepped from the
+    /// saved setting, so two presses before the first save landed made one step.
+    @State private var lookDraft: [String: Double] = [:]
 
     // Find more (bp-subtitle-find.tsx)
     @State private var target: Target?
@@ -538,19 +541,19 @@ struct PlayerSubtitlesPanel: View {
             }
         }
         PlayerChipRow {
-            let size = s.subFontSize ?? 32
-            let height = s.subMarginY ?? 12
-            let opacity = s.subOpacity ?? 1
+            let size: Double = lookDraft["subFontSize"] ?? s.subFontSize ?? 32
+            let height: Double = lookDraft["subMarginY"] ?? s.subMarginY ?? 12
+            let opacity: Double = lookDraft["subOpacity"] ?? s.subOpacity ?? 1
             stepper("Size", value: Int(size), reset: { update(["subFontSize": .number(32)]) }) { d in
-                update(["subFontSize": .number(clamp(size + Double(d) * 4, 16, 120))])
+                stepLook("subFontSize", clamp(size + Double(d) * 4, 16, 120))
             }
             stepper("Height", value: Int(height), reset: { update(["subMarginY": .number(10)]) }) { d in
-                update(["subMarginY": .number(clamp(height + Double(d) * 2, 0, 100))])
+                stepLook("subMarginY", clamp(height + Double(d) * 2, 0, 100))
             }
             PlayerRowLabel(text: "Opacity")
-            chip("−", id: "dec-Opacity") { update(["subOpacity": .number(clamp(((opacity - 0.1) * 100).rounded() / 100, 0.1, 1))]) }
+            chip("−", id: "dec-Opacity") { stepLook("subOpacity", clamp(((opacity - 0.1) * 100).rounded() / 100, 0.1, 1)) }
             chip("\(Int((opacity * 100).rounded()))%", id: "val-Opacity") { update(["subOpacity": .number(1)]) }
-            chip("+", id: "inc-Opacity") { update(["subOpacity": .number(clamp(((opacity + 0.1) * 100).rounded() / 100, 0.1, 1))]) }
+            chip("+", id: "inc-Opacity") { stepLook("subOpacity", clamp(((opacity + 0.1) * 100).rounded() / 100, 0.1, 1)) }
         }
         PlayerChipRow {
             let style = s.subStyle ?? "shadow"
@@ -590,7 +593,20 @@ struct PlayerSubtitlesPanel: View {
         .padding(.top, BP.px(8))
     }
 
+    /// (open-items sweep) One Look stepper press: the next press steps from this value, not from
+    /// the setting still being saved.
+    private func stepLook(_ key: String, _ value: Double) {
+        lookDraft[key] = value
+        Task {
+            try? await SettingsBridge.shared.patch([key: .number(value)])
+            if lookDraft[key] == value { lookDraft[key] = nil }
+            controller?.refreshSubtitleStyle()
+        }
+    }
+
     private func update(_ change: [String: AnyJSON]) {
+        // (open-items sweep) A preset or reset replaces any stepper value still being saved.
+        for key in change.keys { lookDraft[key] = nil }
         Task {
             try? await SettingsBridge.shared.patch(change)
             controller?.refreshSubtitleStyle()

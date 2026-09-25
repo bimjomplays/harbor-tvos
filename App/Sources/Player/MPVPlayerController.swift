@@ -284,7 +284,7 @@ final class MPVPlayerController: UIViewController {
         var label: String {
             // lib/subtitles/language.ts languageName: upstream's English names (as PlayerPanelParts
             // does), not the Apple TV's own language, which leaked into an otherwise Harbor-language panel.
-            let base = [title, lang.map { Locale(identifier: "en").localizedString(forLanguageCode: $0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
+            let base = [title, lang.map { TrackLanguage.englishName($0) ?? $0 }].compactMap { $0 }.joined(separator: " · ")
             return base.isEmpty ? "\(T(type == "sub" ? "Subtitle" : "Audio")) \(id)" : base
         }
     }
@@ -556,15 +556,7 @@ final class MPVPlayerController: UIViewController {
     /// languages (in order); subtitles stay off unless an embedded track matches a preferred
     /// language (player-spec §2.9).
     /// ISO 639-2/B and /T codes ffmpeg tags tracks with → 639-1 (upstream subsync/audio_tracks.rs LANG_ALIAS).
-    private static let langAlias: [String: String] = [
-        "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es", "ita": "it", "por": "pt",
-        "dut": "nl", "nld": "nl", "chi": "zh", "zho": "zh", "gre": "el", "ell": "el", "rum": "ro", "ron": "ro", "slo": "sk", "slk": "sk",
-        "alb": "sq", "sqi": "sq", "arm": "hy", "hye": "hy", "baq": "eu", "eus": "eu", "bur": "my", "mya": "my", "geo": "ka", "kat": "ka",
-        "mac": "mk", "mkd": "mk", "mao": "mi", "mri": "mi", "may": "ms", "msa": "ms", "tib": "bo", "bod": "bo", "wel": "cy", "cym": "cy",
-        "ice": "is", "isl": "is", "kor": "ko", "rus": "ru", "pol": "pl", "tur": "tr", "ara": "ar", "hin": "hi", "swe": "sv", "nor": "no",
-        "dan": "da", "fin": "fi", "cze": "cs", "ces": "cs", "hun": "hu", "ind": "id", "tha": "th", "vie": "vi", "ukr": "uk", "heb": "he",
-        "per": "fa", "fas": "fa", "cat": "ca", "hrv": "hr", "srp": "sr", "bul": "bg", "tam": "ta", "tel": "te", "ben": "bn", "urd": "ur",
-    ]
+    private static let langAlias: [String: String] = TrackLanguage.alias
 
     private func applyTrackPreferences() {
         guard !preview else { return }
@@ -757,5 +749,29 @@ final class MPVPlayerController: UIViewController {
 
     private func check(_ status: CInt) {
         if status < 0 { push("mpv error: \(String(cString: mpv_error_string(status)))") }
+    }
+}
+
+/// (open-items sweep) language.ts languageName: normalizeLang maps 639-2 codes (ISO_3_TO_1) before the
+/// name lookup. The bibliographic codes ffmpeg tags tracks with ("ger", "fre", "dut", "chi") have no
+/// name of their own here, so the audio dialog said "GER" where upstream says German. Outside the
+/// controller so track labels (nonisolated) can read it.
+enum TrackLanguage {
+    /// ISO 639-2/B and /T codes ffmpeg tags tracks with → 639-1 (upstream subsync/audio_tracks.rs LANG_ALIAS).
+    static let alias: [String: String] = [
+        "eng": "en", "jpn": "ja", "ger": "de", "deu": "de", "fre": "fr", "fra": "fr", "spa": "es", "ita": "it", "por": "pt",
+        "dut": "nl", "nld": "nl", "chi": "zh", "zho": "zh", "gre": "el", "ell": "el", "rum": "ro", "ron": "ro", "slo": "sk", "slk": "sk",
+        "alb": "sq", "sqi": "sq", "arm": "hy", "hye": "hy", "baq": "eu", "eus": "eu", "bur": "my", "mya": "my", "geo": "ka", "kat": "ka",
+        "mac": "mk", "mkd": "mk", "mao": "mi", "mri": "mi", "may": "ms", "msa": "ms", "tib": "bo", "bod": "bo", "wel": "cy", "cym": "cy",
+        "ice": "is", "isl": "is", "kor": "ko", "rus": "ru", "pol": "pl", "tur": "tr", "ara": "ar", "hin": "hi", "swe": "sv", "nor": "no",
+        "dan": "da", "fin": "fi", "cze": "cs", "ces": "cs", "hun": "hu", "ind": "id", "tha": "th", "vie": "vi", "ukr": "uk", "heb": "he",
+        "per": "fa", "fas": "fa", "cat": "ca", "hrv": "hr", "srp": "sr", "bul": "bg", "tam": "ta", "tel": "te", "ben": "bn", "urd": "ur",
+    ]
+
+    /// The English name of a track language code, nil when it has none.
+    static func englishName(_ code: String) -> String? {
+        let raw: String = code.trimmingCharacters(in: .whitespaces).lowercased()
+        let lang: String = alias[raw] ?? raw
+        return Locale(identifier: "en").localizedString(forLanguageCode: lang)
     }
 }

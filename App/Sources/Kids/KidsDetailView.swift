@@ -67,12 +67,26 @@ final class KidsDetailModel: ObservableObject {
         Task { await loadEpisodes() }
     }
 
+    /// (open-items sweep) Every season's episodes once read. The next episode was looked up in the
+    /// season on screen only, so a kid who picked another season and then pressed the hero's Play
+    /// (S1 E1, or the page's episode hint) got no up-next and no auto-advance.
+    private(set) var seasonEpisodes: [Int: [Episode]] = [:]
+
+    /// The episodes of a season that plays, read if the page has not shown it.
+    func ensureSeason(_ s: Int) async {
+        guard seasonEpisodes[s] == nil, let tvId = detail?.tvId else { return }
+        let p = profile
+        let list: [Episode] = (try? await HarborEngine.shared.call("kidsRoom.episodes", [tvId, s, p.id, p.linked])) ?? []
+        if !list.isEmpty { seasonEpisodes[s] = list }
+    }
+
     private func loadEpisodes() async {
         guard let tvId = detail?.tvId else { return }
         let p = profile
         let asked = season
         episodesLoading = true
         let list: [Episode] = (try? await HarborEngine.shared.call("kidsRoom.episodes", [tvId, asked, p.id, p.linked])) ?? []
+        if !list.isEmpty { seasonEpisodes[asked] = list }
         guard asked == season else { return }
         episodes = list
         episodesLoading = false
@@ -332,6 +346,8 @@ struct KidsDetailView: View {
         pickerAuto = true
         if isSeries {
             let hint = episodeHint ?? (season: 1, episode: 1)
+            // (open-items sweep) The season that plays may not be the one on screen (nextEpisode).
+            Task { await model.ensureSeason(hint.season) }
             picker = KidsPickerTarget(meta: meta, episode: .object(["season": .number(Double(hint.season)), "episode": .number(Double(hint.episode))]))
         } else {
             picker = KidsPickerTarget(meta: meta, episode: nil)
@@ -352,9 +368,11 @@ struct KidsDetailView: View {
     }
 
     private func nextEpisode(after ctx: PlaybackContext) -> KidsDetailModel.Episode? {
-        guard let s = ctx.season, let e = ctx.episode,
-              let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < model.episodes.count else { return nil }
-        return model.episodes[idx + 1]
+        guard let s = ctx.season, let e = ctx.episode else { return nil }
+        // (open-items sweep) The season that played, not only the one on screen.
+        let list: [KidsDetailModel.Episode] = model.seasonEpisodes[s] ?? model.episodes
+        guard let idx = list.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < list.count else { return nil }
+        return list[idx + 1]
     }
 }
 

@@ -53,7 +53,8 @@ struct LiveChannelBrowser: View {
         let out: [LiveModel.Channel] = channels.filter { c in
             if group == Self.favKey && !c.favorite { return false }
             if let g = group, g != Self.favKey, (c.group ?? "Uncategorized") != g { return false }
-            if !q.isEmpty && !c.name.lowercased().contains(q) && !(c.group ?? "").lowercased().contains(q) { return false }
+            // (open-items sweep) use-channel-filter: arabicAwareMatch over "name group".
+            if !q.isEmpty && !ArabicMatch.matches(c.name + " " + (c.group ?? ""), q) { return false }
             return true
         }
         var favorites = 0
@@ -332,5 +333,61 @@ struct LiveSearchField: View {
         .frame(height: BP.px(50))
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
         .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+    }
+}
+
+/// (open-items sweep) lib/iptv/rtl.ts arabicAwareMatch: a plain lowercase match first; when either
+/// side has Arabic, both are normalized (NFKC, no invisible marks or harakat/tatweel, alef/teh
+/// marbuta/alef maksura/hamza seats folded, Arabic-Indic digits to ASCII, spaces collapsed) so a
+/// query typed without diacritics or with another alef still finds the channel.
+enum ArabicMatch {
+    private static func within(_ c: UInt32, _ lo: UInt32, _ hi: UInt32) -> Bool { c >= lo && c <= hi }
+
+    /// rtl.ts ARABIC_RANGE.
+    static func hasArabic(_ s: String) -> Bool {
+        for v in s.unicodeScalars {
+            let c: UInt32 = v.value
+            if within(c, 0x0600, 0x06FF) || within(c, 0x0750, 0x077F) || within(c, 0x08A0, 0x08FF) { return true }
+            if within(c, 0xFB50, 0xFDFF) || within(c, 0xFE70, 0xFEFF) { return true }
+        }
+        return false
+    }
+
+    /// rtl.ts normalizeArabic.
+    static func normalize(_ s: String) -> String {
+        var out = String.UnicodeScalarView()
+        var lastSpace = false
+        for v in s.precomposedStringWithCompatibilityMapping.unicodeScalars {
+            let c: UInt32 = v.value
+            // INVISIBLE, then HARAKAT (U+064B–U+0652, superscript alef, tatweel).
+            if within(c, 0x200B, 0x200F) || within(c, 0x202A, 0x202E) || within(c, 0x2066, 0x2069) || c == 0xFEFF { continue }
+            if within(c, 0x064B, 0x0652) || c == 0x0670 || c == 0x0640 { continue }
+            var mapped: Unicode.Scalar = v
+            switch c {
+            case 0x0623, 0x0625, 0x0622, 0x0671: mapped = "\u{0627}"
+            case 0x0629: mapped = "\u{0647}"
+            case 0x0649, 0x0626: mapped = "\u{064A}"
+            case 0x0624: mapped = "\u{0648}"
+            default:
+                if within(c, 0x0660, 0x0669) || within(c, 0x06F0, 0x06F9) {
+                    mapped = Unicode.Scalar(0x30 + (c & 0xF)) ?? v
+                }
+            }
+            if mapped.properties.isWhitespace {
+                if !lastSpace { out.append(" ") }
+                lastSpace = true
+                continue
+            }
+            lastSpace = false
+            out.append(mapped)
+        }
+        return String(out).lowercased().trimmingCharacters(in: .whitespaces)
+    }
+
+    /// rtl.ts arabicAwareMatch(haystack, needleLower).
+    static func matches(_ haystack: String, _ needleLower: String) -> Bool {
+        if haystack.lowercased().contains(needleLower) { return true }
+        if !hasArabic(haystack) && !hasArabic(needleLower) { return false }
+        return normalize(haystack).contains(normalize(needleLower))
     }
 }

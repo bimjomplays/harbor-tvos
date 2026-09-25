@@ -248,15 +248,24 @@ enum TrackPlanner {
         let list = c.tracks()
         let planned = await plan(memory: memory, tracks: list)
         guard let plan = planned, c.subPicks == settled else { return nil }
-        guard plan.sub == "select", let id = plan.subId else { return nil }
-        guard let want = list.first(where: { $0.type == "sub" && String($0.id) == id }) else { return nil }
-        let current = list.first { $0.type == "sub" && $0.selected }
-        if let current {
-            if current.id == want.id { return nil }
-            if plan.autoUpgrade != true { return nil }
+        var label: String? = nil
+        var primary: MPVPlayerController.Track? = list.first { $0.type == "sub" && $0.selected }
+        if plan.sub == "select", let id = plan.subId,
+           let want = list.first(where: { $0.type == "sub" && String($0.id) == id }),
+           primary?.id != want.id, primary == nil || plan.autoUpgrade == true {
+            c.select(track: want, type: "sub")
+            primary = want
+            label = want.label
         }
-        c.select(track: want, type: "sub")
-        return want.label
+        // (open-items sweep) use-secondary-sub.ts autoPick runs again on every track-list change, so a
+        // seed in settings.secondarySubLang becomes the second subtitle as well; only the first plan
+        // (the file's own tracks) picked one. Not for kid profiles, as in the first plan.
+        if ProfilesStore.shared.active?.kid == nil, let sid = plan.secondaryId,
+           let second = list.first(where: { $0.type == "sub" && String($0.id) == sid }),
+           second.id != primary?.id, !second.secondary {
+            c.setSecondarySub(second)
+        }
+        return label
     }
 }
 

@@ -15,6 +15,9 @@ struct DiscoverView: View {
     @State private var voyageOpen = false
     /// The lead band holding the ring ("queue", "awards", "genres", "voyage", "people").
     @State private var leadHeld: String?
+    /// (open-items sweep) A Try again that worked hands the ring to the Discovery Queue band (the
+    /// button under it went away and the ring fell to the tab bar).
+    @State private var seedQueue = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -30,8 +33,11 @@ struct DiscoverView: View {
                     BPNote(text: failed)
                     // (device-flow pass) The failure had nothing to press: the room stayed empty
                     // until the app was restarted or the tab reopened.
-                    Button("Try again") { Task { await model.load() } }
-                        .buttonStyle(BPActionStyle(primary: true))
+                    Button("Try again") {
+                        seedQueue = true
+                        Task { await model.load() }
+                    }
+                        .buttonStyle(BPActionStyle(primary: true, busy: model.loading))
                         .padding(.top, BP.px(6))
                 }
                 .padding(.top, BP.px(300)).padding(.horizontal, BP.gutter)
@@ -56,7 +62,8 @@ struct DiscoverView: View {
                     // section's header stayed under the top bar. The lead is taller than the screen,
                     // so scrolling back to the rail top would push the focused band off it instead.
                     section("queue", "Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
-                        QueueBandView(queue: model.build?.queue, onOpen: { queueOpen = true }, onHold: { hold("queue", $0) })
+                        QueueBandView(queue: model.build?.queue, onOpen: { queueOpen = true }, onHold: { hold("queue", $0) },
+                                      seedFocus: seedQueue, onSeeded: { seedQueue = false })
                     }
                     if let aw = model.awards, !aw.summaries.isEmpty {
                         section("awards", "Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : T("%lld awards, %lld winners, %@, all offline", aw.overview.bodies, aw.overview.wins, aw.overview.span)) {
@@ -133,6 +140,9 @@ struct QueueBandView: View {
     var onOpen: () -> Void = {}
     /// The band gained (true) or lost (false) the ring (the rail parks it).
     var onHold: ((Bool) -> Void)? = nil
+    /// (open-items sweep) Take the ring when the band appears (after Discover's Try again).
+    var seedFocus = false
+    var onSeeded: (() -> Void)? = nil
     @FocusState private var focused: Bool
     private let height = BP.px(150)
 
@@ -181,6 +191,11 @@ struct QueueBandView: View {
         .padding(.vertical, BP.px(14))
         .accessibilityIdentifier("queue-band")
         .onChange(of: focused) { _, held in onHold?(held) }
+        .onAppear {
+            guard seedFocus else { return }
+            onSeeded?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true }
+        }
     }
 
     private var line: String {

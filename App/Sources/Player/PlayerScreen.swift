@@ -1100,7 +1100,9 @@ struct PlayerScreen: View {
             HStack(alignment: .lastTextBaseline, spacing: BP.px(14)) {
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     Text(shownTitle).font(BP.display(26)).foregroundStyle(BP.ink)
-                    if let s = shownSubtitle { Text(s).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
+                    // (open-items sweep) A tuned channel's line watches the guide (TunedChannelSubtitle).
+                    if let live = liveGuide, let t = tuned { TunedChannelSubtitle(live: live, channel: t) }
+                    else if let s = shownSubtitle { Text(s).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
                 }
                 Spacer()
                 Text(status.state == "loading" ? T("Loading…") : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))

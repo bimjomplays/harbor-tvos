@@ -499,12 +499,33 @@ struct MultiviewPicker: View {
     private var currentId: String? { live.selectedPlaylist }
     private var scopeId: String { scope ?? currentId ?? "" }
 
+    /// (open-items sweep) "All playlists" joined every source's channels on each render (three times:
+    /// placeholder, groups, browser), and the new array beat the browser's filter memo (it compared
+    /// thousands of channels one by one). The join and its groups are kept until a source's list
+    /// changes; unchanged lists compare by storage.
+    private final class JoinMemo {
+        var parts: [[LiveModel.Channel]] = []
+        var built = false
+        var result: [LiveModel.Channel] = []
+        var groups: [String]?
+    }
+    @State private var joinMemo = JoinMemo()
+
+    private var allChannels: [LiveModel.Channel] {
+        var parts: [[LiveModel.Channel]] = [live.channels]
+        for pl in live.playlists where pl.id != currentId { parts.append(model.otherChannels[pl.id] ?? []) }
+        if joinMemo.built, joinMemo.parts == parts { return joinMemo.result }
+        var out: [LiveModel.Channel] = []
+        for part in parts { out += part }
+        joinMemo.parts = parts
+        joinMemo.result = out
+        joinMemo.groups = nil
+        joinMemo.built = true
+        return out
+    }
+
     private var channels: [LiveModel.Channel] {
-        if scopeId == Self.allPlaylists {
-            var out = live.channels
-            for pl in live.playlists where pl.id != currentId { out += model.otherChannels[pl.id] ?? [] }
-            return out
-        }
+        if scopeId == Self.allPlaylists { return allChannels }
         if scopeId == currentId { return live.channels }
         return model.otherChannels[scopeId] ?? []
     }
@@ -518,8 +539,12 @@ struct MultiviewPicker: View {
     /// channel-picker.tsx groups: first-seen order over the scoped channels.
     private var groups: [String] {
         if scopeId == currentId { return live.groups.map(\.name) }
+        let all: Bool = scopeId == Self.allPlaylists
+        let list: [LiveModel.Channel] = channels
+        if all, let kept = joinMemo.groups { return kept }
         var seen = Set<String>(), out: [String] = []
-        for c in channels { if let g = c.group, !seen.contains(g) { seen.insert(g); out.append(g) } }
+        for c in list { if let g = c.group, !seen.contains(g) { seen.insert(g); out.append(g) } }
+        if all { joinMemo.groups = out }
         return out
     }
 

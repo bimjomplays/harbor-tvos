@@ -1202,6 +1202,10 @@ final class DetailPageProbe {
         }
         guard var host = owner else { return false }
         while let parent = host.parent { host = parent }
+        // (open-items sweep) The page is going (Back, Menu): a 4 s that ran out now joined onto a page
+        // whose picker can never present, and spent the invite. It waits; once the page is gone the
+        // shell's toast takes it.
+        if host.isBeingDismissed { return true }
         if host.presentedViewController != nil { return true }
         let focused: UIView? = UIFocusSystem.focusSystem(for: window)?.focusedItem as? UIView
         guard let focused else { return false }

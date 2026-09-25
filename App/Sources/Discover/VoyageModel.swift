@@ -57,6 +57,10 @@ final class VoyageModel: ObservableObject {
     @Published var length = 5
     /// port-hover-credits.ts `held`: a heading's credits once asked (nil inside = none found).
     @Published private(set) var credits: [String: Credits?] = [:]
+    /// (open-items sweep) Headings whose last credits ask failed (not cached: the next focus asks
+    /// again). usePortCredits' catch sets null, so the card drops its cast placeholders; here they
+    /// stayed grey until an answer came.
+    @Published private(set) var creditsFailed: Set<String> = []
 
     private var profile: (id: String, linked: Bool) {
         let p = ProfilesStore.shared.active
@@ -130,9 +134,12 @@ final class VoyageModel: ObservableObject {
         guard credits[meta.id] == nil else { return }
         let p = profile
         // A failed call is not cached as "no credits": the next focus asks again (review 33).
+        creditsFailed.remove(meta.id)
         do {
             let c: Credits? = try await HarborEngine.shared.call("voyageRoom.credits", [p.id, p.linked, meta.id, meta.type])
             credits[meta.id] = .some(c)
-        } catch {}
+        } catch {
+            creditsFailed.insert(meta.id)
+        }
     }
 }
