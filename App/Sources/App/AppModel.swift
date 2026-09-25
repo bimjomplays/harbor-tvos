@@ -201,7 +201,11 @@ final class AppModel: ObservableObject {
         // the profile and the shell stage in one action, so the shell was built (Search open) on
         // the previous profile's SearchModel before the reset landed, and the new profile saw the
         // last one's query and results until the shell happened to redraw.
-        profiles.$activeId.dropFirst().removeDuplicates().sink { [weak self] _ in
+        // (review 30) removeDuplicates before dropFirst, so it compares with the restored id: the
+        // other way round the first emission always passed, and the first roster reload that
+        // rewrote the same active id (a sign-in's pull from Settings) counted as a switch and
+        // pulled the viewer to Home.
+        profiles.$activeId.removeDuplicates().dropFirst().sink { [weak self] _ in
             guard let self else { return }
             self.views.reset()
             self.profileSwitches &+= 1
@@ -218,6 +222,14 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor in await self?.promptWhoOnReturn() }
             }.store(in: &bag)
+        // (review 30) A return prompt held back by the curfew lock (returnPromptClear) is asked again
+        // when the lock lifts (the parent PIN, the next day): upstream's picker opened under the lock
+        // and is what the viewer finds once it goes.
+        CurfewState.shared.$locked.removeDuplicates().dropFirst().receive(on: RunLoop.main).sink { [weak self] locked in
+            guard let self, !locked, self.promptHeldForCurfew else { return }
+            self.promptHeldForCurfew = false
+            Task { @MainActor in await self.promptWhoOnReturn() }
+        }.store(in: &bag)
         // (profiles bug pass) The Harbor session is per profile (theme-auth sessionKey). Boot starts
         // profile sync only when the restored profile is signed in, and Sign out stops it, but
         // nothing started it again when a signed-in profile became active later (a switch to the
@@ -229,7 +241,7 @@ final class AppModel: ObservableObject {
             Task { @MainActor in await self.sync.start() }
         }.store(in: &bag)
         // Settings (and so the theme and display language) can be per profile: a switch re-reads them.
-        profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { id in
+        profiles.$activeId.removeDuplicates().dropFirst().receive(on: RunLoop.main).sink { id in
             guard id != nil, !Fixtures.active else { return }
             Task { @MainActor in
                 await SettingsBridge.shared.load()
@@ -368,12 +380,20 @@ final class AppModel: ObservableObject {
     /// its profile this way, and like the profile chip it opens over the profile in use (Back
     /// returns to it). Not over a film (leaving the shell would close the player) or setup.
     private func promptWhoOnReturn() async {
+        promptHeldForCurfew = false
         guard stage == .shell, !Fixtures.active, profiles.active?.kid?.parentPinHash == nil,
               returnPromptClear else { return }
         guard let open: Bool = try? await HarborEngine.shared.call("profilesRoom.returnPicker", []), open else { return }
         guard stage == .shell, returnPromptClear else { return }
+        if CurfewState.shared.locked {
+            promptHeldForCurfew = true
+            return
+        }
         stage = .whoIsWatching
     }
+
+    /// (review 30) The return prompt came due under the curfew lock; the lock lifting asks again.
+    private var promptHeldForCurfew = false
 
     /// (review 18) Upstream's picker is a modal over whatever is open, and closing it returns there.
     /// Here Who's watching replaces the shell, which tears down anything presented over it: a
@@ -385,10 +405,11 @@ final class AppModel: ObservableObject {
     /// what the viewer sees. Here Who's watching replaces the shell and the lock went with it
     /// (ShellOverlay only covers the shell stage): a kid without a parent PIN came back after the
     /// prompt interval to the chooser, with no lock and no "Ask a grown-up" (its own Switch
-    /// profile button is the lock's way out).
+    /// profile button is the lock's way out). (review 30) promptWhoOnReturn holds the prompt
+    /// until the lock lifts instead of dropping it.
     private var returnPromptClear: Bool {
         !PlaybackState.shared.active && !PiPBrowse.shared.isUp && HarborOverlayWindow.noCoverPresented
-            && !roomLayer && !TogetherModel.shared.view.inRoom && !CurfewState.shared.locked
+            && !roomLayer && !TogetherModel.shared.view.inRoom
     }
 
     func finishOnboarding() {

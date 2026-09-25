@@ -114,11 +114,24 @@ final class ScreensaverModel: ObservableObject {
     /// unseen on Who's watching (the TV left on the chooser) and flashed up over the shell for up
     /// to a tick after the pick, swallowing the next press; and it drifted over the Live TV guide.
     var blocked = true {
-        didSet {
-            guard blocked != oldValue else { return }
-            suppressionChangedAt = Date()
-            if blocked, active { wake() }
-        }
+        didSet { suppressionChanged(was: oldValue || !pickers.isEmpty) }
+    }
+    /// (review 30) use-bp-screensaver `!!picker`: the stream pickers on screen (PlayPickerView and
+    /// its dialogs, by key). The picker is a cover in the main window, and the saver's overlay
+    /// window sits above it: the saver drifted over a list left open.
+    private var pickers: Set<String> = []
+    private var suppressed: Bool { blocked || !pickers.isEmpty }
+
+    func picker(_ key: String, up: Bool) {
+        let was = suppressed
+        if up { pickers.insert(key) } else { pickers.remove(key) }
+        suppressionChanged(was: was)
+    }
+
+    private func suppressionChanged(was: Bool) {
+        guard suppressed != was else { return }
+        suppressionChangedAt = Date()
+        if suppressed, active { wake() }
     }
     /// (device-flow pass 9) The hook's effect re-runs whenever `suppressed` changes and restarts the
     /// idle clock (lastRef = now). Here nothing did: a film watched to its end without a press (or
@@ -143,7 +156,7 @@ final class ScreensaverModel: ObservableObject {
 
     private func tick() async {
         let slice = SettingsBridge.shared.slice
-        guard slice.screensaver ?? true, !PlaybackState.shared.active, !blocked else { if active { wake() }; return }
+        guard slice.screensaver ?? true, !PlaybackState.shared.active, !suppressed else { if active { wake() }; return }
         if active {
             // (bug pass) The saver only wakes from its own overlay, which is up on the shell stage
             // only. It also turned on (unseen) on Who's watching or onboarding; presses there never
@@ -157,7 +170,7 @@ final class ScreensaverModel: ObservableObject {
         if Date().timeIntervalSince(idleSince) >= delay {
             await load(source: slice.heroFeed ?? "trending")
             // Pressed (or left the app) while the art loaded: stay down.
-            guard UIApplication.shared.applicationState == .active, !blocked, !PlaybackState.shared.active,
+            guard UIApplication.shared.applicationState == .active, !suppressed, !PlaybackState.shared.active,
                   Date().timeIntervalSince(idleSince) >= delay else { return }
             active = true
             activatedAt = Date()

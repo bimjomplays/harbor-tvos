@@ -68,6 +68,8 @@ struct PlayPickerView: View {
     /// The auto step just handed over to the list (bp-streams recoverBpFocus on a surface swap):
     /// the next seed may take the ring from wherever it fell.
     @State private var seedAfterSwap = false
+    /// (review 30) This picker's claim on the screensaver's suppression (use-bp-screensaver `!!picker`).
+    @State private var saverKey = UUID().uuidString
 
     enum PickerDialog: Identifiable {
         case p2p(ScoredStream), debridDown, noSources, exhausted(Int)
@@ -176,7 +178,15 @@ struct PlayPickerView: View {
             guard dialog == nil || switching != nil else { return }
             alive = false; if autoState == .waiting { autoState = .cancelled }; model.cancel()
         }
-        .fullScreenCover(item: coverDialog) { d in dialogView(d) }
+        // (review 30) use-bp-screensaver: no saver over the picker or its dialogs (the in-player
+        // switcher is under playback's suppression already).
+        .onAppear { if switching == nil { ScreensaverModel.shared.picker(saverKey, up: true) } }
+        .onDisappear { ScreensaverModel.shared.picker(saverKey, up: false) }
+        .fullScreenCover(item: coverDialog) { d in
+            dialogView(d)
+                .onAppear { ScreensaverModel.shared.picker(saverKey + "-dialog", up: true) }
+                .onDisappear { ScreensaverModel.shared.picker(saverKey + "-dialog", up: false) }
+        }
     }
 
     /// The picker's dialogs come up in a cover; the in-player switcher's never do (drawn inline).
