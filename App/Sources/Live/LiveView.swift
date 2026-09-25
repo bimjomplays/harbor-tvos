@@ -27,7 +27,11 @@ final class LiveModel: ObservableObject {
 
     static let favKey = "fav", allKey = "all", maxCategories = 30
 
+    /// use-bp-live.ts sources: the channel sources. A "Guide data only" entry is never the one Live
+    /// TV shows; its address backs every source's guide (the engine's EPG fallback list).
     @Published private(set) var playlists: [Playlist] = []
+    /// Every stored source, guide-only ones included (the Sources sheet lists and removes them).
+    @Published private(set) var allSources: [Playlist] = []
     @Published private(set) var channels: [Channel] = []
     @Published private(set) var groups: [Group] = []
     @Published private(set) var guide: [String: NowNext] = [:]
@@ -42,31 +46,76 @@ final class LiveModel: ObservableObject {
     /// Bumped after a manual EPG match changes; `lastRemapped` names the channel.
     @Published private(set) var epgMapRevision = 0
     private(set) var lastRemapped: String?
+    /// Bumped whenever the guide data behind the lanes changed (the XMLTV or the Xtream short EPG
+    /// landed), so the grid rebuilds the lanes it drew before the guide had loaded.
+    @Published private(set) var guideRevision = 0
 
     private var tick: Task<Void, Never>?
     private var indexById: [String: Int] = [:]
+    /// Only the newest channel load applies: a slow playlist must not land over the one picked after it.
+    private var loadGeneration = 0
 
     deinit { tick?.cancel() }
 
+    /// `.task` runs again whenever a cover over Live TV closes (every channel the viewer backs out
+    /// of): the sources are re-read, but channels and guide reload only when they changed.
+    func appear() async {
+        let all: [Playlist] = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
+        let key = { (list: [Playlist]) in list.map { "\($0.id)|\($0.url)|\($0.epgUrl ?? "")|\($0.kind ?? "")" } }
+        if !channels.isEmpty, error == nil, key(all) == key(allSources) { return }
+        await load()
+    }
+
     func load() async {
-        playlists = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
-        if selectedPlaylist == nil || !playlists.contains(where: { $0.id == selectedPlaylist }) { selectedPlaylist = playlists.first?.id }
+        let all: [Playlist] = (try? await HarborEngine.shared.call("live.playlists", [])) ?? []
+        allSources = all
+        playlists = all.filter { ($0.kind ?? "m3u") != "epg" }
+        if selectedPlaylist == nil || !playlists.contains(where: { $0.id == selectedPlaylist }) {
+            // use-bp-live readActiveId: the source picked last time, else the first.
+            let remembered: String? = try? await HarborEngine.shared.call("live.activeSource", [])
+            selectedPlaylist = playlists.first(where: { $0.id == remembered })?.id ?? playlists.first?.id
+        }
+        await loadChannels()
+    }
+
+    /// use-bp-live setActiveId: the picked source is remembered (next launch, the Home live row).
+    func select(_ id: String) async {
+        selectedPlaylist = id
+        _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(id)])
         await loadChannels()
     }
 
     func loadChannels(force: Bool = false) async {
-        guard let id = selectedPlaylist else { setChannels([]); groups = []; extraCategories = []; guide = [:]; return }
-        loading = true; defer { loading = false }
+        loadGeneration += 1
+        let generation = loadGeneration
+        guard let id = selectedPlaylist else {
+            setChannels([]); groups = []; extraCategories = []; guide = [:]; guideNote = nil; guideChannelCount = 0; loading = false
+            return
+        }
+        loading = true
         error = nil
         do {
             let v: View_ = try await HarborEngine.shared.call("live.channels", [id, force])
+            // (bug pass) A slower load for a source picked earlier used to land over this one.
+            guard generation == loadGeneration else { return }
+            guard selectedPlaylist == id else { loading = false; return }
             setChannels(v.channels)
             groups = v.groups
             extraCategories = v.categories ?? []
             if category != Self.favKey && category != Self.allKey && !extraCategories.contains(where: { $0.key == category }) { category = Self.allKey }
-            await loadGuide(force: force)
-            startTick()
-        } catch { self.error = error.localizedDescription; setChannels([]); groups = []; extraCategories = [] }
+            loading = false
+            // The guide follows on its own: a big XMLTV can take a while, and "Add source", a
+            // source pick and Refresh (which wait for this) must not sit on it.
+            Task { [weak self] in
+                await self?.loadGuide(force: force)
+                guard let self, generation == self.loadGeneration else { return }
+                self.startTick()
+            }
+        } catch {
+            guard generation == loadGeneration else { return }
+            self.error = error.localizedDescription; setChannels([]); groups = []; extraCategories = []
+            loading = false
+        }
     }
 
     private func setChannels(_ list: [Channel]) {
@@ -81,21 +130,27 @@ final class LiveModel: ObservableObject {
         guard let id = selectedPlaylist else { return }
         struct Out: Decodable { var channels: Int; var programs: Int; var url: String? }
         var covered = 0
+        var note: String?
         do {
             let o: Out = try await HarborEngine.shared.call("live.loadEpg", [id, force])
             covered = o.channels
-            guideNote = o.url == nil ? "No guide for this source. Add an EPG URL under Sources." : (o.channels == 0 ? "The guide loaded but lists no channels." : nil)
-        } catch { guideNote = T("Guide failed: %@", error.localizedDescription) }
+            note = o.url == nil ? "No guide for this source. Add an EPG URL under Sources." : (o.channels == 0 ? "The guide loaded but lists no channels." : nil)
+        } catch { note = T("Guide failed: %@", error.localizedDescription) }
+        // A guide that lands after another source was picked belongs to that other source.
+        guard selectedPlaylist == id else { return }
+        guideNote = note
         guideChannelCount = covered
+        guideRevision += 1
         await refreshNowNext()
         // use-xtream-epg-fallback: an Xtream source with no usable XMLTV asks get_short_epg per channel.
         let xtream = playlists.first { $0.id == id }?.kind == "xtream"
-        if xtream, covered == 0 || !visible.isEmpty && guide.values.allSatisfy({ !$0.known }) {
+        if xtream, covered == 0 || !visible.isEmpty && visible.allSatisfy({ guide[$0.id]?.known != true }) {
             struct Hydrated: Decodable { var hydrated: Int }
             let ids = visible.map(\.id)
-            if let h: Hydrated = try? await HarborEngine.shared.call("live.loadShortEpg", [id, ids]), h.hydrated > 0 {
+            if let h: Hydrated = try? await HarborEngine.shared.call("live.loadShortEpg", [id, ids]), h.hydrated > 0, selectedPlaylist == id {
                 guideNote = nil
                 guideChannelCount = covered + h.hydrated
+                guideRevision += 1
                 await refreshNowNext()
             }
         }
@@ -225,6 +280,8 @@ final class LiveModel: ObservableObject {
         struct Added: Decodable { var id: String }
         do {
             let a: Added = try await HarborEngine.shared.call("live.addStructured", [kind, name, url, epgUrl, server, username, password])
+            // bp-live onAdded setActiveId (the engine ignores a guide-only source).
+            _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(a.id)])
             selectedPlaylist = a.id
             await load()
             return nil
@@ -235,6 +292,8 @@ final class LiveModel: ObservableObject {
         struct Added: Decodable { var id: String }
         do {
             let a: Added = try await HarborEngine.shared.call("live.addPlaylist", [name, url, epgUrl])
+            // bp-live onAdded setActiveId (the engine ignores a guide-only source).
+            _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(a.id)])
             selectedPlaylist = a.id
             await load()
             return nil
@@ -300,7 +359,7 @@ struct LiveView: View {
                 .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16))
             }
         }
-        .task { await model.load() }
+        .task { await model.appear() }
         .fullScreenCover(item: $playing, onDismiss: {
             guard let ch = pendingMultiview else { return }
             pendingMultiview = nil
@@ -579,19 +638,24 @@ struct LiveSourcesSheet: View {
                     if let e = error ?? model.error { BPNote(text: e, tone: BP.danger) }
                 }
                 .frame(maxWidth: BP.px(560))
-                if !model.playlists.isEmpty {
+                if !model.allSources.isEmpty {
                     VStack(alignment: .leading, spacing: BP.px(10)) {
                         Text("Your sources").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
-                        ForEach(model.playlists) { pl in
+                        ForEach(model.allSources) { pl in
+                            let guideOnly = pl.kind == "epg"
+                            let detail: String = guideOnly
+                                ? T("Guide data only") + " · " + (pl.epgUrl ?? pl.url)
+                                : (pl.epgUrl.map { T("Guide: %@", $0) } ?? T("No guide URL"))
                             HStack(spacing: BP.px(8)) {
+                                // A guide-only source has no channels to show: it backs every source's guide.
                                 Button(pl.name) {
-                                    model.selectedPlaylist = pl.id
-                                    Task { await model.loadChannels(); dismiss() }
+                                    Task { await model.select(pl.id); dismiss() }
                                 }
                                 .buttonStyle(BPActionStyle(primary: model.selectedPlaylist == pl.id))
+                                .disabled(guideOnly)
                                 Button("Remove") { Task { await model.remove(pl.id) } }.buttonStyle(BPActionStyle())
                             }
-                            Text(pl.epgUrl.map { T("Guide: %@", $0) } ?? T("No guide URL")).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                            Text(detail).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                         }
                         if model.selectedPlaylist != nil {
                             Button("Use the EPG URL above for the selected source") {

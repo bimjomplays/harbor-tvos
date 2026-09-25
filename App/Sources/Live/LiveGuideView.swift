@@ -26,8 +26,22 @@ final class LiveGuideModel: ObservableObject {
 
     private var playlistId: String?
     private var channelIds: [String] = []
+    private var index: [String: Int] = [:]
 
-    private var generation = 0
+    // use-bp-guide-data.ts builds a lane only for a row that is mounted (laneFor, 600 cached).
+    // The TV used to ask the engine for every lane of the category at once: "All" on a big
+    // playlist is thousands of channels, megabytes of cells over the bridge on every open and
+    // on every window extension. Lanes are now fetched for the rows on screen, a batch at a time.
+    static let batch = 40
+    static let cacheMax = 600
+    /// Rows LazyVStack has built (onAppear … onDisappear).
+    private var onScreen: Set<String> = []
+    /// Lanes being fetched now (so a row coming on screen does not ask twice).
+    private var pending: Set<String> = []
+    /// Lanes built for an older window or older guide data: shown until the new one lands.
+    private var stale: Set<String> = []
+    /// Bumped when the playlist or the guide data changes: replies from before are dropped.
+    private var epoch = 0
 
     func seed(playlistId: String, channelIds: [String]) async {
         let now = Date().timeIntervalSince1970 * 1000
@@ -36,48 +50,102 @@ final class LiveGuideModel: ObservableObject {
             windowEnd = windowStart + Self.initialWindowMs
             viewStart = windowStart
         }
+        if self.playlistId != playlistId { epoch += 1; pending = [] }
         let changedList = self.playlistId != playlistId || self.channelIds != channelIds
         self.playlistId = playlistId
         self.channelIds = channelIds
-        // Rows that are still on screen keep their lanes until the new ones land (no empty frame).
-        let keep = changedList ? lanes.filter { channelIds.contains($0.key) } : lanes
-        await load(ids: channelIds, base: keep, start: windowStart, end: windowEnd)
+        if changedList {
+            var idx: [String: Int] = [:]
+            for (i, id) in channelIds.enumerated() where idx[id] == nil { idx[id] = i }
+            index = idx
+            // Rows that are still listed keep their lanes (no empty frame); the rest go.
+            lanes = lanes.filter { idx[$0.key] != nil }
+            catchup = catchup.filter { idx[$0] != nil }
+            stale = stale.filter { idx[$0] != nil }
+        }
+        await fill(from: 0)
+        await fillOnScreen()
     }
 
-    /// Fetch lanes for `ids` missing from `base`, then swap window + lanes in one assignment.
-    /// A later call supersedes an earlier one (generation guard), so a slow reply never wins.
-    private func load(ids: [String], base: [String: [Cell]], start: Double, end: Double) async {
+    func rowAppeared(_ id: String) {
+        onScreen.insert(id)
+        guard needsLane(id), !pending.contains(id), let i = index[id] else { return }
+        Task { await fill(from: i) }
+    }
+
+    func rowDisappeared(_ id: String) { onScreen.remove(id) }
+
+    private func needsLane(_ id: String) -> Bool { lanes[id] == nil || stale.contains(id) }
+
+    /// This row's lane and the next rows' (the ones D-pad Down reaches next).
+    private func fill(from i: Int) async {
+        guard i >= 0, i < channelIds.count else { return }
+        let ids = channelIds[i..<min(channelIds.count, i + Self.batch)].filter { needsLane($0) && !pending.contains($0) }
+        await fetch(Array(ids))
+    }
+
+    private func fillOnScreen() async {
+        await fetch(channelIds.filter { onScreen.contains($0) && needsLane($0) && !pending.contains($0) })
+    }
+
+    /// One `live.lanes` ask for the current window. A reply for an older window asks again for
+    /// the rows still on screen; a reply from before a playlist or guide change is dropped.
+    private func fetch(_ ids: [String]) async {
         guard let playlistId, !ids.isEmpty else { return }
-        generation += 1
-        let mine = generation
-        let missing = ids.filter { base[$0] == nil }
-        var next = base
-        var replay = catchup
-        if !missing.isEmpty, let out: [Lane] = try? await HarborEngine.shared.call("live.lanes", [playlistId, missing, start, end]) {
-            for l in out { next[l.id] = l.cells; if l.catchup { replay.insert(l.id) } else { replay.remove(l.id) } }
+        let mine = epoch, start = windowStart, end = windowEnd
+        pending.formUnion(ids)
+        let out: [Lane]? = try? await HarborEngine.shared.call("live.lanes", [playlistId, ids, start, end])
+        guard mine == epoch else { return }
+        pending.subtract(ids)
+        guard start == windowStart, end == windowEnd else {
+            await fetch(ids.filter { onScreen.contains($0) && needsLane($0) && !pending.contains($0) })
+            return
         }
-        guard mine == generation else { return }
-        windowStart = start
-        windowEnd = end
+        guard let out else { return }
+        var next = lanes
+        var replay = catchup
+        for l in out {
+            next[l.id] = l.cells
+            stale.remove(l.id)
+            if l.catchup { replay.insert(l.id) } else { replay.remove(l.id) }
+        }
+        if next.count > Self.cacheMax {
+            // laneFor's cache clears at 600; rows off screen are rebuilt when they come back.
+            next = next.filter { onScreen.contains($0.key) }
+            stale = stale.filter { next[$0] != nil }
+        }
         lanes = next
         catchup = replay
     }
 
-    /// bp-guide.tsx extendWindow / extendWindowBack: every lane is rebuilt for the new span,
-    /// but the old lanes stay up until the new ones arrive so focus never lands on nothing.
+    /// bp-guide.tsx extendWindow / extendWindowBack: the window grows now; the lanes on screen
+    /// are rebuilt for the new span and keep their old cells until the new ones arrive, so focus
+    /// never lands on nothing. Rows off screen are rebuilt when they come back.
     func extend(forward: Bool) async {
         guard windowEnd - windowStart < Self.maxWindowMs else { return }
         var start = windowStart, end = windowEnd
         if forward { end = min(end + Self.extendMs, start + Self.maxWindowMs) }
         else { start = max(start - Self.extendMs, end - Self.maxWindowMs) }
-        await load(ids: channelIds, base: [:], start: start, end: end)
+        windowStart = start
+        windowEnd = end
+        stale = Set(lanes.keys)
+        await fillOnScreen()
+    }
+
+    /// The guide data changed under the lanes (it finished loading, or the short EPG landed).
+    func reloadAll() async {
+        epoch += 1
+        pending = []
+        stale = Set(lanes.keys)
+        await fillOnScreen()
+        await fill(from: 0)
     }
 
     /// A manual EPG match changed one channel: rebuild its lane, keep every other one.
     func refresh(_ id: String) async {
-        var base = lanes
-        base[id] = nil
-        await load(ids: channelIds, base: base, start: windowStart, end: windowEnd)
+        stale.insert(id)
+        pending.remove(id)
+        await fetch([id])
     }
 
     /// viewStartFor: pan so the focused cell is visible; a cell wider than the view pins to its start.
@@ -127,7 +195,11 @@ struct LiveGuideView: View {
             ruler
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: BP.px(4)) {
-                    ForEach(live.visible) { ch in row(ch) }
+                    ForEach(live.visible) { ch in
+                        row(ch)
+                            .onAppear { model.rowAppeared(ch.id) }
+                            .onDisappear { model.rowDisappeared(ch.id) }
+                    }
                 }
                 .padding(.bottom, BP.px(150) + BP.hintHeight)
             }
@@ -154,6 +226,10 @@ struct LiveGuideView: View {
         .onChange(of: model.windowStart) { _, _ in
             // The window grew backwards: every cell moved; re-assert the focused key so the ring stays put.
             if let f = focused { let keep = f; DispatchQueue.main.async { focused = keep } }
+        }
+        .onChange(of: live.guideRevision) { _, _ in
+            // (bug pass) The lanes were drawn before the guide finished loading; they never refreshed.
+            Task { await model.reloadAll() }
         }
         .onChange(of: live.epgMapRevision) { _, _ in
             guard let id = live.lastRemapped else { return }

@@ -154,7 +154,7 @@ struct SettingsView: View {
                         BPField(label: "PIN", placeholder: "4 digits", text: $pinDraft, secure: true, keyboard: .numberPad)
                         HStack(spacing: BP.px(12)) {
                             Button("Save") { if let p = profiles.active { profiles.setPin(pinDraft, for: p.id) }; sheet = nil }
-                                .buttonStyle(BPActionStyle(primary: true)).disabled(pinDraft.count != 4 || Int(pinDraft) == nil)
+                                .buttonStyle(BPActionStyle(primary: true)).disabled(!ProfilesStore.isValidPin(pinDraft))
                             Button("Cancel") { sheet = nil }.buttonStyle(BPActionStyle())
                         }
                         BPNote(text: "PINs stay on this Apple TV. They never sync.")

@@ -75,6 +75,11 @@ struct ShellView: View {
         .fullScreenCover(item: $app.deepLinkMeta) { m in DetailView(meta: m) }
         // Stage 10: harbor://list/<handle>/<id> (lib/deep-link.ts parseHarborList → views/shared-list.tsx).
         .fullScreenCover(item: $app.deepLinkList) { r in SharedListView(ref: r) }
+        // addons.tsx installModal for a stremio://…/manifest.json link (AppModel.handle): nothing
+        // installs until the viewer confirms. Kid profiles get KidsShellView, never this dialog.
+        .fullScreenCover(item: $app.deepLinkInstall) { link in
+            DeepLinkInstallCover(url: link.url, onClose: { app.deepLinkInstall = nil })
+        }
         // Calendar: lib/reminders-runner.tsx and its toast (Calendar/CalendarPanels.swift).
         .overlay(alignment: .top) { ReminderToastHost() }
         // Watch Together invites, summons and chat while browsing (Together/TogetherOverlays.swift).
@@ -453,5 +458,18 @@ struct RoomPlaceholderView: View {
         .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .focusable()
+    }
+}
+
+/// addons.tsx `installModal` opened by a deep link: the install dialog on its own AddonsModel (its
+/// install refreshes the catalog and says harbor:addons-changed like the Addons screen's).
+private struct DeepLinkInstallCover: View {
+    let url: String
+    let onClose: () -> Void
+    @StateObject private var model = AddonsModel()
+
+    var body: some View {
+        AddonConfigureView(target: AddonsModel.ConfigureTarget(mode: .url, name: T("Add from URL"), prefill: url),
+                           model: model, onClose: onClose)
     }
 }

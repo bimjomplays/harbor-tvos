@@ -141,7 +141,7 @@ final class ProfilesStore: ObservableObject {
     @discardableResult
     func create(name: String, avatar: String?, color: String) -> Profile {
         let primary = profiles.first { $0.isPrimary } ?? profiles.first
-        let p = Profile(id: Self.newId(), syncId: nil, name: String(name.trimmingCharacters(in: .whitespaces).prefix(32)).isEmpty ? "Profile" : String(name.trimmingCharacters(in: .whitespaces).prefix(32)),
+        let p = Profile(id: Self.newId(), syncId: nil, name: String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32)).isEmpty ? "Profile" : String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32)),
                         avatar: avatar, color: color, isPrimary: false, kid: nil, passwordHash: nil,
                         createdAt: Date().timeIntervalSince1970 * 1000, settingsLinked: true, shareStremioWith: primary?.id)
         profiles.append(p)
@@ -151,7 +151,7 @@ final class ProfilesStore: ObservableObject {
 
     func update(_ id: String, name: String? = nil, avatar: String?? = nil, color: String? = nil) {
         guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
-        if let name { let n = String(name.trimmingCharacters(in: .whitespaces).prefix(32)); if !n.isEmpty { profiles[i].name = n } }
+        if let name { let n = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32)); if !n.isEmpty { profiles[i].name = n } }
         if let avatar { profiles[i].avatar = avatar }
         if let color { profiles[i].color = color }
         persist()
@@ -162,11 +162,16 @@ final class ProfilesStore: ObservableObject {
         guard let target = profiles.first(where: { $0.id == id }), !target.isPrimary else { return }
         _ = try? await HarborEngine.shared.callJSON("sync.profileDeleted", [.string(id)])
         _ = try? await HarborEngine.shared.callJSON("profilesRoom.purge", [.string(id)])
-        SecretStore.remove("harbor.auth.\(id)")
+        KeyValueStore.shared.remove("harbor.auth.\(id)")
+        HarborEngine.loaded?.syncStorage(key: "harbor.auth.\(id)", value: nil)
         CurfewState.purge(profileId: id)   // (bug pass 2) Swift-only key, not in the engine's purge list
         profiles.removeAll { $0.id == id }
         for i in profiles.indices where profiles[i].shareStremioWith == id { profiles[i].shareStremioWith = nil }
-        if activeId == id { activeId = profiles.first?.id }
+        // (profiles bug pass) Upstream only lets the primary delete, and never the active profile
+        // (editor-view.tsx canEditAdvanced). Here Settings' editor edits the active profile, so a
+        // profile deleting itself used to land in `profiles.first` — the primary — past its PIN
+        // and without a word. It now goes back to Who's watching (AppModel follows a nil active id).
+        if activeId == id { activeId = nil; parentalUnlockedFor = nil }
         persist()
     }
 
@@ -225,17 +230,41 @@ final class ProfilesStore: ObservableObject {
 
     // MARK: Stremio session per profile (harbor.auth.<localId>)
 
+    /// profiles.tsx stremioSourceProfileId: whose `harbor.auth.<id>` this profile reads. A new
+    /// profile shares the primary's Stremio account (createProfile sets shareStremioWith), so
+    /// reading only its own key left every TV-made profile without the household's library,
+    /// watchlist and Stremio addons, while the engine's own reads (readActiveStremioAuthKey)
+    /// followed the share (profiles bug pass).
+    func stremioSourceId(for id: String) -> String {
+        guard let p = profiles.first(where: { $0.id == id }), let share = p.shareStremioWith else { return id }
+        return profiles.contains { $0.id == share } ? share : id
+    }
+
     func stremioSession(for id: String) -> StremioSession? {
-        guard let raw = SecretStore.get("harbor.auth.\(id)"), let data = raw.data(using: .utf8) else { return nil }
+        guard let raw = KeyValueStore.shared.get("harbor.auth.\(stremioSourceId(for: id))"), let data = raw.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(StremioSession.self, from: data)
     }
 
+    /// lib/auth.tsx commitSession / signOut. A sign-in is the profile's own and ends any share; a
+    /// sign-out from a sharing profile only ends the share (the primary stays signed in).
+    /// (profiles bug pass) Written through KeyValueStore and mirrored into the bundle: the engine's
+    /// localStorage map is filled once at boot, so a SecretStore-only write left upstream's
+    /// addon-store / watchlist / mark-watched on the old authKey (or none) until a relaunch — a
+    /// sign-out kept writing to the account just left.
     func setStremioSession(_ s: StremioSession?, for id: String) {
         let key = "harbor.auth.\(id)"
+        let i = profiles.firstIndex { $0.id == id }
+        let sharing = i.map { profiles[$0].shareStremioWith != nil } ?? false
         if let s, let data = try? JSONEncoder().encode(s), let raw = String(data: data, encoding: .utf8) {
-            try? SecretStore.set(raw, for: key)
+            if sharing, let i { profiles[i].shareStremioWith = nil; persist() }
+            try? KeyValueStore.shared.set(raw, for: key)
+            HarborEngine.loaded?.syncStorage(key: key, value: raw)
+        } else if sharing, let i {
+            profiles[i].shareStremioWith = nil
+            persist()
         } else {
-            SecretStore.remove(key)
+            KeyValueStore.shared.remove(key)
+            HarborEngine.loaded?.syncStorage(key: key, value: nil)
         }
         objectWillChange.send()
     }
@@ -265,6 +294,12 @@ final class ProfilesStore: ObservableObject {
         let t = String(Int(Date().timeIntervalSince1970 * 1000), radix: 36)
         let r = String((0..<6).map { _ in "abcdefghijklmnopqrstuvwxyz0123456789".randomElement()! })
         return "p_\(t)_\(r)"
+    }
+
+    /// A PIN the keypad (PinPadView: 0-9 only) can type back. `Int(_:)` also takes "+123" and
+    /// "-123", and phone typing can deliver those, which locked the profile for good (profiles bug pass).
+    static func isValidPin(_ pin: String) -> Bool {
+        pin.count == 4 && pin.unicodeScalars.allSatisfy { $0.value >= 48 && $0.value <= 57 }
     }
 
     /// Same scheme as upstream src/lib/profile-password.ts, so a PIN typed here matches desktop semantics.

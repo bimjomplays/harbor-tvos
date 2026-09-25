@@ -22,6 +22,8 @@ struct ProfileEditorView: View {
     /// editor-view.tsx draftPin: a new profile's PIN, set in the same form.
     @State private var draftPin = ""
     @State private var pinToUnlock = false
+    /// (profiles bug pass) A second Select on Create while the lock value was fetched made a second profile.
+    @State private var saving = false
 
     var body: some View {
         ZStack {
@@ -68,7 +70,7 @@ struct ProfileEditorView: View {
                     }
                     HStack(spacing: BP.px(10)) {
                         Button(editing == nil ? "Create" : "Save") { Task { await save() } }
-                        .buttonStyle(BPActionStyle(primary: true)).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || !pinDraftValid)
+                        .buttonStyle(BPActionStyle(primary: true)).disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pinDraftValid)
                         Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
                         if let e = editing, !e.isPrimary {
                             Button(confirmDelete ? "Delete for real" : "Delete profile") {
@@ -93,13 +95,15 @@ struct ProfileEditorView: View {
             }
         }
         .task {
+            // (profiles bug pass) Before any await: a name typed while the lock list loaded was
+            // overwritten when the task resumed.
+            name = editing?.name ?? ""
+            avatar = editing?.avatar
             await parental.loadLockable()
             if case .object(let o)? = editing?.lockedTabs {
                 initialLocks = o.compactMapValues { $0.bool }
                 draftLocks = initialLocks
             }
-            name = editing?.name ?? ""
-            avatar = editing?.avatar
             groups = (try? await HarborEngine.shared.call("profilesRoom.avatars", [])) ?? []
             colors = (try? await HarborEngine.shared.call("profilesRoom.colors", [])) ?? ProfilesStore.colors
             if color.isEmpty {
@@ -123,7 +127,7 @@ struct ProfileEditorView: View {
     }
 
     /// editor-view.tsx `locked`: the profile has a PIN (or the new one will).
-    private var hasPin: Bool { editing.map { $0.passwordHash != nil } ?? (draftPin.count == 4) }
+    private var hasPin: Bool { editing.map { $0.passwordHash != nil } ?? ProfilesStore.isValidPin(draftPin) }
 
     /// The active profile is locked right now (parental.tsx `locked`): its locks change only after
     /// its PIN, or a kid at the TV could open Settings and lift them.
@@ -134,7 +138,7 @@ struct ProfileEditorView: View {
 
     private var lockedCount: Int { draftLocks.values.filter { $0 }.count }
 
-    private var pinDraftValid: Bool { draftPin.isEmpty || (draftPin.count == 4 && Int(draftPin) != nil) }
+    private var pinDraftValid: Bool { draftPin.isEmpty || ProfilesStore.isValidPin(draftPin) }
 
     private var securityLine: String {
         let pin = hasPin ? "PIN on" : "PIN off"
@@ -184,6 +188,8 @@ struct ProfileEditorView: View {
 
     /// editor-view.tsx save: updateProfile (edit) or createProfile + patch { passwordHash, lockedTabs }.
     private func save() async {
+        guard !saving else { return }
+        saving = true
         var writeLocks = false
         var lockValue: AnyJSON? = nil
         let changed = draftLocks.filter { $0.value } != initialLocks.filter { $0.value }
@@ -197,7 +203,7 @@ struct ProfileEditorView: View {
             if writeLocks { profiles.setLockedTabs(lockValue, for: e.id) }
         } else {
             let p = profiles.create(name: name, avatar: avatar, color: color)
-            if showSecurity, draftPin.count == 4 {
+            if showSecurity, ProfilesStore.isValidPin(draftPin) {
                 profiles.setPin(draftPin, for: p.id)
                 // editor-view.tsx: selectProfile(p.id, { unlocked: true }) — the PIN was typed seconds ago.
                 profiles.markSessionUnlocked(p.id)

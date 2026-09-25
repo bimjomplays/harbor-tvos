@@ -264,7 +264,7 @@ struct StremioSignInForm: View {
             BPField(label: "Password", placeholder: "Your Stremio password", text: $password, secure: true)
             HStack(spacing: BP.px(12)) {
                 Button(busy ? "Signing in…" : "Sign in") { Task { await signIn() } }
-                    .buttonStyle(BPActionStyle(primary: true)).disabled(busy || email.isEmpty || password.isEmpty)
+                    .buttonStyle(BPActionStyle(primary: true)).disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 if let skip { Button("Not now", action: skip).buttonStyle(BPActionStyle()) }
             }
             if let error { BPNote(text: error, tone: BP.danger) }
@@ -276,7 +276,7 @@ struct StremioSignInForm: View {
     private func signIn() async {
         busy = true; defer { busy = false }
         do {
-            let r = try await StremioAPI.login(email: email.trimmingCharacters(in: .whitespaces), password: password)
+            let r = try await StremioAPI.login(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
             let session = ProfilesStore.StremioSession(authKey: r.authKey, user: r.user)
             if let profileId { profiles.setStremioSession(session, for: profileId) }
             else { PendingStremio.session = session }
@@ -310,7 +310,7 @@ struct HarborSignInForm: View {
             BPField(label: "Password", placeholder: creating ? "Choose a password" : "Your Harbor password", text: $password, secure: true)
             HStack(spacing: BP.px(12)) {
                 Button(busy ? "Working…" : (creating ? "Create account" : "Sign in")) { Task { await submit() } }
-                    .buttonStyle(BPActionStyle(primary: true)).disabled(busy || username.isEmpty || password.isEmpty)
+                    .buttonStyle(BPActionStyle(primary: true)).disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 Button(creating ? "I have an account" : "Create an account") { creating.toggle() }.buttonStyle(BPActionStyle())
                 if let skip { Button("Later", action: skip).buttonStyle(BPActionStyle()) }
             }
@@ -323,8 +323,8 @@ struct HarborSignInForm: View {
     private func submit() async {
         busy = true; defer { busy = false }
         do {
-            if creating { try await account.register(username: username.trimmingCharacters(in: .whitespaces), password: password) }
-            else { try await account.signIn(username: username.trimmingCharacters(in: .whitespaces), password: password) }
+            if creating { try await account.register(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password) }
+            else { try await account.signIn(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password) }
             await app.refreshRoster()
             done()
         } catch {

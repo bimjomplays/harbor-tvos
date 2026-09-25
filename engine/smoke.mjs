@@ -1633,6 +1633,7 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
     if (req.url === `${base}/manifest.json`) return json(manifest);
     if (req.url.startsWith(`${base}/stream/movie/tt0111161`)) return json({ streams: [
       { name: "Torrents\n1080p", title: "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP\n👤 42 💾 2.1 GB", infoHash: hash, fileIdx: 1, sources: [`tracker:udp://tracker.example.invalid:1337/announce`, `dht:${hash}`] },
+      { name: "[RD+] Torrents\n720p", title: "The.Shawshank.Redemption.1994.720p.WEB-DL.x264-GRP\n1.1 GB", url: "https://debrid.example.invalid/resolve/abc/The.Shawshank.Redemption.1994.720p.mkv" },
     ] });
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
@@ -1660,6 +1661,13 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const stamped = (await e.streamsRoom.search("rows", "default", true, null, film, null)).result?.picker.all.find((s) => s.infoHash === hash);
   r.ok("streamsRoom.search stamps each row's text (pictographs gone, first title line as filename)", stamped?.tvRow?.filename === "The.Shawshank.Redemption.1994.1080p.BluRay.x264-GRP" && stamped.tvRow.description.split("\n")[1] === "42 2.1 GB" && stamped.tvRow.detail.includes("42 2.1 GB"), JSON.stringify(stamped?.tvRow));
   r.eq("streamsRoom.search stamps the saved filters each stream passes", stamped?.tvFilters, ["hd"]);
+  {
+    // (bug pass) use-bp-streams isCached = streamIsCached: a debrid-resolved link (url, no hash) is instant.
+    const all = (await e.streamsRoom.search("cached", "default", true, null, film, null)).result?.picker.all ?? [];
+    const link = all.find((s) => s.url && !s.infoHash);
+    const torrent = all.find((s) => s.infoHash === hash);
+    r.ok("streamsRoom.search stamps tvCached: a debrid link is cached, an unchecked torrent is not", link?.tvCached === true && torrent?.tvCached === false && typeof link?.tvSort?.needsDownload === "boolean", JSON.stringify(all.map((s) => [s.name, s.tvCached, s.tvSort])));
+  }
   e.settings.patch({ customStreamFilters: [] });
   // Bug pass: a search superseded on the same token answers "aborted" and leaves the newer
   // search's results (which resolve / deadRef index into) alone.
@@ -1746,12 +1754,13 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   const rowText = engine.streamsRoom.pickerRowText({ name: "", title: "\u{1F525} Line one\n\u{1F464} 12  \u{1F4BE}\nLine one", addonId: "x", addonName: "X", audio: { codec: "Other", channels: 2 }, codec: "Other", size: null, seeders: null, hdrFormat: null, audioLanguages: [], behaviorHints: { filename: "Movie.2020.mkv" } }, "Movie", null);
   r.eq("streamsRoom.pickerRowText: glyphs dropped, lines deduped, filename from behaviorHints", rowText, { headline: "Movie.2020.mkv", detail: "Line one · 12", description: "Line one\n12\nLine one", filename: "Movie.2020.mkv" });
   // bp-stream-filters.ts customStreamFilters / activeStreamFilterId.
-  r.eq("streamsRoom.streamFilters: none saved", engine.streamsRoom.streamFilters("default", true), { filters: [], activeId: null });
+  r.eq("streamsRoom.streamFilters: none saved, upstream's default addon-order sort", engine.streamsRoom.streamFilters("default", true), { filters: [], activeId: null, sort: "addon" });
   engine.settings.patch({ customStreamFilters: [{ id: "f4k", name: " 4K only ", resolution: ["4K"] }, { id: "fany", name: "Anything" }], activeStreamFilterId: "gone" });
-  r.eq("streamsRoom.streamFilters: saved filters, a dangling active id reads as none", engine.streamsRoom.streamFilters("default", true), { filters: [{ id: "f4k", name: "4K only", empty: false }, { id: "fany", name: "Anything", empty: true }], activeId: null });
+  r.eq("streamsRoom.streamFilters: saved filters, a dangling active id reads as none", engine.streamsRoom.streamFilters("default", true), { filters: [{ id: "f4k", name: "4K only", empty: false }, { id: "fany", name: "Anything", empty: true }], activeId: null, sort: "addon" });
   r.eq("streamsRoom.setActiveStreamFilter: an unknown id clears it", engine.streamsRoom.setActiveStreamFilter("default", true, "bogus"), null);
   r.eq("streamsRoom.setActiveStreamFilter: a saved id sticks", [engine.streamsRoom.setActiveStreamFilter("default", true, "f4k"), engine.settings.load().activeStreamFilterId, engine.streamsRoom.streamFilters("default", true).activeId], ["f4k", "f4k", "f4k"]);
   engine.settings.patch({ customStreamFilters: [], activeStreamFilterId: null });
+  r.eq("streamsRoom.setStreamSort persists settings.streamSort", [engine.streamsRoom.setStreamSort("default", true, "harbor"), engine.settings.load().streamSort, engine.streamsRoom.streamFilters("default", true).sort, engine.streamsRoom.setStreamSort("default", true, "bogus")], ["harbor", "harbor", "harbor", "addon"]);
   r.eq("homeServers.copies without connections", await engine.homeServers.copies({ id: "tt0111161", type: "movie", name: "x" }, "tt0111161"), []);
   r.eq("homeServers.titles empty", await engine.homeServers.titles(), []);
   // bp-streams.tsx applyPreference + playback-policy.ts decidePlaybackSource.
@@ -2290,6 +2299,24 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
 
 // ------------------------------------------------------------------ settings room
 {
+  {
+    // (profiles bug pass) auth.tsx stremioSourceProfileId: a profile sharing the primary's Stremio
+    // account reads the primary's session; one that shares nothing reads only its own key.
+    const put = (k, v) => { if (v == null) app.node.storage.delete(k); else app.node.storage.set(k, v); engine.runtime.syncStorage(k, v); };
+    const prevProfiles = app.node.storage.get("harbor.profiles.v1") ?? null;
+    put("harbor.profiles.v1", JSON.stringify({ activeId: "p_sh_share", profiles: [
+      { id: "p_sh_prim", name: "Prim", color: "#7dd3fc", isPrimary: true, shareStremioWith: null },
+      { id: "p_sh_share", name: "Share", color: "#60a5fa", isPrimary: false, shareStremioWith: "p_sh_prim" },
+      { id: "p_sh_own", name: "Own", color: "#a78bfa", isPrimary: false, shareStremioWith: null },
+      { id: "p_sh_gone", name: "Gone", color: "#f472b6", isPrimary: false, shareStremioWith: "p_sh_deleted" },
+    ] }));
+    put("harbor.auth.p_sh_prim", JSON.stringify({ authKey: "k_prim", user: { _id: "u1", email: "prim@example.invalid" } }));
+    const setup = (id) => engine.settingsRoom.categories(id, true).categories.find((c) => c.id === "setup")?.summary ?? "";
+    r.eq("(profiles bug pass) settingsRoom: a sharing profile shows the primary's Stremio as connected; its own-account and dangling-share siblings don't",
+      [setup("p_sh_share").includes("Stremio"), setup("p_sh_own").includes("Stremio"), setup("p_sh_gone").includes("Stremio"), setup("p_sh_prim").includes("Stremio")], [true, false, false, true]);
+    put("harbor.auth.p_sh_prim", null);
+    put("harbor.profiles.v1", prevProfiles);
+  }
   const cats = engine.settingsRoom.categories("default", true);
   r.eq("settingsRoom.categories: the 8 Big Picture categories in order", cats.categories.map((c) => c.id), ["picture", "language", "subtitles", "playback", "home", "services", "setup", "interface"]);
   r.ok("settingsRoom.categories carry summaries", cats.categories.every((c) => typeof c.summary === "string" && c.summary.length > 0), JSON.stringify(cats.categories.map((c) => c.summary)));
@@ -2435,6 +2462,52 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     rec.engine.live.setEpgMatch(espnId, "cnn.us");
     rec.engine.live.removePlaylist(pl.id);
     r.eq("live.removePlaylist drops the source's EPG matches", rec.engine.live.epgCandidates(pl.id, espnId, "").current, null);
+  }
+  {
+    // (Live TV bug pass) A big gzipped guide: fetched as bytes (the text path mangled .xml.gz), parsed
+    // in one linear pass (whole-text drainBlocks was quadratic: a 4 MB guide took 25 s), multibyte
+    // titles intact across the 1 MB pieces, the playlist's own guide failing over to a guide-only source.
+    const { gzipSync } = await import("node:zlib");
+    const L = rec.engine.live;
+    const CH = 200, PER = 150, base = Math.floor(now / 1800000) * 1800000 - 24 * 3600000;
+    const parts = ['<?xml version="1.0" encoding="UTF-8"?><tv>'];
+    for (let c = 0; c < CH; c++) parts.push(`<channel id="big${c}"><display-name>Big ${c}</display-name></channel>`);
+    for (let i = 0; i < CH * PER; i++) {
+      const c = i % CH, k = Math.floor(i / CH);
+      parts.push(`<programme start="${fmt(base + k * 1800000)}" stop="${fmt(base + (k + 1) * 1800000)}" channel="big${c}"><title>Émission ${k} 日本 ${c}</title><desc>Épisode ${i}: une description assez longue pour remplir le guide — ça dure.</desc></programme>\n`);
+    }
+    parts.push("</tv>");
+    const gz = gzipSync(Buffer.from(parts.join(""), "utf8"));
+    const lines = ["#EXTM3U"];
+    for (let c = 0; c < CH; c++) lines.push(`#EXTINF:-1 tvg-id="big${c}" group-title="Big",Big ${c}`, `https://example.invalid/big${c}.m3u8`);
+    const bigM3u = lines.join("\n") + "\n";
+    const asked = [];
+    rec.node.host.fetch = async (req) => {
+      asked.push(`${req.url}|${req.responseType}`);
+      if (req.url.endsWith("/big.m3u")) return { status: 200, statusText: "OK", headers: { "content-type": "audio/x-mpegurl" }, url: req.url, body: bigM3u };
+      if (req.url.endsWith("/guide.xml.gz")) {
+        const wantsBytes = req.responseType === "base64";
+        return { status: 200, statusText: "OK", headers: { "content-type": "application/gzip" }, url: req.url, body: wantsBytes ? null : gz.toString("utf8"), bodyBase64: wantsBytes ? gz.toString("base64") : null };
+      }
+      return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    };
+    const big = L.addPlaylist("Big", "https://big.example.invalid/big.m3u", "https://big.example.invalid/missing.xml");
+    const guideOnly = L.addStructured("epg", "Guide", "", "https://guide.example.invalid/guide.xml.gz", "", "", "");
+    r.eq("live.setActiveSource remembers a channel source and ignores a guide-only one", [L.setActiveSource(big.id), L.setActiveSource(guideOnly.id), L.activeSource()], [big.id, big.id, big.id]);
+    const bigView = await L.channels(big.id);
+    const t0 = Date.now();
+    const loadedEpg = await L.loadEpg(big.id);
+    const took = Date.now() - t0;
+    r.ok("live.loadEpg reads a 30,000-programme .xml.gz guide as bytes, in one pass", loadedEpg.channels === CH && loadedEpg.programs === CH * PER && took < 15000 && asked.some((a) => a.endsWith("/guide.xml.gz|base64")), JSON.stringify({ loadedEpg, took, bytes: gz.length }));
+    r.ok("live.loadEpg falls back from a failing guide URL to the guide-only source (epg-store doFetchWithFallback)", asked.some((a) => a.includes("/missing.xml")) && loadedEpg.url === "https://big.example.invalid/missing.xml");
+    const titles = [];
+    for (const ch of bigView.channels) for (const p of L.schedule(big.id, ch.id, base, base + PER * 1800000)) titles.push(p.title + p.description);
+    r.ok("every programme title keeps its accents and CJK across the parse pieces", titles.length === CH * PER && titles.every((t) => /^Émission \d+ 日本 \d+Épisode \d+: une description assez longue pour remplir le guide — ça dure\.$/.test(t)), JSON.stringify([titles.length, titles.find((t) => !/^Émission \d+ 日本 \d+Épisode \d+: une description assez longue pour remplir le guide — ça dure\.$/.test(t))]));
+    const home = await L.homeRow();
+    r.ok("live.homeRow never opens on a guide-only source", home.playlistId === big.id, JSON.stringify(home.playlistId));
+    L.removePlaylist(guideOnly.id);
+    L.removePlaylist(big.id);
+    r.ok("live.activeSource falls back once the remembered source is removed", L.activeSource() !== big.id && L.activeSource() !== guideOnly.id);
   }
   {
     // bp-live.tsx chips from use-live-home rails: themes (3+ matches), big groups (4+), VOD lines dropped.
