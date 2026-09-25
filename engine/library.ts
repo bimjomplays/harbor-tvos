@@ -18,6 +18,7 @@ import { filterLibrary, mergeWatchlist } from "@/views/library/watchlist-tab";
 import { filterHistory, historyItemsToDated, mergeHistory } from "@/views/library/history-merge";
 import { applyFilter, parseTs, sortedGroups, type SortKey, type TypeKey } from "@/views/library/shared";
 import { loadEffective, persistEffective } from "@/lib/settings/profile-store";
+import { markSettingsPatched } from "./sync";
 import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 import { mediaServerConnections } from "@/lib/media-server/connections";
 import { titles as homeServerTitles } from "./homeServers";
@@ -286,4 +287,6 @@ export async function animeHeal(authKey: string | null): Promise<number> {
 export function setSort(sort: SortKey, profileId: string, linked: boolean): void {
   const s = loadEffective(profileId, linked);
   persistEffective({ ...s, librarySort: sort }, profileId, linked);
+  // bp-library onPick → update({ librarySort }): a settings write that profile sync carries.
+  markSettingsPatched(["librarySort"]);
 }
