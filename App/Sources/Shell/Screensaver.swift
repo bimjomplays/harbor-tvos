@@ -205,6 +205,8 @@ struct ScreensaverView: View {
             Button { model.wake() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .focused($focused)
+                // The one focus stop over the saver: VoiceOver names it instead of an empty button.
+                .accessibilityLabel(Text(T("Screensaver")))
                 .onMoveCommand { _ in model.wake() }
                 .onExitCommand { model.wake() }
                 .onPlayPauseCommand { model.wake() }

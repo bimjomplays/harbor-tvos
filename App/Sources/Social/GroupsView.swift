@@ -51,7 +51,7 @@ struct GroupsView: View {
                     }
                 }
             } else if loading {
-                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.focusable()
+                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.accessibilityElement(children: .combine).focusable()
             } else {
                 // A failed call left an empty page with nothing to focus but the search button.
                 SocialEmpty(title: "Could not load groups.", message: "Check your connection and try again.", action: ("Try again", { Task { await load() } }))
@@ -69,7 +69,7 @@ struct GroupsView: View {
     }
 
     private func chip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(label, action: action).buttonStyle(BPActionStyle(primary: active))
+        Button(label, action: action).buttonStyle(BPActionStyle(primary: active)).bpSelected(active)
     }
 
     private func section(_ title: String, _ groups: [Social.GroupCard], count: Int? = nil) -> some View {
@@ -173,7 +173,7 @@ struct GroupPageView: View {
                 default: postsView(g)
                 }
             } else {
-                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.focusable()
+                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.accessibilityElement(children: .combine).focusable()
             }
         }
         // (social bug pass) Once: `.task` re-runs when a member's profile or the post sheet closes, and
@@ -275,6 +275,7 @@ struct GroupPageView: View {
             if !g.tags.isEmpty { Text(g.tags.map { "#\($0)" }.joined(separator: "  ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkSubtle) }
             if let role = g.role { Text("Your role: \(T(role.capitalized))").font(BP.sans(13)).foregroundStyle(BP.inkSubtle) }
         }
+        .accessibilityElement(children: .combine)
         .focusable()
     }
 

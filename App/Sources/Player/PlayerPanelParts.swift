@@ -50,10 +50,12 @@ struct PlayerLineLabel: View {
 
     var body: some View {
         HStack(spacing: BP.px(14)) {
+            // The disc's glyph (a tick on the chosen row) is drawn state: callers mark the row bpSelected.
             Image(systemName: icon)
                 .font(.system(size: BP.px(17), weight: .bold))
                 .frame(width: BP.px(44), height: BP.px(44))
                 .background(Circle().fill(BP.panel2))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 HStack(spacing: BP.px(8)) {
                     Text(title).font(BP.sans(14, .semibold)).lineLimit(1)
@@ -136,6 +138,7 @@ struct PlayerAudioPanel: View {
                             }
                             .buttonStyle(PlayerLineStyle(on: t.selected))
                             .focused($focus, equals: "track-\(t.id)")
+                            .bpSelected(t.selected)
                         }
                     }
                     .padding(.horizontal, BP.px(30)).padding(.vertical, BP.px(18))

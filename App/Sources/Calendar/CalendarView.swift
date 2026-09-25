@@ -115,7 +115,7 @@ struct CalendarView: View {
                             detail = Meta(id: f.id, type: "series", name: f.name, poster: f.poster)
                         } label: {
                             HStack(spacing: BP.px(10)) {
-                                Image(systemName: "bell.badge").foregroundStyle(BP.accent)
+                                Image(systemName: "bell.badge").foregroundStyle(BP.accent).accessibilityHidden(true)
                                 Text(f.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                 Text(f.body).font(BP.sans(12.5)).foregroundStyle(BP.inkMuted).lineLimit(1)
                             }
@@ -157,8 +157,8 @@ struct CalendarView: View {
             HStack(spacing: BP.px(6)) {
                 if let d = model.data {
                     if d.animeDubToggle {
-                        Button("Sub") { model.set(animeDub: false) }.buttonStyle(BPActionStyle(primary: !d.animeDub))
-                        Button("Dub") { model.set(animeDub: true) }.buttonStyle(BPActionStyle(primary: d.animeDub))
+                        Button("Sub") { model.set(animeDub: false) }.buttonStyle(BPActionStyle(primary: !d.animeDub)).bpSelected(!d.animeDub)
+                        Button("Dub") { model.set(animeDub: true) }.buttonStyle(BPActionStyle(primary: d.animeDub)).bpSelected(d.animeDub)
                         divider
                     }
                     Button("Start week on Monday") { model.toggleWeekStart() }.buttonStyle(BPActionStyle(primary: d.weekStartsMonday))
@@ -168,7 +168,7 @@ struct CalendarView: View {
                     if let custom = d.custom {
                         Button { showRail = true } label: {
                             HStack(spacing: BP.px(6)) {
-                                Image(systemName: "slider.horizontal.3")
+                                Image(systemName: "slider.horizontal.3").accessibilityHidden(true)
                                 Text("Filters")
                                 if custom.activeCount > 0 {
                                     Text("\(custom.activeCount)").font(BP.sans(11, .bold)).foregroundStyle(BP.accent)
@@ -196,6 +196,7 @@ struct CalendarView: View {
                             Label("Watchlist only", systemImage: d.watchlistOnly ? "star.fill" : "star")
                         }
                         .buttonStyle(BPActionStyle(primary: d.watchlistOnly))
+                        .bpSelected(d.watchlistOnly)
                         .disabled(!d.signedIn)
                         if !d.signedIn {
                             Text("Sign in to filter by your library").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
@@ -295,7 +296,7 @@ struct CalendarEmptyShell: View {
 
     var body: some View {
         VStack(spacing: BP.px(10)) {
-            Image(systemName: "calendar").font(.system(size: BP.px(26), weight: .light)).foregroundStyle(BP.inkSubtle)
+            Image(systemName: "calendar").font(.system(size: BP.px(26), weight: .light)).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             Text(T(heading)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
             Text(T(bodyText)).font(BP.sans(13)).foregroundStyle(BP.inkMuted).multilineTextAlignment(.center)
                 .frame(maxWidth: BP.px(460)).fixedSize(horizontal: false, vertical: true)

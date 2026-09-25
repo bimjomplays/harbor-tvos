@@ -121,6 +121,7 @@ struct WhoIsWatchingView: View {
                         .modifier(WhoFaceRing())
                     if p.passwordHash != nil {
                         Image(systemName: "lock.fill")
+                            .accessibilityHidden(true)
                             .font(.system(size: faceSize * 0.13, weight: .bold))
                             .foregroundStyle(BP.ink)
                             .frame(width: faceSize * 0.28, height: faceSize * 0.28)

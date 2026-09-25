@@ -213,7 +213,7 @@ struct GenresBandView: View {
                 if let first = genres.first {
                     Button { onOpen(genres.randomElement()?.genre ?? first.genre) } label: {
                         VStack(alignment: .leading) {
-                            Image(systemName: "dice").font(.system(size: BP.px(26), weight: .semibold)).foregroundStyle(BP.ink)
+                            Image(systemName: "dice").font(.system(size: BP.px(26), weight: .semibold)).foregroundStyle(BP.ink).accessibilityHidden(true)
                             Spacer()
                             Text("Surprise me").font(BP.sans(15, .bold)).foregroundStyle(BP.ink)
                         }
@@ -289,7 +289,7 @@ struct AwardsBandView: View {
                     ForEach(anime) { a in
                         Button { onOpenAnime(a) } label: {
                             VStack(alignment: .leading, spacing: BP.px(4)) {
-                                Image(systemName: "trophy.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent)
+                                Image(systemName: "trophy.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent).accessibilityHidden(true)
                                 Spacer(minLength: 0)
                                 Text(a.name).font(BP.display(14)).foregroundStyle(BP.ink).lineLimit(2)
                                 Text("\(a.wins) winners").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(BP.px(1.5)).foregroundStyle(BP.inkSubtle).lineLimit(1)
@@ -436,6 +436,8 @@ struct AwardDetailView: View {
                             .padding(BP.px(16))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+                            // One focus stop, one reading: the category and its winners, not a line at a time.
+                            .accessibilityElement(children: .combine)
                             .focusable()
                         }
                     } else if loaded {

@@ -216,7 +216,7 @@ struct MultiviewView: View {
 
     private var banner: some View {
         HStack(alignment: .top, spacing: BP.px(12)) {
-            Image(systemName: "info.circle").foregroundStyle(BP.inkSubtle)
+            Image(systemName: "info.circle").foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             Text("Most IPTV providers cap simultaneous streams per account (commonly 1–2). If a tile drops to \"Stream offline\" while others play, your provider may be throttling. Try closing a stream and retrying.")
                 .font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,6 +311,7 @@ struct MultiviewCell: View {
                         .foregroundStyle(BP.inkMuted)
                         .frame(width: BP.px(48), height: BP.px(48))
                         .background(Circle().fill(BP.panel2))
+                        .accessibilityHidden(true)
                     Text("Add a channel").font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -385,7 +386,7 @@ struct MultiviewCell: View {
         if status != .playing || suspended {
             VStack(spacing: BP.px(8)) {
                 if status == .offline {
-                    Image(systemName: "exclamationmark.triangle").font(.system(size: BP.px(22))).foregroundStyle(BP.danger)
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: BP.px(22))).foregroundStyle(BP.danger).accessibilityHidden(true)
                     Text("Stream offline").font(BP.sans(12, .medium)).foregroundStyle(BP.inkMuted)
                     if exhausted {
                         Text("If multiple streams are running, your IPTV provider may limit concurrent connections.")

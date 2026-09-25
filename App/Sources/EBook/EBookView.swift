@@ -209,7 +209,7 @@ struct EBookView: View {
 
     private var setup: some View {
         VStack(alignment: .leading, spacing: BP.px(16)) {
-            Image(systemName: "books.vertical").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.ink)
+            Image(systemName: "books.vertical").font(.system(size: BP.px(30), weight: .semibold)).foregroundStyle(BP.ink).accessibilityHidden(true)
             Text("Read eBooks in Harbor").font(BP.display(36)).foregroundStyle(BP.ink)
             BPNote(text: "Harbor does not host any books. Open a folder on this device, install a source extension, or connect your own server. Metadata can describe a book, but a source is what lets Harbor open it.")
                 .frame(maxWidth: BP.px(640), alignment: .leading)
@@ -343,7 +343,7 @@ struct EBookView: View {
     private var shelfButton: some View {
         Button { shelfOpen = true } label: {
             HStack(spacing: BP.px(14)) {
-                Image(systemName: "books.vertical.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent)
+                Image(systemName: "books.vertical.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Shelf").font(BP.sans(15.5, .semibold)).foregroundStyle(BP.ink)
                     // (bug pass) T(): inside a String ternary the literal was never looked up.
@@ -351,7 +351,7 @@ struct EBookView: View {
                         .font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
                 Spacer(minLength: BP.px(20))
-                Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle)
+                Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             }
             .padding(.horizontal, BP.px(20)).padding(.vertical, BP.px(14))
             .frame(width: BP.px(420), alignment: .leading)
@@ -552,6 +552,7 @@ struct EBookSourcesView: View {
                                 HStack(spacing: BP.px(12)) {
                                     Image(systemName: src.kind == "gutendex" ? "building.columns" : (src.kind == "local" ? "folder" : "globe"))
                                         .foregroundStyle(BP.inkMuted)
+                                        .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(src.name).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                                         if !src.readable {
@@ -574,13 +575,15 @@ struct EBookSourcesView: View {
                         let added = store.state?.hasGutendex == true
                         Button { if !added { Task { await store.addGutendex() } } } label: {
                             HStack(spacing: BP.px(14)) {
-                                Image(systemName: "building.columns.fill").font(.system(size: BP.px(20))).foregroundStyle(BP.accent)
+                                Image(systemName: "building.columns.fill").font(.system(size: BP.px(20))).foregroundStyle(BP.accent).accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(verbatim: "Project Gutenberg").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                                     Text(verbatim: "75,000 free public domain books, no account needed").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                                 }
                                 Spacer(minLength: BP.px(20))
                                 Image(systemName: added ? "checkmark" : "plus").foregroundStyle(BP.inkMuted)
+                                    .accessibilityLabel(Text(T("Added")))
+                                    .accessibilityHidden(!added)
                             }
                             .padding(.horizontal, BP.px(18)).padding(.vertical, BP.px(14))
                             .frame(width: BP.px(640), alignment: .leading)

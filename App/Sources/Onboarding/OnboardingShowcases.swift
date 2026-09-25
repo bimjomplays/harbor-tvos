@@ -112,7 +112,7 @@ struct OnboardLanguageStep: View {
                     }
                     if selected {
                         Circle().fill(BP.void_.opacity(0.65))
-                        Image(systemName: "checkmark").font(.system(size: BP.px(18), weight: .heavy)).foregroundStyle(BP.ink)
+                        Image(systemName: "checkmark").font(.system(size: BP.px(18), weight: .heavy)).foregroundStyle(BP.ink).accessibilityHidden(true)
                     }
                 }
                 .frame(width: BP.px(48), height: BP.px(48))
@@ -134,6 +134,7 @@ struct OnboardLanguageStep: View {
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
         .focused(ring, equals: "lang:\(l.code)")
+        .bpSelected(selected)
     }
 
     /// Half of the square, split along the bottom-left → top-right diagonal.

@@ -434,6 +434,7 @@ struct MangaReaderView: View {
             .buttonStyle(BPActionStyle(primary: active, busy: dim))
             .disabled(!enabled)
             .focused($focus, equals: .bar(id))
+            .bpSelected(active)
     }
 }
 

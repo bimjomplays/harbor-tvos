@@ -173,10 +173,13 @@ struct CollectionItemsOverlay: View {
                                             .font(.system(size: BP.px(22), weight: .bold))
                                             .foregroundStyle(BP.live)
                                             .padding(BP.px(6))
+                                            .accessibilityHidden(true)
                                     }
                                 }
                             }
                             .buttonStyle(BPTileStyle())
+                            // The tick on a title already in the list reads as selected.
+                            .bpSelected(contains(m.id))
                         }
                     }
                     .padding(.vertical, BP.px(12))
@@ -205,10 +208,13 @@ struct CollectionItemsOverlay: View {
                                     .font(.system(size: BP.px(22), weight: .bold))
                                     .foregroundStyle(BP.danger)
                                     .padding(BP.px(6))
+                                    .accessibilityHidden(true)
                             }
                         }
                     }
                     .buttonStyle(BPTileStyle())
+                    // Editing, a press removes the title: upstream's "Remove {name}".
+                    .accessibilityLabel(Text(verbatim: editing ? T("Remove %@", item.meta.name) : item.meta.name))
                 }
             }
             .padding(.vertical, BP.px(14))

@@ -385,6 +385,7 @@ struct LiveGuideView: View {
                     Text(ch.shownName).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
                     Spacer(minLength: 0)
                     Image(systemName: ch.favorite ? "star.fill" : "star").font(.system(size: BP.px(12), weight: .bold)).foregroundStyle(ch.favorite ? BP.ink : BP.inkSubtle)
+                        .accessibilityHidden(true)
                 }
                 .padding(.horizontal, BP.px(10))
                 .frame(width: colPx - BP.px(8), height: rowPx - BP.px(8), alignment: .leading)
@@ -392,6 +393,9 @@ struct LiveGuideView: View {
             }
             .buttonStyle(BPTileStyle())
             .focused($focused, equals: ch.id + Self.starSuffix)
+            // bp-guide-row.tsx star: aria-label Favorite / Unfavorite {channel}, aria-pressed.
+            .accessibilityLabel(Text(verbatim: T(ch.favorite ? "Unfavorite %@" : "Favorite %@", ch.shownName)))
+            .bpSelected(ch.favorite)
             .onLongPressGesture(minimumDuration: 0.6) { requestMatch(ch) }
             .frame(width: colPx, alignment: .leading)
             ZStack(alignment: .topLeading) {
@@ -406,7 +410,7 @@ struct LiveGuideView: View {
                     HStack(spacing: BP.px(10)) {
                         Text("No program info")
                         HStack(spacing: BP.px(5)) {
-                            Image(systemName: "link")
+                            Image(systemName: "link").accessibilityHidden(true)
                             Text("Match EPG")
                         }
                         .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(3))
@@ -443,10 +447,10 @@ struct LiveGuideView: View {
         return Button { if canReplay { replay?(ch, p) } else { play(ch) } } label: {
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 HStack(spacing: BP.px(4)) {
-                    if p.startMs < cell.startMs { Image(systemName: "chevron.backward").font(.system(size: BP.px(9), weight: .bold)) }
+                    if p.startMs < cell.startMs { Image(systemName: "chevron.backward").font(.system(size: BP.px(9), weight: .bold)).accessibilityHidden(true) }
                     if tier > 0 { Text(p.title).font(BP.sans(tier == 2 ? 13 : 11, .semibold)).lineLimit(1) }
                     if canReplay && tier == 2 { Text("Replay").textCase(.uppercase).font(BP.sans(9, .bold)).foregroundStyle(BP.live) }
-                    if p.endMs > cell.endMs { Image(systemName: "chevron.forward").font(.system(size: BP.px(9), weight: .bold)) }
+                    if p.endMs > cell.endMs { Image(systemName: "chevron.forward").font(.system(size: BP.px(9), weight: .bold)).accessibilityHidden(true) }
                 }
                 if tier == 2 {
                     Text(LiveChannelRow.range(p)).font(BP.sans(10)).lineLimit(1)
@@ -473,6 +477,8 @@ struct LiveGuideView: View {
         }
         .buttonStyle(.plain)
         .focused($focused, equals: key)
+        // bp-guide-block.tsx ariaLabel: "{title}, {range}"; an empty lane names the channel instead.
+        .accessibilityLabel(Text(verbatim: "\(empty ? ch.shownName : p.title), \(LiveChannelRow.range(p))"))
         .onLongPressGesture(minimumDuration: 0.6) { requestMatch(ch) }
         .offset(x: x(cell.startMs), y: BP.px(5))
     }

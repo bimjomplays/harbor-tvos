@@ -64,6 +64,7 @@ struct ProfilePageView: View {
     @ViewBuilder private var content: some View {
         if loading && page == nil {
             HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading profile…").font(BP.sans(16)).foregroundStyle(BP.inkMuted) }
+                .accessibilityElement(children: .combine)
                 .focusable()
         } else if let p = page, p.state == "ready", let s = p.summary {
             hero(s, stats: p.stats ?? [])
@@ -101,7 +102,7 @@ struct ProfilePageView: View {
                 VStack(alignment: .leading, spacing: BP.px(5)) {
                     HStack(spacing: BP.px(8)) {
                         Text(s.alias).font(BP.display(36, .medium)).foregroundStyle(BP.ink).lineLimit(1)
-                        if s.verified { Image(systemName: "checkmark.seal.fill").foregroundStyle(BP.accent).font(.system(size: BP.px(20))) }
+                        if s.verified { Image(systemName: "checkmark.seal.fill").foregroundStyle(BP.accent).font(.system(size: BP.px(20))).accessibilityLabel(Text(T("Verified"))) }
                     }
                     HStack(spacing: BP.px(10)) {
                         Text("@\(s.handle)").font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted)

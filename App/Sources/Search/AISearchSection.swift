@@ -69,7 +69,7 @@ struct AISearchSection: View {
     /// ai-picks-header.tsx: "AI picks", the model and its maker, the count.
     private var header: some View {
         HStack(spacing: BP.px(10)) {
-            Image(systemName: "sparkles").foregroundStyle(BP.accent)
+            Image(systemName: "sparkles").foregroundStyle(BP.accent).accessibilityHidden(true)
             Text(T("AI picks")).font(BP.sans(12, .semibold)).textCase(.uppercase).tracking(2.4).foregroundStyle(BP.inkSubtle)
             if let s = ai.state {
                 Text(verbatim: "\(s.label) · \(s.providerName)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1)
@@ -117,6 +117,9 @@ struct AIResultRow: View {
                             Image(systemName: "star.fill").font(.system(size: BP.px(10))).foregroundStyle(BP.accent)
                             Text(r).foregroundStyle(BP.ink)
                         }
+                        // The star is IMDb's score: "IMDb 7.8", not "Star, 7.8".
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(verbatim: "IMDb \(r)"))
                     }
                 }
                 .font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)

@@ -223,7 +223,7 @@ struct AccountMenuView: View {
     private func item(_ label: String, _ icon: String, key: String, badge: Int = 0, note: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: BP.px(12)) {
-                Image(systemName: icon).frame(width: BP.px(24))
+                Image(systemName: icon).frame(width: BP.px(24)).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     Text(T(label))
                     if let note { Text(note).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }

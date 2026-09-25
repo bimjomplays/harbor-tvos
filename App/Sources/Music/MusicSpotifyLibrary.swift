@@ -85,7 +85,7 @@ struct MusicSpotifyLibraryView: View {
         HStack(alignment: .center, spacing: BP.px(16)) {
             ZStack {
                 Circle().fill(BP.panel2)
-                Image(systemName: selected == nil ? "music.note.list" : "music.note").font(.system(size: BP.px(22), weight: .semibold)).foregroundStyle(BP.ink)
+                Image(systemName: selected == nil ? "music.note.list" : "music.note").font(.system(size: BP.px(22), weight: .semibold)).foregroundStyle(BP.ink).accessibilityHidden(true)
             }
             .frame(width: BP.px(56), height: BP.px(56))
             VStack(alignment: .leading, spacing: BP.px(4)) {
@@ -335,7 +335,7 @@ struct MusicSpotifyPlaylistRow: View {
                     RemoteImage(url: art)
                 } else {
                     BP.panel2
-                    Image(systemName: "music.note.list").font(.system(size: BP.px(20))).foregroundStyle(BP.inkSubtle)
+                    Image(systemName: "music.note.list").font(.system(size: BP.px(20))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
                 }
             }
             .frame(width: BP.px(56), height: BP.px(56))
@@ -347,7 +347,7 @@ struct MusicSpotifyPlaylistRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if !playlist.canRead {
-                Image(systemName: "arrow.up.right").font(.system(size: BP.px(14), weight: .semibold)).foregroundStyle(BP.inkSubtle)
+                Image(systemName: "arrow.up.right").font(.system(size: BP.px(14), weight: .semibold)).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, BP.px(12))
@@ -462,7 +462,7 @@ struct MusicSpotifyDestinationView: View {
                         HStack(spacing: BP.px(12)) {
                             Text(playlist.name).font(BP.sans(16, .semibold)).lineLimit(1)
                             Spacer()
-                            if saved == playlist.id { Image(systemName: "checkmark").font(.system(size: BP.px(16), weight: .bold)) }
+                            if saved == playlist.id { Image(systemName: "checkmark").font(.system(size: BP.px(16), weight: .bold)).accessibilityLabel(Text(verbatim: MusicCopy.shared("music.saved", "Saved"))) }
                         }
                         .foregroundStyle(BP.ink)
                         .padding(.horizontal, BP.px(14))

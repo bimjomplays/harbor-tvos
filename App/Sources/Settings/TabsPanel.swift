@@ -21,6 +21,7 @@ struct TabsPanel: View {
                 HStack(spacing: BP.px(8)) {
                     Image(systemName: r.icon).font(.system(size: BP.px(15), weight: .semibold))
                         .foregroundStyle(isHidden ? BP.inkSubtle : BP.ink).frame(width: BP.px(28))
+                        .accessibilityHidden(true)
                     Text(T(r.label)).font(BP.sans(14, isHidden ? .regular : .semibold))
                         .foregroundStyle(isHidden ? BP.inkSubtle : BP.ink).lineLimit(1)
                         .frame(width: BP.px(300), alignment: .leading)

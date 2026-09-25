@@ -68,6 +68,7 @@ struct EpgMatchView: View {
                 Image(systemName: "link")
                     .font(.system(size: BP.px(13), weight: .bold))
                     .foregroundStyle(BP.inkSubtle)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     Text(e.id).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     if !e.sample.isEmpty {

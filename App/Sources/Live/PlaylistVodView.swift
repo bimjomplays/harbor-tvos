@@ -295,7 +295,7 @@ struct PlaylistVodView: View {
     private func tabButton(_ tab: PlaylistVodModel.Tab, _ label: String, _ icon: String, _ count: Int) -> some View {
         Button { Task { await model.chooseTab(tab) } } label: {
             HStack(spacing: BP.px(6)) {
-                Image(systemName: icon)
+                Image(systemName: icon).accessibilityHidden(true)
                 Text(T(label))
                 if count > 0 { Text(count.formatted()).opacity(0.55) }
             }
@@ -376,6 +376,9 @@ struct VodCard: View {
                             Image(systemName: "play.fill")
                             Text(Self.clock(r))
                         }
+                        // vod-card.tsx resume chip: "Resume from 42m", not "Play, 42m".
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(verbatim: T("Resume from %@", Self.clock(r))))
                         .font(BP.sans(10, .bold)).foregroundStyle(BP.ink)
                         .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(3))
                         .background(Capsule().fill(BP.void_.opacity(0.8)))
@@ -498,7 +501,7 @@ struct VodEpisodeRow: View {
                         Text(episode.title).font(BP.sans(14, .medium)).foregroundStyle(BP.ink).lineLimit(1)
                         Spacer(minLength: 0)
                         if episode.watched {
-                            Image(systemName: "checkmark").foregroundStyle(BP.accent)
+                            Image(systemName: "checkmark").foregroundStyle(BP.accent).accessibilityLabel(Text(T("Watched")))
                         } else if episode.leftSec > 0 {
                             Text("\(VodCard.clock(episode.leftSec)) left").font(BP.sans(12)).foregroundStyle(BP.inkMuted)
                         } else if let d = episode.durationSec, d > 0 {
@@ -516,5 +519,6 @@ struct VodEpisodeRow: View {
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .bpProgressValue(episode.progress)
     }
 }

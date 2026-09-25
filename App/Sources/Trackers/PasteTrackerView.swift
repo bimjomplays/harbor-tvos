@@ -12,6 +12,9 @@ final class PasteTrackerModel: ObservableObject {
     @Published private(set) var status = Status(authenticated: false, username: nil)
     @Published private(set) var url: String?
     @Published private(set) var note: String?
+    /// Whether `note` reports a success; set with it (LetterboxdPanel), so the tint no longer
+    /// depends on the English wording.
+    @Published private(set) var noteOk = false
     @Published private(set) var busy = false
 
     init(service: String, label: String) { self.service = service; self.label = label }
@@ -22,6 +25,7 @@ final class PasteTrackerModel: ObservableObject {
 
     func begin() async {
         note = nil
+        noteOk = false
         url = try? await HarborEngine.shared.call("\(service).authorizeUrl", [])
         if url == nil { note = "Couldn't build the sign-in link." }
     }
@@ -35,11 +39,14 @@ final class PasteTrackerModel: ObservableObject {
             let d: Done = try await HarborEngine.shared.call("\(service).complete", [pasted])
             url = nil
             await refresh()
-            note = "Connected as \(d.userName)."
+            // anilist-connect-modal.tsx / mal-connect-modal.tsx: t("Connected as {username}").
+            note = T("Connected as %@", d.userName)
+            noteOk = true
             return true
         } catch {
             let text = "\(error)"
-            note = text.split(separator: "\n").first.map(String.init)?.replacingOccurrences(of: "Error: ", with: "") ?? "Sign-in failed."
+            note = text.split(separator: "\n").first.map(String.init)?.replacingOccurrences(of: "Error: ", with: "") ?? T("Sign-in failed.")
+            noteOk = false
             return false
         }
     }
@@ -49,6 +56,7 @@ final class PasteTrackerModel: ObservableObject {
         url = nil
         // (settings pass 2) The last "Connected as …" stayed up under "Not connected".
         note = nil
+        noteOk = false
         await refresh()
     }
 }
@@ -108,7 +116,7 @@ struct PasteTrackerPanel: View {
                 Button("Connect \(model.label)") { Task { await model.begin(); refocus() } }.buttonStyle(BPActionStyle(primary: true))
                     .focused($lead)
             }
-            if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Connected") ? BP.live : BP.danger) }
+            if let n = model.note { BPNote(text: n, tone: model.noteOk ? BP.live : BP.danger) }
         }
         .task { await model.refresh() }
         .alert(disconnectTitle, isPresented: $confirmDisconnect) {

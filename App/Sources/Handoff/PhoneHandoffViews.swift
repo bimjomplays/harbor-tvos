@@ -94,7 +94,7 @@ struct HandoffPanel: View {
                     HandoffQRImage(text: url).padding(BP.px(10)).background(Color.white)
                 } else {
                     RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel)
-                    Image(systemName: "iphone").font(.system(size: BP.px(38), weight: .light)).foregroundStyle(BP.inkSubtle)
+                    Image(systemName: "iphone").font(.system(size: BP.px(38), weight: .light)).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
                 }
             }
             .frame(width: side, height: side)
@@ -140,7 +140,7 @@ struct PhoneTypingSheet: View {
             BP.void_.opacity(0.82).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(22)) {
                 HStack(spacing: BP.px(12)) {
-                    Image(systemName: "iphone").font(.system(size: BP.px(22), weight: .semibold)).foregroundStyle(BP.inkMuted)
+                    Image(systemName: "iphone").font(.system(size: BP.px(22), weight: .semibold)).foregroundStyle(BP.inkMuted).accessibilityHidden(true)
                     Text("Type on your phone").font(BP.display(30)).foregroundStyle(BP.ink)
                     Spacer()
                     // bp-phone-typing.tsx: SFX.close() then onClose.
@@ -236,6 +236,7 @@ struct PhoneSetupStep: View {
         HStack(spacing: BP.px(8)) {
             Image(systemName: settled != nil ? "checkmark.circle.fill" : "circle.dashed")
                 .foregroundStyle(settled != nil ? BP.live : BP.inkSubtle)
+                .accessibilityHidden(true)
             Text(settled ?? T(waiting)).font(BP.sans(15, .semibold)).foregroundStyle(settled != nil ? BP.ink : BP.inkSubtle)
         }
     }
@@ -309,7 +310,7 @@ struct ConnectPane: View {
             ZStack {
                 Circle().fill(on ? BP.live.opacity(0.24) : BP.panel2)
                 if on {
-                    Image(systemName: "checkmark").font(.system(size: BP.px(20), weight: .bold)).foregroundStyle(BP.live)
+                    Image(systemName: "checkmark").font(.system(size: BP.px(20), weight: .bold)).foregroundStyle(BP.live).accessibilityHidden(true)
                 } else {
                     Circle().fill(BP.edge2).frame(width: BP.px(12), height: BP.px(12))
                 }

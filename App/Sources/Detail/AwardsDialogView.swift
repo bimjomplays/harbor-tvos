@@ -59,6 +59,8 @@ struct DialogLine<Content: View>: View {
                 .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(focused ? BP.glass : Color.clear))
                 .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(focused ? BP.edge2 : Color.clear, lineWidth: 1))
         }
+        // The focus stop reads as one line (year, award, result), not its fragments.
+        .accessibilityElement(children: .combine)
         .focusable()
     }
 }

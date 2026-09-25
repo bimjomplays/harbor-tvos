@@ -87,7 +87,7 @@ struct SearchView: View {
 
     private var queryLine: some View {
         HStack(spacing: BP.px(8)) {
-            Image(systemName: "magnifyingglass").foregroundStyle(ai.aiMode ? BP.accent : BP.inkMuted)
+            Image(systemName: "magnifyingglass").foregroundStyle(ai.aiMode ? BP.accent : BP.inkMuted).accessibilityHidden(true)
             if ai.aiMode && model.query.isEmpty {
                 // search-overlay.tsx AiExampleHint: a sample request in place of the placeholder, every 6 s.
                 TimelineView(.periodic(from: .now, by: 6)) { ctx in
@@ -122,6 +122,7 @@ struct SearchView: View {
         }
         .buttonStyle(BPActionStyle(primary: ai.aiMode))
         .accessibilityIdentifier("search-ai")
+        .bpSelected(ai.aiMode)
         .contextMenu {
             Section(T("AI model")) {
                 ForEach(ai.menu) { m in
@@ -190,7 +191,7 @@ struct SearchView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(hit.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                     HStack(spacing: BP.px(4)) {
-                                        if hit.installed { Image(systemName: "checkmark").font(.system(size: BP.px(10), weight: .bold)) }
+                                        if hit.installed { Image(systemName: "checkmark").font(.system(size: BP.px(10), weight: .bold)).accessibilityLabel(Text(T("Installed"))) }
                                         Text(hit.blurb ?? "").lineLimit(1)
                                     }
                                     .font(BP.sans(10)).foregroundStyle(BP.inkSubtle)

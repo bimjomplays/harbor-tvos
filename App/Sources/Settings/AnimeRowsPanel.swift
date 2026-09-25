@@ -114,10 +114,11 @@ struct AnimeRowsPanel: View {
                 Button { Task { await tuneCall("animeTuneGenre", [.number(Double(g.id))]) } } label: {
                     HStack(spacing: BP.px(6)) {
                         Text(verbatim: g.label).lineLimit(1)
-                        if g.on { Image(systemName: "checkmark") }
+                        if g.on { Image(systemName: "checkmark").accessibilityHidden(true) }
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: g.on))
+                .bpSelected(g.on)
             }
         }
         Text(T("Hide from your picks")).font(BP.sans(13, .semibold)).foregroundStyle(BP.inkSubtle)
@@ -125,6 +126,7 @@ struct AnimeRowsPanel: View {
             ForEach(t.origins) { o in
                 Button { Task { await tuneCall("animeTuneOrigin", [.string(o.code)]) } } label: { Text(verbatim: o.label).lineLimit(1) }
                     .buttonStyle(BPActionStyle(primary: o.on))
+                    .bpSelected(o.on)
             }
         }
         HStack(spacing: BP.px(8)) {

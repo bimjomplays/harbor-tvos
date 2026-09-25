@@ -399,7 +399,7 @@ struct AddonsView: View {
                 tabButton(.browse, T("Browse"))
                 Button { model.select(.installed) } label: {
                     HStack(spacing: BP.px(8)) {
-                        Image(systemName: "checkmark").font(.system(size: BP.px(13), weight: .bold))
+                        Image(systemName: "checkmark").font(.system(size: BP.px(13), weight: .bold)).accessibilityHidden(true)
                         Text(T("Installed"))
                         Text("\(model.installedCount)").font(BP.sans(12, .bold)).monospacedDigit()
                             .padding(.horizontal, BP.px(7)).padding(.vertical, BP.px(2))
@@ -478,7 +478,7 @@ struct AddonsView: View {
                     VStack(alignment: .leading, spacing: BP.px(4)) {
                         Text(a.name).font(BP.display(28)).foregroundStyle(.white).lineLimit(1)
                         HStack(spacing: BP.px(6)) {
-                            Image(systemName: "star.fill").foregroundStyle(BP.accent)
+                            Image(systemName: "star.fill").foregroundStyle(BP.accent).accessibilityHidden(true)
                             Text(verbatim: "\(Int(a.stars).formatted()) \(T("stars"))")
                             if !a.types.isEmpty { Text("· " + a.types.joined(separator: " · ")).foregroundStyle(.white.opacity(0.45)) }
                         }
@@ -580,7 +580,7 @@ struct AddonsView: View {
                         ZStack(alignment: .bottomLeading) {
                             LinearGradient(colors: tile.colors.map { $0.opacity(0.4) }, startPoint: .topLeading, endPoint: .bottomTrailing)
                             LinearGradient(colors: [BP.canvas.opacity(0.85), BP.canvas.opacity(0.3), .clear], startPoint: .bottom, endPoint: .top)
-                            Image(systemName: tile.icon).font(.system(size: BP.px(40))).foregroundStyle(BP.ink.opacity(0.55))
+                            Image(systemName: tile.icon).font(.system(size: BP.px(40))).foregroundStyle(BP.ink.opacity(0.55)).accessibilityHidden(true)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(BP.px(16))
                             VStack(alignment: .leading, spacing: BP.px(2)) {
                                 Text(T(tile.title)).font(BP.display(20, .medium)).foregroundStyle(BP.ink)
@@ -674,7 +674,7 @@ struct AddonsView: View {
                         }
                         Text(c.description).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle)
+                    Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
                 }
                 .padding(BP.px(18))
                 .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
@@ -792,7 +792,7 @@ struct AddonBadge: View {
     let tint: Color
     var body: some View {
         HStack(spacing: BP.px(4)) {
-            Image(systemName: icon).font(.system(size: BP.px(9), weight: .bold))
+            Image(systemName: icon).font(.system(size: BP.px(9), weight: .bold)).accessibilityHidden(true)
             Text(text).font(BP.sans(11, .bold))
         }
         .foregroundStyle(tint)
@@ -840,7 +840,7 @@ struct AddonToastView: View {
     var body: some View {
         HStack(spacing: BP.px(12)) {
             if let logo = toast.logo { AddonLogoView(url: logo, name: toast.name ?? "", side: BP.px(32)) }
-            Image(systemName: toast.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(toast.ok ? BP.live : BP.danger)
+            Image(systemName: toast.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(toast.ok ? BP.live : BP.danger).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(2)) {
                 Text(toast.text).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
                 if let n = toast.name { Text(n).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }

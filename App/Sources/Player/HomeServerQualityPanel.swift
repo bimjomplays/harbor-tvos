@@ -41,12 +41,13 @@ struct HomeServerQualityPanel: View {
                                 if switching == q.id {
                                     ProgressView().tint(BP.ink).scaleEffect(0.7)
                                 } else if current == q.id {
-                                    Image(systemName: "checkmark").font(.system(size: BP.px(15), weight: .bold))
+                                    Image(systemName: "checkmark").font(.system(size: BP.px(15), weight: .bold)).accessibilityHidden(true)
                                 }
                             }
                         }
                         .buttonStyle(PlayerLineStyle(on: current == q.id))
                         .focused($focus, equals: q.id)
+                        .bpSelected(current == q.id)
                     }
                 }
                 .focusSection()

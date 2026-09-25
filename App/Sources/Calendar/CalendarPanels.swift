@@ -70,7 +70,7 @@ struct CalendarDayView: View {
                 Text(item.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
                 if let time = item.releaseTime {
                     HStack(spacing: BP.px(4)) {
-                        Image(systemName: "clock").foregroundStyle(Color(hex: 0xfda4af))
+                        Image(systemName: "clock").foregroundStyle(Color(hex: 0xfda4af)).accessibilityHidden(true)
                         Text(time).foregroundStyle(BP.inkSubtle)
                         if let left = AiringCountdown.suffix(item.releaseAtMs, now: now) {
                             Text("· \(left)").foregroundStyle(BP.accent)
@@ -119,7 +119,7 @@ struct RemindersManagerView: View {
                                     HStack(spacing: BP.px(10)) {
                                         ZStack {
                                             BP.raised
-                                            if r.poster != nil { RemoteImage(url: r.poster) } else { Image(systemName: "bell").foregroundStyle(BP.inkSubtle) }
+                                            if r.poster != nil { RemoteImage(url: r.poster) } else { Image(systemName: "bell").foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
                                         }
                                         .frame(width: BP.px(30), height: BP.px(40))
                                         .clipShape(RoundedRectangle(cornerRadius: BP.px(5), style: .continuous))
@@ -234,12 +234,13 @@ struct CalendarConfigRailView: View {
                                                 Text(row.sub).font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
                                             }
                                             Spacer()
-                                            Image(systemName: row.on ? "checkmark.circle.fill" : "circle")
+                                            Image(systemName: row.on ? "checkmark.circle.fill" : "circle").accessibilityHidden(true)
                                         }
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .padding(.vertical, BP.px(4))
                                     }
                                     .buttonStyle(BPActionStyle(primary: row.on))
+                                    .bpSelected(row.on)
                                     .disabled(row.disabled)
                                 }
                             }
@@ -319,11 +320,12 @@ struct CalendarConfigRailView: View {
     private func chip(_ c: Chip) -> some View {
         Button { pressChip(c) } label: {
             HStack(spacing: BP.px(5)) {
-                if c.selected { Image(systemName: c.key.hasPrefix("person:") ? "xmark" : "checkmark") }
+                if c.selected { Image(systemName: c.key.hasPrefix("person:") ? "xmark" : "checkmark").accessibilityHidden(true) }
                 Text(c.label).lineLimit(1)
             }
         }
         .buttonStyle(BPActionStyle(primary: c.selected))
+        .bpSelected(c.selected)
         .focused($focus, equals: "chip:" + c.key)
     }
 
@@ -400,7 +402,7 @@ struct ReminderToastHost: View {
             Color.clear
             if let text = center.toast {
                 HStack(spacing: BP.px(8)) {
-                    Image(systemName: "bell.badge.fill").foregroundStyle(BP.accent)
+                    Image(systemName: "bell.badge.fill").foregroundStyle(BP.accent).accessibilityHidden(true)
                     Text(text).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
                 }
                 .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(9))
@@ -464,7 +466,7 @@ struct CalendarPeopleSearchView: View {
                                         if !person.knownFor.isEmpty { Text(person.knownFor).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                                     }
                                     Spacer(minLength: 0)
-                                    Image(systemName: person.tracked ? "checkmark" : "plus").foregroundStyle(BP.inkMuted)
+                                    Image(systemName: person.tracked ? "checkmark" : "plus").foregroundStyle(BP.inkMuted).accessibilityHidden(true)
                                 }
                                 .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(8))
                                 .frame(width: BP.px(720), alignment: .leading)
@@ -474,6 +476,8 @@ struct CalendarPeopleSearchView: View {
                             // stop (Select does nothing): a disabled row was skipped by the ring, so the
                             // viewer could not reach it to see it is already tracked.
                             .opacity(person.tracked ? 0.5 : 1)
+                            // The tick: already tracked.
+                            .bpSelected(person.tracked)
                         }
                     }
                     .padding(.vertical, BP.px(6))

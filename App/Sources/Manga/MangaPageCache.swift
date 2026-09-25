@@ -148,7 +148,7 @@ struct MangaPageImage: View {
                 Image(uiImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
             } else if failed {
                 VStack(spacing: BP.px(6)) {
-                    Image(systemName: "exclamationmark.triangle").font(.system(size: BP.px(20)))
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: BP.px(20))).accessibilityHidden(true)
                     Text("Page failed to load").font(BP.sans(13, .semibold))
                 }
                 .foregroundStyle(BP.inkSubtle)

@@ -38,7 +38,7 @@ struct NotificationsView: View {
             } else if !center.me.signedIn {
                 SocialEmpty(title: "Sign in to Harbor", message: "Notifications arrive once this TV is signed in to a Harbor account.")
             } else {
-                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.focusable()
+                HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.accessibilityElement(children: .combine).focusable()
             }
         }
         .task { await center.refresh() }
@@ -96,7 +96,7 @@ struct NotificationsView: View {
             if let cover = n.cover, n.kind == "badge-received" {
                 RemoteImage(url: cover, contentMode: .fit).padding(BP.px(6))
             } else {
-                Image(systemName: name).foregroundStyle(accent ? BP.accent : BP.inkMuted)
+                Image(systemName: name).foregroundStyle(accent ? BP.accent : BP.inkMuted).accessibilityHidden(true)
             }
         }
         .frame(width: BP.px(44), height: BP.px(44))

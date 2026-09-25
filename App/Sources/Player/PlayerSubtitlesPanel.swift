@@ -187,6 +187,7 @@ struct PlayerSubtitlesPanel: View {
         }
         .buttonStyle(PlayerChipStyle(on: on))
         .focused($focus, equals: id ?? "chip-\(label)")
+        .bpSelected(on)
     }
 
     private func note(_ text: String) -> some View {
@@ -269,6 +270,7 @@ struct PlayerSubtitlesPanel: View {
         }
         .buttonStyle(PlayerLineStyle(on: noneOn))
         .focused($focus, equals: "line-off")
+        .bpSelected(noneOn)
         ForEach(visible) { t in trackLine(t) }
         if visible.isEmpty {
             note("No tracks match these filters. Try toggling HI/SDH or Forced.")
@@ -287,6 +289,7 @@ struct PlayerSubtitlesPanel: View {
             }
             .buttonStyle(PlayerLineStyle(on: t.selected))
             .focused($focus, equals: "line-\(t.id)")
+            .bpSelected(t.selected)
             // setSecondarySub: a second track under the first, or off again (on AVPlayer, added tracks only).
             if mpvExtras || t.external {
                 Button {
@@ -295,6 +298,7 @@ struct PlayerSubtitlesPanel: View {
                 } label: { Label("2nd", systemImage: "character.bubble") }
                     .buttonStyle(PlayerChipStyle(on: t.secondary))
                     .focused($focus, equals: "second-\(t.id)")
+                    .bpSelected(t.secondary)
             }
         }
     }
