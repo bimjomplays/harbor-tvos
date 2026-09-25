@@ -539,7 +539,15 @@ struct MusicLyricsPanel: View {
             state = "empty"
         }
         defer { giveUp.cancel() }
-        let result: MusicLyrics? = try? await HarborEngine.shared.call("music.lyrics", [track])
+        // (review 29) The effect's cleanup clears the timer: a newer track, or the panel closing and
+        // opening again, cancels this load while the engine call is still out, and the old timer
+        // then put "No lyrics" over the next lookup's "Finding lyrics" (the defer waits for the call).
+        let result: MusicLyrics? = await withTaskCancellationHandler {
+            let found: MusicLyrics? = try? await HarborEngine.shared.call("music.lyrics", [track])
+            return found
+        } onCancel: {
+            giveUp.cancel()
+        }
         guard !Task.isCancelled, player.current?.queueKey == track.queueKey else { return }
         lines = result?.lines ?? []
         offset = result?.offset ?? 0

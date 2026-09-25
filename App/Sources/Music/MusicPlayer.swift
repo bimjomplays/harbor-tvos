@@ -424,7 +424,13 @@ final class MusicPlayer: ObservableObject {
         toggle()
     }
 
+    /// (review 29) A pause that came while the entry was still finding its source (the eBook
+    /// narration starting): the entry is queued paused when it resolves instead of sounding over the
+    /// voice, as it is while a film holds the TV. A new entry starting forgets it.
+    private var holdWhenReady = false
+
     func pause() {
+        if phase == .resolving { holdWhenReady = true; return }
         guard phase == .playing else { return }
         if engine == .spotify { spotify.setPaused(true); phase = .paused; refreshNowPlaying() } else { player.pause(); refreshPhase() }
     }
@@ -542,6 +548,7 @@ final class MusicPlayer: ObservableObject {
         position = 0
         duration = entry.seconds
         error = nil
+        holdWhenReady = false
         phase = .resolving
         player.pause()
         clearItems()
@@ -578,9 +585,13 @@ final class MusicPlayer: ObservableObject {
             items[ObjectIdentifier(item)] = (track, i)
             watch(item)
             player.insert(item, after: nil)
-            if PlaybackState.shared.active {
+            if PlaybackState.shared.active || holdWhenReady {
                 // A film or channel took the TV while this resolved (pauseForVideo only sees a
                 // track that is already playing): queue it paused instead of sounding over it.
+                // (review 29) So does a pause asked for while it resolved (holdWhenReady); the
+                // player is told too, as a source recovery never paused it after the failed item.
+                holdWhenReady = false
+                player.pause()
                 phase = .paused
             } else {
                 activateSession()
@@ -913,8 +924,10 @@ final class MusicPlayer: ObservableObject {
         engine = .spotify
         spotifyEntry = (prepared.track, i)
         startSpotifyClock()
-        if PlaybackState.shared.active {
+        if PlaybackState.shared.active || holdWhenReady {
             // A film or channel took the TV while this resolved: queued paused, as the stream path does.
+            // (review 29) So does a pause asked for while it resolved (holdWhenReady).
+            holdWhenReady = false
             spotify.setPaused(true)
             phase = .paused
         } else {
