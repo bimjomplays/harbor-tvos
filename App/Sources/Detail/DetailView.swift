@@ -175,7 +175,9 @@ struct DetailView: View {
         // bp-detail's pending-play effect: open playback once the meta and the episode are known;
         // awards, trackers, recommendations and the rest keep loading under the picker.
         .onChange(of: model.loadStage) { _, _ in fireAutoPlayIfReady() }
-        .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0 }) {
+        // A Watch Together host who closed the player to reopen (Sources, Switch source, another
+        // episode, a send-back) and leaves the picker with no pick has left the video (TogetherModel.abandonReopen).
+        .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0; TogetherModel.shared.abandonReopen() }) {
             if let picker {
                 PlayPickerView(meta: picker.meta, episode: picker.episode, onPlay: { stream, resolved in
                     guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
@@ -184,6 +186,8 @@ struct DetailView: View {
                         guard let s = e["season"]?.number, let n = e["episode"]?.number else { return nil }
                         return "S\(Int(s)) E\(Int(n))" + (e["name"]?.string.map { " · \($0)" } ?? "")
                     }
+                    // A pick: the player follows, so the picker's dismissal is not a host leaving.
+                    TogetherModel.shared.setReopenPending(false)
                     self.picker = nil
                     let pick = PlayerPickInfo(autoPicked: resolved.autoPicked ?? false, attempt: pickerAttempt, streamRef: resolved.streamRef)
                     let ctx = PlaybackContext(meta: model.meta,

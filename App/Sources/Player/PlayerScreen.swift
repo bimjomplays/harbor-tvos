@@ -108,6 +108,8 @@ struct PlayerScreen: View {
     @State private var leaveConfirm = false
     @State private var leaveRemember = false
     @State private var lastSavedPos: Double = -10
+    /// The last spot the picture reached (duration and position both known), for Switch source.
+    @State private var lastGoodPos: Double = 0
     @State private var snap: (position: Double, duration: Double, paused: Bool) = (0, 0, false)
     @State private var panel: Panel?
     @State private var segments: [SkipSegment] = []
@@ -368,6 +370,9 @@ struct PlayerScreen: View {
                 // A player opened from the PiP browse layer: the one in PiP stops and saves first.
                 inBrowseLayer = PiPBrowse.shared.isUp
                 PiPBrowse.shared.playbackOpening(nowPlayingId)
+                // A Watch Together host's reopen (another episode or source) went through: the
+                // picker's dismissal no longer means the host left the video.
+                together.playerOpened()
             }
             // (bug pass) The stream playing now, as onDisappear releases it: after a kid / quality
             // switch, a re-appear used to re-own the original torrent and leave the playing one to
@@ -445,6 +450,7 @@ struct PlayerScreen: View {
         .onReceive(tick) { _ in
             if let c = controller {
                 snap = c.snapshot()
+                if snap.duration > 0, snap.position > 0 { lastGoodPos = snap.position }
                 muted = c.isMuted()
                 if pipActive, !c.isPictureInPictureActive { pipChanged(false) }
                 buffered = c.bufferedSec()
@@ -876,6 +882,14 @@ struct PlayerScreen: View {
         reloadToken += 1
     }
 
+    /// bp-player-sources: where "Switch source" resumes the new stream. (review 5 follow-up) mpv
+    /// reports 0 / 0 once its stream has died, so the error card's Switch source restarted the title
+    /// at 0:00: the last spot the picture reached stands in, else the spot this player opened at.
+    private var switchSpot: Double {
+        if snap.duration > 0, snap.position > 0 { return snap.position }
+        return lastGoodPos > 0 ? lastGoodPos : (startAt ?? 0)
+    }
+
     /// The transport is on screen (the body's condition; Back puts it away first).
     /// (player/live device pass) Not under the connecting card either: bp-connecting is an overlay
     /// over the shell, and both drew on the same bottom band (title and transport showing through
@@ -1065,7 +1079,7 @@ struct PlayerScreen: View {
                     chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
                 }
                 if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
-                if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = snap.position; finish(natural: false, reopening: true); go?(at) } }
+                if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
                 // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
                 if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
                 // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
@@ -1517,7 +1531,7 @@ struct PlayerScreen: View {
                 HStack(spacing: BP.px(10)) {
                     chip("Go back", "chevron.backward") { finish(natural: false) }
                     chip("Try again", "arrow.clockwise") { reloadSame() }
-                    if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; finish(natural: false, reopening: true); go?(snap.position) } }
+                    if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
                 }
                 .focusSection()
                 .onAppear { focusLater(.chip("Go back")) }
