@@ -208,13 +208,7 @@ struct PlayPickerView: View {
 
     /// The picker's own page: the subtitle step, the auto step, or the list beside the title's column.
     @ViewBuilder private var pickerSurface: some View {
-        if let pending = preselect {
-            // bp-streams.tsx: `if (play.preselect)` BpSubtitleStep stands in for the panel.
-            SubtitleStepView(meta: meta, episode: episode, imdbId: model.imdb?.id, imdbVerified: model.imdb?.verified ?? false,
-                             streamRef: pending.resolved.streamRef, filename: pending.resolved.data?.filename,
-                             onStart: { choice in startPreselect(choice) }, onCancel: { cancelPreselect() })
-                .transition(.opacity)
-        } else if showAutoStep {
+        if showAutoStep, preselect == nil {
             // bp-streams.tsx: while auto is busy BpAutoStep stands in for the panel (a kid
             // profile's is auto-play-transition.tsx's kid branch).
             PickerAutoStep(meta: meta, episode: episode, attemptIdx: autoTried, resolving: autoFiring,
@@ -236,6 +230,18 @@ struct PlayPickerView: View {
                 list
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(50))
+            // (review 35) Kept under the subtitle step, hidden and out of the ring's reach, so Back
+            // finds the picked row where it was: rebuilt, the lazy list started at the top and a
+            // row further down was not there to take the ring.
+            .opacity(preselect == nil ? 1 : 0)
+            .disabled(preselect != nil)
+        }
+        if let pending = preselect {
+            // bp-streams.tsx: `if (play.preselect)` BpSubtitleStep stands in for the panel.
+            SubtitleStepView(meta: meta, episode: episode, imdbId: model.imdb?.id, imdbVerified: model.imdb?.verified ?? false,
+                             streamRef: pending.resolved.streamRef, filename: pending.resolved.data?.filename,
+                             onStart: { choice in startPreselect(choice) }, onCancel: { cancelPreselect() })
+                .transition(.opacity)
         }
     }
 
