@@ -74,7 +74,11 @@ struct AddonDetailView: View {
         if stack.isEmpty { stack = [addonId] }
         loading = true; defer { loading = false }
         revealed = false; docOpen = false
-        let d: Detail? = try? await HarborEngine.shared.call("addonsManager.detail", [currentId, model.authKey, model.adultAllowed])
+        let asked = currentId
+        let d: Detail? = try? await HarborEngine.shared.call("addonsManager.detail", [asked, model.authKey, model.adultAllowed])
+        // (bug pass) A related tile (or Back) changed the page while this loaded: the engine call is
+        // not cancelled with the task, so a late answer would show (or, failing, pop) the wrong addon.
+        guard asked == currentId else { return }
         // RemoteOrLocalDetail: nothing resolved → go back.
         guard let d else { back(); return }
         detail = d

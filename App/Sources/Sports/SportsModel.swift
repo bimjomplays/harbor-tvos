@@ -86,11 +86,15 @@ final class SportsModel: ObservableObject {
 
     func accept() async {
         consent = ((try? await HarborEngine.shared.call("sports.accept", [])) as Consent?)?.status ?? "accepted"
+        SettingsBridge.shared.sportsDeclined = consent == "declined"   // (bug pass) see decline()
         await start()
     }
 
     func decline() async {
         consent = ((try? await HarborEngine.shared.call("sports.decline", [])) as Consent?)?.status ?? "declined"
+        // (bug pass) bp-top-bar useBpTabGate follows the consent live: "Decline and hide Sports"
+        // hides the tab now, not the next time Settings happens to load its categories.
+        SettingsBridge.shared.sportsDeclined = consent == "declined"
     }
 
     /// Coalesce bursts of slice arrivals (upstream shares one render per 80 ms burst).

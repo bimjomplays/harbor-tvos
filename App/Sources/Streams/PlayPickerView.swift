@@ -39,6 +39,10 @@ struct PlayPickerView: View {
     /// play-picker.tsx stubBanner / auto-play-transition.tsx stubNotice: the player just sent a stub
     /// back (use-stub-detection.ts recordStubEvent), shown for 6 s.
     @State private var stubNotice = false
+    /// (bug pass) A dialog's fullScreenCover makes this view disappear and re-appear: `.task` runs
+    /// again (a second search cleared the list under the dialog) and onDisappear cancelled the
+    /// search and set `alive = false`, so the P2P dialog's "Stream" resolved and then dropped the pick.
+    @State private var searched = false
     @Environment(\.dismiss) private var dismiss
 
     enum PickerDialog: Identifiable {
@@ -85,6 +89,8 @@ struct PlayPickerView: View {
         }
         .ignoresSafeArea()
         .task {
+            guard !searched else { return }
+            searched = true
             // bp-streams: sourceKind starts on the preferred kind when the preference applies.
             if applyPreference, SettingsBridge.shared.slice.playbackSourcePreference == "home-server" { sourceKind = "media-server" }
             if autoEnabled { autoState = .waiting; startedAt = Date() }
@@ -120,7 +126,11 @@ struct PlayPickerView: View {
         .onChange(of: autoState) { _, state in
             if state == .exhausted, dialog == nil { dialog = .exhausted(autoTried) }
         }
-        .onDisappear { alive = false; if autoState == .waiting { autoState = .cancelled }; model.cancel() }
+        .onDisappear {
+            // Covered by one of its own dialogs, not closed (bug pass).
+            guard dialog == nil else { return }
+            alive = false; if autoState == .waiting { autoState = .cancelled }; model.cancel()
+        }
         .fullScreenCover(item: $dialog) { d in dialogView(d) }
     }
 

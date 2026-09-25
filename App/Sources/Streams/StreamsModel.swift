@@ -118,7 +118,13 @@ final class StreamsModel: ObservableObject {
     func searchWider() async { guard let m = lastMeta else { return }; strict = false; await search(meta: m, episode: lastEpisode) }
     func showEverything() async { guard let m = lastMeta else { return }; strict = false; showAll = true; await search(meta: m, episode: lastEpisode) }
 
+    /// (bug pass) Each search() bumps this; an older call ("Search wider" pressed mid-search reuses
+    /// the token) returns without touching the list, the phase or the remembered pin.
+    private var searchGen = 0
+
     func search(meta: Meta, episode: AnyJSON?) async {
+        searchGen += 1
+        let gen = searchGen
         lastMeta = meta; lastEpisode = episode
         phase = .searching
         streams = []; primary = nil; progress = (0, 0); rememberedIndex = nil
@@ -126,7 +132,7 @@ final class StreamsModel: ObservableObject {
         let p = ProfilesStore.shared.active
         let authKey = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
         struct Filters: Decodable { var filters: [SavedFilter]; var activeId: String? }
-        if let f: Filters = try? await HarborEngine.shared.call("streamsRoom.streamFilters", [p?.id ?? "default", p?.linked ?? true]) {
+        if let f: Filters = try? await HarborEngine.shared.call("streamsRoom.streamFilters", [p?.id ?? "default", p?.linked ?? true]), gen == searchGen {
             savedFilters = f.filters
             activeFilterId = f.activeId
         }
@@ -139,6 +145,7 @@ final class StreamsModel: ObservableObject {
         do {
             let r: SearchResult = try await HarborEngine.shared.call("streamsRoom.search",
                 [token, p?.id ?? "default", p?.linked ?? true, authKey, meta, episode ?? AnyJSON.null, AnyJSON.object(["strictMode": .bool(strict), "filterDisabled": .bool(showAll)])])
+            guard gen == searchGen else { return }
             if let err = r.error { phase = .failed(err); return }
             addonCount = r.addonCount
             addonOrder = r.addonOrder ?? []
@@ -148,10 +155,11 @@ final class StreamsModel: ObservableObject {
             apply(r.result?.picker)
             let season = episode?["season"]?.number.map { Int($0) }, ep = episode?["episode"]?.number.map { Int($0) }
             let pinned: Int? = try? await HarborEngine.shared.call("streamsRoom.remembered", [token, p?.id ?? "default", p?.linked ?? true, meta, season, ep])
+            guard gen == searchGen else { return }
             rememberedIndex = pinned.flatMap { streams.indices.contains($0) ? $0 : nil }
             phase = .done
         } catch {
-            phase = .failed(error.localizedDescription)
+            if gen == searchGen { phase = .failed(error.localizedDescription) }
         }
     }
 

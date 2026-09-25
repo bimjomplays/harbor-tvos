@@ -19,7 +19,7 @@ struct CatalogPageView: View {
     init(room: Room, row: BrowseRow) {
         self.room = room
         self.row = row
-        _metas = State(initialValue: row.metas)
+        _metas = State(initialValue: row.metas.uniquedById())   // (bug pass) unique grid ids
         _page = State(initialValue: row.metas.isEmpty ? 0 : 1)
     }
 
@@ -100,8 +100,8 @@ struct CatalogPageView: View {
         }
         if next.isEmpty { exhausted = true; return }
         page += 1
-        let known = Set(metas.map(\.id))
-        metas += next.filter { !known.contains($0.id) }
+        // (bug pass) Also drops repeats inside the new page itself (duplicate ForEach ids).
+        metas = (metas + next).uniquedById()
         await CardMarksStore.shared.refresh(metas)
     }
 }

@@ -33,7 +33,8 @@ struct AwardsDialogView: View {
     private func section(_ label: String, _ list: [DetailModel.TitleAwards.Entry]) -> some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             Text(label).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle)
-            ForEach(list) { e in
+            // (bug pass) Two nominations in one category and year (two supporting actors) share an Entry id.
+            ForEach(Array(list.enumerated()), id: \.offset) { _, e in
                 VStack(alignment: .leading, spacing: 2) {
                     Text([e.year.map(String.init), e.category].compactMap { $0 }.joined(separator: " · ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
                     if let r = e.recipient, !r.isEmpty { Text(r).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }

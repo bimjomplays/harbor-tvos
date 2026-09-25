@@ -101,6 +101,7 @@ final class ScreensaverModel: ObservableObject {
     private var ticker: Task<Void, Never>?
     private var rotor: Task<Void, Never>?
     private var fetchedFor = ""
+    private var activatedAt = Date.distantFuture
 
     func start() {
         guard ticker == nil else { return }
@@ -115,11 +116,21 @@ final class ScreensaverModel: ObservableObject {
     private func tick() async {
         let slice = SettingsBridge.shared.slice
         guard slice.screensaver ?? true, !PlaybackState.shared.active else { if active { wake() }; return }
-        if active { return }
+        if active {
+            // (bug pass) The saver only wakes from its own overlay, which is up on the shell stage
+            // only. It also turned on (unseen) on Who's watching or onboarding; presses there never
+            // woke it, so it jumped up the moment a profile was picked. Any press since it came
+            // on wakes it.
+            if ActivityMonitor.shared.last > activatedAt { wake() }
+            return
+        }
         let delay = max(1, slice.screensaverDelayMin ?? 5) * 60
         if Date().timeIntervalSince(ActivityMonitor.shared.last) >= delay {
             await load(source: slice.heroFeed ?? "trending")
+            // Pressed while the art loaded: stay down.
+            guard Date().timeIntervalSince(ActivityMonitor.shared.last) >= delay else { return }
             active = true
+            activatedAt = Date()
             at = 0
             rotor?.cancel()
             rotor = Task { [weak self] in
@@ -200,7 +211,11 @@ final class HarborOverlayWindow: UIWindow {
     static var mainWindow: UIWindow? {
         let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows).filter { !($0 is HarborOverlayWindow) }
-        return windows.first(where: \.isKeyWindow) ?? windows.first
+        // (bug pass) While an overlay is key no app window is, and `windows.first` could be a system
+        // window UIKit adds to the scene after the first text entry (the keyboard's, far above
+        // .normal), and hide() would hand the key there instead of to the shell. App windows first.
+        let app = windows.filter { $0.windowLevel == .normal }
+        return app.first(where: \.isKeyWindow) ?? app.first ?? windows.first(where: \.isKeyWindow) ?? windows.first
     }
 
     /// Nothing is presented over the main window's root (no fullScreenCover or sheet is up).

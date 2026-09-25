@@ -298,6 +298,9 @@ struct HomeCollectionView: View {
             }
         }
         .task {
+            // (bug pass) Re-runs when a title's cover closes: keep the loaded collection (a failed
+            // re-fetch replaced it with "Couldn't load").
+            guard card == nil else { return }
             let p = ProfilesStore.shared.active
             card = try? await HarborEngine.shared.call("collectionsRoom.tmdbCard", [p?.id ?? "default", p?.linked ?? true, target.ref, target.name])
             loaded = true
