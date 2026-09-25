@@ -39,6 +39,12 @@ struct HomeRowsPanel: View {
         focus = "rename:\(key)"
     }
 
+    /// Menu while the rename editor is open closes it; nil otherwise, so Menu still leaves Settings.
+    private var exitAction: (() -> Void)? {
+        guard let r = renaming else { return nil }
+        return { endRename(r.key) }
+    }
+
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
 
     var body: some View {
@@ -118,7 +124,7 @@ struct HomeRowsPanel: View {
         .onChange(of: watch.tick) { _, _ in Task { await load() } }
         // (settings pass 2) Menu closes the rename editor first (row-controls.tsx: Escape cancels
         // the inline rename); it used to leave Settings with the editor still open.
-        .onExitCommand(perform: renaming == nil ? nil : { if let r = renaming { endRename(r.key) } })
+        .onExitCommand(perform: exitAction)
     }
 
     private func simklSwitch(_ label: String, _ on: Bool, _ which: String) -> some View {

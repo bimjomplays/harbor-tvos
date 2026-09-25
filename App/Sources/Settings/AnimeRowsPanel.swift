@@ -33,6 +33,12 @@ struct AnimeRowsPanel: View {
         focus = "rename:\(key)"
     }
 
+    /// Menu while the rename editor is open closes it; nil otherwise, so Menu still leaves Settings.
+    private var exitAction: (() -> Void)? {
+        guard let r = renaming else { return nil }
+        return { endRename(r.key) }
+    }
+
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
 
     var body: some View {
@@ -68,7 +74,7 @@ struct AnimeRowsPanel: View {
         .task { await load() }
         .onChange(of: watch.tick) { _, _ in Task { await load() } }
         // (settings pass 2) Menu closes the rename editor first; it used to leave Settings.
-        .onExitCommand(perform: renaming == nil ? nil : { if let r = renaming { endRename(r.key) } })
+        .onExitCommand(perform: exitAction)
     }
 
     /// AnimeGenrePicker ("Tune anime"): genres steer Top Picks for You (settings.animeFavoriteGenres);
