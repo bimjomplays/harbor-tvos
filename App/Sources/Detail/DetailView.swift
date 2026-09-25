@@ -190,10 +190,9 @@ struct DetailView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         Task { @MainActor in
                             var upNext: String?
-                            if let s = ctx.season, let e = ctx.episode, let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < model.episodes.count {
-                                let n = model.episodes[idx + 1]
-                                // views/player.tsx nextEpMask: a hidden title leaves only "S E" on the up-next card.
-                                if n.season > 0 { upNext = await model.upNextText(n) }
+                            // views/player.tsx nextEpMask: a hidden title leaves only "S E" on the up-next card.
+                            if let s = ctx.season, let e = ctx.episode, let n = model.airedNext(season: s, episode: e) {
+                                upNext = await model.upNextText(n)
                             }
                             let hints = PlayerStreamHints(notWebReady: link.notWebReady, container: stream?.container,
                                                           hdrFormat: stream?.hdrFormat, filename: link.filename)
@@ -234,11 +233,8 @@ struct DetailView: View {
                 // The strip's started / next-up (and so its spoiler masks) move with what was just played.
                 Task { await model.loadWatchedState() }
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
-                if natural, let s = t.context.season, let e = t.context.episode,
-                   let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }),
-                   idx + 1 < model.episodes.count {
-                    let next = model.episodes[idx + 1]
-                    if next.season > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; pickerPref = false; picker = (model.meta, next.playEpisode) } }
+                if natural, let s = t.context.season, let e = t.context.episode, let next = model.airedNext(season: s, episode: e) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; pickerPref = false; picker = (model.meta, next.playEpisode) }
                 }
             }
         }

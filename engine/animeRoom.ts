@@ -172,7 +172,7 @@ function withCardExtras(items: LibraryItem[]): Array<LibraryItem & { _cw: Record
     const rec = i as unknown as Record<string, unknown>;
     const waiting = rec.waitingForAir === true;
     return { ...i, _cw: { watched: false, newEpisode: 0, upNext: rec.upNext === true, waitingForAir: waiting,
-      nextAirDate: waiting && typeof rec.nextAirDate === "string" ? rec.nextAirDate : null, watcher: null, external: null } };
+      nextAirDate: waiting && typeof rec.nextAirDate === "string" ? rec.nextAirDate : null, watcher: null, external: null, anime: true } };
   });
 }
 

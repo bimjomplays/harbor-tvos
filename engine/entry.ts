@@ -480,6 +480,7 @@ export const rooms = {
   page: roomBuilders.page,
   continueWatchingFor: roomBuilders.continueWatchingFor,
   continueWatchingWithExtras: roomBuilders.continueWatchingWithExtras,
+  cwExtras: roomBuilders.cwExtras,
   dismissContinueWatching: roomBuilders.dismissContinueWatching,
   anime: roomBuilders.anime,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,

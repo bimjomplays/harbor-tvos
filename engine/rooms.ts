@@ -397,7 +397,9 @@ async function advanceHomeCw(profileId: string, items: LibraryItem[], cloud: Lib
 }
 
 // bp-cw-card-meta: the extras a CW card carries beyond its art and progress.
-export type CwExtras = { watched: boolean; newEpisode: number; upNext: boolean; waitingForAir: boolean; nextAirDate: string | null; watcher: string | null; external: string | null };
+// `anime` is isAnimeCwItem: bp-cw-row bpCwResume sends an anime card to the detail page (its
+// absolute numbering does not map onto season and episode) instead of resuming it in one press.
+export type CwExtras = { watched: boolean; newEpisode: number; upNext: boolean; waitingForAir: boolean; nextAirDate: string | null; watcher: string | null; external: string | null; anime: boolean };
 const TRAKT_TTL = 10 * 60 * 1000;
 let traktKeys: { at: number; set: Set<string> } | null = null;
 
@@ -424,6 +426,7 @@ export async function cwExtras(items: LibraryItem[], activeProfileId: string | n
       nextAirDate: waiting && typeof rec.nextAirDate === "string" ? rec.nextAirDate : null,
       watcher,
       external: typeof rec.external === "string" ? rec.external : null,
+      anime: isAnimeCwItem(i),
     };
   }));
 }

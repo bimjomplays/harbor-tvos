@@ -332,7 +332,9 @@ struct SearchView: View {
             // bp-search-empty filterStale
             BPNote(text: "Nothing in this filter. Choose All to see everything that answered.").padding(.horizontal, BP.gutter)
         }
-        if model.filter == .all, let top = spotlight ?? model.topMatch {
+        // bp-search: the Top match slot belongs to a query's results. Idle, a focused Suggested
+        // poster was drawn under the row as a "Top match" for a search nobody typed.
+        if model.status != .idle, model.filter == .all, let top = spotlight ?? model.topMatch {
             TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
         }
         if model.shows(.people) && !model.people.isEmpty {

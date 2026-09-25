@@ -135,7 +135,11 @@ struct AnimeHeroActionsView: View {
             let p = ProfilesStore.shared.active
             let cw: AnyJSON = resume.map { r in .object(["season": r.season.map { .number(Double($0)) } ?? .null, "episode": r.episode.map { .number(Double($0)) } ?? .null,
                                                           "duration": .number(r.durationMs), "timeOffset": .number(r.timeOffsetMs)]) } ?? .null
-            info = try? await HarborEngine.shared.call("animeRoom.heroMeta", [meta, p?.id ?? "default", p?.linked ?? true, cw])
+            let got: HeroMeta? = try? await HarborEngine.shared.call("animeRoom.heroMeta", [meta, p?.id ?? "default", p?.linked ?? true, cw])
+            // The hero cycles every 7 s: a slow answer for the last title must not replace the
+            // line of the title now on screen.
+            guard !Task.isCancelled else { return }
+            info = got
         }
     }
 }
