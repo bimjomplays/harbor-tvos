@@ -300,6 +300,9 @@ extension SettingsBridge.Slice {
         sfxVolume = c.lenient("sfxVolume")
         mangaEnabled = c.lenient("mangaEnabled")
         playbackSourcePreference = c.lenient("playbackSourcePreference")
+        // (bug pass 3: these two were missed, so the picker ignored the viewer's choice)
+        pickerShowFilename = c.lenient("pickerShowFilename")
+        fullStreamDescription = c.lenient("fullStreamDescription")
         mpvHwdec = c.lenient("mpvHwdec")
         posterQuality = c.lenient("posterQuality")
     }
