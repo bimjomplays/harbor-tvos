@@ -50,21 +50,21 @@ struct ContinueCardView: View {
 
     private var statusText: String {
         if item.waitingForAir { return Self.countdown(item.nextAirDate) }
-        if item.upNext { return "Up Next" + (item.season.map { " · S\($0) E\(item.episode ?? 0)" } ?? "") }
+        if item.upNext { return T("Up Next") + (item.season.map { " · S\($0) E\(item.episode ?? 0)" } ?? "") }
         if let s = item.season, let e = item.episode { return "S\(s) E\(e)" }
         let left = Int((1 - item.progress) * 100)
-        return item.progress > 0 ? "\(left)% left" : "Resume"
+        return item.progress > 0 ? "\(left)% left" : T("Resume")
     }
 
     /// bp-cw-card-meta useAirCountdown: "Airing now" / "Next in 2d 3h" / "Next in 40m".
     private static func countdown(_ at: String?) -> String {
         guard let at, let date = ISO8601DateFormatter().date(from: at) ?? ISO8601DateFormatter.dateOnly.date(from: at) else { return "Waiting for air" }
         let diff = date.timeIntervalSinceNow
-        if diff <= 0 { return "Airing now" }
+        if diff <= 0 { return T("Airing now") }
         let days = Int(diff / 86_400), hours = Int(diff.truncatingRemainder(dividingBy: 86_400) / 3600), minutes = Int(diff.truncatingRemainder(dividingBy: 3600) / 60)
-        if days > 0 { return "Next in \(days)d \(hours)h" }
-        if hours > 0 { return "Next in \(hours)h \(minutes)m" }
-        return "Next in \(max(1, minutes))m"
+        if days > 0 { return T("Next in %lldd %lldh", days, hours) }
+        if hours > 0 { return T("Next in %lldh %lldm", hours, minutes) }
+        return T("Next in %lldm", max(1, minutes))
     }
 }
 

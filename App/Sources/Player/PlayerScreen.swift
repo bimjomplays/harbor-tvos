@@ -939,7 +939,7 @@ struct PlayerScreen: View {
             .focusSection()
             // bp-player-rail.tsx: Back, one chip per panel, then the mute toggle.
             HStack(spacing: BP.px(10)) {
-                chip("Back", "chevron.left") { requestClose() }
+                chip("Back", "chevron.backward") { requestClose() }
                 chip("Subtitles", "captions.bubble") { open(.subtitles) }
                 chip("Audio", "waveform") { open(.audio) }
                 // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
@@ -1355,7 +1355,7 @@ struct PlayerScreen: View {
             Text("It looks offline right now. Free playlists often include channels that have gone dark, so another one is usually a click away.")
                 .font(BP.sans(16)).foregroundStyle(BP.inkMuted).frame(maxWidth: BP.px(900), alignment: .leading)
             HStack(spacing: BP.px(10)) {
-                chip("Back", "chevron.left", id: "live-back") { finish(natural: false) }
+                chip("Back", "chevron.backward", id: "live-back") { finish(natural: false) }
                 chip("Try again", "arrow.clockwise", id: "live-retry") { status = MPVPlayerController.Status(); loadingSince = Date(); controller = nil; reloadToken += 1 }
                 chip("Browse channels", "list.bullet.rectangle", id: "live-browse") { open(.channels) }
             }
@@ -1395,7 +1395,7 @@ struct PlayerScreen: View {
             }
             if elapsed >= 8 {
                 HStack(spacing: BP.px(10)) {
-                    chip("Go back", "chevron.left") { finish(natural: false) }
+                    chip("Go back", "chevron.backward") { finish(natural: false) }
                     chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); loadingSince = Date(); reloadToken += 1 }
                     if onSwitchSource != nil { chip("Switch source", "list.bullet") { let go = onSwitchSource; finish(natural: false); go?(snap.position) } }
                 }
@@ -1723,7 +1723,7 @@ struct PlayerScreen: View {
                 chip("Try again", "arrow.clockwise") { status = MPVPlayerController.Status(); loadingSince = Date(); controller = nil; reloadToken += 1 }
                 // header-warning.tsx onUseMpv: the forced native engine could not open it; mpv can try.
                 if engine == .native { chip("Use mpv engine", "play.rectangle") { useMpvEngine() } }
-                chip("Back", "chevron.left") { finish(natural: false) }
+                chip("Back", "chevron.backward") { finish(natural: false) }
             }
             .focusSection()
         }

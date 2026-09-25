@@ -171,7 +171,7 @@ struct GroupPageView: View {
 
     @ViewBuilder private func actions(_ g: Social.Group) -> some View {
         HStack(spacing: BP.px(10)) {
-            Button { dismiss() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+            Button { dismiss() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
             if g.isPending {
                 // group-invite-banner.tsx
                 Button("Accept") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)

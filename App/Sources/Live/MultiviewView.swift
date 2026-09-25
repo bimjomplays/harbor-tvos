@@ -188,7 +188,7 @@ struct MultiviewView: View {
     // multiview.tsx toolbar: the layout segmented control, "Clear all", the collapse toggle.
     private var band: some View {
         HStack(spacing: BP.px(8)) {
-            Button { leave() } label: { Label("Back", systemImage: "chevron.left") }
+            Button { leave() } label: { Label("Back", systemImage: "chevron.backward") }
                 .buttonStyle(BPActionStyle())
                 .focused($focus, equals: .band("back"))
             Text("Multiview").font(BP.display(26)).foregroundStyle(BP.ink).padding(.horizontal, BP.px(10))

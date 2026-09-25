@@ -7,6 +7,7 @@ import { tmdbWatchProviders } from "@/lib/providers/tmdb/tmdb-watch";
 import { tmdbCollection } from "@/lib/providers/tmdb/tmdb-collection";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { metaLooksAnime } from "@/lib/anime-detect";
+import { getUiLanguage, t } from "@/lib/i18n";
 
 const IMG = "https://image.tmdb.org/t/p/w342";
 const portrait = (path: string | null | undefined): string | null => (!path ? null : path.startsWith("http") ? path : `${IMG}${path}`);
@@ -49,7 +50,8 @@ const cache = new Map<string, { at: number; value: DetailExtras | null }>();
 export async function extras(meta: Meta, profileId: string, linked: boolean): Promise<DetailExtras | null> {
   const s = loadEffective(profileId, linked);
   if (!s.tmdbKey) return null;
-  const key = `${meta.id}|${s.tmdbKey}|${s.region}`;
+  // The rating fact carries translated copy ("{n} votes"), so a build is per UI language.
+  const key = `${meta.id}|${s.tmdbKey}|${s.region}|${getUiLanguage()}`;
   // bp-detail.tsx useHideAnimeMetas(recSource / similarSource): applied on the way out, so a
   // cached build follows a profile that hides anime.
   const shown = (v: DetailExtras | null): DetailExtras | null =>
@@ -69,10 +71,11 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
   push(d.kind === "tv" ? "Created by" : "Directed by", d.kind === "tv" ? d.creators : d.directors, 3);
   if (d.kind === "tv") push("Directed by", d.directors, 2);
   push("Written by", d.writers, 3);
-  push("Produced by", d.producers, 4);
+  // bp-crew-row.tsx labels (the Swift UI translates every label with T()).
+  push("Producers", d.producers, 4);
   push("Cinematography", d.cinematography, 2);
   push("Music", d.composer, 2);
-  push("Edited by", d.editor, 2);
+  push(d.editor.length === 1 ? "Editor" : "Editors", d.editor, 2);
   // bp-facts: the first rows of the facts card.
   const facts: DetailExtras["facts"] = [];
   const fact = (label: string, value: string | number | undefined | null) => { if (value !== undefined && value !== null && String(value).trim() !== "") facts.push({ label, value: String(value) }); };
@@ -88,7 +91,8 @@ export async function extras(meta: Meta, profileId: string, linked: boolean): Pr
   if (d.originalTitle && d.originalTitle !== d.title) fact("Original title", d.originalTitle);
   if (d.budget) fact("Budget", `$${Math.round(d.budget / 1e6)}M`);
   if (d.revenue) fact("Box office", `$${Math.round(d.revenue / 1e6)}M`);
-  fact("Rating", d.rating ? `${d.rating} (${d.voteCount} votes)` : undefined);
+  // bp-facts.tsx: "{rating} · {n} votes".
+  fact("Rating", d.rating ? (d.voteCount > 0 ? `${d.rating} · ${t("{n} votes", { n: d.voteCount.toLocaleString() })}` : d.rating) : undefined);
   let watchOn: DetailExtras["watchOn"] = [];
   try { watchOn = (await tmdbWatchProviders(s.tmdbKey, d.kind, d.id, s.region)).map((p) => ({ name: p.name, logo: p.logo })); } catch { /* optional */ }
   const value: DetailExtras = {

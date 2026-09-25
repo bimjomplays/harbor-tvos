@@ -71,14 +71,14 @@ struct PersonView: View {
                     hero.padding(.horizontal, BP.gutter)
                     if let pg = model.page {
                         if !pg.hasKey { BPNote(text: "Add a TMDB key in Settings to see filmographies.").padding(.horizontal, BP.gutter) }
-                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: "Known For", metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }) }
-                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: "IMDb Top", metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: T("Known For"), metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }) }
+                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: T("IMDb Top"), metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }) }
                         if let c = pg.collaborators, c.count >= 3 { collaborators(c) }
                         if let secs = pg.sections, !secs.isEmpty {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
                                 Text("Filmography").font(BP.display(24)).foregroundStyle(BP.ink)
-                                filterRow("Sort", [("popularity", "Popularity"), ("rating", "Rating"), ("newest", "Newest")], active: model.sort, trailing: "\(pg.shownTotal ?? 0) of \(pg.total ?? 0)") { model.sort = $0; Task { await model.load() } }
-                                filterRow("Rating", [("0", "Any rating"), ("6", "Rated 6+"), ("7", "Rated 7+"), ("8", "Rated 8+")], active: String(model.minRating), trailing: nil) { model.minRating = Int($0) ?? 0; Task { await model.load() } }
+                                filterRow("Sort", [("popularity", "Popularity"), ("rating", "Rating"), ("newest", "Newest")], active: model.sort, trailing: T("%lld of %lld", pg.shownTotal ?? 0, pg.total ?? 0)) { model.sort = $0; Task { await model.load() } }
+                                filterRow("Rating", [("0", "Any rating"), ("6", T("Rated %lld+", 6)), ("7", T("Rated %lld+", 7)), ("8", T("Rated %lld+", 8))], active: String(model.minRating), trailing: nil) { model.minRating = Int($0) ?? 0; Task { await model.load() } }
                             }
                             .padding(.horizontal, BP.gutter)
                             ForEach(secs) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }) }
@@ -109,7 +109,7 @@ struct PersonView: View {
                 if let p = model.page?.person {
                     Text(([p.department] + p.facts).filter { !$0.isEmpty }.joined(separator: " · ")).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
                     if let a = model.page?.awards, !a.isEmpty {
-                        Text(a.prefix(4).map { "\($0.type.replacingOccurrences(of: "_", with: " ").capitalized): \($0.wins) win\($0.wins == 1 ? "" : "s"), \($0.nominations) nom\($0.nominations == 1 ? "" : "s")" }.joined(separator: " · "))
+                        Text(a.prefix(4).map(Self.awardLine).joined(separator: " · "))
                             .font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                     }
                     if !p.biography.isEmpty {
@@ -119,10 +119,19 @@ struct PersonView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Button { close() } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(BPActionStyle())
+                Button { close() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
             }
         }
         .focusSection()
+    }
+
+    /// bp-person.tsx BpPersonAwards: "{n} win(s)" (else "{n} nom(s)"), then the nominations beside a
+    /// win, under the award body (a proper noun, left untranslated like upstream).
+    private static func awardLine(_ a: PersonModel.Award) -> String {
+        let noms = a.nominations == 1 ? T("%lld nom", a.nominations) : T("%lld noms", a.nominations)
+        let headline = a.wins > 0 ? (a.wins == 1 ? T("%lld win", a.wins) : T("%lld wins", a.wins)) : noms
+        let body = a.type.replacingOccurrences(of: "_", with: " ").capitalized
+        return "\(body): \(headline)" + (a.wins > 0 && a.nominations > 0 ? ", \(noms)" : "")
     }
 
     // bp-collaborators: round portraits with the shared-title count and role.
@@ -140,7 +149,7 @@ struct PersonView: View {
                                 }
                                 .frame(width: BP.px(110), height: BP.px(110))
                                 Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                Text("\(c.titles) titles" + (c.role.map { " · \($0)" } ?? "")).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                                Text(T("%lld titles", c.titles) + (c.role.map { " · " + T($0) } ?? "")).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                             }
                             .frame(width: BP.px(130))
                         }
@@ -156,8 +165,8 @@ struct PersonView: View {
 
     private func filterRow(_ heading: String, _ options: [(String, String)], active: String, trailing: String?, pick: @escaping (String) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
-            Text(heading.uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
-            ForEach(options, id: \.0) { o in Button(o.1) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)) }
+            Text(T(heading).uppercased()).font(BP.sans(11, .bold)).tracking(1.5).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+            ForEach(options, id: \.0) { o in Button(T(o.1)) { pick(o.0) }.buttonStyle(BPActionStyle(primary: active == o.0)) }
             if let trailing { Text(trailing).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
         }
         .focusSection()

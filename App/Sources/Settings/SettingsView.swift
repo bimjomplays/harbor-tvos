@@ -202,7 +202,7 @@ struct SettingsView: View {
         switch sync.phase {
         case .idle: return account.isSignedIn ? "Connected" : "Sign in to Harbor to sync"
         case .pulling: return "Pulling…"
-        case .failed(let why): return "Failed: \(why)"
+        case .failed(let why): return T("Failed: %@", why)
         }
     }
 

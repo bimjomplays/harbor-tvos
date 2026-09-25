@@ -141,8 +141,8 @@ struct ProfileEditorView: View {
     private var pinDraftValid: Bool { draftPin.isEmpty || ProfilesStore.isValidPin(draftPin) }
 
     private var securityLine: String {
-        let pin = hasPin ? "PIN on" : "PIN off"
-        let tabs = lockedCount == 0 ? "no tab locks" : (hasPin ? "\(lockedCount) tabs locked" : "Locks only activate once a PIN is set.")
+        let pin = T(hasPin ? "PIN on" : "PIN off")
+        let tabs = lockedCount == 0 ? T("no tab locks") : (hasPin ? T("%lld tabs locked", lockedCount) : T("Locks only activate once a PIN is set."))
         return "\(pin) · \(tabs)"
     }
 
@@ -162,7 +162,7 @@ struct ProfileEditorView: View {
             if needsUnlock {
                 HStack(spacing: BP.px(12)) {
                     Button("Enter PIN to change locks") { pinToUnlock = true }.buttonStyle(BPActionStyle(primary: true))
-                    BPNote(text: "\(lockedCount) tabs require this profile's PIN.")
+                    BPNote(text: T("%lld tabs require this profile's PIN.", lockedCount))
                 }
             } else {
                 Text("Lock sidebar tabs").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)

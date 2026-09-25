@@ -105,7 +105,7 @@ struct HandoffPanel: View {
                 if let code = handoff.codeDisplay {
                     Text(code).font(BP.display(40)).tracking(4).foregroundStyle(BP.ink).lineLimit(1)
                 } else {
-                    Text(handoffWaitingLabel(handoff.phase)).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkSubtle)
+                    Text(T(handoffWaitingLabel(handoff.phase))).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkSubtle)
                 }
                 if let short = handoff.shortURL {
                     Text(short).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -216,9 +216,9 @@ struct PhoneSetupStep: View {
         VStack(alignment: .leading, spacing: BP.px(18)) {
             HandoffPanel(handoff: handoff)
             HStack(spacing: BP.px(26)) {
-                tick(.tmdb, settled: tmdbConnected ? "TMDB connected" : nil, waiting: "Artwork and rows")
-                tick(.stremio, settled: stremioName.map { "Signed in as \($0)" }, waiting: "Your Stremio library")
-                tick(.harbor, settled: harborName.map { "Signed in as \($0)" }, waiting: "A Harbor account")
+                tick(.tmdb, settled: tmdbConnected ? T("TMDB connected") : nil, waiting: "Artwork and rows")
+                tick(.stremio, settled: stremioName.map { T("Signed in as %@", $0) }, waiting: "Your Stremio library")
+                tick(.harbor, settled: harborName.map { T("Signed in as %@", $0) }, waiting: "A Harbor account")
             }
             BPNote(text: handoffNote(handoff.phase), tone: handoff.phase == .stalled || handoff.phase == .noAddress ? BP.danger : BP.inkMuted)
             HStack(spacing: BP.px(12)) {
@@ -236,7 +236,7 @@ struct PhoneSetupStep: View {
         HStack(spacing: BP.px(8)) {
             Image(systemName: settled != nil ? "checkmark.circle.fill" : "circle.dashed")
                 .foregroundStyle(settled != nil ? BP.live : BP.inkSubtle)
-            Text(settled ?? waiting).font(BP.sans(15, .semibold)).foregroundStyle(settled != nil ? BP.ink : BP.inkSubtle)
+            Text(settled ?? T(waiting)).font(BP.sans(15, .semibold)).foregroundStyle(settled != nil ? BP.ink : BP.inkSubtle)
         }
     }
 }
@@ -268,9 +268,9 @@ struct ConnectPane: View {
                 }
                 HStack(alignment: .top, spacing: BP.px(56)) {
                     VStack(alignment: .leading, spacing: BP.px(18)) {
-                        status("TMDB", hasKey ? "Connected" : "Artwork, rows and collections", on: hasKey)
-                        status("Stremio", stremioName.map { "Signed in as \($0)" } ?? "Your Stremio library", on: stremioName != nil)
-                        status("Harbor account", account.session.map { "Signed in as \($0.user.username)" } ?? "Sync, themes and friends", on: account.isSignedIn)
+                        status("TMDB", T(hasKey ? "Connected" : "Artwork, rows and collections"), on: hasKey)
+                        status("Stremio", stremioName.map { T("Signed in as %@", $0) } ?? T("Your Stremio library"), on: stremioName != nil)
+                        status("Harbor account", account.session.map { T("Signed in as %@", $0.user.username) } ?? T("Sync, themes and friends"), on: account.isSignedIn)
                     }
                     VStack(alignment: .leading, spacing: BP.px(12)) {
                         HandoffPanel(handoff: handoff)
@@ -316,7 +316,7 @@ struct ConnectPane: View {
             }
             .frame(width: BP.px(48), height: BP.px(48))
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(BP.sans(22, .semibold)).foregroundStyle(BP.ink)
+                Text(T(label)).font(BP.sans(22, .semibold)).foregroundStyle(BP.ink)
                 Text(value).font(BP.sans(16, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
             }
         }

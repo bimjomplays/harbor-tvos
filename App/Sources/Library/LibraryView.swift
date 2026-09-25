@@ -111,7 +111,7 @@ struct LibraryView: View {
                             VStack(alignment: .leading, spacing: BP.px(8)) {
                                 if !s.label.isEmpty {
                                     HStack(spacing: BP.px(8)) {
-                                        Text(s.label).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
+                                        Text(T(s.label)).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
                                         Text("\(s.total)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
                                     }
                                 }
@@ -158,7 +158,7 @@ struct LibraryView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: BP.px(8)) {
                 ForEach(model.tabs) { t in
-                    Button(t.label) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id))
+                    Button(T(t.label)) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id))
                 }
                 Divider().frame(height: BP.px(24)).overlay(BP.edge2)
                 Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }.buttonStyle(BPActionStyle(primary: model.showFilters))
@@ -185,7 +185,7 @@ struct LibraryView: View {
                 filterRow("Show", [("episodes", T("Episodes")), ("posters", T("Posters"))], active: model.episodes ? "episodes" : "posters") { model.set(episodes: $0 == "episodes") }
             }
             if let groups = model.feed?.groups, !groups.isEmpty {
-                filterRow(model.tab == "lists" ? "List" : "Group", [("", T("All"))] + groups.map { ($0.id, $0.label) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
+                filterRow(model.tab == "lists" ? "List" : "Group", [("", T("All"))] + groups.map { ($0.id, T($0.label)) }, active: model.group ?? "") { model.set(group: $0.isEmpty ? nil : $0) }
             }
         }
     }

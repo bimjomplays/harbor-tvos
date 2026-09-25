@@ -88,7 +88,7 @@ struct TogetherToastHost: View {
                     Text(i.mediaTitle).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     if let ep { Text(ep).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
                 }
-                Button { join(inv) } label: { Image(systemName: "arrow.right") }.buttonStyle(BPActionStyle(primary: true)).accessibilityLabel("Join")
+                Button { join(inv) } label: { Image(systemName: "arrow.forward") }.buttonStyle(BPActionStyle(primary: true)).accessibilityLabel("Join")
                 Button { handledInviteAt = inv.at; room.dismiss("invite") } label: { Image(systemName: "xmark") }.buttonStyle(BPActionStyle()).accessibilityLabel("Dismiss")
             }
             .padding(BP.px(12))

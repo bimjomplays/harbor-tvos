@@ -71,7 +71,7 @@ struct DetailView: View {
             })
         }
         for tr in model.trackers {
-            let label = tr.statusLabel.map { "\(tr.name) · \($0)" } ?? "Add to \(tr.name)"
+            let label = tr.statusLabel.map { "\(tr.name) · \(T($0))" } ?? T("Add to %@", tr.name)
             out.append(HeroAction(key: tr.key, label: label, icon: "plus", active: tr.status != nil) { trackerDialog = tr })
         }
         if model.isMovie, hero?.traktMovie == true {
@@ -90,7 +90,7 @@ struct DetailView: View {
             })
         }
         let score = hero?.rating
-        out.append(HeroAction(key: "rate", label: score.map { "Your rating \($0)/10" } ?? "Rate this", icon: score == nil ? "star" : "star.fill",
+        out.append(HeroAction(key: "rate", label: score.map { T("Your rating %lld/10", $0) } ?? "Rate this", icon: score == nil ? "star" : "star.fill",
                               active: score != nil, badge: score.map { String($0) }) { rateDialog = true })
         out.append(HeroAction(key: "lists", label: "Add to list", icon: "square.stack.3d.up") { listDialog = true })
         if model.isMovie, hero?.showWatchedButton ?? true {
@@ -102,7 +102,7 @@ struct DetailView: View {
         if let yt = model.trailerYtId {
             out.append(HeroAction(key: "trailer", label: "Watch trailer", icon: "film") { trailer = TrailerPick(ytId: yt, name: nil) })
         }
-        out.append(HeroAction(key: "back", label: "Back", icon: "chevron.left") { dismiss() })
+        out.append(HeroAction(key: "back", label: "Back", icon: "chevron.backward") { dismiss() })
         return out
     }
 
@@ -266,6 +266,8 @@ struct DetailView: View {
                     .mask(LinearGradient(colors: [.black, .black, .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.9)))
             }
             LinearGradient(colors: [BP.void_.opacity(0.85), BP.void_.opacity(0.4), .clear], startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
+                // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
+                .flipsForRightToLeftLayoutDirection(true)
         }
         .ignoresSafeArea()
     }
@@ -315,13 +317,13 @@ struct DetailView: View {
                     }
                     .buttonStyle(DetailIconActionStyle(active: a.active))
                     .focused($heroFocus, equals: a.key)
-                    .accessibilityLabel(a.label)
+                    .accessibilityLabel(T(a.label))
                     .accessibilityIdentifier("detail-action-\(a.key)")
                 }
             }
             .focusSection()
             // BP_ACTION_HINT: the focused icon's label; blank when Play or nothing in the row has focus.
-            Text(heroActions.first(where: { $0.key == heroFocus })?.label ?? " ")
+            Text(heroActions.first(where: { $0.key == heroFocus }).map { T($0.label) } ?? " ")
                 .font(BP.sans(12.5, .semibold)).tracking(0.5).foregroundStyle(BP.inkSubtle)
                 .frame(height: BP.px(16), alignment: .leading)
             // bp-hero-manga: "Read the Manga" on an anime while the manga reader is on, and "Read
@@ -356,8 +358,8 @@ struct DetailView: View {
         if let x = model.extras {
             if !x.cast.isEmpty { castRow(x.cast) }
             if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
-            if !x.recommendations.isEmpty { BPRowView(row: BrowseRow(key: "recommendations", title: "More Like This", metas: x.recommendations), onFocus: { _ in }, onSelect: { related = $0 }) }
-            if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: "You Might Also Like", metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
+            if !x.recommendations.isEmpty { BPRowView(row: BrowseRow(key: "recommendations", title: T("More Like This"), metas: x.recommendations), onFocus: { _ in }, onSelect: { related = $0 }) }
+            if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: T("You Might Also Like"), metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
             if let v = x.videos, !v.isEmpty { videosRow(v) }
             if !x.facts.isEmpty { factsCard(x.facts) }
         }
@@ -375,8 +377,9 @@ struct DetailView: View {
                                 RemoteImage(url: "https://img.youtube.com/vi/\(c.ytId)/mqdefault.jpg")
                                     .frame(width: BP.px(300), height: BP.px(169)).clipped()
                                 VStack(alignment: .leading, spacing: BP.px(3)) {
-                                    Text(c.type).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.inkSubtle).lineLimit(1)
-                                    Text(c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                    Text(T(c.type)).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                                    // bp-videos-row.tsx: the engine's unnamed extra trailers are t("Trailer").
+                                    Text(c.name == "Trailer" ? T("Trailer") : c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                 }
                                 .padding(BP.px(10)).frame(width: BP.px(300), alignment: .leading)
                             }
@@ -394,6 +397,14 @@ struct DetailView: View {
         .focusSection()
     }
 
+    /// bp-awards-row.tsx t("{n} wins") / t("{n} nominations"), with the nominations beside a win.
+    private func awardCounts(_ g: DetailModel.TitleAwards.Group) -> String {
+        let noms = TCount(g.nominations, one: "%lld nomination", "%lld nominations")
+        guard g.wins > 0 else { return noms }
+        let wins = TCount(g.wins, one: "%lld win", "%lld wins")
+        return g.nominations > 0 ? "\(wins) · \(noms)" : wins
+    }
+
     // detail/bp-awards-row: one cell per award body; Select opens the categories and years.
     private func awardsRow(_ a: DetailModel.TitleAwards) -> some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -404,7 +415,7 @@ struct DetailView: View {
                         Button { awardType = g } label: {
                             VStack(alignment: .leading, spacing: BP.px(4)) {
                                 Text(g.title).font(BP.sans(14, .bold)).foregroundStyle(BP.ink).lineLimit(1)
-                                Text(g.wins > 0 ? "\(g.wins) win\(g.wins == 1 ? "" : "s")" + (g.nominations > 0 ? " · \(g.nominations) nomination\(g.nominations == 1 ? "" : "s")" : "") : "\(g.nominations) nomination\(g.nominations == 1 ? "" : "s")")
+                                Text(awardCounts(g))
                                     .font(BP.sans(12)).foregroundStyle(BP.inkMuted)
                             }
                             .padding(BP.px(14)).frame(width: BP.px(260), alignment: .leading)
@@ -479,7 +490,7 @@ struct DetailView: View {
             Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             ForEach(facts.prefix(8)) { f in
                 HStack(alignment: .top, spacing: BP.px(8)) {
-                    Text(f.label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
+                    Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
                     Text(f.value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
                 }
             }
@@ -503,7 +514,7 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: BP.px(6)) {
                 ForEach(crew.prefix(5)) { c in
                     HStack(alignment: .top, spacing: BP.px(8)) {
-                        Text(c.label).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
+                        Text(T(c.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
                         HStack(spacing: BP.px(6)) {
                             ForEach(Array((c.people ?? c.names.map { DetailModel.Extras.Crew.Person(id: nil, name: $0) }).enumerated()), id: \.offset) { _, p in
                                 if let id = p.id {
@@ -699,7 +710,7 @@ struct TrackerDialogView: View {
                     ForEach(tracker.choices) { c in
                         Button { onPick(c.id); dismiss() } label: {
                             HStack {
-                                Text(c.label)
+                                Text(T(c.label))
                                 Spacer()
                                 if c.id == tracker.status { Image(systemName: "checkmark") }
                             }

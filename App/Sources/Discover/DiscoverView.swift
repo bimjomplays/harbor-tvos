@@ -17,7 +17,7 @@ struct DiscoverView: View {
                 .opacity(model.spotlight == nil ? 0 : 1)
             if let failed = model.failed {
                 VStack(spacing: BP.px(10)) {
-                    Text("Couldn't load Discover.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
+                    Text("Couldn't load Discover").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
                     BPNote(text: failed)
                 }
                 .padding(.top, BP.px(300)).padding(.horizontal, BP.gutter)
@@ -29,19 +29,19 @@ struct DiscoverView: View {
                         QueueBandView(queue: model.build?.queue) { queueOpen = true }
                     }
                     if !model.people.isEmpty {
-                        section("Discover", "Top People", "Top \(model.people.count), ranked by the work they left behind") {
+                        section("Discover", "Top People", T("Top %lld, ranked by the work they left behind", model.people.count)) {
                             PeopleBandView(people: model.people)
                         }
                     }
                     if let aw = model.awards, !aw.summaries.isEmpty {
-                        section("Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : "\(aw.overview.bodies) awards, \(aw.overview.wins) winners, \(aw.overview.span), all offline") {
+                        section("Discover", "Awards", aw.overview.span.isEmpty ? "Every winner Harbor ships, browsable offline by year and category." : T("%lld awards, %lld winners, %@, all offline", aw.overview.bodies, aw.overview.wins, aw.overview.span)) {
                             AwardsBandView(summaries: aw.summaries, anime: model.animeAwards,
                                            onOpen: { awardDetail = $0 }, onOpenAnime: { animeAward = $0 })
                         }
                     }
                     section("Discover", "Genres", "18 shelves, one press into any of them") {
                         GenresBandView(genres: model.build?.genres ?? [], art: model.genreArt, onOpen: { genre in
-                            genrePage = BrowseRow(key: "genre:\(genre)", title: genre, metas: [])
+                            genrePage = BrowseRow(key: "genre:\(genre)", title: T(genre), metas: [])
                         }) {
                             Task { await model.loadGenreArt() }
                         }
@@ -88,10 +88,11 @@ struct QueueBandView: View {
                     RemoteImage(url: bed).blur(radius: 18).opacity(queue?.backdrop == nil ? 0.45 : 0.8)
                 }
                 LinearGradient(colors: [BP.panel, BP.panel.opacity(0.6), .clear], startPoint: .leading, endPoint: .trailing)
+                    .flipsForRightToLeftLayoutDirection(true)   // bp-queue-band.tsx --bp-scrim-side under rtl
                 HStack(spacing: BP.px(24)) {
                     VStack(alignment: .leading, spacing: BP.px(6)) {
                         Text("Discovery Queue").font(BP.display(26)).foregroundStyle(BP.ink)
-                        Text(line).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
+                        Text(T(line)).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
                         if let n = queue?.total, queue?.status == "ready" {
                             Text("\(n) waiting").font(BP.sans(13)).foregroundStyle(BP.inkSubtle)
                         }
@@ -197,7 +198,7 @@ struct GenresBandView: View {
                 to.blendMode(.multiply)
             }
             LinearGradient(colors: [.clear, to], startPoint: .center, endPoint: .bottom).frame(height: cell * 0.8 * 0.4).frame(maxHeight: .infinity, alignment: .bottom)
-            Text(g.genre).font(BP.display(16)).foregroundStyle(ink).padding(BP.px(14))
+            Text(T(g.genre)).font(BP.display(16)).foregroundStyle(ink).padding(BP.px(14))
         }
         .frame(width: cell, height: cell * 0.8)
         .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))

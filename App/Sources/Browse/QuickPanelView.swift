@@ -56,7 +56,7 @@ struct QuickPanelView: View {
     }
 
     private func action(_ label: String, _ icon: String, _ run: @escaping () -> Void) -> some View {
-        Button(action: run) { Label(label, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }
+        Button(action: run) { Label(T(label), systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }
             .buttonStyle(BPActionStyle())
             .focused($focus, equals: label)
     }

@@ -81,6 +81,8 @@ struct SpotlightView: View {
             }
             LinearGradient(colors: [BP.void_.opacity(0.82), BP.void_.opacity(0.52), BP.void_.opacity(0.16), .clear],
                            startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
+                // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
+                .flipsForRightToLeftLayoutDirection(true)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.3), BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom)
         }
     }

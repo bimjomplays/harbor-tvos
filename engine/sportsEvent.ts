@@ -31,6 +31,7 @@ import { readSportsApiKey, saveSportsApiKey } from "@/lib/sports/api-credentials
 import { API_SPORTS_LEAGUES, getApiSportsStatus, invalidateApiSportsCredentials } from "@/lib/sports/providers/api-sports";
 import { detail, forgetSlices } from "./sports";
 import { markSettingsPatched } from "./sync";
+import { getUiLanguage } from "@/lib/i18n";
 
 // ------------------------------------------------------------------ SP-1 / SP-11: event rows
 const PAIRED = 8;
@@ -425,7 +426,8 @@ export async function runReminders(): Promise<number> {
       if (!url) continue;
       const attempt = { ...latest, attempted: { ...latest.attempted, [channel]: Date.now() } };
       if (!saveSportsReminder(attempt)) continue;
-      const message = reminderMessage(latest, Date.now(), "en");
+      // sports-reminder-loop.tsx: the start time is formatted in Harbor's UI language.
+      const message = reminderMessage(latest, Date.now(), getUiLanguage());
       const text = channel === "telegram" ? message.replace(/([_*`[])/g, "\\$1") : message;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 12_000);

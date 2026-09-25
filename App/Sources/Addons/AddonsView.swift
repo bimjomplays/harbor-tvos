@@ -453,6 +453,7 @@ struct AddonsView: View {
             LinearGradient(stops: [.init(color: .black.opacity(0.15), location: 0), .init(color: .black.opacity(0.45), location: 0.46),
                                    .init(color: .black.opacity(0.86), location: 0.82), .init(color: .black.opacity(0.95), location: 1)], startPoint: .top, endPoint: .bottom)
             LinearGradient(colors: [.black.opacity(0.72), .clear], startPoint: .leading, endPoint: UnitPoint(x: 0.58, y: 0.5))
+                .flipsForRightToLeftLayoutDirection(true)   // bp-addon-card.tsx SCRIM_RTL
             VStack(alignment: .leading, spacing: BP.px(12)) {
                 Label(s.trending ? T("Trending on %@", "stremio-addons.net") : T("Top rated on %@", "stremio-addons.net"), systemImage: "chart.line.uptrend.xyaxis")
                     .font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1.6).foregroundStyle(.white)
@@ -660,7 +661,7 @@ struct AddonsView: View {
                         }
                         Text(c.description).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Image(systemName: "chevron.right").foregroundStyle(BP.inkSubtle)
+                    Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle)
                 }
                 .padding(BP.px(18))
                 .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))

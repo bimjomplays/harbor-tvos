@@ -82,7 +82,8 @@ struct AnimeAwardView: View {
     }
 
     private func summary(_ d: Award) -> String {
-        var parts = ["\(d.totalWins) recorded winners", d.categories.count == 1 ? "1 category" : "\(d.categories.count) categories"]
+        // bp-anime-awards.tsx: t("{n} recorded winners") • t("{n} category" / "{n} categories").
+        var parts = [T("%lld recorded winners", d.totalWins), d.categories.count == 1 ? T("%lld category", 1) : T("%lld categories", d.categories.count)]
         if !d.yearSpan.isEmpty { parts.append(d.yearSpan) }
         return parts.joined(separator: "  •  ")
     }

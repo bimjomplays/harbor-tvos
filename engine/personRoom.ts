@@ -2,7 +2,8 @@
 // Frequent Collaborators (desktop's ranking, cache-first, fetched off the page load), awards
 // from the bundled index, and the filmography sections with sort / minimum rating.
 import type { Meta } from "@/lib/cinemeta";
-import { creditToMeta, tmdbPerson, tmdbPersonCached, type PersonCredit, type PersonDetail } from "@/lib/providers/tmdb/tmdb-people";
+import { creditToMeta, tmdbDepartmentLabelKey, tmdbPerson, tmdbPersonCached, type PersonCredit, type PersonDetail } from "@/lib/providers/tmdb/tmdb-people";
+import { t } from "@/lib/i18n";
 import { tmdbTitleCredits } from "@/lib/providers/tmdb/tmdb-title-credits";
 import { mergeBundledPersonAwards } from "@/lib/awards-history";
 import { awardSummary } from "@/lib/providers/wikidata";
@@ -22,9 +23,10 @@ const SAMPLE_SIZE = 20;
 const portrait = (path: string | null | undefined): string | null => (!path ? null : path.startsWith("http") ? path : `${IMG}${path}`);
 const byPopularity = (a: PersonCredit, b: PersonCredit) => b.popularity - a.popularity;
 
+// bp-person.tsx sectionTitle, translated like upstream's t().
 const SECTION_TITLES: Record<string, (n: number) => string> = {
-  movies: (n) => `Movies · ${n}`, shows: (n) => `TV Shows · ${n}`, directing: () => "Directing",
-  writing: () => "Writing", producing: () => "Producing", otherCrew: () => "Other Work",
+  movies: (n) => t("Movies · {n}", { n }), shows: (n) => t("TV Shows · {n}", { n }), directing: () => t("Directing"),
+  writing: () => t("Writing"), producing: () => t("Producing"), otherCrew: () => t("Other Work"),
 };
 
 const collabInflight = new Set<number>();
@@ -84,13 +86,19 @@ export async function page(personId: number, profileId: string, linked: boolean,
   if (known === null) loadCollaborators(person, s.tmdbKey);
   const age = person.birthday ? calcAge(person.birthday, person.deathday) : null;
   const facts: string[] = [];
-  if (person.birthday) facts.push(`Born ${fmtDate(person.birthday)}${age != null ? ` · ${age}` : ""}`);
-  if (person.deathday) facts.push(`Died ${fmtDate(person.deathday)}`);
+  if (person.birthday) {
+    const born = t("Born {date}", { date: fmtDate(person.birthday) });
+    facts.push(age != null ? `${born} · ${age}` : born);
+  }
+  if (person.deathday) facts.push(t("Died {date}", { date: fmtDate(person.deathday) }));
+  // bp-person.tsx departmentLabel: TMDB's department through its catalog key when one exists.
+  const departmentKey = person.knownForDepartment ? tmdbDepartmentLabelKey(person.knownForDepartment) : undefined;
+  const department = person.knownForDepartment && departmentKey ? t(departmentKey) : person.knownForDepartment;
   if (person.placeOfBirth) facts.push(person.placeOfBirth);
   const metas = (list: PersonCredit[]): Meta[] => list.map(creditToMeta);
   return {
     hasKey: true,
-    person: { id: person.id, name: person.name, department: person.knownForDepartment, portrait: portrait(person.profilePath), imdbId: person.imdbId, biography: person.biography?.trim() ?? "", facts },
+    person: { id: person.id, name: person.name, department, portrait: portrait(person.profilePath), imdbId: person.imdbId, biography: person.biography?.trim() ?? "", facts },
     knownFor: metas(knownFor),
     topRated: metas(topRated),
     collaborators: collaborators.map((c) => ({ id: c.id, name: c.name, portrait: portrait(c.profilePath), role: c.role ?? null, titles: c.titles })),

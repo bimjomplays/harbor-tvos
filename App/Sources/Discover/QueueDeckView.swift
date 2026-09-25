@@ -92,6 +92,7 @@ struct QueueDeckView: View {
                     .transition(.opacity)
                 LinearGradient(colors: [BP.void_.opacity(0.2), BP.void_.opacity(0.75), BP.void_.opacity(0.97)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 LinearGradient(colors: [BP.void_.opacity(0.9), .clear], startPoint: .leading, endPoint: .init(x: 0.6, y: 0.5)).ignoresSafeArea()
+                    .flipsForRightToLeftLayoutDirection(true)   // bp-tokens.ts --bp-scrim-side under rtl
             }
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 Text("Discovery Queue").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.accent)
@@ -113,15 +114,15 @@ struct QueueDeckView: View {
                         chip("Details", "info.circle") { detail = DetailTarget(meta: c.meta, autoPlay: false) }
                         chip("Skip", "forward.end") { Task { await model.snooze() } }
                         chip("Not interested", "hand.thumbsdown") { Task { await model.block() } }
-                        chip("Back to Discover", "chevron.left") { dismiss() }
+                        chip("Back to Discover", "chevron.backward") { dismiss() }
                     }
                     .focusSection()
                     Text("Skip hides it for two weeks · Not interested never shows it again").font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
                 } else {
-                    Text(emptyTitle).font(BP.display(34)).foregroundStyle(BP.ink)
-                    Text(emptyBlurb).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
+                    Text(T(emptyTitle)).font(BP.display(34)).foregroundStyle(BP.ink)
+                    Text(T(emptyBlurb)).font(BP.sans(15)).foregroundStyle(BP.inkMuted)
                     HStack(spacing: BP.px(10)) {
-                        chip("Back to Discover", "chevron.left") { dismiss() }
+                        chip("Back to Discover", "chevron.backward") { dismiss() }
                         if model.status == "nokey" { chip("Open Settings", "gearshape") { dismiss(); app.room = .settings } }
                     }
                     .focusSection()
@@ -131,7 +132,9 @@ struct QueueDeckView: View {
         }
         .animation(BP.easeFast, value: model.index)
         .onMoveCommand { dir in
-            if dir == .left { model.step(-1) } else if dir == .right { model.step(1) }
+            // bp-queue.tsx: forward is the reading direction (Left steps forward under rtl).
+            guard dir == .left || dir == .right else { return }
+            model.step((dir == .right) != L10n.isRTL ? 1 : -1)
         }
         .onExitCommand { dismiss() }
         .task { await model.open(); focus = "Play now" }
@@ -149,7 +152,7 @@ struct QueueDeckView: View {
     }
 
     private func chip(_ label: String, _ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label(label, systemImage: icon) }
+        Button(action: action) { Label(T(label), systemImage: icon) }
             .buttonStyle(BPActionStyle(primary: label == "Play now"))
             .focused($focus, equals: label)
     }

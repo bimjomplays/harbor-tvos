@@ -60,7 +60,7 @@ struct CalendarView: View {
                 Text("Calendar").font(BP.display(32, .medium)).foregroundStyle(BP.ink)
             }
             Spacer(minLength: BP.px(12))
-            Button { model.prev() } label: { Image(systemName: "chevron.left") }
+            Button { model.prev() } label: { Image(systemName: "chevron.backward") }
                 .buttonStyle(BPActionStyle()).accessibilityLabel("Previous month")
             Button("Today") { model.today() }.buttonStyle(BPActionStyle())
             HStack(spacing: BP.px(6)) {
@@ -71,7 +71,7 @@ struct CalendarView: View {
             .padding(.horizontal, BP.px(16))
             .frame(minWidth: BP.px(150), minHeight: BP.tabItem)
             .overlay(Capsule().stroke(BP.edge2, lineWidth: 1))
-            Button { model.next() } label: { Image(systemName: "chevron.right") }
+            Button { model.next() } label: { Image(systemName: "chevron.forward") }
                 .buttonStyle(BPActionStyle()).accessibilityLabel("Next month")
             Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(22)).padding(.horizontal, BP.px(4))
             // components/reminders-manager.tsx RemindersManagerButton: bell + count.
@@ -99,7 +99,8 @@ struct CalendarView: View {
         if let d = model.data, d.year == model.year, d.month == model.month { return d.monthLabel }
         var c = DateComponents(); c.year = model.year; c.month = model.month + 1; c.day = 1
         guard let date = Calendar.current.date(from: c) else { return "" }
-        return date.formatted(.dateTime.month(.wide).year())
+        // While the month loads: Harbor's UI language, like the engine's t(MONTH_NAMES) label.
+        return date.formatted(.dateTime.month(.wide).year().locale(L10n.locale))
     }
 
     // tvOS: lib/reminders-runner.tsx fired these while the viewer was elsewhere (the toast may have

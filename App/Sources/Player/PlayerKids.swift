@@ -50,7 +50,7 @@ struct KidsPlayerTransport: View {
         HStack(spacing: BP.px(12)) {
             Button(action: onBack) {
                 HStack(spacing: BP.px(10)) {
-                    Image(systemName: "arrow.left").font(.system(size: BP.px(22), weight: .heavy))
+                    Image(systemName: "arrow.backward").font(.system(size: BP.px(22), weight: .heavy))
                     Text("Back").font(KidsTheme.font(18, .heavy))
                 }
             }

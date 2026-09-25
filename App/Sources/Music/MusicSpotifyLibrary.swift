@@ -93,7 +93,7 @@ struct MusicSpotifyLibraryView: View {
             }
             Spacer()
             if selected != nil {
-                Button { selected = nil } label: { Label(text("music.spotifyLibrary.back"), systemImage: "chevron.left") }
+                Button { selected = nil } label: { Label(text("music.spotifyLibrary.back"), systemImage: "chevron.backward") }
                     .buttonStyle(BPActionStyle())
             }
             if spotify.connected {
