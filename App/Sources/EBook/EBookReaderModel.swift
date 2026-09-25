@@ -248,7 +248,7 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         }
         paragraphs = opened.paragraphs
         identity = opened.identity
-        self.landing = landing ?? opened.offset.map { .anchor(line: opened.line, offset: $0) } ?? .line(opened.line)
+        self.landing = landing ?? opened.offset.map { Landing.anchor(line: opened.line, offset: $0) } ?? Landing.line(opened.line)
         await relayout()
         await EBookStore.shared.refreshLists()
     }
