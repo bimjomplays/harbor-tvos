@@ -933,9 +933,9 @@ struct PlayPickerView: View {
 
     private func row(_ s: ScoredStream, highlight: Bool) -> some View {
         Button {
-            // (P8) The stream playing now: the switcher just closes (as the kid switcher does),
-            // rather than loading the same stream over itself.
-            if let current = switching, current.matches(s) { onClose?(); return }
+            // (P8 follow-up) The stream playing now is picked like any other row: use-stream-switcher
+            // onSwitchStream resolves it again (a fresh debrid link, the same torrent) and reloads it
+            // in place at the resume spot, which is how a stalled or dead copy is brought back.
             // (focus pass) One pick at a time, guarded here rather than by disabling every row.
             guard resolving == nil else { return }
             // (detail/search pass 2) Held from the press: the Task starts a beat later and the P2P

@@ -4,13 +4,17 @@ import SwiftUI
 struct ContinueCardView: View {
     let item: ContinueItem
     var focused = false
+    /// (P11) snapshots.ts useSnapshotVersion: a frame saved while the card is on screen redraws it.
+    @ObservedObject private var snapshots = ExitSnapshotVersion.shared
 
     static let width = BP.px(268)
     static var size: CGSize { CGSize(width: width, height: (width * 0.5625).rounded()) }
 
     var body: some View {
+        let snap: String? = snapshotArt
+        let art: String? = item.background ?? item.poster
         ZStack(alignment: .bottomLeading) {
-            RemoteImage(url: item.background ?? item.poster)
+            RemoteImage(url: snap ?? art, fallback: snap != nil ? art : nil)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.4), endPoint: .bottom)
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 if let logo = item.logo, !logo.isEmpty {
@@ -70,6 +74,20 @@ struct ContinueCardView: View {
     }
 
     private var isExternal: Bool { !(item.external ?? "").isEmpty }
+
+    /// (P11) bp-cw-row.tsx BpCwCard `pinned` = readSnapshot(item._id): the frame use-exit-snapshot
+    /// saved when the viewer left this title leads the card ("the card itself leads with them"), and
+    /// the card's own art stands behind it when the file is gone (tvOS purged the cache) or will not
+    /// load. Upstream's card only pins it over a library item with no background; Stremio's cloud
+    /// entries carry none there, but the TV writes the meta's background into them and into every
+    /// local entry, so that gate would hide the frame on nearly every card. An Up Next card shows
+    /// the next episode, not the spot left (continue-card.tsx `thumb = upNext ? undefined : snapshot`).
+    private var snapshotArt: String? {
+        _ = snapshots.version
+        guard !item.upNext else { return nil }
+        let days: Int = ExitSnapshotSettings.current.days
+        return ExitSnapshotStore.shared.url(for: item.id, retentionDays: days)?.absoluteString
+    }
 
     /// lib/stremio isAnimeCwItem (the card's flag, or an anime catalogue id).
     private var isAnime: Bool {

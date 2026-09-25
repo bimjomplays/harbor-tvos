@@ -138,6 +138,10 @@ final class SettingsBridge: ObservableObject {
         /// "{imdbId}" template), both set on desktop.
         var rpdbKey: String? = ""
         var posterBaseUrl: String? = ""
+        /// (P11) use-exit-snapshot.ts: settings.cwSnapshotRetentionDays (30; 0 = no frames) and
+        /// settings.cwSnapshotFullQuality (off), set on desktop (Player/ExitSnapshot.swift reads them).
+        var cwSnapshotRetentionDays: Double? = 30
+        var cwSnapshotFullQuality: Bool? = false
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
