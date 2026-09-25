@@ -24,7 +24,8 @@ final class CollectionsModel: ObservableObject {
         var hidden: Int?
         var id: String { key }
     }
-    struct All: Decodable { @LossyArray var mine: [Card]; @LossyArray var community: [Card] }
+    /// `communityFailed`: engine collectionsRoom.all (bp-collection-steps stepCommunity ctx.communityFailed).
+    struct All: Decodable { @LossyArray var mine: [Card]; @LossyArray var community: [Card]; var communityFailed: Bool? }
     struct Limits: Decodable { var collections: Int; var items: Int }
 
     @Published private(set) var mine: [Card] = []
@@ -32,6 +33,9 @@ final class CollectionsModel: ObservableObject {
     @Published private(set) var loading = false
     @Published private(set) var loaded = false
     @Published private(set) var failed: String?
+    /// bp-collection-steps ctx.communityFailed: the community feed could not be reached (offline,
+    /// harbor.site down), which bp-collections endMessage words differently from an empty one.
+    @Published private(set) var communityFailed = false
     @Published private(set) var source = "all"
     @Published private(set) var limits = Limits(collections: 24, items: 100)
     /// bp-collection-steps "curated": TMDB's franchise catalog, a page at a time, by category.
@@ -53,15 +57,28 @@ final class CollectionsModel: ObservableObject {
     private var tvdbRun = 0
     var hasKey: Bool { !SettingsBridge.shared.slice.tmdbKey.isEmpty }
 
+    /// use-bp-collection-feed AUTO_PULLS: how many times a pull that added nothing is followed by
+    /// another one (the sentinel is still in view).
+    private static let autoPulls = 4
+    /// bp-collection-steps STEPS_PER_PULL (3) steps of TMDB_PAGE (24) franchises. The engine's
+    /// curated page is 12 (collectionsRoom.tmdb), so one pull walks up to six of them.
+    private static let tmdbPagesPerPull = 6
+
     func load() async {
         loading = true; defer { loading = false; loaded = true }
         do {
             let a: All = try await HarborEngine.shared.call("collectionsRoom.all", [])
             mine = a.mine; community = a.community
+            communityFailed = a.communityFailed ?? false
         } catch { failed = error.localizedDescription }
         categories = (try? await HarborEngine.shared.call("collectionsRoom.categories", [])) ?? ["All"]
         if let l: Limits = try? await HarborEngine.shared.call("collectionsRoom.limits", []) { limits = l }
+        let before = cards.count
         if hasKey { await loadTmdb(reset: true) } else { await loadTvdb(reset: true) }
+        // (collections offline pass) Offline every curated franchise fails to resolve, so the first
+        // page added no card and nothing on screen could ask for the next one: the grid sat empty
+        // with no spinner and no end line. Keep pulling, as the feed does.
+        if cards.count == before { await pull() }
     }
 
     func reloadMine() async {
@@ -69,18 +86,36 @@ final class CollectionsModel: ObservableObject {
     }
 
     func reloadCommunity() async {
-        if let c: LossyArray<Card> = try? await HarborEngine.shared.call("collectionsRoom.community", []) { community = c.wrappedValue }   // (bug pass 2) lossy
+        // (bug pass 2) lossy. (collections offline pass) A failed read keeps the list it had.
+        if let c: LossyArray<Card> = try? await HarborEngine.shared.call("collectionsRoom.community", []) {
+            community = c.wrappedValue
+            communityFailed = false
+        } else {
+            communityFailed = true
+        }
     }
 
+    /// (collections offline pass) Upstream builds a fresh feed for every source pick
+    /// (use-bp-collection-feed resets on `source`), so picking a source again is how a viewer
+    /// retries a feed that failed. The TV keeps what loaded (a pick does not throw a full grid
+    /// away) and re-runs only what failed: the community feed, a TVDB walk that could not reach
+    /// TVDB, a curated walk that ended with nothing.
     func set(source s: String) {
         source = s
         Task {
+            if (s == "community" || s == "all") && communityFailed { await reloadCommunity() }
+            let retryTvdb: Bool = tvdbFailed && tvdbDone
+            let retryTmdb: Bool = tmdb.isEmpty && tmdbDone && hasKey
             switch s {
-            case "tvdb": await loadTvdb(reset: false)
-            case "all": if curatedFinished || tvdbScope != "all" { await loadTvdb(reset: false) }
-            case "tmdb": if tmdb.isEmpty && hasKey { await loadTmdb(reset: false) }
+            case "tvdb": await loadTvdb(reset: retryTvdb)
+            case "all":
+                if retryTmdb && category == "All" { await loadTmdb(reset: true) }
+                if curatedFinished || tvdbScope != "all" { await loadTvdb(reset: retryTvdb) }
+            case "tmdb": if tmdb.isEmpty && hasKey { await loadTmdb(reset: retryTmdb) }
             default: break
             }
+            guard source == s, cards.isEmpty else { return }
+            await pull()
         }
     }
 
@@ -91,16 +126,26 @@ final class CollectionsModel: ObservableObject {
         struct Page: Decodable { @LossyArray var cards: [Card]; var done: Bool }
         let p = ProfilesStore.shared.active
         let want = category
-        let got: Page? = try? await HarborEngine.shared.call("collectionsRoom.tmdb", [p?.id ?? "default", p?.linked ?? true, category, tmdbPage + 1])
-        // (bug pass) A category chip pressed while this page loaded reset the list, and its own load
-        // bounced off tmdbLoading: load the new category now instead of leaving the grid empty (and a
-        // failed stale page must not mark the new category done).
-        guard want == category else { tmdbLoading = false; await loadTmdb(reset: false); return }
-        if let page = got {
-            tmdbPage += 1
-            tmdb = (tmdb + page.cards).uniquedById()   // (bug pass) repeats inside a page too
-            tmdbDone = page.done
-        } else { tmdbDone = true }
+        // (collections offline pass) use-bp-collection-feed pull: steps until one adds a card
+        // (STEPS_PER_PULL), so a page whose franchises all failed to resolve moves on to the next.
+        var added = 0
+        var pages = 0
+        while added == 0 && pages < Self.tmdbPagesPerPull && !tmdbDone {
+            pages += 1
+            let got: Page? = try? await HarborEngine.shared.call("collectionsRoom.tmdb", [p?.id ?? "default", p?.linked ?? true, want, tmdbPage + 1])
+            // (bug pass) A category chip pressed while this page loaded reset the list, and its own load
+            // bounced off tmdbLoading: load the new category now instead of leaving the grid empty (and a
+            // failed stale page must not mark the new category done).
+            guard want == category else { tmdbLoading = false; await loadTmdb(reset: false); return }
+            if let page = got {
+                tmdbPage += 1
+                let had = tmdb.count
+                // (bug pass) repeats inside a page too
+                tmdb = (tmdb + page.cards).uniquedById()
+                added += tmdb.count - had
+                tmdbDone = page.done
+            } else { tmdbDone = true }
+        }
     }
 
     /// use-bp-collection-feed pull: up to three steps until one adds a card (STEPS_PER_PULL).
@@ -132,6 +177,22 @@ final class CollectionsModel: ObservableObject {
     }
 
     func set(category c: String) { category = c; Task { await loadTmdb(reset: true) } }
+
+    /// (collections offline pass) use-bp-collection-feed's sentinel: a pull that added nothing
+    /// leaves the sentinel in view, so the feed pulls again (at most AUTO_PULLS more times). The TV
+    /// pulls when the last card appears, and a pull that added nothing makes no new last card, so
+    /// the repeat happens here. Only the feed sources page; Mine and Community load at once.
+    func pull() async {
+        guard source == "all" || source == "tmdb" || source == "tvdb" else { return }
+        let want = source
+        var rounds = 0
+        while !done && rounds <= Self.autoPulls && want == source && !Task.isCancelled {
+            rounds += 1
+            let before = cards.count
+            await more()
+            if cards.count > before { return }
+        }
+    }
 
     /// The last card appeared: pull the next page of whichever source is still open.
     func more() async {
@@ -182,7 +243,7 @@ final class CollectionsModel: ObservableObject {
         if empty {
             switch source {
             case "mine": return "You have not made a collection yet."
-            case "community": return "Nobody has shared a collection yet."
+            case "community": return communityFailed ? "Community collections are unavailable right now." : "Nobody has shared a collection yet."
             case "tvdb" where tvdbFailed: return "TVDB lists are unavailable right now."
             default: return "Nothing to show here yet."
             }
@@ -191,7 +252,7 @@ final class CollectionsModel: ObservableObject {
         case "tvdb": return tvdbFailed ? "That's every TVDB list we could reach. Some are unavailable right now." : "That's every TVDB list we could find."
         case "community": return "That's every shared collection right now."
         case "mine": return "That's all of your collections."
-        case "all" where tvdbFailed: return "That's everything we could reach. Some sources are unavailable right now."
+        case "all" where tvdbFailed || communityFailed: return "That's everything we could reach. Some sources are unavailable right now."
         default: return "That's every collection TMDB knows about."
         }
     }
@@ -246,7 +307,7 @@ struct CollectionsView: View {
                     LazyVGrid(columns: Self.columns, alignment: .leading, spacing: BP.px(20)) {
                         ForEach(model.cards) { c in
                             Button { open = c } label: { CollectionCardView(card: c) }
-                                .onAppear { if c.key == model.cards.last?.key { Task { await model.more() } } }
+                                .onAppear { if c.key == model.cards.last?.key { Task { await model.pull() } } }
                                 .buttonStyle(BPTileStyle())
                                 .focused($focus, equals: "card:" + c.key)
                                 .accessibilityIdentifier("collection-\(c.key)")

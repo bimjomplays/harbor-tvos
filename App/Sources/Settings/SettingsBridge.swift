@@ -138,6 +138,11 @@ final class SettingsBridge: ObservableObject {
         /// "{imdbId}" template), both set on desktop.
         var rpdbKey: String? = ""
         var posterBaseUrl: String? = ""
+        /// settings/defaults.ts profilePromptInterval ("launch" | "15m" | "30m" | "never") and
+        /// defaultProfileId ("" for none): the Startup & default rows (StartupDefaultsPanel). The
+        /// launch and return prompts read them in the engine (profilesRoom.launchPicker / returnPicker).
+        var profilePromptInterval: String? = "launch"
+        var defaultProfileId: String? = ""
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
@@ -431,5 +436,7 @@ extension SettingsBridge.Slice {
         posterBaseUrl = c.lenient("posterBaseUrl")
         mpvHwdec = c.lenient("mpvHwdec")
         posterQuality = c.lenient("posterQuality")
+        profilePromptInterval = c.lenient("profilePromptInterval")
+        defaultProfileId = c.lenient("defaultProfileId")
     }
 }
