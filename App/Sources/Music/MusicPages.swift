@@ -52,7 +52,7 @@ struct MusicPageView: View {
             }
         }
         .onExitCommand { dismiss() }
-        .onPlayPauseCommand { player.toggle() }
+        .onPlayPauseCommand { player.remoteToggle() }
         .task { await load() }
         .fullScreenCover(item: $child) { t in MusicPageView(target: t) }
         .musicSpotifyDestinationHost()
@@ -362,7 +362,7 @@ struct MusicNowPlayingView: View {
                         tab("lyrics", copy("Lyrics", "Lyrics"))
                     }
                     .focusSection()
-                    if panel == "lyrics" { MusicLyricsPanel(clock: player.clock) } else { MusicQueueList(showsTitle: false) }
+                    if panel == "lyrics" { MusicLyricsPanel(clock: player.clock) } else { MusicQueueList(showsTitle: false, suggests: true) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -370,7 +370,7 @@ struct MusicNowPlayingView: View {
             .padding(.top, BP.px(70))
         }
         .onExitCommand { dismiss() }
-        .onPlayPauseCommand { player.toggle() }
+        .onPlayPauseCommand { player.remoteToggle() }
         .onChange(of: player.current == nil) { _, gone in if gone { dismiss() } }
     }
 
@@ -481,19 +481,65 @@ struct MusicLyricsPanel: View {
     }
 }
 
-/// music-queue.tsx: now playing, then up next; Select jumps, hold for Remove.
+/// up-next.ts useUpNextSuggestions (upstream 770ca0bd): with nothing after the current track,
+/// Now Playing's Up next tab shows the radio built for that track (engine `music.upNext`, which
+/// leaves the track itself out), kept per track for the session like upstream's module cache.
+/// A station that can't be built is simply no suggestions (and is asked for again next time).
+@MainActor
+final class MusicUpNextSuggestions: ObservableObject {
+    @Published private(set) var tracks: [MusicTrack] = []
+    @Published private(set) var loading = false
+    /// up-next.ts `cache`: queueKey (connectorId:id) → the suggestions, only when there were some.
+    private static var cache: [String: [MusicTrack]] = [:]
+
+    /// The effect for (enabled, track). Run from `.task(id:)`, so a newer track or the tab closing
+    /// cancels it (the hook's `live` flag): a late answer is cached but not shown.
+    func load(_ track: MusicTrack?, enabled: Bool) async {
+        guard enabled, let track else {
+            tracks = []
+            loading = false
+            return
+        }
+        let key = track.queueKey
+        if let held = Self.cache[key] {
+            tracks = held
+            loading = false
+            return
+        }
+        tracks = []
+        loading = true
+        let answer: [MusicTrack]? = try? await HarborEngine.shared.call("music.upNext", [track])
+        let following = answer ?? []
+        if !following.isEmpty { Self.cache[key] = following }
+        guard !Task.isCancelled else { return }
+        tracks = following
+        loading = false
+    }
+}
+
+/// music-queue.tsx: now playing, then up next; Select jumps, hold for Remove. On Now Playing
+/// (`suggests`), an empty queue offers radio suggestions instead (up-next.ts, upstream 770ca0bd).
 struct MusicQueueList: View {
     var showsTitle = true
+    var suggests = false
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
+    @StateObject private var suggested = MusicUpNextSuggestions()
+
+    /// music-now-playing.tsx: `useUpNextSuggestions(current, panel === "queue" && next.length === 0)`.
+    private var suggesting: Bool { suggests && player.upcoming.isEmpty && player.current != nil }
+    /// `.task(id:)` key: the effect re-runs when the track or the enabled flag changes.
+    private var suggestionKey: String { suggesting ? (player.current?.queueKey ?? "") : "" }
 
     var body: some View {
+        let suggestions = suggesting ? suggested.tracks : []
         VStack(alignment: .leading, spacing: BP.px(10)) {
             if showsTitle {
                 Text(copy("music.row.upNext", "Up next")).font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             }
-            if player.upcoming.isEmpty {
-                BPNote(text: copy("music.queue.empty", "Nothing is queued."))
+            if player.upcoming.isEmpty, suggestions.isEmpty {
+                // music-now-playing.tsx: "Building up next" while the suggestions load.
+                BPNote(text: suggesting && suggested.loading ? copy("music.now.queueBuilding", "Building up next") : copy("music.queue.empty", "Nothing is queued."))
             }
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(6)) {
@@ -510,12 +556,25 @@ struct MusicQueueList: View {
                                 }
                         }
                     }
+                    // up-next.ts: a suggestion plays with [current, ...suggestions] as the queue.
+                    ForEach(Array(suggestions.enumerated()), id: \.offset) { i, track in
+                        Button { playSuggestion(track, among: suggestions) } label: { MusicTrackLine(track: track, number: i + 1) }
+                            .buttonStyle(BPTileStyle(radius: BP.rSM))
+                            .musicTrackMenu(track)
+                    }
                 }
                 .padding(.vertical, BP.px(10))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .focusSection()
+        .task(id: suggestionKey) { await suggested.load(player.current, enabled: suggesting) }
+    }
+
+    /// music-now-playing.tsx `playMusic(track, upNextQueue)` with `upNextQueue = [current, ...suggested.tracks]`.
+    private func playSuggestion(_ track: MusicTrack, among suggestions: [MusicTrack]) {
+        guard let current = player.current else { player.play(track, queue: suggestions); return }
+        player.play(track, queue: [current] + suggestions)
     }
 }
 

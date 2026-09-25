@@ -206,6 +206,12 @@ final class MusicPlayer: ObservableObject {
                 spotify.setPaused(false)
                 startSpotifyClock()
                 phase = .playing
+            } else if player.currentItem == nil {
+                // (bug pass) The queue ran out on a stream: AVQueuePlayer dropped the finished item
+                // (.advance), so play() alone would do nothing. Play the entry again, as player.ts
+                // does after an automatic end (enginePrimed = false → playMusic(current)).
+                if index >= 0 { failed = []; start(at: index) }
+                return
             } else {
                 activateSession()
                 player.play()
@@ -215,6 +221,22 @@ final class MusicPlayer: ObservableObject {
         }
         refreshPhase()
         refreshNowPlaying()
+    }
+
+    /// (bug pass) media-session.ts mediaKeyGate, as VideoNowPlaying has it: one Play/Pause per
+    /// 350 ms. With music the Now Playing app, one remote press can arrive both as the focused
+    /// view's onPlayPauseCommand and as MPRemoteCommandCenter's toggle, which toggled twice (no-op).
+    private var lastMediaKeyAt = Date.distantPast
+    private func mediaKeyGate() -> Bool {
+        let now = Date()
+        if now.timeIntervalSince(lastMediaKeyAt) < 0.35 { return false }
+        lastMediaKeyAt = now
+        return true
+    }
+
+    /// The remote's Play/Pause (a music screen's onPlayPauseCommand), through the gate above.
+    func remoteToggle() {
+        if mediaKeyGate() { toggle() }
     }
 
     func pause() {
@@ -273,7 +295,13 @@ final class MusicPlayer: ObservableObject {
         guard queue.indices.contains(i), i != index else { return }
         if i == 0 { disarmRadio() }
         queue.remove(at: i)
-        if i < index { index -= 1 }
+        if i < index {
+            index -= 1
+            // (bug pass) The playing item and the Spotify binding move with their queue position:
+            // a stale index sent recover() / itemEnded to the wrong entry (and stopped tick()).
+            for (key, bound) in items where bound.index > i { items[key] = (bound.track, bound.index - 1) }
+            if let bound = spotifyEntry, bound.index > i { spotifyEntry = (bound.track, bound.index - 1) }
+        }
         dropPreloaded()
     }
 
@@ -531,7 +559,12 @@ final class MusicPlayer: ObservableObject {
     }
 
     private func tick() {
-        guard current != nil, let item = player.currentItem else { return }
+        // (bug pass) Only the item bound to the entry now shown: after a gapless hand-off the
+        // AVQueuePlayer is already on the next item before currentItemChanged runs, and reading it
+        // here put the next track's length on this one (Now Playing, and the scrobble threshold
+        // finishScrobble computes from `duration`: a heard 3-minute song followed by a 10-minute
+        // one could miss its scrobble).
+        guard current != nil, let item = player.currentItem, items[ObjectIdentifier(item)]?.index == index else { return }
         let t = player.currentTime().seconds
         if t.isFinite { heard(at: t) }
         let d = item.duration.seconds
@@ -831,9 +864,10 @@ final class MusicPlayer: ObservableObject {
                 return .success
             }
         }
-        _ = c.playCommand.addTarget(handler: owned { if $0.phase != .playing { $0.toggle() } })
-        _ = c.pauseCommand.addTarget(handler: owned { $0.pause() })
-        _ = c.togglePlayPauseCommand.addTarget(handler: owned { $0.toggle() })
+        // (bug pass) Play/Pause share the media-key gate with the screens' onPlayPauseCommand.
+        _ = c.playCommand.addTarget(handler: owned { if $0.phase != .playing, $0.mediaKeyGate() { $0.toggle() } })
+        _ = c.pauseCommand.addTarget(handler: owned { if $0.phase == .playing, $0.mediaKeyGate() { $0.pause() } })
+        _ = c.togglePlayPauseCommand.addTarget(handler: owned { if $0.mediaKeyGate() { $0.toggle() } })
         _ = c.nextTrackCommand.addTarget(handler: owned { $0.next() })
         _ = c.previousTrackCommand.addTarget(handler: owned { $0.previous() })
         _ = c.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in

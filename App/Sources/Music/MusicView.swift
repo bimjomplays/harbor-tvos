@@ -44,7 +44,7 @@ struct MusicView: View {
         }
         // use-music-data.ts: harbor:music-library-changed reloads the shelves (liked, recents, queue).
         .onChange(of: player.libraryVersion) { _, _ in Task { await model.load(force: false) } }
-        .onPlayPauseCommand { player.toggle() }
+        .onPlayPauseCommand { player.remoteToggle() }
         .fullScreenCover(item: $page) { target in MusicPageView(target: target) }
         .fullScreenCover(isPresented: $searchOpen) { MusicSearchView() }
         .fullScreenCover(isPresented: $sourcesOpen, onDismiss: { Task { await model.load(force: true) } }) { MusicSourcesView() }
@@ -403,7 +403,9 @@ struct MusicProgressBar: View {
 
     /// music.rs duration_label (m:ss), with hours for long mixes.
     static func stamp(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds > 0 else { return "0:00" }
+        // (bug pass) Int() traps past Int.max: a server's absurd length (Subsonic/Jellyfin durations
+        // are not capped) must not crash the dock. 100 000 h is far beyond any real track.
+        guard seconds.isFinite, seconds > 0, seconds < 360_000_000 else { return "0:00" }
         let s = Int(seconds)
         return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
     }
