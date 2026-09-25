@@ -280,6 +280,11 @@ struct RoomView: View {
                 .padding(.top, BP.px(6))
         }
         .frame(maxWidth: .infinity)
+        // (navigation UI test, run 251) The plate is centred and nothing else on the page takes
+        // focus, so Down from a tab that does not sit above the button found no target and the ring
+        // stayed on the bar: the failure's Try again (and the empty page's Open settings) could not
+        // be reached from the Home tab. A full-width focus section catches Down from anywhere.
+        .focusSection()
         .padding(.top, BP.px(280)).padding(.horizontal, BP.gutter)
     }
 
