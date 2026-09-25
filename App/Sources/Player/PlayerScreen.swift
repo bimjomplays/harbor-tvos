@@ -107,6 +107,7 @@ struct PlayerScreen: View {
     @State private var segments: [SkipSegment] = []
     /// What the skip segments were last asked for: the duration and the file's chapter count.
     @State private var segmentsLoadedFor = ""
+    @State private var segmentsDuration = -1
     /// Only the newest skip.segments answer lands (an older duration's lookup can finish last).
     @State private var segmentsRun = 0
     /// skip-pill-container.tsx autoSkippedRef: the segment already auto-skipped (never twice, even
@@ -433,10 +434,17 @@ struct PlayerScreen: View {
                 together.tick(controller: controller, context: isLive ? nil : context, url: url)
             }
             // (player tracks pass) useSkipSegments also reads the file's chapters (mpv chapter-list).
-            if snap.duration > 0, let c = controller {
-                let chapters = c.chapters()
-                let key = "\(snap.duration)|\(chapters.count)"
-                if segmentsLoadedFor != key { segmentsLoadedFor = key; Task { await loadSegments(chapters: chapters) } }
+            // The chapter list is read only when the (whole-second) duration changes: mpv fills it with
+            // the duration at file open, and reading it every tick cost two mpv reads per chapter
+            // each second. A live stream (its duration grows) has no skip segments to load.
+            if snap.duration > 0, !isLive, let c = controller {
+                let seconds = Int(snap.duration.rounded())
+                if segmentsDuration != seconds {
+                    segmentsDuration = seconds
+                    let chapters = c.chapters()
+                    let key = "\(seconds)|\(chapters.count)"
+                    if segmentsLoadedFor != key { segmentsLoadedFor = key; Task { await loadSegments(chapters: chapters) } }
+                }
             }
             skipTick()
             nowPlayingTick()
