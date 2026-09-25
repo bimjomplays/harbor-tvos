@@ -148,7 +148,8 @@ struct OnboardingView: View {
             }
         case .harbor:
             // bp-step-harbor.tsx: a linked account shows "Signed in as" in place of the form.
-            if let s = account.session {
+            // (profiles device pass) Not while a new account's recovery code waits: the form shows it.
+            if let s = account.session, account.unsavedRecoveryCode == nil {
                 StepConfirmed(title: T("Signed in as %@", s.user.username), detail: "Themes, lists and friends follow this account.") { advance() }
             } else {
                 // The form's own done() lands after the roster pull, by when Continue above may
@@ -411,6 +412,17 @@ struct HarborSignInForm: View {
     @State private var error: String?
 
     var body: some View {
+        if let code = account.unsavedRecoveryCode {
+            RecoveryRevealView(code: code) {
+                account.acknowledgeRecoveryCode()
+                done()
+            }
+        } else {
+            form
+        }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             BPField(label: "Username", placeholder: "Your Harbor username", text: $username)
             BPField(label: "Password", placeholder: creating ? "Choose a password" : "Your Harbor password", text: $password, secure: true)
@@ -421,6 +433,8 @@ struct HarborSignInForm: View {
                 if let skip { Button("Later", action: skip).buttonStyle(BPActionStyle()) }
             }
             if let error { BPNote(text: error, tone: BP.danger) }
+            // account-auth-form.tsx, under the sign-up fields.
+            if creating { BPNote(text: "We'll show a one-time recovery key right after you sign up. Save it: it's the only way back in if you forget your password.") }
             BPNote(text: "Your profiles, settings and themes follow this account to every Harbor install.")
         }
         .frame(maxWidth: BP.px(560))
@@ -432,11 +446,47 @@ struct HarborSignInForm: View {
         do {
             if creating { try await account.register(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password) }
             else { try await account.signIn(username: username.trimmingCharacters(in: .whitespacesAndNewlines), password: password) }
+            // A new account's recovery code is up now; its Continue finishes the form instead.
+            let revealing = account.unsavedRecoveryCode != nil
             await app.refreshRoster()
-            done()
+            if !revealing { done() }
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// recovery-reveal.tsx: a new account's one-time recovery code. Continue waits for "I've saved my
+/// recovery code somewhere safe." and is the only way out, as upstream (the dialog has no close);
+/// Back does nothing here rather than throw the code away. The TV has no clipboard: no Copy.
+struct RecoveryRevealView: View {
+    let code: String
+    let onDone: () -> Void
+    @State private var saved = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: BP.px(16)) {
+            Text("Save your recovery code").font(BP.display(30)).foregroundStyle(BP.ink)
+                .accessibilityAddTraits(.isHeader)
+            BPNote(text: "This is the only time you'll see it. If you ever forget your password, this code is the only way back into your account. Store it somewhere safe.")
+            Text(verbatim: code)
+                .font(.system(size: BP.px(26), weight: .semibold, design: .monospaced))
+                .foregroundStyle(BP.ink)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(BP.px(18))
+                .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2))
+            Button { saved.toggle() } label: {
+                Label(T("I've saved my recovery code somewhere safe."), systemImage: saved ? "checkmark.square.fill" : "square")
+            }
+            .buttonStyle(BPActionStyle())
+            .bpSelected(saved)
+            Button("Continue") { onDone() }
+                .buttonStyle(BPActionStyle(primary: true))
+                .disabled(!saved)
+        }
+        .frame(maxWidth: BP.px(560), alignment: .leading)
+        .onExitCommand {}
     }
 }
 

@@ -20,6 +20,8 @@ final class AccountStore: ObservableObject {
 
     @Published private(set) var session: Session?
     @Published private(set) var busy = false
+    /// A new account's recovery code until the viewer confirms saving it (HarborSignInForm's reveal).
+    @Published private(set) var unsavedRecoveryCode: String?
     private var unsubscribe: (() -> Void)?
 
     private init() {
@@ -54,6 +56,11 @@ final class AccountStore: ObservableObject {
         struct Out: Decodable { var recoveryCode: String; var session: Session? }
         do {
             let out: Out = try await HarborEngine.shared.call("account.register", [username, password])
+            // (profiles device pass) account-auth-form onRecovery → RecoveryReveal: the one-time
+            // recovery code is shown once, before anything else. The TV dropped it, so an account
+            // made here could never be recovered after a forgotten password. Set before the
+            // session, so the onboarding step keeps the form (and its reveal) up.
+            unsavedRecoveryCode = out.recoveryCode.isEmpty ? nil : out.recoveryCode
             session = out.session
         } catch { throw Self.translate(error) }
     }
@@ -64,6 +71,10 @@ final class AccountStore: ObservableObject {
         do {
             session = try await HarborEngine.shared.call("account.adopt", [token, handle, refresh])
         } catch { throw Self.translate(error) }
+    }
+
+    func acknowledgeRecoveryCode() {
+        unsavedRecoveryCode = nil
     }
 
     func signOut() {

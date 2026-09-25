@@ -217,6 +217,8 @@ export function start(): SyncStatus {
 
 export function stop(): void {
   wantStarted = false;
+  // A sign-out: the next sign-in's pullNow is its own, not one still out for the account just left.
+  pullInFlight = null;
   stopProfileSync();
   stopStatus?.();
   stopStatus = null;
