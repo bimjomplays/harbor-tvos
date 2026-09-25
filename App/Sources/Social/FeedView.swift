@@ -102,7 +102,7 @@ struct FeedView: View {
             .accessibilityLabel(Text(verbatim: item.actor.alias))
             SocialRow(title: item.title,
                       subtitle: "\(item.actor.alias) \(verb)\(item.subtitle.map { " · \($0)" } ?? "")",
-                      trailing: "\(item.rating.map { "★ \(Int($0)) · " } ?? "")\(Social.ago(iso: item.at))",
+                      trailing: "\(item.rating.map { "★ \(clampedInt($0)) · " } ?? "")\(Social.ago(iso: item.at))",
                       seat: (binding: $feedFocus, value: "row:" + item.id)) {
                 RemoteImage(url: item.posterUrl).frame(width: BP.px(40), height: BP.px(60)).clipShape(RoundedRectangle(cornerRadius: BP.px(4)))
             } action: {

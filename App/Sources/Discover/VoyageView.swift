@@ -476,7 +476,7 @@ struct VoyageRouteRail: View {
 
     private func slotValue(_ slot: VoyageModel.Slot) -> String {
         if slot.done { return T("Watched") }
-        let pct = Int((slot.progress * 100).rounded())
+        let pct = clampedInt((slot.progress * 100).rounded())
         return pct >= 1 && pct <= 99 ? T("%lld%% watched", pct) : ""
     }
 

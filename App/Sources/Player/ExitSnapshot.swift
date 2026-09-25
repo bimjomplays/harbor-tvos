@@ -415,7 +415,7 @@ final class ExitSnapshotter {
         }
         var ep = ""
         if let s = context.season, let e = context.episode { ep = ":\(s):\(e)" }
-        let key = "\(context.meta.id)\(ep)|\(Int(position.rounded()))"
+        let key = "\(context.meta.id)\(ep)|\(clampedInt(position.rounded()))"
         if capturedKey == key { return }
         capturedKey = key
         guard !Self.nearEnd(position, duration), let c = controller else {

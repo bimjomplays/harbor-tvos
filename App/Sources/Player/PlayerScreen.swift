@@ -588,7 +588,7 @@ struct PlayerScreen: View {
             // the duration at file open, and reading it every tick cost two mpv reads per chapter
             // each second. A live stream (its duration grows) has no skip segments to load.
             if clock.snap.duration > 0, !isLive, let c = controller {
-                let seconds = Int(clock.snap.duration.rounded())
+                let seconds = clampedInt(clock.snap.duration.rounded())
                 if segmentsDuration != seconds {
                     segmentsDuration = seconds
                     let chapters = c.chapters()
@@ -1717,7 +1717,7 @@ struct PlayerScreen: View {
         let torrent = TorrentEngine.streamRef(playURL)
         let hash: String? = ref?["infoHash"]?.string ?? torrent?.infoHash
         var idx: Int? = torrent?.fileIdx
-        if let n = ref?["fileIdx"]?.number, n.isFinite, n >= 0 { idx = Int(n) }
+        if let n = ref?["fileIdx"]?.number, n.isFinite, n >= 0 { idx = clampedInt(n) }
         return PlayerSourcesPanel.Current(url: playURL.absoluteString, streamURL: ref?["url"]?.string, infoHash: hash, fileIdx: idx)
     }
 
