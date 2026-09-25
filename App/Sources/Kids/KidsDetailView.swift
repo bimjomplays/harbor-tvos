@@ -136,9 +136,12 @@ struct KidsDetailView: View {
             if seasonGrid { seasonGrid = false } else { dismiss() }
         }
         .fullScreenCover(item: $related) { m in KidsDetailView(meta: m) }
-        .fullScreenCover(item: $picker) { target in
+        // A Watch Together host's reopen (Pick another source, a send-back, the next episode) left with no pick: TogetherModel.abandonReopen.
+        .fullScreenCover(item: $picker, onDismiss: { TogetherModel.shared.abandonReopen() }) { target in
             PlayPickerView(meta: target.meta, episode: target.episode, onPlay: { _, resolved in
                 guard let link = resolved.data, let url = PlayableURL.make(link.url) else { return }   // (bug pass 2) the picker checked it
+                // A pick: the player follows, so the picker's dismissal is not a host leaving.
+                TogetherModel.shared.setReopenPending(false)
                 self.picker = nil
                 let pick = PlayerPickInfo(autoPicked: resolved.autoPicked ?? false, attempt: target.attempt, streamRef: resolved.streamRef)
                 let ep = target.episode

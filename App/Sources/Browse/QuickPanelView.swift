@@ -11,6 +11,7 @@ struct QuickPanelView: View {
     @EnvironmentObject private var app: AppModel
     @State private var detail: Target?
     @State private var saved = false
+    @State private var saving = false
     @State private var note: String?
     @State private var listDialog = false
     @State private var rateDialog = false
@@ -32,7 +33,12 @@ struct QuickPanelView: View {
                 }
                 .padding(.bottom, BP.px(6))
                 action("Play", "play.fill") { detail = Target(meta: meta, autoPlay: true) }
-                if authKey != nil { action(saved ? "Saved" : "Watchlist", saved ? "bookmark.fill" : "bookmark") { Task { await save() } } }
+                // (home device pass) bp-quick-panel: toggleWatchlist / useInWatchlist, Harbor's own
+                // watchlist (engine actions.setWatchlist, as Detail and the Discovery Queue use). It
+                // wrote a Stremio library bookmark: missing without a Stremio account, never showed a
+                // title already saved as Saved, and could not be undone. A fixed focus key, so the
+                // ring stays on the button when its label turns to Saved.
+                action(saved ? "Saved" : "Watchlist", saved ? "checkmark" : "plus", key: "watchlist") { Task { await toggleSaved() } }
                 action("Details", "info.circle") { detail = Target(meta: meta, autoPlay: false) }
                 action("Add to list", "text.badge.plus") { listDialog = true }
                 action("Rate", "star") { rateDialog = true }
@@ -50,22 +56,37 @@ struct QuickPanelView: View {
         }
         .onExitCommand { dismiss() }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "Play" } }
+        .task { await readSaved() }
         .fullScreenCover(item: $detail) { t in DetailView(meta: t.meta, autoPlay: t.autoPlay) }
         .fullScreenCover(isPresented: $listDialog) { ListDialogView(meta: meta) }
         .fullScreenCover(isPresented: $rateDialog) { RateDialogView(meta: meta) }
     }
 
-    private func action(_ label: String, _ icon: String, _ run: @escaping () -> Void) -> some View {
+    private func action(_ label: String, _ icon: String, key: String? = nil, _ run: @escaping () -> Void) -> some View {
         Button(action: run) { Label(T(label), systemImage: icon).frame(maxWidth: .infinity, alignment: .leading) }
             .buttonStyle(BPActionStyle())
-            .focused($focus, equals: label)
+            .focused($focus, equals: key ?? label)
     }
 
-    private func save() async {
-        guard let authKey, !saved else { return }
-        _ = try? await HarborEngine.shared.callJSON("stremio.saveBookmark", [.string(authKey), .string(meta.id), .object(["type": .string(meta.type), "name": .string(meta.name), "poster": meta.poster.map { .string($0) } ?? .null])])
-        saved = true
-        await CardMarksStore.shared.refreshWatchlist()
+    private struct WatchlistState: Decodable { var watchlist: Bool? }
+
+    /// useInWatchlist(focused.id) (engine actions.heroState).
+    private func readSaved() async {
+        let p = ProfilesStore.shared.active
+        let noImdb: String? = nil
+        guard let s: WatchlistState = try? await HarborEngine.shared.call("actions.heroState", [meta, noImdb, p?.id ?? "default", p?.linked ?? true]) else { return }
+        if !saving { saved = s.watchlist == true }
+    }
+
+    private func toggleSaved() async {
+        guard !saving else { return }
+        saving = true
+        defer { saving = false }
+        let on = !saved
+        let noImdb: String? = nil
+        let _: Bool? = try? await HarborEngine.shared.call("actions.setWatchlist", [authKey, meta, noImdb, on])
+        saved = on
+        await CardMarksStore.shared.remark()
     }
 
     private func removeCw() async {

@@ -5,6 +5,8 @@ import SwiftUI
 struct DiscoverView: View {
     @EnvironmentObject private var app: AppModel
     @StateObject private var model = DiscoverModel()
+    /// A tab the profile's PIN locks (Profiles/ParentalGate.swift): the chip that leads to it is not offered.
+    @ObservedObject private var parental = ParentalGate.shared
     @State private var detail: Meta?
     @State private var awardDetail: DiscoverModel.Awards.Summary?
     @State private var animeAward: DiscoverModel.AnimeAwardTile?
@@ -40,6 +42,11 @@ struct DiscoverView: View {
                 BPRailView(rows: model.rows, onFocus: { m, _ in model.spotlight = m }, onSelect: { detail = $0 },
                            onSeeAll: { row in app.room = Self.isSeries(row) ? .shows : .movies },
                            seeAllLabel: { row in Self.isSeries(row) ? "All shows" : "All movies" },
+                           // (home device pass) Movies or Shows locked by the profile's PIN: ShellView
+                           // sends a locked room straight back to Home, so the chip bounced the viewer
+                           // off Discover. A locked tab is off the bar (bp-top-bar visibleTabs), and its
+                           // way in from a rail goes with it.
+                           seeAllShown: { row in !parental.hides(Self.isSeries(row) ? Room.shows : Room.movies) },
                            topInset: BP.barHeight + BP.px(10)) {
                     section("Discover", "Discovery Queue", "One pick at a time, full screen, until something lands.") {
                         QueueBandView(queue: model.build?.queue) { queueOpen = true }
