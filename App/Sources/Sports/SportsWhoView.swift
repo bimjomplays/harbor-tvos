@@ -41,7 +41,10 @@ struct SportsWhoView: View {
                         }
                         ScrollView(.vertical, showsIndicators: false) {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
-                                if !w.body.isEmpty { Text(w.body).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(8).focusable() }
+                                // (device-flow pass) Not focusable: a focusable Text has no ring, and as the
+                                // first stop it took the focus when the page opened, so nothing looked
+                                // selected (bp-sports-who-panel focuses the first chip or roster tile).
+                                if !w.body.isEmpty { Text(w.body).font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(8) }
                                 ForEach(Array(w.facts.enumerated()), id: \.offset) { _, f in
                                     HStack(alignment: .top, spacing: BP.px(8)) {
                                         Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(150), alignment: .leading)

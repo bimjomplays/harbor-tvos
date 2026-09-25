@@ -3,10 +3,14 @@ import SwiftUI
 /// Sports room (bp-sports.tsx): chips → date band (schedule) → status note → hero + rows,
 /// or the Explore grid, or the consent notice before anything else.
 struct SportsView: View {
+    @EnvironmentObject private var app: AppModel
     @StateObject private var model = SportsModel()
     @State private var event: SportsModel.Game?
     @State private var personalize = false
     @State private var heroIndex = 0
+    /// use-bp-sports-cycle cardFocused: the hero holds its game while it has the focus.
+    @State private var heroFocused = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var directPlay: SportsEventModel.WatchOption?
     @State private var directStream: SportsAddonPanelView.Play?
@@ -38,7 +42,10 @@ struct SportsView: View {
 
     var body: some View {
         Group {
-            if model.consent != "accepted" {
+            if model.consent.isEmpty {
+                // The stored answer is still being read: neither the notice nor the room yet.
+                Color.clear
+            } else if model.consent != "accepted" {
                 SportsConsentView(accept: { Task { await model.accept() } }, decline: { Task { await model.decline() } })
             } else {
                 room
@@ -46,7 +53,13 @@ struct SportsView: View {
         }
         .task { await model.start() }
         .onDisappear { model.stopPolling() }
-        .fullScreenCover(item: $event) { g in SportsEventView(game: g, dismiss: { event = nil }) }
+        .fullScreenCover(item: $event) { g in
+            SportsEventView(game: g, dismiss: { event = nil }, openLive: {
+                // bp-sports-watch openSetup → goBigPictureTab("live"), once the cover has gone.
+                event = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { app.room = .live }
+            })
+        }
         .fullScreenCover(item: $directPlay) { opt in
             PlayerScreen(title: opt.name, subtitle: opt.label, url: URL(string: opt.url) ?? URL(string: "about:blank")!, headers: opt.headers ?? [:], isLive: true) { _ in directPlay = nil }
         }
@@ -67,7 +80,7 @@ struct SportsView: View {
                         explore(p)
                     } else {
                         if let hero = p.heroes.indices.contains(heroIndex) ? p.heroes[heroIndex] : p.heroes.first {
-                            SportsHeroView(game: hero, count: p.heroes.count, index: heroIndex, open: { open(hero) })
+                            SportsHeroView(game: hero, count: p.heroes.count, index: heroIndex, open: { open(hero) }, onFocus: { heroFocused = $0 })
                         }
                         ForEach(p.rows) { row in
                             SportsRowView(row: row, open: { open($0) })
@@ -81,12 +94,16 @@ struct SportsView: View {
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16)).padding(.bottom, BP.hintHeight + BP.px(40))
         }
         .task(id: model.page?.heroes.map(\.key)) {
-            // use-bp-sports-cycle.ts: next hero every 7 s.
+            // use-bp-sports-cycle.ts: next hero every 7 s, (device-flow pass) but not while the hero
+            // has the focus (the game swapped under the viewer's finger, so Select opened another
+            // one) nor with Reduce Motion on.
             heroIndex = 0
             let n = model.page?.heroes.count ?? 0
-            guard n > 1 else { return }
+            guard n > 1, !reduceMotion else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(7))
+                guard !Task.isCancelled else { return }
+                if heroFocused { continue }
                 heroIndex = (heroIndex + 1) % n
             }
         }
@@ -128,7 +145,8 @@ struct SportsView: View {
     private var statusLine: String {
         guard let s = model.page?.status else { return "" }
         if s.busy { return T("Updating schedules…") }
-        if s.at > 0 { return T("Updated %@", Date(timeIntervalSince1970: s.at / 1000).formatted(date: .omitted, time: .shortened)) }
+        // The time in Harbor's UI language like the rest of the page (not the Apple TV's).
+        if s.at > 0 { return T("Updated %@", Date(timeIntervalSince1970: s.at / 1000).formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(L10n.locale))) }
         return ""
     }
 
@@ -139,12 +157,16 @@ struct SportsView: View {
                     Button {
                         model.setDay(d.key)
                     } label: {
+                        // bp-sports-date-band: the weekday over the day of the month, then the live dot.
                         VStack(spacing: BP.px(3)) {
-                            Text(d.today ? L10n.lookup(d.label) : d.label).font(BP.sans(13, .semibold))
+                            Text(d.today ? L10n.lookup(d.label) : d.label).font(BP.sans(11, .bold)).textCase(.uppercase).lineLimit(1)
+                            if let n = d.number { Text(verbatim: "\(n)").font(BP.sans(18, .bold)).monospacedDigit() }
                             Circle().fill(p.liveDays.contains(d.key) ? BP.live : .clear).frame(width: BP.px(5), height: BP.px(5))
                         }
+                        .frame(minWidth: BP.px(40))
                     }
                     .buttonStyle(BPActionStyle(primary: (model.day ?? p.today) == d.key))
+                    .bpSelected((model.day ?? p.today) == d.key)
                 }
             }
         }
@@ -203,6 +225,8 @@ struct SportsHeroView: View {
     let count: Int
     let index: Int
     let open: () -> Void
+    var onFocus: (Bool) -> Void = { _ in }
+    @FocusState private var focused: Bool
 
     var body: some View {
         Button(action: open) {
@@ -247,6 +271,9 @@ struct SportsHeroView: View {
             )
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
+        .focused($focused)
+        .onChange(of: focused) { _, on in onFocus(on) }
+        .onDisappear { onFocus(false) }
         .focusSection()
     }
 

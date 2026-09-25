@@ -139,6 +139,7 @@ struct SportsBroadcastsView: View {
     /// Picker actions kept from bp-sports-broadcast-picker: channels, addon sources, Live TV setup.
     var channels: (() -> Void)? = nil
     var addons: (() -> Void)? = nil
+    var setup: (() -> Void)? = nil
     let onClose: () -> Void
     @State private var link: SportsLink?
 
@@ -178,6 +179,7 @@ struct SportsBroadcastsView: View {
                 HStack(spacing: BP.px(10)) {
                     if let channels { Button { channels() } label: { Label("Search your channels", systemImage: "magnifyingglass") }.buttonStyle(BPActionStyle()) }
                     if let addons { Button { addons() } label: { Label("Addon sources", systemImage: "powerplug") }.buttonStyle(BPActionStyle()) }
+                    if let setup { Button(T("Set up Live TV")) { setup() }.buttonStyle(BPActionStyle()) }
                     Button("Close") { onClose() }.buttonStyle(BPActionStyle())
                 }
                 .focusSection()
