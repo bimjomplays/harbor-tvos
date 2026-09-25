@@ -16,6 +16,7 @@ struct MusicPageView: View {
     @State private var loadingMore = false
     @State private var moreError: String?
     @State private var retrying = false
+    @FocusState private var playFocused: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -73,7 +74,15 @@ struct MusicPageView: View {
         // (bug pass 3) Once per page: `.task` runs again whenever a cover over it closes (an album
         // opened from this artist, the Spotify playlist picker), and each re-run fetched the whole
         // page again from the server and dropped the albums "Load more" had added.
-        .task { if data == nil { await load() } }
+        .task {
+            guard data == nil else { return }
+            await load()
+            // (kids/music pass 2) With music playing, the dock (since the device-flow pass) is the
+            // only focus stop while the page loads, so the ring started there and stayed at the
+            // bottom of the screen once the tracks arrived. The page opens on Play, as it does
+            // when nothing is playing.
+            if data?.tracks.isEmpty == false { DispatchQueue.main.async { playFocused = true } }
+        }
         .fullScreenCover(item: $child) { t in MusicPageView(target: t) }
         .musicSpotifyDestinationHost()
     }
@@ -96,6 +105,7 @@ struct MusicPageView: View {
                     HStack(spacing: BP.px(12)) {
                         Button { player.play(tracks[0], queue: tracks) } label: { Label(copy("music.play", "Play"), systemImage: "play.fill") }
                             .buttonStyle(BPActionStyle(primary: true))
+                            .focused($playFocused)
                             .accessibilityIdentifier("music-page-play")
                         Button {
                             let shuffled = tracks.shuffled()
@@ -471,6 +481,14 @@ struct MusicLyricsPanel: View {
                     .onChange(of: active) { _, now in
                         guard now >= 0 else { return }
                         withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(now, anchor: .center) }
+                    }
+                    // (kids/music pass 2) music-now-playing.tsx scrolls on [panel, activeLyric,
+                    // lyricsState], so also when the tab opens or the lines arrive: lyrics opened
+                    // mid-song showed the first lines, the sung one off screen, until the next line
+                    // changed (a long instrumental break kept it there).
+                    .onAppear {
+                        guard active >= 0 else { return }
+                        DispatchQueue.main.async { proxy.scrollTo(active, anchor: .center) }
                     }
                 }
             } else {

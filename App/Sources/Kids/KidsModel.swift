@@ -70,7 +70,11 @@ final class KidsModel: ObservableObject {
         }
         do {
             let page: Page = try await HarborEngine.shared.call("kidsRoom.page", [p.id, p.linked])
-            apply(page)
+            // (kids/music pass 2) A failed build (offline at launch) comes back as an empty page, not
+            // an error: applying it wiped last session's shelves a moment after the cache showed them,
+            // leaving "Couldn't load this room." instead. They stay; loadedOnce stays false, so the
+            // next visit (a cover closing) or Try again builds again.
+            if !page.failed || rows.isEmpty { apply(page) }
             if !page.failed { Task.detached(priority: .utility) { try? CacheStore.shared.set(page, for: key) }; loadedOnce = true }
             failed = page.failed && rows.isEmpty
         } catch {

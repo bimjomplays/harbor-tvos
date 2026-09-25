@@ -129,8 +129,13 @@ struct KidsDetailView: View {
             // (bug pass) Seed Play only on the first visit: after the player or picker closes the
             // ring stays where the viewer left it (an episode card) instead of jumping to Play.
             guard model.detail == nil else { return }
-            await model.load()
+            // (kids/music pass 2) Seeded before the load, not after it: load() also waits for the
+            // card marks and the first season's episodes, and the recs, collection and season chips
+            // are on screen (and focusable) by then, so a kid who had already pressed Down into
+            // "More to explore" was pulled back up to Play when the episodes landed. Play is the
+            // page's only focus stop until the detail arrives.
             playFocused = true
+            await model.load()
         }
         .onExitCommand {
             if seasonGrid { seasonGrid = false } else { dismiss() }

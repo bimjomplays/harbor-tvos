@@ -63,9 +63,11 @@ export function status(): { authenticated: boolean; username: string | null } {
  * settings back to their defaults (scrobbling on, the home rails off, …) and clears the Simkl
  * caches, so a later reconnect starts clean. (settings pass 2) The TV only dropped the session:
  * "Scrobbling off" or the rails switched on survived a disconnect and came back on reconnect.
- * The avatar half (useSimklAvatar/pushAvatar) is the account's and is left alone here.
+ * useSimklAvatar goes off as upstream sets it unconditionally (review 7); pushAvatar (the
+ * account's avatar) is left alone here.
  */
 export const SIMKL_DISCONNECT_RESET: Partial<Settings> = {
+  useSimklAvatar: false,
   simklScrobbleEnabled: true,
   simklShowCommunityRatings: true,
   simklEnableUserRatings: true,

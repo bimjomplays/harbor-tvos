@@ -1864,6 +1864,47 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------------- (review 7) an anime partial landing after the final result
+// runPipeline builds each partial through the async enhanceAnimeStreams without awaiting it, so one
+// can land after the search answered. It must not replace the final lastResults (resolve / deadRef /
+// autoCandidates read them) nor reach Swift as a partial.
+{
+  const fast = "https://fast.example.invalid", slow = "https://slow.example.invalid";
+  const mf = (id, name) => ({ id, version: "1.0.0", name, resources: ["stream"], types: ["series", "anime"], idPrefixes: ["kitsu"], catalogs: [] });
+  const [mFast, mSlow] = [mf("org.example.fast", "Fast"), mf("org.example.slow", "Slow")];
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.installed-addons.default", JSON.stringify([{ transportUrl: `${fast}/manifest.json`, manifest: mFast }, { transportUrl: `${slow}/manifest.json`, manifest: mSlow }])],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === `${fast}/manifest.json`) return json(mFast);
+    if (req.url === `${slow}/manifest.json`) return json(mSlow);
+    if (req.url.startsWith(`${fast}/stream/`)) return json({ streams: [{ name: "Fast\n1080p", title: "[SubsPlease] Show - 02 (1080p) [ABCD1234].mkv", url: "https://cdn.example.invalid/fast.mkv" }] });
+    if (req.url.startsWith(`${slow}/stream/`)) {
+      await new Promise((res) => setTimeout(res, 40));
+      return json({ streams: [{ name: "Slow\n720p", title: "[Erai-raws] Show - 02 [720p][EFGH5678].mkv", url: "https://cdn.example.invalid/slow.mkv" }] });
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  // runPipeline throttles partials to one per 250 ms of performance.now(), which starts with the engine.
+  await new Promise((res) => setTimeout(res, 300));
+  const phases = [];
+  const off = e.runtime.onEvent((type, d) => { if (type === "harbor-tvos:streams" && d.token === "late" && d.phase === "partial") phases.push(d.picker.all.length); });
+  const release = e.streamsRoom.holdPartials();
+  const show = { id: "kitsu:1", type: "series", name: "Show" };
+  const found = await e.streamsRoom.search("late", "default", true, null, show, { season: 1, episode: 2 });
+  const finalUrls = (found.result?.picker.all ?? []).map((s) => s.url).sort();
+  const held = release();
+  const urlsNow = [0, 1].map((i) => e.streamsRoom.deadRef("late", i)?.url ?? null).sort();
+  off();
+  r.ok("(review 7) an anime search's final result lists both addons and one partial was held", found.streamIds.includes("kitsu:1:2") && finalUrls.length === 2 && held >= 1, JSON.stringify({ ids: found.streamIds, finalUrls, held }));
+  r.eq("(review 7) a partial landing after the final leaves the final lastResults (both streams still named)", urlsNow, finalUrls);
+  r.eq("(review 7) a partial landing after the final is not sent on as a partial", phases, []);
+  rec.dispose();
+}
+
 // ------------------------------------- dead streams (lib/dead-streams, views/player.tsx stall skip)
 {
   const base = "https://direct.example.invalid";
@@ -1898,6 +1939,10 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   // results re-rank picker.all under the TV's list), and a key no longer listed names nothing.
   r.ok("(detail/search pass 2) picker rows carry tvKey = streamIdentity", all.length === 3 && all.every((s) => typeof s.tvKey === "string" && s.tvKey.startsWith(`${manifest.id}:`)) && all[ic].tvKey === `${manifest.id}:h:${hash}:2`, JSON.stringify(all.map((s) => s.tvKey)));
   r.ok("(detail/search pass 2) deadRef follows the key over a stale index", e.streamsRoom.deadRef("dead", ib, all[ia].tvKey)?.url === "https://cdn.example.invalid/a.mp4" && e.streamsRoom.deadRef("dead", ia, "gone:u:x") === null && e.streamsRoom.deadRef("dead", ia, null)?.url === "https://cdn.example.invalid/a.mp4", "");
+  // (review 7) A row's key changes when the same hash or URL gets credited to another addon between
+  // partials (the debrid library lands first in mergeAndDedupe): the source is still the one picked.
+  r.ok("(review 7) a key re-credited to another addon still names the same hash / URL", e.streamsRoom.deadRef("dead", ia, `rd-library:h:${hash}:2`)?.url === "https://cdn.example.invalid/c.mp4" && e.streamsRoom.deadRef("dead", ia, `x-library:h:${hash.toUpperCase()}:2`)?.infoHash === hash && e.streamsRoom.deadRef("dead", ia, "other.addon:u:https://cdn.example.invalid/b.mp4")?.url === "https://cdn.example.invalid/b.mp4", "");
+  r.eq("(review 7) no re-credit match for another file, a bare prefix or an empty URL", [e.streamsRoom.deadRef("dead", ia, `rd-library:h:${hash}:3`), e.streamsRoom.deadRef("dead", ia, ":u:"), e.streamsRoom.deadRef("dead", ia, "other:u:"), e.streamsRoom.deadRef("dead", ia, "other:u:https://cdn.example.invalid/")], [null, null, null, null]);
   r.eq("(detail/search pass 2) autoCandidateKeys = autoCandidates as row keys", e.streamsRoom.autoCandidateKeys("dead", "default", true, film, null, null, false, null), auto().map((i) => all[i].tvKey));
   {
     const viaKey = await e.streamsRoom.resolve("default", true, "dead", ib, true, false, false, null, null, all[ia].tvKey);
@@ -3116,9 +3161,9 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     // (settings pass 2) simkl-panel.tsx's confirmed Disconnect resets the profile's Simkl settings.
     // Its own engine: the reset writes the profile's settings store, which the checks below patch around.
     const sk = loadEngine({ storage: new Map() }).engine;
-    sk.settings.patch({ simklScrobbleEnabled: false, simklHomeRailsEnabled: true, simklTrendingRailEnabled: true, showSimklBadge: false });
+    sk.settings.patch({ simklScrobbleEnabled: false, simklHomeRailsEnabled: true, simklTrendingRailEnabled: true, showSimklBadge: false, useSimklAvatar: true });
     const before = sk.settings.loadForProfile("default", true);
-    r.eq("simkl.disconnect check starts from changed Simkl settings", [before.simklScrobbleEnabled, before.simklHomeRailsEnabled], [false, true]);
+    r.eq("simkl.disconnect check starts from changed Simkl settings", [before.simklScrobbleEnabled, before.simklHomeRailsEnabled, before.useSimklAvatar], [false, true, true]);
     let fired = null;
     const off = sk.runtime.onEvent((type, detail) => { if (type === "harbor:settings-updated") fired = detail; });
     sk.simkl.disconnect("default", true);
@@ -3127,6 +3172,8 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     r.eq("simkl.disconnect(profile) puts the Simkl settings back and says so",
       [after.simklScrobbleEnabled, after.simklHomeRailsEnabled, after.simklTrendingRailEnabled, after.showSimklBadge, after.simklAnimeTitleLanguage, Boolean(fired && fired.fields.includes("simklScrobbleEnabled")), sk.simkl.status().authenticated],
       [true, false, false, true, "english", true, false]);
+    // (review 7) simkl-panel.tsx's disconnect also turns useSimklAvatar off, whatever the avatar.
+    r.eq("(review 7) simkl.disconnect(profile) turns useSimklAvatar off and says so", [after.useSimklAvatar, Boolean(fired && fired.fields.includes("useSimklAvatar"))], [false, true]);
   }
   r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
   const tv = e.subtitles.trackView("default", true, [
