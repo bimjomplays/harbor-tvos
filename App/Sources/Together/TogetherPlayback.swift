@@ -49,6 +49,7 @@ final class TogetherPlayback: ObservableObject {
     private var source: AnyJSON?
     private var sourceAsked = false
     private var openedSent = false
+    private var lastInRoom: Bool?
 
     var inRoom: Bool { room.view.inRoom }
     var isHost: Bool { room.view.isHost }
@@ -90,6 +91,21 @@ final class TogetherPlayback: ObservableObject {
         let snap = c.snapshot()
         let playing = !snap.paused
         let view = room.view
+
+        // (bug pass) use-room-sync resets readiness and the initial sync on [mediaKey, inRoom]:
+        // markReady(false), selfFrameReady = false, initialSyncDone = false. Kept for good here, a
+        // TV that left a room and joined another from the player's Room panel never said "ready"
+        // (the new host's lobby waited on it) and, as a guest, never jumped to the host's position.
+        if inRoom != lastInRoom {
+            if lastInRoom != nil {
+                selfFrameReady = false
+                initialSyncDone = false
+                // A picture that is already up says "ready" just below; two queued calls could
+                // reach the engine out of order, so only the one that applies is sent.
+                if !(inRoom && c.videoWidth() > 0 && snap.duration > 0) { room.call("markReady", [.bool(false)]) }
+            }
+            lastInRoom = inRoom
+        }
 
         // use-room-sync: ready once the first frame and a duration exist; not ready on a new title.
         if inRoom, !selfFrameReady, c.videoWidth() > 0, snap.duration > 0 {
@@ -237,6 +253,12 @@ final class TogetherPlayback: ObservableObject {
                 struct Opened: Decodable { var invited: Bool; var source: AnyJSON? }
                 if let o: Opened = try? await HarborEngine.shared.call("together.playerOpened", [meta, ep, AnyJSON.object(ref), duration]) {
                     source = o.source
+                    // (bug pass) use-host-source.ts: in the lobby the host re-seeds the room whenever its
+                    // source descriptor arrives. The one lobby seed usually went out before this answer,
+                    // so guests had no source to match until the host pressed play.
+                    if let s = o.source, !s.isNull, inRoom, isHost, !hasStarted, lobbySeeded, let ctl = controller {
+                        publish(position: ctl.snapshot().position, playing: false)
+                    }
                 }
             }
         }

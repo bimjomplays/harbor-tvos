@@ -30,7 +30,10 @@ struct TogetherToastHost: View {
         .padding(.leading, BP.gutter).padding(.bottom, BP.hintHeight + BP.px(16))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .onReceive(clock) { _ in tickInvite() }
-        .onChange(of: room.view.chat.count) { _, _ in showLatestChat() }
+        // (bug pass) Keyed on the newest line, not the count: the engine keeps the last 200 lines
+        // (provider-events.ts CHAT_HISTORY_LIMIT), so once a room reached 200 the count stopped
+        // changing and no chat toast ever showed again.
+        .onChange(of: room.view.chat.last) { _, _ in showLatestChat() }
         .onChange(of: room.view.incomingParticipantLeft) { _, left in
             guard left != nil else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { room.dismiss("participantLeft") }
@@ -189,8 +192,9 @@ struct TogetherPlayerLayer: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .allowsHitTesting(false)
         .animation(.easeOut(duration: 0.25), value: recentChat)
-        .onChange(of: v.chat.count) { _, _ in
-            guard let last = v.chat.last, last.from != v.clientId else { return }
+        // (bug pass) The newest line, not the count (capped at 200 lines by the engine).
+        .onChange(of: v.chat.last) { _, newest in
+            guard let last = newest, last.from != room.view.clientId else { return }
             recentChat = Array((recentChat + [last]).suffix(3))
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { recentChat.removeAll { $0 == last } }
         }

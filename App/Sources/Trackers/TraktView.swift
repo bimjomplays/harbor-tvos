@@ -17,6 +17,7 @@ final class TraktModel: ObservableObject {
     @Published private(set) var code: Code?
     @Published private(set) var note: String?
     private var pollTask: Task<Void, Never>?
+    private var connectGen = 0
 
     func refresh() async {
         status = (try? await HarborEngine.shared.call("\(service).status", [])) ?? Status(authenticated: false, username: nil)
@@ -24,8 +25,13 @@ final class TraktModel: ObservableObject {
 
     func connect() async {
         note = nil
+        connectGen &+= 1
+        let gen = connectGen
         do {
             let c: Code = try await HarborEngine.shared.call("\(service).deviceCode", [])
+            // (bug pass) The panel closed (cancelConnect) or Connect was pressed again while the
+            // code was being fetched: this code's poll would run unseen until it expired.
+            guard gen == connectGen else { return }
             code = c
             pollTask?.cancel()
             pollTask = Task { [weak self] in
@@ -63,6 +69,7 @@ final class TraktModel: ObservableObject {
     /// code is confirmed calls cancelConnect (provider.tsx cancels the poll). The poll kept running
     /// until the code expired while the panel stayed alive off screen.
     func cancelConnect() {
+        connectGen &+= 1
         pollTask?.cancel()
         pollTask = nil
         code = nil

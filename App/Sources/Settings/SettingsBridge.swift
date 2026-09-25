@@ -170,15 +170,13 @@ final class SettingsBridge: ObservableObject {
     @Published private(set) var slice = Slice() { didSet { L10n.setLanguage(slice.uiLanguage) } }
     @Published private(set) var loaded = false
 
-    private var storageKey: String {
-        get async {
-            let p = ProfilesStore.shared.active
-            let id = p?.id ?? "default"
-            return (try? await HarborEngine.shared.call("settings.sourceKeyFor", [id, p?.linked ?? true])) ?? "harbor.settings"
-        }
-    }
-
     private var unsubscribe: (() -> Void)?
+    /// (bug pass) `load()` runs once per harbor:settings-updated and per profile switch, each with
+    /// several awaits (the language catalog can take a while): an older run finishing last put the
+    /// previous profile's slice and language back. Only the newest load applies, and a patch is
+    /// newer than any load already in flight as far as the slice goes.
+    private var loadGen = 0
+    private var sliceGen = 0
 
     func load() async {
         if unsubscribe == nil {
@@ -188,15 +186,26 @@ final class SettingsBridge: ObservableObject {
                 Task { await self?.load() }
             }
         }
-        let key = await storageKey
-        let s: Slice? = try? await HarborEngine.shared.call("settings.load", [key])
+        loadGen &+= 1
+        sliceGen &+= 1
+        let gen = loadGen
+        let sgen = sliceGen
+        // (bug pass) settings.activate is lib/settings.tsx for the active profile: loadEffective (an
+        // unlinked profile without a blob of its own reads the shared one, not the defaults), and
+        // the `harbor.settings` mirror that upstream modules read follows the profile (switchProfile).
+        let p = ProfilesStore.shared.active
+        let id = p?.id ?? "default"
+        let linked = p?.linked ?? true
+        let s: Slice? = try? await HarborEngine.shared.call("settings.activate", [id, linked])
+        guard gen == loadGen else { return }
         // lib/i18n follows the profile's uiLanguage (store.ts only reads it once, at load), with
         // its catalog installed first (load-locale.ts). Both land before the slice is published,
         // so the rooms a language change rebuilds already read translated engine copy.
-        let p = ProfilesStore.shared.active
-        let lang: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [p?.id ?? "default", p?.linked ?? true])
+        let lang: String? = try? await HarborEngine.shared.call("settingsRoom.applyUiLanguage", [id, linked])
+        guard gen == loadGen else { return }
         if let lang = lang ?? s?.uiLanguage { await L10n.installEngineCatalog(lang) }
-        if let s {
+        guard gen == loadGen else { return }
+        if let s, sgen == sliceGen {
             slice = s
             loaded = true
         }
@@ -208,9 +217,13 @@ final class SettingsBridge: ObservableObject {
     }
 
     func patch(_ change: [String: AnyJSON]) async throws {
-        let key = await storageKey
-        let s: Slice = try await HarborEngine.shared.call("settings.patch", [AnyJSON.object(change), key])
-        slice = s
+        sliceGen &+= 1
+        let sgen = sliceGen
+        let p = ProfilesStore.shared.active
+        // (bug pass) settings.patchFor saves through persistEffective (the profile's source key and
+        // the mirror); settings.patch(…, sourceKey) left the mirror that upstream modules read behind.
+        let s: Slice = try await HarborEngine.shared.call("settings.patchFor", [AnyJSON.object(change), AnyJSON.string(p?.id ?? "default"), AnyJSON.bool(p?.linked ?? true)])
+        if sgen == sliceGen { slice = s }
     }
 
     /// Checks a TMDB v3 key by asking TMDB for one page of trending titles.

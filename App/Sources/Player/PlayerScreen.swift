@@ -408,8 +408,15 @@ struct PlayerScreen: View {
                 }
             }
             Task { await saveTick(flush: false) }
-            scrobbleTick()
-            together.tick(controller: controller, context: isLive ? nil : context, url: url)
+            // (bug pass) Not once finish() ran: the close awaits the flushed save (a Stremio push)
+            // before onClose, and the video plays on meanwhile. The next tick turned the closing
+            // "pause" scrobble back into "start" (Trakt/Simkl showed the title as watching after
+            // the viewer left), and a Watch Together host's heartbeat re-published the media that
+            // closing() had just cleared, pulling the guests back into it.
+            if !finishing {
+                scrobbleTick()
+                together.tick(controller: controller, context: isLive ? nil : context, url: url)
+            }
             if snap.duration > 0, segmentsLoadedFor != snap.duration { segmentsLoadedFor = snap.duration; Task { await loadSegments() } }
             skipTick()
             nowPlayingTick()
