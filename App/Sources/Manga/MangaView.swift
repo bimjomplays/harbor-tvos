@@ -334,15 +334,17 @@ struct MangaView: View {
     // MARK: browse (manga-browse.tsx)
 
     @FocusState private var gridFocus: String?
+    @FocusState private var searchFocused: Bool
 
     private var browseSection: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             Text("Browse manga").font(BP.sans(22, .bold)).foregroundStyle(BP.ink)
             HStack(alignment: .bottom, spacing: BP.px(12)) {
-                BPField(label: "Search", placeholder: "Search manga...", text: $model.query, phone: true)
+                BPField(label: "Search", placeholder: "Search manga...", text: $model.query, phone: true, focus: $searchFocused)
                     .frame(width: BP.px(420))
                 if !model.query.isEmpty {
-                    Button("Clear") { model.query = "" }.buttonStyle(BPActionStyle())
+                    // (review 24) Clear leaves with the query it clears: the ring goes to the field.
+                    Button("Clear") { searchFocused = true; model.query = "" }.buttonStyle(BPActionStyle())
                 }
             }
             .focusSection()

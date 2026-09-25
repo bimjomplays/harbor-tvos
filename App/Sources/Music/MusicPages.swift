@@ -619,9 +619,12 @@ struct MusicQueueList: View {
             }
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.px(6)) {
-                    ForEach(Array(next.enumerated()), id: \.offset) { position, i in
-                        if player.queue.indices.contains(i) {
-                            row(player.queue[i], at: i, position: position)
+                    // (review 24) Keyed by the entry, not its place: after Move up / down (or Play next)
+                    // the row, and the ring on it, go with the track (music-queue.tsx keys rows by
+                    // connectorId:id; the occurrence tells a track queued twice apart).
+                    ForEach(Self.entries(next, in: player.queue), id: \.key) { entry in
+                        if player.queue.indices.contains(entry.index) {
+                            row(player.queue[entry.index], at: entry.index, position: entry.position)
                         }
                     }
                     // up-next.ts: a suggestion plays with [current, ...suggestions] as the queue.
@@ -637,6 +640,21 @@ struct MusicQueueList: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .focusSection()
         .task(id: suggestionKey) { await suggested.load(player.current, enabled: !suggestionKey.isEmpty) }
+    }
+
+    private struct QueueEntry { let key: String; let index: Int; let position: Int }
+
+    /// The upcoming queue indices with a stable key each: queueKey plus its occurrence so far.
+    private static func entries(_ next: [Int], in queue: [MusicTrack]) -> [QueueEntry] {
+        var seen: [String: Int] = [:]
+        var out: [QueueEntry] = []
+        for (position, i) in next.enumerated() {
+            let base: String = queue.indices.contains(i) ? queue[i].queueKey : "missing"
+            let n: Int = seen[base, default: 0]
+            seen[base] = n + 1
+            out.append(QueueEntry(key: base + "#" + String(n), index: i, position: position))
+        }
+        return out
     }
 
     /// One upcoming entry: queue index `i`, `position` places from the current track.

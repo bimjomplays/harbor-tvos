@@ -738,6 +738,9 @@ struct AddonsView: View {
         Task {
             await model.uninstall(c)
             guard !model.installed.contains(where: { $0.key == c.key }) else { return }
+            // (review 24) Only while the Installed tab is still up: a viewer who went on to Discover
+            // during the uninstall holds no installedFocus either, and was pulled back to the tab.
+            guard model.tab == .installed else { return }
             guard installedFocus == nil || installedFocus == "remove:" + c.key else { return }
             if let neighbour, model.filteredInstalled.contains(where: { $0.key == neighbour }) {
                 installedFocus = "remove:" + neighbour

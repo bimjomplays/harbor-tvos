@@ -85,6 +85,10 @@ struct LiveRowView: View {
         }
         .task {
             await model.load()
+            // (review 24) Back on Home after a while: the bars and an ended programme catch up now,
+            // not at the first tick.
+            nowMs = Date().timeIntervalSince1970 * 1000
+            await model.refreshIfEnded(nowMs: nowMs)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }

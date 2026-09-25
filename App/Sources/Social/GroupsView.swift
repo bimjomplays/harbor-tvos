@@ -14,6 +14,9 @@ struct GroupsView: View {
     /// (device-flow pass 4) Clear goes away with the query it clears, under the ring: the ring
     /// moves to the search button beside it instead of falling out of the row.
     @FocusState private var searchFocused: Bool
+    /// (review 24) "more" on Load more, "g:<id>" on a tile of the main list. The last page takes
+    /// Load more away under the ring: it goes to the first tile that page added (else the last tile).
+    @FocusState private var listFocus: String?
 
     var body: some View {
         SocialPage(eyebrow: "Community", title: T("Groups"),
@@ -48,10 +51,11 @@ struct GroupsView: View {
                 } else if d.groups.isEmpty {
                     SocialEmpty(title: query.isEmpty ? "No public groups yet" : T("No groups match “%@”", query), message: "Groups are made on desktop Harbor or harbor.site.")
                 } else {
-                    section(!query.isEmpty || tag != nil ? "Results" : (d.mine.isEmpty ? "Public groups" : "Discover more"), d.groups, count: d.total)
+                    section(!query.isEmpty || tag != nil ? "Results" : (d.mine.isEmpty ? "Public groups" : "Discover more"), d.groups, count: d.total, keyed: true)
                     if d.nextCursor != nil {
                         Button(loadingMore ? "Loading" : "Load more") { Task { await more() } }
                             .buttonStyle(BPActionStyle(busy: loadingMore))
+                            .focused($listFocus, equals: "more")
                     }
                 }
             } else if loading {
@@ -76,14 +80,16 @@ struct GroupsView: View {
         Button(label, action: action).buttonStyle(BPActionStyle(primary: active)).bpSelected(active)
     }
 
-    private func section(_ title: String, _ groups: [Social.GroupCard], count: Int? = nil) -> some View {
+    private func section(_ title: String, _ groups: [Social.GroupCard], count: Int? = nil, keyed: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             HStack(alignment: .lastTextBaseline, spacing: BP.px(8)) {
                 Text(T(title)).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink)
                 if let count, count > 0 { Text("\(count)").font(BP.sans(14)).foregroundStyle(BP.inkSubtle) }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(16)), count: 3), alignment: .leading, spacing: BP.px(16)) {
-                ForEach(groups) { g in tile(g) }
+                ForEach(groups) { g in
+                    if keyed { tile(g).focused($listFocus, equals: "g:" + g.id) } else { tile(g) }
+                }
             }
         }
     }
@@ -154,8 +160,12 @@ struct GroupsView: View {
             // views/groups.tsx filters "Your groups" out of every loaded page (`rest`); the engine can
             // only do that on the first page, where it fetches them, so a later page repeated them.
             let have = Set((data?.groups ?? []).map(\.id) + (data?.mine ?? []).map(\.id))
-            data?.groups.append(contentsOf: next.groups.filter { !have.contains($0.id) })
+            let added: [Social.GroupCard] = next.groups.filter { !have.contains($0.id) }
+            data?.groups.append(contentsOf: added)
             data?.nextCursor = next.nextCursor
+            if next.nextCursor == nil, listFocus == "more", let target = added.first?.id ?? data?.groups.last?.id {
+                DispatchQueue.main.async { listFocus = "g:" + target }
+            }
         }
     }
 }
