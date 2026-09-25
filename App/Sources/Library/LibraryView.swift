@@ -125,6 +125,12 @@ struct LibraryView: View {
         if !inGrid { focusedChip = chip }
     }
 
+    /// Menu with a panel open closes it; nil lets the press through to the shell (Home).
+    private var exitAction: (() -> Void)? {
+        guard model.showFilters || model.showSearch || model.showRepair else { return nil }
+        return { closePanels() }
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: BP.px(16)) {
@@ -199,7 +205,7 @@ struct LibraryView: View {
         // bp-library-filters / bp-library-search are dialogs that Back closes (pushBpBack). Here they
         // open inline, and Menu inside one left the Library for Home; it now closes them and puts
         // the ring back on the chip row. With none open, the press goes on to the shell (Home).
-        .onExitCommand(perform: model.showFilters || model.showSearch || model.showRepair ? { closePanels() } : nil)
+        .onExitCommand(perform: exitAction)
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $showStats) { WrappedView() }
     }
