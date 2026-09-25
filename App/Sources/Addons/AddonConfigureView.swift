@@ -201,6 +201,8 @@ struct AddonConfigureView: View {
         let manage: AnyJSON = target.mode == .manage && target.manageId != nil
             ? .object(["id": .string(target.manageId ?? ""), "name": .string(target.name)]) : .null
         let m: Match? = try? await HarborEngine.shared.call("addonsManager.resolveUrl", [raw, manage])
+        // (bug pass) The link was edited while it was being read: this card is for the old one.
+        guard pasted.trimmingCharacters(in: .whitespacesAndNewlines) == raw else { phase = .idle; return }
         guard let m, m.error == nil, m.url != nil else {
             phase = .idle
             error = m?.error ?? T("Couldn't read that addon URL.")
