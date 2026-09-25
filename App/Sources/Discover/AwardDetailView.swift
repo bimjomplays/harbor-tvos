@@ -82,7 +82,10 @@ struct AwardDetailView: View {
             // data-bp-autofocus on the first winner, once: later reads leave the ring where it is.
             if !seeded, let g = got.groups.first, !g.entries.isEmpty {
                 seeded = true
-                focusedWinner = Self.key(g.key, 0)
+                // (review 33) A runloop later: set in the same update that first draws the winners,
+                // the tile did not exist yet and tvOS put the ring on "All years" instead.
+                let first: String = Self.key(g.key, 0)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { if focusedWinner == nil { focusedWinner = first } }
             }
         } else if page == nil {
             failed = true
