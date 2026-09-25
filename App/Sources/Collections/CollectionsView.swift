@@ -205,6 +205,7 @@ final class CollectionsModel: ObservableObject {
 }
 
 struct CollectionsView: View {
+    @EnvironmentObject private var app: AppModel
     @StateObject private var model = CollectionsModel()
     @State private var open: CollectionsModel.Card?
     @State private var detail: Meta?
@@ -299,6 +300,11 @@ struct CollectionsView: View {
         .task { if model.loaded || model.loading { await model.reloadMine() } else { await model.load() } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .animation(BP.easeFast, value: open?.key)
+        // (review 12) The overlay keeps the focus while it is up: the shell's bar takes none and LB/RB
+        // turn no tab (the room under it is disabled above). Cleared when the room goes.
+        .onAppear { app.roomLayer = open != nil }
+        .onDisappear { app.roomLayer = false }
+        .onChange(of: open?.key) { _, key in app.roomLayer = key != nil }
     }
 
     private var sourceRow: some View {

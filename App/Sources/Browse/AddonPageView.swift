@@ -44,7 +44,10 @@ struct AddonPageView: View {
                                         // (sports/addons pass 2) bp-addon setPickedKey: the chip already
                                         // shown does nothing. Pressed again mid-scroll, it restarted at page
                                         // 1 while the next page was loading, which then landed as the first.
-                                        guard active?.key != c.key else { return }
+                                        // (review 12) Except over an empty grid: a failed first page left the
+                                        // chip with nothing to retry it (a one-catalog addon had no other chip).
+                                        let retry: Bool = metas.isEmpty && !loading
+                                        guard active?.key != c.key || retry else { return }
                                         Task { await open(c) }
                                     }
                                     .buttonStyle(BPActionStyle(primary: active?.key == c.key)).bpSelected(active?.key == c.key)

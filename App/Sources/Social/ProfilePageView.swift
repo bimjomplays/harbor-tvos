@@ -368,8 +368,13 @@ struct ProfilePageView: View {
         comments?.nextCursor = next.nextCursor
     }
 
+    /// (review 12) Comments with a like on its way: a double press sent the same value twice.
+    @State private var liking: Set<String> = []
+
     private func toggleLike(_ handle: String, _ c: Social.Comment) async {
-        guard SocialCenter.shared.me.signedIn else { return }
+        guard SocialCenter.shared.me.signedIn, !liking.contains(c.id) else { return }
+        liking.insert(c.id)
+        defer { liking.remove(c.id) }
         guard let r: Social.LikeState = try? await HarborEngine.shared.call("social.commentLike", [handle, c.id, !c.liked]) else { return }
         guard var page = comments, let i = page.comments.firstIndex(where: { $0.id == c.id }) else { return }
         page.comments[i].liked = r.liked

@@ -744,6 +744,8 @@ export async function addonSources(game: SportsGame, authKey: string | null = nu
 
 /** bp-sports-addon-play choose: the streams one listing offers (inline, its addon, then others that accept the id). */
 let addonStreamsSeq = 0;
+/** (review 12) The pick whose streams `addonPicked` holds: a later answer never gives way to an earlier one. */
+let addonPickedSeq = 0;
 export async function addonStreams(key: string): Promise<{ status: "ok" | "listing" | "reload"; rows: Array<{ index: number; name: string; title: string; external: boolean }> }> {
   const row = addonHeld?.rows.find((r) => r.key === key);
   if (!row || !isAddonEnabled(row.addon.transportUrl)) { addonHeld = null; return { status: "reload", rows: [] }; }
@@ -754,7 +756,10 @@ export async function addonStreams(key: string): Promise<{ status: "ok" | "listi
   try {
     const providers = (addonHeld?.providers ?? []).filter((a) => isAddonEnabled(a.transportUrl));
     const streams = await loadSportsAddonStreams(row, new AbortController().signal, providers);
-    if (seq === addonStreamsSeq) addonPicked = { key, streams };
+    // (review 12) An answer lands unless a later pick's already has. "Only the newest pick" dropped
+    // the first answer of a listing picked twice (Back, then the same listing) while the second was
+    // still loading: the TV showed that answer's streams and every Play said "Could not start".
+    if (seq > addonPickedSeq) { addonPickedSeq = seq; addonPicked = { key, streams }; }
     return {
       status: "ok",
       rows: streams.map((st, index) => ({

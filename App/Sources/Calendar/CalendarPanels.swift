@@ -167,9 +167,16 @@ struct RemindersManagerView: View {
 
     private func remove(_ r: ReminderCenter.Row) async {
         let index = rows.firstIndex(of: r) ?? 0
-        let next: [ReminderCenter.Row]? = await ReminderCenter.shared.remove(r.id)
-        rows = next ?? rows.filter { $0.id != r.id }
-        note = "Reminder removed"
+        var next: [ReminderCenter.Row]? = await ReminderCenter.shared.remove(r.id)
+        // (review 12) An unreadable answer dropped the row and said "Reminder removed" whether or not
+        // it went: the list is read again, and the rows stay as they are when that fails too.
+        if next == nil {
+            let fresh: [ReminderCenter.Row]? = try? await HarborEngine.shared.call("calendar.reminders", [])
+            next = fresh
+        }
+        rows = next ?? rows
+        let gone: Bool = !rows.contains(where: { $0.id == r.id })
+        if gone { note = "Reminder removed" }
         focus = rows.isEmpty ? "close" : rows[min(index, rows.count - 1)].id
     }
 }

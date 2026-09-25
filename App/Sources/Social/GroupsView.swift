@@ -354,8 +354,14 @@ struct GroupPageView: View {
         }
     }
 
+    /// (review 12) Posts with a like on its way: a double press sent the same value twice.
+    @State private var liking: Set<String> = []
+
     private func like(_ post: Social.Post) async {
         guard SocialCenter.shared.me.signedIn, group?.isMember == true || group?.isOwner == true else { return }
+        guard !liking.contains(post.id) else { return }
+        liking.insert(post.id)
+        defer { liking.remove(post.id) }
         guard let next: Social.Post = try? await HarborEngine.shared.call("social.groupPostLike", [AnyJSON.string(id), .string(post.id), .bool(!post.liked)]) else { return }
         if let i = posts?.posts.firstIndex(where: { $0.id == post.id }) { posts?.posts[i] = next }
     }
