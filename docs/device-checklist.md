@@ -15,8 +15,8 @@ type (debrid, torrent, HLS, home server, IPTV).
 ## Before you start
 
 **Build.** Merge `claude/determined-hopper-smvu37` into `main` (or open a PR), run `Build` with
-`testflight=true`, and install that build from TestFlight (internal testing). Nothing from 09-24
-onward is on TestFlight yet.
+`testflight=true`, and install that build from TestFlight (internal testing). TestFlight build 220
+(2026-09-25) carries the branch up to `37aa626`; later work waits for the next upload.
 
 **Hardware.**
 - An Apple TV 4K running the current tvOS. Multiview and Anime4K assume the A15 model.
