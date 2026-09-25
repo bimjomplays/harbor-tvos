@@ -307,7 +307,9 @@ extension PlayerScreen {
         guard let context, !isLive else { return nil }
         return TrackMemory(metaId: context.meta.id, season: context.season, episode: context.episode,
                            genres: context.meta.genres ?? [],
-                           // After an in-place switch the original release's filename no longer applies (review 26).
-                           filename: switchedInPlace ? nil : streamHints?.filename)
+                           // After an in-place switch the original release's filename no longer applies (review 26);
+                           // (player regression pass) the source switcher's pick names its own (subtitleStreamKey
+                           // over activeMediaSrc.streamRef), the kid and quality switches none.
+                           filename: switchedInPlace ? switchedFilename : streamHints?.filename)
     }
 }

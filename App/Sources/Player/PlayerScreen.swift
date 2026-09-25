@@ -69,7 +69,13 @@ struct PlayerScreen: View {
         /// (P8) use-stream-switcher liveStreamRef: the picked stream's PlayerStreamRef, when the
         /// switcher knew it (its "Now playing" row and the room's source descriptor).
         var ref: AnyJSON? = nil
+        /// (player regression pass) The swapped-in release's file name, when the source switcher
+        /// knew it (liveStreamRef.resolvedFilename): the subtitle memory's release key follows it.
+        var filename: String? = nil
     }
+    /// (player regression pass) views/player.tsx subtitleStreamKey(activeMediaSrc.streamRef): after a
+    /// swap in place the release is the new stream's (TrackMemory.swift), nil when it is not known.
+    var switchedFilename: String? { switched?.filename }
     /// TransportKids' subtitle toggle reads the subtitle tracks (refreshed while its chrome is up).
     @State private var kidSubs: [MPVPlayerController.Track] = []
     @State private var subDelay: Double = 0
@@ -105,9 +111,13 @@ struct PlayerScreen: View {
     /// last frame with nothing to press (use-auto-retry triggerAutoRetry's sourceError).
     @State private var endedEarly: String?
     /// use-started-near-end.ts: the stream the first playing reading was taken for, and whether
-    /// that reading was at 80% or later (NEAR_END_RATIO). Keyed by the URL, as upstream's src.url.
+    /// that reading was at 80% or later (NEAR_END_RATIO). Keyed by upstream's src.url (srcURL).
     @State private var nearEndCapturedFor: URL?
     @State private var startedNearEnd = false
+    /// (player regression pass) views/player.tsx replacePlayerSrc: the stream a home-server quality
+    /// switch put in place of the PlayerSrc (switchMediaServerQuality), which gives it a new src.url.
+    /// The source switcher and the kid switcher swap only use-stream-switcher's liveUrl (src.url stays).
+    @State private var replacedSrc: URL?
 
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
@@ -266,6 +276,9 @@ struct PlayerScreen: View {
                                      // AVPlayer has no audio offset (BpAudioLane locked): the readout says 0 again.
                                      audioDelay = 0
                                      applyRate(c)
+                                     // (player regression pass) The rail's mute outlives the stream, as
+                                     // it does on upstream's one bridge (a load keeps the muted flag).
+                                     if muted { c.setMuted(true) }
                                      if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                                  },
                                  onPictureInPicture: { on in if engine == .native { pipChanged(on) } },
@@ -292,6 +305,11 @@ struct PlayerScreen: View {
                                   // viewer's offset: it carries over, as it does in upstream's one mpv.
                                   if audioDelay != 0 { c.setAudioDelay(audioDelay) }
                                   applyRate(c)
+                                  // (player regression pass) A source switched in place, a retry or a
+                                  // live reconnect starts a new engine unmuted while the rail still
+                                  // read "Muted" until the next tick: the mute carries over, as the
+                                  // muted flag does across upstream's bridge.load().
+                                  if muted { c.setMuted(true) }
                                   if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
                               })
                     .ignoresSafeArea()
@@ -303,8 +321,11 @@ struct PlayerScreen: View {
             TogetherPlayerLayer(playback: together)
             // (player parity pass 2) stage-overlays.tsx ContentAdvisoryToast (contentAdvisoryToast, off by default).
             if !isLive, let context {
-                ContentAdvisoryLayer(imdbId: context.imdbId, metaId: context.meta.id, playKey: playURL,
-                                     playing: status.state == "playing", hidden: pipActive, clock: clock)
+                // (player regression pass) Keyed by src.url (a source swapped in place keeps it, as
+                // player.tsx passes src.url to useContentAdvisory), and out of the way of the X-Ray
+                // rail, which the TV draws in the same top-left corner while paused.
+                ContentAdvisoryLayer(imdbId: context.imdbId, metaId: context.meta.id, playKey: srcURL,
+                                     playing: status.state == "playing", hidden: pipActive || xrayMeta != nil, clock: clock)
             }
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
@@ -458,6 +479,7 @@ struct PlayerScreen: View {
         .onDisappear {
             SleepTimer.shared.unregister(nowPlayingId)
             skipHideTask?.cancel()
+            seekCommit?.cancel()
             // media-session.ts clearMediaControls before PlaybackState lets the music take Now Playing back.
             VideoNowPlaying.shared.end(nowPlayingId)
             // A player torn down while it owned the PiP browse layer (the tree rebuilt) takes it down.
@@ -998,10 +1020,15 @@ struct PlayerScreen: View {
     /// use-started-near-end.ts: the first reading while playing, with a length and a position, says
     /// whether this stream started at 80% or later (re-watching an ending). Such a stream does not
     /// auto-advance, go on through the queue or close by itself at its end (use-auto-next-episode,
-    /// use-queue-advance, use-auto-end-exit). A new URL (a source swapped in place) takes a new reading.
+    /// use-queue-advance, use-auto-end-exit). A new src.url (a tuned channel, a home-server quality) takes a new reading.
+    /// (player regression pass) Keyed by upstream's src.url (srcURL), not the URL playing: player.tsx
+    /// passes src.url, which use-stream-switcher's in-place swap leaves alone (it moves liveUrl). A
+    /// source switched at 85% of a film took a new reading there, so the end of that film no longer
+    /// moved on to the next episode, asked Still watching or closed. Only with a player: the clock
+    /// holds the last stream's reading until the new one's first tick.
     private func noteStartedNearEnd() {
-        let src: URL = playURL
-        guard nearEndCapturedFor != src, status.state == "playing" else { return }
+        let src: URL = srcURL
+        guard nearEndCapturedFor != src, status.state == "playing", controller != nil else { return }
         let dur: Double = clock.snap.duration
         let pos: Double = clock.snap.position
         guard dur > 0, pos > 0 else { return }
@@ -1010,7 +1037,7 @@ struct PlayerScreen: View {
     }
 
     /// startedNearEndRef.current for the stream on screen (false until its reading is taken).
-    private var startedNearEndNow: Bool { nearEndCapturedFor == playURL && startedNearEnd }
+    private var startedNearEndNow: Bool { nearEndCapturedFor == srcURL && startedNearEnd }
 
     /// (player/live device pass) use-auto-retry.ts premature EOF (isTruncatedEnd): a stream that
     /// ends well short of its length (the connection dropped and mpv played out its cache, or
@@ -1510,7 +1537,11 @@ struct PlayerScreen: View {
 
     private func homeServerQualityPanel(_ h: HomeServerSession, _ c: PlayerClock) -> some View {
         HomeServerQualityPanel(session: h, positionSec: c.snap.position, playing: !c.snap.paused,
-                               onSwitched: { next, headers, subs in pausedAfterSwitch = clock.snap.paused; switchStream(to: next, headers: headers, subtitles: subs) }, onClose: { closePanel() })
+                               onSwitched: { next, headers, subs in
+                                   pausedAfterSwitch = clock.snap.paused
+                                   // bp-ten-foot.tsx replacePlayerSrc(await switchMediaServerQuality(…)): a new PlayerSrc.
+                                   switchStream(to: next, headers: headers, subtitles: subs, replacesSrc: true)
+                               }, onClose: { closePanel() })
     }
 
     // MARK: kid profiles (transport-kids.tsx, kids-switcher.tsx, resume-prompt.tsx; useActiveKid)
@@ -1612,8 +1643,11 @@ struct PlayerScreen: View {
     /// the player while it plays (use-player-media).
     /// (P8) `spot`: where the new stream starts (the source switcher's resume spot; the position
     /// otherwise), `hints`: the picked stream's facts for the engine rule, `ref`: its PlayerStreamRef.
+    /// (player regression pass) `replacesSrc`: the switch replaces the PlayerSrc itself (a home-server
+    /// quality, replacePlayerSrc), so src.url moves with it (srcURL).
     private func switchStream(to next: URL, headers nextHeaders: [String: String], subtitles nextSubtitles: [SeedSubtitle] = [],
-                              from spot: Double? = nil, hints: PlayerStreamHints? = nil, ref: AnyJSON? = nil) {
+                              from spot: Double? = nil, hints: PlayerStreamHints? = nil, ref: AnyJSON? = nil,
+                              replacesSrc: Bool = false) {
         let here: Double = clock.snap.position > 5 ? clock.snap.position : 0
         // use-stream-switcher `startAtSec: resumeAt > 5 ? resumeAt : undefined`.
         let at: Double = spot.map { $0 > 5 ? $0 : 0 } ?? here
@@ -1622,12 +1656,18 @@ struct PlayerScreen: View {
             TorrentEngine.shared.playerOpened(url: next)
             TorrentEngine.shared.playerClosed(url: owned)
         }
-        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles, ref: ref)
+        switched = SwitchedStream(url: next, headers: nextHeaders, subtitles: nextSubtitles, ref: ref, filename: hints?.filename)
+        if replacesSrc { replacedSrc = next }
         // (P8) use-host-source: nothing closes, so a Watch Together room keeps this player (no
         // host-leaving, no reopen); the room's source descriptor follows the new stream.
         together.sourceSwitched(url: next, ref: ref, at: at)
         // use-auto-retry.ts resets its early-end reload per source.
         truncatedReloaded = false
+        // (player regression pass) The error card's early-end reason goes with the old stream now:
+        // it was cleared only by the reload token, which moves once the engine rule has run, so a
+        // swap from the error card (Pick another source, the second early end) brought the card
+        // back for that moment, and its onAppear pulled the ring onto a chip that then went.
+        endedEarly = nil
         status = MPVPlayerController.Status()
         loadingSince = Date()
         controller = nil
@@ -1637,6 +1677,10 @@ struct PlayerScreen: View {
         let target = playURL
         Task {
             guard await settleEngine(for: target, hints: hints) else { return }
+            // (player regression pass) A player that began to close meanwhile (Back, the leave
+            // dialog, the curfew) opens no new engine: it would play the new stream, with sound,
+            // under the close (finish paused only the old one).
+            guard !finishing else { return }
             startAt = at
             reloadToken += 1
         }
@@ -1739,6 +1783,11 @@ struct PlayerScreen: View {
 
     private var currentChannel: LiveModel.Channel? { tuned ?? liveChannel }
     private var playURL: URL { tuned.flatMap { URL(string: $0.url) } ?? switched?.url ?? url }
+    /// (player regression pass) views/player.tsx src.url: the channel tuned in place, a home-server
+    /// quality's new PlayerSrc, else the stream opened. Not a stream swapped in place by the source
+    /// or kid switcher (use-stream-switcher liveUrl): use-started-near-end and use-content-advisory
+    /// key on src.url, so neither takes a new reading or shows again for such a swap.
+    private var srcURL: URL { tuned.flatMap { URL(string: $0.url) } ?? replacedSrc ?? url }
     private var playHeaders: [String: String] { tuned.map { $0.headers ?? [:] } ?? switched?.headers ?? headers }
     /// PlayerSrc.subtitles of what plays now: a tuned channel has none, a stream swapped in place
     /// brings its own (not the opened stream's), otherwise the opened stream's.
@@ -1780,6 +1829,8 @@ struct PlayerScreen: View {
         let target = playURL
         Task {
             guard await settleEngine(for: target, hints: nil) else { return }
+            // (player regression pass) As switchStream: no new engine under a closing player.
+            guard !finishing else { return }
             startAt = 0
             reloadToken += 1
         }
@@ -2028,10 +2079,15 @@ struct PlayerScreen: View {
     }
 
     /// The ring is on a card that outlives the chrome.
+    /// (player regression pass) The skip pill and the up-next card are such cards too, like the
+    /// duration-mismatch chip beside them: Up from the woken transport reaches them, and the idle
+    /// hide took the ring back to the stage 4.6 s later while the pill stayed up, so the Select
+    /// meant for "Skip Intro" or "Play now" paused the film instead.
     private var ringOnCard: Bool {
         guard case .chip(let id)? = focus else { return false }
-        return ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry",
-                "mismatch-find", "mismatch-dismiss"].contains(id)
+        let cards: [String] = ["Go back", "Try again", "Switch source", "Use mpv engine", "Dismiss", "kids-cancel", "kids-goback", "kids-retry",
+                               "mismatch-find", "mismatch-dismiss", "skip", "skip-dismiss", "upnext-play", "upnext-keep"]
+        return cards.contains(id)
     }
 
     private func fmt(_ s: Double) -> String { PlayerClock.fmt(s) }
@@ -2445,13 +2501,22 @@ struct PlayerScreen: View {
         }
         // (P11) use-player-exit.ts closePlayer → captureExitSnapshot, first: the frame is taken now,
         // while the engine is still up, and saved off the main thread; the close never waits for it.
-        if !isLive {
+        // (player regression pass) Not for a stream sent back to the picker (a stub, a stall, an auto
+        // pick that failed): use-player-exit onStubEject and views/player.tsx's auto-next open the
+        // picker without closePlayer, so no frame is taken; here a stub's placeholder picture
+        // replaced the title's Continue Watching frame. A frame kept while it played stays.
+        if !isLive, !sentBack {
             let live: (position: Double, duration: Double, paused: Bool) = controller?.snapshot() ?? clock.snap
             exitSnapshot.captureOnExit(controller: controller, context: context, position: live.position, duration: live.duration)
         }
         // (player pass 2) Nothing plays on under a closing player (Next episode, Play now, Sources
         // and a Back without the leave dialog kept the film and its sound going through the close).
         controller?.setPaused(true)
+        // (player regression pass) bp-player-scrub's pending nudge dies with the player: committed
+        // 420 ms after the last press, it seeked the closing video and, for a Watch Together guest,
+        // sent the room a seek after this TV had left the video.
+        seekCommit?.cancel()
+        pendingSeek = nil
         let advancing: Bool = advance ?? natural
         Task { @MainActor in
             // (player pass 2) use-player-exit closePlayer saves the spot locally and leaves; the
