@@ -584,10 +584,10 @@ final class MPVPlayerController: UIViewController {
             // sends END_FILE(eof) for it, so onEnded (next episode, watched-at-end save) never fired.
             // Upstream reads eof-reached as "ended" (lib/player/mpv.ts) and acts on a natural end
             // only (playback-end.ts isNaturalEnd: no duration, or at least 85 % through). A live
-            // channel keeps its old behaviour (it never closes on its own here).
+            // channel is not a title's end: PlayerScreen reloads it off the "ended" state (bug pass 2).
             if eof == "yes", !isLive, !endedSent {
                 let s = snapshot()
-                if !s.duration.isFinite || s.duration <= 0 || s.position / s.duration >= 0.85 { sendEnded() }
+                if PlaybackEnd.isNatural(position: s.position, duration: s.duration) { sendEnded() }
             }
         }
         report()

@@ -103,3 +103,16 @@ enum PlayerEngineChoice {
         }
     }
 }
+
+/// lib/player/playback-end.ts isNaturalEnd for a file the engine reports ended: no known duration
+/// (the snapshots fold an infinite live duration into 0), or at least END_RATIO (85 %) through. A
+/// stream cut short ends "ended" too but is neither watched nor followed by the next episode.
+/// (bug pass 2) One rule for mpv, AVPlayer and the live reload.
+enum PlaybackEnd {
+    static let endRatio = 0.85
+
+    static func isNatural(position: Double, duration: Double) -> Bool {
+        guard duration.isFinite, duration > 0 else { return true }
+        return position / duration >= endRatio
+    }
+}

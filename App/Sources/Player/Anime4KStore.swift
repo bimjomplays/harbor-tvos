@@ -1,9 +1,11 @@
 import Foundation
 import Combine
 
-/// The eleven Anime4K GLSL shaders (src-tauri/src/anime4k.rs), kept in Application Support so
-/// they survive cache purges. `ensure()` downloads whatever is missing; mpv gets the chain as
-/// absolute paths through `glsl-shaders`.
+/// The eleven Anime4K GLSL shaders (src-tauri/src/anime4k.rs), kept in Caches: tvOS gives an app
+/// no persistent local storage beyond small data, so a few MB of downloads belong where the system
+/// may purge them (bug pass 2; they were in Application Support). A purged set is simply fetched
+/// again on next use: `ensure()` downloads whatever is missing, and `paths(for:)` rechecks the
+/// files. mpv gets the chain as absolute paths through `glsl-shaders`.
 @MainActor
 final class Anime4KStore: ObservableObject {
     static let shared = Anime4KStore()
@@ -15,11 +17,17 @@ final class Anime4KStore: ObservableObject {
     @Published private(set) var note: String?
 
     let dir: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("anime4k", isDirectory: true)
     }()
 
-    private init() { installed = Self.complete(in: dir) }
+    private init() {
+        // (bug pass 2) Builds before this kept the shaders in Application Support: let that copy go.
+        let old = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("anime4k", isDirectory: true)
+        if FileManager.default.fileExists(atPath: old.path) { try? FileManager.default.removeItem(at: old) }
+        installed = Self.complete(in: dir)
+    }
 
     private static func complete(in dir: URL) -> Bool {
         let fm = FileManager.default
@@ -62,6 +70,11 @@ final class Anime4KStore: ObservableObject {
     func paths(for files: [String]) -> [String]? {
         guard installed else { return nil }
         let out = files.map { dir.appendingPathComponent($0).path }
-        return out.allSatisfy { FileManager.default.fileExists(atPath: $0) } ? out : nil
+        guard out.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) else {
+            // (bug pass 2) Caches were purged since launch: the next ensure() fetches them again.
+            installed = false
+            return nil
+        }
+        return out
     }
 }

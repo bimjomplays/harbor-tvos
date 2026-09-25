@@ -72,6 +72,10 @@ struct PlayerScreen: View {
     @State private var loadingSince = Date()
     let onClose: (_ endedNaturally: Bool) -> Void
     @State private var reloadToken = 0
+    /// use-auto-end-exit.ts reloadTimesRef: when a live channel that ran out was reloaded (15 s window).
+    @State private var liveReloadTimes: [Date] = []
+    /// The pending reload (or close) after a live channel ran out.
+    @State private var liveEndTask: Task<Void, Never>?
 
     @State private var status = MPVPlayerController.Status()
     @State private var chrome = true
@@ -192,8 +196,10 @@ struct PlayerScreen: View {
                                  onStatus: { s in if engine == .native { status = s } },
                                  onEnded: { if engine == .native { endedNaturally() } },
                                  onUnsupported: { nativeUnsupported($0) },
-                                 onReady: { c in
-                                     guard engine == .native else { return }
+                                 onReady: { [token = reloadToken] c in
+                                     // (bug pass 2) Delivered a main-queue turn after creation: a player
+                                     // replaced meanwhile (a reload, the engine switch) must not claim it.
+                                     guard engine == .native, token == reloadToken else { return }
                                      controller = c
                                      pipActive = false
                                      applyRate(c)
@@ -210,7 +216,16 @@ struct PlayerScreen: View {
                               preferredSubs: SettingsBridge.shared.slice.preferredSubLangs,
                               trackMemory: trackMemory,
                               onStatus: { status = $0 }, onEnded: { endedNaturally() },
-                              onReady: { controller = $0; pipActive = false; applyRate($0); if resumePending != nil || pausedAfterSwitch { $0.setPaused(true); pausedAfterSwitch = false } })
+                              onReady: { [token = reloadToken] c in
+                                  // (bug pass 2) onReady lands a main-queue turn after the controller is
+                                  // made: one replaced meanwhile (two reloads, the switch to AVPlayer) is
+                                  // not made current, and does not use up pausedAfterSwitch.
+                                  guard engine != .native, token == reloadToken else { return }
+                                  controller = c
+                                  pipActive = false
+                                  applyRate(c)
+                                  if resumePending != nil || pausedAfterSwitch { c.setPaused(true); pausedAfterSwitch = false }
+                              })
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else {
@@ -402,7 +417,11 @@ struct PlayerScreen: View {
             stubTick()
         }
         // views/player.tsx: an auto pick that fails before it ever played goes on to the next source.
-        .onChange(of: status.state) { _, state in if state == "error" { autoNextOnError() } }
+        .onChange(of: status.state) { _, state in
+            if state == "error" { autoNextOnError() }
+            // (bug pass 2) use-auto-end-exit.ts: a live channel's end reloads it.
+            if state == "ended", isLive { liveEnded() }
+        }
         // A retry or the switch to mpv starts the stall wait over (review 31).
         .onChange(of: reloadToken) { _, _ in openedAt = Date() }
         .animation(.easeOut(duration: 0.32), value: chrome)
@@ -422,7 +441,13 @@ struct PlayerScreen: View {
     /// lib/player/stall-wait.ts hasPlaybackStartedForStallCheck: paused, a position, or a picture.
     private func notePlaybackStarted() {
         guard !playbackStarted, let c = controller else { return }
-        if snap.paused || snap.position > 0 || c.videoWidth() > 0 { playbackStarted = true }
+        // (bug pass 2) Upstream's "paused" is a snapshot status: mpv.ts sets it at file-loaded, the
+        // html5 bridge only from readyState >= 3, so it means an open stream that is paused. The
+        // TV's snap.paused is the pause flag, set before anything opens (held for the resume prompt,
+        // pausedAfterSwitch), which counted a stream that never connected as started and turned the
+        // stall skip off. A pause counts once the engine reports the file open.
+        let opened = status.state == "playing" || status.state == "buffering/paused"
+        if (snap.paused && opened) || snap.position > 0 || c.videoWidth() > 0 { playbackStarted = true }
     }
 
     /// views/player.tsx (opt-in autoNextStreamOnStall): an auto-picked stream that has not started
@@ -670,13 +695,60 @@ struct PlayerScreen: View {
         wake()
     }
 
+    /// (bug pass 2) use-auto-end-exit.ts, live only: a channel that ran out (mpv's keep-open holds its
+    /// last frame, AVPlayer ends the item) is reloaded after LIVE_RELOAD_DELAY_MS (1 s), up to
+    /// LIVE_RELOAD_MAX (5) times in LIVE_RELOAD_WINDOW_MS (15 s); past that the player closes after
+    /// POST_END_DELAY_MS (800 ms). Only a natural end (isNaturalEnd) counts. Upstream's
+    /// `durationSec <= 0` early return is not carried over: the TV snapshots fold a live stream's
+    /// infinite duration into 0, which upstream lets through.
+    private func liveEnded() {
+        guard isLive, !finishing else { return }
+        if let c = controller {
+            let s = c.snapshot()
+            guard PlaybackEnd.isNatural(position: s.position, duration: s.duration) else { return }
+        }
+        let now = Date()
+        var recent = liveReloadTimes.filter { now.timeIntervalSince($0) < 15 }
+        let token = reloadToken
+        liveEndTask?.cancel()
+        if recent.count < 5 {
+            recent.append(now)
+            liveReloadTimes = recent
+            liveEndTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                // The effect's cleanup upstream: a status change, a retry or a tune meanwhile cancels it.
+                guard !Task.isCancelled, !finishing, token == reloadToken, status.state == "ended" else { return }
+                // reloadLive: the same source again (as the live error card's Try again).
+                status = MPVPlayerController.Status()
+                loadingSince = Date()
+                controller = nil
+                reloadToken += 1
+            }
+            return
+        }
+        liveReloadTimes = recent
+        liveEndTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled, !finishing, token == reloadToken, status.state == "ended" else { return }
+            finish(natural: false)
+        }
+    }
+
     /// use-auto-next-episode.ts: at a natural end the next episode follows unless the viewer chose
     /// "Keep watching", autoPlayNextEpisode is off, or the file is a stub (under 150 s).
     private func endedNaturally() {
         guard !stillPrompt else { return }
+        // (bug pass 2) A live channel's end is liveEnded's (use-auto-end-exit.ts reloads it).
+        guard !isLive else { return }
         // use-sleep-timer.ts: "End of episode" (or the last of "End of next episode") stops here.
         let sleepStops = SleepTimer.shared.episodeEnded()
-        let advance = !sleepStops && upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
+        // (bug pass 2) player.tsx canChangeEpisode = !inRoom || isHost: a Watch Together guest never
+        // moves on by itself. use-auto-end-exit.ts `(canChangeEpisode || roomGuest) && nextEp`: with
+        // a next episode the guest stays on the end for the host's pick (the room's "Now watching"
+        // notice); with none, or the sleep timer's end (use-queue-advance.ts), the player closes.
+        let roomGuest = together.inRoom && !together.isHost
+        if roomGuest, upNext != nil, !sleepStops { return }
+        let advance = !sleepStops && !roomGuest && upNext != nil && prefs.autoPlayNextEpisode && !autoNextCancelled && snap.duration >= 150
         // Ended in Picture in Picture: what follows (the next episode, Still watching) has to be on
         // screen, so the browse layer goes down and the picture comes home first; a title that just
         // ends leaves the viewer browsing (the player closes under the layer).
@@ -965,7 +1037,8 @@ struct PlayerScreen: View {
         let p = ProfilesStore.shared.active
         guard let choice: Anime4KChoice = try? await HarborEngine.shared.call("anime4k.choose", [p?.id ?? "default", p?.linked ?? true, meta, srcWidth, display]) else { return }
         if choice.active {
-            if !Anime4KStore.shared.installed { await Anime4KStore.shared.ensure() }
+            // (bug pass 2) The shaders live in Caches now: a set the system purged is fetched again here.
+            if Anime4KStore.shared.paths(for: choice.files) == nil { await Anime4KStore.shared.ensure() }
             if let paths = Anime4KStore.shared.paths(for: choice.files) {
                 anime4k = choice
                 anime4kNote = nil
@@ -1188,6 +1261,9 @@ struct PlayerScreen: View {
         }
         tuned = ch
         liveGuide?.played(ch)
+        // (bug pass 2) use-auto-end-exit.ts resets its reload count per source.
+        liveEndTask?.cancel()
+        liveReloadTimes = []
         status = MPVPlayerController.Status()
         loadingSince = Date()
         controller = nil

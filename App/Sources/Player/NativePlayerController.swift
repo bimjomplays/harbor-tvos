@@ -296,6 +296,18 @@ final class NativePlayerController: UIViewController {
         guard !tornDown else { return }
         status.state = "ended"
         report()
+        // (bug pass 2) A live channel that runs out is reloaded by PlayerScreen off the "ended"
+        // status (use-auto-end-exit.ts), never treated as a title's end.
+        guard !isLive else { return }
+        // (bug pass 2) playback-end.ts isNaturalEnd, as mpv's eof-reached path applies it: a stream
+        // cut short (its header promised more) stays "ended" on screen, but is not saved as watched
+        // and does not move on to the next episode.
+        let s = snapshot()
+        guard PlaybackEnd.isNatural(position: s.position, duration: s.duration) else {
+            push("ended early at \(Int(s.position))s of \(Int(s.duration))s")
+            report()
+            return
+        }
         onEnded?()
     }
 
@@ -348,14 +360,28 @@ final class NativePlayerController: UIViewController {
 
     func setPaused(_ paused: Bool) {
         wantsPlay = !paused
-        if paused { player.pause() } else { player.play() }
+        if paused { player.pause() }
+        // (bug pass 2) A start still held for the ready handler (see seek(to:)) is played from there.
+        else if readyHandled || startAtSeconds <= 1 { player.play() }
         refreshState()
     }
 
-    func seek(_ seconds: Double) { seek(to: player.currentTime().seconds + seconds) }
+    /// (bug pass 2) Before the item is ready a step counts from the held start (currentTime is 0 then).
+    func seek(_ seconds: Double) { seek(to: (readyHandled ? player.currentTime().seconds : startAtSeconds) + seconds) }
 
     func seek(to seconds: Double) {
         guard seconds.isFinite else { return }
+        // (bug pass 2) A seek made before the item is readyToPlay ("Pick up where you left off"
+        // pressed while a slow source still connects) is not reliably kept by AVPlayer, and the
+        // ready handler would then start from startAtSeconds (0 under the resume prompt). Hold it
+        // as the start instead: the latest request replaces the opening one, and the ready handler
+        // applies it once, as MPVPlayerController does before FILE_LOADED.
+        guard readyHandled else {
+            startAtSeconds = max(0, seconds)
+            // Not from 0 first: the ready handler plays (wantsPlay) once it has seeked there.
+            if startAtSeconds > 1 { player.pause() }
+            return
+        }
         // The output reports what shows at the new spot; what it reported for the old one is stale.
         embeddedTimeline = []
         lastCueKey = "-"
