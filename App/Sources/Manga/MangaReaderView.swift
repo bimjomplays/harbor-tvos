@@ -318,6 +318,16 @@ struct MangaReaderView: View {
                     DispatchQueue.main.async { focus = .surface }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
+                // (kids/music pass 2) Upstream's reader bar stays up over ReaderFailed with its chapter
+                // jump; here the bar cannot open while a chapter failed, so a dead chapter mid-series
+                // could only be left by going Back to the list (the eBook reader's card has this too).
+                if let n = model.nextIndex {
+                    Button("Next chapter") {
+                        model.changeIndex(n)
+                        DispatchQueue.main.async { focus = .surface }
+                    }
+                    .buttonStyle(BPActionStyle())
+                }
                 Button("Back") { closeReader() }.buttonStyle(BPActionStyle())
             }
         }
@@ -378,8 +388,10 @@ struct MangaReaderView: View {
                 HStack(spacing: BP.px(8)) {
                     barButton("prev", "Previous chapter", icon: "backward.end.fill", enabled: model.prevIndex != nil) { model.previousChapter(); closeMenu() }
                     barButton("next", "Next chapter", icon: "forward.end.fill", enabled: model.nextIndex != nil) { model.nextChapter(); closeMenu() }
-                    barButton("mode", T("Reading mode") + ": " + T(model.autoLong ? "Long strip" : labelOf(Self.modes, model.prefs.tvMode)), icon: "rectangle.split.3x1") {
-                        model.patch(["mode": .string(nextOf(Self.modes, model.prefs.tvMode))])
+                    // (kids/music pass 2) Cycles from the mode on screen (a detected strip reads as Long
+                    // strip), so the first press after a detection goes to Single, as the label says.
+                    barButton("mode", T("Reading mode") + ": " + T(labelOf(Self.modes, model.mode)), icon: "rectangle.split.3x1") {
+                        model.patch(["mode": .string(nextOf(Self.modes, model.mode))])
                     }
                     barButton("dir", model.prefs.rtl ? "Right to left" : "Left to right", icon: "arrow.left.arrow.right") {
                         model.patch(["rtl": .bool(!model.prefs.rtl)])

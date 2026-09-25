@@ -87,7 +87,13 @@ final class MangaReaderModel: ObservableObject {
         await load()
     }
 
-    func reload() { Task { await load() } }
+    func reload() {
+        // (kids/music pass 2) Out of the failed state at once, like changeIndex: the surface stays
+        // disabled while `failed` holds, so Retry's hand-back of the focus to the page found nothing.
+        loading = true
+        failed = false
+        Task { await load() }
+    }
 
     private func load() async {
         guard let ch = chapter else { failed = true; loading = false; return }
@@ -148,6 +154,8 @@ final class MangaReaderModel: ObservableObject {
         // up, so a second quick Right / Down at the end marked the new chapter complete (with the old
         // page count) and skipped straight past it.
         loading = true
+        // (kids/music pass 2) Leaving a failed chapter (its card's Next chapter): see reload().
+        failed = false
         Task { await load() }
     }
 
@@ -317,6 +325,10 @@ final class MangaReaderModel: ObservableObject {
         Task {
             if let p: MangaReaderPrefs = try? await HarborEngine.shared.call("manga.savePrefs", [AnyJSON.object(change)]) {
                 let wasPaged = paged
+                // (kids/music pass 2) manga-reader.tsx setMode / ReaderSettings onChange: a mode the
+                // viewer picks ends the webtoon auto-detect. Without this a strip detected as tall
+                // stayed a long strip whatever Reading mode was pressed (the label never moved).
+                if change["mode"] != nil { autoLong = false }
                 prefs = p
                 if wasPaged != paged, total > 0 {
                     let at = min(currentPage, total - 1)

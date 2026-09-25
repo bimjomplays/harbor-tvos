@@ -117,6 +117,8 @@ struct MangaDetailView: View {
     @StateObject private var model: MangaDetailModel
     @State private var reader: MangaReaderLaunch?
     @State private var expanded = false
+    /// The Resume button's lookup is in flight.
+    @State private var resuming = false
     @FocusState private var chapterFocus: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -246,7 +248,17 @@ struct MangaDetailView: View {
             // the remote's focus with nothing to return to.
             Button {
                 if let p = model.progress {
-                    Task { if let l = await model.resumeLaunch(p) { reader = l } }
+                    // (kids/music pass 2) One resume at a time, and a late one never replaces a reader
+                    // already up: the saved chapter's lookup can go to the network (MangaStore.resume
+                    // when it is not in this list), so a double press opened the reader twice (the
+                    // second swapped in over the first) and Read latest pressed meanwhile was replaced.
+                    guard !resuming else { return }
+                    resuming = true
+                    Task {
+                        let l = await model.resumeLaunch(p)
+                        resuming = false
+                        if let l, reader == nil { reader = l }
+                    }
                 } else {
                     let list = model.langFiltered
                     guard !list.isEmpty else { return }
@@ -259,7 +271,7 @@ struct MangaDetailView: View {
                     Text("Start from beginning")
                 }
             }
-            .buttonStyle(BPActionStyle())
+            .buttonStyle(BPActionStyle(busy: resuming))
             .disabled(model.progress == nil && !model.canRead)
             Button { Task { await model.toggleFavorite() } } label: {
                 Image(systemName: model.favorite ? "heart.fill" : "heart")
