@@ -62,8 +62,9 @@ struct WhoIsWatchingView: View {
         // to the system (the app closes) rather than swallowed. The PIN pad handles its own Back.
         .onExitCommand(perform: backAction)
         // bp-who-is-watching: the ring starts on the active profile, not whoever sits first (also
-        // once the launch intro wall, which holds the tree disabled, lets go).
-        .defaultFocus($tileFocus, profiles.activeId)
+        // once the launch intro wall, which holds the tree disabled, lets go). With none active the
+        // value names no tile (never nil, as BPRowView), so the usual first-tile rule applies.
+        .defaultFocus($tileFocus, profiles.activeId ?? "who:none")
         .onAppear {
             guard let id = profiles.activeId else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if pinFor == nil { tileFocus = id } }
