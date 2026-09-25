@@ -421,7 +421,9 @@ struct KidsDetailView: View {
     }
 
     private func nextEpisode(after ctx: PlaybackContext) -> KidsDetailModel.Episode? {
-        guard let s = ctx.season, let e = ctx.episode else { return nil }
+        // (device-flow pass 6) series-episodes.ts tmdbSeason: season < 1 is never on the adjacency
+        // list, so a special has no next episode (it ran on into the next special).
+        guard let s = ctx.season, s > 0, let e = ctx.episode else { return nil }
         // (open-items sweep) The season that played, not only the one on screen.
         let list: [KidsDetailModel.Episode] = model.seasonEpisodes[s] ?? model.episodes
         guard let idx = list.firstIndex(where: { $0.season == s && $0.episode == e }) else { return nil }

@@ -10,6 +10,8 @@ struct ListDialogView: View {
     @State private var newName = ""
     @State private var creating = false
     @FocusState private var focus: String?
+    /// (device-flow pass 6) The name field, which takes the ring from "New list" as it goes.
+    @FocusState private var nameFocused: Bool
     struct ListSummary: Decodable, Identifiable { var id: String; var name: String; var count: Int; var contains: Bool }
 
     var body: some View {
@@ -29,7 +31,7 @@ struct ListDialogView: View {
                     .bpSelected(l.contains)
                 }
                 if naming {
-                    BPField(label: "New list", placeholder: "List name", text: $newName)
+                    BPField(label: "New list", placeholder: "List name", text: $newName, focus: $nameFocused)
                     HStack(spacing: BP.px(8)) {
                         Button("Create") { Task { await create() } }.buttonStyle(BPActionStyle(primary: true, busy: creating)).disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                         // (detail pass) Both buttons go with the naming row: the ring moves back to "New list"
@@ -37,7 +39,15 @@ struct ListDialogView: View {
                         Button("Cancel") { naming = false; newName = ""; focus = "new" }.buttonStyle(BPActionStyle())
                     }
                 } else {
-                    Button { naming = true } label: { Label("New list", systemImage: "plus") }.buttonStyle(BPActionStyle()).focused($focus, equals: "new")
+                    // (device-flow pass 6) "New list" gives way to the name field under the ring,
+                    // which then fell to whatever tvOS scored nearest (a list, or Close): it moves
+                    // to the field, so the next Select opens the keyboard.
+                    Button {
+                        naming = true
+                        DispatchQueue.main.async { nameFocused = true }
+                    } label: { Label("New list", systemImage: "plus") }
+                    .buttonStyle(BPActionStyle())
+                    .focused($focus, equals: "new")
                 }
                 Spacer()
                 Button("Close") { dismiss() }.buttonStyle(BPActionStyle())
@@ -120,11 +130,13 @@ struct RateDialogView: View {
 
     /// bp-rate-dialog.tsx: a score rates and closes (the Rate cell re-reads it as the dialog goes).
     /// (detail pass) It stayed open; the dialog now closes unless the device-only note has to show.
+    /// (device-flow pass 6) Only when the score really stayed on the device (`kept`): lib/ratings
+    /// rolls it back when harbor.site refuses it (signed out), and upstream's dialog just closes.
     private func rate(_ n: Int) async {
-        struct Out: Decodable { var score: Int; var synced: Bool }
+        struct Out: Decodable { var score: Int; var synced: Bool; var kept: Bool? }
         if let o: Out = try? await HarborEngine.shared.call("actions.rate", [meta, n]) {
             score = o.score
-            if o.synced { dismiss(); return }
+            if o.synced || o.kept == false { dismiss(); return }
             note = "Saved on this device. It syncs to your Harbor account when you sign in."
         }
     }

@@ -28,7 +28,11 @@ struct GalleryRow: View {
         }
         .task(id: meta.id) {
             let p = ProfilesStore.shared.active
-            gallery = try? await HarborEngine.shared.call("detailRoom.gallery", [meta, p?.id ?? "default", p?.linked ?? true])
+            // (device-flow pass 6) The task runs again whenever a cover over the page closes (this
+            // row's own lightbox included): a failed re-read (offline, TMDB's cache run out) took
+            // the row away from under the ring. It keeps what it drew, as DetailModel.loadExtras does.
+            let g: Gallery? = try? await HarborEngine.shared.call("detailRoom.gallery", [meta, p?.id ?? "default", p?.linked ?? true])
+            if let g { gallery = g }
         }
         .fullScreenCover(item: $lightbox) { lb in LightboxView(images: lb.images, index: lb.index, tall: lb.tall) }
     }

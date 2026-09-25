@@ -472,7 +472,9 @@ struct DetailView: View {
     /// bp-player-controls "Previous episode": the episode before this one opens its picker (after
     /// the player's cover has dismissed, like Switch source); nil on the first episode or a movie.
     private func previousEpisodeAction(_ ctx: PlaybackContext) -> (() -> Void)? {
-        guard let s = ctx.season, let e = ctx.episode,
+        // (device-flow pass 6) series-episodes.ts computeAdjacent: a special (season 0) is not on
+        // the adjacency list, so it has no previous episode either.
+        guard let s = ctx.season, s > 0, let e = ctx.episode,
               let idx = model.episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx > 0 else { return nil }
         let prev = model.episodes[idx - 1]
         guard prev.season > 0 else { return nil }
@@ -925,13 +927,21 @@ struct DetailView: View {
                 // (detail/search pass 2) bp-detail's BpPageMessage when the title can't be read.
                 VStack(alignment: .leading, spacing: BP.px(10)) {
                     BPNote(text: "Couldn't load this title.")
-                    Button("Try again") { Task { await model.load() } }.buttonStyle(BPActionStyle())
+                    Button("Try again") {
+                        Task {
+                            await model.load()
+                            // (device-flow pass 6) The button leaves with the message once the
+                            // episodes are in: the ring goes to Play instead of wherever tvOS drops it.
+                            if !model.episodes.isEmpty { heroFocus = "play" }
+                        }
+                    }
+                    .buttonStyle(BPActionStyle())
                 }
                 .focusSection()
             }
             if model.animeSeasonKey != nil {
                 animeSeasonChips
-            } else {
+            } else if model.seasons.count > 1 {
                 HStack(spacing: BP.px(8)) {
                     ForEach(seasonChips, id: \.self) { s in
                         Button(s == 0 ? "Specials" : "Season \(s)") { model.pickKitsuSeason(s) }
@@ -946,6 +956,13 @@ struct DetailView: View {
                     }
                 }
                 .focusSection()
+            } else if !model.seasons.isEmpty {
+                // (device-flow pass 6) bp-episodes.tsx: one season has no season chips
+                // (BpEpisodeSeasonChips returns null at seasons.length <= 1), only BpEpisodesHeading
+                // over the strip. A lone "Season 1" button did nothing and was one more Down press
+                // between Play and the episodes.
+                Text(T("Episodes")).font(BP.sans(16, .bold)).foregroundStyle(BP.ink)
+                    .accessibilityAddTraits(.isHeader)
             }
             ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
