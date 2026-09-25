@@ -144,6 +144,10 @@ final class MangaReaderModel: ObservableObject {
     func changeIndex(_ i: Int) {
         guard chapters.indices.contains(i), i != index || failed else { return }
         index = i
+        // (bug pass 3) Loading from this moment: until load() ran, the old chapter's pages were still
+        // up, so a second quick Right / Down at the end marked the new chapter complete (with the old
+        // page count) and skipped straight past it.
+        loading = true
         Task { await load() }
     }
 
