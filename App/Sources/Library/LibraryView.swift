@@ -26,6 +26,10 @@ final class LibraryModel: ObservableObject {
     @Published var tab = "library"
     @Published var type = "all"
     @Published var sort = "recent"
+    /// bp-library reads settings.librarySort. Until the first feed says which sort it used (or the
+    /// viewer picks one) the engine is asked with none, so it applies the saved one: every visit
+    /// used to open on Recent, with that chip lit, whatever the viewer had chosen last time.
+    private var sortKnown = false
     @Published var flat = false
     /// bp-library "Episodes / Posters" for History (harbor.history.view).
     @Published var episodes = Prefs.get(String.self, for: "harbor.history.view") == "episodes"
@@ -43,7 +47,9 @@ final class LibraryModel: ObservableObject {
 
     func start() async {
         let p = profile
-        tabs = (try? await HarborEngine.shared.call("libraryRoom.tabs", [p.id, p.linked])) ?? []
+        // Runs again whenever a cover (Detail, Stats) closes: a failed read keeps the tabs on screen
+        // instead of emptying the chip row and dropping the viewer back on Saved.
+        if let t: [Tab] = try? await HarborEngine.shared.call("libraryRoom.tabs", [p.id, p.linked]) { tabs = t }
         if !tabs.contains(where: { $0.id == tab }) { tab = tabs.first?.id ?? "library" }
         await load()
     }
@@ -62,19 +68,24 @@ final class LibraryModel: ObservableObject {
         let p = profile
         let input: AnyJSON = .object([
             "tab": .string(tab), "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,
-            "sort": .string(sort), "flat": .bool(flat), "type": .string(type), "query": .string(query), "episodes": .bool(episodes),
+            "sort": sortKnown ? AnyJSON.string(sort) : AnyJSON.null, "flat": .bool(flat), "type": .string(type), "query": .string(query), "episodes": .bool(episodes),
             "group": group.map { .string($0) } ?? .null, "limit": .number(Double(limit)), "force": .bool(force),
         ])
         if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]), mine == generation {
             feed = f
+            sort = f.sort
+            sortKnown = true
             await CardMarksStore.shared.refresh(f.sections.flatMap { $0.items.map(\.meta) })
         }
     }
 
-    func select(tab id: String) { tab = id; group = nil; limit = 60; Task { await load() } }
+    /// bp-library's [tab] effect: a new tab starts unfiltered (group, type and search cleared). The
+    /// search used to carry over, filtering the next tab by a title typed for the last one, even
+    /// with the search row closed and nothing on screen saying so.
+    func select(tab id: String) { tab = id; group = nil; type = "all"; query = ""; limit = 60; Task { await load() } }
     func set(type t: String) { type = t; limit = 60; Task { await load() } }
     func set(sort s: String) {
-        sort = s; limit = 60
+        sort = s; sortKnown = true; limit = 60
         let p = profile
         Task { _ = try? await HarborEngine.shared.callJSON("libraryRoom.setSort", [.string(s), .string(p.id), .bool(p.linked)]); await load() }
     }
@@ -98,6 +109,21 @@ struct LibraryView: View {
     /// auto-fill grid fits the page, so the column count is what fits: 5 × 298 + 4 × 24 = 1 586.
     private let columns = Array(repeating: GridItem(.fixed(BPTileView.posterWidth), spacing: BP.px(14)), count: 5)
     @FocusState private var focusedKey: String?
+    /// The Filters / Search / Repair chip that takes the ring back when Menu closes its panel.
+    @FocusState private var focusedChip: String?
+    /// "Show more" was pressed at this many tiles: the tile at that index takes the ring once it lands.
+    @State private var focusAfterMore: Int?
+
+    private func closePanels() {
+        let chip = model.showSearch ? "search" : (model.showFilters ? "filters" : "repair")
+        let inGrid = focusedKey != nil
+        model.showFilters = false
+        model.showSearch = false
+        model.showRepair = false
+        // From a tile the ring stays put (the grid only moves up); from inside a panel, which is
+        // going away, it returns to the chip that opened it like a closed bp dialog.
+        if !inGrid { focusedChip = chip }
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -107,7 +133,8 @@ struct LibraryView: View {
                 if model.showSearch { searchRow }
                 if model.showRepair { LibraryRepairPanel(onRepaired: { Task { await model.load(force: true) } }) }
                 if let f = model.feed {
-                    if f.status == "error" { BPNote(text: errorText, tone: BP.danger) }
+                    // Over a grid kept from the cache; an empty tab says it in its own empty copy.
+                    if f.status == "error" && !f.sections.isEmpty { BPNote(text: errorText, tone: BP.danger) }
                     if f.sections.isEmpty {
                         emptyState(f)
                     } else {
@@ -143,7 +170,11 @@ struct LibraryView: View {
                             .focusSection()
                         }
                         if f.hasMore {
-                            Button("Show more (\(f.shown) of \(f.matched))") { model.more() }.buttonStyle(BPActionStyle())
+                            // The next page lands between the last tile and this button, so the focused
+                            // button slid a page down off screen and Up then landed at the new page's
+                            // end. The ring goes to the first new tile instead, where the viewer was
+                            // reading (bp-library pages under the grid's end, never past it).
+                            Button("Show more (\(f.shown) of \(f.matched))") { focusAfterMore = f.shown; model.more() }.buttonStyle(BPActionStyle())
                         }
                     }
                 } else if model.loading {
@@ -157,6 +188,18 @@ struct LibraryView: View {
             let p = ProfilesStore.shared.active
             statsEnabled = (try? await HarborEngine.shared.call("wrapped.enabled", [p?.id ?? "default", p?.linked ?? true]) as Bool) ?? false
         }
+        .onChange(of: model.feed?.shown) { _, _ in
+            guard let i = focusAfterMore, let f = model.feed else { return }
+            focusAfterMore = nil
+            let keys = f.sections.flatMap { $0.items.map(\.key) }
+            if i < keys.count { focusedKey = keys[i] }
+        }
+        // bp-library's [tab] effect clears the search; the field shows it.
+        .onChange(of: model.tab) { _, _ in draft = ""; focusAfterMore = nil }
+        // bp-library-filters / bp-library-search are dialogs that Back closes (pushBpBack). Here they
+        // open inline, and Menu inside one left the Library for Home; it now closes them and puts
+        // the ring back on the chip row. With none open, the press goes on to the shell (Home).
+        .onExitCommand(perform: model.showFilters || model.showSearch || model.showRepair ? { closePanels() } : nil)
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $showStats) { WrappedView() }
     }
@@ -169,11 +212,21 @@ struct LibraryView: View {
                     Button(T(t.label)) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id)).bpSelected(model.tab == t.id)
                 }
                 Divider().frame(height: BP.px(24)).overlay(BP.edge2)
-                Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }.buttonStyle(BPActionStyle(primary: model.showFilters))
-                Button { model.showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }.buttonStyle(BPActionStyle(primary: model.showSearch))
+                // bp-library chips print their own state (the Filters chip is selected while a type
+                // or group narrows the grid, the Search chip reads the query), so a closed panel
+                // still says why the grid is filtered.
+                Button { model.showFilters.toggle() } label: { Label("Filters", systemImage: "line.3.horizontal.decrease") }
+                    .buttonStyle(BPActionStyle(primary: model.showFilters || model.type != "all" || model.group != nil))
+                    .focused($focusedChip, equals: "filters")
+                Button { model.showSearch.toggle() } label: {
+                    Label { Text(model.query.isEmpty ? T("Search") : model.query).lineLimit(1) } icon: { Image(systemName: "magnifyingglass") }
+                }
+                .buttonStyle(BPActionStyle(primary: model.showSearch || !model.query.isEmpty))
+                .focused($focusedChip, equals: "search")
                 Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.buttonStyle(BPActionStyle())
                 // library-repair-rows.tsx lives in desktop Settings → Advanced; the TV keeps it beside the library.
                 Button { model.showRepair.toggle() } label: { Label("Repair library", systemImage: "wrench.and.screwdriver") }.buttonStyle(BPActionStyle(primary: model.showRepair))
+                    .focused($focusedChip, equals: "repair")
                 if statsEnabled {
                     Button { showStats = true } label: { Label("Stats", systemImage: "chart.bar") }.buttonStyle(BPActionStyle())
                 }
@@ -214,6 +267,9 @@ struct LibraryView: View {
     private var searchRow: some View {
         HStack(spacing: BP.px(8)) {
             BPField(label: "Search this tab", placeholder: "Title", text: $draft)
+                // bp-library-search filters as the viewer types; the TV keyboard's Done now applies
+                // the query too, instead of returning to a grid that ignored it until Go.
+                .onSubmit { model.search(draft) }
             Button("Go") { model.search(draft) }.buttonStyle(BPActionStyle(primary: true))
             if !model.query.isEmpty { Button("Clear") { draft = ""; model.search("") }.buttonStyle(BPActionStyle()) }
         }
@@ -227,14 +283,19 @@ struct LibraryView: View {
         return "Couldn't load your library. Try refreshing."
     }
 
-    // bp-library.tsx empty copy per tab.
+    // bp-library.tsx emptyCopy per tab. Without a Stremio account or Trakt only Saved and History
+    // ask the viewer to sign in: the Watchlist is Harbor's own (lib/watchlist) and works without
+    // one, so an empty one was told to sign in to Stremio. An unreachable source says so instead
+    // of an empty-tab line under the error.
     private func emptyState(_ f: LibraryModel.Feed) -> some View {
         let text: String
         if model.loading { text = "Loading…" }
-        else if !model.query.isEmpty || model.type != "all" || model.group != nil { text = "No matches for these filters." }
-        else if !f.signedIn && (model.tab == "library" || model.tab == "watchlist" || model.tab == "history") { text = "Sign in to Stremio in Settings to see your library here." }
+        else if f.status == "error" { text = errorText }
+        else if f.total > 0 || !model.query.isEmpty || model.type != "all" || model.group != nil { text = "No matches for these filters." }
         else {
             switch model.tab {
+            case "library" where !f.signedIn: text = "Sign in to Stremio or connect Trakt in Settings to see your library here."
+            case "history" where !f.signedIn: text = "Sign in to Stremio or connect Trakt in Settings to see what you have been watching."
             case "watchlist": text = "Your watchlist is empty."
             case "history": text = "Nothing watched yet. Press play on something."
             case "lists": text = "You have no lists yet."

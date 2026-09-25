@@ -13,6 +13,7 @@ struct SearchView: View {
     @State private var phoneOpen = false
     /// (focus pass) Bumped to put the ring on the keyboard (BPKeyboardView.focusRequest).
     @State private var keyboardFocus = 0
+    @State private var autofocused = false
     /// A manga result (SR-9) or a franchise manga opened in the manga detail page.
     @State private var mangaOpen: MangaOpen?
 
@@ -46,9 +47,18 @@ struct SearchView: View {
         .onAppear {
             if let q = Fixtures.query, model.query.isEmpty { model.query = q }
             if let seed = app.searchSeed { model.query = seed; app.searchSeed = nil }
+            // bp-search-input data-bp-autofocus: opening Search puts the ring on the field (here the
+            // keyboard), not on the tab it was opened from. Once: a closing cover hands focus back
+            // to the result that opened it. After ShellView's LB/RB default-focus reset (0.1 s).
+            if !autofocused {
+                autofocused = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { keyboardFocus += 1 }
+            }
         }
         .task { await model.loadSuggestions() }
-        .task { await ai.load() }
+        // Once per visit: this re-ran on every cover close (a Detail page closing), refetching the
+        // model catalog, and a failed read there turned AI mode off under the viewer's AI picks.
+        .task { if ai.state == nil { await ai.load() } }
         // (bug pass) The focused tile of the last query must not stand in as the next query's top match.
         .onChange(of: model.query) { _, q in ai.queryChanged(q); spotlight = nil }
         .onPlayPauseCommand { phoneOpen.toggle() }
@@ -339,6 +349,9 @@ struct SearchView: View {
             }
             if !model.suggestions.isEmpty {
                 BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+            } else if model.suggestionsLoaded {
+                // bp-search idle showEmpty (suggestions.length === 0): the right side was blank.
+                BPNote(text: "Start typing to search movies, series and everything your addons carry.").padding(.horizontal, BP.gutter)
             }
         }
         if model.status != .idle { chipStrip }

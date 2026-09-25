@@ -146,9 +146,12 @@ final class SearchModel: ObservableObject {
     @Published private(set) var recent: [String] = Prefs.get([String].self, for: "harbor.search.recent") ?? []
     /// bp-search idle "Suggested": posters from the hero feed while the field is empty.
     @Published private(set) var suggestions: [Meta] = []
+    /// The Suggested read has answered: an empty field with nothing to suggest says so (bp-search showEmpty).
+    @Published private(set) var suggestionsLoaded = false
 
     func loadSuggestions() async {
         guard suggestions.isEmpty else { return }
+        defer { suggestionsLoaded = true }
         // bp-search: the first 60 unique posters across the Home rows, in row order.
         struct Build: Decodable { struct Row: Decodable { @LossyArray var metas: [Meta] }; @LossyArray var rows: [Row] }
         let p = ProfilesStore.shared.active
@@ -225,7 +228,14 @@ final class SearchModel: ObservableObject {
         // cleared field (or a newer query) never gets the old query's people / top match / status.
         requestId += 1
         let q = query.trimmingCharacters(in: .whitespaces)
-        if q != latchedQuery { latchedQuery = q; latched = []; filter = .all; engineRequestId = 0; addonsPending = [] }
+        // search-display-state getSearchDisplayState: results only ever show under the query that
+        // asked for them. The last query's rows, people and top match stayed up (and could be
+        // opened, filing the new query as a recent) until the new fan-out answered, or for good
+        // when it failed.
+        if q != latchedQuery {
+            latchedQuery = q; latched = []; filter = .all; engineRequestId = 0; addonsPending = []
+            rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; people = []; early = []
+        }
         guard !q.isEmpty else { status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; addonsPending = []; people = []; early = []; engineRequestId = 0; return }
         status = .typing
         timer = Task { [weak self] in
@@ -276,10 +286,12 @@ final class SearchModel: ObservableObject {
             collections = results.collections ?? []
             rows = out
             channels = results.liveTv ?? []
-            await CardMarksStore.shared.refresh(out.filter { $0.key != "manga" }.flatMap(\.metas))
-            guard mine == requestId else { return }
+            // With the rows, not after the marks read: People and Top match landing a beat later
+            // pushed rows already on screen down under the ring (use-bp-search latch.decided).
             people = results.people ?? []
             topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
+            await CardMarksStore.shared.refresh(out.filter { $0.key != "manga" }.flatMap(\.metas))
+            guard mine == requestId else { return }
             status = .done
             latchGroups()
             let late = early.filter { $0.0 == engineRequestId }.map { $0.1 }
