@@ -49,7 +49,9 @@ struct MangaReaderView: View {
                 .onMoveCommand(perform: move)
                 // The page is the only focus stop: VoiceOver names the book instead of an empty button.
                 .accessibilityLabel(Text(verbatim: model.manga.title))
-            if counterVisible || menuOpen, !model.loading, !model.failed, model.total > 0 { pageCounter }
+            // (device-flow pass) With the bar up the count sits in the bar's header: in the corner it
+            // was drawn under the bar's bottom panel and its last buttons.
+            if counterVisible, !menuOpen, showsCount { pageCounter }
             if menuOpen { readerBar.transition(.opacity) }
         }
         .ignoresSafeArea()
@@ -62,6 +64,11 @@ struct MangaReaderView: View {
             await model.start()
         }
         .onChange(of: model.turn) { _, _ in showCounter() }
+        // (device-flow pass) A chapter opening on its first page never turned, so the count stayed
+        // on screen until the first press; it now fades like after a turn (reader chrome's 2.6 s).
+        .onChange(of: model.loading) { _, loading in if !loading { showCounter() } }
+        // Leaving without Close / Back (a profile switch, a lock screen) still saves the page.
+        .onDisappear { model.close() }
         .onChange(of: model.currentPage) { _, _ in resetPan() }
         .onChange(of: model.prefs) { old, new in
             resetPan()
@@ -305,7 +312,12 @@ struct MangaReaderView: View {
             Text("This chapter could not be loaded from this source.").font(BP.sans(19, .bold)).foregroundStyle(BP.ink)
             BPNote(text: "The source did not return any pages. Try again, or go back and pick another chapter.")
             HStack(spacing: BP.px(10)) {
-                Button("Retry") { model.reload() }.buttonStyle(BPActionStyle(primary: true))
+                Button("Retry") {
+                    model.reload()
+                    // The card goes away while the chapter loads: the remote goes back to the page.
+                    DispatchQueue.main.async { focus = .surface }
+                }
+                .buttonStyle(BPActionStyle(primary: true))
                 Button("Back") { closeReader() }.buttonStyle(BPActionStyle())
             }
         }
@@ -314,8 +326,18 @@ struct MangaReaderView: View {
         .zIndex(2)
     }
 
+    private var showsCount: Bool { !model.loading && !model.failed && model.total > 0 }
+
     /// reader-progress-meter: "p / N" in the corner for a moment after each turn.
     private var pageCounter: some View {
+        counterPill
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(BP.px(28))
+            .allowsHitTesting(false)
+            .transition(.opacity)
+    }
+
+    private var counterPill: some View {
         let shown = model.complete ? model.total : min(model.currentPage + 1, model.total)
         return HStack(spacing: BP.px(8)) {
             Text(model.chapter?.label ?? "").lineLimit(1)
@@ -325,10 +347,6 @@ struct MangaReaderView: View {
         .font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)
         .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(6))
         .background(Capsule().fill(BP.void_.opacity(0.78)))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        .padding(BP.px(28))
-        .allowsHitTesting(false)
-        .transition(.opacity)
     }
 
     private static let modes: [(String, String)] = [("long", "Long strip"), ("paged", "Single"), ("double", "Double")]
@@ -344,12 +362,15 @@ struct MangaReaderView: View {
     /// reader-bar + reader-settings, as one row of remote-friendly buttons.
     private var readerBar: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: BP.px(4)) {
-                Text(model.manga.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1).accessibilityAddTraits(.isHeader)
-                Text(barSubtitle)
-                    .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
+            HStack(alignment: .top, spacing: BP.px(16)) {
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    Text(model.manga.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1).accessibilityAddTraits(.isHeader)
+                    Text(barSubtitle)
+                        .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if showsCount { counterPill.allowsHitTesting(false) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(36)).padding(.bottom, BP.px(60))
             .background(LinearGradient(colors: [BP.void_.opacity(0.92), .clear], startPoint: .top, endPoint: .bottom))
             Spacer()
@@ -368,8 +389,10 @@ struct MangaReaderView: View {
                     }
                 }
                 HStack(spacing: BP.px(8)) {
-                    barButton("zoomOut", "Zoom out", icon: "minus.magnifyingglass", enabled: model.prefs.zoom > 0.5) { model.zoomBy(-0.25) }
-                    barButton("zoomIn", "Zoom in", icon: "plus.magnifyingglass", enabled: model.prefs.zoom < 3) { model.zoomBy(0.25) }
+                    // (device-flow pass) At 0.5× / 3× these dim but stay focusable: disabling the focused
+                    // button threw the ring off the bar. The engine clamps the zoom (savePrefs).
+                    barButton("zoomOut", "Zoom out", icon: "minus.magnifyingglass", dim: model.prefs.zoom <= 0.5) { model.zoomBy(-0.25) }
+                    barButton("zoomIn", "Zoom in", icon: "plus.magnifyingglass", dim: model.prefs.zoom >= 3) { model.zoomBy(0.25) }
                     barButton("bg", T("Brightness") + ": " + T(labelOf(Self.bgs, model.prefs.bg)), icon: "sun.max") {
                         model.patch(["bg": .string(nextOf(Self.bgs, model.prefs.bg))])
                     }
@@ -394,9 +417,9 @@ struct MangaReaderView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func barButton(_ id: String, _ label: String, icon: String, enabled: Bool = true, active: Bool = false, run: @escaping () -> Void) -> some View {
+    private func barButton(_ id: String, _ label: String, icon: String, enabled: Bool = true, dim: Bool = false, active: Bool = false, run: @escaping () -> Void) -> some View {
         Button(action: run) { Label(T(label), systemImage: icon) }
-            .buttonStyle(BPActionStyle(primary: active))
+            .buttonStyle(BPActionStyle(primary: active, busy: dim))
             .disabled(!enabled)
             .focused($focus, equals: .bar(id))
     }

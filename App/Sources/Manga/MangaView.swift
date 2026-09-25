@@ -440,11 +440,16 @@ struct MangaSourcesView: View {
                     }
                     Spacer()
                     if let source {
-                        if s.activeId == source.id {
-                            Text("Active").font(BP.sans(13, .semibold)).foregroundStyle(BP.live)
-                        } else {
-                            Button("Use this server") { Task { await store.setActive(source.id) } }.buttonStyle(BPActionStyle())
+                        // (device-flow pass) servers-section: the row picks the server and wears an
+                        // "Active" badge. One button that turns into the badge keeps the ring where the
+                        // viewer pressed (swapping it for plain text dropped focus off the list).
+                        let active = s.activeId == source.id
+                        Button {
+                            if !active { Task { await store.setActive(source.id) } }
+                        } label: {
+                            if active { Label("Active", systemImage: "checkmark") } else { Text("Use this server") }
                         }
+                        .buttonStyle(BPActionStyle(primary: active)).bpSelected(active)
                     }
                     Button("Remove") { Task { await store.removeServer(server.id) } }.buttonStyle(BPActionStyle())
                 }
@@ -470,10 +475,13 @@ struct MangaSourcesView: View {
                 BPField(label: "Password", placeholder: "", text: $password, secure: true)
             }
             HStack(spacing: BP.px(10)) {
+                // (device-flow pass) Not disabled while the address is empty (server-form isn't): a
+                // successful add clears the form, which disabled the focused Add server button and threw
+                // the ring off the page. An empty address answers with the form's own error line.
                 Button(busy ? "Checking…" : "Test connection") { Task { await test() } }
-                    .buttonStyle(BPActionStyle(busy: busy)).disabled(address.isEmpty)
+                    .buttonStyle(BPActionStyle(busy: busy))
                 Button("Add server") { Task { await add() } }
-                    .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(address.isEmpty)
+                    .buttonStyle(BPActionStyle(primary: true, busy: busy))
             }
             if let note { BPNote(text: note.text, tone: note.ok ? BP.live : BP.danger) }
         }

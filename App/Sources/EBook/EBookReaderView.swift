@@ -47,7 +47,9 @@ struct EBookReaderView: View {
             // The invisible surface holds focus while the bar is down so remote presses reach us.
             Button { openMenu() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .disabled(menuOpen || panel != nil)
+                // (device-flow pass) Also off while a chapter failed, so its buttons take focus: under
+                // the full-screen surface the card's Close reader could not be reached.
+                .disabled(menuOpen || panel != nil || model.failed != nil)
                 .focused($focus, equals: .surface)
                 .onMoveCommand(perform: move)
                 // The page is the only focus stop: VoiceOver names the book instead of an empty button.
@@ -71,6 +73,13 @@ struct EBookReaderView: View {
         .onDisappear { model.close() }
         .onChange(of: model.prefs.width) { _, _ in model.resize(textSize) }
         .onChange(of: model.page) { _, _ in showCounter() }
+        // (device-flow pass) A chapter that opens on the page already in view never "turned", so the
+        // count stayed up until the first press; it fades after the chapter lands like after a turn.
+        .onChange(of: model.loading) { _, loading in if !loading { showCounter() } }
+        // Stop (or the chapter's last paragraph) takes the Stop button away: the ring moves to Read aloud.
+        .onChange(of: model.speaking) { _, speaking in
+            if !speaking, menuOpen, panel == nil, focus == nil || focus == .bar("stop") { focus = .bar("speak") }
+        }
         .animation(BP.easeFast, value: menuOpen)
         .animation(BP.easeFast, value: panel)
     }
@@ -93,7 +102,21 @@ struct EBookReaderView: View {
                 } else if let failed = model.failed {
                     VStack(spacing: BP.px(12)) {
                         Text(T(failed)).font(BP.sans(17, .semibold)).foregroundStyle(Color(hex: paper.ink))
-                        Button("Close reader") { closeReader() }.buttonStyle(BPActionStyle())
+                        HStack(spacing: BP.px(10)) {
+                            Button("Try again") {
+                                model.retry()
+                                DispatchQueue.main.async { focus = .surface }
+                            }
+                            .buttonStyle(BPActionStyle(primary: true))
+                            if model.hasNext {
+                                Button("Next chapter") {
+                                    model.goToChapter(model.index + 1, line: 0)
+                                    DispatchQueue.main.async { focus = .surface }
+                                }
+                                .buttonStyle(BPActionStyle())
+                            }
+                            Button("Close reader") { closeReader() }.buttonStyle(BPActionStyle())
+                        }
                     }
                 } else {
                     EBookPageCanvas(pages: model.pages, page: model.page, paint: model.paint)
@@ -107,7 +130,8 @@ struct EBookReaderView: View {
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(Color(hex: paper.page)))
         .shadow(color: .black.opacity(0.45), radius: 30, y: 16)
         .overlay(alignment: .bottom) {
-            if counterVisible || menuOpen || model.speaking { counter.offset(y: BP.px(30)) }
+            // With the bar up the count moves into the bar's header (down here it sat under the bar).
+            if (counterVisible || model.speaking) && !menuOpen { counter.offset(y: BP.px(30)) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, Self.cardInsetY)
@@ -190,29 +214,38 @@ struct EBookReaderView: View {
 
     private var readerBar: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: BP.px(4)) {
-                Text(model.book.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1).accessibilityAddTraits(.isHeader)
-                Text(model.chapter.label == model.chapter.title ? model.chapter.title : "\(model.chapter.label) · \(model.chapter.title)")
-                    .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
+            HStack(alignment: .top, spacing: BP.px(16)) {
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    Text(model.book.title).font(BP.sans(19, .bold)).foregroundStyle(BP.ink).lineLimit(1).accessibilityAddTraits(.isHeader)
+                    Text(model.chapter.label == model.chapter.title ? model.chapter.title : "\(model.chapter.label) · \(model.chapter.title)")
+                        .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !model.loading { counter }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(36)).padding(.bottom, BP.px(60))
             .background(LinearGradient(colors: [BP.void_.opacity(0.92), .clear], startPoint: .top, endPoint: .bottom))
             Spacer()
-            HStack(spacing: BP.px(8)) {
-                barButton("prev", "Previous chapter", icon: "backward.end.fill", enabled: model.hasPrevious) { model.goToChapter(model.index - 1, line: 0); closeMenu() }
-                barButton("next", "Next chapter", icon: "forward.end.fill", enabled: model.hasNext) { model.goToChapter(model.index + 1, line: 0); closeMenu() }
-                barButton("chapters", "Chapters", icon: "list.bullet") { openPanel(.chapters) }
-                barButton("mark", "Bookmark current passage", icon: "bookmark") { model.addBookmark(); openPanel(.bookmarks) }
-                barButton("bookmarks", "Bookmarks", icon: "bookmark.fill") { openPanel(.bookmarks) }
-                barButton("speak", narrationLabel, icon: model.speaking && !model.narrationPaused ? "pause.fill" : "speaker.wave.2.fill", active: model.speaking) {
-                    model.toggleNarration()
+            // (device-flow pass) Two rows, like the manga bar: the nine labelled buttons in one row were
+            // wider than the screen between the gutters and got squeezed and cut off.
+            VStack(alignment: .leading, spacing: BP.px(12)) {
+                HStack(spacing: BP.px(8)) {
+                    barButton("prev", "Previous chapter", icon: "backward.end.fill", enabled: model.hasPrevious) { model.goToChapter(model.index - 1, line: 0); closeMenu() }
+                    barButton("next", "Next chapter", icon: "forward.end.fill", enabled: model.hasNext) { model.goToChapter(model.index + 1, line: 0); closeMenu() }
+                    barButton("chapters", "Chapters", icon: "list.bullet") { openPanel(.chapters) }
+                    barButton("bookmarks", "Bookmarks", icon: "bookmark.fill") { openPanel(.bookmarks) }
                 }
-                if model.speaking {
-                    barButton("stop", "Stop", icon: "stop.fill") { model.stopSpeech() }
+                HStack(spacing: BP.px(8)) {
+                    barButton("mark", "Bookmark current passage", icon: "bookmark") { model.addBookmark(); openPanel(.bookmarks) }
+                    barButton("speak", narrationLabel, icon: model.speaking && !model.narrationPaused ? "pause.fill" : "speaker.wave.2.fill", active: model.speaking) {
+                        model.toggleNarration()
+                    }
+                    if model.speaking {
+                        barButton("stop", "Stop", icon: "stop.fill") { focus = .bar("speak"); model.stopSpeech() }
+                    }
+                    barButton("settings", "Reader settings", icon: "textformat.size") { openPanel(.settings) }
+                    barButton("close", "Close reader", icon: "xmark") { closeReader() }
                 }
-                barButton("settings", "Reader settings", icon: "textformat.size") { openPanel(.settings) }
-                barButton("close", "Close reader", icon: "xmark") { closeReader() }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(60)).padding(.bottom, BP.px(36))
@@ -253,8 +286,11 @@ struct EBookReaderView: View {
                 }
                 .scrollClipDisabled()
             }
-            .padding(BP.px(28))
-            .frame(width: BP.px(460))
+            // (device-flow pass) Top and trailing insets clear the TV's title-safe area (60 / 80 pt):
+            // at 47 pt the panel's heading and right-hand steppers sat at the screen's edge.
+            .padding(.top, BP.px(40)).padding(.bottom, BP.px(28))
+            .padding(.leading, BP.px(28)).padding(.trailing, BP.px(48))
+            .frame(width: BP.px(480))
             .frame(maxHeight: .infinity, alignment: .top)
             .background(BP.panel.opacity(0.98))
             .focusSection()
@@ -300,7 +336,15 @@ struct EBookReaderView: View {
                 }
                 .buttonStyle(BPActionStyle())
                 .focused($focus, equals: .item("bm-\(bm.id)"))
-                Button { model.removeBookmark(bm.id) } label: { Image(systemName: "trash") }
+                Button {
+                    // (device-flow pass) The row goes away under the remote: the ring moves to the next
+                    // bookmark (or the one before, or "Bookmark current passage") first.
+                    let ids = model.bookmarks.map(\.id)
+                    let at = ids.firstIndex(of: bm.id) ?? 0
+                    let neighbour: String? = ids.indices.contains(at + 1) ? ids[at + 1] : (at > 0 ? ids[at - 1] : nil)
+                    focus = neighbour.map { Focus.item("bm-\($0)") } ?? Focus.item("bm-add")
+                    model.removeBookmark(bm.id)
+                } label: { Image(systemName: "trash") }
                     .buttonStyle(BPActionStyle())
                     .accessibilityLabel("Delete bookmark")
             }
@@ -366,8 +410,9 @@ struct EBookReaderView: View {
             Text(T(label)).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
             Spacer()
             Button { set(key, value - step, range) } label: { Image(systemName: "minus") }
-                .buttonStyle(BPActionStyle())
-                .disabled(value <= range.lowerBound + 0.0001)
+                // (device-flow pass) Dimmed, not disabled, at the bound: disabling the focused button
+                // threw the ring out of the panel. set() clamps.
+                .buttonStyle(BPActionStyle(busy: value <= range.lowerBound + 0.0001))
                 .focused($focus, equals: .item("\(key)-minus"))
                 // upstream steppers: aria-label t("Decrease {name}") / t("Increase {name}"), the value between.
                 .accessibilityLabel(Text(T("Decrease %@", T(label))))
@@ -375,8 +420,7 @@ struct EBookReaderView: View {
             Text(String(format: format, value)).font(BP.sans(14, .semibold)).monospacedDigit().foregroundStyle(BP.ink)
                 .frame(minWidth: BP.px(56))
             Button { set(key, value + step, range) } label: { Image(systemName: "plus") }
-                .buttonStyle(BPActionStyle())
-                .disabled(value >= range.upperBound - 0.0001)
+                .buttonStyle(BPActionStyle(busy: value >= range.upperBound - 0.0001))
                 .focused($focus, equals: .item("\(key)-plus"))
                 .accessibilityLabel(Text(T("Increase %@", T(label))))
                 .accessibilityValue(Text(verbatim: String(format: format, value)))

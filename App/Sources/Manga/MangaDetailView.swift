@@ -117,6 +117,7 @@ struct MangaDetailView: View {
     @StateObject private var model: MangaDetailModel
     @State private var reader: MangaReaderLaunch?
     @State private var expanded = false
+    @FocusState private var chapterFocus: String?
     @Environment(\.dismiss) private var dismiss
 
     init(mangaId: String) { _model = StateObject(wrappedValue: MangaDetailModel(mangaId: mangaId)) }
@@ -240,20 +241,26 @@ struct MangaDetailView: View {
             } label: { Label("Read latest", systemImage: "book") }
                 .buttonStyle(BPActionStyle(primary: true))
                 .disabled(!model.canRead)
-            if let p = model.progress {
-                Button {
+            // (device-flow pass) One button for Resume / Start from beginning: reading from "Start from
+            // beginning" saves progress, and swapping in a separate Resume button on the way back left
+            // the remote's focus with nothing to return to.
+            Button {
+                if let p = model.progress {
                     Task { if let l = await model.resumeLaunch(p) { reader = l } }
-                } label: { Label(p.resumeLabel, systemImage: "arrow.counterclockwise") }
-                    .buttonStyle(BPActionStyle())
-            } else {
-                Button {
+                } else {
                     let list = model.langFiltered
                     guard !list.isEmpty else { return }
                     reader = MangaReaderLaunch(manga: model.ref, chapters: list, index: 0, startPage: nil)
-                } label: { Text("Start from beginning") }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(!model.canRead)
+                }
+            } label: {
+                if let p = model.progress {
+                    Label(p.resumeLabel, systemImage: "arrow.counterclockwise")
+                } else {
+                    Text("Start from beginning")
+                }
             }
+            .buttonStyle(BPActionStyle())
+            .disabled(model.progress == nil && !model.canRead)
             Button { Task { await model.toggleFavorite() } } label: {
                 Image(systemName: model.favorite ? "heart.fill" : "heart")
             }
@@ -310,10 +317,17 @@ struct MangaDetailView: View {
                             reader = MangaReaderLaunch(manga: model.ref, chapters: ascending, index: i, startPage: nil)
                         } label: { chapterRow(c) }
                             .buttonStyle(BPTileStyle(radius: BP.rSM))
+                            .focused($chapterFocus, equals: c.id)
                     }
                     if ordered.count > model.visibleCount {
-                        Button("Show \(min(MangaDetailModel.pageSize, ordered.count - model.visibleCount)) more") { model.visibleCount += MangaDetailModel.pageSize }
-                            .buttonStyle(BPActionStyle())
+                        Button("Show \(min(MangaDetailModel.pageSize, ordered.count - model.visibleCount)) more") {
+                            // (device-flow pass) The ring moves to the first chapter revealed: on the last
+                            // batch the button goes away under the remote and focus jumped off the list.
+                            let first: String? = ordered.indices.contains(model.visibleCount) ? ordered[model.visibleCount].id : nil
+                            model.visibleCount += MangaDetailModel.pageSize
+                            if let first { DispatchQueue.main.async { chapterFocus = first } }
+                        }
+                        .buttonStyle(BPActionStyle())
                     }
                 }
                 .focusSection()

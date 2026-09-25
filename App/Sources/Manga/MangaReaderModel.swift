@@ -294,7 +294,12 @@ final class MangaReaderModel: ObservableObject {
         }
     }
 
+    /// Set once the reader has closed: close() runs once (Close / Back, then the view going away).
+    private var closed = false
+
     func close() {
+        guard !closed else { return }
+        closed = true
         flushSave()
         prefetchTask?.cancel()
         prefetchTask = nil
