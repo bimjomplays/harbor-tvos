@@ -281,6 +281,8 @@ struct BPSettingsView: View {
         .buttonStyle(BPTileStyle(radius: BP.rSM, onFocus: { model.select(c.id) }))
         .focused($focus, equals: "cat:\(c.id)")
         .bpSelected(model.active == c.id)
+        // UI tests (NavigationTests): the category column's cells, for the Back-steps check.
+        .accessibilityIdentifier("settings-cat-\(c.id)")
     }
 
     /// bp-settings.tsx: `onCellFocus={control.id === "sound" ? auditionSound : undefined}`.
