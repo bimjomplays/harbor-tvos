@@ -367,6 +367,14 @@ final class ExitSnapshotter {
             nextCheck = nil
             return
         }
+        // (review 23) mpv's screenshot-raw copies the frame off the decoder and converts it in
+        // software on the core thread (tens to hundreds of ms on 4K HDR), which can drop frames
+        // mid-play. The periodic grab is AVPlayer's only; mpv takes its frame on exit, when the
+        // player is closing anyway.
+        guard c.engineKind == .native else {
+            nextCheck = nil
+            return
+        }
         let now = Date()
         guard let due = nextCheck else {
             nextCheck = now.addingTimeInterval(Self.warmS)
