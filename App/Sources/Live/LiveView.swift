@@ -414,6 +414,9 @@ final class LiveModel: ObservableObject {
     private func added(_ id: String) async {
         _ = try? await HarborEngine.shared.callJSON("live.setActiveSource", [.string(id)])
         selectedPlaylist = id
+        // The spinner from the start: between the sources arriving and loadChannels running, a
+        // frame drew the empty state ("Add a playlist") and the ring could land on it.
+        if !sourcesOnly { loading = true }
         await loadSources()
         if sourcesOnly { return }
         Task { [weak self] in await self?.loadChannels() }
