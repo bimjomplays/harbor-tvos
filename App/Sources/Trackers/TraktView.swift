@@ -85,6 +85,8 @@ final class TraktModel: ObservableObject {
 struct TraktPanel: View {
     @StateObject private var model: TraktModel
     @ObservedObject private var settings = SettingsBridge.shared
+    /// When the waiting code was approved: the Cancel under the ring has just become Disconnect.
+    @State private var connectedAt: Date?
     init(service: String = "trakt", label: String = "Trakt") {
         _model = StateObject(wrappedValue: TraktModel(service: service, label: label))
     }
@@ -116,6 +118,9 @@ struct TraktPanel: View {
             if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Connected") ? BP.live : BP.danger) }
         }
         .task { await model.refresh() }
+        .onChange(of: model.code?.deviceCode) { was, now in
+            if was != nil && now == nil { connectedAt = Date() }
+        }
         .onDisappear { model.cancelConnect() }   // (bug pass 2)
     }
 
@@ -128,6 +133,8 @@ struct TraktPanel: View {
 
     private func primaryAction() {
         if model.status.authenticated {
+            // A press meant for Cancel that lands just after the approval must not disconnect.
+            if let at = connectedAt, Date().timeIntervalSince(at) < 2 { return }
             Task { await model.disconnect() }
         } else if model.code != nil {
             model.cancelConnect()
