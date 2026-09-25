@@ -50,7 +50,13 @@ struct SportsChannelSearchView: View {
             if result != nil { try? await Task.sleep(for: .milliseconds(220)) }
             guard !Task.isCancelled else { return }
             let got: Result? = try? await HarborEngine.shared.call("sports.searchChannels", [query, game.league, 30])
-            guard !Task.isCancelled, let got else { return }
+            guard !Task.isCancelled else { return }
+            guard let got else {
+                // (review 19) A failed first read left the spinner up for good: it reads as nothing
+                // found (Done and Back still close the panel).
+                if result == nil { result = Result(searchable: false, league: game.league, leagueLabel: game.leagueLabel, attachedIds: [], rows: []) }
+                return
+            }
             result = got
             pinned = Set(got.attachedIds)
         }

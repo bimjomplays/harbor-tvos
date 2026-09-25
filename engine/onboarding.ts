@@ -95,13 +95,23 @@ export function facts(profileId: string, linked: boolean) {
  * that blocks TMDB) is "unreachable", where the step offers "Save it anyway". Nothing is saved
  * here: the step writes the key only once TMDB has accepted it (or the viewer keeps it anyway).
  */
-export async function checkTmdbKey(key: string): Promise<"ok" | "rejected" | "unreachable"> {
+// (review 19) A request that hangs (a DNS black hole, a captive portal that never answers) held
+// "Checking…" for the host's 60 s request timeout. Past this the step says TMDB could not be
+// reached and offers "Save it anyway", as a failed request does.
+const TMDB_CHECK_TIMEOUT_MS = 12_000;
+
+export async function checkTmdbKey(key: string, timeoutMs: number = TMDB_CHECK_TIMEOUT_MS): Promise<"ok" | "rejected" | "unreachable"> {
   const k = typeof key === "string" ? key.trim() : "";
   if (!k) return "rejected";
+  const ms = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : TMDB_CHECK_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"unreachable">((resolve) => { timer = setTimeout(() => resolve("unreachable"), ms); });
+  const asked = fetch(`https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(k)}`)
+    .then((res): "ok" | "rejected" => (res.ok ? "ok" : "rejected"))
+    .catch((): "unreachable" => "unreachable");
   try {
-    const res = await fetch(`https://api.themoviedb.org/3/configuration?api_key=${encodeURIComponent(k)}`);
-    return res.ok ? "ok" : "rejected";
-  } catch {
-    return "unreachable";
+    return await Promise.race([asked, late]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }

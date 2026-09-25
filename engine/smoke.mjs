@@ -4451,6 +4451,11 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const O = ob.engine.onboarding;
   r.eq("onboarding.checkTmdbKey: TMDB's configuration answers ok / 401 rejected / no answer unreachable", [await O.checkTmdbKey(" good "), await O.checkTmdbKey("bad"), await O.checkTmdbKey("down")], ["ok", "rejected", "unreachable"]);
   r.ok("onboarding.checkTmdbKey asks the configuration endpoint with the trimmed key", seen[0] === "https://api.themoviedb.org/3/configuration?api_key=good", JSON.stringify(seen));
+  // (review 19) A request that never answers ends as "unreachable", not an endless "Checking…".
+  ob.node.host.fetch = () => new Promise(() => {});
+  const hung0 = Date.now();
+  r.eq("onboarding.checkTmdbKey: a hung request times out as unreachable", await O.checkTmdbKey("hang", 60), "unreachable");
+  r.ok("onboarding.checkTmdbKey: the timeout answers promptly", Date.now() - hung0 < 3000, String(Date.now() - hung0));
   ob.dispose();
 }
 
