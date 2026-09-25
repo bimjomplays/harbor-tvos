@@ -225,7 +225,10 @@ final class EBookStore: ObservableObject {
     var pid: String { ProfilesStore.shared.active?.id ?? "default" }
 
     func refresh() async {
-        state = try? await HarborEngine.shared.call("ebook.state")
+        // (device-flow pass 4) A read that fails keeps the state on screen: it set nil, and the
+        // eBook room (re-read on every visit and when Sources closes) swapped its home for the
+        // loading spinner, with the ring under it, until something read it again.
+        if let s: EBookState = try? await HarborEngine.shared.call("ebook.state") { state = s }
         await refreshLists()
     }
 

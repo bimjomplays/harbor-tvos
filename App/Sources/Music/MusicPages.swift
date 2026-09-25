@@ -36,6 +36,10 @@ struct MusicPageView: View {
                                     retrying = true
                                     await load()
                                     retrying = false
+                                    // (device-flow pass 4) The error and its button leave once the
+                                    // page lands: the ring goes to Play, as on a first open (it fell
+                                    // to the dock at the bottom of the screen).
+                                    if data?.tracks.isEmpty == false { DispatchQueue.main.async { playFocused = true } }
                                 }
                             }
                             .buttonStyle(BPActionStyle(busy: retrying))

@@ -14,6 +14,10 @@ struct EpgMatchView: View {
     @State private var seeded = false
     @State private var fetchedQuery: String?
     @State private var busy = false
+    /// (device-flow pass 4) The first read failed. Upstream's list is in memory; here it is an
+    /// engine read over the whole guide, and until it answered (or when it failed) the page was a
+    /// bare field over nothing, with no sign that anything was happening.
+    @State private var failed = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -54,6 +58,13 @@ struct EpgMatchView: View {
                 if let list, list.entries.isEmpty {
                     BPNote(text: "No EPG channels match. This playlist's EPG source may be empty.", tone: BP.inkSubtle)
                         .padding(.vertical, BP.px(24))
+                } else if list == nil {
+                    if failed {
+                        BPNote(text: "No EPG channels match. This playlist's EPG source may be empty.", tone: BP.inkSubtle)
+                            .padding(.vertical, BP.px(24))
+                    } else {
+                        ProgressView().tint(BP.inkMuted).padding(.vertical, BP.px(24))
+                    }
                 }
             }
             .padding(.vertical, BP.px(8)).padding(.bottom, BP.hintHeight + BP.px(40))
@@ -96,7 +107,10 @@ struct EpgMatchView: View {
             if Task.isCancelled { return }
         }
         let asked: String? = seeded ? query : nil
-        guard let out = await model.epgCandidates(for: channel, query: asked) else { return }
+        guard let out = await model.epgCandidates(for: channel, query: asked) else {
+            if !Task.isCancelled, list == nil { failed = true }
+            return
+        }
         if Task.isCancelled { return }
         fetchedQuery = out.query
         list = out

@@ -341,6 +341,10 @@ struct AddonsView: View {
     @State private var configure: AddonsModel.ConfigureTarget?
     @State private var organizeOpen = false
     @State private var ageGateOpen = false
+    /// (device-flow pass 4) The Installed tab's ring: "remove:<key>" on a row's Remove, "tab" on the
+    /// Installed tab button. A removed row took the ring with it, and tvOS put it back at the top of
+    /// the page (the Discover tab) instead of on the next row.
+    @FocusState private var installedFocus: String?
 
     private var adult: Bool { settings.slice.showAdultAddons ?? false }
 
@@ -407,6 +411,7 @@ struct AddonsView: View {
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: model.tab == .installed)).bpSelected(model.tab == .installed)
+                .focused($installedFocus, equals: "tab")
                 Spacer(minLength: BP.px(24))
                 Button { configure = AddonsModel.ConfigureTarget(mode: .url, name: T("Add from URL")) } label: {
                     Label(T("Add from URL"), systemImage: "link")
@@ -722,6 +727,26 @@ struct AddonsView: View {
         }
     }
 
+    /// Remove, then the ring goes to the Remove of the row now in its place (the next row, else
+    /// the one before), or to the Installed tab when the list emptied.
+    private func remove(_ c: AddonsModel.Card) {
+        let list: [AddonsModel.Card] = model.filteredInstalled
+        var neighbour: String?
+        if let i = list.firstIndex(where: { $0.key == c.key }) {
+            if i + 1 < list.count { neighbour = list[i + 1].key } else if i > 0 { neighbour = list[i - 1].key }
+        }
+        Task {
+            await model.uninstall(c)
+            guard !model.installed.contains(where: { $0.key == c.key }) else { return }
+            guard installedFocus == nil || installedFocus == "remove:" + c.key else { return }
+            if let neighbour, model.filteredInstalled.contains(where: { $0.key == neighbour }) {
+                installedFocus = "remove:" + neighbour
+            } else {
+                installedFocus = "tab"
+            }
+        }
+    }
+
     private func emptyPanel(title: String, body: String) -> some View {
         VStack(spacing: BP.px(8)) {
             Text(title).font(BP.display(22, .medium)).foregroundStyle(BP.ink)
@@ -765,10 +790,11 @@ struct AddonsView: View {
                 } label: { Label(T("Manage"), systemImage: "slider.horizontal.3") }
                 .buttonStyle(BPActionStyle(busy: busy))
             }
-            Button { Task { await model.uninstall(c) } } label: {
+            Button { remove(c) } label: {
                 Label(busy ? T("Uninstalling") : T("Remove"), systemImage: busy ? "hourglass" : "trash")
             }
             .buttonStyle(BPActionStyle(busy: busy))
+            .focused($installedFocus, equals: "remove:" + c.key)
         }
         .focusSection()
     }

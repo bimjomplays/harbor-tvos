@@ -95,10 +95,12 @@ final class CalendarModel: ObservableObject {
 
     var large: Bool { data?.posterSize == "large" }
 
-    func load() async {
+    /// `quiet`: a re-read of the month on screen (a cover over the room closed); the rows stay as
+    /// they are until it answers. The newest load, quiet or not, ends the loading state.
+    func load(quiet: Bool = false) async {
         generation += 1
         let mine = generation
-        loading = true
+        if !quiet { loading = true }
         let p = profile
         let input: AnyJSON = .object([
             "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,

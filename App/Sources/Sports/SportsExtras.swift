@@ -11,6 +11,7 @@ struct StandingsSection: View {
     var highlight: [String] = []
     @State private var table: Table?
     @State private var expanded = false
+    @State private var shownLeague: String?
     struct Row: Decodable, Identifiable {
         var teamId: String; var name: String; var shortName: String?; var abbr: String?; var logo: String?; var rank: Double?; var note: String?
         /// standings.ts StandingsRow: the fixed stat fields the Big Picture table shows.
@@ -50,8 +51,13 @@ struct StandingsSection: View {
             content
         }
         .task(id: league) {
-            expanded = false
-            table = try? await HarborEngine.shared.call("sports.standings", [league])
+            // (device-flow pass 4) The task also runs when a cover over the event closes (the player,
+            // Addon sources): only another league folds the table back or drops it, not every return
+            // (a re-read that failed on return took the table off the page).
+            let changed: Bool = shownLeague != league
+            if changed { expanded = false; shownLeague = league }
+            let fresh: Table? = try? await HarborEngine.shared.call("sports.standings", [league])
+            if let fresh { table = fresh } else if changed { table = nil }
         }
     }
 

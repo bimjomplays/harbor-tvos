@@ -18,6 +18,19 @@ final class LiveRowModel: ObservableObject {
         loaded = true
     }
 
+    /// (device-flow pass 4) bp-live-cell: nowMs advances at a programme boundary, so a cell never
+    /// keeps a programme that has ended. The row was read once per Home visit: a viewer left on
+    /// Home saw last hour's show as "now" (with a full bar) until they left the tab. Read again
+    /// when a cell's programme has ended, at most once a minute.
+    private var lastRefresh = Date.distantPast
+    func refreshIfEnded(nowMs: Double) async {
+        guard loaded, Date().timeIntervalSince(lastRefresh) >= 60 else { return }
+        guard cells.contains(where: { ($0.now?.endMs ?? Double.infinity) <= nowMs }) else { return }
+        lastRefresh = Date()
+        // A read that comes back empty (the source is reloading) keeps the row under the ring.
+        if let r: Row = try? await HarborEngine.shared.call("live.homeRow", []), !r.cells.isEmpty { cells = r.cells }
+    }
+
     func played(_ c: Cell) {
         Task { _ = try? await HarborEngine.shared.callJSON("live.recordPlay", [.string(c.playlistId), .string(c.channel.id)]) }
     }
@@ -35,6 +48,8 @@ struct LiveRowView: View {
     /// its ambient preview (bp-live-hero); and whether this row's player is up.
     var onHot: ((LiveRowModel.Cell?) -> Void)? = nil
     var onPlaying: ((Bool) -> Void)? = nil
+    /// bp-live-tick (10 s): the cells' progress bars follow the clock (BpLiveProgress).
+    @State private var nowMs: Double = Date().timeIntervalSince1970 * 1000
 
     var body: some View {
         Group {
@@ -68,13 +83,28 @@ struct LiveRowView: View {
                 .focusSection()
             }
         }
-        .task { await model.load() }
+        .task {
+            await model.load()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+                nowMs = Date().timeIntervalSince1970 * 1000
+                await model.refreshIfEnded(nowMs: nowMs)
+            }
+        }
         .onChange(of: focusedId) { _, id in onHot?(id.flatMap { key in model.cells.first(where: { $0.id == key }) }) }
         .onChange(of: playing?.id) { _, id in onPlaying?(id != nil) }
         .fullScreenCover(item: $playing) { c in
             PlayerScreen(title: c.channel.shownName, subtitle: c.now?.title ?? c.channel.groupLabel ?? c.channel.group, url: URL(string: c.channel.url) ?? URL(string: "about:blank")!,
                          headers: c.channel.headers ?? [:], isLive: true) { _ in playing = nil }
         }
+    }
+
+    /// BpLiveProgress: (now - start) / (end - start) at the tick, else the engine's reading.
+    private func progress(_ c: LiveRowModel.Cell) -> Double? {
+        guard let p = c.now, p.endMs > p.startMs else { return c.progress }
+        let ratio: Double = (nowMs - p.startMs) / (p.endMs - p.startMs)
+        return min(1, max(0, ratio))
     }
 
     // bp-live-cell: logo plate, channel name with its quality badge, current programme and its progress, then next.
@@ -89,7 +119,7 @@ struct LiveRowView: View {
                 if c.channel.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(9))).foregroundStyle(BP.ink).accessibilityLabel(Text(T("Favorite"))) }
             }
             Text(c.now?.title ?? T(c.next == nil ? "Live" : "No program info")).font(BP.sans(13, .bold)).foregroundStyle(BP.ink).lineLimit(1)
-            if let p = c.progress {
+            if let p = progress(c) {
                 ZStack(alignment: .leading) { Capsule().fill(BP.edge2); Capsule().fill(BP.live).frame(width: (BP.px(250) - BP.px(24)) * min(1, max(0, p))) }
                     .frame(height: BP.px(3))
             }

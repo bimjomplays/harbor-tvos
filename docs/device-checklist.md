@@ -446,6 +446,10 @@ commit (`a8ac757` onward) needs the next upload (run 221 hit Apple's daily limit
 - [ ] Open the in-player TV Guide on a large playlist and leave it open a few minutes → focus lands on the playing channel, and "{n}m left" and the airing bars update each minute. (`2a72fd4`, `6ac33ed`)
 - [ ] In Sources, press Remove on a playlist → a "Remove playlist "{name}"?" alert asks first; Cancel keeps it. (`ace7304`)
 - [ ] Settings → Live TV → playlists row → the Sources sheet opens over Settings (not the Live tab), and closing it returns to Settings. (`ace7304`)
+- [ ] Open Live TV → Playlists, scroll past the first 60 movies, play one and press Back → the grid keeps its length and the ring stays on that movie; open a show, press Back → the ring is on that show. (`56d3886`)
+- [ ] On the Favorites chip, unstar a channel (guide and list) → the ring moves to the next favourite; unstarring the last one puts it on the Favorites chip. (`56d3886`)
+- [ ] Sources → Remove a playlist → after the alert the ring is on the next source's Remove (Close when none is left). (`56d3886`)
+- [ ] Leave Home on the Live TV row across a programme change → the progress bars move and the new programme shows. (`56d3886`)
 
 ### Sports
 
@@ -455,12 +459,16 @@ commit (`a8ac757` onward) needs the next upload (run 221 hit Apple's daily limit
 - [ ] Open an event's addon panel, wait for streams, then press Back → focus is on the first listing, then the first stream, then the first listing again (not the search field). (`2b7f97a`)
 - [ ] In the addon panel pick a slow listing A, Back, pick B, Back, pick A again, and press Play as soon as streams show → A's stream plays; no "Could not start". (`43f6f6a`, `286c5f3`, `8314373`)
 - [ ] Leave Sports open on a mode across midnight, then leave and return → the date band and "today" roll over once, and the mode is kept per profile. (`2b7f97a`)
+- [ ] Open an event, press Choose a channel → the ring lands on the first entry; Menu returns it to Choose a channel; pick a channel, press Back in the player → the ring is on Choose a channel. (`56d3886`)
+- [ ] Expand the standings, open Addon sources or the player, then go back → no "Loading match details..." flash, the table stays expanded. (`56d3886`)
 
 ### Addons
 
 - [ ] Open an addon page and press Install / Update, and install one through the Install dialog → the page opens on its action button, the button changes in place and keeps the ring, Install stays busy until done, and Done takes focus. (`2f7f274`, `2b7f97a`)
 - [ ] In Organize, move a row to the very top and the very bottom, then restore → focus follows the moved row, and the first row is focused after a restore. (`6d18ae2`)
 - [ ] Open an addon's setup dialog and send its link from the phone → the link stays in the field after the phone sheet closes, and the success card closes itself. (`2b7f97a`)
+- [ ] On Installed press Remove on a middle addon → the ring moves to the next addon's Remove (the Installed tab when the list empties). (`56d3886`)
+- [ ] In Organize, press Reload list or Move all to account → the list stays on screen and the ring lands on the first row. (`56d3886`)
 
 ### Library / Media Servers
 
@@ -544,6 +552,7 @@ commit (`a8ac757` onward) needs the next upload (run 221 hit Apple's daily limit
 - [ ] Offline, press Dismiss on a notification → the row goes at once, and the center offers Try again instead of loading forever. (`1124337`)
 - [ ] Accept or Decline a friend request, then Dismiss a notification → the ring goes to the next request's profile tile, then to the row now in place. (`8314373`)
 - [ ] Press Save to my collections at the 24-collection limit → it shows "Limit reached · 24 / 24". (`8314373`)
+- [ ] Account menu → Groups (or Notifications), press Back → the ring stays on that item, not "View my profile". (`56d3886`)
 
 ### Discover / Calendar
 

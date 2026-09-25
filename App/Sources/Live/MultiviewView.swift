@@ -112,6 +112,11 @@ struct MultiviewView: View {
     /// accounts commonly allow one or two connections, and the full player wants the decoder).
     @State private var fullScreen: LiveModel.Channel?
     @State private var seeded = false
+    /// (device-flow pass 4) `.task` runs again when the full player closes: the ring was sent to
+    /// tile 1 every time, away from the tile that had been promoted. The first ring is placed once;
+    /// back from the full player it returns to that tile.
+    @State private var focusSeeded = false
+    @State private var promotedSlot: Int?
     /// Multiview's hold on PlaybackState (the players it opens hold their own).
     @State private var playbackClaim = UUID()
     @FocusState private var focus: Target?
@@ -152,7 +157,10 @@ struct MultiviewView: View {
                 seeded = true
                 model.pick(0, seed)
             }
-            focusLater(.cell(0))
+            if !focusSeeded {
+                focusSeeded = true
+                focusLater(.cell(0))
+            }
         }
         .onAppear {
             // Opened from the PiP browse layer: the film in Picture in Picture stops first (PiPBrowse).
@@ -164,7 +172,11 @@ struct MultiviewView: View {
         // Released on any disappear: the full player holds its own claim, and onDismiss claims again
         // (a teardown with the player up must not leave an orphaned claim; review 36).
         .onDisappear { PlaybackState.shared.release(playbackClaim) }
-        .fullScreenCover(item: $fullScreen, onDismiss: { PlaybackState.shared.claim(playbackClaim) }) { ch in
+        .fullScreenCover(item: $fullScreen, onDismiss: {
+            PlaybackState.shared.claim(playbackClaim)
+            if let slot = promotedSlot { focusLater(.cell(slot)) }
+            promotedSlot = nil
+        }) { ch in
             // The grid is under this player: its PiP keeps the placard rather than stepping aside.
             PlayerScreen(title: ch.name, subtitle: live.guide[ch.id]?.now?.title ?? ch.group, url: URL(string: ch.url) ?? URL(string: "about:blank")!,
                          headers: ch.headers ?? [:], isLive: true, liveGuide: live, liveChannel: ch, browseDuringPiP: false) { _ in fullScreen = nil }
@@ -263,7 +275,7 @@ struct MultiviewView: View {
                              onClose: { model.close(i); focusLater(.cell(i)) },
                              onFocus: { model.setAudioFocus(i) },
                              onMute: { model.setAudioFocus(-1) },
-                             onFullScreen: { if let ch { fullScreen = ch } })
+                             onFullScreen: { if let ch { promotedSlot = i; fullScreen = ch } })
             // cell.tsx resets its status and retry count when the channel changes.
             .id("\(i)|\(ch?.url ?? "")")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -495,6 +507,7 @@ struct MultiviewPicker: View {
     @State private var group: String?
     @State private var query = ""
     @State private var manual = ""
+    @FocusState private var searchFocused: Bool
 
     private var currentId: String? { live.selectedPlaylist }
     private var scopeId: String { scope ?? currentId ?? "" }
@@ -569,7 +582,9 @@ struct MultiviewPicker: View {
             HStack(spacing: BP.px(12)) {
                 Text("Add to tile \(slot + 1)").font(BP.display(26)).foregroundStyle(BP.ink)
                 LiveSearchField(placeholder: placeholder, text: $query).frame(maxWidth: BP.px(560))
-                if !query.isEmpty { Button("Clear") { query = "" }.buttonStyle(BPActionStyle()) }
+                    .focused($searchFocused)
+                // (device-flow pass 4) Clear leaves with the query it clears: the ring goes to the field.
+                if !query.isEmpty { Button("Clear") { searchFocused = true; query = "" }.buttonStyle(BPActionStyle()) }
                 Spacer(minLength: 0)
                 Button(action: onClose) { Label("Close", systemImage: "xmark") }.buttonStyle(BPActionStyle())
             }

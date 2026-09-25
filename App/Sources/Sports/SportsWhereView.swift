@@ -59,7 +59,11 @@ struct SportsWhereRowView: View {
                 }
             }
         }
-        .task(id: game.id) { data = try? await HarborEngine.shared.call("sports.where", [game.wire]) }
+        .task(id: game.id) {
+            // (device-flow pass 4) The task runs again when a venue or provider page closes (and any
+            // cover over the event): a re-read that failed took the whole row out from under the ring.
+            if let fresh: SportsWhere = try? await HarborEngine.shared.call("sports.where", [game.wire]) { data = fresh }
+        }
         .fullScreenCover(item: $link) { l in SportsLinkView(link: l) { link = nil } }
     }
 
