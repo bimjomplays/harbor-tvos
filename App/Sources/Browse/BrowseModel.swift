@@ -102,6 +102,12 @@ final class BrowseModel: ObservableObject {
     /// Home itself, not a streaming-service page that reuses the Home room layout: only Home has
     /// the Live TV row and the band-owned bands (bp-home.tsx).
     var isHomePage: Bool { room == .home && source.cacheId == nil }
+    /// The page shows a Continue Watching row (EngineBrowseSource: none on Movies or a service page).
+    private var hasContinueWatchingRow: Bool {
+        if source is FixtureBrowseSource { return true }
+        if room == .movies { return false }
+        return room != .home || isHomePage
+    }
 
     private var cacheKey: String { "bp.room.\(restoreKey)" }
     /// The route key bp-restore remembers positions under (per page and profile).
@@ -129,6 +135,11 @@ final class BrowseModel: ObservableObject {
         }
         cwGeneration += 1
         let cwMine = cwGeneration
+        // (review 6) A page with no Continue Watching row (Movies, a streaming-service page) has
+        // nothing to wait for: cwResolved only turned true after the live rows were built, so the
+        // first focus sat on the tab bar for up to 3 s over last session's rows (bp-movies seeds on
+        // its rows alone). It seeded 0.05 s after them before the home pass.
+        if !hasContinueWatchingRow { cwResolved = true }
         do {
             async let r = source.page(for: room)
             async let cw = source.continueWatching(for: room)

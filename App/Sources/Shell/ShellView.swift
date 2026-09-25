@@ -7,6 +7,9 @@ final class ShellFocus {
     static let shared = ShellFocus()
     var request: (() -> Void)?
     func requestDefault() { request?() }
+    /// (review 6) When the ring last left a top-bar tab (walking the bar, or on to the profile chip
+    /// or the cog). A room's first-focus seed that lands later leaves the ring there (RoomView).
+    var barMovedAt: Date?
 }
 
 private struct ShellFocusNamespaceKey: EnvironmentKey { static let defaultValue: Namespace.ID? = nil }
@@ -343,6 +346,11 @@ struct TopBarView: View {
         // One full-width focus target: Up from anything in a room reaches the bar even when
         // nothing focusable sits directly above it (the brand mark is not a button).
         .focusSection()
+        // (review 6) use-bp-focus stops seeding once the viewer has moved: a room's seed now waits
+        // for Continue Watching (up to 3 s), and it pulled the ring off the bar the viewer was walking.
+        .onChange(of: focusedTab) { old, _ in
+            if old != nil { ShellFocus.shared.barMovedAt = Date() }
+        }
         .background(
             LinearGradient(colors: [BP.void_.opacity(0.95), BP.void_.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: BP.barHeight * 1.9), alignment: .top

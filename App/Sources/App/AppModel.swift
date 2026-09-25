@@ -31,12 +31,12 @@ final class AppModel: ObservableObject {
         if parts.first == "detail", parts.count >= 3 {
             deepLinkMeta = Meta(id: parts[2], type: parts[1], name: "", poster: nil, background: nil, logo: nil, description: nil, releaseInfo: nil, releaseDate: nil,
                                 inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
-            if stage != .shell, stage != .boot, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            showLinkTarget()
             return
         }
         if scheme == "harbor", parts.first == "list", parts.count >= 3, !parts[1].isEmpty, !parts[2].isEmpty {
             deepLinkList = Social.ListRef(handle: parts[1], listId: parts[2])
-            if stage != .shell, stage != .boot, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            showLinkTarget()
             return
         }
         if scheme == "stremio", raw.hasSuffix("manifest.json") {
@@ -48,8 +48,18 @@ final class AppModel: ObservableObject {
             // a re-configured addon arrived as a second copy. ShellView shows it; like upstream's
             // pendingUrl it waits for the shell when the link lands earlier.
             deepLinkInstall = DeepLinkInstall(url: raw)
-            if stage != .shell, stage != .boot, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
+            showLinkTarget()
         }
+    }
+
+    /// A link that lands outside the shell shows once the shell is up. (review 6) Not over Who's
+    /// watching: since the profiles pass the chooser (the launch prompt, the top bar, a kid's
+    /// parent-PIN switch) opens over a profile that stays active, so goToWhoOrShell() here closed the
+    /// chooser into that profile the moment a link arrived. The link waits for the pick, as upstream's
+    /// picker layer stays up over it.
+    private func showLinkTarget() {
+        guard stage == .onboarding, onboardingDone, !profiles.profiles.isEmpty else { return }
+        goToWhoOrShell()
     }
 
     /// lib/deep-link.ts emitDeepLinkInstall's pending URL, until ShellView's install dialog takes it.
