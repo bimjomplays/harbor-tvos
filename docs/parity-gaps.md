@@ -53,6 +53,70 @@ Close behind: D3 anime Filler tag (S), H2 minutes-left on Continue Watching card
 watching on return (S), D2 hero provenance marks (S-M) and V1 award pages with playable
 winners (M).
 
+### Where this audit stands (end of 2026-09-25)
+
+Cross-checked against `PROJECT_STATE.md` → Status up to device-flow pass 11 (22:54 UTC). The tables below
+keep what the audit found; their first column now says what happened to each row.
+
+**Closed.** 30 of the 38 rows are fully ported: P1, P2, P3, P5, P6, P7, P8, P10, P11; S2, S3, S5
+(the picker's host match and the player's duration-mismatch chip); D1-D5; V1, V2; H1, H2, H3, H6;
+L1, L3; X1, X2; O1 (plus the "Startup & default" rows), O3, O4. Six are ported in part (P9, V3, H4,
+H5, X3, L2; what is left is listed below), S4 is open and O2 is the owner's. The same day also
+closed these Big Picture behaviours that were outside the table:
+- bp-view-state keys: Search and Library state across tabs (L1), `sportsMode` per profile, and
+  `liveCategory` / `collectionSource` / `collectionCategory` in `ShellViewState`, kept across tabs
+  and reset on a profile switch (Live TV keeps a chip only when the viewer picks it).
+- use-bp-screensaver `suppressed`: no saver on Who's watching, setup, the intro wall, Live TV or an
+  open stream picker; its idle clock restarts when playback starts or ends.
+- use-bp-profile-reset: a profile switch opens Home.
+- use-bp-hero-cycle: Home's hero keeps cycling while the ring is on a row's See all.
+- See all and addon pages retry a failed page with Try again at the end of the grid.
+- The music dock over the kids detail page and franchise grid (K1); the Collections offline end line
+  (C1); the lyrics' 9 s give-up (music-now-playing.tsx); manga page auto-retry (page-image.tsx).
+
+**Still open: parity gaps.**
+- S4: the subtitle step before playback (M; `subtitlePreselect` is off by default upstream).
+- Flag icons for stream languages (FlagStack): SVGs that tvOS can't draw without converting them.
+- P9: use-track-autoload's automatic subtitle search and its "Search every source again" chip (the
+  TV has the manual Find more lane, which shows no source counts). "{count} dl" is ported; the
+  offset badge is not a TV gap.
+- P8: each opening of the in-place switcher searches the addons again.
+- P11: no TV control for snapshot retention, full quality or Clear (desktop only, as in Big Picture).
+- H5: opening the quick panel with no title focused (a Siri Remote has no spare button; needs a
+  design decision) and the Controls legend.
+- H4: the poster pinned on the desktop, the TMDB id lookups some poster hosts need, and TMDB's
+  localized poster.
+- V3: the "Picked for you" rail headers, and the Discovery Queue band's sampled glow (the TV washes
+  in the accent).
+- X3: the sampled-glow wash over the Live split, and metahub channel hydration ahead of the XMLTV icon.
+- L2: the addon mark on slots that already have titles.
+- TMDB episode titles on Continue Watching cards (not ported with H2).
+- O2: avatar and name write-back to the Harbor account (owner decision).
+
+**Still open: smaller behaviour differences** (logged as "Open" in the Status lines; low):
+- Detail's Play follows the season chip on screen; upstream plays the resume point.
+- Specials and episode 0 stay in the episode strip; Big Picture drops them (they no longer
+  auto-advance into S1 E1).
+- eBook chapters opened from the panel or bar start at line 0; upstream restores the saved line
+  (owner to decide, see HANDOFF.md).
+- Live TV shows All after an A → B → A source switch that dropped B's chip; upstream shows the kept key.
+- Discover and Collections place no first focus of their own.
+- Deep links open once the covers close rather than on top of them, and an install does not close
+  the player; a link page over the intro wall on a cold launch, links under the curfew lock or
+  screensaver, and a theme or language rebuild dropping a re-presented page are unhandled.
+- A sync-pulled theme or language drops a non-player cover.
+- Watch Together: an invite to another title waits under a Detail page for the shell's toast; a
+  dismissed toast hands the ring to the room's default, not the exact tile; the mismatch chip can
+  show the old length for under 1 s after a guest's swap; a host swap stuck connecting holds the
+  guests; PiP drops on a live reconnect.
+- The Music room's own dock and the Spotify library page lose the ring on Stop and close player.
+- Home's hero pips stay hidden on See all while the hero cycles; the rank tile has no focused
+  caption; Up from a tile under See all can land on See all.
+- Onboarding's Harbor step lacks the side cards; there is no client-side 8-character password check.
+- The content advisory toast's corner when the stats overlay is up.
+- Player panels: the Anime4K sidebar lets the ring reach the chrome; a reload under Subtitles does
+  not re-read the offset.
+
 ### Ported since this audit
 
 The player, Browse and Picker/Detail parity passes (PROJECT_STATE, 2026-09-25 15:57-16:08 UTC)
@@ -70,7 +134,8 @@ The parity batch after them ported:
 | O3 | The setup poster wall: two drifting columns at 7 % on the trailing side under a page wash; still under Reduce Motion. | `Onboarding/OnboardBackdropView.swift`, `Onboarding/OnboardingView.swift` |
 | O4 | TMDB step: "rejected" and "could not reach TMDB" are separate answers (engine `onboarding.checkTmdbKey`, configuration endpoint), Save it anyway only for the second, a live "{n} of 32 characters" note, Verify dims rather than disables. | `engine/onboarding.ts`, `Onboarding/TmdbStep.swift` |
 
-Still open from this audit: P5-P11, S4, S5, D4, V3, H4, H5, L2, L3, X2, X3, O2.
+Still open from this audit at that point: P5-P11, S4, S5, D4, V3, H4, H5, L2, L3, X2, X3, O2. Most
+of these were ported later the same day; the current list is "Where this audit stands" above.
 
 ### Player / picker parity pass 2
 
@@ -109,7 +174,7 @@ Still open in this scope:
 - P9: "Search every source again" belongs to use-track-autoload's automatic subtitle search, which the TV does not run (it has the manual Find more lane). The SubtitleOffsetIndicator only shows for 1.8 s after a keyboard shortcut (use-keyboard-shortcuts), so it is not a TV gap.
 - S4 subtitle step (M, off by default).
 - Flag icons for stream languages (FlagStack): upstream's flags are SVGs plus the flag-icons set, which tvOS cannot draw without converting them first.
-- X3 Live band art (bp-live-split / use-bp-live-panels: TMDB backdrops per focused channel, the diagonal seam and the logo bridge), low.
+- X3 Live band art: ported in parity pass 3 below, except the sampled-glow wash and the channel hydration.
 
 ### Parity pass 3 (outside the player and picker)
 
@@ -157,14 +222,14 @@ Left:
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| P2 | Live auto-reconnect | `views/player/hooks/use-auto-retry.ts:111-160` | When a live channel errors, it reconnects on its own: once before the first frame, twice after playback has started (after 1.5 s or 4 s). | `PlayerScreen.swift` ports only the VOD "premature EOF" branch. A live error goes straight to the error card. PROJECT_STATE lists this as open. | S | Yes |
-| P1 | Audio normalise + audio profile | `lib/player/mpv.ts:168-173,1283-1291`, `use-track-autoload.ts:755-756` | `audioNormalize` and `audioProfile` (bass, voice, bass-reduce, **night**) are applied as mpv audio filters. Both sync from desktop Settings → Audio. | `MPVPlayerController.swift` sets no `af`. `SettingsBridge.swift` has neither key. | S | Yes (mpv engine only; AVPlayer has no filter chain) |
-| P3 | Subtitle font family + ASS override | `use-sub-style-apply.ts:65-67`, `lib/player/sub-presets.ts` | The viewer's subtitle font (Inter, Arabic, …) and `subAssOverride` (no, scale, force) restyle ASS/SSA subtitles too. | `MPVPlayerController.swift:485` always uses `sub-font` "Switzer". It never sets `sub-ass-override`. | S | Yes |
+| P2 (ported) | Live auto-reconnect | `views/player/hooks/use-auto-retry.ts:111-160` | When a live channel errors, it reconnects on its own: once before the first frame, twice after playback has started (after 1.5 s or 4 s). | `PlayerScreen.swift` ports only the VOD "premature EOF" branch. A live error goes straight to the error card. PROJECT_STATE lists this as open. | S | Yes |
+| P1 (ported) | Audio normalise + audio profile | `lib/player/mpv.ts:168-173,1283-1291`, `use-track-autoload.ts:755-756` | `audioNormalize` and `audioProfile` (bass, voice, bass-reduce, **night**) are applied as mpv audio filters. Both sync from desktop Settings → Audio. | `MPVPlayerController.swift` sets no `af`. `SettingsBridge.swift` has neither key. | S | Yes (mpv engine only; AVPlayer has no filter chain) |
+| P3 (ported) | Subtitle font family + ASS override | `use-sub-style-apply.ts:65-67`, `lib/player/sub-presets.ts` | The viewer's subtitle font (Inter, Arabic, …) and `subAssOverride` (no, scale, force) restyle ASS/SSA subtitles too. | `MPVPlayerController.swift:485` always uses `sub-font` "Switzer". It never sets `sub-ass-override`. | S | Yes |
 | P5 (ported, pass 2) | Started-near-end guard | `use-started-near-end.ts`, `use-auto-end-exit.ts` | Playback that starts at 80% or later (re-watching an ending) does not auto-exit or auto-advance. | Absent. PROJECT_STATE lists this as open. | S | Yes |
 | P6 (ported, pass 2) | Crop / aspect mode | `use-video-fill.ts` (`cropMode`: fit, fill, stretch, zoom, 16:9, 4:3, 21:9) | The crop chosen on desktop applies in Big Picture too. Big Picture itself has no control for it. | No `panscan`, `video-zoom` or `video-aspect-override` anywhere. | S to apply the synced value; M for a TV chip (a deviation from upstream) | Yes (21:9 on 16:9), low priority |
 | P7 (ported, pass 2) | Content advisory toast | `use-content-advisory.ts`, `components/player/content-advisory-toast.tsx` via `stage-overlays.tsx:121` | When playback starts: the MPA rating and IMDb parental-guide categories. `contentAdvisoryToast` is off by default. | None. `harbor-imdb` is bundled, but only for episodes and scores. | S-M | Maybe (households with kids) |
 | P8 (ported) | Switch source in place | `big-picture/player/bp-player-sources.tsx` ("Pick a source to swap in place. Playback keeps running.") | Opens the source list over the playing film. Picking one swaps the stream at the same position. | Ported: `PlayerSourcesPanel.swift` (the picker's switch mode) swaps in place through `PlayerScreen.switchSource`; a home-server copy keeps the close-and-reopen path. | M | Yes, medium |
-| P9 | Subtitle small bits | `stage-overlays.tsx:85` `SubtitleOffsetIndicator`; `bp-player-subtitles.tsx:239` "Search every source again"; `bp-subtitle-parts.tsx:184` "{count} dl" | A badge on screen while a subtitle offset is set, a chip that re-runs the automatic subtitle search, and download counts on results. | `PlayerSubtitlesPanel.swift` has the offset stepper and a manual search, but none of these three. | S | Low |
+| P9 ("{count} dl" ported; the rest open or not a TV gap) | Subtitle small bits | `stage-overlays.tsx:85` `SubtitleOffsetIndicator`; `bp-player-subtitles.tsx:239` "Search every source again"; `bp-subtitle-parts.tsx:184` "{count} dl" | A badge on screen while a subtitle offset is set, a chip that re-runs the automatic subtitle search, and download counts on results. | `PlayerSubtitlesPanel.swift` has the offset stepper and a manual search, but none of these three. | S | Low |
 | P10 (ported, pass 2) | Picture EQ | `use-live-picture-eq.ts` (`mpvTweaks` brightness, contrast, saturation, gamma) | Picture adjustments set on desktop also apply on the TV. | None. | S | Low |
 | P11 (ported) | Exit snapshot for Continue Watching | `use-exit-snapshot.ts` (`cwSnapshotFullQuality`, `cwSnapshotRetentionDays`) | Saves a frame at exit and uses it as the Continue Watching art. | Ported: `Player/ExitSnapshot.swift` (both engines), frames in Caches; the card falls back to its own art. | M | Low (tvOS caches can be purged) |
 
@@ -172,45 +237,45 @@ Left:
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| S3 | Stream row labels | `bp-stream-row.tsx:265-300,379-387` | "Cached on Real-Debrid", or "In TorBox" when it is your own cloud. "Unverified" or "No Label" when the quality is guessed. DUB/SUB badge (`showDubBadge`). Quality badges follow `showQualityBadge`. | A plain "Cached" badge (`PlayPickerView.swift:686,783`). No confidence label, no DUB/SUB, no badge toggles. | S | Yes |
-| S2 | Remaining picker chips | `bp-stream-chips.tsx:31-47,137-142,186`; `bp-stream-filters.ts:121`; `bp-streams.tsx:380-392` | Mode chip: All sources, Direct/debrid only, P2P only. A preferred-language chip, on by default under `requirePreferredLanguage`. A Refresh chip. A header like "N of M sources · K addons loading". "No sources found". | Only the All sources / Media servers toggle (`PlayPickerView.swift:611-614`). "Asking addons… n/m" shows only before the first result. No language chip, no Refresh. | S | Yes |
+| S3 (ported) | Stream row labels | `bp-stream-row.tsx:265-300,379-387` | "Cached on Real-Debrid", or "In TorBox" when it is your own cloud. "Unverified" or "No Label" when the quality is guessed. DUB/SUB badge (`showDubBadge`). Quality badges follow `showQualityBadge`. | A plain "Cached" badge (`PlayPickerView.swift:686,783`). No confidence label, no DUB/SUB, no badge toggles. | S | Yes |
+| S2 (ported) | Remaining picker chips | `bp-stream-chips.tsx:31-47,137-142,186`; `bp-stream-filters.ts:121`; `bp-streams.tsx:380-392` | Mode chip: All sources, Direct/debrid only, P2P only. A preferred-language chip, on by default under `requirePreferredLanguage`. A Refresh chip. A header like "N of M sources · K addons loading". "No sources found". | Only the All sources / Media servers toggle (`PlayPickerView.swift:611-614`). "Asking addons… n/m" shows only before the first result. No language chip, no Refresh. | S | Yes |
 | S5 (ported: picker pass 2, player with P8) | Watch Together host match | `components/host-match-chip.tsx` (`bp-stream-row.tsx:327`); `views/player/duration-mismatch-chip.tsx` | A guest sees which rows are "Same file as host" or a "Close match". In the player, a chip warns when the file's length differs from the host's and offers to find a closer one. | `TogetherModel.swift:120` receives `hostSource`, but neither the picker nor the player uses it. PROJECT_STATE lists this as open. | S-M | Yes, for Together |
-| S4 | Subtitle step before playback | `bp-subtitle-step.tsx` via `bp-streams.tsx:337`, `use-bp-stream-play.ts:145-160` | With `subtitlePreselect` on (a desktop setting, off by default), a "Choose subtitles" screen appears between the pick and the player. It has "Skip, let Harbor choose" and "Start playback". | None. The picker goes straight to the player. | M | Maybe (off by default) |
+| S4 (open) | Subtitle step before playback | `bp-subtitle-step.tsx` via `bp-streams.tsx:337`, `use-bp-stream-play.ts:145-160` | With `subtitlePreselect` on (a desktop setting, off by default), a "Choose subtitles" screen appears between the pick and the player. It has "Skip, let Harbor choose" and "Start playback". | None. The picker goes straight to the player. | M | Maybe (off by default) |
 
 ### Detail and Person (5)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| D1 | Synopsis "Read more" | `detail/bp-synopsis.tsx` (the toggle is the last cell of the actions row) | A long overview that is cut off can be opened in place, and closed again with "Show less". | `DetailView.swift:551` uses `.lineLimit(4)` with nothing to open it. | S | Yes |
-| D3 | Anime "Filler" tag | `bp-anime-seasons.tsx:134` | Filler episodes carry a "Filler" pill in the episode strip. | `DetailModel.swift:186` decodes `filler`, but nothing draws it. | S | Yes |
-| D2 | Hero provenance marks | `detail/bp-hero-notes.tsx` `BpHeroMarks`, `BpTmdbKeyNote` | Marks on the hero: the addon that served the title (its logo and name), "Available in Plex/Jellyfin/Emby" for each connected server that has it, and "Add a TMDB key in Settings to see the cast, crew, and details." | None. Nothing in the port reads `addonOrigin`, and no per-title server availability is looked up. | S-M | Yes (media servers are already ported) |
+| D1 (ported) | Synopsis "Read more" | `detail/bp-synopsis.tsx` (the toggle is the last cell of the actions row) | A long overview that is cut off can be opened in place, and closed again with "Show less". | `DetailView.swift:551` uses `.lineLimit(4)` with nothing to open it. | S | Yes |
+| D3 (ported) | Anime "Filler" tag | `bp-anime-seasons.tsx:134` | Filler episodes carry a "Filler" pill in the episode strip. | `DetailModel.swift:186` decodes `filler`, but nothing draws it. | S | Yes |
+| D2 (ported) | Hero provenance marks | `detail/bp-hero-notes.tsx` `BpHeroMarks`, `BpTmdbKeyNote` | Marks on the hero: the addon that served the title (its logo and name), "Available in Plex/Jellyfin/Emby" for each connected server that has it, and "Add a TMDB key in Settings to see the cast, crew, and details." | None. Nothing in the port reads `addonOrigin`, and no per-title server availability is looked up. | S-M | Yes (media servers are already ported) |
 | D4 (ported, pass 3) | Favourite an anime character | `bp-anime-characters.tsx:116` (`lib/character-favorites`) | Select on a character favourites them. The favourites sync to the desktop Favorites tab. | The ring is there, but Select does nothing (`DetailView.swift:659`: "that store is not ported"). | S-M | Low |
-| D5 | Crew and facts labels | `detail/bp-crew-row.tsx:65-71` (Director/Directors, Creator/Creators, Writer/Writers, Producers, Cinematography, Music, Editor/Editors); `bp-facts.tsx:30-35` (the facts card opens with Directed by, Created by, Written by, Music by, Cinematography); `bp-person.tsx:333` "Top {n}" department rank | The crew row uses role names with singular or plural forms. The facts card begins with the credit rows. A person's department rank shows as a badge. | `engine/detailRoom.ts:71-78` gives the crew row the facts-style labels ("Directed by", "Written by", "Music"), and the facts card starts at Status. No rank badge. | S | Low |
+| D5 (ported) | Crew and facts labels | `detail/bp-crew-row.tsx:65-71` (Director/Directors, Creator/Creators, Writer/Writers, Producers, Cinematography, Music, Editor/Editors); `bp-facts.tsx:30-35` (the facts card opens with Directed by, Created by, Written by, Music by, Cinematography); `bp-person.tsx:333` "Top {n}" department rank | The crew row uses role names with singular or plural forms. The facts card begins with the credit rows. A person's department rank shows as a badge. | `engine/detailRoom.ts:71-78` gives the crew row the facts-style labels ("Directed by", "Written by", "Music"), and the facts card starts at Status. No rank badge. | S | Low |
 
 ### Discover and Awards (3)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| V2 | Collections band | `bp-discover.tsx:240-246`, `bp-collections-band.tsx` | "Sagas and series, gathered in the order they were meant to be watched." A Collections band between Genres and Top People. | `DiscoverView.swift` has sections for queue, awards, genres, voyage and people. No collections section. `HomeBands.swift` already has the collections band. | S | Yes |
-| V1 | Award page | `bp-award.tsx`, `use-bp-award-work.ts` | Year and category chips ("All years", "All categories"). Every winner is a poster tile that resolves to a TMDB title and opens its page ("Checking with TMDB…" / "No match found"). The whole list pages in. | `AwardDetailView` (`DiscoverView.swift:403-475`) is text only, 12 entries per category, with nothing to open. | M | Yes |
+| V2 (ported) | Collections band | `bp-discover.tsx:240-246`, `bp-collections-band.tsx` | "Sagas and series, gathered in the order they were meant to be watched." A Collections band between Genres and Top People. | `DiscoverView.swift` has sections for queue, awards, genres, voyage and people. No collections section. `HomeBands.swift` already has the collections band. | S | Yes |
+| V1 (ported) | Award page | `bp-award.tsx`, `use-bp-award-work.ts` | Year and category chips ("All years", "All categories"). Every winner is a poster tile that resolves to a TMDB title and opens its page ("Checking with TMDB…" / "No match found"). The whole list pages in. | `AwardDetailView` (`DiscoverView.swift:403-475`) is text only, 12 entries per category, with nothing to open. | M | Yes |
 | V3 (ported except the rail headers, pass 3) | Discover finish | `bp-discover-wash.tsx`; `bp-discover.tsx:261-263` "{n} picks, refreshed daily"; `bp-people-band.tsx:52,74` "{n} award wins", "Start at number one" | A colour wash from the focused cell, headers on the "Picked for you" rails, and award counts on people. | None of these. | S | Low |
 
 ### Home, rooms and cards (6)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| H1 | Row edge navigation | `bp-row-see-all.ts`, `use-bp-focus.ts` | Right on a row's last tile reaches the row's See all. Left from See all returns to that tile. Left at the start of a row reaches the tabs. | `BPRowView.swift` has no `onMoveCommand`. PROJECT_STATE lists this as open. | S | Yes |
-| H2 | Continue Watching time left | `bp-cw-row.tsx:46-65` | "42m left", "1h 5m left", "Almost done"; anime shows "Episode 12" rather than S/E. | "NN% left" (`ContinueCardView.swift:67`). | S | Yes |
-| H3 | Per-room empty and error states | `bp-movies.tsx`, `bp-shows.tsx`, `bp-anime.tsx`, `bp-service.tsx`, `bp-home.tsx` | Room-specific copy: "Add a TMDB key in Setup to power this view." with **Open Setup**, "Anime is hidden", "No movies to show yet", and the service-filter note. | One generic "Couldn't load this room." with Try again (`RoomView.swift:57`). | S | Yes |
+| H1 (ported) | Row edge navigation | `bp-row-see-all.ts`, `use-bp-focus.ts` | Right on a row's last tile reaches the row's See all. Left from See all returns to that tile. Left at the start of a row reaches the tabs. | `BPRowView.swift` has no `onMoveCommand`. PROJECT_STATE lists this as open. | S | Yes |
+| H2 (ported) | Continue Watching time left | `bp-cw-row.tsx:46-65` | "42m left", "1h 5m left", "Almost done"; anime shows "Episode 12" rather than S/E. | "NN% left" (`ContinueCardView.swift:67`). | S | Yes |
+| H3 (ported) | Per-room empty and error states | `bp-movies.tsx`, `bp-shows.tsx`, `bp-anime.tsx`, `bp-service.tsx`, `bp-home.tsx` | Room-specific copy: "Add a TMDB key in Setup to power this view." with **Open Setup**, "Anime is hidden", "No movies to show yet", and the service-filter note. | One generic "Couldn't load this room." with Try again (`RoomView.swift:57`). | S | Yes |
 | H4 (RPDB / poster-host URLs ported, pass 3) | Poster chain | `bp-poster-chain.ts` (`useTitlePoster`, `usePosterChain`, `rpdbKey`) | Shows the poster the viewer pinned on desktop, then RPDB rating posters, then localized TMDB art. | Tiles use `meta.poster`. `entry.ts:296` exports `rpdbPoster`, but no caller uses it. | M | Yes, for RPDB users |
-| H5 (rows ported, pass 3) | Quick panel global rows | `bp-quick-panel.tsx:188-226` | Opens anywhere (Y or Tab), including with no title focused. It has Interface sounds (cycle the sound pack), Animated backdrop on/off, and a Controls legend. | `QuickPanelView.swift` opens only on a title and has only title actions. | S | Low |
-| H6 | Card options | `bp-tile.tsx:144,229` (`hidePosterTitles`, `cardBadgeLimit`) | Hide the title on poster cards; cap the score chips per card. | Titles always follow the tile rules. `ScoreChipsView.swift:8` has a fixed `limit = 4`. | S | Low |
+| H5 (rows ported, pass 3; open-anywhere and the Controls legend open) | Quick panel global rows | `bp-quick-panel.tsx:188-226` | Opens anywhere (Y or Tab), including with no title focused. It has Interface sounds (cycle the sound pack), Animated backdrop on/off, and a Controls legend. | `QuickPanelView.swift` opens only on a title and has only title actions. | S | Low |
+| H6 (ported) | Card options | `bp-tile.tsx:144,229` (`hidePosterTitles`, `cardBadgeLimit`) | Hide the title on poster cards; cap the score chips per card. | Titles always follow the tile rules. `ScoreChipsView.swift:8` has a fixed `limit = 4`. | S | Low |
 
 ### Search and Library (3)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| L1 | Keep state across tabs | `lib/search-context.tsx`, `bp-view-state.ts` | The query, results and Library tab survive a trip to another tab. | `ShellView.swift:119-124` rebuilds `SearchView()` and `LibraryView()` on every switch, so their `@StateObject`s reset. PROJECT_STATE lists this as open. | S | Yes |
+| L1 (ported) | Keep state across tabs | `lib/search-context.tsx`, `bp-view-state.ts` | The query, results and Library tab survive a trip to another tab. | `ShellView.swift:119-124` rebuilds `SearchView()` and `LibraryView()` on every switch, so their `@StateObject`s reset. PROJECT_STATE lists this as open. | S | Yes |
 | L2 (ported, pass 3) | Per-addon result plates | `search/bp-search-group.tsx`, `search/bp-search-results.tsx` | Every addon has a fixed slot: a quiet placeholder while it answers, "Didn't answer" with Try again when it fails. The rows do not jump. | Late rows are inserted in place. Failed addons only appear in the empty-state count (`SearchView.swift:371`). There is no retry. | S-M | Medium |
 | L3 (ported, pass 3) | Library auto-paging | `bp-library-sections.tsx` (sentinel) | The grid loads more as the ring nears the bottom. | A "Show more (n of m)" button (`LibraryView.swift:339`). | S | Low (the button works well on a remote) |
 
@@ -218,18 +283,18 @@ Left:
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| X1 | Search playlists for a channel and pin it | `sports/bp-sports-broadcast-search.tsx` | Type a channel name, match it across every playlist, play it, and "Always use for {league}". | The picker lists only auto-matched channels (`SportsEventView.swift:300-340`). When nothing matches, its note tells the viewer to "Search your channels", but no text search exists. Only the addon panel has a field. | S-M | Yes |
+| X1 (ported) | Search playlists for a channel and pin it | `sports/bp-sports-broadcast-search.tsx` | Type a channel name, match it across every playlist, play it, and "Always use for {league}". | The picker lists only auto-matched channels (`SportsEventView.swift:300-340`). When nothing matches, its note tells the viewer to "Search your channels", but no text search exists. Only the addon panel has a field. | S-M | Yes |
 | X2 (ported, pass 3) | Saved event and feed notes | `sports/bp-sports-event-hero.tsx:285-291` | "Showing saved match details." when offline, plus source notes for TheSportsDB, ONE Championship and promoter-published cards. | None. | S | Low |
-| X3 (ported, pass 3) | Live band art | `bp-live-split.tsx`, `use-bp-live-panels.ts` | The Home Live band shows two channels' art side by side, plus a fallback ladder of panels. | `HomeBands.swift` shows a single still or mosaic. | S-M | Low |
+| X3 (ported, pass 3, except the sampled glow) | Live band art | `bp-live-split.tsx`, `use-bp-live-panels.ts` | The Home Live band shows two channels' art side by side, plus a fallback ladder of panels. | `HomeBands.swift` shows a single still or mosaic. | S-M | Low |
 
 ### Profiles, onboarding and account (4)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
-| O1 | Who's watching on return | `lib/profiles.tsx:569-580` (`profilePromptInterval` 15m / 30m) | After 15 or 30 minutes away, Who's watching comes up again when Harbor returns to the front. | `profilesRoom.launchPicker` applies the interval on a cold launch only (`AppModel.swift:316`). `AppLifecycle.swift` does not check it on foreground, and tvOS usually resumes apps rather than relaunching them. PROJECT_STATE lists this as open. | S | Yes (multi-profile homes) |
-| O2 | Avatar and name write-back | `components/harbor-avatar-sync.tsx`, `harbor-name-sync.tsx` (mounted by `bp-tv-app.tsx`) | An avatar or name picked on the TV reaches the Harbor account (social, Together). | `engine/together.ts:340` reads the alias only. Nothing is pushed. | S-M | Low. It writes to the account, so it needs the same care as sync writes. |
-| O3 | Setup poster wall | `onboarding/bp-onboard-backdrop.tsx` | Drifting poster columns behind the setup steps. | None. PROJECT_STATE lists this as open. | S | Low |
-| O4 | TMDB step feedback | `onboarding/steps/bp-step-tmdb.tsx:156-165` | A live "{n} of 32 characters" count, and separate messages for "rejected" and "could not reach TMDB". | `TmdbStep.swift` merges the two errors and checks the length only on Verify. | S | Low |
+| O1 (ported, with the Startup & default rows) | Who's watching on return | `lib/profiles.tsx:569-580` (`profilePromptInterval` 15m / 30m) | After 15 or 30 minutes away, Who's watching comes up again when Harbor returns to the front. | `profilesRoom.launchPicker` applies the interval on a cold launch only (`AppModel.swift:316`). `AppLifecycle.swift` does not check it on foreground, and tvOS usually resumes apps rather than relaunching them. PROJECT_STATE lists this as open. | S | Yes (multi-profile homes) |
+| O2 (owner decision) | Avatar and name write-back | `components/harbor-avatar-sync.tsx`, `harbor-name-sync.tsx` (mounted by `bp-tv-app.tsx`) | An avatar or name picked on the TV reaches the Harbor account (social, Together). | `engine/together.ts:340` reads the alias only. Nothing is pushed. | S-M | Low. It writes to the account, so it needs the same care as sync writes. |
+| O3 (ported) | Setup poster wall | `onboarding/bp-onboard-backdrop.tsx` | Drifting poster columns behind the setup steps. | None. PROJECT_STATE lists this as open. | S | Low |
+| O4 (ported) | TMDB step feedback | `onboarding/steps/bp-step-tmdb.tsx:156-165` | A live "{n} of 32 characters" count, and separate messages for "rejected" and "could not reach TMDB". | `TmdbStep.swift` merges the two errors and checks the length only on Verify. | S | Low |
 
 ### Counts
 
@@ -254,8 +319,9 @@ owner (see below).
   `bp-trailer.tsx`, need yt-dlp), seek thumbnails (`use-trickplay.ts`), subtitle Auto sync
   (`bp-subtitle-tune.tsx` "Auto sync" / "Use it" / "Revert", needs subsync + audio extraction),
   YouTube Music.
-- **Owner decisions or deliberate differences** (PROJECT_STATE): TV collection edits are not
-  published; curfew "Switch profile" without the parent PIN; a deep link under a kid profile; Top
+- **Owner decisions or deliberate differences** (PROJECT_STATE, HANDOFF.md): TV collection edits are
+  not published; curfew "Switch profile" without the parent PIN; a deep link under a kid profile
+  opening any title; Collections with no TMDB key keeps the feed (upstream shows BpConnect); Top
   Shelf (needs a second signed target); sports odds (`bp-sports-extra-odds.tsx`, deliberately left
   out in `engine/sportsEvent.ts:178`, off by default upstream); Download for offline
   (`use-bp-detail-actions.ts`, PLAN §5); Settings "Phone setup is off / Turn on phone setup" (the

@@ -5,18 +5,193 @@ CI only compiles the app and runs simulator UI tests. The last hardware run was 
 09-25 has only run in the simulator. This file collects every "Needs device" / "Untested on device"
 note from `PROJECT_STATE.md` → Status, the Next section and `docs/*.md` in one list, deduplicated and
 grouped by area. The 2026-09-25 UTC day session's checks (tagged by commit) are in the last section,
-with their own "Test first" list.
+with their own "Test first" list. **For the next TestFlight upload, start with "Next TestFlight build"
+just below**: it lists what changed since build 220, highest risk first.
 
 Each line reads **action → expected result (source)**. Sources are Status lines as `(MM-DD HH:MM)`
 in the status-log clock. Lines without a date are 09-23. `(Next)` is PROJECT_STATE → Next → Then,
 item 1. When something fails, note the build number, the engine (mpv or AVPlayer) and the source
 type (debrid, torrent, HLS, home server, IPTV).
 
+## Next TestFlight build (first upload since build 220)
+
+Added 2026-09-25 for the upload retried on 2026-09-26. Build 220 carries the branch up to `37aa626`
+(~11:07 UTC 09-25); this build carries everything after it (`a8ac757` onward: 2026-09-25 11:02 →
+22:54 UTC in `PROJECT_STATE.md` → Status). Collected from those entries' "Device check:" lines and the
+fixes they describe, deduplicated, one line each: **action → expected result (`commit`)**. The fuller
+wording of the 11:02–14:19 checks is in the "2026-09-25 day session" section at the end of this file.
+
+How to use it: run **Test first**, then the areas in order. Lines marked *(UI test: …)* are already
+walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run, so check them last
+(the remote feel and timing are what the simulator can't show). Prerequisites are in "Before you start".
+
+### Test first (highest risk)
+
+- [ ] During a film press Sources on the player rail → "Switch source" opens as a card over the playing film, the ring on the first row, Menu closes it back onto Sources. (`f819778`, `7f0d67a`)
+- [ ] In that switcher pick another row, on mpv, on AVPlayer and on a P2P row (the P2P dialog draws inline) → the stream swaps in place at the same spot; the player never leaves the screen; the old torrent is released. (`f819778`)
+- [ ] Pick the "Now playing" row in the switcher → it resolves again and reloads at the resume spot; a failed resolve keeps the panel open with the reason. (`0979e99`)
+- [ ] Make a stream fail, press "Pick another source" on the error card → the in-place switcher opens (the card steps aside, and comes back if you close with no swap); a home-server copy or a kid profile still reopens the full picker. (`0979e99`)
+- [ ] Switch source at ~85 % of a film → it still ends normally (no "started near the end": it moves on, no Still watching loop), the advisory toast does not return, and mute carries over to the new engine. (`50fa9b6`)
+- [ ] Press Back while a source switch or channel tune is still settling → the player closes and no new engine starts under it (no audio after close). (`50fa9b6`)
+- [ ] As a Watch Together host with a guest, swap source in place → the room stays (no host-leaving); guests hold at the swap spot until the new stream plays; a failed swap lets them play on. (`f819778`, `0979e99`)
+- [ ] Play a film on mpv for a minute, press Back → the Continue Watching card leads with a frame from the film; repeat on AVPlayer (HLS and a progressive file). (`0979e99`)
+- [ ] Repeat the exit frame on an HDR10 and a Dolby Vision title, on both engines → the card's colours look normal (not washed out or green); mpv under MoltenVK gives a frame; closing does not hitch. (`0979e99`, `ab86b34`)
+- [ ] Watch a 4K HDR film on mpv for 6+ minutes → no periodic hitch (mpv grabs only on exit; the 4 s / 5 min grabs are AVPlayer's). (`ab86b34`)
+- [ ] Relaunch Harbor → the Continue Watching cards draw their frames at once; after a stream sent back to the picker, the card keeps its earlier frame or art. (`ab86b34`, `50fa9b6`, `3378b13`)
+- [ ] Set snapshot retention to 0 (or full quality) on desktop Harbor, let it sync → the TV follows it (frames cleared / sharper frames). (`ab86b34`)
+- [ ] Play a film with the controls up, pause a minute, press Play → the seek bar and elapsed/remaining move while playing and stop while paused, "Ends" keeps moving, the controls hide ~4.6 s after Play. (`57bf553`, `89b9ef6`)
+- [ ] From any room other than Home, switch profile on Who's watching → the new profile opens on Home; a sync that rewrites the same active profile does not send you Home. (`56796c7`, `87189d8`)
+- [ ] Leave the TV idle on Who's watching, setup, the intro wall, Live TV and an open stream picker → the screensaver never comes on there. (`56796c7`, `87189d8`)
+- [ ] Watch a film to its end without pressing anything → the player closes and the saver does not come up straight away (its idle clock restarts). (`56796c7`)
+- [ ] Play addon series episodes, a multi-file torrent and a home-server title, scrub and open the Sources / Subtitles panels → nothing crashes (Double→Int values are clamped). (`41d5b9b`)
+- [ ] With a large Plex/Jellyfin library, open Library → Media Servers, pick filters, force-quit and relaunch → launch is no slower, details show without a refetch, the filters come back. (`5f97a54`, `08b4760`, `5f6d7bd`)
+- [ ] Pick a Live TV category chip and a Collections source/category, walk to another tab and back, then switch profile → the chips are kept across tabs and reset for the new profile. (`bb117ed`)
+- [ ] Open a `harbor://` link while Detail, the player and the Addons cover are up → it opens once those close (after the film for the player), never twice; a link held behind a film for over 10 minutes is dropped. (`3f4da96`, `5541573`)
+
+### Player & source switching / Continue Watching snapshot
+
+- [ ] Let a stream sit on the Connecting card and press its Switch source → the same in-place switcher opens. (`f819778`)
+- [ ] As a room guest whose file runs 4+ s off the host's → "Your copy runs … Sync may drift." shows bottom-centre, never takes the ring, Up reaches it; Find closer match opens the switcher; closing it gives the ring to the stage. (`f819778`, `0979e99`)
+- [ ] As a room guest, check picker rows → the host's file reads "Same file" / "Close match" and leads the order. (`abf3055`)
+- [ ] Resume a film at 80 %+ (re-watch an ending) → it stays on its end: no next episode, no Still watching, no auto-close. (`abf3055`)
+- [ ] Set a crop mode (Fill, 21:9) and a picture look (incl. sharpen) on desktop → mpv and AVPlayer apply the crop; mpv applies the look. (`abf3055`, `3877ddd`)
+- [ ] Turn on the content advisory toast (synced setting, off by default) and start a title → the rating and parental-guide rows show top-start for ~28 s, never take focus, and step aside for X-Ray. (`abf3055`, `50fa9b6`)
+- [ ] Turn on Normalize loudness / a Sound profile (night mode) under Playback → mpv's audio changes; AVPlayer ignores it. (`feec966`)
+- [ ] Pick the Arabic and Rounded subtitle fonts, and Styled (ASS) subtitles → Force on an anime release → mpv draws those faces and restyles the ASS track. (`feec966`)
+- [ ] Wait for the skip-intro pill and the up-next card, let the controls hide → they animate, the countdown ticks each second, and the ring stays on the pill/card only while it is drawn. (`57bf553`, `3378b13`)
+- [ ] Set a sleep timer, and resume a film to get the resume fork → the Speed & sleep chip counts down; the fork shows the right duration. (`57bf553`)
+- [ ] Swap sources in place, then pick a subtitle track → the track memory is saved under the new source's release, not the old one's. (`50fa9b6`)
+- [ ] In the Subtitles panel press Better match, Show more to the end, and Back to what's playing → the ring lands on the track's line, the first revealed row, and Search. (`8dff6b4`)
+- [ ] Open Subtitles and Audio while the stream is still loading → once tracks arrive the ring moves to the track that is on (All languages if it was filtered out); Audio Reset puts the ring on +0.5s. (`8dff6b4`)
+- [ ] Open Speed & sleep and Anime4K → the ring starts on the rate / option in use (on a live channel, the armed sleep row). (`8dff6b4`)
+- [ ] On a kid profile, open the source switcher on a debrid stream → it reads "Playing now", and picking it does not reload the video. (`8dff6b4`)
+- [ ] Open the picker on a title with many badges and languages → rows wrap cleanly, badge art is sized right, the language chip can leave under the ring, Refresh works mid-search, chip changes update the list at once. (`ed3ac59`, `abf3055`, `8c5fd7d`)
+
+### Home & browse (Home, Discover, Collections, Calendar)
+
+- [ ] Press Right off a Home row's last tile and Left off its first → See all takes the ring, then the top bar on that row's tab; the hero keeps cycling while the ring is on See all. (`3ca744f`, `cdc57a6`, `bb117ed`) *(UI test: testRowSeeAllEdge covers Right/Left)*
+- [ ] Look at Continue Watching cards → "S1 E3 · 42m left" / "Almost done" / "Episode 12"; air countdowns read in your language. (`3ca744f`, `cdc57a6`)
+- [ ] With an RPDB key synced from desktop, browse rows including a title with no poster → RPDB posters draw, a bad key does not make posters blink back each visit, the title plate shows only when no art draws. (`c156ac3`, `ee5e7c2`, `f182d83`)
+- [ ] Focus a Live channel on Home's Live band (channel with EPG titles) → the split art draws over the still without blinking. (`c156ac3`, `ee5e7c2`)
+- [ ] Open See all and an addon catalog page, drop the network and scroll → a failed page shows Try again at the end of the grid; it keeps the ring and hands it to the first new title. (`ac066ca`)
+- [ ] Open a streaming-service page with no TMDB key → an empty state with Open settings, not a failure with Try again. (`7a6db3e`)
+- [ ] On Discover, move through the bands → the wash takes the focused band's colour; the Collections band parks like the others; Top People loads after Genres and Voyages without pushing the band holding the ring. (`c156ac3`, `3ca744f`, `a3ed212`)
+- [ ] Open an award page, page through winners, pick one; open an anime award with the network down → the first winner takes the ring (not All years), "Checking with TMDB…" opens the title, the anime page ends its spinner. (`65e15ea`, `ac066ca`, `7a6db3e`)
+- [ ] In Collections open a collection, open a title from it and close it; open a TVDB list → the overlay's ring stays where it was; the TVDB list hands the ring to its first tile once loaded. (`7a6db3e`)
+- [ ] Offline, open Collections → the grid ends with "Community collections are unavailable right now." rather than sitting empty. (`8543889`)
+- [ ] Back from a film started from a Voyage route slot → the ring is on the slot, not Play. (`bb117ed`)
+- [ ] Press Calendar Previous / Next / Today, then a day → the skeleton shows until the new month answers, and the day opens that month. (`a3ed212`)
+- [ ] Home band leads: Your streaming → "Manage" opens Settings, Collections → "View all", Your addons has none. (`7a6db3e`) *(UI test: testHomeBandRowLeads)*
+- [ ] Discover failure: Down from the bar reaches Try again, a failing retry keeps the ring. (`7a6db3e`) *(UI test: testDiscoverFailedTryAgainReachable, testDiscoverDownReachesBands)*
+- [ ] Collections: New collection under Mine, Menu closes it onto New collection. (`7a6db3e`) *(UI test: testCollectionsNewCollectionBack)*
+- [ ] Failed Calendar month: Down reaches Try again, which keeps the ring. (`9ab3745`, `dcd9992`) *(UI test: testCalendarFailedTryAgain)*
+
+### Detail / Person / Library / Search
+
+- [ ] Play the last special of a series (and a kids special) to its end → no up-next card into S1 E1; the kids special does not run on. (`cb4164e`)
+- [ ] Open a title offline, restore the network, press Try again → the ring goes to Play as soon as the message goes, not seconds later. (`12678e0`)
+- [ ] Signed out of Harbor, rate a title → the dialog closes (no "Saved on this device"). (`cb4164e`)
+- [ ] Open a person → the ring starts on the first Known For card; Back returns it to the tile you came from. (`cb4164e`, `a90ba7c`)
+- [ ] Press Read more on a long overview; check the hero's addon mark on an addon title → it expands in place and Show less closes it; the addon's logo and name show. (`ed3ac59`, `65e15ea`)
+- [ ] Select an anime character → the heart toggles; Library → Favorites notes character favourites live on the desktop. (`c156ac3`)
+- [ ] Scroll Library to the bottom with the network dropped, then restored → a failed first read says so; paging retries the same page; an empty tab says Loading only on Refresh. (`cb4164e`, `f182d83`, `bb117ed`)
+- [ ] On Media Servers wait for details, try each Sort / Direction and the Library / Genre rows, change UI language → Rating/Duration fill in, picks restore, details follow the new language. (`5f6d7bd`, `0438f63`, `08b4760`)
+- [ ] Select the search field and dictate with the Siri Remote → the words land in the query and search; only Harbor's drawn stroke shows. (`a90ba7c`, `286c5f3`)
+- [ ] Search with one slow and one answered addon, then Try again → the answered row stays, the failed one says "Didn't answer" and retries; Top match opens its title. (`c156ac3`, `f182d83`, `a90ba7c`)
+- [ ] A one-season show shows Episodes (no lone Season 1 chip), one Down from Play reaches them. (`cb4164e`) *(UI test: testDetailOneSeasonEpisodesAndBack)*
+- [ ] Library Filters: Menu closes the panel onto Filters, a second Menu goes Home. *(UI test: testLibraryFiltersMenuSteps)*
+- [ ] Search keeps its query and the ring on the keyboard across Menu → Home → back. (`3ca744f`) *(UI test: testSearchKeyboardAcrossTabSwitch)*
+
+### Settings / onboarding / account
+
+- [ ] With 2+ profiles, set Settings → Startup & default ("Who's watching" interval, "Start as"), cold-launch with each value → the launch follows it; "Start as" paints its theme and language first. (`8543889`, `761d256`) *(UI test: testStartupDefaultsPills covers the pills)*
+- [ ] Leave Harbor for 15+ minutes with the 15 min interval, come back → Who's watching comes up (not over a film, PiP, setup or a PIN-locked kid). (`3ca744f`)
+- [ ] Sign in to Harbor / Stremio from Settings, then sign out → the ring moves to that section's Sign out, then Sign in; the column updates. (`5bbbf5e`)
+- [ ] Settings → Replay walkthrough / Switch profile, then come back → the ring returns to that button; Switch profile from the PiP browse layer leaves no stray ring return for a later Settings visit. (`5bbbf5e`, `e647d54`, `56796c7`)
+- [ ] Remove a home server; finish a phone Connect → the ring goes to the next server's Remove; to "Type a key on this TV" when the hand-off completes. (`e647d54`)
+- [ ] Onboarding: Continue quickly into Your services and Taste → the ring lands on the first choice once it loads, and stays put once you move. (`5bbbf5e`, `e647d54`)
+- [ ] Try a Harbor sign-in with the network down → the network error line (error-messages.ts wording), not a raw code. (`e647d54`)
+- [ ] TMDB setup step: a wrong key, then a network that swallows requests → "rejected", then "Could not reach TMDB…" within ~12 s with Save it anyway. (`65e15ea`, `7aa8b2f`)
+- [ ] Setup: Menu on Language → "Leave setup?"; Finish later then relaunch with several profiles; Replay → Do not show this again → setup resumes where it should, launch path first. (`a90ba7c`, `b9d4d84`, `286c5f3`)
+- [ ] First launch after the intro wall; Create account then Later → Language ring on the current language; the recovery code is revealed. (`a3ed212`)
+- [ ] Account menu signed out → "Sign in to Harbor" opens the sign-in form. (`5bbbf5e`)
+- [ ] Quick panel: double-press Interface sounds / Animated backdrop; Settings → Animated backdrop off → one flip per press; the mosaic stops at once. (`c156ac3`, `60887f7`)
+- [ ] Connect Trakt / Simkl / AniList / MAL → "Connected as …" in your language, green; a failed Anime4K download reads red. (`2c965bf`, `5f6d7bd`)
+- [ ] Settings category Menu steps back to the column, a second Menu goes Home. *(UI test: testSettingsBackSteps)*
+- [ ] Account bell → menu opens on its first item, Menu returns to the bell. *(UI test: testAccountMenuBackToBell)*
+
+### Profiles / Kids
+
+- [ ] Settings → Switch profile, press Back on Who's watching → the ring returns to Switch profile. (`56796c7`)
+- [ ] On a kid profile hit the curfew with the return interval due → the lock ("The ship is sailing away…") comes first; Who's watching is asked after it lifts. (`56796c7`, `87189d8`, `9ab3745`)
+- [ ] Profile editor → "Enter PIN to change locks" → after the pad the ring is back on that button (or the first lock tile). (`8543889`)
+- [ ] Kids: play the last episode of a season → the up-next card crosses into the next season and skips unaired episodes; hero Play after picking another season still auto-advances. (`60887f7`, `5d8a86b`)
+- [ ] Kids: the season stepper's ends dim (the ring stays); the music dock shows on a kid's title page and franchise grid. (`60887f7`, `8543889`)
+- [ ] Kids age gate: answer a round wrong → the re-deal starts the ring on the first answer. (`9ab3745`, `dcd9992`)
+- [ ] A kid profile active at launch never gets adult setup. (`286c5f3`)
+- [ ] PIN pad: third miss puts the ring on Back, the end of the cool-down re-seeds 1. (`8543889`) *(UI test: testPinCooldownRing)*
+- [ ] Kids Parent PIN: Menu / ‹ returns the ring to the profile chip. (`60887f7`) *(UI test: testKidsParentPinBackToChip)*
+- [ ] Failed kids page: one Down from each bar item reaches Try again. (`9ab3745`) *(UI test: testKidsFailedTryAgainReachable)*
+
+### Live TV / Sports
+
+- [ ] Pull the network on a live channel for a few seconds → it reconnects by itself (1.5 s / 4 s); the error card only after the tries run out. (`feec966`)
+- [ ] Let the guide fail late with the ring in the grid → the list opens on the same channel. (`5d8a86b`, `64ca414`)
+- [ ] Leave the in-player TV Guide open a few minutes → "{n}m left" and the airing bars move each minute. (`6ac33ed`)
+- [ ] Search channels in Arabic; double-press the Look steppers; zap a channel → the Arabic query matches; one step per press; the chrome line follows the guide. (`5d8a86b`)
+- [ ] Press Clear in Live / Manga / eBook search → the ring goes to the field and the keyboard does not open. (`288f4df`)
+- [ ] Sports event → "Search your channels": type a name, play a result, pin one → it plays; "Always use for {league}" is tried first next time; a failed first read shows the no-channel note. (`65e15ea`, `7aa8b2f`)
+- [ ] Sports addon panel: pick slow listing A, Back, B, Back, A, press Play as streams show → A's stream plays, no "Could not start". (`43f6f6a`, `286c5f3`)
+- [ ] Sports: open the addon panel and an addon's page; leave Sports on a mode over midnight → focus lands on the first listing / the action button; the date rolls over once and the mode is kept per profile. (`2b7f97a`)
+- [ ] Open a live event, then drop the network across a 30 s refresh → "Showing saved match details."; Stats and Lineups stay. (`c156ac3`, `ee5e7c2`)
+- [ ] Event → Choose a channel, play, Back; expand the standings and open a cover → the ring returns to Choose a channel; the table stays expanded with no "Loading match details..." flash. (`56d3886`)
+
+### Music / Manga / eBook
+
+- [ ] In an album of 5+ tracks turn on Shuffle and Repeat all, let it run past the end → gapless hand-offs, a new shuffled lap at the end; the modes survive a relaunch. (`6b01a08`)
+- [ ] Repeat one on a streaming track and a Spotify track; change shuffle/repeat from Control Center → each replays, Next still moves on; the dock and Now Playing follow. (`6b01a08`)
+- [ ] Play next on a heard track, under shuffle then Repeat off, and on a wrapped row → it plays next and the order carries on with nothing skipped. (`531cb93`)
+- [ ] With music loaded (playing or paused), open the manga zoom and eBook narration and press Play/Pause → the reader gets it; the music does not toggle. (`7386342`, `54d217a`)
+- [ ] Start eBook narration while a music track is still finding its source → the track is queued paused, not started over the narration. (`54d217a`)
+- [ ] Change the eBook text size / font during narration → the highlight stays on the read paragraph. (`7386342`)
+- [ ] Make a manga page fail; zoom a fit-height page and pan → it retries once after 1.5 s; the pan stays inside the page. (`7386342`)
+- [ ] Make an eBook chapter fail, press Try again → the ring lands on the page. (`7386342`)
+- [ ] Open Lyrics, skip tracks quickly → no "No lyrics" over the next track's lookup (9 s give-up). (`54d217a`)
+- [ ] Music queue Move up / down → the ring follows the moved row. (`288f4df`)
+- [ ] Stop and close the player from the music dock on a kids page, a music page and music search → the ring lands on a nearby control, not nowhere. (`bb117ed`)
+
+### Watch Together
+
+- [ ] As a TV guest: host buffers, give the guest a slow source, drop the TV's network ~30 s → no seek every second or heartbeat; the guest rejoins and resyncs. (`a8ac757`)
+- [ ] As a guest in a paused room press Back ("Leave the show?") → the room is not paused by it; Keep watching leaves the video to the room. (`a8ac757`)
+- [ ] Host moves to the next episode while the TV guest is in the player or on Detail → one invite toast (Join, 4 s auto-join), no second Back; the lobby does not read the guest ready too early. (`a8ac757`, `95f1be7`, `9a9daa1`)
+- [ ] As a guest, open the invited title's Detail page before joining → "{name} started watching" with Join / Dismiss, not a picker with no way out. (`9a9daa1`)
+- [ ] As a guest, hold Select on a card when an invite arrives; get a re-invite after leaving the player → the invite waits for the menu; the closed video does not reopen. (`9a9daa1`, `a8ac757`)
+- [ ] Get an invite while browsing in the PiP layer; summon a title (Sure) then receive an invite in the room screen → toasts show in the right window; no unseen auto-join. (`a8ac757`, `6ac33ed`)
+- [ ] Start a room / Join by code; open the in-player typing sheet and close it → the ring goes to Now watching (else Message); typing returns to its button. (`9ab3745`, `dcd9992`)
+- [ ] Dismiss an invite toast, or let an auto-joined title page close → the ring goes to the room's default spot, not wherever tvOS drops it. (`bb117ed`, `fc919bc`)
+- [ ] Desktop host at 1.5× with the TV as guest → the TV plays at 1.5× and returns to its own speed after leaving. (`a8ac757`)
+- [ ] Watch together from the account menu: first action seeded, Back and Menu return to the item. *(UI test: testWatchTogetherFromAccountMenu)*
+
+### Shell / lifecycle / screensaver
+
+- [ ] Change the theme and then the language → LB/RB still switch tabs afterwards. (`56796c7`)
+- [ ] Cold-launch with a big library → the boot splash animates smoothly (the engine is no longer built on the main thread). (`56796c7`)
+- [ ] Watch the top-bar clock → it turns on the minute. (`56796c7`)
+- [ ] Open a link under the PiP layer's page, then restore; send a list link under a kid, then pick an adult → it opens in the layer's window; the list waits for the adult shell. (`3f4da96`, `5541573`)
+- [ ] Send a link while a page is still opening → it opens after, not lost and not twice. (`5541573`)
+- [ ] On an Apple TV HD open the Together room QR, sign-in QR, Detail with episode stills, the picker and Lyrics → no stutter. (`8c5fd7d`)
+- [ ] With VoiceOver on, walk the guide, the player's track dialogs, a tile with marks and the collection editor → labels read; picks read as selected. (`b40d1a5`)
+- [ ] Switch the UI to German → the controller toast, "All addons", Play Zone names, PIN pad titles are translated. (`1cabd7e`)
+- [ ] Menu on Detail returns Home with the ring on the card; the profile chip opens Who's watching and Menu closes it. *(UI test: testDetailBackKeepsHomeFocus, testProfileChipWhoBack, testWhoPinBackAndPick)*
+- [ ] A failed room's Try again is reachable and keeps the ring through a failing retry. *(UI test: testRoomTryAgainKeepsRing)*
+
 ## Before you start
 
 **Build.** Merge `claude/determined-hopper-smvu37` into `main` (or open a PR), run `Build` with
 `testflight=true`, and install that build from TestFlight (internal testing). TestFlight build 220
-(2026-09-25) carries the branch up to `37aa626`; later work waits for the next upload.
+(2026-09-25) carries the branch up to `37aa626`; later work waits for the next upload (Apple's daily
+upload limit refused run 221's upload; the retry is set for 2026-09-26).
 
 **Hardware.**
 - An Apple TV 4K running the current tvOS. Multiview and Anime4K assume the A15 model.
