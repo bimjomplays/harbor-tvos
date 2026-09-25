@@ -43,6 +43,11 @@ struct DetailView: View {
     /// autoPlay opens the picker once, as soon as the page knows what Play would start
     /// (DetailModel.knowsPlayTarget), not after the whole page has loaded.
     @State private var autoPlayFired = false
+    /// (detail/search pass 2) Something was played from this page: an episode hint (an AI search
+    /// episode pick) is spent like a Continue Watching one (takeBpPlayIntent). Kept, it put Play back
+    /// on the hinted episode from its start after an auto-advance had moved the resume point on,
+    /// with the resume label and bar stood down (hintElsewhere).
+    @State private var hintSpent = false
 
     /// use-bp-detail-actions BpDetailAction.
     struct HeroAction: Identifiable {
@@ -162,7 +167,7 @@ struct DetailView: View {
             // A Continue Watching one-press resume names its episode only for that one play (bp-detail
             // takeBpPlayIntent consumes the intent): once it fired, Play and the strip follow the resume
             // point again, not the episode the page was opened for (an auto-advance moved on from it).
-            model.episodeHint = autoPlayFired ? nil : episodeHint
+            model.episodeHint = (autoPlayFired || hintSpent) ? nil : episodeHint
             let first = !didFirstLoad
             didFirstLoad = true
             await model.load()
@@ -240,6 +245,8 @@ struct DetailView: View {
                              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { pickerAttempt = next; picker = (model.meta, t.episode) }
                          }) { natural in
                 playing = nil
+                hintSpent = true
+                model.episodeHint = nil
                 // The strip's started / next-up (and so its spoiler masks) move with what was just played.
                 Task { await model.loadWatchedState() }
                 // Auto-advance (player-spec §1.9, simplified): a finished episode opens the next one's picker.
@@ -265,7 +272,7 @@ struct DetailView: View {
         pickerPref = !roomPick
         if let re = roomEpisode, let s = re["season"]?.number, let e = re["episode"]?.number {
             picker = (model.meta, model.episodes.first(where: { $0.season == Int(s) && $0.episode == Int(e) })?.playEpisode ?? re)
-        } else if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) } else { picker = (model.meta, nil) }
+        } else if model.isSeries { picker = (model.meta, model.playTarget?.playEpisode ?? model.premiereEpisode) } else { picker = (model.meta, nil) }
     }
 
     /// bp-player-controls "Previous episode": the episode before this one opens its picker (after
@@ -321,7 +328,7 @@ struct DetailView: View {
                 Button {
                     pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true
                     pickerPref = true
-                    if model.isSeries, let target = model.playTarget { picker = (model.meta, target.playEpisode) }
+                    if model.isSeries { picker = (model.meta, model.playTarget?.playEpisode ?? model.premiereEpisode) }
                     else { picker = (model.meta, nil) }
                 } label: {
                     VStack(spacing: 0) {
@@ -608,6 +615,14 @@ struct DetailView: View {
 
     private var episodes: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
+            if model.metaFailed, model.episodes.isEmpty {
+                // (detail/search pass 2) bp-detail's BpPageMessage when the title can't be read.
+                VStack(alignment: .leading, spacing: BP.px(10)) {
+                    BPNote(text: "Couldn't load this title.")
+                    Button("Try again") { Task { await model.load() } }.buttonStyle(BPActionStyle())
+                }
+                .focusSection()
+            }
             if model.animeSeasonKey != nil {
                 animeSeasonChips
             } else {
@@ -655,9 +670,15 @@ struct DetailView: View {
             .onChange(of: stripParkKey) { _, _ in
                 guard stripFocus == nil else { return }
                 // An anime chip can hold several Kitsu seasons, so the card is found by its own pair.
-                guard !model.seasonEpisodes.isEmpty, let s = model.stripTarget?.season, let e = model.stripTarget?.episode,
-                      let target = model.seasonEpisodes.first(where: { $0.season == s && $0.episode == e }) else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { proxy.scrollTo(target.id, anchor: .leading) } }
+                let strip = model.seasonEpisodes
+                guard let firstCard = strip.first else { return }
+                let s = model.stripTarget?.season, e = model.stripTarget?.episode
+                let target: DetailModel.Episode? = strip.first(where: { $0.season == s && $0.episode == e })
+                // (detail/search pass 2) A season without the target opens at its first card: the
+                // strip kept the last season's scroll, so after scrolling to E20 of one season the
+                // next opened on its late episodes (or blank space past a short season's end).
+                let id: String = (target ?? firstCard).id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { withAnimation { proxy.scrollTo(id, anchor: .leading) } }
             }
             }
             .focusSection()

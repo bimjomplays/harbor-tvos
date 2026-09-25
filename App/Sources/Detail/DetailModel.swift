@@ -345,6 +345,23 @@ final class DetailModel: ObservableObject {
         static func < (a: LoadStage, b: LoadStage) -> Bool { a.rawValue < b.rawValue }
     }
     @Published private(set) var loadStage: LoadStage = .none
+    /// (detail/search pass 2) The last load could not read the full meta (offline, catalog down).
+    /// A series then has no episodes: the page says so with Try again (bp-detail's "Couldn't load
+    /// this title." page), where it showed an empty strip and nothing else.
+    @Published private(set) var metaFailed = false
+
+    /// bp-detail play(): "A series with no resolvable episode still must not ask addons for
+    /// series-level streams, so it falls back to the premiere" (bpEpisodeAt(1, 1)). (detail/search
+    /// pass 2) Play on a series whose episodes never loaded opened the picker with no episode.
+    var premiereEpisode: AnyJSON {
+        var ep: [String: AnyJSON] = ["season": .number(1), "episode": .number(1)]
+        if meta.id.hasPrefix("tt") {
+            ep["imdbId"] = .string(meta.id)
+            ep["imdbSeason"] = .number(1)
+            ep["imdbEpisode"] = .number(1)
+        }
+        return .object(ep)
+    }
     private func reach(_ stage: LoadStage) { if loadStage < stage { loadStage = stage } }
 
     /// An episodeHint that names an episode on this page (a Continue Watching resume, an AI pick).
@@ -374,6 +391,7 @@ final class DetailModel: ObservableObject {
         // However it ended, a finished load is all Play will get.
         defer { loading = false; reach(.library) }
         let kind = isSeries ? "series" : "movie"
+        var fetched = false
         if isAnimeId {
             // use-bp-anime-detail: a kitsu id resolves to nothing on TMDB or Cinemeta; the Kitsu chain owns it.
             let p = ProfilesStore.shared.active
@@ -386,6 +404,7 @@ final class DetailModel: ObservableObject {
                 if let y = a.detail.year { m.releaseInfo = y }
                 if !a.detail.genres.isEmpty { m.genres = a.detail.genres }
                 meta = m
+                fetched = true
                 episodes = a.episodes.map { animeEpisode($0, showSeason: false) }.uniquedById()   // (bug pass)
                 seasons = Array(Set(episodes.map(\.season))).sorted()
                 if let first = seasons.first, !seasons.contains(season) { season = first }
@@ -397,7 +416,9 @@ final class DetailModel: ObservableObject {
             }
         } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
             meta = full
+            fetched = true
         }
+        metaFailed = !fetched
         if !isAnimeId { buildEpisodes() }
         reach(.meta)
         await loadResume()

@@ -22,6 +22,11 @@ final class LibraryModel: ObservableObject {
 
     @Published private(set) var tabs: [Tab] = []
     @Published private(set) var feed: Feed?
+    /// (detail/search pass 2) The feed of the tab on screen. A tab pick keeps the last tab's feed
+    /// until the new one lands (Trakt, Simkl and Letterboxd go to the network): its titles and count
+    /// stood under the new tab's chip and could be opened. bp-library's feed is per tab; nil here
+    /// shows the spinner instead.
+    var shownFeed: Feed? { feed.flatMap { $0.tab == tab ? $0 : nil } }
     @Published private(set) var loading = false
     @Published var tab = "library"
     @Published var type = "all"
@@ -82,7 +87,13 @@ final class LibraryModel: ObservableObject {
     /// bp-library's [tab] effect: a new tab starts unfiltered (group, type and search cleared). The
     /// search used to carry over, filtering the next tab by a title typed for the last one, even
     /// with the search row closed and nothing on screen saying so.
-    func select(tab id: String) { tab = id; group = nil; type = "all"; query = ""; limit = 60; Task { await load() } }
+    func select(tab id: String) {
+        tab = id; group = nil; type = "all"; query = ""; limit = 60
+        // Loading from this frame on: the new tab has no feed yet (shownFeed), so the page shows
+        // the spinner, not the failed-read note, until the load below starts.
+        loading = true
+        Task { await load() }
+    }
     func set(type t: String) { type = t; limit = 60; Task { await load() } }
     func set(sort s: String) {
         sort = s; sortKnown = true; limit = 60
@@ -116,6 +127,8 @@ struct LibraryView: View {
     @FocusState private var focusedChip: String?
     /// "Show more" was pressed at this many tiles: the tile at that index takes the ring once it lands.
     @State private var focusAfterMore: Int?
+    /// When the ring last left the grid by its tile going away (or moving off it).
+    @State private var gridFocusLostAt: Date?
 
     private func closePanels() {
         let chip = model.showSearch ? "search" : (model.showFilters ? "filters" : "repair")
@@ -141,7 +154,7 @@ struct LibraryView: View {
                 if model.showFilters { filters }
                 if model.showSearch { searchRow }
                 if model.showRepair { LibraryRepairPanel(onRepaired: { Task { await model.load(force: true) } }) }
-                if let f = model.feed {
+                if let f = model.shownFeed {
                     // Over a grid kept from the cache; an empty tab says it in its own empty copy.
                     if f.status == "error" && !f.sections.isEmpty { BPNote(text: errorText, tone: BP.danger) }
                     if f.sections.isEmpty {
@@ -188,6 +201,9 @@ struct LibraryView: View {
                     }
                 } else if model.loading {
                     ProgressView().tint(BP.inkMuted).padding(.top, BP.px(40))
+                } else if model.feed != nil {
+                    // The new tab's read failed outright; the last tab's grid is not its answer.
+                    BPNote(text: errorText, tone: BP.danger).padding(.top, BP.px(10))
                 }
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16)).padding(.bottom, BP.hintHeight + BP.px(40))
@@ -196,6 +212,18 @@ struct LibraryView: View {
         .task {
             let p = ProfilesStore.shared.active
             statsEnabled = (try? await HarborEngine.shared.call("wrapped.enabled", [p?.id ?? "default", p?.linked ?? true]) as Bool) ?? false
+        }
+        // bp-library BpChip autofocus={(showEmpty || first) && selected}: a grid that empties under
+        // the ring (the last title taken off the Watchlist on its page, a filter) hands it to the
+        // selected tab chip, not to wherever tvOS resets focus. (detail/search pass 2)
+        .onChange(of: focusedKey) { old, new in if old != nil, new == nil { gridFocusLostAt = Date() } }
+        .onChange(of: model.shownFeed?.sections.isEmpty) { old, empty in
+            guard empty == true, old == false else { return }
+            // Only a ring the emptying grid just dropped (not one the viewer took to a filter row).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                guard focusedKey == nil, focusedChip == nil, let lost = gridFocusLostAt, Date().timeIntervalSince(lost) < 0.5 else { return }
+                focusedChip = "tab:" + model.tab
+            }
         }
         .onChange(of: model.feed?.shown) { _, _ in
             guard let i = focusAfterMore, let f = model.feed else { return }
@@ -219,6 +247,7 @@ struct LibraryView: View {
             HStack(spacing: BP.px(8)) {
                 ForEach(model.tabs) { t in
                     Button(T(t.label)) { model.select(tab: t.id) }.buttonStyle(BPActionStyle(primary: model.tab == t.id)).bpSelected(model.tab == t.id)
+                        .focused($focusedChip, equals: "tab:" + t.id)
                 }
                 Divider().frame(height: BP.px(24)).overlay(BP.edge2)
                 // bp-library chips print their own state (the Filters chip is selected while a type
@@ -239,7 +268,7 @@ struct LibraryView: View {
                 if statsEnabled {
                     Button { showStats = true } label: { Label("Stats", systemImage: "chart.bar") }.buttonStyle(BPActionStyle())
                 }
-                if let f = model.feed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
+                if let f = model.shownFeed { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }
             }
         }
         // (layout pass) The track is exactly one chip tall: the focused chip's ring (9.5 pt out) lost

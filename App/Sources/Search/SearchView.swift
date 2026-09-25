@@ -98,6 +98,9 @@ struct SearchView: View {
             } else {
                 Text(model.query.isEmpty ? T("Search Harbor") : model.query)
                     .font(BP.sans(22, .semibold)).foregroundStyle(model.query.isEmpty ? BP.inkSubtle : BP.ink).lineLimit(1)
+                    // (detail/search pass 2) A long query keeps its end in view, where the caret is
+                    // (an input scrolls to it); the tail was cut, so the letters being typed never showed.
+                    .truncationMode(model.query.isEmpty ? .tail : .head)
             }
             Rectangle().fill(BP.ink).frame(width: 2, height: BP.px(26)).opacity(0.8)
             Spacer()
@@ -148,9 +151,13 @@ struct SearchView: View {
     @MainActor private func select(_ m: Meta) {
         guard m.type == "manga" else { detail = m; return }
         guard m.id.hasPrefix("anilist:") else { mangaOpen = MangaOpen(id: m.id); return }
+        let asked = model.query
         Task {
             let id: String? = try? await HarborEngine.shared.call("manga.resolveTitle", [m.name])
-            if let id { mangaOpen = MangaOpen(id: id) }
+            // (detail/search pass 2) A late answer opens nothing once the viewer has moved on (a new
+            // query, or another page already up: a second cover could not present and stayed pending).
+            guard let id, model.query == asked, detail == nil, aiOpen == nil, mangaOpen == nil, person == nil, collection == nil, addonPage == nil, channel == nil else { return }
+            mangaOpen = MangaOpen(id: id)
         }
     }
 
@@ -313,9 +320,9 @@ struct SearchView: View {
                 Color.clear.frame(height: BP.barHeight + BP.px(20))
                 // search-overlay.tsx: in AI mode the AI section replaces the regular results.
                 if ai.aiMode && !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
-                    AISearchSection(ai: ai, query: model.query.trimmingCharacters(in: .whitespaces)) { r in
-                        aiOpen = AIOpen(meta: r.meta, season: r.season, episode: r.episode)
-                    }
+                    AISearchSection(ai: ai, query: model.query.trimmingCharacters(in: .whitespaces),
+                                    onOpen: { r in aiOpen = AIOpen(meta: r.meta, season: r.season, episode: r.episode) },
+                                    onRun: { keyboardFocus += 1 })
                     .padding(.horizontal, BP.gutter)
                 } else {
                     regularResults
