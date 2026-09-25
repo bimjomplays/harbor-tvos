@@ -63,7 +63,7 @@ struct RoomView: View {
                 // until the answer), dimmed but focusable, so the ring stays on the button.
                 let copy: (title: String, body: String) = failureCopy
                 let retrying: Bool = model.loading
-                pageMessage(title: copy.title, body: copy.body, action: T("Try again"), icon: "arrow.clockwise", busy: retrying) {
+                pageMessage(title: copy.title, body: copy.body, action: T("Try again"), icon: "arrow.clockwise", busy: retrying, testId: "room-try-again") {
                     guard !model.loading else { return }
                     Task { await model.load() }
                 }
@@ -72,7 +72,7 @@ struct RoomView: View {
             } else if let empty = emptyCopy {
                 // bp-movies / bp-shows / bp-service: a page that settles with nothing says why and
                 // offers the one thing that fixes it (BpEmptyState: never a dead end on a remote).
-                pageMessage(title: empty.title, body: empty.body, action: T("Open settings"), icon: "slider.horizontal.3") {
+                pageMessage(title: empty.title, body: empty.body, action: T("Open settings"), icon: "slider.horizontal.3", testId: "room-open-settings") {
                     if model.isServicePage { dismissPage() }
                     app.room = .settings
                 }
@@ -264,7 +264,8 @@ struct RoomView: View {
 
     /// BpPageMessage / BpEmptyState: a heading, a sentence, and the one action that fixes the state,
     /// on a solid plate that takes the ring.
-    private func pageMessage(title: String, body: String, action: String, icon: String, busy: Bool = false, perform: @escaping () -> Void) -> some View {
+    /// `testId`: the action's accessibility identifier (UI tests, NavigationTests2).
+    private func pageMessage(title: String, body: String, action: String, icon: String, busy: Bool = false, testId: String, perform: @escaping () -> Void) -> some View {
         VStack(spacing: BP.px(12)) {
             if !title.isEmpty {
                 Text(verbatim: title).font(BP.display(26)).foregroundStyle(BP.ink).multilineTextAlignment(.center)
@@ -275,6 +276,7 @@ struct RoomView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button(action: perform) { Label(action, systemImage: icon) }
                 .buttonStyle(BPActionStyle(primary: true, busy: busy))
+                .accessibilityIdentifier(testId)
                 .padding(.top, BP.px(6))
         }
         .frame(maxWidth: .infinity)
