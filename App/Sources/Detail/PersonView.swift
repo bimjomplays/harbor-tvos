@@ -25,8 +25,15 @@ final class PersonModel: ObservableObject {
     init(personId: Int) { self.personId = personId }
     deinit { unsubscribe?() }
 
+    /// (detail pass) Only the newest load lands: a Sort or Rating pick made while the previous one
+    /// was out (or a person-updated refresh) could put the older filmography under the new chips.
+    private var loadGen = 0
+
     func load() async {
-        loading = true; defer { loading = false }
+        loadGen += 1
+        let gen = loadGen
+        loading = true
+        defer { if gen == loadGen { loading = false } }
         if unsubscribe == nil {
             unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
                 guard type == "harbor:person-updated", let self, (try? detail?.decode(Ping.self))?.personId == self.personId else { return }
@@ -35,6 +42,7 @@ final class PersonModel: ObservableObject {
         }
         let p = ProfilesStore.shared.active
         if let pg: Page = try? await HarborEngine.shared.call("personRoom.page", [personId, p?.id ?? "default", p?.linked ?? true, sort, minRating]) {
+            guard gen == loadGen else { return }
             page = pg
             await CardMarksStore.shared.refresh((pg.knownFor ?? []) + (pg.sections ?? []).flatMap(\.metas))
         }

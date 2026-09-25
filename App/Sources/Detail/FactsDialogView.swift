@@ -15,12 +15,12 @@ struct FactsDialogView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: BP.px(8)) {
                         ForEach(facts) { f in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(T(f.label)).font(BP.sans(11, .bold)).foregroundStyle(BP.inkSubtle).textCase(.uppercase)
-                                Text(f.value).font(BP.sans(14)).foregroundStyle(BP.ink)
+                            DialogLine {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(T(f.label)).font(BP.sans(11, .bold)).foregroundStyle(BP.inkSubtle).textCase(.uppercase)
+                                    Text(f.value).font(BP.sans(14)).foregroundStyle(BP.ink)
+                                }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .focusable()
                         }
                     }
                 }

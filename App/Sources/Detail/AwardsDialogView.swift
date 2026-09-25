@@ -35,13 +35,30 @@ struct AwardsDialogView: View {
             Text(label).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkSubtle)
             // (bug pass) Two nominations in one category and year (two supporting actors) share an Entry id.
             ForEach(Array(list.enumerated()), id: \.offset) { _, e in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text([e.year.map(String.init), e.category].compactMap { $0 }.joined(separator: " · ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
-                    if let r = e.recipient, !r.isEmpty { Text(r).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
+                DialogLine {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text([e.year.map(String.init), e.category].compactMap { $0 }.joined(separator: " · ")).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                        if let r = e.recipient, !r.isEmpty { Text(r).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .focusable()
             }
         }
+    }
+}
+
+/// bp-award-detail-dialog.tsx BpAwardLine / bp-facts-dialog.tsx: a line that takes focus only so Down
+/// can walk (and scroll) the list; the focused one sits on --bp-glass with an --bp-edge-2 ring.
+/// (detail pass) The lines were bare .focusable() views: the focus sat on them with nothing drawn.
+struct DialogLine<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        BPFocusReader { focused in
+            content()
+                .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(focused ? BP.glass : Color.clear))
+                .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(focused ? BP.edge2 : Color.clear, lineWidth: 1))
+        }
+        .focusable()
     }
 }

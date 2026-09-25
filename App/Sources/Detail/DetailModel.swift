@@ -62,6 +62,8 @@ final class DetailModel: ObservableObject {
 
     struct HeroState: Decodable, Equatable {
         var favorite: Bool; var reminder: Bool; var watchedLocal: Bool; var traktMovie: Bool; var showWatchedButton: Bool; var rating: Int?
+        /// (detail pass) useInWatchlist(meta.id, [imdbId]): Harbor's own watchlist or the synced aggregate.
+        var watchlist: Bool?
     }
     @Published private(set) var hero: HeroState?
     /// stremio-watched stremioMovieWatched(libraryItem): flaggedWatched or timesWatched on the Stremio entry.
@@ -138,10 +140,18 @@ final class DetailModel: ObservableObject {
     }
     /// Resume state for the Play button (detail-spec §1.3/1.4): where the viewer left off.
     @Published private(set) var resume: Resume?
-    /// Stremio library membership ("Add to Watchlist" / "In Watchlist", detail-spec §1.3).
-    @Published private(set) var inWatchlist = false
+    /// "Add to Watchlist" / "In Watchlist" (use-bp-detail-actions useInWatchlist): Harbor's own
+    /// watchlist or the synced aggregate (heroState), or the title's Stremio library entry while the
+    /// aggregate has not caught up with it. (detail pass) It was the Stremio entry alone, so the
+    /// action was missing without a Stremio account and never reached Trakt, Simkl or the Library
+    /// room's own watchlist.
+    var inWatchlist: Bool { (hero?.watchlist ?? false) || (libraryBookmarked && !watchlistCleared) }
     @Published private(set) var watchlistBusy = false
-    @Published private(set) var canWatchlist = false
+    /// The Stremio library entry under the page's ids (not removed, not temp).
+    @Published private(set) var libraryBookmarked = false
+    /// The viewer took the title off the watchlist on this page: a library entry read before the
+    /// removal reached Stremio no longer counts.
+    @Published private(set) var watchlistCleared = false
     /// use-bp-episode-strip watchedOf: "season:episode" keys that read watched (Harbor's manual marks,
     /// the Stremio library bitfield, Trakt/Simkl history; a manual unmark wins). engine/episodeWatched.ts.
     @Published private(set) var watched: Set<String> = []
@@ -389,11 +399,12 @@ final class DetailModel: ObservableObject {
         if !isAnimeId { buildEpisodes() }
         reach(.meta)
         await loadResume()
+        // Local marks at once (an anime's Play follows its next-up, so they come before Play can
+        // fire); the library pull and Trakt/Simkl history land after.
+        if isSeries { await loadWatchedState() }
         reach(.resume)
         await loadHero()
         if isSeries {
-            // Local marks at once; the library pull and Trakt/Simkl history land after.
-            await loadWatchedState()
             let _: Bool? = try? await HarborEngine.shared.call("episodeWatched.load", [authKey, meta, imdbId])
             await loadWatchedState()
         }
@@ -460,6 +471,7 @@ final class DetailModel: ObservableObject {
         struct WatchedState: Decodable {
             var watched: [String]; var started: [String]; var masks: [String: SpoilerMask]
             var showEpisodeRating: Bool; var showEpisodeDescription: Bool
+            var nextUp: String?
         }
         let p = ProfilesStore.shared.active
         // An anime chip of the TVDB order mixes Kitsu seasons: started / next-up / masks follow the strip itself.
@@ -475,6 +487,27 @@ final class DetailModel: ObservableObject {
         spoilerMasks = s.masks
         showEpisodeRating = s.showEpisodeRating
         showEpisodeDescription = s.showEpisodeDescription
+        nextUpKey = s.nextUp
+    }
+
+    /// episodeWatched.state nextUp: the first unwatched card of the strip ("season:episode").
+    @Published private(set) var nextUpKey: String?
+
+    /// use-bp-anime-detail resume: an anime page plays the strip's next-up episode once any card of
+    /// the strip reads watched ("Resume S:E"), whatever the local resume entry says. (detail pass)
+    /// The port only followed the local resume point, which a finished episode clears, so after
+    /// watching episodes 1-5 Play said "Play S1 E1" again. Nil when a caller's hint names an episode.
+    var animeNextUp: Episode? {
+        guard isAnimeId, !hintOnPage, let k = nextUpKey else { return nil }
+        let strip = seasonEpisodes
+        guard strip.contains(where: { isWatched($0) }) else { return nil }
+        return strip.first { "\($0.season):\($0.episode)" == k }
+    }
+
+    /// use-bp-episode-strip progressOf: the resume episode's card carries its progress bar.
+    func progress(for ep: Episode) -> Double {
+        guard let r = resume, r.season == ep.season, r.episode == ep.episode else { return 0 }
+        return r.progress
     }
 
     enum WatchedMark: String { case episode, upTo, season }
@@ -510,19 +543,18 @@ final class DetailModel: ObservableObject {
         ProfilesStore.shared.active.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
     }
 
+    /// use-bp-detail-actions watchlist: toggleWatchlist({ ...seed, imdbId }) (engine actions.setWatchlist):
+    /// Harbor's own watchlist at once, then Trakt, Simkl and the Stremio library (every cloud form of
+    /// the title on removal, watchlist.ts ec6a696d) in the background.
     func toggleWatchlist() async {
-        guard let authKey, !watchlistBusy else { return }
+        guard !watchlistBusy else { return }
         watchlistBusy = true; defer { watchlistBusy = false }
-        if inWatchlist {
-            // watchlist.ts removal (upstream ec6a696d): every cloud form of the title goes, tt… and
-            // tmdb:… alike, so a twin saved elsewhere cannot keep the card alive.
-            _ = try? await HarborEngine.shared.callJSON("cards.removeFromWatchlist", [.string(authKey), .string(meta.id), imdbId.map { .string($0) } ?? .null])
-            inWatchlist = false
-        } else {
-            _ = try? await HarborEngine.shared.callJSON("stremio.saveBookmark", [.string(authKey), .string(meta.id), .object(["type": .string(meta.type), "name": .string(meta.name), "poster": meta.poster.map { .string($0) } ?? .null])])
-            inWatchlist = true
-        }
-        await CardMarksStore.shared.refreshWatchlist()
+        let on = !inWatchlist
+        let _: Bool? = try? await HarborEngine.shared.call("actions.setWatchlist", [authKey, meta, imdbId, on])
+        watchlistCleared = !on
+        await loadHero()
+        // The cloud writes are still running: re-mark from the local answer, not a library re-read.
+        await CardMarksStore.shared.remark()
     }
 
     /// The resume point whose season the strip was last moved to. The page reloads every time a
@@ -561,8 +593,8 @@ final class DetailModel: ObservableObject {
             struct State: Decodable { var timeOffset: Double?; var duration: Double?; var season: Int?; var episode: Int?; var video_id: String?; var flaggedWatched: Double?; var timesWatched: Double? }
             var state: State?
             var removed: Bool?
+            var temp: Bool?
         }
-        canWatchlist = authKey != nil
         guard let authKey else { return await loadLocalResume() }
         var found: Item?
         var answered = false
@@ -572,7 +604,8 @@ final class DetailModel: ObservableObject {
             if let item { found = item; break }
         }
         guard answered else { return await loadLocalResume() }
-        inWatchlist = found.map { $0.removed != true } ?? false
+        // watchlist-sync refreshWatchlistAggregates: the library minus removed / temp entries.
+        libraryBookmarked = found.map { $0.removed != true && $0.temp != true } ?? false
         stremioWatched = isMovie && ((found?.state?.flaggedWatched ?? 0) > 0 || (found?.state?.timesWatched ?? 0) > 0)
         guard let st = found?.state else { return await loadLocalResume() }
         let off = st.timeOffset ?? 0
@@ -622,8 +655,16 @@ final class DetailModel: ObservableObject {
     /// The episode Play should start with: the resume target, else the first of the current season.
     var playTarget: Episode? {
         if let h = episodeHint, let ep = episodes.first(where: { $0.season == h.season && $0.episode == h.episode }) { return ep }
+        if let n = animeNextUp { return n }
         if let r = resume, let s = r.season, let e = r.episode, let ep = episodes.first(where: { $0.season == s && $0.episode == e }) { return ep }
         return seasonEpisodes.first
+    }
+
+    /// The hero's progress bar belongs to the resume point only while Play starts it.
+    var resumeIsPlayTarget: Bool {
+        guard let r = resume, !hintElsewhere else { return false }
+        guard isSeries, let s = r.season, let e = r.episode else { return true }
+        return playTarget.map { $0.season == s && $0.episode == e } ?? false
     }
 
     /// views/player.tsx airedNext: the episode after this one when it has aired
@@ -648,11 +689,13 @@ final class DetailModel: ObservableObject {
     /// else the resume point (use-bp-episode-strip initial focus follows views/detail.tsx lastPlay).
     var stripTarget: (season: Int, episode: Int)? {
         if let h = episodeHint, episodes.contains(where: { $0.season == h.season && $0.episode == h.episode }) { return h }
+        if let n = animeNextUp { return (n.season, n.episode) }
         if let r = resume, let s = r.season, let e = r.episode { return (s, e) }
         return nil
     }
 
     var playLabel: String {
+        if let n = animeNextUp { return T("Resume S%lld:E%lld", n.season, n.episode) }
         // A hinted episode other than the resume point plays from its start ("Play S E").
         if let r = resume, !hintElsewhere {
             if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }

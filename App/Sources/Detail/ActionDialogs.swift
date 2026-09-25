@@ -30,7 +30,9 @@ struct ListDialogView: View {
                     BPField(label: "New list", placeholder: "List name", text: $newName)
                     HStack(spacing: BP.px(8)) {
                         Button("Create") { Task { await create() } }.buttonStyle(BPActionStyle(primary: true)).disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Cancel") { naming = false; newName = "" }.buttonStyle(BPActionStyle())
+                        // (detail pass) Both buttons go with the naming row: the ring moves back to "New list"
+                        // (or the new list) instead of falling off the dialog.
+                        Button("Cancel") { naming = false; newName = ""; focus = "new" }.buttonStyle(BPActionStyle())
                     }
                 } else {
                     Button { naming = true } label: { Label("New list", systemImage: "plus") }.buttonStyle(BPActionStyle()).focused($focus, equals: "new")
@@ -62,6 +64,7 @@ struct ListDialogView: View {
         if let id { let _: Bool? = try? await HarborEngine.shared.call("actions.toggleList", [id, meta]) as Bool }
         naming = false; newName = ""
         await load()
+        focus = id.flatMap { i in lists.contains(where: { $0.id == i }) ? i : nil } ?? "new"
     }
 }
 
@@ -107,16 +110,22 @@ struct RateDialogView: View {
         }
     }
 
+    /// bp-rate-dialog.tsx: a score rates and closes (the Rate cell re-reads it as the dialog goes).
+    /// (detail pass) It stayed open; the dialog now closes unless the device-only note has to show.
     private func rate(_ n: Int) async {
         struct Out: Decodable { var score: Int; var synced: Bool }
         if let o: Out = try? await HarborEngine.shared.call("actions.rate", [meta, n]) {
             score = o.score
-            note = o.synced ? nil : "Saved on this device. It syncs to your Harbor account when you sign in."
+            if o.synced { dismiss(); return }
+            note = "Saved on this device. It syncs to your Harbor account when you sign in."
         }
     }
 
+    /// bp-rate-dialog.tsx "Remove rating": unrate and close. (detail pass) The button vanished under
+    /// the ring once the score cleared and the focus fell off the dialog.
     private func unrate() async {
         _ = try? await HarborEngine.shared.callJSON("actions.unrate", [.string(meta.id)])
         score = 0
+        dismiss()
     }
 }

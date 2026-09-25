@@ -30,6 +30,8 @@ struct DetailView: View {
     @FocusState private var heroFocus: String?
     /// The season row: a Kitsu season button ("kitsu-<n>") or a TVDB chip ("chip-<key>").
     @FocusState private var seasonFocus: String?
+    /// The episode card holding the ring, if any (the strip parks on the resume card only without it).
+    @FocusState private var stripFocus: String?
     /// When a Kitsu season button last lost focus by vanishing (the TVDB chips replacing it).
     @State private var kitsuFocusLostAt: Date?
     @Environment(\.dismiss) private var dismiss
@@ -66,13 +68,12 @@ struct DetailView: View {
                 picker = (model.meta, nil)
             })
         }
-        if model.canWatchlist {
-            let saved = model.inWatchlist
-            out.append(HeroAction(key: "watchlist", label: saved ? "In Watchlist" : "Add to Watchlist", icon: saved ? "checkmark" : "plus", active: saved) {
-                guard !model.watchlistBusy else { return }
-                Task { await model.toggleWatchlist() }
-            })
-        }
+        // use-bp-detail-actions: always offered (Harbor's own watchlist needs no Stremio account).
+        let saved = model.inWatchlist
+        out.append(HeroAction(key: "watchlist", label: saved ? "In Watchlist" : "Add to Watchlist", icon: saved ? "checkmark" : "plus", active: saved) {
+            guard !model.watchlistBusy else { return }
+            Task { await model.toggleWatchlist() }
+        })
         for tr in model.trackers {
             let label = tr.statusLabel.map { "\(tr.name) · \(T($0))" } ?? T("Add to %@", tr.name)
             out.append(HeroAction(key: tr.key, label: label, icon: "plus", active: tr.status != nil) { trackerDialog = tr })
@@ -322,8 +323,9 @@ struct DetailView: View {
                     VStack(spacing: 0) {
                         Label(model.playLabel, systemImage: "play.fill")
                         // Progress under Play, only mid-way through (0.01 < progress < 0.97).
-                        // Hidden when an AI search episode pick names another episode (it plays from its start).
-                        if let r = model.resume, !model.hintElsewhere, r.progress > 0.01, r.progress < 0.97 {
+                        // Hidden when an AI search episode pick names another episode (it plays from its start),
+                        // or an anime's next-up is the target instead of the local resume point.
+                        if let r = model.resume, model.resumeIsPlayTarget, r.progress > 0.01, r.progress < 0.97 {
                             GeometryReader { g in
                                 Capsule().fill(BP.accent).frame(width: g.size.width * r.progress, height: BP.px(3))
                             }
@@ -468,13 +470,17 @@ struct DetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
                     ForEach(model.characters.prefix(20)) { c in
-                        VStack(spacing: BP.px(8)) {
-                            RemoteImage(url: c.image).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
-                            Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                            if let r = c.role, !r.isEmpty { Text(r.capitalized).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                        // (detail pass) A tile like the cast row's: the bare .focusable() cell took focus
+                        // with no ring. Upstream's Select favourites the character; that store is not ported.
+                        Button { } label: {
+                            VStack(spacing: BP.px(8)) {
+                                RemoteImage(url: c.image).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
+                                Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                if let r = c.role, !r.isEmpty { Text(r.capitalized).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+                            }
+                            .frame(width: BP.px(130))
                         }
-                        .frame(width: BP.px(130))
-                        .focusable()
+                        .buttonStyle(BPTileStyle(radius: BP.px(55)))
                         // bp-anime-characters.tsx aria-label `${character.name}, ${role}`: one focus stop reads both.
                         .accessibilityElement(children: .combine)
                     }
@@ -517,24 +523,26 @@ struct DetailView: View {
     }
 
     // bp-facts: a preview card of the first rows.
+    // (detail pass) A Button like bp-facts.tsx's: the bare .focusable() card took focus with no
+    // ring, so the viewer lost track of the focus at the bottom of the page.
     private func factsCard(_ facts: [DetailModel.Extras.Fact]) -> some View {
-        VStack(alignment: .leading, spacing: BP.px(6)) {
-            Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
-            ForEach(facts.prefix(8)) { f in
-                HStack(alignment: .top, spacing: BP.px(8)) {
-                    Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
-                    Text(f.value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
+        Button { factsDialog = true } label: {
+            VStack(alignment: .leading, spacing: BP.px(6)) {
+                Text("Details").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
+                ForEach(facts.prefix(8)) { f in
+                    HStack(alignment: .top, spacing: BP.px(8)) {
+                        Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
+                        Text(f.value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                    }
                 }
             }
+            .padding(BP.px(16))
+            .frame(maxWidth: BP.px(620), alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
         }
-        .padding(BP.px(16))
-        .frame(maxWidth: BP.px(620), alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
-        .padding(.horizontal, BP.gutter)
-        .focusable()
         // bp-facts-dialog: Select opens every row in a scrollable sheet.
-        .onTapGesture { factsDialog = true }
-        .onPlayPauseCommand { factsDialog = true }
+        .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .padding(.horizontal, BP.gutter)
     }
 
     /// Crew/cast lines from Cinemeta until TMDB cast cards arrive (detail-spec §1.1 rows 4-5).
@@ -577,13 +585,30 @@ struct DetailView: View {
         }
     }
 
+    /// The season buttons: the first eight, plus the season on screen when it sits past them (a
+    /// resume in season 12, or a pick from the list). (detail pass) Without it no button read as
+    /// selected while the strip showed that season (bp-season-menu's trigger names the active one).
+    private var seasonChips: [Int] {
+        var out = Array(model.seasons.prefix(8))
+        if model.seasons.contains(model.season), !out.contains(model.season) { out.append(model.season) }
+        return out
+    }
+
+    /// What the strip parks on: its first card and count, and the hinted / resume episode.
+    private var stripParkKey: String {
+        let strip = model.seasonEpisodes
+        var key = "\(strip.first?.id ?? ""):\(strip.count)"
+        if let t = model.stripTarget { key += ":\(t.season):\(t.episode)" }
+        return key
+    }
+
     private var episodes: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             if model.animeSeasonKey != nil {
                 animeSeasonChips
             } else {
                 HStack(spacing: BP.px(8)) {
-                    ForEach(model.seasons.prefix(8), id: \.self) { s in
+                    ForEach(seasonChips, id: \.self) { s in
                         Button(s == 0 ? "Specials" : "Season \(s)") { model.pickKitsuSeason(s) }
                             .buttonStyle(BPActionStyle(primary: model.season == s))
                             .bpSelected(model.season == s)
@@ -604,9 +629,11 @@ struct DetailView: View {
                         // use-bp-detail play(ep, fromStrip): the strip fires like Play when instant play is on.
                         Button { pickerAuto = SettingsBridge.shared.slice.instantPlay ?? true; pickerPref = true; picker = (model.meta, ep.playEpisode) } label: {
                             EpisodeCell(episode: ep, watched: model.isWatched(ep), fact: model.fact(for: ep), chain: model.stillChain(for: ep), backdrop: model.meta.background,
-                                        spoiler: model.spoilerMask(for: ep), showRating: model.showEpisodeRating, showDescription: model.showEpisodeDescription)
+                                        spoiler: model.spoilerMask(for: ep), showRating: model.showEpisodeRating, showDescription: model.showEpisodeDescription,
+                                        progress: model.progress(for: ep))
                         }
                             .buttonStyle(BPTileStyle())
+                            .focused($stripFocus, equals: ep.id)
                             // episode-watched-menu.tsx on hold-Select, plus use-mark-season's season toggle.
                             .contextMenu { episodeWatchedMenu(ep) }
                             .id(ep.id)
@@ -618,7 +645,11 @@ struct DetailView: View {
             .scrollClipDisabled()
             // use-bp-episode-strip: land on the hinted (AI search pick) or resume episode when the strip first shows.
             // Keyed by the strip's first card too: the hint's season can replace the resume season with the same count.
-            .onChange(of: "\(model.seasonEpisodes.first?.id ?? ""):\(model.seasonEpisodes.count)") { _, _ in
+            // (detail pass) And by the target itself: the resume point is read after the episodes are in,
+            // so a resume in the season already on screen (every one-season show) never parked the strip.
+            // useBpParkedTrack: never while the ring is in the strip (the viewer's own spot wins).
+            .onChange(of: stripParkKey) { _, _ in
+                guard stripFocus == nil else { return }
                 // An anime chip can hold several Kitsu seasons, so the card is found by its own pair.
                 guard !model.seasonEpisodes.isEmpty, let s = model.stripTarget?.season, let e = model.stripTarget?.episode,
                       let target = model.seasonEpisodes.first(where: { $0.season == s && $0.episode == e }) else { return }
@@ -878,6 +909,8 @@ struct EpisodeCell: View {
     /// bp-episode-card.tsx: settings.showEpisodeRating / showEpisodeDescription !== false.
     var showRating = true
     var showDescription = true
+    /// bp-episode-card.tsx progress: the resume episode's bar along the still's bottom edge (0.01–0.97).
+    var progress: Double = 0
     /// The episode button's focus (the nearest focusable ancestor): bp-episode-still BP_SPOILER_THUMB /
     /// BP_SPOILER_TEXT lift the blur on focus, since a remote has no hover to reveal it.
     @Environment(\.isFocused) private var focused
@@ -919,6 +952,16 @@ struct EpisodeCell: View {
                     Text("Unaired").font(BP.sans(9.8, .bold)).textCase(.uppercase).foregroundStyle(BP.canvas)
                         .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.ink))
                         .padding(BP.px(7)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                // (detail pass) The strip never showed where the viewer stopped inside an episode.
+                if progress > 0.01, progress < 0.97 {
+                    ZStack(alignment: .leading) {
+                        BP.void_.opacity(0.6)
+                        BP.accent.frame(width: Self.size.width * progress)
+                    }
+                    .frame(width: Self.size.width, height: BP.px(3))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .accessibilityHidden(true)
                 }
             }
             .frame(width: Self.size.width, height: Self.size.height)
