@@ -468,6 +468,10 @@ struct PlayPickerView: View {
     /// bp-stream-filters addonOrderMode: settings.streamSort === "addon" (the default) or an addon
     /// that ranks its own list; else the Harbor order.
     private var sortByAddon: Bool { model.addonRanked || model.streamSort == "addon" }
+    /// bp-stream-chips sort chip label (sortForced / sort === "addon" / Harbor's order).
+    private var sortChipLabel: String {
+        T(model.addonRanked ? "Addon order (locked)" : (model.streamSort == "addon" ? "Addon order" : "Harbor pick"))
+    }
 
     private func matchesFacets(_ s: ScoredStream, except: String? = nil) -> Bool {
         for f in Self.facets where f.key != except {
@@ -616,12 +620,17 @@ struct PlayPickerView: View {
                         .buttonStyle(BPActionStyle(primary: model.activeFilterId != nil))
                 }
                 Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(24))
-                Button(sortByAddon ? "Sort: addon order" : "Sort: Harbor") {
+                // (device-flow pass 3) Dimmed and ignored, not disabled, while an addon ranks its
+                // own list: that flag can land with the ring on this chip, and a disabled button
+                // drops focus on tvOS. Labels are bp-stream-chips' sort chip.
+                Button {
+                    guard !model.addonRanked else { return }
                     let next = sortByAddon ? "harbor" : "addon"
                     Task { await model.setStreamSort(next) }
+                } label: {
+                    Label(sortChipLabel, systemImage: "arrow.up.arrow.down")
                 }
-                .buttonStyle(BPActionStyle())
-                .disabled(model.addonRanked)
+                .buttonStyle(BPActionStyle(busy: model.addonRanked))
                 if filtered {
                     // (detail/search pass 2) The chip goes with the filters: the ring moves to "All"
                     // instead of falling off the row.

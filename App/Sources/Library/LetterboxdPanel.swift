@@ -52,6 +52,10 @@ final class LetterboxdModel: ObservableObject {
 struct LetterboxdPanel: View {
     @StateObject private var model = LetterboxdModel()
     @State private var username = ""
+    /// (device-flow pass 3) Disconnect asks nothing first, like letterboxd-panel.tsx
+    /// handleDisconnect, and Connect swaps it out under the ring; the ring follows to the step's
+    /// lead button (Disconnect ↔ Connect) instead of falling off the panel.
+    @FocusState private var lead: Bool
 
     init() {}
 
@@ -60,16 +64,25 @@ struct LetterboxdPanel: View {
             if let s = model.status, s.active {
                 Text("Connected as \(s.username)").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Your watchlist shows in the Library, and your Letterboxd rows on Movies.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                Button("Disconnect") { Task { await model.disable() } }.buttonStyle(BPActionStyle())
+                Button("Disconnect") { Task { await model.disable(); refocus() } }.buttonStyle(BPActionStyle())
+                    .focused($lead)
             } else {
                 Text("Letterboxd username").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("The handle in your profile address, letterboxd.com/your-name.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                 HStack(alignment: .bottom, spacing: BP.px(8)) {
                     BPField(label: "Letterboxd username", placeholder: "your-name", text: $username)
                         .frame(maxWidth: BP.px(420))
-                    Button(model.busy ? "Connecting…" : "Connect") { Task { await model.connect(username) } }
-                        .buttonStyle(BPActionStyle(primary: true, busy: model.busy))
-                        .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty)
+                    // Dimmed, not disabled, while the field is empty, so the ring can land here.
+                    let empty = username.trimmingCharacters(in: .whitespaces).isEmpty
+                    Button(model.busy ? "Connecting…" : "Connect") {
+                        guard !empty else { return }
+                        Task {
+                            await model.connect(username)
+                            if model.status?.active == true { refocus() }
+                        }
+                    }
+                        .buttonStyle(BPActionStyle(primary: true, busy: model.busy || empty))
+                        .focused($lead)
                 }
                 Text("Checks the username against Stremboxd and turns on the catalogs it finds.").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
@@ -79,5 +92,10 @@ struct LetterboxdPanel: View {
             await model.refresh()
             if username.isEmpty, let s = model.status { username = s.username }
         }
+    }
+
+    /// The step's lead button, once it is on screen.
+    private func refocus() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { lead = true }
     }
 }
