@@ -163,6 +163,20 @@ struct SettingsView: View {
                 section("Developer") {
                     Button("Stage 0 spikes") { sheet = .spikes }.buttonStyle(BPActionStyle())
                 }
+                // advanced-panel/about-tab.tsx: the Onboarding section above About. "Replay
+                // walkthrough" re-opens setup (useOnboarding resetOnboarding); after "Do not show
+                // this again" it was the only way back in. Upstream's "Restore dismissed hints"
+                // row has nothing to restore on the TV (no dismissible tips), so it is not here.
+                section("Onboarding") {
+                    row("Replay walkthrough", detail: "Re-runs the welcome flow and clears every dismissed tip.")
+                    Button {
+                        app.replayOnboarding()
+                    } label: {
+                        Label(T("Replay"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(BPActionStyle())
+                    .accessibilityIdentifier("settings-replay-walkthrough")
+                }
                 section("About") {
                     row("Harbor for Apple TV", detail: "Build \(build) · upstream beta-branch")
                 }

@@ -103,6 +103,14 @@ struct OnboardingView: View {
         .onDisappear { handoff.stop() }
     }
 
+    /// (review 14 follow-up) The profile this setup edits: bp-step-stremio's useAuth signs in the
+    /// active profile. A setup resumed over profiles (after Who's watching) or replayed from
+    /// Settings signs in the profile it runs for; first run has none yet, so the sign-in is parked
+    /// (PendingStremio) for the first profile, as before.
+    private var editingProfileId: String? {
+        profiles.active?.id
+    }
+
     private func syncHandoff(_ s: Step) {
         guard s.rawValue >= Step.phone.rawValue else {
             handoff.stop()
@@ -110,7 +118,7 @@ struct OnboardingView: View {
         }
         if handoff.onPayload == nil {
             let a = app
-            handoff.onPayload = HandoffApply.make(profileId: nil, afterHarbor: { await a.refreshRoster() })
+            handoff.onPayload = HandoffApply.make(profileId: editingProfileId, afterHarbor: { await a.refreshRoster() })
         }
         handoff.start()
     }
@@ -185,7 +193,7 @@ struct OnboardingView: View {
             if let stremioName {
                 StepConfirmed(title: T("Signed in as %@", stremioName), detail: nil) { advance() }
             } else {
-                StremioSignInForm(profileId: nil) { name in
+                StremioSignInForm(profileId: editingProfileId) { name in
                     stremioName = name
                     if step == .stremio { advance() }
                 } skip: { advance() }

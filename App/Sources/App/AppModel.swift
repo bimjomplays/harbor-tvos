@@ -150,31 +150,56 @@ final class AppModel: ObservableObject {
             return
         }
         // (review 14) After Finish later the app runs on profiles while setup stays unfinished. A kid
-        // profile active at launch never gets setup (App.tsx pins a kid to the Kids surface, where
-        // bp-shell's onboarding gate is not mounted): it opened adult setup over the kid's profile,
-        // before the curfew lock started. A setup resumed over existing profiles hands off to the
-        // launch path when it closes (resumedOverProfiles), so Who's watching still comes up.
-        if !onboardingDone, profiles.active?.kid == nil {
-            resumedOverProfiles = !profiles.profiles.isEmpty
-            stage = .onboarding
-            return
+        // profile never gets setup (App.tsx pins a kid to the Kids surface, where bp-shell's
+        // onboarding gate is not mounted): it opened adult setup over the kid's profile, before the
+        // curfew lock started.
+        // (review 14 follow-up) bp-shell.tsx mounts BpWhoIsWatching over BpOnboarding (z-80 over
+        // z-60), so a setup resumed over existing profiles waits under the launch path: the "Start
+        // as" default, Who's watching at launch (a PIN profile asks for its PIN) and a kid's PIN lock
+        // come first, and setup then edits the profile that was picked. First run (no profiles yet)
+        // still opens setup straight away.
+        if !onboardingDone {
+            if profiles.profiles.isEmpty {
+                stage = .onboarding
+                return
+            }
+            setupWaiting = true
         }
         await goToWhoOrShellAtLaunch()
     }
 
-    /// (review 14) This launch opened setup over profiles a Finish later (or a roster pull) left.
-    private var resumedOverProfiles = false
+    /// (review 14 follow-up) bp-onboarding.tsx useBpOnboardingGate `open` (!onboarded && !snoozed)
+    /// for a setup that waits under Who's watching: set at launch when setup is unfinished and
+    /// profiles exist, cleared when setup is left (Start watching, Finish later, Do not show this
+    /// again). While it is set, leaving Who's watching onto an adult profile opens setup; a kid
+    /// profile goes to the Kids surface, where upstream's gate is not mounted.
+    private var setupWaiting = false
 
-    /// (review 14) Setup closing: a setup resumed over existing profiles takes the launch path
-    /// (the "Start as" default, Who's watching at launch, a kid's PIN lock) instead of opening the
-    /// shell straight into whoever was active last, which Finish later made the usual relaunch.
+    /// Where the app goes once a profile is active: setup when it waits for an adult profile,
+    /// else the shell.
+    private var stageAfterPick: Stage {
+        setupWaiting && !onboardingDone && profiles.active?.kid == nil ? .onboarding : .shell
+    }
+
+    /// Setup closing (Start watching, Finish later, Do not show this again). A setup resumed over
+    /// existing profiles already went through the launch path before it opened, so it closes onto
+    /// the profile it edited.
     private func leaveSetup() {
-        guard resumedOverProfiles else {
-            goToWhoOrShell()
-            return
-        }
-        resumedOverProfiles = false
-        Task { @MainActor in await self.goToWhoOrShellAtLaunch() }
+        setupWaiting = false
+        goToWhoOrShell()
+    }
+
+    /// (review 14 follow-up) about-tab.tsx OnboardingRow "Replay walkthrough": useOnboarding
+    /// resetOnboarding clears the finished flag (the TV has no dismissed tips to clear) and
+    /// bp-shell's gate opens setup over the room at once. The resume cursor is left alone, as
+    /// upstream's: a finished setup cleared it, so setup opens on its first screen; one left with
+    /// Finish later picks up where it was. Nothing else is reset: profiles, sign-ins and settings
+    /// stay, and leaving setup returns to the active profile's shell. Settings is an adult room
+    /// (a kid profile has none), so a kid never starts it.
+    func replayOnboarding() {
+        guard !isBrowseLayer, stage == .shell, let active = profiles.active, active.kid == nil else { return }
+        onboardingDone = false
+        stage = .onboarding
     }
 
     /// (profiles device pass) lib/profiles.tsx at launch (engine `profilesRoom.launchPicker`): a
@@ -228,7 +253,7 @@ final class AppModel: ObservableObject {
     }
 
     func goToWhoOrShell() {
-        stage = profiles.active == nil ? .whoIsWatching : .shell
+        stage = profiles.active == nil ? .whoIsWatching : stageAfterPick
     }
 
     /// (profiles device pass) bp-who-is-watching-layer: the chooser opens over the profile in use,
@@ -248,7 +273,25 @@ final class AppModel: ObservableObject {
 
     func closeWho() {
         guard canCloseWho else { return }
-        stage = .shell
+        stage = stageAfterPick
+    }
+
+    /// bp-who-is-watching commit(): a profile was picked (after its PIN, if it has one). Setup
+    /// waiting under the chooser continues for it (review 14 follow-up), else the shell opens.
+    func pickedOnWho() {
+        guard stageAfterPick == .onboarding, !Fixtures.active else {
+            stage = stageAfterPick
+            return
+        }
+        // Setup holds the theme while it runs (ThemeStore.holding) and a new language rebuilds the
+        // tree, so the picked profile's settings and theme land before setup opens on them. The
+        // activeId sink reloads them too; a second load reads the same stored values.
+        Task { @MainActor in
+            await SettingsBridge.shared.load()
+            await ThemeStore.shared.load()
+            guard self.stage == .whoIsWatching else { return }
+            self.stage = self.stageAfterPick
+        }
     }
 
     /// One awaited pull (the engine adopts the roster and Swift reloads it), then the

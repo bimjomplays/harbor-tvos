@@ -93,11 +93,13 @@ struct WhoIsWatchingView: View {
 
     /// bp-who-is-watching commit(): a profile that left the roster meanwhile is not selected (the
     /// shell opened on an active id with no profile behind it). Returns whether it switched.
+    /// (review 14 follow-up) A setup waiting under the chooser at launch continues for the picked
+    /// profile (AppModel.pickedOnWho), as bp-shell's BpOnboarding sits under BpWhoIsWatching.
     @discardableResult
     private func commit(_ id: String, unlocked: Bool) -> Bool {
         guard profiles.profiles.contains(where: { $0.id == id }) else { return false }
         profiles.select(id, unlocked: unlocked)
-        app.stage = .shell
+        app.pickedOnWho()
         return true
     }
 
