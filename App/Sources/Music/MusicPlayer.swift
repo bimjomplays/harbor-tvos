@@ -402,6 +402,15 @@ final class MusicPlayer: ObservableObject {
         return true
     }
 
+    /// (device-flow pass 8) A screen that gives the remote's Play/Pause a job of its own (the manga
+    /// reader's zoom, the eBook reader's narration) takes the press: with music loaded the same press
+    /// can also arrive as the Now Playing app's togglePlayPauseCommand, which started the paused
+    /// music under the page (or over the narration that had just paused it). The gate is stamped so
+    /// that command, when it follows, is dropped.
+    func claimMediaKey() {
+        lastMediaKeyAt = Date()
+    }
+
     /// The remote's Play/Pause (a music screen's onPlayPauseCommand), through the gate above.
     /// (device-flow pass) While a film holds the TV (PlaybackState: Music opened from the Picture in
     /// Picture browse layer) the press is the film's, as the remote commands below already defer:
