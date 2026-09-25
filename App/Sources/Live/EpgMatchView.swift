@@ -28,8 +28,7 @@ struct EpgMatchView: View {
                         .frame(maxWidth: BP.px(620))
                     if list?.current != nil {
                         Button("Clear match") { assign(nil) }
-                            .buttonStyle(BPActionStyle())
-                            .disabled(busy)
+                            .buttonStyle(BPActionStyle(busy: busy))
                     }
                     Button("Close") { dismiss() }.buttonStyle(BPActionStyle())
                 }
@@ -83,9 +82,9 @@ struct EpgMatchView: View {
             .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(10))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(matched ? BP.on : BP.panel2))
+            .opacity(busy ? 0.6 : 1)
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
-        .disabled(busy)
     }
 
     /// The first call seeds the field with the channel's name; later edits search after a short pause.
@@ -107,6 +106,8 @@ struct EpgMatchView: View {
     }
 
     private func assign(_ tvgId: String?) {
+        // (focus pass 2) Re-entry guard instead of .disabled(busy): a disabled row drops the ring.
+        guard !busy else { return }
         busy = true
         Task {
             await model.setEpgMatch(channel, tvgId: tvgId)

@@ -108,6 +108,7 @@ struct SportsPersonalizeView: View {
                             } else if step == 1 {
                                 Button("Back") { step = 0 }.buttonStyle(BPActionStyle())
                                 Button(saving ? "Saving…" : "Next") {
+                                    guard !saving else { return }
                                     saving = true
                                     Task {
                                         await model.setLeagues(Array(leagues))
@@ -116,7 +117,7 @@ struct SportsPersonalizeView: View {
                                         if teamLeagues.isEmpty { dismiss() } else { step = 2; await loadTeams(teamLeagues[0].key) }
                                     }
                                 }
-                                .buttonStyle(BPActionStyle(primary: true)).disabled(saving)
+                                .buttonStyle(BPActionStyle(primary: true, busy: saving))
                             } else {
                                 Button("Back") { step = 1 }.buttonStyle(BPActionStyle())
                                 Button("Done") { dismiss() }.buttonStyle(BPActionStyle(primary: true))

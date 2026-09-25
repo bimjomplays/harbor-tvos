@@ -121,7 +121,10 @@ struct SportsAddonPanelView: View {
             TextField("Channel or event name", text: $query).frame(width: BP.px(420))
                 .onChange(of: query) { _, _ in limit = Self.page }
             Button(browse ? "Matching events" : "Browse addon channels") { browse.toggle(); limit = Self.page }.buttonStyle(BPActionStyle())
-            Button("Refresh") { Task { await model.loadAddons(game, force: true) } }.buttonStyle(BPActionStyle()).disabled(model.addonsLoading)
+            Button("Refresh") {
+                guard !model.addonsLoading else { return }
+                Task { await model.loadAddons(game, force: true) }
+            }.buttonStyle(BPActionStyle(busy: model.addonsLoading))
             Button("Close") { onClose() }.buttonStyle(BPActionStyle())
         }
         .focusSection()

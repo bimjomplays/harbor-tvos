@@ -21,7 +21,7 @@ struct TmdbKeyForm: View {
             BPField(label: "TMDB API key, v3 auth", placeholder: "32 characters", text: $key, phone: true)
             HStack(spacing: BP.px(12)) {
                 Button(busy ? "Checking…" : "Verify key") { Task { await verify() } }
-                    .buttonStyle(BPActionStyle(primary: true)).disabled(busy || key.count < 20)
+                    .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(key.count < 20)
                 if unreachable {
                     Button("Save it anyway") { Task { await save() } }.buttonStyle(BPActionStyle())
                 }
@@ -38,6 +38,7 @@ struct TmdbKeyForm: View {
     }
 
     private func verify() async {
+        guard !busy else { return }
         busy = true; defer { busy = false }
         note = nil; unreachable = false
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)

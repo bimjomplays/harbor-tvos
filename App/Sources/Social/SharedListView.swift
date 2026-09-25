@@ -60,10 +60,10 @@ struct SharedListView: View {
                 Button { Task { await toggleLike(list) } } label: {
                     Label("\(Int(list.likeCount))", systemImage: list.liked ? "heart.fill" : "heart")
                 }
-                .buttonStyle(BPActionStyle(primary: list.liked)).disabled(!canLike || busy)
+                .buttonStyle(BPActionStyle(primary: list.liked, busy: busy)).disabled(!canLike)
                 if canLike {
                     Button { Task { await save() } } label: { Label("Save to my lists", systemImage: "square.and.arrow.down") }
-                        .buttonStyle(BPActionStyle()).disabled(busy)
+                        .buttonStyle(BPActionStyle(busy: busy))
                 }
                 Button { profile = Social.HandleRef(handle: owner.handle) } label: { Label("View all", systemImage: "chevron.forward") }
                     .buttonStyle(BPActionStyle())
@@ -100,6 +100,7 @@ struct SharedListView: View {
     }
 
     private func toggleLike(_ list: Social.SharedListBody) async {
+        guard !busy else { return }
         busy = true
         defer { busy = false }
         do {
@@ -113,6 +114,7 @@ struct SharedListView: View {
 
     /// save-list-button.tsx: "Saved", "Already in your lists", or "Your lists are full".
     private func save() async {
+        guard !busy else { return }
         busy = true
         defer { busy = false }
         do {

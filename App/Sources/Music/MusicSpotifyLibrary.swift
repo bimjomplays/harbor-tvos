@@ -97,9 +97,12 @@ struct MusicSpotifyLibraryView: View {
                     .buttonStyle(BPActionStyle())
             }
             if spotify.connected {
-                Button { Task { await read() } } label: { Label(text("music.spotifyLibrary.refresh"), systemImage: "arrow.clockwise") }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(loading || working)
+                Button {
+                    guard !loading else { return }
+                    Task { await read() }
+                } label: { Label(text("music.spotifyLibrary.refresh"), systemImage: "arrow.clockwise") }
+                    .buttonStyle(BPActionStyle(busy: loading))
+                    .disabled(working)
             }
         }
         .focusSection()
@@ -187,8 +190,8 @@ struct MusicSpotifyLibraryView: View {
                 BPField(label: copy("music.playlist.nameLabel", "New playlist name"), placeholder: copy("music.playlist.namePlaceholder", "Name a new playlist"), text: $name, phone: true)
                     .frame(maxWidth: BP.px(560))
                 Button { Task { await create() } } label: { Label(text("music.spotifyLibrary.create"), systemImage: "plus") }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(working || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(BPActionStyle(busy: working))
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             Text(text("music.spotifyLibrary.private")).font(BP.sans(13)).foregroundStyle(BP.inkSubtle)
         }
@@ -234,9 +237,12 @@ struct MusicSpotifyLibraryView: View {
                 Text(counter)
                     .font(BP.sans(13)).monospacedDigit().foregroundStyle(BP.inkSubtle)
                 if let next = page.nextOffset {
-                    Button(copy("music.library.loadMore", "Load more")) { Task { await read(offset: next, append: true) } }
-                        .buttonStyle(BPActionStyle())
-                        .disabled(loading || working)
+                    Button(copy("music.library.loadMore", "Load more")) {
+                        guard !loading else { return }
+                        Task { await read(offset: next, append: true) }
+                    }
+                        .buttonStyle(BPActionStyle(busy: loading))
+                        .disabled(working)
                         .accessibilityIdentifier("music-spotify-library-more")
                 }
             }
@@ -461,10 +467,10 @@ struct MusicSpotifyDestinationView: View {
                         .padding(.horizontal, BP.px(14))
                         .frame(height: BP.px(50))
                         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.glass))
-                        .opacity(playlist.editable ? 1 : 0.4)
+                        .opacity(playlist.editable && !busy ? 1 : 0.4)
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rSM))
-                    .disabled(busy || saved != nil || !playlist.editable)
+                    .disabled(!playlist.editable)
                 }
             }
             .focusSection()
@@ -481,9 +487,12 @@ struct MusicSpotifyDestinationView: View {
                 Button("Retry") { Task { await load() } }.buttonStyle(BPActionStyle()).disabled(loading)
             }
             if let next = page?.nextOffset {
-                Button(copy("music.library.loadMore", "Load more")) { Task { await load(offset: next) } }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(loading || busy)
+                Button(copy("music.library.loadMore", "Load more")) {
+                    guard !loading else { return }
+                    Task { await load(offset: next) }
+                }
+                    .buttonStyle(BPActionStyle(busy: loading))
+                    .disabled(busy)
             }
             if page?.canCreate == true {
                 VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -491,8 +500,8 @@ struct MusicSpotifyDestinationView: View {
                     HStack(alignment: .bottom, spacing: BP.px(12)) {
                         BPField(label: copy("music.playlist.nameLabel", "New playlist name"), placeholder: copy("music.playlist.namePlaceholder", "Name a new playlist"), text: $name, phone: true)
                         Button { Task { await create() } } label: { Label(text("music.spotifyLibrary.create"), systemImage: "plus") }
-                            .buttonStyle(BPActionStyle())
-                            .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .buttonStyle(BPActionStyle(busy: busy))
+                            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 .padding(.top, BP.px(8))
@@ -533,6 +542,7 @@ struct MusicSpotifyDestinationView: View {
 
     /// addTrackToSpotifyPlaylist, then a check mark and the sheet closes half a second later.
     private func add(_ playlist: MusicSpotifyLibraryPlaylist) async {
+        guard !busy, saved == nil else { return }
         busy = true
         error = nil
         do {

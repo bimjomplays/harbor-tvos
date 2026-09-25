@@ -25,6 +25,7 @@ final class LetterboxdModel: ObservableObject {
 
     /// letterboxd-panel handleVerify.
     func connect(_ username: String) async {
+        guard !busy else { return }
         busy = true
         defer { busy = false }
         let p = profile
@@ -67,8 +68,8 @@ struct LetterboxdPanel: View {
                     BPField(label: "Letterboxd username", placeholder: "your-name", text: $username)
                         .frame(maxWidth: BP.px(420))
                     Button(model.busy ? "Connecting…" : "Connect") { Task { await model.connect(username) } }
-                        .buttonStyle(BPActionStyle(primary: true))
-                        .disabled(model.busy || username.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .buttonStyle(BPActionStyle(primary: true, busy: model.busy))
+                        .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 Text("Checks the username against Stremboxd and turns on the catalogs it finds.").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }

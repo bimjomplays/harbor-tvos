@@ -27,6 +27,7 @@ final class PasteTrackerModel: ObservableObject {
     }
 
     func complete(_ pasted: String) async {
+        guard !busy else { return }
         busy = true; defer { busy = false }
         struct Done: Decodable { var userName: String }
         do {
@@ -70,8 +71,11 @@ struct PasteTrackerPanel: View {
                         Text("2. Copy the code it shows and paste it here (the iPhone keyboard for Apple TV can paste).").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                         BPField(label: "Code from \(model.label)", placeholder: "Paste the code or the whole page address", text: $pasted, phone: true)
                         HStack(spacing: BP.px(8)) {
-                            Button(model.busy ? "Connecting…" : "Connect") { Task { await model.complete(pasted); pasted = "" } }
-                                .buttonStyle(BPActionStyle(primary: true)).disabled(model.busy || pasted.trimmingCharacters(in: .whitespaces).isEmpty)
+                            Button(model.busy ? "Connecting…" : "Connect") {
+                                guard !model.busy else { return }
+                                Task { await model.complete(pasted); pasted = "" }
+                            }
+                                .buttonStyle(BPActionStyle(primary: true, busy: model.busy)).disabled(pasted.trimmingCharacters(in: .whitespaces).isEmpty)
                             Button("Cancel") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())
                         }
                     }

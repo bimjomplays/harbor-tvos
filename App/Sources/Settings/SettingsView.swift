@@ -64,7 +64,7 @@ struct SettingsView: View {
                         Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
                         Button { sheet = .connect } label: { Label("Use your phone", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                         if !settings.slice.tmdbKey.isEmpty {
-                            Button(tmdbTesting ? "Testing…" : "Test saved key") { Task { await testSavedKey() } }.buttonStyle(BPActionStyle()).disabled(tmdbTesting)
+                            Button(tmdbTesting ? "Testing…" : "Test saved key") { Task { await testSavedKey() } }.buttonStyle(BPActionStyle(busy: tmdbTesting))
                             Button("Remove key") { Task { try? await settings.patch(["tmdbKey": .string("")]); tmdbTestNote = nil } }.buttonStyle(BPActionStyle())
                         }
                     }
@@ -194,6 +194,7 @@ struct SettingsView: View {
     }
 
     private func testSavedKey() async {
+        guard !tmdbTesting else { return }
         tmdbTesting = true; defer { tmdbTesting = false }
         let r = await settings.verifyTmdb(key: settings.slice.tmdbKey)
         tmdbTestNote = r.ok ? "OK: TMDB accepted the saved key." : "Rejected. TMDB said: \(r.reason ?? "no details")"

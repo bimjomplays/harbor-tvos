@@ -43,6 +43,10 @@ struct BPTileStyle: ButtonStyle {
 /// Text action button: panel face, edge border, brightens to `on` when focused.
 struct BPActionStyle: ButtonStyle {
     var primary = false
+    /// Its own action is running: dimmed like a disabled button but still focusable, so the ring
+    /// stays on the button the viewer pressed (a disabled button drops focus on tvOS). The action
+    /// guards re-entry itself.
+    var busy = false
     @Environment(\.isEnabled) private var enabled
     /// Theme button styles (index.css html[data-theme-button]): crunch sets .bg-ink bold with
     /// 0.02em tracking; glossy lays a top shine over .bg-ink. Flat (the default) adds nothing.
@@ -50,7 +54,7 @@ struct BPActionStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader { focused in
             configuration.label
-                .opacity(enabled ? 1 : 0.45)
+                .opacity(enabled && !busy ? 1 : 0.45)
                 .font(BP.sans(15, primary && style == "crunch" ? .bold : .semibold))
                 .tracking(primary && style == "crunch" ? BP.px(15) * 0.02 : 0)
                 .foregroundStyle(primary ? BP.canvas : BP.ink)

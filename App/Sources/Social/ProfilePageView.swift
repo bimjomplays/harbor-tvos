@@ -143,24 +143,27 @@ struct ProfilePageView: View {
         case "blocked":
             EmptyView()
         case "friends":
-            Button { confirmRemove = true } label: { Label(friendBusy ? "Removing..." : "Friends", systemImage: "checkmark") }
-                .buttonStyle(BPActionStyle()).disabled(friendBusy)
+            Button {
+                guard !friendBusy else { return }
+                confirmRemove = true
+            } label: { Label(friendBusy ? "Removing..." : "Friends", systemImage: "checkmark") }
+                .buttonStyle(BPActionStyle(busy: friendBusy))
         case "incoming":
             Button { Task { await friendAct("social.friendAccept", arg: s.friendEdgeId ?? "") } } label: {
                 Label(friendBusy ? "Accepting..." : "Accept request", systemImage: "checkmark")
             }
-            .buttonStyle(BPActionStyle(primary: true)).disabled(friendBusy || s.friendEdgeId == nil)
+            .buttonStyle(BPActionStyle(primary: true, busy: friendBusy)).disabled(s.friendEdgeId == nil)
         case "outgoing":
             Button { Task { await friendAct("social.friendRemove", arg: s.handle) } } label: {
                 Label(friendBusy ? "Canceling..." : "Cancel request", systemImage: "clock")
             }
-            .buttonStyle(BPActionStyle()).disabled(friendBusy)
+            .buttonStyle(BPActionStyle(busy: friendBusy))
         default:
             if SocialCenter.shared.me.signedIn {
                 Button { Task { await friendAct("social.friendRequest", arg: s.handle) } } label: {
                     Label(friendBusy ? "Sending..." : friendError ? "Try again" : "Add friend", systemImage: "person.badge.plus")
                 }
-                .buttonStyle(BPActionStyle(primary: true)).disabled(friendBusy)
+                .buttonStyle(BPActionStyle(primary: true, busy: friendBusy))
             }
         }
     }
@@ -331,7 +334,7 @@ struct ProfilePageView: View {
                     // (social bug pass) use-comments.ts loadMore: the TV only ever showed the first page.
                     if c.nextCursor != nil {
                         Button(loadingMoreComments ? "Loading" : "Load more") { Task { await moreComments(s.handle) } }
-                            .buttonStyle(BPActionStyle()).disabled(loadingMoreComments)
+                            .buttonStyle(BPActionStyle(busy: loadingMoreComments))
                     }
                 }
             }

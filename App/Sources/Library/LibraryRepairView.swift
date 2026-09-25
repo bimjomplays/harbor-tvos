@@ -76,7 +76,7 @@ final class LibraryRepairModel: ObservableObject {
 
     /// AnimeRepairRow: scan first; when the scan found entries the same button removes them.
     func animeAction() async {
-        guard let key = authKey else { return }
+        guard let key = authKey, !animeBusy else { return }
         if animePhase == "scanned" && !found.isEmpty {
             animePhase = "removing"
             do {
@@ -145,13 +145,13 @@ struct LibraryRepairPanel: View {
                     row("Repair library", model.line, tone: (model.outcome?.repaired ?? 0) > 0 && model.failure == nil ? BP.live : BP.inkMuted)
                     Spacer(minLength: BP.px(12))
                     Button {
+                        guard !model.busy else { return }
                         Task {
                             await model.run()
                             onRepaired()
                         }
                     } label: { Label(T(model.cta), systemImage: "wrench.and.screwdriver") }
-                    .buttonStyle(BPActionStyle(primary: model.outcome == nil))
-                    .disabled(model.busy)
+                    .buttonStyle(BPActionStyle(primary: model.outcome == nil, busy: model.busy))
                 }
                 HStack(alignment: .center, spacing: BP.px(16)) {
                     VStack(alignment: .leading, spacing: BP.px(6)) {
@@ -163,14 +163,14 @@ struct LibraryRepairPanel: View {
                     }
                     Spacer(minLength: BP.px(12))
                     Button {
+                        guard !model.animeBusy else { return }
                         Task {
                             let removing = model.showRemove
                             await model.animeAction()
                             if removing { onRepaired() }
                         }
                     } label: { Label(T(model.animeCta), systemImage: "wrench.and.screwdriver") }
-                    .buttonStyle(BPActionStyle(primary: model.showRemove))
-                    .disabled(model.animeBusy)
+                    .buttonStyle(BPActionStyle(primary: model.showRemove, busy: model.animeBusy))
                 }
             }
         }

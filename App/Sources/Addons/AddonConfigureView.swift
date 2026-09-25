@@ -130,8 +130,8 @@ struct AddonConfigureView: View {
                 .disabled(busy)
             HStack(spacing: BP.px(12)) {
                 Button(isReading ? T("Reading") : T("Read")) { Task { await read() } }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(busy || pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(BPActionStyle(busy: isReading))
+                    .disabled((busy && !isReading) || pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .focusSection()
             if let error { BPNote(text: error, tone: BP.danger) }

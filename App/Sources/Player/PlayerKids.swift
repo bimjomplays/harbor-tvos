@@ -711,7 +711,6 @@ struct KidsStreamSwitcher: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(KidsSwitcherRowStyle(current: current))
-        .disabled(busy)
         .focused($focus, equals: "row-\(s.id)")
     }
 

@@ -75,7 +75,7 @@ struct ProfileEditorView: View {
                     }
                     HStack(spacing: BP.px(10)) {
                         Button(editing == nil ? "Create" : "Save") { Task { await save() } }
-                        .buttonStyle(BPActionStyle(primary: true)).disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pinDraftValid)
+                        .buttonStyle(BPActionStyle(primary: true, busy: saving)).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pinDraftValid)
                         Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
                         if let e = editing, !e.isPrimary {
                             Button(confirmDelete ? "Delete for real" : "Delete profile") {

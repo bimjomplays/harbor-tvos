@@ -471,9 +471,9 @@ struct MangaSourcesView: View {
             }
             HStack(spacing: BP.px(10)) {
                 Button(busy ? "Checking…" : "Test connection") { Task { await test() } }
-                    .buttonStyle(BPActionStyle()).disabled(busy || address.isEmpty)
+                    .buttonStyle(BPActionStyle(busy: busy)).disabled(address.isEmpty)
                 Button("Add server") { Task { await add() } }
-                    .buttonStyle(BPActionStyle(primary: true)).disabled(busy || address.isEmpty)
+                    .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(address.isEmpty)
             }
             if let note { BPNote(text: note.text, tone: note.ok ? BP.live : BP.danger) }
         }
@@ -482,6 +482,7 @@ struct MangaSourcesView: View {
     }
 
     private func test() async {
+        guard !busy else { return }
         busy = true
         let r = await store.testServer(url: address.trimmingCharacters(in: .whitespaces), username: username, password: password)
         busy = false
@@ -493,6 +494,7 @@ struct MangaSourcesView: View {
     }
 
     private func add() async {
+        guard !busy else { return }
         busy = true
         let err = await store.addServer(name: name, url: address.trimmingCharacters(in: .whitespaces), username: username, password: password)
         busy = false

@@ -483,7 +483,7 @@ struct AddonsView: View {
                         Button { Task { if let c = await model.install(a) { configure = c } } } label: {
                             Label(model.busy.contains(a.key) ? T("Installing…") : T("Install"), systemImage: "plus")
                         }
-                        .buttonStyle(BPActionStyle(primary: true)).disabled(model.busy.contains(a.key))
+                        .buttonStyle(BPActionStyle(primary: true, busy: model.busy.contains(a.key)))
                     }
                     Button(T("Details")) { detail = .init(id: a.addonId) }.buttonStyle(BPActionStyle())
                 }
@@ -675,7 +675,7 @@ struct AddonsView: View {
                 Button { Task { if let t = await model.install(c) { configure = t } } } label: {
                     Label(model.busy.contains(c.key) ? T("Installing…") : T("Install"), systemImage: "plus")
                 }
-                .buttonStyle(BPActionStyle(primary: true)).disabled(model.busy.contains(c.key))
+                .buttonStyle(BPActionStyle(primary: true, busy: model.busy.contains(c.key)))
             }
         }
         .focusSection()

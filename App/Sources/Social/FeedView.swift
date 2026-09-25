@@ -25,7 +25,7 @@ struct FeedView: View {
                     ForEach(p.items) { item in row(item) }
                     if p.nextCursor != nil {
                         Button(loadingMore ? "Loading" : "Load more") { Task { await more() } }
-                            .buttonStyle(BPActionStyle()).disabled(loadingMore)
+                            .buttonStyle(BPActionStyle(busy: loadingMore))
                     }
                 } else if (page?.friendCount ?? 0) == 0 {
                     SocialEmpty(title: "No friends yet", message: "Add a few friends and their watching, ratings, and favorites land here.")

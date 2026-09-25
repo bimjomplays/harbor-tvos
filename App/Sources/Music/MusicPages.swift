@@ -829,8 +829,8 @@ struct MusicSubsonicSignInView: View {
                 if let error { BPNote(text: error, tone: BP.danger) }
                 HStack(spacing: BP.px(12)) {
                     Button(busy ? copy("music.connect.connecting", "Connecting") : copy("music.connect.action", "Connect")) { Task { await connect() } }
-                        .buttonStyle(BPActionStyle(primary: true))
-                        .disabled(busy || url.trimmingCharacters(in: .whitespaces).isEmpty || username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                        .buttonStyle(BPActionStyle(primary: true, busy: busy))
+                        .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty || username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
                         .accessibilityIdentifier("music-subsonic-connect")
                     Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
                 }
@@ -844,6 +844,7 @@ struct MusicSubsonicSignInView: View {
     }
 
     private func connect() async {
+        guard !busy else { return }
         busy = true
         defer { busy = false }
         error = nil
@@ -904,8 +905,8 @@ struct MusicLastFmView: View {
                         Label(working ? copy("music.connect.connecting", "Connecting") : (pending == nil ? copy("music.lastfm.authorize", "Authorize Last.fm") : copy("music.lastfm.finish", "Finish connection")),
                               systemImage: pending == nil ? "arrow.up.right" : "checkmark")
                     }
-                    .buttonStyle(BPActionStyle(primary: true))
-                    .disabled(working || (pending == nil && !canBegin))
+                    .buttonStyle(BPActionStyle(primary: true, busy: working))
+                    .disabled(pending == nil && !canBegin)
                     .accessibilityIdentifier("music-lastfm-go")
                     Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
                 }
@@ -933,6 +934,7 @@ struct MusicLastFmView: View {
     }
 
     private func begin() async {
+        guard !working else { return }
         working = true
         defer { working = false }
         error = nil
@@ -948,7 +950,7 @@ struct MusicLastFmView: View {
     }
 
     private func finish() async {
-        guard let pending else { return }
+        guard let pending, !working else { return }
         working = true
         defer { working = false }
         error = nil
@@ -996,12 +998,13 @@ struct MusicSpotifyView: View {
                     if let error { BPNote(text: error, tone: BP.danger) }
                     HStack(spacing: BP.px(12)) {
                         Button {
+                            guard !spotify.connecting else { return }
                             Task { if pending == nil { await begin() } else { await finish() } }
                         } label: {
                             Label(label, systemImage: pending == nil ? "arrow.up.right" : "checkmark")
                         }
-                        .buttonStyle(BPActionStyle(primary: true))
-                        .disabled(working || spotify.connecting || !canGo)
+                        .buttonStyle(BPActionStyle(primary: true, busy: working || spotify.connecting))
+                        .disabled(!canGo)
                         .accessibilityIdentifier("music-spotify-go")
                         if pending != nil {
                             Button(copy("music.spotifySetup.authorize", "Authorize Spotify")) { pending = nil; pasted = ""; error = nil }
@@ -1107,6 +1110,7 @@ struct MusicSpotifyView: View {
     }
 
     private func begin() async {
+        guard !working else { return }
         working = true
         defer { working = false }
         error = nil
@@ -1121,6 +1125,7 @@ struct MusicSpotifyView: View {
     }
 
     private func finish() async {
+        guard !working else { return }
         working = true
         defer { working = false }
         error = nil

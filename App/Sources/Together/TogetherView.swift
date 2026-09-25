@@ -96,12 +96,13 @@ struct TogetherView: View {
             .focusSection()
             HStack(spacing: BP.px(10)) {
                 Button {
+                    guard room.view.state != "connecting" else { return }
                     note = nil
                     Task { await room.start() }
                 } label: {
                     Label(room.view.state == "connecting" ? "Starting…" : "Start a new room", systemImage: "plus")
                 }
-                .buttonStyle(BPActionStyle(primary: true)).disabled(room.view.state == "connecting").focused($focus, equals: "start")
+                .buttonStyle(BPActionStyle(primary: true, busy: room.view.state == "connecting")).focused($focus, equals: "start")
                 Button { draft = ""; typing = .link } label: { Label("Paste invite link", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                 Button("Back") { close() }.buttonStyle(BPActionStyle())
             }
@@ -109,8 +110,11 @@ struct TogetherView: View {
             HStack(alignment: .bottom, spacing: BP.px(10)) {
                 BPField(label: "or join", placeholder: "ABCD23", text: $code, phone: true)
                     .frame(width: BP.px(360))
-                Button("Join") { Task { await join(code) } }
-                    .buttonStyle(BPActionStyle()).disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || room.view.state == "connecting")
+                Button("Join") {
+                    guard room.view.state != "connecting" else { return }
+                    Task { await join(code) }
+                }
+                    .buttonStyle(BPActionStyle(busy: room.view.state == "connecting")).disabled(code.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .focusSection()
             if room.view.state == "error" {

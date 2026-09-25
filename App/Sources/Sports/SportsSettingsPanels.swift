@@ -23,9 +23,9 @@ struct SportsWebhooksPanel: View {
                 BPField(label: "Chat ID", placeholder: "123456789", text: $chatId)
             }
             HStack(spacing: BP.px(10)) {
-                Button("Save") { Task { await save() } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)
-                Button(T("Send test") + " · Discord") { Task { await test("discord") } }.buttonStyle(BPActionStyle()).disabled(busy || discord.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button(T("Send test") + " · Telegram") { Task { await test("telegram") } }.buttonStyle(BPActionStyle()).disabled(busy || Self.compose(token, chatId).isEmpty)
+                Button("Save") { Task { await save() } }.buttonStyle(BPActionStyle(primary: true, busy: busy))
+                Button(T("Send test") + " · Discord") { Task { await test("discord") } }.buttonStyle(BPActionStyle(busy: busy)).disabled(discord.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(T("Send test") + " · Telegram") { Task { await test("telegram") } }.buttonStyle(BPActionStyle(busy: busy)).disabled(Self.compose(token, chatId).isEmpty)
                 if let onDone { Button("Done") { onDone() }.buttonStyle(BPActionStyle()) }
             }
             if let status { BPNote(text: status) }
@@ -52,12 +52,14 @@ struct SportsWebhooksPanel: View {
     }
 
     private func save() async {
+        guard !busy else { return }
         busy = true; defer { busy = false }
         let out: Hooks? = try? await HarborEngine.shared.call("sports.setWebhooks", [discord, Self.compose(token, chatId)])
         status = out == nil ? "Could not save. Try again." : "Saved."
     }
 
     private func test(_ kind: String) async {
+        guard !busy else { return }
         await save()
         busy = true; defer { busy = false }
         status = "Sending…"

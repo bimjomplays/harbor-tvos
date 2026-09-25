@@ -47,7 +47,7 @@ struct GroupsView: View {
                     section(!query.isEmpty || tag != nil ? "Results" : (d.mine.isEmpty ? "Public groups" : "Discover more"), d.groups, count: d.total)
                     if d.nextCursor != nil {
                         Button(loadingMore ? "Loading" : "Load more") { Task { await more() } }
-                            .buttonStyle(BPActionStyle()).disabled(loadingMore)
+                            .buttonStyle(BPActionStyle(busy: loadingMore))
                     }
                 }
             } else if loading {
@@ -196,13 +196,18 @@ struct GroupPageView: View {
             Button { dismiss() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
             if g.isPending {
                 // group-invite-banner.tsx
-                Button("Accept") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)
-                Button("Decline") { Task { await respond(false) } }.buttonStyle(BPActionStyle()).disabled(busy)
+                Button("Accept") { Task { await respond(true) } }.buttonStyle(BPActionStyle(primary: true, busy: busy))
+                Button("Decline") { Task { await respond(false) } }.buttonStyle(BPActionStyle(busy: busy))
             } else if g.isMember || g.isOwner {
                 if g.can.post { Button { draft = ""; composing = true } label: { Label("Write a post", systemImage: "iphone") }.buttonStyle(BPActionStyle()) }
-                if !g.isOwner { Button("Leave group") { confirmLeave = true }.buttonStyle(BPActionStyle()).disabled(busy) }
+                if !g.isOwner {
+                    Button("Leave group") {
+                        guard !busy else { return }
+                        confirmLeave = true
+                    }.buttonStyle(BPActionStyle(busy: busy))
+                }
             } else if g.visibility == "public", SocialCenter.shared.me.signedIn {
-                Button("Join group") { Task { await join() } }.buttonStyle(BPActionStyle(primary: true)).disabled(busy)
+                Button("Join group") { Task { await join() } }.buttonStyle(BPActionStyle(primary: true, busy: busy))
             }
         }
         .focusSection()
@@ -228,7 +233,7 @@ struct GroupPageView: View {
                 }
             }
             if p.nextCursor != nil {
-                Button(loadingMorePosts ? "Loading" : "Load more") { Task { await morePosts() } }.buttonStyle(BPActionStyle()).disabled(loadingMorePosts)
+                Button(loadingMorePosts ? "Loading" : "Load more") { Task { await morePosts() } }.buttonStyle(BPActionStyle(busy: loadingMorePosts))
             }
         } else if postsFailed {
             // (social bug pass) A failed posts call (a group whose posts only members may read, or
@@ -292,11 +297,13 @@ struct GroupPageView: View {
     }
 
     private func join() async {
+        guard !busy else { return }
         await run { group = try await HarborEngine.shared.call("social.groupJoin", [id]) }
         await loadPosts()
     }
 
     private func leave() async {
+        guard !busy else { return }
         await run {
             let _: Bool = try await HarborEngine.shared.call("social.groupLeave", [id])
             dismiss()
@@ -304,6 +311,7 @@ struct GroupPageView: View {
     }
 
     private func respond(_ accept: Bool) async {
+        guard !busy else { return }
         await run {
             let g: Social.Group? = try await HarborEngine.shared.call("social.groupRespond", [AnyJSON.string(id), AnyJSON.bool(accept)])
             if accept, let g { group = g } else if !accept { dismiss() }

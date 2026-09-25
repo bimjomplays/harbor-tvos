@@ -33,8 +33,11 @@ struct Anime4KPanel: View {
                 Button("Fast") { patch(["playerAnime4kTier": .string("fast")]) }.buttonStyle(BPActionStyle(primary: tier == "fast")).bpSelected(tier == "fast")
             }
             HStack(spacing: BP.px(8)) {
-                Button(store.busy ? "Downloading…" : (store.installed ? "Re-download shaders" : "Download shaders")) { Task { await store.ensure(force: store.installed) } }
-                    .buttonStyle(BPActionStyle()).disabled(store.busy)
+                Button(store.busy ? "Downloading…" : (store.installed ? "Re-download shaders" : "Download shaders")) {
+                    guard !store.busy else { return }
+                    Task { await store.ensure(force: store.installed) }
+                }
+                    .buttonStyle(BPActionStyle(busy: store.busy))
                 Text(store.installed ? "Shaders installed" : "Not downloaded yet (about 3 MB, fetched on first use too)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
             }
             if let n = store.note { BPNote(text: n, tone: n.hasPrefix("Download failed") ? BP.danger : BP.live) }

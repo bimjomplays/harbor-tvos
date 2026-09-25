@@ -45,7 +45,6 @@ struct HomeServerQualityPanel: View {
                             }
                         }
                         .buttonStyle(PlayerLineStyle(on: current == q.id))
-                        .disabled(switching != nil)
                         .focused($focus, equals: q.id)
                     }
                 }
@@ -81,6 +80,8 @@ struct HomeServerQualityPanel: View {
     /// HomeServerQualityPanel select(): the one playing just closes; another swaps the stream, and a
     /// failure leaves the current one playing with upstream's note.
     private func select(_ id: String) async {
+        // (focus pass 2) Was .disabled(switching != nil) on every row: the pressed row lost the ring.
+        guard switching == nil else { return }
         if id == current { onClose(); return }
         switching = id
         error = nil

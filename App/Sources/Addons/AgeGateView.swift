@@ -73,7 +73,7 @@ struct AgeGateView: View {
                 HStack(spacing: BP.px(12)) {
                     Spacer()
                     Button(T("Cancel")) { onClose() }.buttonStyle(BPActionStyle())
-                    Button(T("Continue")) { submit() }.buttonStyle(BPActionStyle(primary: true)).disabled(!allAnswered || submitted)
+                    Button(T("Continue")) { submit() }.buttonStyle(BPActionStyle(primary: true, busy: submitted)).disabled(!allAnswered)
                 }
                 .focusSection()
                 if submitted && !allCorrect {
@@ -116,6 +116,7 @@ struct AgeGateView: View {
     }
 
     private func submit() {
+        guard !submitted else { return }
         submitted = true
         if allCorrect {
             verified = true

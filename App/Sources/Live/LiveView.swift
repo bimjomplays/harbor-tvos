@@ -678,6 +678,7 @@ struct LiveSourcesSheet: View {
                     }
                     HStack(spacing: BP.px(12)) {
                         Button(busy ? "Adding…" : "Add source") {
+                            guard !busy else { return }
                             busy = true
                             Task {
                                 error = kind == "m3u" && !url.isEmpty && server.isEmpty
@@ -687,7 +688,7 @@ struct LiveSourcesSheet: View {
                                 if error == nil { name = ""; url = ""; epg = ""; dismiss() }
                             }
                         }
-                        .buttonStyle(BPActionStyle(primary: true)).disabled(busy || (kind == "m3u" ? url.count < 8 : kind == "xtream" ? (server.count < 8 || username.isEmpty) : epg.count < 8))
+                        .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(kind == "m3u" ? url.count < 8 : kind == "xtream" ? (server.count < 8 || username.isEmpty) : epg.count < 8)
                         if !firstRun { Button("Close") { dismiss() }.buttonStyle(BPActionStyle()) }
                     }
                     if let e = error ?? model.error { BPNote(text: e, tone: BP.danger) }

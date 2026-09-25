@@ -274,9 +274,11 @@ struct PlaylistVodView: View {
                     Text(s.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkMuted)
                 }
                 Spacer(minLength: 0)
-                Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(model.loading)
+                Button {
+                    guard !model.loading else { return }
+                    Task { await model.load(force: true) }
+                } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .buttonStyle(BPActionStyle(busy: model.loading))
             }
             .focusSection()
             HStack(spacing: BP.px(10)) {

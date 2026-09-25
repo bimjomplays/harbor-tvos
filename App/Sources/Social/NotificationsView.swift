@@ -63,10 +63,16 @@ struct NotificationsView: View {
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel.opacity(0.85)))
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
-            Button { busy = p.edgeId; Task { await center.respond(edgeId: p.edgeId, accept: true); busy = nil } } label: { Label("Accept", systemImage: "checkmark") }
-                .buttonStyle(BPActionStyle(primary: true)).disabled(busy == p.edgeId)
-            Button { busy = p.edgeId; Task { await center.respond(edgeId: p.edgeId, accept: false); busy = nil } } label: { Label("Decline", systemImage: "xmark") }
-                .buttonStyle(BPActionStyle()).disabled(busy == p.edgeId)
+            Button {
+                guard busy != p.edgeId else { return }
+                busy = p.edgeId; Task { await center.respond(edgeId: p.edgeId, accept: true); busy = nil }
+            } label: { Label("Accept", systemImage: "checkmark") }
+                .buttonStyle(BPActionStyle(primary: true, busy: busy == p.edgeId))
+            Button {
+                guard busy != p.edgeId else { return }
+                busy = p.edgeId; Task { await center.respond(edgeId: p.edgeId, accept: false); busy = nil }
+            } label: { Label("Decline", systemImage: "xmark") }
+                .buttonStyle(BPActionStyle(busy: busy == p.edgeId))
         }
         .focusSection()
     }

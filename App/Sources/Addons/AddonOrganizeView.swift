@@ -105,7 +105,7 @@ struct AddonOrganizeView: View {
             if !loadError {
                 Button(T("Cancel")) { onClose() }.buttonStyle(BPActionStyle()).disabled(locked)
                 Button(saving.map(stepLabel) ?? T("Save order")) { Task { await save() } }
-                    .buttonStyle(BPActionStyle(primary: true)).disabled(!dirty || locked || loading)
+                    .buttonStyle(BPActionStyle(primary: true, busy: saving != nil)).disabled(!dirty || moving || loading)
             }
         }
         .disabled(grabbed != nil)
@@ -215,8 +215,8 @@ struct AddonOrganizeView: View {
         Button { Task { await moveAll() } } label: {
             Label(moving ? T("Checking") : T("Move all to account"), systemImage: "icloud.and.arrow.up")
         }
-        .buttonStyle(BPActionStyle())
-        .disabled(locked || dirty || grabbed != nil)
+        .buttonStyle(BPActionStyle(busy: moving))
+        .disabled(saving != nil || dirty || grabbed != nil)
     }
 
     // MARK: side panels

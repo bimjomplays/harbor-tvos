@@ -90,6 +90,7 @@ struct QueueDeckView: View {
             if let c = model.current {
                 RemoteImage(url: c.meta.background ?? c.meta.poster).ignoresSafeArea().id(c.id)
                     .transition(.opacity)
+                    .opacity(railFocused ? 0.6 : 1)   // bp-queue-stage dimmed={zone === "rail"}
                 LinearGradient(colors: [BP.void_.opacity(0.2), BP.void_.opacity(0.75), BP.void_.opacity(0.97)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 LinearGradient(colors: [BP.void_.opacity(0.9), .clear], startPoint: .leading, endPoint: .init(x: 0.6, y: 0.5)).ignoresSafeArea()
                     .flipsForRightToLeftLayoutDirection(true)   // bp-tokens.ts --bp-scrim-side under rtl
@@ -97,17 +98,26 @@ struct QueueDeckView: View {
             VStack(alignment: .leading, spacing: BP.px(14)) {
                 Text("Discovery Queue").font(BP.sans(12, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.accent)
                 if let c = model.current {
-                    HStack(alignment: .bottom, spacing: BP.px(24)) {
-                        RemoteImage(url: c.meta.poster).frame(width: BP.px(180), height: BP.px(270))
-                            .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
-                        VStack(alignment: .leading, spacing: BP.px(8)) {
-                            if !c.tag.isEmpty { Text(c.tag).font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkMuted) }
-                            Text(c.meta.name).font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
-                            Text(c.meta.facts).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
-                            if let d = c.meta.description, !d.isEmpty { Text(d).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(3).frame(maxWidth: BP.px(900), alignment: .leading) }
-                            Text("\(model.index + 1) of \(model.entries.count) · Left and Right step through the deck").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+                    // bp-queue.tsx queue-deck cell: the one focusable spot where Left and Right step the
+                    // deck (never a tile, so no lift or ring); Select plays like the rail's Play now.
+                    Button { detail = DetailTarget(meta: c.meta, autoPlay: true) } label: {
+                        HStack(alignment: .bottom, spacing: BP.px(24)) {
+                            RemoteImage(url: c.meta.poster).frame(width: BP.px(180), height: BP.px(270))
+                                .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+                            VStack(alignment: .leading, spacing: BP.px(8)) {
+                                if !c.tag.isEmpty { Text(c.tag).font(BP.sans(12, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.inkMuted) }
+                                Text(c.meta.name).font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
+                                Text(c.meta.facts).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
+                                if let d = c.meta.description, !d.isEmpty { Text(d).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(3).frame(maxWidth: BP.px(900), alignment: .leading) }
+                                Text("\(model.index + 1) of \(model.entries.count) · Left and Right step through the deck").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(QueueDeckCellStyle())
+                    .focused($focus, equals: "deck")
+                    .accessibilityLabel(Text(verbatim: c.meta.name))
                     HStack(spacing: BP.px(10)) {
                         chip("Play now", "play.fill") { detail = DetailTarget(meta: c.meta, autoPlay: true) }
                         if model.canSave { chip(model.saved.contains(c.id) ? "Saved" : "Save", model.saved.contains(c.id) ? "bookmark.fill" : "bookmark") { Task { await model.save() } } }
@@ -133,13 +143,18 @@ struct QueueDeckView: View {
         .animation(BP.easeFast, value: model.index)
         .onMoveCommand { dir in
             // bp-queue.tsx: forward is the reading direction (Left steps forward under rtl).
-            guard dir == .left || dir == .right else { return }
+            // Only while the deck cell holds the ring (setBpQueueKeyHandler: zone === "deck"); on the
+            // action chips Left and Right move along the chips.
+            guard focus == "deck", dir == .left || dir == .right else { return }
             model.step((dir == .right) != L10n.isRTL ? 1 : -1)
         }
         .onExitCommand { dismiss() }
-        .task { await model.open(); focus = "Play now" }
+        .task { await model.open(); focus = model.current == nil ? "Back to Discover" : "deck" }
         .fullScreenCover(item: $detail) { t in DetailView(meta: t.meta, autoPlay: t.autoPlay) }
     }
+
+    /// A rail chip holds the ring (bp-queue zone "rail"): the art is veiled.
+    private var railFocused: Bool { focus != nil && focus != "deck" }
 
     private var emptyTitle: String { model.status == "loading" ? "Building tonight's queue…" : model.status == "empty" ? "Nothing left in today's picks" : "Discovery Queue" }
     private var emptyBlurb: String {
@@ -155,5 +170,12 @@ struct QueueDeckView: View {
         Button(action: action) { Label(T(label), systemImage: icon) }
             .buttonStyle(BPActionStyle(primary: label == "Play now"))
             .focused($focus, equals: label)
+    }
+}
+
+/// The deck cell draws nothing of its own: a custom style also keeps tvOS's system lift off it.
+private struct QueueDeckCellStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }

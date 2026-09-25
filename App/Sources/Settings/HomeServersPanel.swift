@@ -64,7 +64,7 @@ final class HomeServersModel: ObservableObject {
     }
 
     func addPlex(_ server: Poll.Server) async {
-        guard let pin else { return }
+        guard let pin, !busy else { return }
         busy = true; defer { busy = false }
         struct Out: Decodable { var id: String }
         if let c: Out = try? await HarborEngine.shared.call("homeServers.plexAdd", [pin.pinId, server.id]) {
@@ -77,6 +77,7 @@ final class HomeServersModel: ObservableObject {
     func cancelPlex() { pollTask?.cancel(); pin = nil; servers = [] }
 
     func connect(provider: String, address: String, username: String, password: String) async -> Bool {
+        guard !busy else { return false }
         busy = true; defer { busy = false }
         note = nil
         struct Out: Decodable { var id: String }
@@ -143,7 +144,10 @@ struct HomeServersPanel: View {
                         Text(model.progress[c.id].map { T($0) } ?? summary(c)).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
                     }
                     .frame(width: BP.px(420), alignment: .leading)
-                    Button(model.progress[c.id] == nil ? "Sync now" : "Syncing…") { Task { await model.sync(c.id) } }.buttonStyle(BPActionStyle()).disabled(model.progress[c.id] != nil)
+                    Button(model.progress[c.id] == nil ? "Sync now" : "Syncing…") {
+                        guard model.progress[c.id] == nil else { return }
+                        Task { await model.sync(c.id) }
+                    }.buttonStyle(BPActionStyle(busy: model.progress[c.id] != nil))
                     Button(c.enabled ? "Enabled" : "Disabled") { Task { await model.toggle(c) } }.buttonStyle(BPActionStyle(primary: c.enabled))
                     // (settings bug pass) home-servers-tab.tsx: Remove asks first (HomeServerRemoveDialog,
                     // it also drops the cached titles) and is off while that server syncs.
@@ -173,7 +177,7 @@ struct HomeServersPanel: View {
                 } else {
                     Text("Choose a server").font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
                     ForEach(model.servers) { s in
-                        Button("\(s.name)\(s.owned ? "" : " (shared)")\(s.available ? "" : " · offline")") { Task { await model.addPlex(s) } }.buttonStyle(BPActionStyle(primary: s.available)).disabled(model.busy)
+                        Button("\(s.name)\(s.owned ? "" : " (shared)")\(s.available ? "" : " · offline")") { Task { await model.addPlex(s) } }.buttonStyle(BPActionStyle(primary: s.available, busy: model.busy))
                     }
                 }
             } else if showForm {
@@ -186,7 +190,7 @@ struct HomeServersPanel: View {
                 BPField(label: "Password", placeholder: "Password", text: $password, secure: true)
                 HStack(spacing: BP.px(8)) {
                     Button(model.busy ? "Connecting…" : "Connect") { Task { if await model.connect(provider: provider, address: address, username: username, password: password) { showForm = false; address = ""; username = ""; password = "" } } }
-                        .buttonStyle(BPActionStyle(primary: true)).disabled(model.busy || address.count < 3)
+                        .buttonStyle(BPActionStyle(primary: true, busy: model.busy)).disabled(address.count < 3)
                     Button("Cancel") { showForm = false }.buttonStyle(BPActionStyle())
                 }
             } else {
