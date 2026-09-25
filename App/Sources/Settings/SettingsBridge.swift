@@ -244,9 +244,24 @@ final class SettingsBridge: ObservableObject {
         } catch {
             return (false, error.localizedDescription)
         }
+        // (settings bug pass) Only TMDB's own line: the fallback was whatever the bundle logged last
+        // (another module's request line, possibly carrying its token), shown on screen. Query
+        // secrets are masked in case a TMDB line ever carries its URL.
         let fresh = HarborEngine.shared.logs(since: before)
-        let tmdbLine = fresh.last { $0.contains("[tmdb]") } ?? fresh.last
+        let tmdbLine = fresh.last { $0.contains("[tmdb]") }.map(Self.redacted)
         return (false, tmdbLine)
+    }
+
+    /// Masks `api_key=…`, `token=…`, `access_token=…`, `key=…` and bearer values in a log line.
+    nonisolated static func redacted(_ line: String) -> String {
+        var out = line
+        let patterns = [#"(?i)\b(api_key|apikey|access_token|refresh_token|token|key)=[^&\s"']+"#, #"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"#]
+        for p in patterns {
+            guard let re = try? NSRegularExpression(pattern: p) else { continue }
+            let range = NSRange(out.startIndex..., in: out)
+            out = re.stringByReplacingMatches(in: out, range: range, withTemplate: p.contains("Bearer") ? "Bearer ***" : "$1=***")
+        }
+        return out
     }
 }
 

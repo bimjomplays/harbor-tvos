@@ -34,7 +34,10 @@ struct FeedView: View {
                 }
             }
         }
-        .task { await load() }
+        // (social bug pass) Once, like SharedListView: `.task` runs again when a title or a friend's
+        // profile closes, and the reload put the spinner over the feed (focus gone, "Load more"
+        // pages dropped) or, offline, swapped it for "Could not load activity". Try again reloads.
+        .task { if page == nil { await load() } }
         .task {
             // use-feed.ts WATCHING_POLL_MS
             while !Task.isCancelled {
@@ -118,7 +121,11 @@ struct FeedView: View {
         loadingMore = true
         defer { loadingMore = false }
         if let next: Social.FeedPage = try? await HarborEngine.shared.call("social.feed", [cursor]) {
-            page?.items.append(contentsOf: next.items)
+            // Only onto the page it continues (a Try again may have reloaded meanwhile), and without
+            // repeats: a row shifted across the page edge would give ForEach two rows with one id.
+            guard page?.nextCursor == cursor else { return }
+            let have = Set(page?.items.map(\.id) ?? [])
+            page?.items.append(contentsOf: next.items.filter { !have.contains($0.id) })
             page?.nextCursor = next.nextCursor
         }
     }

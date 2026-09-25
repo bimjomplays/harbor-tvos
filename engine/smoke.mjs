@@ -2404,6 +2404,13 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   engine.settingsRoom.commit("hwdec", "off", "default", true);
   r.eq("settingsRoom: hwdec Off commits and reads back", [hw().value, engine.settings.load().mpvHwdec], ["off", "off"]);
   engine.settingsRoom.commit("hwdec", "auto", "default", true);
+  // (settings bug pass) bp-safe-area clampOverscan: a synced out-of-range edge margin is read clamped.
+  engine.settings.patchFor({ bigPictureOverscan: 5 }, "default", true);
+  const osc = () => [engine.settingsRoom.pane("default", true).overscan, engine.settingsRoom.categories("default", true).overscan, engine.settingsRoom.categories("default", true).categories[0].summary.split(" / ")[0], engine.settingsRoom.controls("picture", "default", true)[0].value];
+  r.eq("(settings bug pass) settingsRoom: a synced overscan of 5 reads as upstream's 10% cap", osc(), [0.1, 0.1, "10%", "0.05"]);
+  engine.settings.patchFor({ bigPictureOverscan: -1 }, "default", true);
+  r.eq("(settings bug pass) settingsRoom: a negative overscan reads as Off", osc(), [0, 0, "Off", "0"]);
+  engine.settings.patchFor({ bigPictureOverscan: 0 }, "default", true);
 }
 
 // ------------------------------------------ themes, language picker, settings preview, done facts

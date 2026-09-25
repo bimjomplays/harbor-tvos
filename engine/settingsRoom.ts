@@ -58,6 +58,17 @@ function stremioName(profileId: string): string | null {
   }
 }
 
+/**
+ * bp-safe-area.ts clampOverscan (MAX_OVERSCAN 0.1): upstream's catalog and pane are handed
+ * bpOverscan(), which is clamped, never the raw setting. A synced 5 (a percent typed as a
+ * fraction) or a negative value read as "500%" in the Picture summary and pushed the preview's
+ * dashed frame past the screen (settings bug pass). The shells clamp the same way
+ * (SettingsBridge.Slice.overscanFraction).
+ */
+export function clampOverscan(fraction: unknown): number {
+  return typeof fraction === "number" && Number.isFinite(fraction) ? Math.min(0.1, Math.max(0, fraction)) : 0;
+}
+
 function facts(s: Settings, profileId: string) {
   return { tmdbKey: s.tmdbKey ?? "", stremioName: stremioName(profileId), harborName: currentAuthor()?.username ?? null };
 }
@@ -67,10 +78,10 @@ export function categories(profileId: string, linked: boolean) {
   const connected = bpConnectedNames(facts(s, profileId));
   return {
     // bp-settings-catalog summary: the TV's stand-in for upstream's html5 engine is AVPlayer.
-    categories: bpSettingsCategories(s, t, s.bigPictureOverscan ?? 0, connected).map((c) =>
+    categories: bpSettingsCategories(s, t, clampOverscan(s.bigPictureOverscan), connected).map((c) =>
       c.id === "playback" && s.playerEngine === "html5" ? { ...c, summary: NATIVE_ENGINE_LABEL } : c),
     sportsShown: getSportsConsentSnapshot().status !== "declined",
-    overscan: s.bigPictureOverscan ?? 0,
+    overscan: clampOverscan(s.bigPictureOverscan),
   };
 }
 
@@ -129,7 +140,7 @@ export function tvExtraControls(id: BpCatId, s: Settings): BpControl[] {
 
 export function controls(id: BpCatId, profileId: string, linked: boolean): TvControl[] {
   const s = loadEffective(profileId, linked);
-  const upstreamRows: TvControl[] = [...bpSettingsControls(id, s, t, s.bigPictureOverscan ?? 0, getSportsConsentSnapshot().status !== "declined"), ...tvExtraControls(id, s)]
+  const upstreamRows: TvControl[] = [...bpSettingsControls(id, s, t, clampOverscan(s.bigPictureOverscan), getSportsConsentSnapshot().status !== "declined"), ...tvExtraControls(id, s)]
     .filter((c) => !TV_HIDDEN_CONTROLS.has(c.id));
   // Setup: AI search right after the Live TV playlists row.
   const live = upstreamRows.findIndex((c) => c.kind === "push" && c.pane === "live");
@@ -160,7 +171,7 @@ export function commit(id: string, value: string, profileId: string, linked: boo
   const on = value === "on";
   const patch: Partial<Settings> = {};
   switch (id) {
-    case "overscan": patch.bigPictureOverscan = Number(value); break;
+    case "overscan": patch.bigPictureOverscan = clampOverscan(Number(value)); break;
     case "quality": patch.posterQuality = value as Settings["posterQuality"]; break;
     case "backdrop": patch.bigPictureMosaic = on; break;
     case "uiLanguage":
@@ -276,7 +287,7 @@ const SUB_PREVIEW_SCALE = 0.55;
 export function pane(profileId: string, linked: boolean) {
   const s = loadEffective(profileId, linked);
   const connected = bpConnectedNames(facts(s, profileId));
-  const overscan = s.bigPictureOverscan ?? 0;
+  const overscan = clampOverscan(s.bigPictureOverscan);
   const language = LANGUAGES.find((l) => l.code === s.uiLanguage) ?? null;
   const source = tvPlaybackSource(s.playbackSourcePreference);
   return {

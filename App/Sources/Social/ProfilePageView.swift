@@ -41,7 +41,10 @@ struct ProfilePageView: View {
         }
         .ignoresSafeArea()
         .onExitCommand { dismiss() }
-        .task { await load() }
+        // (social bug pass) Once, like SharedListView: `.task` re-runs whenever a title, another
+        // profile, a list or the comment sheet closes, and that reload dropped the loaded comment
+        // pages or, offline, swapped the profile for "Could not load this profile". Retry reloads.
+        .task { if page == nil { await load() } }
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(item: $other) { h in ProfilePageView(handle: h.handle) }
         .fullScreenCover(item: $list) { r in SharedListView(ref: r) }
@@ -325,9 +328,29 @@ struct ProfilePageView: View {
                             Task { await toggleLike(s.handle, cm) }
                         }
                     }
+                    // (social bug pass) use-comments.ts loadMore: the TV only ever showed the first page.
+                    if c.nextCursor != nil {
+                        Button(loadingMoreComments ? "Loading" : "Load more") { Task { await moreComments(s.handle) } }
+                            .buttonStyle(BPActionStyle()).disabled(loadingMoreComments)
+                    }
                 }
             }
         }
+    }
+
+    @State private var loadingMoreComments = false
+
+    /// use-comments.ts loadMore: the next page appended, total and cursor from the answer.
+    private func moreComments(_ handle: String) async {
+        guard let cursor = comments?.nextCursor, !loadingMoreComments else { return }
+        loadingMoreComments = true
+        defer { loadingMoreComments = false }
+        guard let next: Social.CommentPage = try? await HarborEngine.shared.call("social.comments", [handle, cursor]),
+              comments?.nextCursor == cursor else { return }
+        let have = Set(comments?.comments.map(\.id) ?? [])
+        comments?.comments.append(contentsOf: next.comments.filter { !have.contains($0.id) })
+        if next.total != nil { comments?.total = next.total }
+        comments?.nextCursor = next.nextCursor
     }
 
     private func toggleLike(_ handle: String, _ c: Social.Comment) async {

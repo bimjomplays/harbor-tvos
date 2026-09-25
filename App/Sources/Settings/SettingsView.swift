@@ -246,16 +246,30 @@ struct SettingsView: View {
 /// onboarding and Settings. Writes `preferredSubLangs` through the engine on every change.
 struct SubtitleLanguageGrid: View {
     @EnvironmentObject private var settings: SettingsBridge
-    private static let languages = ["English", "Spanish", "Portuguese", "French", "German", "Italian", "Dutch", "Polish", "Russian", "Turkish", "Arabic", "Japanese", "Korean", "Chinese", "Hindi", "Swedish", "Norwegian", "Danish", "Finnish", "Greek", "Czech", "Hungarian", "Romanian", "Indonesian"]
+    /// (settings bug pass) bp-step-subtitles.tsx COMMON: ALL_LANGUAGE_NAMES.slice(0, 24) in upstream's
+    /// order (lib/subtitles/language.ts NAMES), the cells the Settings column's subLang row shows.
+    /// The TV had its own list, so Spanish (Latin America), Portuguese (Brazil), Thai, Vietnamese or
+    /// Hebrew picked there or on the desktop showed here without a cell and could not be removed.
+    private static let common = ["English", "Spanish", "Spanish (Latin America)", "French", "German", "Italian", "Japanese", "Korean", "Chinese", "Russian", "Portuguese", "Portuguese (Brazil)", "Arabic", "Hindi", "Thai", "Vietnamese", "Turkish", "Polish", "Dutch", "Swedish", "Norwegian", "Danish", "Finnish", "Hebrew"]
+
+    /// "A language chosen elsewhere but outside the common set still needs a cell, otherwise this
+    /// screen can select it away but never give it back."
+    private var languages: [String] {
+        var out: [String] = Self.common
+        for lang in settings.slice.preferredSubLangs where !out.contains(lang) { out.append(lang) }
+        return out
+    }
 
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(10)), count: 4), spacing: BP.px(10)) {
-            ForEach(Self.languages, id: \.self) { lang in
+            ForEach(languages, id: \.self) { lang in
                 let idx = settings.slice.preferredSubLangs.firstIndex(of: lang)
                 Button(idx.map { "\($0 + 1) · \(lang)" } ?? lang) {
                     var list = settings.slice.preferredSubLangs
+                    // Upstream's toggle allows an empty list (the Subtitles summary reads "Off", the
+                    // onboarding recap "No subtitle languages set"); forcing English back meant the
+                    // last language could never be removed.
                     if let i = idx { list.remove(at: i) } else { list.append(lang) }
-                    if list.isEmpty { list = ["English"] }
                     Task { try? await settings.patch(["preferredSubLangs": .array(list.map { .string($0) })]) }
                 }
                 .buttonStyle(BPActionStyle(primary: idx != nil))
