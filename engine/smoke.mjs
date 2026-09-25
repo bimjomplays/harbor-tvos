@@ -25,6 +25,21 @@ const app = loadEngine({ storage: seeded, onFetch: (req) => tmdbRequests.push(re
 const { engine, run } = app;
 
 r.ok("bundle loads in a bare context", true);
+
+// ------------------------------------------- app lifecycle → document / navigator (lifecycle pass)
+{
+  const lc = loadEngine({ storage: new Map() });
+  lc.run(`globalThis.__lcSeen = []; document.addEventListener("visibilitychange", () => globalThis.__lcSeen.push("doc:" + document.visibilityState)); window.addEventListener("visibilitychange", () => globalThis.__lcSeen.push("win:" + document.visibilityState)); window.addEventListener("online", () => globalThis.__lcSeen.push("online:" + navigator.onLine)); window.addEventListener("offline", () => globalThis.__lcSeen.push("offline:" + navigator.onLine));`);
+  r.eq("(lifecycle) the bundle starts visible and online", lc.run("[document.visibilityState, document.hidden, navigator.onLine]"), ["visible", false, true]);
+  lc.engine.runtime.setVisibility(false);
+  r.eq("(lifecycle) hidden: document.hidden + visibilitychange on document and window", [lc.run("document.hidden"), lc.run("JSON.stringify(__lcSeen)")], [true, JSON.stringify(["doc:hidden", "win:hidden"])]);
+  lc.engine.runtime.setVisibility(true);
+  lc.engine.runtime.setOnline(false);
+  lc.engine.runtime.setOnline(false);
+  lc.engine.runtime.setOnline(true);
+  r.eq("(lifecycle) visible again, then offline → online fire once each with navigator.onLine already set", lc.run("JSON.stringify(__lcSeen.slice(2))"), JSON.stringify(["doc:visible", "win:visible", "offline:false", "online:true"]));
+  lc.dispose();
+}
 r.eq("host contract satisfied", engine.runtime.missingHostFunctions(), []);
 r.ok("benchmark still works", (() => {
   const b = engine.benchmark(50);
@@ -1498,6 +1513,14 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("settings.patch on homeRows pushed s_aaa:home at baseRev 3", sent.some((w) => w.key === "s_aaa:home" && w.baseRev === 3 && w.value && w.value.order[0] === "continue"), JSON.stringify(sent.map((w) => [w.key, w.baseRev])));
   r.ok("no roster re-push when unchanged (sent-hash suppression)", !sent.some((w) => w.key === "account:profiles"), JSON.stringify(sent.map((w) => w.key)));
   r.ok("sync status reached idle with a pull time", rec.engine.sync.status().phase === "idle" && rec.engine.sync.status().lastPullAt > 0, JSON.stringify(rec.engine.sync.status()));
+  // (lifecycle pass) scheduler.ts onVisibility: the app going to the background flushes the
+  // queue at once instead of after the 2.5 s debounce (tvOS may suspend it within seconds).
+  const pushedBefore = pushes.length;
+  rec.engine.settings.patch({ homeRows: { order: ["new", "continue", "trending"], hidden: [] } }, rec.engine.settings.sourceKeyFor("p_local1", true));
+  r.eq("(lifecycle) runtime.setVisibility(false) reports a change", rec.engine.runtime.setVisibility(false), true);
+  await new Promise((res) => setTimeout(res, 200));
+  r.ok("(lifecycle) going to the background pushes the queued change without waiting for the debounce", pushes.slice(pushedBefore).flatMap((p) => p.writes).some((w) => w.key === "s_aaa:home" && w.value && w.value.order[0] === "new"), JSON.stringify(pushes.slice(pushedBefore)));
+  r.eq("(lifecycle) runtime.setVisibility(true) reports a change, a repeat does not", [rec.engine.runtime.setVisibility(true), rec.engine.runtime.setVisibility(true)], [true, false]);
   rec.engine.sync.stop();
   rec.engine.account.stop();
   rec.dispose();
@@ -3041,6 +3064,17 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("ebook.openChapter: paragraphs (single newlines joined), line 0, a text identity; the resume points at the chapter", o1.paragraphs.length === 3 && o1.paragraphs[1] === "However little known the feelings." && o1.line === 0 && /^\d+:\d+$/.test(o1.identity) && eb.resume("default", route)?.chapterId === chs[0].id, JSON.stringify(o1));
   const saved = eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity);
   r.ok("ebook.savePosition: harbor-reader's chapter and book progress", saved.chapterProgress === 50 && saved.bookProgress === 25 && saved.textIdentity === o1.identity && eb.openChapter("default", route, chs[0], text).line === 1, JSON.stringify(saved));
+  // (bug pass) The TV's page anchor: a page deep inside a long paragraph reopens there, not on the
+  // paragraph's first page; it is dropped when the line or the chapter's text no longer match.
+  r.eq("ebook.openChapter: no page anchor for a save without one", eb.openChapter("default", route, chs[0], text).offset, null);
+  eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity, 1840);
+  const anchored = eb.openChapter("default", route, chs[0], text);
+  const edited = eb.openChapter("default", route, chs[0], `${text}\n\nA new closing paragraph.`);
+  eb.savePosition("default", route, chs[0], 2, 3, 0, 2, o1.identity, null);
+  r.ok("ebook.savePosition keeps the page anchor beside the line; a changed text or a save without it drops it",
+    anchored.line === 1 && anchored.offset === 1840 && edited.offset === null && eb.openChapter("default", route, chs[0], text).offset === null,
+    JSON.stringify([anchored.offset, edited.offset]));
+  eb.savePosition("default", route, chs[0], 1, 3, 0, 2, o1.identity);
   r.eq("ebook.statuses: a started book is partial", eb.statuses("default", [route, "source:x:2"]), { [route]: "partial" });
   eb.savePosition("default", route, chs[1], 2, 3, 1, 2, o1.identity);
   r.eq("ebook.statuses: the last chapter at its end is read", eb.statuses("default", [route])[route], "read");

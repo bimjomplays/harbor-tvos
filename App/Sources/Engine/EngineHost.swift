@@ -62,22 +62,30 @@ final class HarborEngine {
 
     private static let sharedLock = NSLock()
     private static var sharedInstance: HarborEngine?
+    /// (lifecycle pass) Held for the whole build. `sharedLock` used to be, so `loaded` (asked from
+    /// the main thread by ProfilesStore and the lifecycle bridge) blocked for the seconds the
+    /// bundle takes to evaluate whenever a build was under way on another thread.
+    private static let buildLock = NSLock()
 
-    /// The engine if it has already been started (never triggers the 1 s boot).
+    /// The engine if it has already been started (never triggers the boot, never waits for one).
     static var loaded: HarborEngine? {
         sharedLock.lock(); defer { sharedLock.unlock() }
         return sharedInstance
     }
 
-    /// The process-wide engine, built on first use. Building it evaluates a ~900 KB bundle
-    /// (expect 0.5–1 s on an Apple TV), so ask for it off the main thread during launch.
-    /// This is the form to use anywhere the failure can be shown to the user.
+    /// The process-wide engine, built on first use. Building it evaluates a ~4.4 MB bundle and
+    /// reads the whole storage snapshot (seconds on an Apple TV), so ask for it off the main
+    /// thread during launch (AppModel.boot does). This is the form to use anywhere the failure
+    /// can be shown to the user.
     static func sharedOrThrow() throws -> HarborEngine {
-        sharedLock.lock()
-        defer { sharedLock.unlock() }
-        if let existing = sharedInstance { return existing }
+        if let existing = loaded { return existing }
+        buildLock.lock()
+        defer { buildLock.unlock() }
+        if let existing = loaded { return existing }
         let engine = try HarborEngine()
+        sharedLock.lock()
         sharedInstance = engine
+        sharedLock.unlock()
         return engine
     }
 
@@ -390,6 +398,25 @@ final class HarborEngine {
         if let value { arguments.append(value) } else { arguments.append(NSNull()) }
         queue.async { [weak self] in
             self?.invokeGlobal("__harbor_sync", arguments: arguments)
+        }
+    }
+
+    /// (lifecycle pass) The app went to the background (`false`) or came back (`true`): the bundle's
+    /// `document.visibilityState` follows and upstream's visibilitychange listeners run (profile
+    /// sync flushes its queue on hidden and pulls when it comes back stale, the account session
+    /// refreshes on wake, storage-recovery and the Suwayomi progress bridge flush).
+    func setVisibility(_ visible: Bool) {
+        queue.async { [weak self] in
+            self?.invokeGlobal("__harbor_lifecycle", arguments: ["visible", visible])
+        }
+    }
+
+    /// (lifecycle pass) The network path went down or came back: `navigator.onLine` follows and
+    /// `online`/`offline` fire (Trakt/Simkl pending syncs and the session refresh retry on
+    /// `online`; a MAL token refresh that fails while offline no longer signs MAL out).
+    func setOnline(_ online: Bool) {
+        queue.async { [weak self] in
+            self?.invokeGlobal("__harbor_lifecycle", arguments: ["online", online])
         }
     }
 
@@ -864,6 +891,13 @@ final class HarborEngine {
       g.__harbor_sync = function (key, value) {
         var v = (value === null || value === undefined) ? null : String(value);
         return g.HarborEngine.runtime.syncStorage(String(key), v);
+      };
+
+      g.__harbor_lifecycle = function (kind, value) {
+        var rt = g.HarborEngine.runtime;
+        if (kind === "visible") return rt.setVisibility(!!value);
+        if (kind === "online") return rt.setOnline(!!value);
+        return false;
       };
 
       g.__harbor_event_unsubscribe = g.HarborEngine.runtime.onEvent(function (type, detail) {

@@ -35,6 +35,17 @@ final class EBookPages: @unchecked Sendable {
         return ranges.lastIndex(where: { $0.location <= start }) ?? 0
     }
 
+    /// The page holding a character offset (a page's own first character lands on that page).
+    func page(forCharacter c: Int) -> Int {
+        guard !ranges.isEmpty else { return 0 }
+        return ranges.lastIndex(where: { $0.location <= c }) ?? 0
+    }
+
+    /// The first character of a page (where a relayout or a resume lands it again).
+    func start(ofPage page: Int) -> Int {
+        ranges.indices.contains(page) ? ranges[page].location : 0
+    }
+
     /// The line a page is "at": the first paragraph that starts on it, else the one it continues.
     func line(forPage page: Int) -> Int {
         guard ranges.indices.contains(page), !paragraphStarts.isEmpty else { return 0 }
@@ -153,14 +164,19 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
     private var identity = ""
     private var pageSize = CGSize(width: 1200, height: 800)
     private var saveTask: Task<Void, Never>?
+    /// The position save waiting out the settle delay (flushed early on a chapter move or close).
+    private var pendingSave: [any Encodable]?
     private var layoutSeq = 0
     private let synth = AVSpeechSynthesizer()
     private var speechIndex = 0
     /// The utterance in flight; a callback for any other (one stopped earlier) is ignored.
     private var utterance: ObjectIdentifier?
-    /// Where the next layout should land: a line (resume, bookmark) or the chapter's end.
-    private enum Landing { case line(Int), end }
+    /// Where the next layout should land: a line (bookmark, chapter start), a saved page inside a
+    /// line (resume: characters from the paragraph's start), or the chapter's end.
+    private enum Landing { case line(Int), anchor(line: Int, offset: Int), end }
     private var landing: Landing?
+    /// Set once the reader has closed: nothing speaks or saves after it.
+    private var closed = false
 
     init(launch: EBookReaderLaunch) {
         book = launch.book
@@ -202,24 +218,37 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
     /// EBookDetails readChapter + the reader's first render: the text through the engine
     /// (cleanSourceText, paragraphs, the saved line), then pages.
     private func openChapter(_ i: Int, landing: Landing?) async {
+        guard !closed else { return }
         stopSpeech()
+        // (bug pass) Save the page being left before the chapter changes under it: a chapter move
+        // inside the 400 ms settle cancelled the pending save, so that page never reached storage
+        // (the last page of a chapter, its 100 %, was lost on every Right into the next one).
+        let leaving = flushSave()
         index = i
         loading = true
         failed = nil
         pages = nil
+        // (bug pass) A relayout still running for the chapter being left must not land its pages
+        // over this one (it could, between here and this chapter's own layout).
+        layoutSeq += 1
+        await leaving?.value
+        guard i == index, !closed else { return }
         let path = paths[i]
         let epub = self.epub
         let raw = await Task.detached(priority: .userInitiated) { epub.text(for: path) }.value
-        struct Opened: Decodable { var paragraphs: [String]; var line: Int; var identity: String }
-        guard let opened: Opened = try? await HarborEngine.shared.call("ebook.openChapter", [pid, book.id, chapter, raw]) else {
+        struct Opened: Decodable { var paragraphs: [String]; var line: Int; var identity: String; var offset: Int? }
+        let opened: Opened? = try? await HarborEngine.shared.call("ebook.openChapter", [pid, book.id, chapters[i], raw])
+        // (bug pass) Only the newest chapter move owns the screen, failure included: an older one
+        // failing late put "could not be loaded" over the chapter that had opened.
+        guard i == index, !closed else { return }
+        guard let opened else {
             loading = false
             failed = "This chapter could not be loaded."
             return
         }
-        guard i == index else { return }
         paragraphs = opened.paragraphs
         identity = opened.identity
-        self.landing = landing ?? .line(opened.line)
+        self.landing = landing ?? opened.offset.map { Landing.anchor(line: opened.line, offset: $0) } ?? Landing.line(opened.line)
         await relayout()
         await EBookStore.shared.refreshLists()
     }
@@ -229,7 +258,9 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
     private func relayout() async {
         layoutSeq += 1
         let seq = layoutSeq
-        let keepLine = pages != nil ? currentLine : nil
+        // (bug pass) A prefs change or resize keeps the page's first character in view. Keeping its
+        // line sent a page inside a long paragraph back to the paragraph's first page.
+        let keepChar = pages.map { $0.start(ofPage: page) }
         let title = chapter.title
         let paras = paragraphs
         let prefs = self.prefs
@@ -245,7 +276,11 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         switch landing {
         case .end?: target = max(0, built.count - 1)
         case .line(let l)?: target = built.page(forLine: l)
-        case nil: target = keepLine.map { built.page(forLine: $0) } ?? 0
+        case .anchor(let l, let offset)?:
+            target = built.paragraphStarts.indices.contains(l)
+                ? built.page(forCharacter: max(0, built.paragraphStarts[l] + offset))
+                : built.page(forLine: l)
+        case nil: target = keepChar.map { built.page(forCharacter: $0) } ?? 0
         }
         landing = nil
         if page == target { pageChanged() } else { page = target }
@@ -270,28 +305,50 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
         Task { await openChapter(i, landing: line.map { .line($0) }) }
     }
 
+    /// What persistReadingPosition gets for the page in view: its line, plus the TV's page anchor
+    /// (the page's first character, from that line's start; engine/ebook.ts pageAnchorKey).
+    /// (bug pass) On a chapter's last page the whole rest of the chapter is on screen, so it saves
+    /// the last line: the first paragraph starting on that page kept chapterProgress under 100, so a
+    /// finished book never counted as read (upstream's scroll mode reaches the last line).
+    private func positionArgs() -> [any Encodable]? {
+        guard let pages, !paragraphs.isEmpty else { return nil }
+        let line = page >= pages.count - 1 ? paragraphs.count - 1 : currentLine
+        let lineStart = pages.paragraphStarts.indices.contains(line) ? pages.paragraphStarts[line] : 0
+        let offset = pages.start(ofPage: page) - lineStart
+        return [pid, book.id, chapter, line, paragraphs.count, index, chapters.count, identity, offset]
+    }
+
     /// harbor-reader persistReadingPosition, a moment after the page settles.
     private func pageChanged() {
-        guard pages != nil, !paragraphs.isEmpty else { return }
-        let line = currentLine
-        let chapter = self.chapter
-        let (i, total, count, identity) = (index, chapters.count, paragraphs.count, self.identity)
+        guard !closed, let args = positionArgs() else { return }
+        pendingSave = args
         saveTask?.cancel()
-        saveTask = Task { [pid, book] in
+        saveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
-            let _: EBookResume? = try? await HarborEngine.shared.call("ebook.savePosition", [pid, book.id, chapter, line, count, i, total, identity])
+            self?.flushSave()
         }
     }
 
-    /// Leaving the reader saves the page at once.
-    func close() {
-        stopSpeech()
-        guard saveTask != nil else { return }
+    /// Sends the page waiting in the settle delay now (leaving the chapter or the reader). A chapter
+    /// move awaits it, so the chapter being left never saves over the resume of the one opening.
+    @discardableResult
+    private func flushSave() -> Task<Void, Never>? {
         saveTask?.cancel()
-        guard pages != nil, !paragraphs.isEmpty else { return }
-        let args: [any Encodable] = [pid, book.id, chapter, currentLine, paragraphs.count, index, chapters.count, identity]
-        Task { let _: EBookResume? = try? await HarborEngine.shared.call("ebook.savePosition", args) }
+        saveTask = nil
+        guard let args = pendingSave else { return nil }
+        pendingSave = nil
+        return Task { let _: EBookResume? = try? await HarborEngine.shared.call("ebook.savePosition", args) }
+    }
+
+    /// Leaving the reader stops the voice and saves the page at once. Runs once: from Close / Back,
+    /// and again from the view going away any other way (a profile switch, a lock screen), which
+    /// used to leave the narration speaking over whatever came next.
+    func close() {
+        guard !closed else { return }
+        stopSpeech()
+        closed = true
+        flushSave()
     }
 
     // MARK: prefs (harbor-reader patch)
@@ -387,6 +444,7 @@ final class EBookReaderModel: NSObject, ObservableObject, AVSpeechSynthesizerDel
 
     func speak(from line: Int) {
         stopSpeech()
+        guard !closed else { return }
         guard paragraphs.indices.contains(line) else {
             narrationNotice = "There is nothing to read aloud on this page."
             return

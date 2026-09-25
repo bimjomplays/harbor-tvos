@@ -48,15 +48,24 @@ final class LibraryModel: ObservableObject {
         await load()
     }
 
+    /// (bug pass) Only the newest feed request lands. Tabs, filters and "Show more" each start a
+    /// load; a slow one (Trakt / Simkl / Letterboxd tabs go to the network) answering after a
+    /// quicker, newer one put the old tab's titles under the new tab's chip, and the first to finish
+    /// cleared `loading` while the other still ran.
+    private var generation = 0
+
     func load(force: Bool = false) async {
-        loading = true; defer { loading = false }
+        generation += 1
+        let mine = generation
+        loading = true
+        defer { if mine == generation { loading = false } }
         let p = profile
         let input: AnyJSON = .object([
             "tab": .string(tab), "profileId": .string(p.id), "linked": .bool(p.linked), "authKey": p.authKey.map { .string($0) } ?? .null,
             "sort": .string(sort), "flat": .bool(flat), "type": .string(type), "query": .string(query), "episodes": .bool(episodes),
             "group": group.map { .string($0) } ?? .null, "limit": .number(Double(limit)), "force": .bool(force),
         ])
-        if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]) {
+        if let f: Feed = try? await HarborEngine.shared.call("libraryRoom.feed", [input]), mine == generation {
             feed = f
             await CardMarksStore.shared.refresh(f.sections.flatMap { $0.items.map(\.meta) })
         }

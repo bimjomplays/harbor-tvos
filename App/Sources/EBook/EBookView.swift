@@ -346,7 +346,8 @@ struct EBookView: View {
                 Image(systemName: "books.vertical.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Shelf").font(BP.sans(15.5, .semibold)).foregroundStyle(BP.ink)
-                    Text(store.shelf.isEmpty ? T("Books you save will appear here") : "\(store.shelf.count) books saved")
+                    // (bug pass) T(): inside a String ternary the literal was never looked up.
+                    Text(store.shelf.isEmpty ? T("Books you save will appear here") : T("%lld books saved", store.shelf.count))
                         .font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
                 Spacer(minLength: BP.px(20))
@@ -495,7 +496,7 @@ struct EBookShelfView: View {
                 VStack(alignment: .leading, spacing: BP.px(22)) {
                     VStack(alignment: .leading, spacing: BP.px(4)) {
                         Text("Shelf").font(BP.display(34)).foregroundStyle(BP.ink)
-                        Text(store.shelf.isEmpty ? T("Books you add to your shelf will appear here.") : "\(store.shelf.count) books saved to your shelf")
+                        Text(store.shelf.isEmpty ? T("Books you add to your shelf will appear here.") : T("%lld books saved to your shelf", store.shelf.count))
                             .font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                     }
                     if store.shelf.isEmpty {

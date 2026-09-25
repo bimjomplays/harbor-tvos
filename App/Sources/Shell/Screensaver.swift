@@ -102,9 +102,17 @@ final class ScreensaverModel: ObservableObject {
     private var rotor: Task<Void, Never>?
     private var fetchedFor = ""
     private var activatedAt = Date.distantFuture
+    /// (lifecycle pass) use-idle-screensaver.ts bumps its idle clock on focus / visibilitychange and
+    /// never fires while the page is hidden. Here only presses counted: coming back from the Home
+    /// screen (or from a while of background music) after the delay put the saver up the moment
+    /// Harbor reappeared, and it could come on unseen in the background and swallow the first press.
+    private var resumedAt = Date.distantPast
+    private var resumeWatch: AnyCancellable?
 
     func start() {
         guard ticker == nil else { return }
+        resumeWatch = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in self?.resumedAt = Date() }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(4))
@@ -125,10 +133,12 @@ final class ScreensaverModel: ObservableObject {
             return
         }
         let delay = max(1, slice.screensaverDelayMin ?? 5) * 60
-        if Date().timeIntervalSince(ActivityMonitor.shared.last) >= delay {
+        guard UIApplication.shared.applicationState == .active else { return }
+        if Date().timeIntervalSince(idleSince) >= delay {
             await load(source: slice.heroFeed ?? "trending")
-            // Pressed while the art loaded: stay down.
-            guard Date().timeIntervalSince(ActivityMonitor.shared.last) >= delay else { return }
+            // Pressed (or left the app) while the art loaded: stay down.
+            guard UIApplication.shared.applicationState == .active,
+                  Date().timeIntervalSince(idleSince) >= delay else { return }
             active = true
             activatedAt = Date()
             at = 0
@@ -142,6 +152,9 @@ final class ScreensaverModel: ObservableObject {
             }
         }
     }
+
+    /// The last press, or the app coming back on screen, whichever is later.
+    private var idleSince: Date { max(ActivityMonitor.shared.last, resumedAt) }
 
     func wake() {
         ActivityMonitor.shared.touch()

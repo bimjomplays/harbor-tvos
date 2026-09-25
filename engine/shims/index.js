@@ -144,6 +144,7 @@ define("self", g);
 
 export const shims = {
   events: dom.events,
+  lifecycle: dom.lifecycle,
   localStorage,
   sha256,
   bytesToBase64,

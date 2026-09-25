@@ -57,7 +57,7 @@ enum EPUBZip {
             let localOff = u32(cd + 42)
             guard cd + 46 + fnLen <= n else { break }
             let name = String(decoding: b[(cd + 46)..<(cd + 46 + fnLen)], as: UTF8.self)
-            if !name.hasSuffix("/"), localOff + 30 <= n {
+            if !name.hasSuffix("/"), !isMedia(name), localOff + 30 <= n {
                 let start = localOff + 30 + u16(localOff + 26) + u16(localOff + 28)
                 let end = start + compSize
                 if start <= end, end <= n {
@@ -73,6 +73,21 @@ enum EPUBZip {
             cd += 46 + fnLen + extraLen + commentLen
         }
         return out
+    }
+
+    /// (bug pass) Images, fonts and audio: the TV reader shows text only, and parse() dropped them
+    /// again anyway, but they were all inflated first. An illustrated Gutenberg book (the
+    /// ".epub3.images" edition the TV downloads) peaked at several times its size in memory, and
+    /// with a large enough archive the 300 MB budget ran out on pictures before the chapters that
+    /// came after them in the zip, which then went missing.
+    private static let mediaExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "avif", "heic",
+        "ttf", "otf", "woff", "woff2", "mp3", "m4a", "aac", "ogg", "wav", "mp4", "m4v", "webm",
+    ]
+
+    private static func isMedia(_ name: String) -> Bool {
+        guard let dot = name.lastIndex(of: "."), !name[dot...].contains("/") else { return false }
+        return mediaExtensions.contains(name[name.index(after: dot)...].lowercased())
     }
 
     /// Raw DEFLATE (COMPRESSION_ZLIB is headerless DEFLATE, RFC 1951).
