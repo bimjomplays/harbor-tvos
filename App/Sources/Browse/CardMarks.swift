@@ -27,11 +27,35 @@ final class CardMarksStore: ObservableObject {
         init(_ m: Meta) { id = m.id; type = m.type; name = m.name; releaseInfo = m.releaseInfo; releaseDate = m.releaseDate; inTheaters = m.inTheaters }
     }
 
+    /// The profile the table was read for (nil until the first read, and after a switch).
+    private var tableProfile: String?
+    private var bag = Set<AnyCancellable>()
+
+    init() {
+        // (profiles device pass) Cleared the moment the profile changes, before any screen of the
+        // new profile draws a tile.
+        ProfilesStore.shared.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in
+            guard let self else { return }
+            self.tableProfile = nil
+            if !self.byId.isEmpty { self.byId = [:] }
+        }.store(in: &bag)
+    }
+
     func refresh(_ metas: [Meta]) async {
         guard !Fixtures.active, !metas.isEmpty else { return }
         lastMetas = metas
         let p = ProfilesStore.shared.active
-        guard let list: [CardMarks] = try? await HarborEngine.shared.call("cards.marks", [metas.map(CardMeta.init), p?.id ?? "default", p?.linked ?? true]) else { return }
+        let pid = p?.id ?? "default"
+        // (profiles device pass) The table is per profile: after a switch the previous profile's
+        // watched checks and bookmarks stayed on every card (Home's cached shelves show before the
+        // live build re-marks them, and titles not on screen kept theirs for the whole session).
+        if tableProfile != pid {
+            tableProfile = pid
+            if !byId.isEmpty { byId = [:] }
+        }
+        guard let list: [CardMarks] = try? await HarborEngine.shared.call("cards.marks", [metas.map(CardMeta.init), pid, p?.linked ?? true]) else { return }
+        // A read started for the previous profile answers after the switch: not this profile's marks.
+        guard tableProfile == pid else { return }
         // (perf pass) Every BPTileView observes this store: republishing an unchanged table (each room
         // load, Home's re-reads, every cover close via remark()) redrew every tile on screen.
         var next = byId

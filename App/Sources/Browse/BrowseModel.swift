@@ -28,6 +28,9 @@ final class BrowseModel: ObservableObject {
     @Published private(set) var heroIndex = 0
     /// A tile holds focus somewhere in the room (use-bp-hero-cycle cardFocused()).
     @Published private(set) var tileHeld = false
+    /// bp-home cwReady: the first Continue Watching read has answered (or the load failed). The
+    /// room seeds its first focus only once both it and the rows are in.
+    @Published private(set) var cwResolved = false
 
     let room: Room
     private let source: BrowseSource
@@ -37,6 +40,8 @@ final class BrowseModel: ObservableObject {
 
     private var unsubscribe: (() -> Void)?
     private var refreshTask: Task<Void, Never>?
+    /// Numbers Continue Watching reads, so a slower older answer never replaces a newer one.
+    private var cwGeneration = 0
 
     /// bp-restore route entry: where focus lands when this page opens again. bp-home.tsx forgets
     /// the Home position on mount (Home always opens on its first card); rows keep their memory.
@@ -107,6 +112,8 @@ final class BrowseModel: ObservableObject {
                 if spotlight == nil { spotlight = cached.first?.metas.first }
             }
         }
+        cwGeneration += 1
+        let cwMine = cwGeneration
         do {
             async let r = source.rows(for: room)
             async let cw = source.continueWatching(for: room)
@@ -117,7 +124,9 @@ final class BrowseModel: ObservableObject {
                 rows = live
                 if cacheable { Task.detached(priority: .utility) { try? CacheStore.shared.set(live, for: key) } }
             }
-            continueWatching = (try? await cw) ?? []
+            let cwItems: [ContinueItem] = (try? await cw) ?? []
+            if cwMine == cwGeneration, cwItems != continueWatching { continueWatching = cwItems }
+            cwResolved = true
             // A row that left while holding focus never reports losing it.
             let keys = Set(live.map(\.key))
             let cwShown = !continueWatching.isEmpty
@@ -130,9 +139,30 @@ final class BrowseModel: ObservableObject {
             await CardMarksStore.shared.refresh(live.flatMap(\.metas))
         } catch {
             if rows.isEmpty { failed = error.localizedDescription }
+            cwResolved = true
         }
         loading = false
         if reloadPending { reloadPending = false; await load() }
+    }
+
+    /// (home device pass) Continue Watching alone, re-read when a page over the room closes: a
+    /// card removed in the quick panel stayed in the row (nothing listened for harbor:cw-dismissed),
+    /// and after playback the row kept the old episode and progress, so its one-press resume went
+    /// back to the episode just finished. Upstream's row follows the local resume store and the
+    /// dismissals (mobile-cw-row subscribeLocalCw / useCwDismissVersion).
+    func reloadContinueWatching() {
+        guard !(source is FixtureBrowseSource) else { return }
+        cwGeneration += 1
+        let mine = cwGeneration
+        let room = self.room
+        let source = self.source
+        Task { [weak self] in
+            let items: [ContinueItem]? = try? await source.continueWatching(for: room)
+            guard let self, let items, mine == self.cwGeneration else { return }
+            if items != self.continueWatching { self.continueWatching = items }
+            // A row that left while holding focus never reports losing it.
+            if items.isEmpty { self.hold("cw", false) }
+        }
     }
 
     func focus(_ meta: Meta) {
@@ -153,7 +183,10 @@ final class BrowseModel: ObservableObject {
     private func startHeroCycle() {
         heroTask?.cancel()
         let pool = Array((rows.first?.metas ?? []).prefix(8))
-        guard pool.count > 1, !UIAccessibility.isReduceMotionEnabled else {
+        // (home device pass) Home only: bp-home is the one page that mounts useBpHeroCycle. On the
+        // anime page it turned the title under Resume / More Info every 7 s while the ring sat on
+        // them (those buttons are not tiles), so Resume started whichever title had rotated in.
+        guard isHomePage, pool.count > 1, !UIAccessibility.isReduceMotionEnabled else {
             heroCount = 0
             return
         }

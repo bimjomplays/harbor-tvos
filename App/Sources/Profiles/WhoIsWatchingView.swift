@@ -47,17 +47,57 @@ struct WhoIsWatchingView: View {
             if let pinFor {
                 PinPadView(profile: pinFor) { ok in
                     // bp-who-is-watching commit(id, unlocked): the PIN unlocks the profile's locked tabs for the session.
-                    if ok { profiles.select(pinFor.id, unlocked: true); app.stage = .shell }
+                    let id = pinFor.id
                     self.pinFor = nil
-                    if !ok {
-                        let id = pinFor.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { tileFocus = id }
-                    }
+                    if ok, commit(id, unlocked: true) { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { tileFocus = id }
                 }
                 .transition(.opacity)
             }
         }
         .animation(BP.easeFast, value: pinFor?.id)
+        // (profiles device pass) bp-who-is-watching-layer: Back closes the chooser onto the profile
+        // still active behind it (opened from the top bar, the account menu, Settings, the kids
+        // chip or at launch). With none active there is nothing to return to, and the press is left
+        // to the system (the app closes) rather than swallowed. The PIN pad handles its own Back.
+        .onExitCommand(perform: backAction)
+        // bp-who-is-watching: the ring starts on the active profile, not whoever sits first (also
+        // once the launch intro wall, which holds the tree disabled, lets go).
+        .defaultFocus($tileFocus, profiles.activeId)
+        .onAppear {
+            guard let id = profiles.activeId else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { if pinFor == nil { tileFocus = id } }
+        }
+        // bp-who-is-watching pinTarget: a profile the roster sync removed takes its PIN pad with it.
+        .onChange(of: profiles.profiles) { _, list in
+            if let p = pinFor, !list.contains(where: { $0.id == p.id }) { pinFor = nil }
+        }
+    }
+
+    private var backAction: (() -> Void)? {
+        guard app.canCloseWho else { return nil }
+        let model = app
+        return { model.closeWho() }
+    }
+
+    /// bp-who-is-watching choose(): the active profile just closes the chooser (no PIN, no switch);
+    /// another asks for its PIN when it has one.
+    private func choose(_ p: ProfilesStore.Profile) {
+        if p.id == profiles.activeId {
+            app.closeWho()
+            return
+        }
+        if p.passwordHash != nil { pinFor = p } else { commit(p.id, unlocked: false) }
+    }
+
+    /// bp-who-is-watching commit(): a profile that left the roster meanwhile is not selected (the
+    /// shell opened on an active id with no profile behind it). Returns whether it switched.
+    @discardableResult
+    private func commit(_ id: String, unlocked: Bool) -> Bool {
+        guard profiles.profiles.contains(where: { $0.id == id }) else { return false }
+        profiles.select(id, unlocked: unlocked)
+        app.stage = .shell
+        return true
     }
 
     private var rows: [[ProfilesStore.Profile]] {
@@ -72,7 +112,7 @@ struct WhoIsWatchingView: View {
         Button {
             // bpWhoKidSelectable() is true on a TV shell, so a kid tile is never `unavailable` (dimmed):
             // Big Picture stays mounted and the kid lands on the Kids surface (KidsShellView).
-            if p.passwordHash != nil { pinFor = p } else { profiles.select(p.id); app.stage = .shell }
+            choose(p)
         } label: {
             VStack(spacing: BP.px(12)) {
                 ZStack(alignment: .bottomTrailing) {
@@ -98,18 +138,30 @@ struct WhoIsWatchingView: View {
         .accessibilityLabel(Text(verbatim: p.passwordHash != nil ? "\(T("Switch to %@", p.name)), \(T("PIN"))" : T("Switch to %@", p.name)))
     }
 
+    /// (profiles device pass) bp-who-is-watching-sync useBpWhoSyncPhase: "pending" is the FIRST
+    /// pull for this account only, "failed" only that pull failing ("a device that has synced before
+    /// holds a complete local copy and must show no chrome at all"). It read SyncReader.phase, which
+    /// is "pulling" for every scheduled pull and push and "failed" for any push error, so the notice
+    /// and its Retry came and went under the faces (moving them) on an ordinary visit.
+    private enum WhoSync { case idle, pending, failed }
+
+    private var whoSync: WhoSync {
+        guard account.isSignedIn, let s = sync.status, s.armed else { return .idle }
+        if s.phase == "first-pull" { return .pending }
+        if s.phase == "first-pull-failed" { return .failed }
+        return .idle
+    }
+
     @ViewBuilder private var syncNotice: some View {
-        if account.isSignedIn {
-            switch sync.phase {
-            case .pulling:
-                BPNote(text: "Signing in to your Harbor account. Your profiles will appear in a moment.")
-            case .failed:
-                HStack(spacing: BP.px(12)) {
-                    BPNote(text: "Couldn't reach Harbor. Showing this device only.")
-                    Button("Retry") { Task { await app.refreshRoster() } }.buttonStyle(BPActionStyle())
-                }
-            case .idle: EmptyView()
+        switch whoSync {
+        case .pending:
+            BPNote(text: "Signing in to your Harbor account. Your profiles will appear in a moment.")
+        case .failed:
+            HStack(spacing: BP.px(12)) {
+                BPNote(text: "Couldn't reach Harbor. Showing this device only.")
+                Button("Retry") { Task { await app.refreshRoster() } }.buttonStyle(BPActionStyle())
             }
+        case .idle: EmptyView()
         }
     }
 

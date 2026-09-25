@@ -776,6 +776,7 @@ export const profilesRoom = {
   colors: profilesRoomGlue.colors,
   pickColor: profilesRoomGlue.pickColor,
   purge: profilesRoomGlue.purge,
+  launchPicker: profilesRoomGlue.launchPicker,
 };
 
 /** Per-profile gating (lib/parental.tsx, bp-top-bar useBpTabGate, profile-identity-sync hideContent). */

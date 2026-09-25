@@ -35,12 +35,7 @@ final class SyncReader: ObservableObject {
 
     /// Follow the engine's status events and start the scheduler (idempotent).
     func start() async {
-        if unsubscribe == nil {
-            unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
-                guard type == "harbor:sync-status", let s = detail.flatMap({ try? $0.decode(Status.self) }) else { return }
-                self?.apply(s)
-            }
-        }
+        listen()
         guard !started else { return }
         started = true
         if let s: Status = try? await HarborEngine.shared.call("sync.start") { apply(s) }
@@ -50,6 +45,9 @@ final class SyncReader: ObservableObject {
     @discardableResult
     func pull() async -> Bool {
         struct Out: Decodable { var ok: Bool; var reason: String?; var status: Status }
+        // (profiles device pass) The boot and sign-in pull runs before `start`: listen first, so the
+        // engine's "first-pull" status (Who's watching's "Signing in…" line) arrives while it runs.
+        listen()
         phase = .pulling
         guard let out: Out = try? await HarborEngine.shared.call("sync.pullNow") else {
             phase = .failed("engine unavailable"); return false
@@ -57,6 +55,15 @@ final class SyncReader: ObservableObject {
         apply(out.status)
         if !out.ok { phase = .failed(Self.describe(out.reason)) }
         return out.ok
+    }
+
+    /// Follow the engine's `harbor:sync-status` events (idempotent).
+    private func listen() {
+        guard unsubscribe == nil else { return }
+        unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
+            guard type == "harbor:sync-status", let s = detail.flatMap({ try? $0.decode(Status.self) }) else { return }
+            self?.apply(s)
+        }
     }
 
     func stop() {

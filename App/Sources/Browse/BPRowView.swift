@@ -95,6 +95,9 @@ struct BPRailView<Lead: View>: View {
     var onSeeAll: ((BrowseRow) -> Void)? = nil
     /// The See all chip's copy per row (bp-row-header BpRowLead `action`).
     var seeAllLabel: ((BrowseRow) -> String)? = nil
+    /// Whether a row offers its See all chip at all (nil = every row does). bp-row-header renders
+    /// the chip only when it has somewhere to go.
+    var seeAllShown: ((BrowseRow) -> Bool)? = nil
     var onQuick: ((Meta) -> Void)? = nil
     var topInset: CGFloat = 0
     /// bp-restore: the route rows remember their cells under, and the position to re-enter at.
@@ -122,6 +125,13 @@ struct BPRailView<Lead: View>: View {
         proxy.scrollTo(Self.parkID(key), anchor: .top)
     }
 
+    private func seeAllAction(_ row: BrowseRow) -> (() -> Void)? {
+        guard let onSeeAll else { return nil }
+        let shown: Bool = seeAllShown?(row) ?? true
+        guard shown else { return nil }
+        return { onSeeAll(row) }
+    }
+
     private func parkEntry(_ proxy: ScrollViewProxy) {
         guard focusedRow == nil, let e = entry, rows.contains(where: { $0.key == e.row }) else { return }
         // The rail is lazy: bring the row into existence by its own id, then park it by its marker.
@@ -138,7 +148,7 @@ struct BPRailView<Lead: View>: View {
                     lead().id("lead").zIndex(1)
                     ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
-                                  onSeeAll: onSeeAll.map { cb in { cb(row) } }, seeAllLabel: seeAllLabel?(row) ?? "See all", onQuick: onQuick,
+                                  onSeeAll: seeAllAction(row), seeAllLabel: seeAllLabel?(row) ?? "See all", onQuick: onQuick,
                                   restoreRoute: restoreRoute, restoreCell: entry?.row == row.key ? entry?.cell : nil,
                                   onHold: { held in
                                       if held { heldRow = row.key } else if heldRow == row.key { heldRow = nil }
@@ -176,6 +186,13 @@ struct BPRailView<Lead: View>: View {
                 guard held, focusedRow != nil else { return }
                 focusedRow = nil
                 withAnimation(BP.easeSlow) { proxy.scrollTo(Self.topID, anchor: .top) }
+            }
+            // (home device pass) Rows that arrive or leave above the focused one (Home's late extra
+            // rows, a synced row edit, the anime bursts) moved it off its park: down under the hint
+            // bar or off the screen, or up under the spotlight copy, with the ring still on it.
+            .onChange(of: rows.map(\.key)) { _, _ in
+                guard let key = heldRow else { return }
+                DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
             }
             // Route entry: park the remembered row first so it exists when focus resets into it.
             .onAppear { parkEntry(proxy) }

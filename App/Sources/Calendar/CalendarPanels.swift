@@ -182,6 +182,8 @@ struct CalendarConfigRailView: View {
     @State private var rail: Rail?
     @State private var open: Set<String> = ["genres"]
     @State private var addingPerson = false
+    /// (home device pass) Where the ring goes when the control it sat on leaves or goes inert.
+    @FocusState private var focus: String?
 
     struct Chip: Decodable, Identifiable, Equatable { var key: String; var label: String; var selected: Bool; var id: String { key } }
     struct RailGroup: Decodable, Identifiable, Equatable { var id: String; var title: String; var count: Int; var summary: String; var chips: [Chip] }
@@ -245,8 +247,12 @@ struct CalendarConfigRailView: View {
                         HStack(spacing: BP.px(8)) {
                             Text(rail.activeCount > 0 ? "\(rail.activeCount) active" : "No filters").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
                             Spacer()
-                            Button("Clear all") { toggle("clear") }.buttonStyle(BPActionStyle()).disabled(rail.activeCount == 0)
+                            // (home device pass) Clear all disables itself once it has cleared, which threw
+                            // the ring off it to wherever tvOS chose: it goes to Close, beside it.
+                            Button("Clear all") { toggle("clear") { _ in "close" } }.buttonStyle(BPActionStyle()).disabled(rail.activeCount == 0)
+                                .focused($focus, equals: "clearAll")
                             Button("Close") { dismiss() }.buttonStyle(BPActionStyle(primary: true))
+                                .focused($focus, equals: "close")
                         }
                         .focusSection()
                     }
@@ -287,13 +293,16 @@ struct CalendarConfigRailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(BPActionStyle())
-                if g.count > 0 { Button("Clear") { toggle("clear:\(g.id)") }.buttonStyle(BPActionStyle()) }
+                .focused($focus, equals: "group:" + g.id)
+                // (home device pass) Clear leaves with the group's picks: the ring goes to the group's header.
+                if g.count > 0 { Button("Clear") { toggle("clear:\(g.id)") { _ in "group:" + g.id } }.buttonStyle(BPActionStyle()) }
             }
             if open.contains(g.id) {
                 // people-field.tsx: the search that adds a person (TMDB people, 8 results).
                 if g.id == "people" {
                     Button { addingPerson = true } label: { Label(T("Search actors, directors…"), systemImage: "person.badge.plus") }
                         .buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "addPerson")
                 }
                 if g.chips.isEmpty {
                     if g.id != "people" { BPNote(text: T("Nothing here yet.")) }
@@ -308,13 +317,31 @@ struct CalendarConfigRailView: View {
     }
 
     private func chip(_ c: Chip) -> some View {
-        Button { toggle(c.key) } label: {
+        Button { pressChip(c) } label: {
             HStack(spacing: BP.px(5)) {
                 if c.selected { Image(systemName: c.key.hasPrefix("person:") ? "xmark" : "checkmark") }
                 Text(c.label).lineLimit(1)
             }
         }
         .buttonStyle(BPActionStyle(primary: c.selected))
+        .focused($focus, equals: "chip:" + c.key)
+    }
+
+    /// (home device pass) A tracked person's chip removes the person (people-field onRemove), so the
+    /// chip left from under the ring: the ring goes to the chip that takes its place (or the one
+    /// before it at the end), else to the people search.
+    private func pressChip(_ c: Chip) {
+        guard c.key.hasPrefix("person:") else {
+            toggle(c.key)
+            return
+        }
+        let before: [String] = rail?.groups.first(where: { $0.id == "people" })?.chips.map(\.key) ?? []
+        let at: Int = before.firstIndex(of: c.key) ?? 0
+        toggle(c.key) { next in
+            let left: [String] = next.groups.first(where: { $0.id == "people" })?.chips.map(\.key) ?? []
+            if left.isEmpty { return "addPerson" }
+            return "chip:" + left[min(at, left.count - 1)]
+        }
     }
 
     private var profile: (id: String, linked: Bool) {
@@ -334,10 +361,13 @@ struct CalendarConfigRailView: View {
         }
     }
 
-    private func toggle(_ key: String) {
+    private func toggle(_ key: String, refocus: ((Rail) -> String?)? = nil) {
         let p = profile
         Task {
-            if let next: Rail = try? await HarborEngine.shared.call("calendar.customToggle", [p.id, p.linked, key]) { rail = next }
+            if let next: Rail = try? await HarborEngine.shared.call("calendar.customToggle", [p.id, p.linked, key]) {
+                rail = next
+                if let target = refocus?(next) { DispatchQueue.main.async { focus = target } }
+            }
         }
     }
 }
@@ -440,7 +470,10 @@ struct CalendarPeopleSearchView: View {
                                 .frame(width: BP.px(720), alignment: .leading)
                             }
                             .buttonStyle(BPTileStyle(radius: BP.rMD))
-                            .disabled(person.tracked)
+                            // (home device pass) Dimmed like people-field's disabled row, but still a focus
+                            // stop (Select does nothing): a disabled row was skipped by the ring, so the
+                            // viewer could not reach it to see it is already tracked.
+                            .opacity(person.tracked ? 0.5 : 1)
                         }
                     }
                     .padding(.vertical, BP.px(6))
@@ -465,6 +498,7 @@ struct CalendarPeopleSearchView: View {
     }
 
     private func add(_ person: Person) {
+        guard !person.tracked else { return }
         let p = profile
         Task {
             if let next: CalendarConfigRailView.Rail = try? await HarborEngine.shared.call("calendar.customAddPerson", [p.id, p.linked, Pick(id: person.id, name: person.name, profile: person.profile)] as [any Encodable]) {

@@ -66,11 +66,13 @@ final class AppModel: ObservableObject {
     let sync = SyncReader.shared
 
     private var bag = Set<AnyCancellable>()
+    private let isBrowseLayer: Bool
 
     /// `isBrowseLayer`: the PiP browse layer's own model (Player/PiPBrowse.swift). It leaves the
     /// app-wide reloads a profile switch makes to the app's model (which runs them once), and the
     /// layer goes down on a switch anyway.
     init(isBrowseLayer: Bool = false) {
+        self.isBrowseLayer = isBrowseLayer
         // A pull can adopt a roster that no longer holds the active profile (deleted on another
         // device): the engine clears the active id and the shell must go back to who-is-watching.
         profiles.$activeId.dropFirst().receive(on: RunLoop.main).sink { [weak self] id in
@@ -134,6 +136,31 @@ final class AppModel: ObservableObject {
             return
         }
         if !onboardingDone { stage = .onboarding; return }
+        await goToWhoOrShellAtLaunch()
+    }
+
+    /// (profiles device pass) lib/profiles.tsx at launch (engine `profilesRoom.launchPicker`): a
+    /// "Start as" default profile opens directly, and with several profiles Who's watching comes
+    /// up over the restored one (profilePromptInterval, every launch by default; Back closes it).
+    /// The TV only asked when no profile was active, so it always woke in whoever used it last.
+    private func goToWhoOrShellAtLaunch() async {
+        struct Launch: Decodable { var open: Bool; var defaultId: String? }
+        // A kid profile behind a parent PIN is left only through that PIN (KidsShellView's chip), so
+        // neither the prompt nor a default takes it away at launch: quitting and reopening the app
+        // must not be a way around the PIN (or the curfew lock).
+        let kidLocked = profiles.active?.kid?.parentPinHash != nil
+        guard !Fixtures.active, !kidLocked, let launch: Launch = try? await HarborEngine.shared.call("profilesRoom.launchPicker", []) else {
+            goToWhoOrShell()
+            return
+        }
+        if let id = launch.defaultId, id != profiles.activeId,
+           let target = profiles.profiles.first(where: { $0.id == id }), target.passwordHash == nil {
+            profiles.select(id)
+        }
+        if launch.open, profiles.active != nil {
+            stage = .whoIsWatching
+            return
+        }
         goToWhoOrShell()
     }
 
@@ -157,9 +184,24 @@ final class AppModel: ObservableObject {
         stage = profiles.active == nil ? .whoIsWatching : .shell
     }
 
+    /// (profiles device pass) bp-who-is-watching-layer: the chooser opens over the profile in use,
+    /// which stays active until another is picked, so Back returns to it (`canClose`) and picking
+    /// it again just closes. The switch used to clear the active profile first: Back on Who's
+    /// watching then left the app, re-picking your own PIN profile asked for its PIN again, and a
+    /// parental unlock was dropped.
+    /// The PiP browse layer still clears it: that is what takes the layer and its film down and
+    /// sends the app's own shell to Who's watching (PiPBrowse.profileChanged, the sink in init).
     func switchProfile() {
-        profiles.deselect()
+        if isBrowseLayer { profiles.deselect() }
         stage = .whoIsWatching
+    }
+
+    /// Who's watching may close back to the shell: there is a profile behind it.
+    var canCloseWho: Bool { profiles.active != nil }
+
+    func closeWho() {
+        guard canCloseWho else { return }
+        stage = .shell
     }
 
     /// One awaited pull (the engine adopts the roster and Swift reloads it), then the

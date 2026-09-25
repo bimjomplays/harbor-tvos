@@ -371,7 +371,10 @@ struct BPSettingsView: View {
                     Task {
                         await model.commit(c.id, "on")
                         // bp-settings.tsx reviewSportsNotice: reset, then open the Sports tab to show it.
-                        if c.id == "sportsNotice" { app.room = .sports }
+                        // (home device pass) Not into a Sports tab the profile's PIN locks: ShellView sends a
+                        // locked room back to Home, which threw the viewer out of Settings. The notice is
+                        // reset either way and shows on the next visit.
+                        if c.id == "sportsNotice", !ParentalGate.shared.hides(.sports) { app.room = .sports }
                     }
                 }
                 .buttonStyle(BPActionStyle())
