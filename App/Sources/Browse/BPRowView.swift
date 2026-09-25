@@ -26,6 +26,14 @@ struct BPRowView: View {
     var onSeeAllHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var seeAllFocused: Bool
+    /// (navigation UI test, run 258) A 2 pt catch after the last cell of a row with a see-all. On a
+    /// short row (Home's three-tile Your streaming) Right off the last cell found nothing in the row,
+    /// and tvOS carried the ring diagonally into another row before bpSeeAllEnter could act; the catch
+    /// is the nearest thing to the right, and hands the ring on at once (see `endCatch`).
+    @FocusState private var endGuard: Bool
+    /// The last cell of this row that held the ring (never cleared): the catch reads it to tell a
+    /// Right off the last cell (→ see-all) from an arrival out of another row (→ the last cell).
+    @State private var lastHeld: String?
     /// Bumped to bring the last cell into existence (the track is lazy) before the ring goes there.
     @State private var revealLast = 0
     @Environment(\.shellFocusNamespace) private var shellNS
@@ -51,6 +59,20 @@ struct BPRowView: View {
         }
     }
 
+    /// The end catch took the ring: straight on to the see-all when it came off the last cell
+    /// (bpSeeAllEnter), else back to the last cell (an arrival from a row above or below).
+    private func endCatch() {
+        guard let last = items.last else { return }
+        let id: String = last.id
+        // A runloop later: the see-all is drawn only while the row (the catch included) holds the
+        // ring, so it comes into the tree in the same update the catch took focus.
+        if lastHeld == id, onSeeAll != nil {
+            DispatchQueue.main.async { seeAllFocused = true }
+        } else {
+            DispatchQueue.main.async { focusedId = id }
+        }
+    }
+
     /// bp-row-see-all.ts bpSeeAllExit: back to the row's last cell, not whatever tvOS scores nearest.
     private func seeAllMove(_ dir: MoveCommandDirection) {
         guard dir == startDir, let last = items.last else { return }
@@ -71,7 +93,7 @@ struct BPRowView: View {
                 Text(row.title)
                     .font(BP.sans(19, .bold)).foregroundStyle(BP.ink.opacity(focusedId == nil && !seeAllFocused ? 0.55 : 1))
                     .accessibilityAddTraits(.isHeader)
-                if let onSeeAll, focusedId != nil || seeAllFocused {
+                if let onSeeAll, focusedId != nil || seeAllFocused || endGuard {
                     Button(T(seeAllLabel), action: onSeeAll)
                         .buttonStyle(BPSeeAllStyle())
                         .focused($seeAllFocused)
@@ -101,6 +123,13 @@ struct BPRowView: View {
                             // The lifted tile, its ring, shadow and caption draw over its neighbours.
                             .zIndex(focusedId == meta.id ? 1 : 0)
                         }
+                        if onSeeAll != nil, !items.isEmpty {
+                            Color.clear
+                                .frame(width: 2, height: BP.px(120))
+                                .focusable()
+                                .focused($endGuard)
+                                .accessibilityHidden(true)
+                        }
                     }
                     .padding(.horizontal, BP.gutter)
                     .padding(.vertical, BP.px(14))   // room for the lift and ring
@@ -123,7 +152,11 @@ struct BPRowView: View {
         // With no memory the value names no tile (never nil), so the usual nearest-tile rule applies.
         .defaultFocus($focusedId, remembered ?? "bp-restore:none", priority: .userInitiated)
         .focusSection()
+        .onChange(of: endGuard) { _, on in
+            if on { endCatch() }
+        }
         .onChange(of: focusedId) { _, id in
+            if let id { lastHeld = id }
             if let id, let m = row.metas.first(where: { $0.id == id }) {
                 if let route = restoreRoute { BPRestore.remember(route: route, row: row.key, cell: id) }
                 onFocus(m)
@@ -134,7 +167,7 @@ struct BPRowView: View {
         // contains focus. Since Right off the last tile reaches See all, the row reported losing the
         // ring there: Home's band let go (the spotlight crossfaded back in over a services or addons
         // row) and the rail dropped the row's zIndex, then both came back on Left.
-        .onChange(of: focusedId != nil || seeAllFocused) { _, held in onHold?(held) }
+        .onChange(of: focusedId != nil || seeAllFocused || endGuard) { _, held in onHold?(held) }
         .onChange(of: seeAllFocused) { _, on in onSeeAllHold?(on) }
     }
 }
