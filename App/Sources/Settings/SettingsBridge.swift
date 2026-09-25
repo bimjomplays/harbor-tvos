@@ -442,5 +442,10 @@ extension SettingsBridge.Slice {
         posterQuality = c.lenient("posterQuality")
         profilePromptInterval = c.lenient("profilePromptInterval")
         defaultProfileId = c.lenient("defaultProfileId")
+        // (review 23) P11 added these to the slice but never decoded them, so the desktop's
+        // retention (0 = frames off) and full-quality choice were ignored. Absent or bad reads nil
+        // (ExitSnapshotSettings: 30 days, thumbnails).
+        cwSnapshotRetentionDays = c.lenient("cwSnapshotRetentionDays")
+        cwSnapshotFullQuality = c.lenient("cwSnapshotFullQuality")
     }
 }
