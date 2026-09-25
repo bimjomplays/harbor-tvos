@@ -530,6 +530,15 @@ struct MusicLyricsPanel: View {
         guard let track = player.current else { return }
         lines = []
         state = "loading"
+        // (device-flow pass 8) music-now-playing.tsx giveUp: after 9 s still loading reads "No lyrics
+        // for this track" (a late answer still lands). A lookup LRCLIB never answered kept "Finding
+        // lyrics" up until the engine call itself timed out.
+        let giveUp = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(9))
+            guard !Task.isCancelled, state == "loading" else { return }
+            state = "empty"
+        }
+        defer { giveUp.cancel() }
         let result: MusicLyrics? = try? await HarborEngine.shared.call("music.lyrics", [track])
         guard !Task.isCancelled, player.current?.queueKey == track.queueKey else { return }
         lines = result?.lines ?? []
