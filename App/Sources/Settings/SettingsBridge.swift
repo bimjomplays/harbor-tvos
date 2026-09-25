@@ -85,6 +85,13 @@ final class SettingsBridge: ObservableObject {
         var bigPictureMosaic: Bool? = true
         /// bp-settings "Edge margin": a fraction of the screen kept clear on every edge.
         var bigPictureOverscan: Double? = 0
+        /// (bug pass) bp-safe-area.ts clampOverscan: 0...0.1 (MAX_OVERSCAN). The stored value is synced
+        /// from other devices unchecked; a stray 5 (percent) or a negative one made the shells' padding
+        /// larger than the screen or negative.
+        var overscanFraction: Double {
+            guard let v = bigPictureOverscan, v.isFinite else { return 0 }
+            return min(0.1, max(0, v))
+        }
         /// use-bp-sound.ts: the Big Picture sound theme (none/glass/modern/retro/cinematic) and
         /// bp-tv-app.tsx's SFX volume (0-100); played by BPSound.
         var bigPictureSound: String? = "cinematic"
@@ -193,6 +200,10 @@ final class SettingsBridge: ObservableObject {
             slice = s
             loaded = true
         }
+        // (bug pass) The Sports tab gate was only set by the Settings page: at launch a declined
+        // notice still showed the tab until Settings was opened. Read the stored consent here.
+        struct Consent: Decodable { var status: String }
+        if let c: Consent = try? await HarborEngine.shared.call("sports.consent", []) { sportsDeclined = c.status == "declined" }
         await loadNavLayout()
     }
 
@@ -205,14 +216,14 @@ final class SettingsBridge: ObservableObject {
     /// Checks a TMDB v3 key by asking TMDB for one page of trending titles.
     /// On failure returns what the engine logged for TMDB, so the screen can say why.
     func verifyTmdb(key: String) async -> (ok: Bool, reason: String?) {
-        let before = HarborEngine.shared.recentLogs.count
+        let before = HarborEngine.shared.logMark   // (bug pass) was recentLogs.count: blind once the 200-line ring was full
         do {
             let metas: [Meta] = try await HarborEngine.shared.call("tmdb.trending", [key, "movie", "week", 1])
             if !metas.isEmpty { return (true, nil) }
         } catch {
             return (false, error.localizedDescription)
         }
-        let fresh = HarborEngine.shared.recentLogs.dropFirst(before)
+        let fresh = HarborEngine.shared.logs(since: before)
         let tmdbLine = fresh.last { $0.contains("[tmdb]") } ?? fresh.last
         return (false, tmdbLine)
     }

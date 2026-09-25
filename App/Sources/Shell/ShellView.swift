@@ -40,8 +40,8 @@ struct ShellView: View {
         // is why Home's hint says Exit. Rooms with their own Back handling sit deeper and win.
         .onExitCommand(perform: backToHome)
         // bp-settings "Edge margin": a whole-screen inset for sets that crop the picture.
-        .padding(.horizontal, 1920 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
-        .padding(.vertical, 1080 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
+        .padding(.horizontal, 1920 * CGFloat(settings.slice.overscanFraction))
+        .padding(.vertical, 1080 * CGFloat(settings.slice.overscanFraction))
         .ignoresSafeArea()
         .focusScope(focusNS)
         .environment(\.shellFocusNamespace, focusNS)
@@ -159,6 +159,9 @@ struct ShellView: View {
     /// Only on a bare route: bp-shell passes no onTab while a layer is up, and a full-screen cover
     /// (detail, pages, panels) or playback is exactly that here.
     private func cycleTab(_ delta: Int) {
+        // (bug pass) LB/RB reach GameController directly, not the overlay window's press handling, so
+        // under the screensaver they turned the tab behind it. The first press only wakes the saver.
+        if ScreensaverModel.shared.active { ScreensaverModel.shared.wake(); return }
         // The PiP browse layer's shell turns over the player in PiP: only its own covers count there.
         let clear = inBrowseLayer ? PiPBrowse.shared.noCoverPresented : (!PlaybackState.shared.active && Self.noCoverPresented)
         guard app.stage == .shell, clear, !CurfewState.shared.locked else { return }

@@ -3,11 +3,46 @@
 import { AVATAR_CATALOG, avatarUrl } from "@/lib/avatars/catalog";
 import { PROFILE_COLORS } from "@/lib/profiles";
 
-const PROFILE_KEY_PREFIXES = [
-  "harbor.auth.", "harbor.theme-session.", "harbor.localcw.v1.", "harbor.favorites.v1.", "harbor.charfavorites.v1.",
-  "harbor.mangafav.v1.", "harbor.mangaread.v1.", "harbor.manga.match.mal.v1.", "harbor.manga.match.anilist.v1.",
-  "harbor.localwatchlist.v1.", "harbor.settings.", "harbor.trakt.session.v1.", "harbor.tvsettings.v1.",
-  // The TV's AI search keys (Keychain) die with the profile too (review 34).
+// Mirrors lib/profiles.tsx PROFILE_KEY_PREFIXES (not exported upstream) plus the TV's own
+// per-profile keys. (bug pass) This list and engine/sync.ts's roster purge each held a short copy
+// (12 of upstream's 33): a deleted profile left its Simkl / AniList / MAL sessions in the Keychain
+// and its watch history, watchlist and addon lists behind. One list now serves both.
+export const PROFILE_KEY_PREFIXES: readonly string[] = [
+  "harbor.auth.",
+  "harbor.theme-session.",
+  "harbor.localcw.v1.",
+  "harbor.favorites.v1.",
+  "harbor.charfavorites.v1.",
+  "harbor.mangafav.v1.",
+  "harbor.mangaread.v1.",
+  "harbor.manga.match.mal.v1.",
+  "harbor.manga.match.anilist.v1.",
+  "harbor.localwatchlist.v1.",
+  "harbor.settings.",
+  "harbor.trakt.session.v1.",
+  "harbor.simkl.session.v1.",
+  "harbor.anilist.session.v1.",
+  "harbor.mal.session.v1.",
+  "harbor.simkl.cache.v2.",
+  "harbor.anilist.synced.v1.",
+  "harbor.mal.synced.v1.",
+  "harbor.moviewatched.v1.",
+  "harbor.watchedFlag.v1.",
+  "harbor.manualwatched.v1.",
+  "harbor.manualunwatched.v1.",
+  "harbor.manualwatched.meta.v1.",
+  "harbor.manualwatched.dismissed.v1.",
+  "harbor.manualunwatched.at.v1.",
+  "harbor.manualwatched.fromremote.v1.",
+  "harbor.watchevents.v1.",
+  "harbor.playback-history.v1.",
+  "harbor.watchlist.v1.",
+  "harbor.watchlist.aggregate.v1.",
+  "harbor.installed-addons.",
+  "harbor.addons.disabled.",
+  "harbor.stremio.freshwatched.v1.",
+  // TV-only: the Settings › TV blob and the AI search keys (Keychain; review 34).
+  "harbor.tvsettings.v1.",
   "harbor.ai-search.keys.v1.",
 ];
 
