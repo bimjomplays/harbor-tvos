@@ -171,15 +171,43 @@ function wire(): void {
   registerTvSyncSections();
 }
 
+/**
+ * Every status change reaches the host as `harbor:sync-status`. (profiles device pass) Also from
+ * `pullNow`: the boot and sign-in pull runs before `start`, so the host never heard "first-pull"
+ * and Who's watching could not tell the first pull (bp-who-is-watching-sync "pending") from an
+ * ordinary refresh or push.
+ */
+function forwardStatus(): void {
+  if (stopStatus) return;
+  stopStatus = subscribeSyncStatus(() => {
+    window.dispatchEvent(new CustomEvent("harbor:sync-status", { detail: getSyncStatus() }));
+  });
+}
+
+/**
+ * (profiles device pass) The awaited pull in flight. A Harbor sign-in ran two first pulls side by
+ * side: the host's `pullNow` (the roster refresh after sign-in) and the scheduler's own pull that
+ * `start` fires at once (the host starts sync as soon as a session appears). runPull decides
+ * "first pull" before its request, so the later one cleared the rev state (or, after an account
+ * switch, the whole queue) the earlier one had just settled, roster push included. One pull runs
+ * at a time: a second `pullNow` shares the one in flight, and `start` waits for it to land.
+ */
+let pullInFlight: ReturnType<typeof runPull> | null = null;
+let wantStarted = false;
+
 /** Start upstream's scheduler: pull now, then every 15 min; pushes debounce 2.5 s after a mark. */
 export function start(): SyncStatus {
   wire();
-  startProfileSync();
-  if (!stopStatus) {
-    stopStatus = subscribeSyncStatus(() => {
-      window.dispatchEvent(new CustomEvent("harbor:sync-status", { detail: getSyncStatus() }));
-    });
+  wantStarted = true;
+  if (pullInFlight) {
+    void pullInFlight.then(
+      () => { if (wantStarted) startProfileSync(); },
+      () => { if (wantStarted) startProfileSync(); },
+    );
+  } else {
+    startProfileSync();
   }
+  forwardStatus();
   if (!onProfilesUpdated) {
     onProfilesUpdated = () => markSectionDirty("profiles");
     window.addEventListener("harbor:profiles-updated", onProfilesUpdated);
@@ -188,6 +216,7 @@ export function start(): SyncStatus {
 }
 
 export function stop(): void {
+  wantStarted = false;
   stopProfileSync();
   stopStatus?.();
   stopStatus = null;
@@ -202,7 +231,16 @@ export function status(): SyncStatus {
 /** One awaited pull (boot, "Pull now"); the scheduler keeps its own cadence. */
 export async function pullNow(): Promise<{ ok: boolean; firstPull?: boolean; reason?: string | null; status: SyncStatus }> {
   wire();
-  const r = await runPull();
+  forwardStatus();
+  let mine = pullInFlight;
+  if (!mine) {
+    const started = runPull();
+    mine = started;
+    pullInFlight = started;
+    const clear = () => { if (pullInFlight === started) pullInFlight = null; };
+    started.then(clear, clear);
+  }
+  const r = await mine;
   if (r.ok) flushSyncNow();
   return { ok: r.ok, firstPull: r.ok ? r.firstPull : undefined, reason: r.ok ? null : r.reason, status: getSyncStatus() };
 }
