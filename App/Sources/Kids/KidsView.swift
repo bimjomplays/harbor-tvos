@@ -32,6 +32,7 @@ struct KidsView: View {
                             // empty (offline at launch) nothing on it could load it again.
                             Button("Try again") { Task { await model.load() } }
                                 .buttonStyle(KidsPillStyle(fill: KidsTheme.teal, ink: .white))
+                                .accessibilityIdentifier("kids-try-again")
                                 .padding(.top, BP.px(6))
                         }
                         .padding(.horizontal, BP.gutter)

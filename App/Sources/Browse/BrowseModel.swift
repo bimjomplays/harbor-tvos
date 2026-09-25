@@ -284,7 +284,15 @@ final class BrowseModel: ObservableObject {
 
 /// Deterministic fake rows for the simulator.
 struct FixtureBrowseSource: BrowseSource {
+    /// `--fixtures roomfail`: every room's rows fail, after a beat like a real read, so the failure
+    /// card and its Try again (RoomView) can be driven offline (NavigationTests2).
+    static let failRooms: Bool = ProcessInfo.processInfo.arguments.contains("roomfail")
+
     func rows(for room: Room) async throws -> [BrowseRow] {
+        if Self.failRooms {
+            try await Task.sleep(for: .seconds(2))
+            throw URLError(.notConnectedToInternet)
+        }
         let titles = ["Dune: Part Two", "Oppenheimer", "The Bear", "Severance", "Poor Things", "Shōgun", "Past Lives", "Fallout", "The Holdovers", "Anatomy of a Fall", "Civil War", "Ripley"]
         func metas(_ prefix: String, _ type: String) -> [Meta] {
             titles.enumerated().map { i, t in

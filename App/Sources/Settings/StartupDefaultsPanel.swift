@@ -36,6 +36,8 @@ struct StartupDefaultsPanel: View {
                     Button(T(label)) { pick("profilePromptInterval", value) }
                         .buttonStyle(BPActionStyle(primary: on))
                         .bpSelected(on)
+                        // UI tests (NavigationTests2): the interval pills.
+                        .accessibilityIdentifier("startup-interval-\(value)")
                 }
             }
             .focusSection()
@@ -45,9 +47,12 @@ struct StartupDefaultsPanel: View {
                 HStack(spacing: BP.px(8)) {
                     ForEach(choices, id: \.0) { id, name in
                         let on: Bool = defaultId == id
+                        let testId: String = id.isEmpty ? "none" : id
                         Button(name) { pick("defaultProfileId", id) }
                             .buttonStyle(BPActionStyle(primary: on))
                             .bpSelected(on)
+                            // UI tests (NavigationTests2): "startup-default-none" or the profile id.
+                            .accessibilityIdentifier("startup-default-\(testId)")
                     }
                 }
                 .padding(.vertical, BP.px(4))
