@@ -17,7 +17,7 @@ type (debrid, torrent, HLS, home server, IPTV).
 
 Added 2026-09-25 for the upload retried on 2026-09-26. Build 220 carries the branch up to `37aa626`
 (~11:07 UTC 09-25); this build carries everything after it (`a8ac757` onward: 2026-09-25 11:02 →
-22:45 UTC in `PROJECT_STATE.md` → Status). Collected from those entries' "Device check:" lines and the
+22:54 UTC in `PROJECT_STATE.md` → Status). Collected from those entries' "Device check:" lines and the
 fixes they describe, deduplicated, one line each: **action → expected result (`commit`)**. The fuller
 wording of the 11:02–14:19 checks is in the "2026-09-25 day session" section at the end of this file.
 
@@ -61,6 +61,10 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 - [ ] Wait for the skip-intro pill and the up-next card, let the controls hide → they animate, the countdown ticks each second, and the ring stays on the pill/card only while it is drawn. (`57bf553`, `3378b13`)
 - [ ] Set a sleep timer, and resume a film to get the resume fork → the Speed & sleep chip counts down; the fork shows the right duration. (`57bf553`)
 - [ ] Swap sources in place, then pick a subtitle track → the track memory is saved under the new source's release, not the old one's. (`50fa9b6`)
+- [ ] In the Subtitles panel press Better match, Show more to the end, and Back to what's playing → the ring lands on the track's line, the first revealed row, and Search. (`8dff6b4`)
+- [ ] Open Subtitles and Audio while the stream is still loading → once tracks arrive the ring moves to the track that is on (All languages if it was filtered out); Audio Reset puts the ring on +0.5s. (`8dff6b4`)
+- [ ] Open Speed & sleep and Anime4K → the ring starts on the rate / option in use (on a live channel, the armed sleep row). (`8dff6b4`)
+- [ ] On a kid profile, open the source switcher on a debrid stream → it reads "Playing now", and picking it does not reload the video. (`8dff6b4`)
 - [ ] Open the picker on a title with many badges and languages → rows wrap cleanly, badge art is sized right, the language chip can leave under the ring, Refresh works mid-search, chip changes update the list at once. (`ed3ac59`, `abf3055`, `8c5fd7d`)
 
 ### Home & browse (Home, Discover, Collections, Calendar)

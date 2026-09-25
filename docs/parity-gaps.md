@@ -55,7 +55,7 @@ winners (M).
 
 ### Where this audit stands (end of 2026-09-25)
 
-Cross-checked against `PROJECT_STATE.md` → Status up to the 22:45 UTC crash audit. The tables below
+Cross-checked against `PROJECT_STATE.md` → Status up to device-flow pass 11 (22:54 UTC). The tables below
 keep what the audit found; their first column now says what happened to each row.
 
 **Closed.** 30 of the 38 rows are fully ported: P1, P2, P3, P5, P6, P7, P8, P10, P11; S2, S3, S5
@@ -78,7 +78,8 @@ closed these Big Picture behaviours that were outside the table:
 - S4: the subtitle step before playback (M; `subtitlePreselect` is off by default upstream).
 - Flag icons for stream languages (FlagStack): SVGs that tvOS can't draw without converting them.
 - P9: use-track-autoload's automatic subtitle search and its "Search every source again" chip (the
-  TV has the manual Find more lane). "{count} dl" is ported; the offset badge is not a TV gap.
+  TV has the manual Find more lane, which shows no source counts). "{count} dl" is ported; the
+  offset badge is not a TV gap.
 - P8: each opening of the in-place switcher searches the addons again.
 - P11: no TV control for snapshot retention, full quality or Clear (desktop only, as in Big Picture).
 - H5: opening the quick panel with no title focused (a Siri Remote has no spare button; needs a
@@ -113,6 +114,8 @@ closed these Big Picture behaviours that were outside the table:
   caption; Up from a tile under See all can land on See all.
 - Onboarding's Harbor step lacks the side cards; there is no client-side 8-character password check.
 - The content advisory toast's corner when the stats overlay is up.
+- Player panels: the Anime4K sidebar lets the ring reach the chrome; a reload under Subtitles does
+  not re-read the offset.
 
 ### Ported since this audit
 
