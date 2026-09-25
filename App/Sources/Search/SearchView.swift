@@ -8,7 +8,6 @@ struct SearchView: View {
     /// ai-result-list.tsx openMeta(meta, { episodeHint }).
     @State private var aiOpen: AIOpen?
     @EnvironmentObject private var app: AppModel
-    @State private var spotlight: Meta?
     @State private var detail: Meta?
     @State private var phoneOpen = false
     /// (focus pass) Bumped to put the ring on the keyboard (BPKeyboardView.focusRequest).
@@ -16,6 +15,10 @@ struct SearchView: View {
     @State private var autofocused = false
     /// A manga result (SR-9) or a franchise manga opened in the manga detail page.
     @State private var mangaOpen: MangaOpen?
+    /// (search pass 3) The query field holds the ring (bp-search-input's lit border).
+    @FocusState private var fieldFocused: Bool
+    /// (search pass 3) The recent-query chip holding the ring.
+    @FocusState private var recentFocus: String?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -59,8 +62,7 @@ struct SearchView: View {
         // Once per visit: this re-ran on every cover close (a Detail page closing), refetching the
         // model catalog, and a failed read there turned AI mode off under the viewer's AI picks.
         .task { if ai.state == nil { await ai.load() } }
-        // (bug pass) The focused tile of the last query must not stand in as the next query's top match.
-        .onChange(of: model.query) { _, q in ai.queryChanged(q); spotlight = nil }
+        .onChange(of: model.query) { _, q in ai.queryChanged(q) }
         .onPlayPauseCommand { phoneOpen.toggle() }
         .fullScreenCover(isPresented: $phoneOpen) {
             // search-overlay.tsx: Enter in AI mode asks the model straight away.
@@ -85,7 +87,44 @@ struct SearchView: View {
         }
     }
 
+    /// bp-search-input.tsx BpSearchField: the field is a real input (data-tv-text-auto), so the
+    /// TV's own keyboard types into it. (search pass 3) The line was only a label: nothing on the
+    /// page took the system keyboard, so Siri Remote dictation (hold the mic with the keyboard up)
+    /// could never fill the query. Select on the field opens the tvOS keyboard; what it types or
+    /// dictates lands in the query and searches like the on-screen keys (the 180 ms debounce).
+    /// The drawn line stays on top, so a long query keeps its end in view.
     private var queryLine: some View {
+        ZStack(alignment: .leading) {
+            TextField(T("Search Harbor"), text: $model.query)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(Color.clear)
+                .tint(Color.clear)
+                .focused($fieldFocused)
+                // search-overlay.tsx: Enter in AI mode asks the model straight away.
+                .onSubmit {
+                    ai.queryChanged(model.query)
+                    if ai.aiMode { ai.runNow() }
+                }
+                .padding(.horizontal, BP.px(16))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // bp-search-input.tsx aria-label t("Search Harbor").
+                .accessibilityLabel(Text(T("Search Harbor")))
+                .accessibilityIdentifier("search-query")
+            queryDisplay
+                .padding(.horizontal, BP.px(16))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+                .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous)
+                    .stroke(fieldFocused ? BP.focusStroke : BP.edge2, lineWidth: fieldFocused ? 3 : 1))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .frame(height: BP.px(56))
+    }
+
+    private var queryDisplay: some View {
         HStack(spacing: BP.px(8)) {
             Image(systemName: "magnifyingglass").foregroundStyle(ai.aiMode ? BP.accent : BP.inkMuted).accessibilityHidden(true)
             if ai.aiMode && model.query.isEmpty {
@@ -105,13 +144,6 @@ struct SearchView: View {
             Rectangle().fill(BP.ink).frame(width: 2, height: BP.px(26)).opacity(0.8)
             Spacer()
         }
-        .frame(height: BP.px(44))
-        // bp-search-input.tsx aria-label t("Search Harbor"): one field that reads its query, not the
-        // glass, the placeholder and the caret as three elements.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(T("Search Harbor")))
-        .accessibilityValue(Text(verbatim: model.query))
-        .accessibilityIdentifier("search-query")
     }
 
     /// ai-mode-button.tsx: Select toggles AI mode; holding it (the TV's long press, upstream's
@@ -160,6 +192,20 @@ struct SearchView: View {
             guard let id, model.query == asked, detail == nil, aiOpen == nil, mangaOpen == nil, person == nil, collection == nil, addonPage == nil, channel == nil else { return }
             mangaOpen = MangaOpen(id: id)
         }
+    }
+
+    /// (search pass 3) One recent query off the list. The ring moves to the chip that takes its
+    /// place (or the one before it), and to the keyboard once the row is gone, as Clear does.
+    @MainActor private func removeRecent(_ q: String) {
+        let at: Int = model.recent.firstIndex(of: q) ?? 0
+        model.removeRecent(q)
+        let rest = model.recent
+        guard !rest.isEmpty else {
+            keyboardFocus += 1
+            return
+        }
+        let next = rest[min(at, rest.count - 1)]
+        DispatchQueue.main.async { recentFocus = next }
     }
 
     /// bp-search-cells addonBase: the transport url without its manifest.json.
@@ -274,8 +320,10 @@ struct SearchView: View {
     }
 
     private static func isCoreRow(_ key: String) -> Bool { key == "movies" || key == "series" || key == "anime" || key == "manga" }
-    /// Movies, Series, Anime and Manga rows under the active chip.
-    private var coreRows: [BrowseRow] { model.rows.filter { Self.isCoreRow($0.key) && model.shows(SearchModel.group(ofRow: $0.key)) } }
+    /// Movies and Series rows under the active chip.
+    private var titleRows: [BrowseRow] { model.rows.filter { ($0.key == "movies" || $0.key == "series") && model.shows(SearchModel.group(ofRow: $0.key)) } }
+    /// Anime and Manga rows under the active chip.
+    private var mediaRows: [BrowseRow] { model.rows.filter { ($0.key == "anime" || $0.key == "manga") && model.shows(SearchModel.group(ofRow: $0.key)) } }
     /// Franchise and per-addon rows under the active chip.
     private var laterRows: [BrowseRow] { model.rows.filter { !Self.isCoreRow($0.key) && model.shows(SearchModel.group(ofRow: $0.key)) } }
 
@@ -310,9 +358,19 @@ struct SearchView: View {
         switch model.status {
         case .loading: BPNote(text: "Searching…")
         case .failed(let why): BPNote(text: why, tone: BP.danger)
-        case .done where model.settled && model.distinctCount(nil) == 0: BPNote(text: T("Nothing found for \"%@\"", model.query))
+        case .done where model.settled && model.distinctCount(nil) == 0: BPNote(text: emptyMessage)
         default: EmptyView()
         }
+    }
+
+    /// (search pass 3) bp-search-empty.tsx bpSearchEmptyMessage: TMDB down (offline) and addons
+    /// that never answered are said as such, not as a query that exists nowhere.
+    private var emptyMessage: String {
+        let q = model.query.trimmingCharacters(in: .whitespaces)
+        if model.tmdbUnavailable { return T("TMDB is temporarily unavailable. Try your search again shortly.") }
+        let failed = model.addonsFailed.count
+        if failed > 0 { return T("Nothing found for \"%@\". %lld of your addons did not answer.", q, failed) }
+        return T("Nothing found for \"%@\"", q)
     }
 
     private var results: some View {
@@ -346,7 +404,16 @@ struct SearchView: View {
                             // (focus pass) bp-search BpRecentRow onPick / onClear: setBpFocus(input) first.
                             // Either press takes the whole row away (the query leaves idle, or the list
                             // empties) from under the ring, leaving it to wherever tvOS resets focus.
-                            ForEach(model.recent, id: \.self) { q in Button(q) { keyboardFocus += 1; model.query = q }.buttonStyle(BPActionStyle()) }
+                            ForEach(model.recent, id: \.self) { q in
+                                Button(q) { keyboardFocus += 1; model.query = q }
+                                    .buttonStyle(BPActionStyle())
+                                    .focused($recentFocus, equals: q)
+                                    // (search pass 3) search-context removeRecent (the desktop chip's
+                                    // X, t("Remove {name}")): hold Select to take one query off.
+                                    .contextMenu {
+                                        Button(T("Remove %@", q), role: .destructive) { removeRecent(q) }
+                                    }
+                            }
                             Button { keyboardFocus += 1; model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
                         }
                         .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
@@ -356,22 +423,61 @@ struct SearchView: View {
                 .focusSection()
             }
             if !model.suggestions.isEmpty {
-                BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { spotlight = $0 }, onSelect: { detail = $0 })
+                BPRowView(row: BrowseRow(key: "suggested", title: T("Suggested"), metas: model.suggestions), onFocus: { _ in }, onSelect: { detail = $0 })
             } else if model.suggestionsLoaded {
                 // bp-search idle showEmpty (suggestions.length === 0): the right side was blank.
                 BPNote(text: "Start typing to search movies, series and everything your addons carry.").padding(.horizontal, BP.gutter)
             }
         }
         if model.status != .idle { chipStrip }
+        resultNotes
+        // bp-search: the Top match slot belongs to a query's results. Idle, a focused Suggested
+        // poster was drawn under the row as a "Top match" for a search nobody typed.
+        // (search pass 3) use-bp-search slot "top" is r.topMatch alone, a card Select opens
+        // (bp-search-cells titleCell HERO). The panel showed whichever tile last had the ring, and
+        // kept showing it after the ring left the rows; it could not be opened either.
+        if model.status != .idle, model.filter == .all, let top = model.topMatch {
+            Button { select(top) } label: { TopMatchPanel(meta: top) }
+                .buttonStyle(BPTileStyle(radius: BP.rMD))
+                .padding(.horizontal, BP.gutter)
+                .focusSection()
+        }
+        leadRows
+        // use-bp-search slot order: Movies, Series, People, Anime, Manga, Live TV, Collections,
+        // Franchise, one row per addon, then "Addons you could install".
+        ForEach(mediaRows) { row in
+            BPRowView(row: row, onFocus: { _ in }, onSelect: { select($0) })
+        }
+        if model.shows(.livetv) && !model.channels.isEmpty { channelRow }
+        if model.shows(.collections) && !model.collections.isEmpty { collectionRow }
+        ForEach(laterRows) { row in
+            BPRowView(row: row, onFocus: { _ in }, onSelect: { select($0) })
+        }
+        if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
+    }
+
+    @ViewBuilder private var resultNotes: some View {
+        // (search pass 3) bp-search: TMDB did not answer but something else did (offline, or TMDB down).
+        if model.status == .done, model.tmdbUnavailable, model.distinctCount(nil) > 0 {
+            BPNote(text: "TMDB is temporarily unavailable, so these results may be incomplete.").padding(.horizontal, BP.gutter)
+        }
         if model.filterStale {
             // bp-search-empty filterStale
             BPNote(text: "Nothing in this filter. Choose All to see everything that answered.").padding(.horizontal, BP.gutter)
         }
-        // bp-search: the Top match slot belongs to a query's results. Idle, a focused Suggested
-        // poster was drawn under the row as a "Top match" for a search nobody typed.
-        if model.status != .idle, model.filter == .all, let top = spotlight ?? model.topMatch {
-            TopMatchPanel(meta: top).padding(.horizontal, BP.gutter)
+    }
+
+    /// (search pass 3) use-bp-search buildBpSearchSlots: People follows Series unless the query
+    /// names the first person found (promotePerson), then it leads Movies. It always led.
+    @ViewBuilder private var leadRows: some View {
+        if model.promotePerson { peopleRow }
+        ForEach(titleRows) { row in
+            BPRowView(row: row, onFocus: { _ in }, onSelect: { select($0) })
         }
+        if !model.promotePerson { peopleRow }
+    }
+
+    @ViewBuilder private var peopleRow: some View {
         if model.shows(.people) && !model.people.isEmpty {
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 Text("People").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
@@ -395,17 +501,6 @@ struct SearchView: View {
             }
             .focusSection()
         }
-        // use-bp-search slot order: Movies, Series, Anime, Manga, Live TV, Collections, Franchise,
-        // one row per addon, then "Addons you could install".
-        ForEach(coreRows) { row in
-            BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
-        }
-        if model.shows(.livetv) && !model.channels.isEmpty { channelRow }
-        if model.shows(.collections) && !model.collections.isEmpty { collectionRow }
-        ForEach(laterRows) { row in
-            BPRowView(row: row, onFocus: { spotlight = $0 }, onSelect: { select($0) })
-        }
-        if model.shows(.addons) && model.addonHits.contains(where: { $0.transportUrl != nil }) { addonIndexRow }
     }
 }
 

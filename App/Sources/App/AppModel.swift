@@ -186,6 +186,15 @@ final class AppModel: ObservableObject {
         goToWhoOrShell()
     }
 
+    /// (onboarding pass 3) bp-onboarding.tsx BpOnboardingGate.suspend, "Finish later": setup closes
+    /// for this run only. The finished flag stays unset and the saved step stays, so the next launch
+    /// opens setup where it was left; meanwhile the app runs on a first profile as after setup.
+    func suspendOnboarding() {
+        if profiles.profiles.isEmpty { profiles.seedIfEmpty(name: account.session?.user.username ?? "Harbor") }
+        attachPendingStremio()
+        goToWhoOrShell()
+    }
+
     /// A Stremio sign-in made before profiles existed goes to the primary profile.
     func attachPendingStremio() {
         guard let s = PendingStremio.session,

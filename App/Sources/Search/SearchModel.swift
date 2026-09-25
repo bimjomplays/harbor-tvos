@@ -38,6 +38,8 @@ final class SearchModel: ObservableObject {
         var addons: [AddonHit]?
         var collections: [CollectionHit]?
         var requestId: Int?
+        /// lib/search.ts searchAll: the keyed TMDB search got no answer (offline, TMDB down).
+        var tmdbUnavailable: Bool?
     }
 
     @Published var query = "" { didSet { schedule() } }
@@ -50,6 +52,15 @@ final class SearchModel: ObservableObject {
     @Published private(set) var collections: [Results.CollectionHit] = []
     /// Addon slots announced "pending" that have not answered yet (use-bp-search addonsPending).
     @Published private(set) var addonsPending: Set<String> = []
+    /// (search pass 3) Addon slots that answered "failed" (bp-search failedCount).
+    @Published private(set) var addonsFailed: Set<String> = []
+    /// (search pass 3) search-display-state tmdbUnavailable: the keyed TMDB search got no answer.
+    @Published private(set) var tmdbUnavailable = false
+    /// (search pass 3) use-bp-search QueryLatch.promote (person-top-match matchPersonForQuery): the
+    /// query names the first person found, so People leads the rows instead of following Series.
+    @Published private(set) var promotePerson = false
+    /// (search pass 3) The addon slots in the order the fan-out announced them (installed order).
+    private var addonOrder: [String] = []
 
     // MARK: kind chips (use-bp-search.ts BpSearchFilter, GROUP_ORDER, GROUP_LABEL)
 
@@ -183,6 +194,25 @@ final class SearchModel: ObservableObject {
 
     func clearRecent() { recent = []; try? Prefs.set([String](), for: "harbor.search.recent") }
 
+    /// (search pass 3) search-context removeRecent: one query off the list (held Select on its chip).
+    func removeRecent(_ q: String) {
+        recent = recent.filter { $0 != q }
+        try? Prefs.set(recent, for: "harbor.search.recent")
+    }
+
+    /// (search pass 3) components/search/person-top-match.tsx matchPersonForQuery: the first person,
+    /// with a photo, whose name is the query, starts with it, or is how it starts (3+ characters).
+    static func matchesPerson(_ people: [Results.Person], _ query: String) -> Bool {
+        guard let p = people.first, let profile = p.profile, !profile.isEmpty else { return false }
+        let norm: (String) -> String = { s in
+            s.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        }
+        let q = norm(query)
+        let n = norm(p.name)
+        guard q.count >= 3, !n.isEmpty else { return false }
+        return n == q || n.hasPrefix(q) || q.hasPrefix(n)
+    }
+
     /// After an install from "Addons you could install", the hit shows its tick straight away.
     func markInstalled(_ id: String) {
         for i in addonHits.indices where addonHits[i].id == id { addonHits[i].installed = true }
@@ -209,10 +239,22 @@ final class SearchModel: ObservableObject {
         var out = rows.filter { $0.key != key }
         if !g.metas.isEmpty {
             let row = BrowseRow(key: key, title: T("From %@", g.name), metas: g.metas)
-            if let at = out.firstIndex(where: { $0.key.hasPrefix("addon:") }) { out.insert(row, at: at) } else { out.append(row) }
+            // (search pass 3) use-bp-search: addon slots keep the order the fan-out announced
+            // (installed order). A late answer went in ahead of every addon row already up, so the
+            // addon rows reshuffled by answer speed on each query.
+            let order = addonOrder
+            let rank: Int = order.firstIndex(of: g.id) ?? Int.max
+            let at: Int? = out.firstIndex { r in
+                guard r.key.hasPrefix("addon:") else { return false }
+                let id = String(r.key.dropFirst("addon:".count))
+                let other: Int = order.firstIndex(of: id) ?? Int.max
+                return other > rank
+            }
+            if let at { out.insert(row, at: at) } else { out.append(row) }
         }
         rows = out
         addonsPending.remove(g.id)
+        if g.state == "failed" { addonsFailed.insert(g.id) } else { addonsFailed.remove(g.id) }
         latchGroups()
         Task { await CardMarksStore.shared.refresh(g.metas) }
     }
@@ -235,8 +277,13 @@ final class SearchModel: ObservableObject {
         if q != latchedQuery {
             latchedQuery = q; latched = []; filter = .all; engineRequestId = 0; addonsPending = []
             rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; people = []; early = []
+            addonsFailed = []; addonOrder = []; tmdbUnavailable = false; promotePerson = false
         }
-        guard !q.isEmpty else { status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; addonsPending = []; people = []; early = []; engineRequestId = 0; return }
+        guard !q.isEmpty else {
+            status = .idle; rows = []; channels = []; topMatch = nil; addonHits = []; collections = []; addonsPending = []; people = []; early = []; engineRequestId = 0
+            addonsFailed = []; addonOrder = []; tmdbUnavailable = false; promotePerson = false
+            return
+        }
         status = .typing
         timer = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(180))
@@ -258,6 +305,9 @@ final class SearchModel: ObservableObject {
             guard mine == requestId else { return }
             engineRequestId = results.requestId ?? 0
             addonsPending = Set((results.addonQueries ?? []).filter { $0.state == "pending" }.map(\.id))
+            addonsFailed = Set((results.addonQueries ?? []).filter { $0.state == "failed" }.map(\.id))
+            addonOrder = (results.addonQueries ?? results.addonGroups ?? []).map(\.id)
+            tmdbUnavailable = results.tmdbUnavailable ?? false
             var out: [BrowseRow] = []
             if !results.movies.isEmpty { out.append(BrowseRow(key: "movies", title: T("Movies"), metas: results.movies)) }
             if !results.series.isEmpty { out.append(BrowseRow(key: "series", title: T("Series"), metas: results.series)) }
@@ -289,7 +339,10 @@ final class SearchModel: ObservableObject {
             // With the rows, not after the marks read: People and Top match landing a beat later
             // pushed rows already on screen down under the ring (use-bp-search latch.decided).
             people = results.people ?? []
-            topMatch = results.topMatch?.meta ?? results.movies.first ?? results.series.first
+            promotePerson = Self.matchesPerson(results.people ?? [], q)
+            // (search pass 3) use-bp-search slot "top": search-context's topMatch (TMDB's best hit)
+            // and nothing else. The first Movies or Series tile stood in when TMDB named none.
+            topMatch = results.topMatch?.meta
             await CardMarksStore.shared.refresh(out.filter { $0.key != "manga" }.flatMap(\.metas))
             guard mine == requestId else { return }
             status = .done

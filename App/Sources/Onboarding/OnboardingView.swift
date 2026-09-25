@@ -28,8 +28,14 @@ struct OnboardingView: View {
     /// advanceBpOnboardRing: once a step's answer is given the ring moves to its primary button.
     @FocusState private var ring: String?
     @State private var facts: OnboardFacts?
+    /// (onboarding pass 3) bp-onboarding.tsx leaveOpen: Back on the first screen asks "Leave setup?".
+    @State private var leaveOpen = false
+    /// Where the ring was when the dialog opened (BpOnboardLeave hands focus back to it on close).
+    @State private var leaveReturn: String?
+    /// False while the intro wall is up (RootView disables the tree under it).
+    @Environment(\.isEnabled) private var enabled
 
-    var body: some View {
+    private var wizard: some View {
         VStack(spacing: 0) {
             ProgressBar(fraction: Double(step.rawValue + 1) / Double(Step.allCases.count),
                         valueText: T("%lld of %lld", step.rawValue + 1, Step.allCases.count))
@@ -46,10 +52,26 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(40)).padding(.bottom, BP.hintHeight)
         }
+    }
+
+    var body: some View {
+        ZStack {
+            wizard
+                // The dialog is modal (aria-modal): nothing under it takes the ring.
+                .disabled(leaveOpen)
+                .accessibilityHidden(leaveOpen)
+            if leaveOpen {
+                OnboardLeaveDialog(onKeep: { closeLeave() },
+                                   onLater: { leaveOpen = false; app.suspendOnboarding() },
+                                   onNever: { leaveOpen = false; app.finishOnboarding() })
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
+        }
         // (focus pass) bp-onboarding.tsx pushBpBack: Back steps to the previous screen and never
         // reaches the shell while setup is up; there was no handler, so Menu on any step closed the
-        // app. On the first screen the press stays the system's (upstream asks whether to leave
-        // setup there; on the TV that is leaving the app).
+        // app. (onboarding pass 3) On the first screen it opens "Leave setup?" as upstream (Menu
+        // there closed the app with no prompt), and with the dialog up it closes the dialog.
         .onExitCommand(perform: exitAction)
         .onChange(of: step) { _, s in
             syncHandoff(s)
@@ -59,6 +81,10 @@ struct OnboardingView: View {
         // A resumed setup opens past the phone step (or on the recap) without a step change.
         .onAppear {
             if stremioName == nil, let s = PendingStremio.session { stremioName = s.user.fullname ?? s.user.email }
+            // (onboarding pass 3) After Finish later the parked sign-in already went to a profile.
+            if stremioName == nil, let p = profiles.active ?? profiles.profiles.first, let s = profiles.stremioSession(for: p.id) {
+                stremioName = s.user.fullname ?? s.user.email
+            }
             syncHandoff(step)
             if step == .done, facts == nil { Task { await loadFacts() } }
         }
@@ -71,6 +97,7 @@ struct OnboardingView: View {
         // recovered. Setup returns to the Harbor step, whose form reveals it; its Continue moves on.
         .onChange(of: account.unsavedRecoveryCode) { _, code in
             guard code != nil, step != .harbor else { return }
+            leaveOpen = false
             withAnimation(BP.easeSlow) { step = .harbor }
         }
         .onDisappear { handoff.stop() }
@@ -171,7 +198,7 @@ struct OnboardingView: View {
             } else {
                 // The form's own done() lands after the roster pull, by when Continue above may
                 // already have moved on: only a press made on this screen advances.
-                HarborSignInForm { if step == .harbor { advance() } } skip: { advance() }
+                HarborSignInForm(laterFirst: true) { if step == .harbor { advance() } } skip: { advance() }
             }
         case .layout:
             VStack(alignment: .leading, spacing: BP.px(16)) {
@@ -269,10 +296,34 @@ struct OnboardingView: View {
         withAnimation(BP.easeSlow) { step = next }
     }
 
-    /// Menu on a step past the first: back(). nil on the first screen leaves the press to the system.
+    /// Menu: closes "Leave setup?" when it is up, opens it on the first screen, back() past it
+    /// (bp-onboarding.tsx pushBpBack). The first screen under the intro wall (setup disabled)
+    /// leaves the press to the system, as before: the dialog must not open behind the wall.
     private var exitAction: (() -> Void)? {
-        if step == .language { return nil }
+        if leaveOpen { return { closeLeave() } }
+        if step == .language {
+            if !enabled { return nil }
+            return { openLeave() }
+        }
         return { back() }
+    }
+
+    /// (onboarding pass 3) BpOnboardLeave mount: remembers the ring; the dialog seeds Keep setting up.
+    private func openLeave() {
+        leaveReturn = ring
+        withAnimation(BP.easeFast) { leaveOpen = true }
+    }
+
+    /// (onboarding pass 3) Keep setting up, or Back with the dialog up: the ring goes back where it
+    /// was (BpOnboardLeave's cleanup setBpFocus(prev)). OnboardLanguageStep re-seeds the current
+    /// language the moment its list is enabled again; this lands just after, so a ring that was on
+    /// another row or on Continue returns there.
+    private func closeLeave() {
+        let target = leaveReturn
+        leaveReturn = nil
+        withAnimation(BP.easeFast) { leaveOpen = false }
+        guard let target else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { ring = target }
     }
 
     /// bp-onboarding.tsx Back: `setIndex(i - 1)`, passing over the steps the phone delivered as
@@ -341,6 +392,68 @@ struct StepConfirmed: View {
             Button("Continue", action: next).buttonStyle(BPActionStyle(primary: true))
         }
         .frame(maxWidth: BP.px(560), alignment: .leading)
+    }
+}
+
+/// (onboarding pass 3) bp-onboarding.tsx BpOnboardLeave: Back on the first screen. Keep setting up
+/// holds the ring (data-bp-autofocus) and closes the dialog; Finish later leaves setup for this run
+/// only (BpOnboardingGate.suspend, the next launch resumes in place); Do not show this again, on
+/// its own row and never the default, marks Harbor onboarded (BpOnboardingGate.complete).
+private struct OnboardLeaveDialog: View {
+    let onKeep: () -> Void
+    let onLater: () -> Void
+    let onNever: () -> Void
+    @FocusState private var keepFocused: Bool
+
+    var body: some View {
+        ZStack {
+            BP.void_.opacity(0.84).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: BP.px(28)) {
+                VStack(alignment: .leading, spacing: BP.px(10)) {
+                    Text("Leave setup?").font(BP.display(36)).foregroundStyle(BP.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Nothing you have already set is lost. Harbor picks this back up where you left it.")
+                        .font(BP.sans(19)).foregroundStyle(BP.inkSubtle).lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // Neither pill is primary: the filled one on screen is always the one the ring is on.
+                HStack(spacing: BP.px(12)) {
+                    Button {
+                        BPSound.shared.click()
+                        onKeep()
+                    } label: {
+                        Text("Keep setting up").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BPActionStyle())
+                    .focused($keepFocused)
+                    Button {
+                        BPSound.shared.close()
+                        onLater()
+                    } label: {
+                        Text("Finish later").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(BPActionStyle())
+                }
+                .focusSection()
+                HStack {
+                    Spacer(minLength: 0)
+                    Button {
+                        BPSound.shared.close()
+                        onNever()
+                    } label: {
+                        Text("Do not show this again").foregroundStyle(BP.inkMuted)
+                    }
+                    .buttonStyle(BPActionStyle())
+                    Spacer(minLength: 0)
+                }
+                .focusSection()
+            }
+            .padding(BP.px(44))
+            .frame(width: BP.px(720))
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel2))
+            .accessibilityAddTraits(.isModal)
+        }
+        .onAppear { DispatchQueue.main.async { keepFocused = true } }
     }
 }
 
@@ -422,8 +535,14 @@ enum PendingStremio {
 
 /// Harbor username + password with a create-account switch (identity API, protocol §1.1).
 struct HarborSignInForm: View {
+    /// (onboarding pass 3) bp-onboard-steps.ts harbor `focus: "skip"`: in setup the ring opens on
+    /// Later (useBpOnboardFocus picks the skip action), not on the Username field.
+    var laterFirst = false
     let done: () -> Void
     let skip: (() -> Void)?
+    @FocusState private var laterFocused: Bool
+    /// False while the intro wall is up over a setup resumed on this step.
+    @Environment(\.isEnabled) private var enabled
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var account: AccountStore
     @State private var username = ""
@@ -451,7 +570,10 @@ struct HarborSignInForm: View {
                 Button(busy ? "Working…" : (creating ? "Create account" : "Sign in")) { Task { await submit() } }
                     .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
                 Button(creating ? "I have an account" : "Create an account") { creating.toggle() }.buttonStyle(BPActionStyle())
-                if let skip { Button("Later", action: skip).buttonStyle(BPActionStyle()) }
+                if let skip {
+                    Button("Later", action: skip).buttonStyle(BPActionStyle())
+                        .focused($laterFocused)
+                }
             }
             if let error { BPNote(text: error, tone: BP.danger) }
             // account-auth-form.tsx, under the sign-up fields.
@@ -459,6 +581,14 @@ struct HarborSignInForm: View {
             BPNote(text: "Your profiles, settings and themes follow this account to every Harbor install.")
         }
         .frame(maxWidth: BP.px(560))
+        .onAppear { seedLater() }
+        .onChange(of: enabled) { _, on in if on { seedLater() } }
+    }
+
+    /// (onboarding pass 3) After the step's views settle, as OnboardLanguageStep seeds its row.
+    private func seedLater() {
+        guard laterFirst, skip != nil else { return }
+        DispatchQueue.main.async { laterFocused = true }
     }
 
     private func submit() async {

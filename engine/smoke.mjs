@@ -2275,6 +2275,12 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const hidden = await pg.engine.search.fanOut("naruto", "p1", false, null);
   const animeHits = urls.filter((u) => /anilist|jikan|kitsu/.test(u));
   r.ok("search.fanOut skips anime sources for a profile that locks or hides anime", animeHits.length === 0 && hidden.anime.length === 0 && hidden.liveTv.length === 0, JSON.stringify(animeHits.slice(0, 3)));
+  // (search pass 3) SearchView reads tmdbUnavailable (bp-search-empty): a keyed TMDB search that
+  // gets no answer says TMDB is down instead of "Nothing found"; an unkeyed one never claims it.
+  pg.engine.settings.saveForProfile({ ...pg.engine.settings.loadForProfile("p1", false), tmdbKey: "smoke-key" }, "p1", false);
+  const down = await pg.engine.search.fanOut("dune offline", "p1", false, null);
+  r.ok("search.fanOut flags tmdbUnavailable when the keyed TMDB search fails", down.tmdbUnavailable === true && down.movies.length === 0, JSON.stringify({ t: down.tmdbUnavailable, m: down.movies.length }));
+  r.ok("search.fanOut never flags tmdbUnavailable without a TMDB key", !hidden.tmdbUnavailable, String(hidden.tmdbUnavailable));
   pg.dispose();
 }
 
