@@ -51,6 +51,10 @@ final class SocialCenter: ObservableObject {
 
     /// use-notification-center.ts markRead: optimistic, then the server.
     func markAllRead() async {
+        // markRead: `if (!unread) return` — closing the center with nothing unread sends nothing.
+        guard (notifications?.unread ?? 0) > 0 else { return }
+        // A poll already in flight read the unread state from before this; it must not land.
+        generation += 1
         if var n = notifications {
             for i in n.items.indices { n.items[i].read = true }
             n.unread = 0
@@ -68,6 +72,7 @@ final class SocialCenter: ObservableObject {
     }
 
     func respond(edgeId: String, accept: Bool) async {
+        generation += 1   // an in-flight poll would put the answered request back until the next one
         if var n = notifications {
             n.pending.removeAll { $0.edgeId == edgeId }
             n.badge = n.unread + n.pending.count
@@ -124,6 +129,8 @@ struct AccountMenuView: View {
 
     private enum Sheet: String, Identifiable { case profile, notifications, feed, groups, together, list; var id: String { rawValue } }
     @State private var sheet: Sheet?
+    /// The open cover is the notification center: closing it marks everything read.
+    @State private var readOnClose = false
     @FocusState private var focus: String?
 
     private var kid: Bool { profiles.active?.kid != nil }
@@ -138,7 +145,7 @@ struct AccountMenuView: View {
                     if !kid {
                         if center.me.signedIn {
                             item("View my profile", "person.crop.circle", key: "profile") { sheet = .profile }
-                            item("Notifications", "bell", key: "notifications", badge: center.badge) { sheet = .notifications }
+                            item("Notifications", "bell", key: "notifications", badge: center.badge) { readOnClose = true; sheet = .notifications }
                             item("Activity", "person.2", key: "feed") { sheet = .feed }
                         }
                         item("Groups", "person.3", key: "groups") { sheet = .groups }
@@ -161,7 +168,17 @@ struct AccountMenuView: View {
         .onExitCommand { dismiss() }
         .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = kid ? "who" : (center.me.signedIn ? "profile" : "groups") } }
         .task { await center.refresh() }
-        .fullScreenCover(item: $sheet, onDismiss: { Task { await center.refresh() } }) { s in
+        .fullScreenCover(item: $sheet, onDismiss: {
+            // (settings/social bug pass) notification-center.tsx: closing the center marks everything
+            // read (`if (!open && wasOpen.current) void nc.markRead()`). The TV never did, so the bell
+            // kept its badge for notifications the viewer had just read.
+            let read = readOnClose
+            readOnClose = false
+            Task {
+                if read { await center.markAllRead() }
+                await center.refresh()
+            }
+        }) { s in
             switch s {
             case .profile: ProfilePageView(handle: nil)
             case .notifications: NotificationsView()

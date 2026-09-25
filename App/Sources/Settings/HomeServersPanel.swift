@@ -10,6 +10,8 @@ final class HomeServersModel: ObservableObject {
         var id: String; var provider: String; var name: String; var origin: String; var enabled: Bool
         var lastSyncAt: Double?; var lastSummary: Summary?; var lastSyncResult: SyncResult?
         var preferredQuality: String?; var refreshInterval: String?
+        /// home-servers-tab.tsx "Every… N days" (refreshInterval "custom"), set on the desktop.
+        var refreshEveryDays: Double?
     }
     struct Pin: Decodable { var pinId: Int; var code: String; var url: String; var expiresAt: Double }
     struct Poll: Decodable { struct Server: Decodable, Identifiable { var id: String; var name: String; var owned: Bool; var available: Bool; var origin: String }; var kind: String; var servers: [Server]? }
@@ -129,6 +131,8 @@ struct HomeServersPanel: View {
     @State private var username = ""
     @State private var password = ""
     @State private var showForm = false
+    /// The connection whose Remove is waiting for the viewer's answer.
+    @State private var removing: HomeServersModel.Connection?
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -141,11 +145,17 @@ struct HomeServersPanel: View {
                     .frame(width: BP.px(420), alignment: .leading)
                     Button(model.progress[c.id] == nil ? "Sync now" : "Syncing…") { Task { await model.sync(c.id) } }.buttonStyle(BPActionStyle()).disabled(model.progress[c.id] != nil)
                     Button(c.enabled ? "Enabled" : "Disabled") { Task { await model.toggle(c) } }.buttonStyle(BPActionStyle(primary: c.enabled))
-                    Button("Remove") { Task { await model.remove(c.id) } }.buttonStyle(BPActionStyle())
+                    // (settings bug pass) home-servers-tab.tsx: Remove asks first (HomeServerRemoveDialog,
+                    // it also drops the cached titles) and is off while that server syncs.
+                    Button("Remove") { removing = c }.buttonStyle(BPActionStyle()).disabled(model.progress[c.id] != nil)
                 }
                 HStack(spacing: BP.px(10)) {
                     Button("Quality: " + Self.label(HomeServersModel.qualities, c.preferredQuality ?? "original")) { Task { await model.cycle(c, field: "preferredQuality", options: HomeServersModel.qualities, current: c.preferredQuality) } }.buttonStyle(BPActionStyle())
-                    Button("Refresh: " + Self.label(HomeServersModel.intervals, c.refreshInterval ?? "launch")) { Task { await model.cycle(c, field: "refreshInterval", options: HomeServersModel.intervals, current: c.refreshInterval) } }.buttonStyle(BPActionStyle())
+                    // A desktop "Every… N days" (custom) interval shows as such and cycles on to Manual;
+                    // it read as "Every launch" and cycled to Daily.
+                    let refreshLabel: String = c.refreshInterval == "custom" ? Self.customDays(c) : Self.label(HomeServersModel.intervals, c.refreshInterval ?? "launch")
+                    let refreshAt: String? = c.refreshInterval == "custom" ? "weekly" : c.refreshInterval
+                    Button("Refresh: " + refreshLabel) { Task { await model.cycle(c, field: "refreshInterval", options: HomeServersModel.intervals, current: refreshAt) } }.buttonStyle(BPActionStyle())
                     if let r = c.lastSyncResult, !r.ok { Text("Last sync failed: \(r.message)").font(BP.sans(12)).foregroundStyle(BP.danger).lineLimit(1) }
                 }
                 .padding(.bottom, BP.px(6))
@@ -188,10 +198,26 @@ struct HomeServersPanel: View {
             if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Indexed") ? BP.live : BP.danger) }
         }
         .task { await model.load() }
+        .alert(removeTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { c in
+            Button("Remove server", role: .destructive) { Task { await model.remove(c.id) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Cached titles from this server will also be removed. Your media on the server will not be changed.")
+        }
     }
+
+    private var removeTitle: String { T("Remove %@?", removing?.name ?? "") }
 
     private static func label(_ options: [(String, String)], _ value: String) -> String {
         options.first(where: { $0.0 == value })?.1 ?? options[0].1
+    }
+
+    /// mediaServerSyncDue: `Math.max(1, refreshEveryDays ?? 1)` days.
+    private static func customDays(_ c: HomeServersModel.Connection) -> String {
+        // RefreshDaysField keeps 1…365; a synced value is bounded before Int() (which traps on huge/NaN).
+        let raw: Double = c.refreshEveryDays ?? 1
+        let days: Int = raw.isFinite ? Int(min(365, max(1, raw.rounded()))) : 1
+        return days == 1 ? "Every day" : "Every \(days) days"
     }
 
     private func summary(_ c: HomeServersModel.Connection) -> String {

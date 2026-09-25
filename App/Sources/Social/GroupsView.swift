@@ -52,9 +52,14 @@ struct GroupsView: View {
                 }
             } else if loading {
                 HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.focusable()
+            } else {
+                // A failed call left an empty page with nothing to focus but the search button.
+                SocialEmpty(title: "Could not load groups.", message: "Check your connection and try again.", action: ("Try again", { Task { await load() } }))
             }
         }
-        .task { await load() }
+        // The first load only: closing a group reloads through onDismiss (join/leave shows), and the
+        // `.task` re-run on the same close raced it.
+        .task { if data == nil { await load() } }
         .fullScreenCover(item: $open, onDismiss: { Task { await load() } }) { g in GroupPageView(id: g.id) }
         .fullScreenCover(isPresented: $searching) {
             PhoneTypingSheet(label: "Search groups", placeholder: "Search groups by name or tag", text: $query,
@@ -98,20 +103,35 @@ struct GroupsView: View {
         .buttonStyle(BPTileStyle(radius: BP.rSM))
     }
 
+    /// (social bug pass) use-group-discovery.ts aborts the previous request whenever q or tag
+    /// changes; here every chip press, Clear, search and cover close started a load and the
+    /// slowest one won, so a quick "All" → "#anime" could end on All's list under the #anime chip.
+    @State private var generation = 0
+
     private func load() async {
+        generation += 1
+        let mine = generation
         loading = true
-        defer { loading = false }
+        defer { if mine == generation { loading = false } }
         let q: String? = query.isEmpty ? nil : query
-        data = try? await HarborEngine.shared.call("social.groups", [q, tag, String?.none])
+        let fresh: Social.GroupsPage? = try? await HarborEngine.shared.call("social.groups", [q, tag, String?.none])
+        guard mine == generation else { return }
+        data = fresh
     }
 
     private func more() async {
         guard let cursor = data?.nextCursor, !loadingMore else { return }
+        let mine = generation
         loadingMore = true
         defer { loadingMore = false }
         let q: String? = query.isEmpty ? nil : query
         if let next: Social.GroupsPage = try? await HarborEngine.shared.call("social.groups", [q, tag, cursor]) {
-            data?.groups.append(contentsOf: next.groups)
+            // A later page lands only on the list it continues.
+            guard mine == generation, data?.nextCursor == cursor else { return }
+            // views/groups.tsx filters "Your groups" out of every loaded page (`rest`); the engine can
+            // only do that on the first page, where it fetches them, so a later page repeated them.
+            let have = Set((data?.groups ?? []).map(\.id) + (data?.mine ?? []).map(\.id))
+            data?.groups.append(contentsOf: next.groups.filter { !have.contains($0.id) })
             data?.nextCursor = next.nextCursor
         }
     }
@@ -156,7 +176,9 @@ struct GroupPageView: View {
                 HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Loading…").foregroundStyle(BP.inkMuted) }.focusable()
             }
         }
-        .task { await load() }
+        // (social bug pass) Once: `.task` re-runs when a member's profile or the post sheet closes, and
+        // that reload dropped the loaded posts pages or, offline, replaced the group with the error.
+        .task { if group == nil { await load() } }
         .fullScreenCover(item: $profile) { h in ProfilePageView(handle: h.handle) }
         .fullScreenCover(isPresented: $composing) {
             PhoneTypingSheet(label: "Post", placeholder: group.map { T("Share something with %@", $0.name) } ?? "Share something with the group", text: $draft,
@@ -206,10 +228,26 @@ struct GroupPageView: View {
                 }
             }
             if p.nextCursor != nil {
-                Button("Load more") { Task { await morePosts() } }.buttonStyle(BPActionStyle())
+                Button(loadingMorePosts ? "Loading" : "Load more") { Task { await morePosts() } }.buttonStyle(BPActionStyle()).disabled(loadingMorePosts)
             }
+        } else if postsFailed {
+            // (social bug pass) A failed posts call (a group whose posts only members may read, or
+            // offline) left this spinner up for good.
+            SocialEmpty(title: "Could not load posts.", message: "Check your connection and try again.", action: ("Try again", { Task { await loadPosts() } }))
         } else {
             ProgressView().tint(BP.ink)
+        }
+    }
+
+    @State private var postsFailed = false
+
+    private func loadPosts() async {
+        postsFailed = false
+        do {
+            posts = try await HarborEngine.shared.call("social.groupPosts", [id, String?.none])
+        } catch {
+            posts = nil
+            postsFailed = true
         }
     }
 
@@ -240,7 +278,7 @@ struct GroupPageView: View {
         do {
             group = try await HarborEngine.shared.call("social.group", [id])
             phase = "ready"
-            posts = try? await HarborEngine.shared.call("social.groupPosts", [id, String?.none])
+            await loadPosts()
         } catch {
             self.error = Social.message(error)
             phase = "error"
@@ -255,7 +293,7 @@ struct GroupPageView: View {
 
     private func join() async {
         await run { group = try await HarborEngine.shared.call("social.groupJoin", [id]) }
-        posts = try? await HarborEngine.shared.call("social.groupPosts", [id, String?.none])
+        await loadPosts()
     }
 
     private func leave() async {
@@ -270,6 +308,8 @@ struct GroupPageView: View {
             let g: Social.Group? = try await HarborEngine.shared.call("social.groupRespond", [AnyJSON.string(id), AnyJSON.bool(accept)])
             if accept, let g { group = g } else if !accept { dismiss() }
         }
+        // A member now: the posts an invitee could not read (join() does the same).
+        if accept, group?.isMember == true || group?.isOwner == true { await loadPosts() }
     }
 
     private func like(_ post: Social.Post) async {
@@ -282,15 +322,24 @@ struct GroupPageView: View {
         await run {
             let p: Social.Post = try await HarborEngine.shared.call("social.groupPost", [id, draft])
             draft = ""
-            let at = posts?.posts.firstIndex(where: { !$0.pinned }) ?? 0
+            // After the pinned posts; when every post is pinned, that is the end of the list.
+            let at = posts?.posts.firstIndex(where: { !$0.pinned }) ?? posts?.posts.count ?? 0
             posts?.posts.insert(p, at: at)
         }
     }
 
+    /// (social bug pass) One page at a time, like the feed's and the groups list's Load more: a second
+    /// press before the first answered appended the same page twice, two rows per post id.
+    @State private var loadingMorePosts = false
+
     private func morePosts() async {
-        guard let cursor = posts?.nextCursor else { return }
+        guard let cursor = posts?.nextCursor, !loadingMorePosts else { return }
+        loadingMorePosts = true
+        defer { loadingMorePosts = false }
         if let next: Social.PostPage = try? await HarborEngine.shared.call("social.groupPosts", [id, cursor]) {
-            posts?.posts.append(contentsOf: next.posts)
+            guard posts?.nextCursor == cursor else { return }
+            let have = Set(posts?.posts.map(\.id) ?? [])
+            posts?.posts.append(contentsOf: next.posts.filter { !have.contains($0.id) })
             posts?.nextCursor = next.nextCursor
         }
     }
