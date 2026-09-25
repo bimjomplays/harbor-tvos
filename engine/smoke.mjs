@@ -950,6 +950,12 @@ r.ok("benchmark still works", (() => {
   r.ok("music.radio seeds the station with the track, then ranked Deezer picks without karaoke variants", station.length >= 6 && station[0].id === seedTrack.id && !station.some((t) => /karaoke/i.test(t.title)) && station.slice(1).every((t) => t.connectorId === "catalog" && t.mediaKind === "audio"), JSON.stringify(station.map((t) => `${t.artist} - ${t.title}`)));
   const more = await m.radioExtend(station, station.length - 2);
   r.ok("music.radioExtend never repeats a queued track", Array.isArray(more) && more.every((t) => !station.some((s) => s.title === t.title && s.artist === t.artist)), JSON.stringify(more.map((t) => t.title)));
+  // up-next.ts (upstream 770ca0bd): Now Playing's Up next when nothing follows the current track
+  const suggested = await m.upNext(seedTrack);
+  r.ok("music.upNext offers the track's radio without the track itself", suggested.length === station.length - 1 && suggested.length > 0 && !suggested.some((t) => t.connectorId === seedTrack.connectorId && t.id === seedTrack.id) && suggested[0].id === station[1].id, JSON.stringify(suggested.map((t) => t.id)));
+  const noSuggestions = await m.upNext({ ...seedTrack, id: "deezer:track:0", sourceId: "0", title: "Nothing Like It", artist: "Nobody At All" });
+  r.eq("music.upNext is empty (not an error) when no station can be built", noSuggestions, []);
+  r.eq("music.copy carries up-next.ts's loading line", m.copy()["music.now.queueBuilding"], "Building up next");
 
   m.subsonicDisconnect();
   r.ok("music.subsonicDisconnect forgets the pairing", !store.has("harbor.subsonic.v1.token") && m.connections().find((c) => c.id === "subsonic").status === "disconnected");
@@ -1164,6 +1170,15 @@ r.ok("benchmark still works", (() => {
   await m.search("muse", "spotify");
   const refreshed = JSON.parse(store.get("harbor.spotify.v1.webToken"));
   r.ok("a stale web token is refreshed; the old refresh token and the granted scopes are kept (tokens.rs)", refreshed.accessToken === "web-2" && refreshed.refreshToken === "refresh-old" && refreshed.scopes.join(",") === "streaming,user-top-read" && hits.some((x) => x.includes("/v1/search?") && x.endsWith("Bearer web-2")), JSON.stringify(refreshed));
+  // (bug pass) Several Spotify calls at once with a stale token spend the refresh token once.
+  await m.spotifyDisconnect();
+  store.set("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-once", expiresAt: 10, scopes: ["streaming"] }));
+  rec.engine.runtime.syncStorage("harbor.spotify.v1.webToken", JSON.stringify({ accessToken: "old", refreshToken: "refresh-once", expiresAt: 10, scopes: ["streaming"] }));
+  await m.spotifySessionReady({ ...rust, credentials: null, accountType: "Premium", premium: true }, null);
+  const formsBefore = forms.length;
+  await Promise.all([m.search("muse", "spotify"), m.search("daft punk", "spotify"), m.search("air", "spotify")]);
+  const spent = forms.slice(formsBefore).filter((f) => f.grant_type === "refresh_token");
+  r.ok("concurrent Spotify calls share one token refresh (a rotated refresh token is never spent twice)", spent.length === 1 && spent[0].refresh_token === "refresh-once" && JSON.parse(store.get("harbor.spotify.v1.webToken")).accessToken === "web-2", JSON.stringify({ spent, stored: store.get("harbor.spotify.v1.webToken") }));
   rec.dispose();
 }
 

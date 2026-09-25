@@ -38,6 +38,8 @@ const COPY_KEYS = [
   "music.lastfm.connected", "music.lastfm.saved", "music.lastfm.history", "music.lastfm.live", "music.lastfm.connect", "music.lastfm.disconnect",
   "music.lastfm.apiKey", "music.lastfm.secret", "music.lastfm.finish", "music.lastfm.authorize", "music.lastfm.browserPrompt",
   "music.card.startRadio", "music.radio.error", "music.now.next",
+  // up-next.ts (upstream 770ca0bd): Now Playing's Up next while radio suggestions load
+  "music.now.queueBuilding",
   "Lyrics", "Lyric sync", "Lyrics earlier", "Lyrics later", "Finding lyrics", "No lyrics for this track",
   // Spotify (music.ts spotify + spotifySetup, spotify-setup.tsx, recovery.ts)
   "music.spotify.connect", "music.spotify.connectDetail", "music.spotify.connectAction", "music.spotify.connectedAs", "music.spotify.premium",
@@ -393,6 +395,24 @@ export async function radio(track: MusicTrack): Promise<MusicTrack[]> {
     return await radioLib.loadTrackRadio(track, familiar());
   } catch {
     throw new Error(t("music.radio.error"));
+  }
+}
+/**
+ * up-next.ts useUpNextSuggestions (upstream 770ca0bd), the part that is not React state: when the
+ * queue has nothing after the current track, Now Playing's "Up next" tab offers the station
+ * musicRadioTracks builds for it, the track itself left out (keyOf: connectorId:id). A station
+ * that cannot be built is no suggestions. Swift keeps upstream's per-track cache and the
+ * loading flag ("music.now.queueBuilding"), and plays a pick with [current, ...suggestions].
+ */
+export async function upNext(track: MusicTrack): Promise<MusicTrack[]> {
+  if (!track || typeof track.id !== "string") return [];
+  const keyOf = (entry: Pick<MusicTrack, "id" | "connectorId">) => `${entry.connectorId ?? ""}:${entry.id}`;
+  const key = keyOf(track);
+  try {
+    const station = await radio(track);
+    return station.filter((entry) => keyOf(entry) !== key);
+  } catch {
+    return [];
   }
 }
 /** radio.ts armTrackRadio's extension, asked for by Swift near the end of a radio queue. */
