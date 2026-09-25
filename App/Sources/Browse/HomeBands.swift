@@ -124,8 +124,10 @@ struct HomeBandBackdrop: View {
                 .id(still)
                 .transition(.opacity)
             }
-            if let pair = band.panels, let b = pair.b, band.id == .live {
+            if let pair = band.panels, let b = pair.b, band.id == .live, band.still?.isEmpty == false {
                 // (parity pass 3, X3) bp-ambient splitOn: the two panels in the same envelope as a still.
+                // (review 21 fixes) splitOn = Boolean(band?.still && wantA && wantB && …): a channel
+                // with no still gets no split either (it drew over the bare void before).
                 // (review 21) Drawn over the still, which stays put: the split used to replace the
                 // still's branch and redraw it inside LiveSplitArt, so the still blinked to the bare
                 // plate and faded back in the moment the panels resolved. The split is clear until

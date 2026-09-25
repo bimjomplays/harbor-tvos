@@ -232,6 +232,9 @@ final class SearchModel: ObservableObject {
         for i in addonHits.indices where addonHits[i].id == id { addonHits[i].installed = true }
     }
     private var engineRequestId = 0
+    /// (review 21 fixes) Addon slots of the current fan-out that answered (upsert) before run()
+    /// built its rows: run() keeps that answer rather than the fan-out's pending (or held) slot.
+    private var answeredSince: Set<String> = []
     private var unsubscribe: (() -> Void)?
     /// Addon answers that crossed before this side learned the request id they belong to.
     private var early: [(Int, Results.AddonGroup)] = []
@@ -268,6 +271,7 @@ final class SearchModel: ObservableObject {
             if let at { out.insert(row, at: at) } else { out.append(row) }
         }
         rows = out
+        answeredSince.insert(g.id)
         addonsPending.remove(g.id)
         if g.state == "failed" { addonsFailed.insert(g.id) } else { addonsFailed.remove(g.id) }
         let state: String = g.state ?? (g.metas.isEmpty ? "empty" : "ok")
@@ -283,14 +287,18 @@ final class SearchModel: ObservableObject {
     enum Status: Equatable { case idle, typing, loading, done, failed(String) }
 
     /// (parity pass 3, L2) search-context retry (bp-search onRetry / the empty state's Try again):
-    /// the same query is asked again from the top; its rows stay up until the answer replaces them.
+    /// the same query is asked again from the top (search-context bumps retryNonce, which re-runs the
+    /// whole fan-out); its rows stay up until the answer replaces them. (review 21 fixes) An addon
+    /// slot that had already answered keeps its row (or its collapse) while it is asked again, and
+    /// only its new answer replaces it; before, every answered addon row dropped back to pending
+    /// plates until that addon answered a second time.
     func retry() {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty, status != .loading else { return }
         timer?.cancel()
         requestId += 1
         timer = Task { [weak self] in
-            await self?.run(q)
+            await self?.run(q, holdAnswered: true)
         }
     }
 
@@ -325,7 +333,7 @@ final class SearchModel: ObservableObject {
         }
     }
 
-    private func run(_ q: String) async {
+    private func run(_ q: String, holdAnswered: Bool = false) async {
         requestId += 1
         let mine = requestId
         status = .loading
@@ -337,12 +345,24 @@ final class SearchModel: ObservableObject {
             let results: Results = try await HarborEngine.shared.call("search.fanOut", [q, p?.id ?? "default", p?.linked ?? true, authKey])
             guard mine == requestId else { return }
             engineRequestId = results.requestId ?? 0
+            answeredSince = []
             addonsPending = Set((results.addonQueries ?? []).filter { $0.state == "pending" }.map(\.id))
             addonsFailed = Set((results.addonQueries ?? []).filter { $0.state == "failed" }.map(\.id))
             addonOrder = (results.addonQueries ?? results.addonGroups ?? []).map(\.id)
+            // (review 21 fixes) On a retry, a slot the last answer settled ("ok" / "empty") that the
+            // new fan-out announces pending keeps its settled state and row until upsert brings
+            // the new answer; failed slots go to pending plates as before.
+            let priorSlots: [AddonSlot] = holdAnswered ? addonSlots : []
+            let priorRows: [BrowseRow] = holdAnswered ? rows.filter { $0.key.hasPrefix("addon:") } : []
+            var held: Set<String> = []
             addonSlots = (results.addonQueries ?? []).map { q in
                 let state: String = q.state ?? (q.metas.isEmpty ? "empty" : "ok")
-                return AddonSlot(id: q.id, name: q.name, logo: q.logo, state: state)
+                var slot = AddonSlot(id: q.id, name: q.name, logo: q.logo, state: state)
+                if state == "pending", let old = priorSlots.first(where: { $0.id == q.id }), old.state == "ok" || old.state == "empty" {
+                    held.insert(q.id)
+                    slot.state = old.state
+                }
+                return slot
             }
             tmdbUnavailable = results.tmdbUnavailable ?? false
             var out: [BrowseRow] = []
@@ -366,8 +386,15 @@ final class SearchModel: ObservableObject {
             }
             // bp-search-rows: one row per addon that answered ("From <addon>"), after the catalogs.
             // addonQueries keeps every slot's own hits (never stripped against the fused rows).
-            for g in results.addonQueries ?? results.addonGroups ?? [] where !g.metas.isEmpty {
-                out.append(BrowseRow(key: "addon:\(g.id)", title: g.name, metas: g.metas))
+            for g in results.addonQueries ?? results.addonGroups ?? [] {
+                if answeredSince.contains(g.id) {
+                    // Answered (upsert) during the manga read above: that answer is the row.
+                    if let now = rows.first(where: { $0.key == "addon:\(g.id)" }) { out.append(now) }
+                } else if held.contains(g.id) {
+                    if let old = priorRows.first(where: { $0.key == "addon:\(g.id)" }) { out.append(old) }
+                } else if !g.metas.isEmpty {
+                    out.append(BrowseRow(key: "addon:\(g.id)", title: g.name, metas: g.metas))
+                }
             }
             addonHits = results.addons ?? []
             collections = results.collections ?? []

@@ -230,6 +230,9 @@ struct RemoteImage: View {
     /// (parity pass 3, H4) components/poster.tsx usePosterChain onError: when `url` cannot be
     /// loaded, the next candidate (the plain poster behind an RPDB / poster-service url) is shown.
     var fallback: String? = nil
+    /// (review 21 fixes) Told the url and whether anything drew (false: neither `url` nor `fallback`
+    /// loaded), so a tile can print its title plate the way bp-tile does once its art chain runs out.
+    var onResult: ((String, Bool) -> Void)? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
     @State private var failed = false
@@ -286,6 +289,7 @@ struct RemoteImage: View {
             }
             if image == nil { withAnimation(BP.easeFast) { image = img } } else if let img { image = img }
             failed = img == nil
+            onResult?(url, img != nil)
         }
     }
 }

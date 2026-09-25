@@ -118,6 +118,9 @@ final class LibraryModel: ObservableObject {
     /// quicker, newer one put the old tab's titles under the new tab's chip, and the first to finish
     /// cleared `loading` while the other still ran.
     private var generation = 0
+    /// (review 21 fixes) The generation of the last read that got no feed while it was still the
+    /// newest (a read a newer one superseded is not a failure: the newer one answers for it).
+    private var failedGeneration = -1
 
     func load(force: Bool = false) async {
         generation += 1
@@ -158,8 +161,9 @@ final class LibraryModel: ObservableObject {
             }
             if restore { finishRestore(restored: restored) }
             await CardMarksStore.shared.refresh(f.sections.flatMap { $0.items.map(\.meta) })
-        } else if restore && mine == generation {
-            finishRestore(restored: false)
+        } else if mine == generation {
+            failedGeneration = mine
+            if restore { finishRestore(restored: false) }
         }
     }
 
@@ -245,7 +249,21 @@ final class LibraryModel: ObservableObject {
         } while detailsAgain && tab == "media-servers"
     }
     func search(_ q: String) { query = q; limit = 60; Task { await load() } }
-    func more() { limit += 60; Task { await load() } }
+    /// (review 21 fixes) A failed page read gives its 60 back: `limit` stayed up, so the next page
+    /// asked for 120 more than the grid showed. Only while no filter, tab or newer page has moved
+    /// it since. `pageFailed` lets the grid ask for that page again (autoPage's pagedAt).
+    @Published private(set) var pageFailed = 0
+    func more() {
+        limit += 60
+        let asked: Int = limit
+        Task {
+            await load()
+            if failedGeneration == generation && limit == asked {
+                limit -= 60
+                pageFailed += 1
+            }
+        }
+    }
 }
 
 struct LibraryView: View {
@@ -414,6 +432,8 @@ struct LibraryView: View {
             guard let key = focusedKey else { return }
             autoPage(key)
         }
+        // (review 21 fixes) A failed page read re-arms the next-page ask for the same page.
+        .onChange(of: model.pageFailed) { _, _ in pagedAt = nil }
         // bp-library's [tab] effect clears the search; the field shows it.
         .onChange(of: model.tab) { _, _ in draft = ""; pagedAt = nil }
         // bp-library-filters / bp-library-search are dialogs that Back closes (pushBpBack). Here they

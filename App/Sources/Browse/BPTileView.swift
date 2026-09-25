@@ -9,6 +9,10 @@ struct BPTileView: View {
     @ObservedObject private var marks = CardMarksStore.shared
     /// poster.tsx sizes the art to the card at devicePixelRatio (PosterSizing).
     @Environment(\.displayScale) private var displayScale
+    /// (review 21 fixes) The art url that drew nothing (its fallback too). bp-tile's art.url goes
+    /// empty once useBpArt's chain runs out, and the title stands on the plate again; kept as the
+    /// url rather than a flag so a reused tile with other art is not held to an old failure.
+    @State private var deadArt: String?
 
     static let posterWidth = BP.px(177)
     static let wideWidth = BP.px(230)
@@ -138,14 +142,22 @@ struct BPTileView: View {
         // (parity pass 3, H4) bp-poster-chain useBpPosterChain: a poster-shaped tile asks the viewer's
         // poster service first (never resized), and falls back to the sized poster when it fails.
         let override: String? = chain ? PosterChain.override(for: meta) : nil
+        // bp-tile.tsx: the title sits on the plate only while art.url is empty, and art.url is the
+        // override when there is one (useBpArt pickArt), so an RPDB poster over a meta with no art
+        // of its own is art like any other; the plate text comes back once nothing can draw.
+        let candidate: String? = override ?? sized
+        let drawn: String? = candidate?.isEmpty == false ? candidate : nil
+        let hasArt: Bool = drawn != nil && drawn != deadArt
         return ZStack(alignment: .topLeading) {
-            RemoteImage(url: override ?? sized, fallback: override == nil ? nil : sized)
-            if url == nil && plateText && showTitle {
+            RemoteImage(url: drawn, fallback: override == nil ? nil : sized, onResult: { shown, ok in
+                if !ok { deadArt = shown } else if deadArt == shown { deadArt = nil }
+            })
+            if !hasArt && plateText && showTitle {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))
                     .frame(width: size.width, height: size.height)
             }
-            if caption && url != nil {
+            if caption && hasArt {
                 // bp-tile.tsx: --bp-scrim-up over the lower half, then the title (line-clamp-2,
                 // px-2.5 pb-2), both only on focus; the marks draw after them, unwashed.
                 LinearGradient(stops: [.init(color: BP.void_, location: 0), .init(color: BP.void_.opacity(0.88), location: 0.18),
