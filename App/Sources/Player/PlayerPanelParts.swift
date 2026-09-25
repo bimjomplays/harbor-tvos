@@ -105,6 +105,8 @@ struct PlayerAudioPanel: View {
     let onClose: () -> Void
 
     @State private var tracks: [MPVPlayerController.Track] = []
+    /// (device-flow pass 11) The ring was seeded on Back before the file had any audio tracks.
+    @State private var seededEmpty = false
     @FocusState private var focus: String?
     private static let delaySteps: [Double] = [-0.5, -0.1, 0.1, 0.5]
     /// bp-player-sources.tsx BpAudioLane `locked = engine === "html5"`: AVPlayer has no audio delay.
@@ -118,7 +120,9 @@ struct PlayerAudioPanel: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: BP.px(5)) {
                     Label("Audio", systemImage: "character.bubble").font(BP.display(26)).foregroundStyle(BP.ink)
-                    Text("\(title) · \(tracks.count) tracks").font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                    // (device-flow pass 11) bp-player-sources `${title ? `${title} · ` : ""}${t("{n} tracks", { n })}`:
+                    // the whole line was one key no catalog has, so "tracks" stayed English.
+                    Text(verbatim: headerLine).font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                 }
                 .padding(.horizontal, BP.px(30)).padding(.top, BP.px(30))
 
@@ -153,6 +157,7 @@ struct PlayerAudioPanel: View {
         }
         .onAppear {
             tracks = (controller?.tracks() ?? []).filter { $0.type == "audio" }
+            seededEmpty = tracks.isEmpty
             let seed = tracks.first { $0.selected } ?? tracks.first
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = seed.map { "track-\($0.id)" } ?? "back" }
         }
@@ -165,8 +170,21 @@ struct PlayerAudioPanel: View {
                 if Task.isCancelled { return }
                 let now = (controller?.tracks() ?? []).filter { $0.type == "audio" }
                 if now != tracks { tracks = now }
+                // (device-flow pass 11) BpAudioRow autofocus (the selected row, else the first): opened
+                // before the file's tracks were read, the ring sat on Back once they arrived.
+                if seededEmpty, !now.isEmpty {
+                    seededEmpty = false
+                    let seed: MPVPlayerController.Track? = now.first { $0.selected } ?? now.first
+                    if focus == "back", let seed { focus = "track-\(seed.id)" }
+                }
             }
         }
+    }
+
+    /// bp-player-sources.tsx header: the title, then "{n} tracks".
+    private var headerLine: String {
+        let count: String = T("%lld tracks", tracks.count)
+        return title.isEmpty ? count : "\(title) · \(count)"
     }
 
     /// One bottom lane, so Left and Right walk Back through to Reset without leaving the row.
@@ -190,7 +208,13 @@ struct PlayerAudioPanel: View {
                     .disabled(locked)
             }
             if audioDelay != 0 {
-                Button { setDelay(0) } label: { Label("Reset", systemImage: "arrow.counterclockwise") }
+                // (device-flow pass 11) Reset leaves with the offset it clears (BpAudioLane pushes the
+                // cell only while delaySec !== 0): the ring goes to the step beside it, not wherever
+                // the focus engine put it (the first track row, or out of the lane).
+                Button {
+                    setDelay(0)
+                    focus = "step0.5"
+                } label: { Label("Reset", systemImage: "arrow.counterclockwise") }
                     .buttonStyle(BPActionStyle())
                     .focused($focus, equals: "reset")
                     .disabled(locked)
