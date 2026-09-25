@@ -1391,13 +1391,18 @@ r.eq("cinemeta re-enabled", engine.cinemeta.enabled(), true);
   // upstream modules read); activate reads loadEffective and points the mirror at the profile.
   const get = (k) => run(`localStorage.getItem(${JSON.stringify(k)})`);
   const set = (k, v) => run(v == null ? `localStorage.removeItem(${JSON.stringify(k)})` : `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)})`);
-  const keep = ["harbor.settings", "harbor.settings.shared", "harbor.settings.smoke-kid"].map((k) => [k, get(k)]);
+  const keep = ["harbor.settings", "harbor.settings.shared", "harbor.settings.smoke-kid", "harbor.sports.favourites.v1"].map((k) => [k, get(k)]);
   const out = engine.settings.patchFor({ simklScrobbleEnabled: false, cinemetaEnabled: false }, "default", true);
   r.eq("settings.patchFor writes the shared source key and the mirror", [out.simklScrobbleEnabled, JSON.parse(get("harbor.settings.shared")).simklScrobbleEnabled, JSON.parse(get("harbor.settings")).simklScrobbleEnabled, engine.cinemeta.enabled()], [false, false, false, false]);
   set("harbor.settings", JSON.stringify({ ...JSON.parse(get("harbor.settings")), region: "DE" }));
   const sharedRegion = JSON.parse(get("harbor.settings.shared")).region;
   const act = engine.settings.activate("smoke-kid", false);
   r.eq("settings.activate: an unlinked profile without its own blob reads the shared one and the mirror follows it", [act.simklScrobbleEnabled, act.region, JSON.parse(get("harbor.settings")).region, get("harbor.settings.smoke-kid")], [false, sharedRegion, sharedRegion, null]);
+  // (review) Sports "Make it yours" saves like update({ sportsLeagues }): a mirror-only write was
+  // undone by the next settings.activate (launch, profile switch, harbor:settings-updated).
+  engine.sports.setLeagues(["NFL", "NBA"], "default", true);
+  engine.settings.activate("default", true);
+  r.eq("sports.setLeagues survives settings.activate (source key + mirror)", [JSON.parse(get("harbor.settings.shared")).sportsLeagues, engine.sports.catalog().selected], [["NFL", "NBA"], ["NFL", "NBA"]]);
   for (const [k, v] of keep) set(k, v);
   engine.settings.patch({ cinemetaEnabled: true });
 }

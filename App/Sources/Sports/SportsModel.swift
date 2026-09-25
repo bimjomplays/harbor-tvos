@@ -138,7 +138,9 @@ final class SportsModel: ObservableObject {
     func setDay(_ key: String) { day = key; Task { await reload() } }
 
     func setLeagues(_ keys: [String]) async {
-        _ = try? await HarborEngine.shared.callJSON("sports.setLeagues", [.array(keys.map { .string($0) })])
+        // The active profile's settings (source key + mirror), as upstream's update({ sportsLeagues }).
+        let p = ProfilesStore.shared.active
+        _ = try? await HarborEngine.shared.callJSON("sports.setLeagues", [.array(keys.map { .string($0) }), .string(p?.id ?? "default"), .bool(p?.linked ?? true)])
         await reload(force: true)
     }
 }

@@ -18,7 +18,9 @@ import { acceptSportsConsent, declineSportsConsent, getSportsConsentSnapshot } f
 import { bpSportsForYouRows, bpSportsHotRows, bpSportsLeagueRows } from "@/views/big-picture/sports/bp-sports-rows";
 import type { SportsGame } from "@/lib/sports/espn-types";
 import { loadStoredSettings } from "@/lib/settings/load";
-import { serializeSettings } from "@/lib/settings/profile-store";
+import { MIRROR_KEY, loadEffective, persistEffective, serializeSettings } from "@/lib/settings/profile-store";
+import type { Settings } from "@/lib/settings/types";
+import { markSettingsPatched } from "./sync";
 import { readPlaylists } from "@/lib/iptv/playlists-store";
 import { loadPlaylist } from "@/lib/iptv/store";
 import { headersFromChannel } from "@/lib/iptv/channel-headers";
@@ -60,13 +62,25 @@ function selected(): string[] {
   return selectedSportsLeagues(HUB_LEAGUES, s.sportsLeagues ?? [], !!readFavourites().personalized, HUB_DEFAULTS);
 }
 
-/** Personalize save (bp-sports-personalize.tsx:152-168): both stores, `personalized: true`. */
-export function setLeagues(keys: string[], settingsKey = "harbor.settings"): string[] {
+/**
+ * Personalize save (bp-sports-personalize.tsx:152-168): both stores, `personalized: true`.
+ * The settings half is upstream's `update({ sportsLeagues })`: the active profile's source key and
+ * the `harbor.settings` mirror (persistEffective), marked for profile sync. Writing the mirror
+ * alone was undone by the next settings.activate (every profile switch, launch and
+ * harbor:settings-updated rewrites the mirror from the source key), so the picks reverted.
+ */
+export function setLeagues(keys: string[], profileId?: string | null, linked?: boolean | null): string[] {
   const fav = readFavourites();
   const leagues = keys.filter((k) => HUB_LEAGUES.some((l) => l.key === k));
   writeFavourites({ ...fav, personalized: true, leagues });
-  const s = { ...loadStoredSettings(settingsKey), sportsLeagues: leagues };
-  localStorage.setItem(settingsKey, serializeSettings(s));
+  if (typeof profileId === "string" && profileId) {
+    const l = linked !== false;
+    persistEffective({ ...loadEffective(profileId, l), sportsLeagues: leagues } as Settings, profileId, l);
+  } else {
+    const s = { ...loadStoredSettings(MIRROR_KEY), sportsLeagues: leagues };
+    localStorage.setItem(MIRROR_KEY, serializeSettings(s));
+  }
+  markSettingsPatched(["sportsLeagues"]);
   return leagues;
 }
 
