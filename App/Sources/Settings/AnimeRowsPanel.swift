@@ -122,8 +122,10 @@ struct AnimeRowsPanel: View {
 
     private func load() async {
         let p = profile
-        tune = try? await HarborEngine.shared.call("actions.animeTune", [p.id, p.linked])
-        rows = (try? await HarborEngine.shared.call("actions.animeRows", [p.id, p.linked])) ?? []
+        // (review 7) A failed re-read (SettingsFieldWatch) keeps what is on screen instead of
+        // dropping the Tune section and emptying the rows under the ring.
+        if let t: Tune = try? await HarborEngine.shared.call("actions.animeTune", [p.id, p.linked]) { tune = t }
+        if let list: [Row] = try? await HarborEngine.shared.call("actions.animeRows", [p.id, p.linked]) { rows = list }
         loaded = true
     }
 
