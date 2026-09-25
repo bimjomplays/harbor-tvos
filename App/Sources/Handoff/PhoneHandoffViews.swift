@@ -253,6 +253,11 @@ struct ConnectPane: View {
     @StateObject private var handoff = TvHandoff(mode: .setup(HandoffStep.allCases))
     @State private var typing = false
     @FocusState private var typeKeyFocused: Bool
+    /// (review 26) "Show a new code" holds the ring: it goes when the hand-off completes.
+    @FocusState private var newCodeFocused: Bool
+    /// When the ring last dropped off "Show a new code" (the button went away under it).
+    @State private var newCodeLeftAt: Date?
+    @FocusState private var settingsFocused: Bool
 
     private var hasKey: Bool { !settings.slice.tmdbKey.trimmingCharacters(in: .whitespaces).isEmpty }
     private var stremioName: String? {
@@ -286,6 +291,7 @@ struct ConnectPane: View {
                 }
                 HStack(spacing: BP.px(12)) {
                     Button("Settings", action: onBack).buttonStyle(BPActionStyle())
+                        .focused($settingsFocused)
                     if !typing {
                         // (device-flow pass 5) bp-connect.tsx: "Type a key on this TV" whether or not a
                         // key is saved (upstream says "Replace the saved key" only as the field's
@@ -297,6 +303,7 @@ struct ConnectPane: View {
                     }
                     if handoff.phase != .complete {
                         Button("Show a new code") { handoff.restart() }.buttonStyle(BPActionStyle())
+                            .focused($newCodeFocused)
                     }
                 }
             }
@@ -310,6 +317,21 @@ struct ConnectPane: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { typeKeyFocused = true }
         }
         .onDisappear { handoff.stop() }
+        // (review 26) The hand-off completing takes "Show a new code" away: a ring on it went to
+        // whatever tvOS found. It goes to "Type a key on this TV" (Settings while the key form is
+        // up), only when it was on that button or has just lost it.
+        .onChange(of: newCodeFocused) { was, now in
+            if was && !now { newCodeLeftAt = Date() }
+        }
+        .onChange(of: handoff.phase) { _, now in
+            guard now == .complete else { return }
+            let wasOn: Bool = newCodeFocused
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let justLost: Bool = newCodeLeftAt.map { Date().timeIntervalSince($0) < 0.6 } ?? false
+                guard wasOn || justLost else { return }
+                if typing { settingsFocused = true } else { typeKeyFocused = true }
+            }
+        }
     }
 
     /// (device-flow pass 5) The key form's Verify / Keep / Use Cinemeta held the ring and go with
