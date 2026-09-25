@@ -33,6 +33,11 @@ struct OnboardLanguageStep: View {
     var ring: FocusState<String?>.Binding
     let done: () -> Void
     @State private var list: Languages?
+    /// (onboarding device pass) A new language rebuilds the whole tree (RootView's `.id` carries the
+    /// language), so this screen comes back as a fresh view and `pick`'s move to Continue landed on
+    /// the old one: the ring opened on the new language's row instead of advanceBpOnboardRing's
+    /// Continue. A pick made moments ago sends the rebuilt screen's ring to Continue.
+    private static var pickedAt: Date?
 
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
 
@@ -56,7 +61,12 @@ struct OnboardLanguageStep: View {
         }
         .task {
             await load()
-            if let cur = list?.current { ring.wrappedValue = "lang:\(cur)" }
+            if let at = Self.pickedAt, Date().timeIntervalSince(at) < 10 {
+                Self.pickedAt = nil
+                ring.wrappedValue = "primary"
+            } else if let cur = list?.current {
+                ring.wrappedValue = "lang:\(cur)"
+            }
         }
     }
 
@@ -67,6 +77,7 @@ struct OnboardLanguageStep: View {
 
     private func pick(_ code: String) async {
         let p = profile
+        if code != list?.current { Self.pickedAt = Date() }
         _ = try? await HarborEngine.shared.callJSON("settingsRoom.commit", [.string("uiLanguage"), .string(code), .string(p.id), .bool(p.linked)])
         await SettingsBridge.shared.load()
         await load()
