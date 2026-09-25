@@ -94,13 +94,6 @@ struct TraktPanel: View {
             if model.status.authenticated {
                 Text("Connected as \(model.status.username ?? "\(model.label) user")").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Scrobbles what you watch; watchlist and history sync arrive with Stage 5.").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                HStack(spacing: BP.px(8)) {
-                    Button("Disconnect") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())
-                    if model.service == "simkl" {
-                        let on = settings.slice.simklScrobbleEnabled ?? true
-                        Button(on ? "Scrobbling on" : "Scrobbling off") { Task { try? await settings.patch(["simklScrobbleEnabled": .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
-                    }
-                }
             } else if let c = model.code {
                 Text("On your phone, open \(c.verificationUrl) and enter").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                 Text(c.userCode).font(BP.display(44)).foregroundStyle(BP.ink).tracking(6)
@@ -108,11 +101,38 @@ struct TraktPanel: View {
             } else {
                 Text("Not connected").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text("Scrobbling, watchlist and history").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                Button("Connect \(model.label)") { Task { await model.connect() } }.buttonStyle(BPActionStyle(primary: true))
+            }
+            // (settings device pass) One button that changes with the state (Connect → Cancel →
+            // Disconnect) rather than three: Connect vanished once the code showed, leaving the
+            // waiting panel with nothing to focus or cancel (trakt-device-modal.tsx has Cancel), and
+            // the ring jumped elsewhere on the page; the same happened when the code was approved.
+            HStack(spacing: BP.px(8)) {
+                Button(primaryTitle) { primaryAction() }.buttonStyle(BPActionStyle(primary: !model.status.authenticated && model.code == nil))
+                if model.status.authenticated && model.service == "simkl" {
+                    let on = settings.slice.simklScrobbleEnabled ?? true
+                    Button(on ? "Scrobbling on" : "Scrobbling off") { Task { try? await settings.patch(["simklScrobbleEnabled": .bool(!on)]) } }.buttonStyle(BPActionStyle(primary: on))
+                }
             }
             if let n = model.note { BPNote(text: n, tone: n.hasPrefix("Connected") ? BP.live : BP.danger) }
         }
         .task { await model.refresh() }
         .onDisappear { model.cancelConnect() }   // (bug pass 2)
+    }
+
+    // T(): a String title is not looked up the way a Button literal is.
+    private var primaryTitle: String {
+        if model.status.authenticated { return T("Disconnect") }
+        if model.code != nil { return T("Cancel") }
+        return T("Connect %@", model.label)
+    }
+
+    private func primaryAction() {
+        if model.status.authenticated {
+            Task { await model.disconnect() }
+        } else if model.code != nil {
+            model.cancelConnect()
+        } else {
+            Task { await model.connect() }
+        }
     }
 }

@@ -74,9 +74,14 @@ struct AISearchPanel: View {
                     placeholder: groq ? "Groq API key (gsk-...)" : "OpenRouter API key (sk-or-...)",
                     text: $keyDraft, secure: true, phone: true)
             HStack(spacing: BP.px(10)) {
-                Button(T("Save")) { Task { await saveKey(groq ? "groq" : "openrouter", keyDraft) } }
-                    .buttonStyle(BPActionStyle(primary: true))
-                    .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                // (settings device pass) Dimmed, not disabled, while the draft is empty: a save
+                // clears the draft, and disabling the focused button threw the ring off it.
+                let keyEmpty = keyDraft.trimmingCharacters(in: .whitespaces).isEmpty
+                Button(T("Save")) {
+                    guard !keyEmpty else { return }
+                    Task { await saveKey(groq ? "groq" : "openrouter", keyDraft) }
+                }
+                    .buttonStyle(BPActionStyle(primary: true, busy: keyEmpty))
                     .accessibilityIdentifier("ai-key-save")
                 if let mask = groq ? state?.saved.groq : state?.saved.openrouter {
                     Button(T("Remove")) { Task { await saveKey(groq ? "groq" : "openrouter", "") } }
@@ -174,9 +179,12 @@ struct AISearchPanel: View {
             .buttonStyle(BPActionStyle(primary: state?.webSearch == true)).bpSelected(state?.webSearch == true)
             BPField(label: "Jina API key (optional)", placeholder: "jina_...", text: $jinaDraft, secure: true, phone: true)
             HStack(spacing: BP.px(10)) {
-                Button(T("Save")) { Task { await saveKey("jina", jinaDraft) } }
-                    .buttonStyle(BPActionStyle())
-                    .disabled(jinaDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                let jinaEmpty = jinaDraft.trimmingCharacters(in: .whitespaces).isEmpty
+                Button(T("Save")) {
+                    guard !jinaEmpty else { return }
+                    Task { await saveKey("jina", jinaDraft) }
+                }
+                    .buttonStyle(BPActionStyle(busy: jinaEmpty))
                 if let mask = state?.saved.jina {
                     Button(T("Remove")) { Task { await saveKey("jina", "") } }.buttonStyle(BPActionStyle())
                     Text(verbatim: "\(T("Saved")) · \(mask)").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkSubtle)
@@ -227,8 +235,9 @@ struct AISearchPanel: View {
         let p = profile
         let tab: String? = state?.tab
         if let s: AISearchModel.State = try? await HarborEngine.shared.call("aiSearch.setModel", [id, tab, p.id, p.linked]) {
+            // (settings device pass) ai-search-section.tsx keeps the custom id in its field; clearing
+            // it disabled the focused Use model button and threw the ring off it.
             state = s
-            customDraft = ""
         }
     }
 

@@ -15,6 +15,20 @@ struct AnimeRowsPanel: View {
     @State private var loaded = false
     @State private var renaming: Row?
     @State private var newName = ""
+    @FocusState private var focus: String?
+
+    /// The editor opens under the list: the ring goes to its Save (the field sits just above).
+    private func startRename(_ r: Row) {
+        renaming = r
+        newName = r.name
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "rename-save" }
+    }
+
+    /// The editor closes under the ring: it goes back to that row's Rename.
+    private func endRename(_ key: String) {
+        renaming = nil
+        focus = "rename:\(key)"
+    }
 
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
 
@@ -27,18 +41,23 @@ struct AnimeRowsPanel: View {
             ForEach(Array(rows.enumerated()), id: \.element.key) { i, r in
                 HStack(spacing: BP.px(8)) {
                     Text(r.name).font(BP.sans(14, r.hidden ? .regular : .semibold)).foregroundStyle(r.hidden ? BP.inkSubtle : BP.ink).lineLimit(1).frame(width: BP.px(340), alignment: .leading)
-                    Button { Task { await call("animeRowMove", [.string(r.key), .number(-1)]) } } label: { Image(systemName: "arrow.up") }.buttonStyle(BPActionStyle()).disabled(i == 0).accessibilityLabel(T("Move up"))
-                    Button { Task { await call("animeRowMove", [.string(r.key), .number(1)]) } } label: { Image(systemName: "arrow.down") }.buttonStyle(BPActionStyle()).disabled(i == rows.count - 1).accessibilityLabel(T("Move down"))
+                    // (settings device pass) Dimmed, not disabled, at the ends (HomeRowsPanel).
+                    let top = i == 0
+                    let bottom = i == rows.count - 1
+                    Button { if !top { Task { await call("animeRowMove", [.string(r.key), .number(-1)]) } } } label: { Image(systemName: "arrow.up") }.buttonStyle(BPActionStyle(busy: top)).accessibilityLabel(T("Move up"))
+                    Button { if !bottom { Task { await call("animeRowMove", [.string(r.key), .number(1)]) } } } label: { Image(systemName: "arrow.down") }.buttonStyle(BPActionStyle(busy: bottom)).accessibilityLabel(T("Move down"))
                     Button(r.hidden ? "Show" : "Hide") { Task { await call("animeRowToggleHidden", [.string(r.key)]) } }.buttonStyle(BPActionStyle(primary: r.hidden))
-                    Button("Rename") { renaming = r; newName = r.name }.buttonStyle(BPActionStyle())
+                    Button("Rename") { startRename(r) }.buttonStyle(BPActionStyle())
+                        .focused($focus, equals: "rename:\(r.key)")
                 }
             }
             if let r = renaming {
                 BPField(label: T("Rename %@", r.originalName), placeholder: r.originalName, text: $newName)
                 HStack(spacing: BP.px(8)) {
-                    Button("Save") { Task { await call("animeRowRename", [.string(r.key), .string(newName)]); renaming = nil } }.buttonStyle(BPActionStyle(primary: true))
-                    Button("Use original name") { Task { await call("animeRowRename", [.string(r.key), .string("")]); renaming = nil } }.buttonStyle(BPActionStyle())
-                    Button("Cancel") { renaming = nil }.buttonStyle(BPActionStyle())
+                    Button("Save") { Task { await call("animeRowRename", [.string(r.key), .string(newName)]); endRename(r.key) } }.buttonStyle(BPActionStyle(primary: true))
+                        .focused($focus, equals: "rename-save")
+                    Button("Use original name") { Task { await call("animeRowRename", [.string(r.key), .string("")]); endRename(r.key) } }.buttonStyle(BPActionStyle())
+                    Button("Cancel") { endRename(r.key) }.buttonStyle(BPActionStyle())
                 }
             }
             if !rows.isEmpty { Button("Reset rows") { Task { await call("animeRowsReset", []) } }.buttonStyle(BPActionStyle()) }

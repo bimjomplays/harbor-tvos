@@ -4,10 +4,10 @@ import SwiftUI
 /// control rows from upstream's catalog: option rails, multi cells, push rows and actions.
 @MainActor
 final class BPSettingsModel: ObservableObject {
-    struct Category: Decodable, Identifiable { var id: String; var label: String; var summary: String }
-    struct Option: Decodable, Identifiable { var value: String; var label: String; var id: String { value } }
-    struct MultiItem: Decodable, Identifiable { var value: String; var label: String; var on: Bool; var rank: Int; var tint: String?; var id: String { value } }
-    struct Control: Decodable, Identifiable {
+    struct Category: Decodable, Identifiable, Equatable { var id: String; var label: String; var summary: String }
+    struct Option: Decodable, Identifiable, Equatable { var value: String; var label: String; var id: String { value } }
+    struct MultiItem: Decodable, Identifiable, Equatable { var value: String; var label: String; var on: Bool; var rank: Int; var tint: String?; var id: String { value } }
+    struct Control: Decodable, Identifiable, Equatable {
         var kind: String; var id: String; var label: String
         var value: String?; var options: [Option]?; var letter: Bool?; var columns: Int?
         var render: String?; var items: [MultiItem]?
@@ -17,10 +17,10 @@ final class BPSettingsModel: ObservableObject {
     struct Committed: Decodable { var ok: Bool; var sportsShown: Bool }
 
     /// engine settingsRoom.pane: what bp-settings-pane.tsx draws beside the column.
-    struct Pane: Decodable {
-        struct Subtitle: Decodable { var text: String; var px: Double; var flags: [String] }
-        struct Service: Decodable, Identifiable { var value: String; var label: String; var tint: String; var id: String { value } }
-        struct Language: Decodable { var code: String; var nativeLabel: String; var greeting: String; var rtl: Bool }
+    struct Pane: Decodable, Equatable {
+        struct Subtitle: Decodable, Equatable { var text: String; var px: Double; var flags: [String] }
+        struct Service: Decodable, Identifiable, Equatable { var value: String; var label: String; var tint: String; var id: String { value } }
+        struct Language: Decodable, Equatable { var code: String; var nativeLabel: String; var greeting: String; var rtl: Bool }
         var still: String
         var overscan: Double
         var overscanLabel: String
@@ -47,28 +47,75 @@ final class BPSettingsModel: ObservableObject {
         return (p?.id ?? "default", p?.linked ?? true)
     }
 
+    /// (settings device pass) Only the newest load applies: a commit, harbor:settings-updated and a
+    /// closing cover can each start one, and an older answer landing last put old values back.
+    private var loadGen = 0
+    private var unsubscribe: (() -> Void)?
+    private var reloadTask: Task<Void, Never>?
+
+    deinit { reloadTask?.cancel(); unsubscribe?() }
+
     func load() async {
+        watch()
+        loadGen &+= 1
+        let gen = loadGen
         let p = profile
-        if let c: Cats = try? await HarborEngine.shared.call("settingsRoom.categories", [p.id, p.linked]) {
-            categories = c.categories
-            SettingsBridge.shared.sportsDeclined = !c.sportsShown
+        let c: Cats? = try? await HarborEngine.shared.call("settingsRoom.categories", [p.id, p.linked])
+        guard gen == loadGen else { return }
+        if let c {
+            if c.categories != categories { categories = c.categories }
+            let declined = !c.sportsShown
+            if SettingsBridge.shared.sportsDeclined != declined { SettingsBridge.shared.sportsDeclined = declined }
         }
-        pane = try? await HarborEngine.shared.call("settingsRoom.pane", [p.id, p.linked])
+        let fresh: Pane? = try? await HarborEngine.shared.call("settingsRoom.pane", [p.id, p.linked])
+        guard gen == loadGen else { return }
+        if let fresh, fresh != pane { pane = fresh }
         await loadControls()
+    }
+
+    /// (settings device pass) bp-settings.tsx reads the live settings on every render, so a change
+    /// synced from another device (profile sync raises harbor:settings-updated) shows at once. The
+    /// column loaded once per visit and kept the old values, summaries and preview; a burst of
+    /// events (one per synced section) now reloads once.
+    private func watch() {
+        guard unsubscribe == nil else { return }
+        unsubscribe = HarborEngine.shared.onEvent { [weak self] type, _ in
+            guard type == "harbor:settings-updated" else { return }
+            Task { @MainActor in self?.scheduleReload() }
+        }
+    }
+
+    func scheduleReload() {
+        reloadTask?.cancel()
+        reloadTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self?.load()
+        }
     }
 
     func loadControls() async {
         let p = profile
         let id = active
-        let fresh: [Control] = (try? await HarborEngine.shared.call("settingsRoom.controls", [id, p.id, p.linked])) ?? []
+        let fresh: [Control]? = try? await HarborEngine.shared.call("settingsRoom.controls", [id, p.id, p.linked])
         // Focus can walk the column faster than the engine answers; only the latest wins.
-        if id == active { controls = fresh }
+        guard id == active, let fresh, fresh != controls else { return }
+        controls = fresh
+    }
+
+    /// The chosen category's rows, loaded now if the focus walk has not brought them in yet.
+    func ensureControls() async {
+        if controls.isEmpty { await loadControls() }
     }
 
     func select(_ id: String) {
         guard id != active || controls.isEmpty else { return }
         // bp-settings.tsx: leaving the category puts the committed sound theme back.
         BPSound.shared.audition = nil
+        // (settings device pass) upstream derives the rows from the active category in the same
+        // render; here they arrive later, and Select pressed before they did opened the previous
+        // category's rows (and a press there changed that category's setting).
+        if id != active { controls = [] }
         active = id
         Self.lastActive = id
         Task { await loadControls() }
@@ -77,7 +124,8 @@ final class BPSettingsModel: ObservableObject {
     func commit(_ control: String, _ value: String) async {
         let p = profile
         if let c: Committed = try? await HarborEngine.shared.call("settingsRoom.commit", [control, value, p.id, p.linked]) {
-            SettingsBridge.shared.sportsDeclined = !c.sportsShown
+            let declined = !c.sportsShown
+            if SettingsBridge.shared.sportsDeclined != declined { SettingsBridge.shared.sportsDeclined = declined }
         }
         await SettingsBridge.shared.load()
         BPSound.shared.audition = nil
@@ -93,21 +141,30 @@ struct BPSettingsView: View {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var account: AccountStore
     let openConnect: () -> Void
-    @State private var depth = BPSettingsView.initialDepth()
+    /// SettingsView bumps this when one of its covers closes (sign-ins, Accounts and TMDB, the
+    /// subtitle languages): the Setup summary and push-row details read what they changed.
+    var refresh = 0
+    @EnvironmentObject private var settings: SettingsBridge
+    @State private var depth = BPSettingsView.restoredDepth
     /// A theme change rebuilds the tree mid-visit (ThemeStore.revision): the column comes back at
     /// the depth it was on; a fresh visit still opens on the categories (review 17).
     /// (bug pass) RootView's `.id` is "theme revision|language": picking a language in Settings
     /// rebuilds the tree just as a theme does, and the column fell back to the category list.
+    /// (settings device pass) Read without side effects: a @State initial value is evaluated on
+    /// every init of this view, and the old consume-and-restamp could spend the saved depth on
+    /// the outgoing tree. The stamp happens on appear; leaving the room forgets it.
     private static var saved: (depth: Int, revision: String)?
     private static var treeToken: String {
         "\(ThemeStore.shared.revision)|\(L10n.normalize(SettingsBridge.shared.slice.uiLanguage))"
     }
-    private static func initialDepth() -> Int {
-        let now = treeToken
-        guard let s = saved, s.revision != now else { return 1 }
-        saved = (s.depth, now)
+    private static var restoredDepth: Int {
+        guard let s = saved, s.revision != treeToken else { return 1 }
         return s.depth
     }
+    /// (settings device pass) The option cell a pick came from, while that pick may rebuild the
+    /// tree (Display language): the ring came back on the top bar instead of the cell, the way
+    /// AppearancePanel's `refocus` already brings it back to a theme tile.
+    private static var refocus: (key: String, revision: String)?
     @FocusState private var focus: String?
     /// Setup → AI search (engine settingsRoom TvControl, pane "ai"): the key and model panel.
     @State private var aiOpen = false
@@ -132,8 +189,28 @@ struct BPSettingsView: View {
         // The page spans the width, so Down from the top bar's cog (far right, above the
         // preview, which has nothing focusable) still lands in the category column.
         .focusSection()
-        .task { await model.load() }
-        .onDisappear { BPSound.shared.audition = nil }
+        .task {
+            await model.load()
+            if let r = Self.refocus, r.revision != Self.treeToken {
+                Self.refocus = nil
+                guard depth == 2 else { return }
+                try? await Task.sleep(for: .milliseconds(150))
+                focus = r.key
+            }
+        }
+        .onAppear { Self.saved = (depth, Self.treeToken) }
+        .onDisappear {
+            BPSound.shared.audition = nil
+            // Leaving Settings (another tab, a profile switch): the next visit opens on the
+            // categories like upstream's fresh mount, whatever a synced theme did meanwhile.
+            if app.room != .settings || app.stage != .shell {
+                Self.saved = nil
+                Self.refocus = nil
+            }
+        }
+        // Changes written from the panels below (SettingsBridge.patch raises no event).
+        .onChange(of: settings.slice) { _, _ in model.scheduleReload() }
+        .onChange(of: refresh) { _, _ in model.scheduleReload() }
         .fullScreenCover(isPresented: $aiOpen, onDismiss: { Task { await model.load() } }) {
             AISearchPanel(onClose: { aiOpen = false })
         }
@@ -150,8 +227,26 @@ struct BPSettingsView: View {
         model.select(id)
         depth = 2
         Self.saved = (2, Self.treeToken)
-        // bp-settings.tsx: a depth change moves the ring into the swapped column.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focus = "first" }
+        // bp-settings.tsx: a depth change moves the ring into the swapped column (once its rows are in).
+        Task {
+            await model.ensureControls()
+            try? await Task.sleep(for: .milliseconds(150))
+            if depth == 2 { focus = "first" }
+        }
+    }
+
+    /// An option cell's pick. Remembered while it runs, in case it rebuilds the tree (language).
+    private func pick(_ control: String, _ value: String, key: String) {
+        Self.refocus = (key, Self.treeToken)
+        Task {
+            await model.commit(control, value)
+            // No rebuild happened: nothing to bring back later (a theme pick must not pull the ring here).
+            if Self.refocus?.revision == Self.treeToken { Self.refocus = nil }
+        }
+    }
+
+    private static func cellKey(_ c: BPSettingsModel.Control, _ value: String, first: Bool) -> String {
+        first ? "first" : "\(c.id):\(value)"
     }
 
     private func categoryRow(_ c: BPSettingsModel.Category) -> some View {
@@ -193,16 +288,18 @@ struct BPSettingsView: View {
                 if c.columns == 2 {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: BP.px(6)) {
                         ForEach(Array(opts.enumerated()), id: \.element.id) { i, o in
-                            cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil, focus: audition(c, o.value)) { Task { await model.commit(c.id, o.value) } }
-                                .focused($focus, equals: first && i == 0 ? "first" : "\(c.id):\(o.value)")
+                            let key = Self.cellKey(c, o.value, first: first && i == 0)
+                            cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil, focus: audition(c, o.value)) { pick(c.id, o.value, key: key) }
+                                .focused($focus, equals: key)
                         }
                     }
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: BP.px(6)) {
                             ForEach(Array(opts.enumerated()), id: \.element.id) { i, o in
-                                cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil, focus: audition(c, o.value)) { Task { await model.commit(c.id, o.value) } }
-                                    .focused($focus, equals: first && i == 0 ? "first" : "\(c.id):\(o.value)")
+                                let key = Self.cellKey(c, o.value, first: first && i == 0)
+                                cell(o.label, on: c.value == o.value, letter: c.letter == true ? o.value : nil, focus: audition(c, o.value)) { pick(c.id, o.value, key: key) }
+                                    .focused($focus, equals: key)
                             }
                         }
                         .padding(.vertical, BP.px(8))

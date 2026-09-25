@@ -26,8 +26,9 @@ final class PasteTrackerModel: ObservableObject {
         if url == nil { note = "Couldn't build the sign-in link." }
     }
 
-    func complete(_ pasted: String) async {
-        guard !busy else { return }
+    /// Whether the code was accepted.
+    func complete(_ pasted: String) async -> Bool {
+        guard !busy else { return false }
         busy = true; defer { busy = false }
         struct Done: Decodable { var userName: String }
         do {
@@ -35,9 +36,11 @@ final class PasteTrackerModel: ObservableObject {
             url = nil
             await refresh()
             note = "Connected as \(d.userName)."
+            return true
         } catch {
             let text = "\(error)"
             note = text.split(separator: "\n").first.map(String.init)?.replacingOccurrences(of: "Error: ", with: "") ?? "Sign-in failed."
+            return false
         }
     }
 
@@ -73,7 +76,9 @@ struct PasteTrackerPanel: View {
                         HStack(spacing: BP.px(8)) {
                             Button(model.busy ? "Connecting…" : "Connect") {
                                 guard !model.busy else { return }
-                                Task { await model.complete(pasted); pasted = "" }
+                                // (settings device pass) A rejected code stays in the field to fix
+                                // or retry; clearing it also disabled the focused Connect button.
+                                Task { if await model.complete(pasted) { pasted = "" } }
                             }
                                 .buttonStyle(BPActionStyle(primary: true, busy: model.busy)).disabled(pasted.trimmingCharacters(in: .whitespaces).isEmpty)
                             Button("Cancel") { Task { await model.disconnect() } }.buttonStyle(BPActionStyle())

@@ -24,11 +24,15 @@ struct TabsPanel: View {
                     Text(T(r.label)).font(BP.sans(14, isHidden ? .regular : .semibold))
                         .foregroundStyle(isHidden ? BP.inkSubtle : BP.ink).lineLimit(1)
                         .frame(width: BP.px(300), alignment: .leading)
-                    Button { Task { await settings.moveTab(r, beside: list[i - 1], after: false) } } label: { Image(systemName: "arrow.up") }
-                        .buttonStyle(BPActionStyle()).disabled(i == 0)
+                    // (settings device pass) Dimmed, not disabled, at the ends: a tab moved to the
+                    // first or last place disabled the arrow under the ring, which jumped off the list.
+                    let top = i == 0
+                    let bottom = i == list.count - 1
+                    Button { if !top { Task { await settings.moveTab(r, beside: list[i - 1], after: false) } } } label: { Image(systemName: "arrow.up") }
+                        .buttonStyle(BPActionStyle(busy: top))
                         .accessibilityLabel(T("Move up"))
-                    Button { Task { await settings.moveTab(r, beside: list[i + 1], after: true) } } label: { Image(systemName: "arrow.down") }
-                        .buttonStyle(BPActionStyle()).disabled(i == list.count - 1)
+                    Button { if !bottom { Task { await settings.moveTab(r, beside: list[i + 1], after: true) } } } label: { Image(systemName: "arrow.down") }
+                        .buttonStyle(BPActionStyle(busy: bottom))
                         .accessibilityLabel(T("Move down"))
                     Button(T(isHidden ? "Show this tab" : "Hide this tab")) { Task { await settings.toggleTabHidden(r) } }
                         .buttonStyle(BPActionStyle(primary: isHidden))
@@ -36,8 +40,10 @@ struct TabsPanel: View {
             }
             if hidden.isEmpty { BPNote(text: "Nothing hidden.") }
             HStack(spacing: BP.px(12)) {
-                Button(T("Show all tabs")) { Task { await settings.showAllTabs() } }
-                    .buttonStyle(BPActionStyle()).disabled(hidden.isEmpty)
+                // Pressing it empties the hidden set: dimmed rather than disabled under the ring.
+                let none = hidden.isEmpty
+                Button(T("Show all tabs")) { if !none { Task { await settings.showAllTabs() } } }
+                    .buttonStyle(BPActionStyle(busy: none))
                 Button(T("Reset layout")) { Task { await settings.resetTabs() } }
                     .buttonStyle(BPActionStyle())
             }

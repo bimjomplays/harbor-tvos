@@ -34,7 +34,8 @@ struct BPSettingsPane: View {
     /// `useAppVersion`: the build this TV runs.
     private var version: [[String]] {
         guard let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String else { return [] }
-        return [["Version", v]]
+        // bp-settings-pane.tsx: t("Version"); the line read English in every language.
+        return [[T("Version"), v]]
     }
 
     /// Screen(): a 16:9 box on the void, edge ring, md radius.

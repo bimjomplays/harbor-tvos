@@ -10,6 +10,10 @@ struct SettingsView: View {
     @State private var pinDraft = ""
     @State private var tmdbTesting = false
     @State private var tmdbTestNote: String?
+    /// Counts closed covers, so the column above re-reads what a sign-in or key change did.
+    @State private var coversClosed = 0
+    /// The Artwork and rows section's first button (Connect TMDB / Use a different key).
+    @FocusState private var tmdbLead: Bool
 
     @EnvironmentObject private var settings: SettingsBridge
     /// The eBook tab (EBook/EBookModels.swift EBookGate): a choice for this TV.
@@ -21,7 +25,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: BP.px(28)) {
                 Text("Settings").font(BP.display(36)).foregroundStyle(BP.ink)
-                BPSettingsView(openConnect: { sheet = .connect })
+                BPSettingsView(openConnect: { sheet = .connect }, refresh: coversClosed)
                     .padding(.bottom, BP.px(10))
                 // Stage 9: settings-sidebar.tsx "LOOK & FEEL" → Appearance (theme-panel.tsx).
                 section("Appearance") { AppearancePanel() }
@@ -62,10 +66,25 @@ struct SettingsView: View {
                         detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : "Saved on this device only (\(settings.slice.tmdbKey.count) characters)")
                     HStack(spacing: BP.px(12)) {
                         Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
+                            .focused($tmdbLead)
                         Button { sheet = .connect } label: { Label("Use your phone", systemImage: "iphone") }.buttonStyle(BPActionStyle())
                         if !settings.slice.tmdbKey.isEmpty {
                             Button(tmdbTesting ? "Testing…" : "Test saved key") { Task { await testSavedKey() } }.buttonStyle(BPActionStyle(busy: tmdbTesting))
-                            Button("Remove key") { Task { try? await settings.patch(["tmdbKey": .string("")]); tmdbTestNote = nil } }.buttonStyle(BPActionStyle())
+                            // (settings device pass) Removing the key takes Test and Remove away with it:
+                            // the ring goes to Connect TMDB instead of jumping off the section, and a
+                            // failed save says so instead of doing nothing.
+                            Button("Remove key") {
+                                Task {
+                                    do {
+                                        try await settings.patch(["tmdbKey": .string("")])
+                                        tmdbTestNote = nil
+                                        tmdbLead = true
+                                    } catch {
+                                        tmdbTestNote = T("Failed: %@", error.localizedDescription)
+                                    }
+                                }
+                            }
+                            .buttonStyle(BPActionStyle())
                         }
                     }
                     if let tmdbTestNote { BPNote(text: tmdbTestNote, tone: tmdbTestNote.hasPrefix("OK") ? BP.live : BP.danger) }
@@ -131,7 +150,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { if Fixtures.openSpikes && sheet == nil { sheet = .spikes } }
-        .fullScreenCover(item: $sheet) { which in
+        .fullScreenCover(item: $sheet, onDismiss: { coversClosed &+= 1 }) { which in
             ZStack {
                 BPAmbientBackground()
                 switch which {
