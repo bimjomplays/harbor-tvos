@@ -40,17 +40,24 @@ final class AppModel: ObservableObject {
             return
         }
         if scheme == "stremio", raw.hasSuffix("manifest.json") {
-            // stremio://host/path/manifest.json installs the addon at https://host/path/manifest.json.
-            let https = "https://" + String(path)
-            Task {
-                struct Result: Decodable { var replaced: Bool; var syncedToStremio: Bool }
-                if let r: Result = try? await HarborEngine.shared.call("addonStore.installFromUrl", [https]) {
-                    HarborEngine.shared.emitEvent("harbor:addons-changed")
-                    deepLinkNote = r.replaced ? "Addon updated." : "Addon installed."
-                } else { deepLinkNote = "Couldn't install that addon." }
-            }
+            // (addons bug pass) addons.tsx onDeepLinkInstall → setInstallModal({ kind: "install", url }):
+            // the link opens the install dialog (AddonConfigureView reads it like install-modal's
+            // tryResolve: new, update, or a re-configure that replaces the old entry) and nothing is
+            // installed until Install is pressed. It used to install straight away, with no word to
+            // the viewer, whatever sent the link and whichever profile (a kid's too) was active, and
+            // a re-configured addon arrived as a second copy. ShellView shows it; like upstream's
+            // pendingUrl it waits for the shell when the link lands earlier.
+            deepLinkInstall = DeepLinkInstall(url: raw)
+            if stage != .shell, stage != .boot, onboardingDone, !profiles.profiles.isEmpty { goToWhoOrShell() }
         }
     }
+
+    /// lib/deep-link.ts emitDeepLinkInstall's pending URL, until ShellView's install dialog takes it.
+    struct DeepLinkInstall: Identifiable, Equatable {
+        let id = UUID()
+        let url: String
+    }
+    @Published var deepLinkInstall: DeepLinkInstall?
 
     /// Rooms read through this; swapped for the engine-backed source in Stage 2.
     var browseSource: BrowseSource = (Fixtures.active && !Fixtures.liveRooms) ? FixtureBrowseSource() : EngineBrowseSource()
@@ -71,6 +78,16 @@ final class AppModel: ObservableObject {
             self.stage = .whoIsWatching
         }.store(in: &bag)
         guard !isBrowseLayer else { return }
+        // (profiles bug pass) The Harbor session is per profile (theme-auth sessionKey). Boot starts
+        // profile sync only when the restored profile is signed in, and Sign out stops it, but
+        // nothing started it again when a signed-in profile became active later (a switch to the
+        // primary, which holds the account's session): sync then stayed off for the whole run,
+        // edits never uploaded. Upstream's ProfileSyncRunner is always mounted and re-pulls on
+        // every author change; here a session appearing after boot starts it (idempotent).
+        account.$session.map { $0 != nil }.removeDuplicates().dropFirst().receive(on: RunLoop.main).sink { [weak self] signedIn in
+            guard let self, signedIn, self.stage != .boot, !Fixtures.active else { return }
+            Task { @MainActor in await self.sync.start() }
+        }.store(in: &bag)
         // Settings (and so the theme and display language) can be per profile: a switch re-reads them.
         profiles.$activeId.dropFirst().removeDuplicates().receive(on: RunLoop.main).sink { id in
             guard id != nil, !Fixtures.active else { return }

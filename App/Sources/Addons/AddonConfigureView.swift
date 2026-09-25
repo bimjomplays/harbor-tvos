@@ -68,6 +68,11 @@ struct AddonConfigureView: View {
             pasted = target.prefill
             if !target.prefill.isEmpty { Task { await read() } }
         }
+        // (addons bug pass) The card read from the previous link kept its Install button after the
+        // link was edited, so Install put in the old addon. A changed link has to be read again.
+        .onChange(of: pasted) { _, _ in
+            if case .resolved = phase { phase = .idle }
+        }
         .fullScreenCover(isPresented: $phoneOpen) {
             PhoneTypingSheet(label: "Manifest URL", placeholder: "stremio://… or https://…/manifest.json", text: $pasted,
                              purpose: "Scan this with your phone camera, then paste the install link from the addon's setup page. It goes straight to this TV.",

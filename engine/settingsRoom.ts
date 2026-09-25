@@ -13,6 +13,7 @@ import { declineSportsConsent, getSportsConsentSnapshot, resetSportsConsent } fr
 import { markSettingsPatched } from "./sync";
 import { readPlaylists } from "@/lib/iptv/playlists-store";
 import { state as aiSearchState } from "./aiSearch";
+import { stremioSourceProfileId, type Profile } from "@/lib/profiles";
 
 /**
  * bp-settings.tsx counts `settings.iptvPlaylists`, but load.ts moves playlists into their own
@@ -30,9 +31,26 @@ function playlistCount(): number {
 /** What the TV calls upstream's "html5" engine value: AVPlayer plays it (engine/player.ts pickEngine). */
 const NATIVE_ENGINE_LABEL = "AVPlayer";
 
+/**
+ * lib/auth.tsx reads the Stremio session through stremioSourceProfileId: a profile sharing the
+ * primary's Stremio account (every new profile does, profiles.tsx createProfile) has no
+ * `harbor.auth.<own id>`, so reading its own key said "not connected" (profiles bug pass).
+ */
+export function stremioSourceId(profileId: string): string {
+  try {
+    const raw = localStorage.getItem("harbor.profiles.v1");
+    const blob = raw ? (JSON.parse(raw) as { profiles?: unknown }) : null;
+    const profiles = (Array.isArray(blob?.profiles) ? blob.profiles : []) as Profile[];
+    const me = profiles.find((p) => p?.id === profileId) ?? null;
+    return stremioSourceProfileId(me, profiles) ?? profileId;
+  } catch {
+    return profileId;
+  }
+}
+
 function stremioName(profileId: string): string | null {
   try {
-    const raw = localStorage.getItem(`harbor.auth.${profileId}`);
+    const raw = localStorage.getItem(`harbor.auth.${stremioSourceId(profileId)}`);
     const parsed = raw ? (JSON.parse(raw) as { user?: { email?: string; name?: string } }) : null;
     return parsed?.user?.name ?? parsed?.user?.email ?? null;
   } catch {

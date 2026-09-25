@@ -31,13 +31,22 @@ final class SocialCenter: ObservableObject {
         }
     }
 
+    /// (account bug pass) Only the newest refresh lands. The 60 s poll's notifications request could
+    /// finish after a sign-out or a switch to another profile's account had refreshed, and put the
+    /// previous account's notifications and badge back for another minute.
+    private var generation = 0
+
     func refresh() async {
-        if let m: Social.Me = try? await HarborEngine.shared.call("social.me") { me = m }
+        generation += 1
+        let mine = generation
+        let m: Social.Me? = try? await HarborEngine.shared.call("social.me")
+        guard mine == generation else { return }
+        if let m { me = m }
         guard me.signedIn else { notifications = nil; badge = 0; return }
-        if let n: Social.Notifications = try? await HarborEngine.shared.call("social.notifications") {
-            notifications = n
-            badge = n.badge
-        }
+        let n: Social.Notifications? = try? await HarborEngine.shared.call("social.notifications")
+        guard mine == generation, let n else { return }
+        notifications = n
+        badge = n.badge
     }
 
     /// use-notification-center.ts markRead: optimistic, then the server.

@@ -2289,6 +2289,24 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
 
 // ------------------------------------------------------------------ settings room
 {
+  {
+    // (profiles bug pass) auth.tsx stremioSourceProfileId: a profile sharing the primary's Stremio
+    // account reads the primary's session; one that shares nothing reads only its own key.
+    const put = (k, v) => { if (v == null) app.node.storage.delete(k); else app.node.storage.set(k, v); engine.runtime.syncStorage(k, v); };
+    const prevProfiles = app.node.storage.get("harbor.profiles.v1") ?? null;
+    put("harbor.profiles.v1", JSON.stringify({ activeId: "p_sh_share", profiles: [
+      { id: "p_sh_prim", name: "Prim", color: "#7dd3fc", isPrimary: true, shareStremioWith: null },
+      { id: "p_sh_share", name: "Share", color: "#60a5fa", isPrimary: false, shareStremioWith: "p_sh_prim" },
+      { id: "p_sh_own", name: "Own", color: "#a78bfa", isPrimary: false, shareStremioWith: null },
+      { id: "p_sh_gone", name: "Gone", color: "#f472b6", isPrimary: false, shareStremioWith: "p_sh_deleted" },
+    ] }));
+    put("harbor.auth.p_sh_prim", JSON.stringify({ authKey: "k_prim", user: { _id: "u1", email: "prim@example.invalid" } }));
+    const setup = (id) => engine.settingsRoom.categories(id, true).categories.find((c) => c.id === "setup")?.summary ?? "";
+    r.eq("(profiles bug pass) settingsRoom: a sharing profile shows the primary's Stremio as connected; its own-account and dangling-share siblings don't",
+      [setup("p_sh_share").includes("Stremio"), setup("p_sh_own").includes("Stremio"), setup("p_sh_gone").includes("Stremio"), setup("p_sh_prim").includes("Stremio")], [true, false, false, true]);
+    put("harbor.auth.p_sh_prim", null);
+    put("harbor.profiles.v1", prevProfiles);
+  }
   const cats = engine.settingsRoom.categories("default", true);
   r.eq("settingsRoom.categories: the 8 Big Picture categories in order", cats.categories.map((c) => c.id), ["picture", "language", "subtitles", "playback", "home", "services", "setup", "interface"]);
   r.ok("settingsRoom.categories carry summaries", cats.categories.every((c) => typeof c.summary === "string" && c.summary.length > 0), JSON.stringify(cats.categories.map((c) => c.summary)));

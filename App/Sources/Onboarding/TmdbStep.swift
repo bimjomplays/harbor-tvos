@@ -40,7 +40,7 @@ struct TmdbKeyForm: View {
     private func verify() async {
         busy = true; defer { busy = false }
         note = nil; unreachable = false
-        let trimmed = key.trimmingCharacters(in: .whitespaces)
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("eyJ") {
             note = "That is the API Read Access Token. Harbor needs the shorter API Key (32 letters and numbers) from the same TMDB page."
             return
@@ -61,7 +61,7 @@ struct TmdbKeyForm: View {
 
     private func save() async {
         do {
-            try await settings.patch(["tmdbKey": .string(key.trimmingCharacters(in: .whitespaces))])
+            try await settings.patch(["tmdbKey": .string(key.trimmingCharacters(in: .whitespacesAndNewlines))])
             done()
         } catch {
             note = error.localizedDescription

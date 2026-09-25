@@ -17,7 +17,7 @@ enum HandoffApply {
         return { payload in
             switch payload {
             case .tmdb(let key):
-                try await SettingsBridge.shared.patch(["tmdbKey": .string(key.trimmingCharacters(in: .whitespaces))])
+                try await SettingsBridge.shared.patch(["tmdbKey": .string(key.trimmingCharacters(in: .whitespacesAndNewlines))])
             case .stremio(let authKey, _):
                 let user = try await StremioAPI.getUser(authKey: authKey)
                 let session = ProfilesStore.StremioSession(authKey: authKey, user: user)
