@@ -209,6 +209,11 @@ final class TogetherPlayback: ObservableObject {
     func closing(reopening: Bool = false) {
         seekApply?.cancel()
         bag.removeAll()
+        // Opening the next episode or another source keeps the room (and the host role), but the
+        // guests should not play on unseen while the host picks: the room holds at this spot.
+        if inRoom, isHost, reopening, let c = controller {
+            publish(position: c.snapshot().position, playing: false)
+        }
         if inRoom, isHost, !reopening {
             room.publish(.object([
                 "mediaId": .null, "mediaTitle": .null, "episode": .null, "posterUrl": .null,
