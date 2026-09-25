@@ -25,7 +25,9 @@ struct ContentAdvisoryInfo: Decodable, Equatable {
 struct ContentAdvisoryLayer: View {
     let imdbId: String?
     let metaId: String?
-    /// use-content-advisory srcKey: the stream on screen (a source swapped in place shows it again).
+    /// use-content-advisory srcKey: views/player.tsx src.url (PlayerScreen.srcURL). A source or kid
+    /// switcher swap keeps it (use-stream-switcher moves liveUrl only), so the toast does not come
+    /// back for one; a tuned channel or a home-server quality's new PlayerSrc starts it over.
     let playKey: URL
     /// snap.status === "playing".
     let playing: Bool
