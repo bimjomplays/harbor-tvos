@@ -45,6 +45,10 @@ final class KeyValueStore {
 
     private var memory: [String: String] = [:]
     private let lock = NSLock()
+    /// (bug pass) Bumped by every set/remove. `get` reads the disk outside the lock (the engine queue
+    /// and the main thread both come here), so a slow first read could land after a concurrent write
+    /// and pin the old value in `memory` for good; it now caches only when nothing wrote meanwhile.
+    private var writes = 0
 
     static func tier(for key: String) -> Tier {
         if secretPrefixes.contains(where: key.hasPrefix) { return .secret }
@@ -53,19 +57,19 @@ final class KeyValueStore {
     }
 
     func get(_ key: String) -> String? {
-        lock.lock(); if let v = memory[key] { lock.unlock(); return v }; lock.unlock()
+        lock.lock(); if let v = memory[key] { lock.unlock(); return v }; let seen = writes; lock.unlock()
         let value: String?
         switch Self.tier(for: key) {
         case .secret: value = SecretStore.get(key)
         case .durable: value = Prefs.get(String.self, for: key) ?? CacheStore.shared.get(String.self, for: key)
         case .cache: value = CacheStore.shared.get(String.self, for: key)
         }
-        if let value { lock.lock(); memory[key] = value; lock.unlock() }
+        if let value { lock.lock(); if writes == seen { memory[key] = value }; lock.unlock() }
         return value
     }
 
     func set(_ value: String, for key: String) throws {
-        lock.lock(); memory[key] = value; lock.unlock()
+        lock.lock(); memory[key] = value; writes &+= 1; lock.unlock()
         switch Self.tier(for: key) {
         case .secret: try SecretStore.set(value, for: key)
         case .durable:
@@ -106,7 +110,7 @@ final class KeyValueStore {
     }
 
     func remove(_ key: String) {
-        lock.lock(); memory[key] = nil; lock.unlock()
+        lock.lock(); memory[key] = nil; writes &+= 1; lock.unlock()
         switch Self.tier(for: key) {
         case .secret: SecretStore.remove(key)
         case .durable: Prefs.remove(key); CacheStore.shared.remove(key)

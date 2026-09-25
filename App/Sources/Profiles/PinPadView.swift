@@ -32,7 +32,7 @@ struct PinPadView: View {
                         Circle().fill(i < entry.count ? BP.ink : BP.edge2).frame(width: BP.px(14), height: BP.px(14))
                     }
                 }
-                .modifier(ShakeEffect(shakes: shake))
+                .modifier(ShakeEffect(shakes: CGFloat(shake)))
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(BP.px(56)), spacing: BP.px(10)), count: 3), spacing: BP.px(10)) {
                     ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "‹"], id: \.self) { key in
                         Button { tap(key) } label: {
@@ -84,8 +84,10 @@ struct PinPadView: View {
 }
 
 struct ShakeEffect: GeometryEffect {
-    var shakes: Int
-    var animatableData: CGFloat { get { CGFloat(shakes) } set { shakes = Int(newValue) } }
+    // (bug pass) Was an Int: the animation's in-between values were truncated to whole shakes, and
+    // sin(n * 6π) is 0 for every whole n, so the dots never moved. Fractional values animate.
+    var shakes: CGFloat
+    var animatableData: CGFloat { get { shakes } set { shakes = newValue } }
     func effectValue(size: CGSize) -> ProjectionTransform {
         ProjectionTransform(CGAffineTransform(translationX: sin(CGFloat(shakes) * .pi * 6) * 12, y: 0))
     }

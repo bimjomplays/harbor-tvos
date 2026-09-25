@@ -40,8 +40,8 @@ struct KidsShellView: View {
         }
         .animation(BP.easeFast, value: parentPin)
         // bp-settings "Edge margin" applies here too: it is the TV's crop, not a room setting.
-        .padding(.horizontal, 1920 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
-        .padding(.vertical, 1080 * CGFloat(settings.slice.bigPictureOverscan ?? 0))
+        .padding(.horizontal, 1920 * CGFloat(settings.slice.overscanFraction))
+        .padding(.vertical, 1080 * CGFloat(settings.slice.overscanFraction))
         .ignoresSafeArea()
         .focusScope(focusNS)
         .environment(\.shellFocusNamespace, focusNS)

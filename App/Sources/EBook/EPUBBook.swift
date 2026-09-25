@@ -658,7 +658,18 @@ struct EPUBBook {
                 return Chapter(path: draft.path, title: draft.title)
             }
         }
-        return EPUBBook(chapters: chapters, entries: entries, chapterContents: contents)
+        // (bug pass) Keep only the reading-order documents `text(for:)` can still open: the whole archive
+        // (every image and font, tens of MB in an illustrated book) stayed in memory for each of the
+        // three books EPUBLibrary holds.
+        var kept: [String: Data] = [:]
+        for item in documents {
+            var normalized = item.path.replacingOccurrences(of: "\\", with: "/")
+            if normalized.hasPrefix("./") { normalized.removeFirst(2) }
+            if let d = entries[normalized] { kept[normalized] = d; continue }
+            let lower = normalized.lowercased()
+            if let hit = entries.first(where: { $0.key.lowercased() == lower }) { kept[hit.key] = hit.value }
+        }
+        return EPUBBook(chapters: chapters, entries: kept, chapterContents: contents)
     }
 
     /// JavaScript's encodeURIComponent: everything but A-Z a-z 0-9 - _ . ! ~ * ' ( ) is escaped.
@@ -717,20 +728,24 @@ actor EPUBLibrary {
         if let task = pending[key] { return try await task.value }
         let file = folder.appendingPathComponent(EPUBBook.encodeURIComponent(key).replacingOccurrences(of: "%", with: "_") + ".epub")
         let task = Task.detached(priority: .userInitiated) { () throws -> EPUBBook in
-            var data = try? Data(contentsOf: file)
-            if data == nil {
-                guard let remote = URL(string: url) else { throw URLError(.badURL) }
-                var request = URLRequest(url: remote, timeoutInterval: 60)
-                request.setValue("application/epub+zip, */*", forHTTPHeaderField: "Accept")
-                let (body, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                    throw NSError(domain: "EPUB", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
-                                  userInfo: [NSLocalizedDescriptionKey: "Gutenberg download \((response as? HTTPURLResponse)?.statusCode ?? 0)"])
-                }
-                try? body.write(to: file, options: .atomic)
-                data = body
+            // (bug pass) A cached file that no longer parses (a truncated write, or an HTML error page
+            // served with a 200) used to fail this book forever: it is dropped and fetched again, and a
+            // download is only kept once it parses.
+            if let cached = try? Data(contentsOf: file) {
+                if let book = try? EPUBBook.parse(cached) { return book }
+                try? FileManager.default.removeItem(at: file)
             }
-            return try EPUBBook.parse(data!)
+            guard let remote = URL(string: url) else { throw URLError(.badURL) }
+            var request = URLRequest(url: remote, timeoutInterval: 60)
+            request.setValue("application/epub+zip, */*", forHTTPHeaderField: "Accept")
+            let (body, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw NSError(domain: "EPUB", code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                              userInfo: [NSLocalizedDescriptionKey: "Gutenberg download \((response as? HTTPURLResponse)?.statusCode ?? 0)"])
+            }
+            let book = try EPUBBook.parse(body)
+            try? body.write(to: file, options: .atomic)
+            return book
         }
         pending[key] = task
         defer { pending[key] = nil }

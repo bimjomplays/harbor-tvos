@@ -36,6 +36,9 @@ struct WhoIsWatchingView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .opacity(pinFor == nil ? 1 : 0)
+            // (bug pass) Faded out is not gone: the tiles under the keypad could still take focus
+            // (Up from the top keys), leaving the ring on something invisible.
+            .disabled(pinFor != nil)
             if let pinFor {
                 PinPadView(profile: pinFor) { ok in
                     // bp-who-is-watching commit(id, unlocked): the PIN unlocks the profile's locked tabs for the session.

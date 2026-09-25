@@ -363,6 +363,23 @@ async function refresh(refreshToken: string): Promise<WebToken> {
   return tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId() });
 }
 
+/** The refresh in flight and the refresh token it spends (webToken shares it between callers). */
+let refreshing: { token: string; work: Promise<string | null> } | null = null;
+/** tokens.rs web_token's refresh step: the new access token, or null (an expired grant is forgotten). */
+async function refreshStored(stored: WebToken, previous: string): Promise<string | null> {
+  try {
+    const granted = await refresh(previous);
+    // Refresh cannot grant new scopes; keep the ones the sign-in granted.
+    return adopt({ ...granted, scopes: stored.scopes }, previous);
+  } catch (cause) {
+    if (String(cause instanceof Error ? cause.message : cause).includes(EXPIRED)) {
+      webTokenCache = null;
+      write(KEYS.webToken, null);
+    }
+    return null;
+  }
+}
+
 /** tokens.rs web_token: fresh cache, stored token, refresh, then the session's login5 token. */
 export async function webToken(): Promise<string> {
   if (!account.connected) throw new Error(CONNECT_FIRST);
@@ -375,16 +392,19 @@ export async function webToken(): Promise<string> {
       return stored.accessToken;
     }
     if (stored.refreshToken) {
-      try {
-        const granted = await refresh(stored.refreshToken);
-        // Refresh cannot grant new scopes; keep the ones the sign-in granted.
-        return adopt({ ...granted, scopes: stored.scopes }, stored.refreshToken);
-      } catch (cause) {
-        if (String(cause instanceof Error ? cause.message : cause).includes(EXPIRED)) {
-          webTokenCache = null;
-          write(KEYS.webToken, null);
-        }
+      // (bug pass) One refresh per refresh token: the home and search fan out several Spotify
+      // calls at once, and each used to refresh on its own. Spotify may rotate the refresh token,
+      // so the slower calls came back invalid_grant and wiped the token the first one had just
+      // stored (the listener then had to sign in again). Concurrent callers share one request.
+      if (!refreshing || refreshing.token !== stored.refreshToken) {
+        const previous = stored.refreshToken;
+        const work: Promise<string | null> = refreshStored(stored, previous).finally(() => {
+          if (refreshing?.work === work) refreshing = null;
+        });
+        refreshing = { token: previous, work };
       }
+      const access = await refreshing.work;
+      if (access) return access;
     }
   }
   if (sessionToken && sessionToken.expiresAt > now + TOKEN_SKEW_SECONDS) return sessionToken.accessToken;

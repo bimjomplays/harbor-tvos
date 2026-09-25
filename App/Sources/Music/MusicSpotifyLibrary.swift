@@ -56,7 +56,7 @@ struct MusicSpotifyLibraryView: View {
         }
         // music-spotify-library.tsx back(): inside a playlist, Back returns to the list first.
         .onExitCommand { if selected != nil { selected = nil } else { dismiss() } }
-        .onPlayPauseCommand { player.toggle() }
+        .onPlayPauseCommand { player.remoteToggle() }
         .task(id: cacheKey) { await show() }
         .task {
             let status: SpotifyPlayback.Status? = try? await HarborEngine.shared.call("music.spotifyStatus")

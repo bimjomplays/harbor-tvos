@@ -246,7 +246,8 @@ struct PlayerSpeedPanel: View {
 
     private var speeds: [Double] {
         var all = Self.curatedSpeeds
-        for s in settings.slice.customPlaybackSpeeds ?? [] where !all.contains(where: { abs($0 - s) < 0.001 }) { all.append(s) }
+        // A synced custom speed outside what both engines play (0 would stall AVPlayer) is skipped (bug pass).
+        for s in settings.slice.customPlaybackSpeeds ?? [] where s.isFinite && s >= 0.25 && s <= 4 && !all.contains(where: { abs($0 - s) < 0.001 }) { all.append(s) }
         return all.sorted()
     }
 

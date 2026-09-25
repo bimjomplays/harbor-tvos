@@ -1262,6 +1262,7 @@ export const music = {
   shouldScrobble: musicGlue.shouldScrobble,
   radio: musicGlue.radio,
   radioExtend: musicGlue.radioExtend,
+  upNext: musicGlue.upNext,
   lyrics: musicGlue.lyrics,
   setLyricOffset: musicGlue.setLyricOffset,
   // Spotify (music/spotify; the librespot session is Swift + rust/harbor-ffi)
