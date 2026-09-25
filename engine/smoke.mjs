@@ -3085,6 +3085,32 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     e.settings.patch({ defaultPlaybackSpeed: 1 });
   }
   r.ok("settingsRoom: the html5 engine option reads AVPlayer on the TV", e.settingsRoom.controls("playback", "default", true).some((c) => c.id === "engine" && c.options.some((o) => o.value === "html5" && o.label === "AVPlayer") && c.options.some((o) => o.value === "auto")), "");
+  {
+    // (settings pass 2) The preview's Player engine line names html5 as the column does.
+    const engineBefore = e.settings.load().playerEngine;
+    e.settings.patch({ playerEngine: "html5" });
+    const line = () => e.settingsRoom.pane("default", true).playback.find((l) => l[0] === "Player engine")[1];
+    const html5 = line();
+    e.settings.patch({ playerEngine: "mpv" });
+    r.eq("settingsRoom.pane: the html5 engine reads AVPlayer, mpv stays mpv", [html5, line(), e.settingsRoom.categories("default", true).categories.find((c) => c.id === "playback").summary], ["AVPlayer", "mpv", "mpv"]);
+    e.settings.patch({ playerEngine: engineBefore });
+  }
+  {
+    // (settings pass 2) simkl-panel.tsx's confirmed Disconnect resets the profile's Simkl settings.
+    // Its own engine: the reset writes the profile's settings store, which the checks below patch around.
+    const sk = loadEngine({ storage: new Map() }).engine;
+    sk.settings.patch({ simklScrobbleEnabled: false, simklHomeRailsEnabled: true, simklTrendingRailEnabled: true, showSimklBadge: false });
+    const before = sk.settings.loadForProfile("default", true);
+    r.eq("simkl.disconnect check starts from changed Simkl settings", [before.simklScrobbleEnabled, before.simklHomeRailsEnabled], [false, true]);
+    let fired = null;
+    const off = sk.runtime.onEvent((type, detail) => { if (type === "harbor:settings-updated") fired = detail; });
+    sk.simkl.disconnect("default", true);
+    off();
+    const after = sk.settings.loadForProfile("default", true);
+    r.eq("simkl.disconnect(profile) puts the Simkl settings back and says so",
+      [after.simklScrobbleEnabled, after.simklHomeRailsEnabled, after.simklTrendingRailEnabled, after.showSimklBadge, after.simklAnimeTitleLanguage, Boolean(fired && fired.fields.includes("simklScrobbleEnabled")), sk.simkl.status().authenticated],
+      [true, false, false, true, "english", true, false]);
+  }
   r.eq("subtitles.presets: the three seed presets", e.subtitles.presets().map((p) => p.name), ["English", "Foreign", "Arabic"]);
   const tv = e.subtitles.trackView("default", true, [
     { id: 1, lang: "eng", title: null, codec: "subrip", external: false },

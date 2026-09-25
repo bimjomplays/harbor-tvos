@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var pinDraft = ""
     @State private var tmdbTesting = false
     @State private var tmdbTestNote: String?
+    /// Sync → Pull now is running (settings pass 2).
+    @State private var pulling = false
     /// Counts closed covers, so the column above re-reads what a sign-in or key change did.
     @State private var coversClosed = 0
     /// The Artwork and rows section's first button (Connect TMDB / Use a different key).
@@ -122,7 +124,17 @@ struct SettingsView: View {
                 section("Sync") {
                     row(syncLine, detail: sync.lastPull.map { "Last pulled \($0.formatted(date: .omitted, time: .shortened))" } ?? "Never pulled on this TV")
                     HStack(spacing: BP.px(12)) {
-                        Button("Pull now") { Task { await app.refreshRoster() } }.buttonStyle(BPActionStyle()).disabled(!account.isSignedIn)
+                        // (settings pass 2) A second press while the pull runs started another pull,
+                        // roster reload and sync restart on top of it; now it is dimmed and ignored.
+                        Button("Pull now") {
+                            guard !pulling else { return }
+                            pulling = true
+                            Task {
+                                await app.refreshRoster()
+                                pulling = false
+                            }
+                        }
+                        .buttonStyle(BPActionStyle(busy: pulling)).disabled(!account.isSignedIn)
                         BPNote(text: sync.queued > 0 ? "\(sync.queued) change\(sync.queued == 1 ? "" : "s") waiting to upload" : "Profiles, home rows and services sync both ways. PINs never leave this TV.")
                     }
                 }

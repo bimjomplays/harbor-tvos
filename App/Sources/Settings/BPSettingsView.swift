@@ -214,6 +214,11 @@ struct BPSettingsView: View {
         // Changes written from the panels below (SettingsBridge.patch raises no event).
         .onChange(of: settings.slice) { _, _ in model.scheduleReload() }
         .onChange(of: refresh) { _, _ in model.scheduleReload() }
+        // (settings pass 2) The ring left the column (Down into the panels below): an auditioned
+        // sound pack is not the committed one, so it stops playing there too.
+        .onChange(of: focus) { _, now in
+            if now == nil { BPSound.shared.audition = nil }
+        }
         .fullScreenCover(isPresented: $aiOpen, onDismiss: { Task { await model.load() } }) {
             AISearchPanel(onClose: { aiOpen = false })
         }
@@ -223,6 +228,10 @@ struct BPSettingsView: View {
     }
 
     private func goBack() {
+        // (settings pass 2) bp-settings.tsx puts the committed sound theme back when depth 2 of
+        // Interface closes (the effect's cleanup on `depth`). Back returns to Interface's own cell,
+        // which select() skips, so a pack auditioned on the way out kept playing everywhere.
+        BPSound.shared.audition = nil
         depth = 1
         Self.saved = (1, Self.treeToken)
         let id = model.active

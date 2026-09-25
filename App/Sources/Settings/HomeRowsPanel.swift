@@ -20,6 +20,12 @@ struct HomeRowsPanel: View {
     @State private var renaming: RowsState.Row?
     @State private var newName = ""
     @FocusState private var focus: String?
+    /// (settings pass 2) A layout synced from another device (profile sync's `home` section is
+    /// settings.homeRows) or a Simkl / Continue Watching switch changed elsewhere: the panel read its
+    /// state once per visit and kept showing, and editing, the old one.
+    @StateObject private var watch = SettingsFieldWatch { f in
+        f == "homeRows" || f == "animeCwEnd" || f.hasPrefix("simkl") || f.hasPrefix("cw")
+    }
 
     private func startRename(_ r: RowsState.Row) {
         renaming = r
@@ -31,6 +37,12 @@ struct HomeRowsPanel: View {
     private func endRename(_ key: String) {
         renaming = nil
         focus = "rename:\(key)"
+    }
+
+    /// Menu while the rename editor is open closes it; nil otherwise, so Menu still leaves Settings.
+    private var exitAction: (() -> Void)? {
+        guard let r = renaming else { return nil }
+        return { endRename(r.key) }
     }
 
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
@@ -109,6 +121,10 @@ struct HomeRowsPanel: View {
             }
         }
         .task { await load() }
+        .onChange(of: watch.tick) { _, _ in Task { await load() } }
+        // (settings pass 2) Menu closes the rename editor first (row-controls.tsx: Escape cancels
+        // the inline rename); it used to leave Settings with the editor still open.
+        .onExitCommand(perform: exitAction)
     }
 
     private func simklSwitch(_ label: String, _ on: Bool, _ which: String) -> some View {
@@ -130,5 +146,36 @@ struct HomeRowsPanel: View {
     private func call(_ fn: String, _ args: [AnyJSON]) async {
         let p = profile
         if let out = try? await HarborEngine.shared.callJSON("rooms.\(fn)", [.string(p.id), .bool(p.linked)] + args), let next = try? out.decode(RowsState.self) { layout = next }
+    }
+}
+
+/// (settings pass 2) Bumps `tick` (debounced 250 ms) when harbor:settings-updated names a field
+/// `wants` accepts, or names none: a panel that reads its state once re-reads what profile sync
+/// (or another screen) changed while it is open.
+@MainActor
+final class SettingsFieldWatch: ObservableObject {
+    struct Detail: Decodable { var fields: [String]? }
+    @Published private(set) var tick = 0
+    private var unsubscribe: (() -> Void)?
+    private var pending: Task<Void, Never>?
+
+    init(_ wants: @escaping (String) -> Bool) {
+        unsubscribe = HarborEngine.shared.onEvent { [weak self] type, detail in
+            guard type == "harbor:settings-updated" else { return }
+            let decoded: Detail? = detail.flatMap { try? $0.decode(Detail.self) }
+            if let fields = decoded?.fields, !fields.contains(where: wants) { return }
+            Task { @MainActor in self?.bump() }
+        }
+    }
+
+    deinit { pending?.cancel(); unsubscribe?() }
+
+    private func bump() {
+        pending?.cancel()
+        pending = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            self?.tick &+= 1
+        }
     }
 }
