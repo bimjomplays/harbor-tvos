@@ -274,6 +274,8 @@ final class CollectionsModel: ObservableObject {
 }
 
 struct CollectionsView: View {
+    @Environment(\.shellFocusNamespace) private var shellNS
+    @Namespace private var localNS
     @EnvironmentObject private var app: AppModel
     @StateObject private var model = CollectionsModel()
     @State private var open: CollectionsModel.Card?
