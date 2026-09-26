@@ -659,8 +659,8 @@ struct AddonsView: View {
 
     /// community-browse-list.tsx: "+N / 24h" for the official list, "+N / 5d" for recorded velocity.
     private static func risingText(_ delta: Double, window: Double?) -> String {
-        let days = Int(window ?? 1)
-        return "+\(Int(delta)) / " + (days <= 1 ? "24h" : "\(days)d")
+        let days = clampedInt(window ?? 1)
+        return "+\(clampedInt(delta)) / " + (days <= 1 ? "24h" : "\(days)d")
     }
 
     private func modeLabel(_ m: AddonsModel.BrowseMode) -> (label: String, sub: String, icon: String) {

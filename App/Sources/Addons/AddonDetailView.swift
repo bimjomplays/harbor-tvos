@@ -167,7 +167,7 @@ struct AddonDetailView: View {
                 Text(d.eyebrow).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(3).foregroundStyle(BP.inkSubtle)
                 Text(c.name).font(BP.display(36, .medium)).foregroundStyle(BP.ink)
                 if let r = d.risingStars {
-                    AddonBadge(text: Int(r) == 1 ? T("Rising · +%lld star in 24h", Int(r)) : T("Rising · +%lld stars in 24h", Int(r)),
+                    AddonBadge(text: clampedInt(r) == 1 ? T("Rising · +%lld star in 24h", clampedInt(r)) : T("Rising · +%lld stars in 24h", clampedInt(r)),
                                icon: "chart.line.uptrend.xyaxis", tint: Color(hex: 0xfda4af))
                 }
                 if !c.description.isEmpty {

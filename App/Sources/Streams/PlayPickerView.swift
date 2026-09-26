@@ -390,13 +390,13 @@ struct PlayPickerView: View {
         let s = episode?["imdbSeason"]?.number ?? episode?["season"]?.number
         let e = episode?["imdbEpisode"]?.number ?? episode?["episode"]?.number
         guard let s, let e else { return meta.name }
-        return "\(meta.name) S\(Int(s))E" + String(format: "%02d", Int(e))
+        return "\(meta.name) S\(clampedInt(s))E" + String(format: "%02d", clampedInt(e))
     }
 
     private var episodeLabel: String? {
         guard let s = episode?["season"]?.number, let e = episode?["episode"]?.number else { return nil }
         let name = episode?["name"]?.string
-        return "S\(Int(s)) E\(Int(e))" + (name.map { " · \($0)" } ?? "")
+        return "S\(clampedInt(s)) E\(clampedInt(e))" + (name.map { " · \($0)" } ?? "")
     }
 
     private func autoTick(done: Bool) async {
