@@ -98,6 +98,11 @@ final class MPVPlayerController: UIViewController {
     deinit {
         timer?.invalidate()
         teardown()
+        // (review 37) A controller released without stop() (its host torn down without SwiftUI's
+        // dismantle) drops out of DisplayAwake's weak table, but nothing recomputed the flag: the
+        // screen saver stayed off until another mpv player polled. The hop runs after this object
+        // is gone, so the table no longer lists it.
+        Task { @MainActor in DisplayAwake.shared.refresh() }
     }
 
     /// Detach the wakeup callback and destroy on the event queue, so a pending readEvents
@@ -917,6 +922,11 @@ final class DisplayAwake {
 
     func hold(_ holder: AnyObject, awake: Bool) {
         if awake { holders.add(holder) } else { holders.remove(holder) }
+        refresh()
+    }
+
+    /// The flag again from the players still holding (a released one has left the weak table).
+    func refresh() {
         let on: Bool = !holders.allObjects.isEmpty
         if UIApplication.shared.isIdleTimerDisabled != on { UIApplication.shared.isIdleTimerDisabled = on }
     }
