@@ -27,6 +27,9 @@ struct MusicSpotifyLibraryView: View {
     @State private var account: String?
     @State private var setupOpen = false
     @State private var webLink: MusicSpotifyWebLink?
+    /// (open-items sweep 3) Where the ring goes when Now Playing's "Stop and close player" took the
+    /// dock from under it: "back" (inside a playlist), the view chip in use, or "connect".
+    @FocusState private var dockRing: String?
 
     private var cacheKey: String { selected?.id ?? kind }
     private var page: MusicSpotifyLibraryPage? { pages[cacheKey] }
@@ -45,6 +48,7 @@ struct MusicSpotifyLibraryView: View {
                     if !spotify.connected {
                         Button(MusicSpotifyCopy.text("music.spotifyLibrary.connect")) { setupOpen = true }
                             .buttonStyle(BPActionStyle(primary: true))
+                            .focused($dockRing, equals: "connect")
                     } else {
                         library
                     }
@@ -54,7 +58,9 @@ struct MusicSpotifyLibraryView: View {
                 .padding(.top, BP.px(60))
             }
         }
-        .musicDock()
+        // (open-items sweep 3) Stop and close player took the dock from under the ring (MusicDockHost
+        // ringTo, as the room's other layers): Back inside a playlist, else the view chip in use.
+        .musicDock(ringTo: { dockRing = selected != nil ? "back" : (spotify.connected ? kind : "connect") })
         // music-spotify-library.tsx back(): inside a playlist, Back returns to the list first.
         .onExitCommand { if selected != nil { selected = nil } else { dismiss() } }
         .onPlayPauseCommand { player.remoteToggle() }
@@ -96,6 +102,7 @@ struct MusicSpotifyLibraryView: View {
             if selected != nil {
                 Button { selected = nil } label: { Label(text("music.spotifyLibrary.back"), systemImage: "chevron.backward") }
                     .buttonStyle(BPActionStyle())
+                    .focused($dockRing, equals: "back")
             }
             if spotify.connected {
                 Button {
@@ -119,9 +126,11 @@ struct MusicSpotifyLibraryView: View {
             HStack(spacing: BP.px(12)) {
                 Button { kind = "playlists" } label: { Label(text("music.spotifyLibrary.playlists"), systemImage: "music.note.list") }
                     .buttonStyle(BPActionStyle(primary: kind == "playlists")).bpSelected(kind == "playlists")
+                    .focused($dockRing, equals: "playlists")
                     .accessibilityIdentifier("music-spotify-library-playlists")
                 Button { kind = "liked" } label: { Label(text("music.spotifyLibrary.liked"), systemImage: "heart") }
                     .buttonStyle(BPActionStyle(primary: kind == "liked")).bpSelected(kind == "liked")
+                    .focused($dockRing, equals: "liked")
                     .accessibilityIdentifier("music-spotify-library-liked")
             }
             .focusSection()

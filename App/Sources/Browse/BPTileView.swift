@@ -84,7 +84,9 @@ struct BPTileView: View {
                 .frame(width: Self.rankSize.width * 0.4, alignment: .trailing)
                 .offset(x: BP.px(6), y: Self.rankSize.height * 0.18)
                 .clipped()
-            art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height), chain: true)
+            // (open-items sweep 3) bp-tile.tsx: the ranked cell's card is the same button as a poster
+            // tile's, scrim and title (data-bp-tile-title) on focus included; it drew neither.
+            art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height), caption: true, chain: true)
         }
         .frame(width: Self.rankSize.width, height: Self.rankSize.height, alignment: .bottomTrailing)
     }

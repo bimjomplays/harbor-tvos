@@ -41,6 +41,10 @@ final class BrowseModel: ObservableObject {
     @Published private(set) var heroIndex = 0
     /// A tile holds focus somewhere in the room (use-bp-hero-cycle cardFocused()).
     @Published private(set) var tileHeld = false
+    /// (open-items sweep 3) A tile, not just a row's See all, holds the ring: the hero cycle pauses
+    /// and its pips hide. On See all the cycle turns (use-bp-hero-cycle cardFocused() asks for a
+    /// [data-bp-tile]), so the pips showing its position stay up too (they hid on every hold).
+    @Published private(set) var cycleHeld = false
     /// bp-home cwReady: the first Continue Watching read has answered (or the load failed). The
     /// room seeds its first focus only once both it and the rows are in.
     @Published private(set) var cwResolved = false
@@ -173,6 +177,7 @@ final class BrowseModel: ObservableObject {
             heldRows = heldRows.filter { $0 == "cw" ? cwShown : keys.contains($0) }
             seeAllRows = seeAllRows.filter { keys.contains($0) }
             tileHeld = !heldRows.isEmpty
+            syncCycleHeld()
             // A stale spotlight (from the cache, or a title that fell off the rows) resets.
             let known = Set(live.flatMap { $0.metas.map(\.id) })
             if room == .anime {
@@ -240,6 +245,13 @@ final class BrowseModel: ObservableObject {
     func hold(_ rowKey: String, _ held: Bool) {
         if held { heldRows.insert(rowKey) } else { heldRows.remove(rowKey) }
         if tileHeld != !heldRows.isEmpty { tileHeld = !heldRows.isEmpty }
+        syncCycleHeld()
+    }
+
+    /// (open-items sweep 3) cycleHeld from the held rows less those held by their See all alone.
+    private func syncCycleHeld() {
+        let held: Bool = !heldRows.subtracting(seeAllRows).isEmpty
+        if cycleHeld != held { cycleHeld = held }
     }
 
     /// (open-items sweep 2) A row's See all chip holds the ring. The row still counts as held (the
@@ -247,6 +259,7 @@ final class BrowseModel: ObservableObject {
     /// for a [data-bp-tile] under the ring, and See all is not one (the hero paused there).
     func seeAllHold(_ rowKey: String, _ held: Bool) {
         if held { seeAllRows.insert(rowKey) } else { seeAllRows.remove(rowKey) }
+        syncCycleHeld()
     }
 
     /// Home is hidden: the saver or the curfew lock is up, the app is in the background, or a

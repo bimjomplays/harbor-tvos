@@ -73,6 +73,12 @@ closed these Big Picture behaviours that were outside the table:
 - See all and addon pages retry a failed page with Try again at the end of the grid.
 - The music dock over the kids detail page and franchise grid (K1); the Collections offline end line
   (C1); the lyrics' 9 s give-up (music-now-playing.tsx); manga page auto-retry (page-image.tsx).
+- Open-items sweep 3 (09-26): Live TV draws the kept liveCategory key again when the source has it
+  (A → B → A shows A's chip; bp-live `categories.find(key) ?? All`); the Music room's own dock and
+  the Spotify library page hand the ring on after Stop and close player (recoverBpFocus); Home's
+  hero pips stay up while the ring is on See all and the cycle turns; the rank tile draws the
+  focused scrim and title (bp-tile); Find more rows are keyed with their source
+  (bp-subtitle-find `${source}:${id}:${url}`) and a repeated row is drawn once.
 
 **Still open: parity gaps.**
 - S4 (ported in part, 09-25 late): the subtitle step runs; what differs is listed under "Still open
@@ -96,12 +102,13 @@ closed these Big Picture behaviours that were outside the table:
 - O2: avatar and name write-back to the Harbor account (owner decision).
 
 **Still open: smaller behaviour differences** (logged as "Open" in the Status lines; low):
-- Detail's Play follows the season chip on screen; upstream plays the resume point.
+- Detail's Play with no resume point starts the first episode of the season chip on screen and
+  says so ("Play S3 E1"); upstream's bp-resume-mark plays the first regular episode whatever the
+  chip. With a resume point both play it. Left as a TV choice (sweep 3 checked it).
 - Specials and episode 0 stay in the episode strip; Big Picture drops them (they no longer
   auto-advance into S1 E1).
 - eBook chapters opened from the panel or bar start at line 0; upstream restores the saved line
   (owner to decide, see HANDOFF.md).
-- Live TV shows All after an A → B → A source switch that dropped B's chip; upstream shows the kept key.
 - Discover and Collections place no first focus of their own.
 - Deep links open once the covers close rather than on top of them, and an install does not close
   the player; a link page over the intro wall on a cold launch, links under the curfew lock or
@@ -111,9 +118,7 @@ closed these Big Picture behaviours that were outside the table:
   dismissed toast hands the ring to the room's default, not the exact tile; the mismatch chip can
   show the old length for under 1 s after a guest's swap; a host swap stuck connecting holds the
   guests; PiP drops on a live reconnect.
-- The Music room's own dock and the Spotify library page lose the ring on Stop and close player.
-- Home's hero pips stay hidden on See all while the hero cycles; the rank tile has no focused
-  caption; Up from a tile under See all can land on See all.
+- Up from a tile under its row's See all can land on See all (upstream's Up goes to the row above).
 - Onboarding's Harbor step lacks the side cards; there is no client-side 8-character password check.
 - The content advisory toast's corner when the stats overlay is up.
 - Player panels: the Anime4K sidebar lets the ring reach the chrome; a reload under Subtitles does

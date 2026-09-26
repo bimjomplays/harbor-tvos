@@ -42,7 +42,9 @@ struct PlayerSubtitlesPanel: View {
         var id: String; var url: String; var lang: String; var langName: String; var title: String
         var detail: String; var tags: [String]; var provider: String; var hearingImpaired: Bool; var forced: Bool
         /// (device-flow pass 11) The row's identity: a provider's id alone can repeat.
-        var key: String { id + "|" + url }
+        /// (open-items sweep 3) With the source first, as bp-subtitle-find keys a row
+        /// (`${r.source}:${r.id}:${r.url}`): two sources answering with the same id and URL were one key.
+        var key: String { provider + ":" + id + "|" + url }
     }
     struct FindResult: Decodable { var results: [Found]; var tooNew: Bool }
     struct Preset: Decodable, Identifiable { var id: String; var name: String; var values: [String: AnyJSON] }
@@ -397,7 +399,11 @@ struct PlayerSubtitlesPanel: View {
         let kept = (results ?? []).filter { !(hideHI && $0.hearingImpaired) && !(forcedOnly && !$0.forced) }
         var order: [String] = []
         var byLang: [String: [Found]] = [:]
+        // (open-items sweep 3) A row whose key repeats (the same source listing one file twice) is
+        // drawn once: ForEach and the ring's focus value need each key once.
+        var seen: Set<String> = []
         for r in kept {
+            guard seen.insert(r.key).inserted else { continue }
             if byLang[r.langName] == nil { order.append(r.langName) }
             byLang[r.langName, default: []].append(r)
         }

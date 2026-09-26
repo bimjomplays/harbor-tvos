@@ -319,7 +319,7 @@ struct RoomView: View {
     /// (300 ms after 140 ms).
     private func spotlight(_ layer: SpotlightView.Layer) -> some View {
         SpotlightView(meta: model.spotlight, boxHeight: heroHeight,
-                      pips: model.heroCount > 1 && !model.tileHeld ? HeroPips(total: model.heroCount, active: model.heroIndex) : nil,
+                      pips: model.heroCount > 1 && !model.cycleHeld ? HeroPips(total: model.heroCount, active: model.heroIndex) : nil,
                       drift: model.room != .anime, awardsCorner: model.room != .anime, layer: layer)
             .opacity(band == nil ? 1 : 0)
             .animation(band == nil ? BP.easeSlow.delay(0.14) : .easeIn(duration: 0.18), value: band == nil)

@@ -57,11 +57,16 @@ final class LiveModel: ObservableObject {
     /// (open-items sweep) The channel whose guide cell holds the ring (nil when the ring is elsewhere):
     /// a guide note that lands late swaps the grid for the list under the ring, and the list rings it.
     var guideFocusChannel: String?
+    /// (open-items sweep 3) bp-live.tsx `key` (useBpPersistedState "liveCategory"): the chip the
+    /// viewer picked last, kept while a source without it shows All. `category` is the chip drawn
+    /// (categories.find(key) ?? All), so A → B → A shows A's chip again; it came back on All.
+    var keptCategory: String = LiveModel.allKey
 
     /// `category`: the chip to open on (ShellViewState.liveCategory, bp-view-state); a key the
     /// source's channels do not carry falls back to All when they load.
     init(sourcesOnly: Bool = false, category: String = LiveModel.allKey) {
         self.sourcesOnly = sourcesOnly
+        self.keptCategory = category
         self.category = category
     }
 
@@ -150,7 +155,11 @@ final class LiveModel: ObservableObject {
             setChannels(v.channels)
             groups = v.groups
             extraCategories = v.categories ?? []
-            if category != Self.favKey && category != Self.allKey && !extraCategories.contains(where: { $0.key == category }) { category = Self.allKey }
+            // (open-items sweep 3) bp-live `categories.find((c) => c.key === key) ?? All`: the kept
+            // key when this source has it, else All (the key itself stays kept).
+            let kept: String = keptCategory
+            let keptShown: Bool = kept == Self.favKey || kept == Self.allKey || extraCategories.contains(where: { $0.key == kept })
+            category = keptShown ? kept : Self.allKey
             loading = false
             // The guide follows on its own: a big XMLTV can take a while, and "Add source", a
             // source pick and Refresh (which wait for this) must not sit on it.
@@ -548,6 +557,7 @@ struct LiveView: View {
     /// bp-live setKey (useBpPersistedState): a chip the viewer picks is kept for the next visit.
     private func pick(_ key: String) {
         model.category = key
+        model.keptCategory = key
         views.liveCategory = key
     }
 

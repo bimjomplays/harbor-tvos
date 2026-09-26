@@ -14,6 +14,10 @@ struct MusicView: View {
     @State private var sourcesOpen = false
     @State private var nowPlayingOpen = false
     @State private var spotifyLibraryOpen = false
+    /// (open-items sweep 3) The mast's Search, where the ring goes when Now Playing's "Stop and
+    /// close player" took the room's own dock from under it (MusicDockHost.ringTo does this for the
+    /// room's layers; the room draws its dock itself).
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -55,9 +59,18 @@ struct MusicView: View {
         .fullScreenCover(item: $page) { target in MusicPageView(target: target) }
         .fullScreenCover(isPresented: $searchOpen) { MusicSearchView() }
         .fullScreenCover(isPresented: $sourcesOpen, onDismiss: { Task { await model.load(force: true) } }) { MusicSourcesView() }
-        .fullScreenCover(isPresented: $nowPlayingOpen) { MusicNowPlayingView() }
+        .fullScreenCover(isPresented: $nowPlayingOpen, onDismiss: { dockClosed() }) { MusicNowPlayingView() }
         .fullScreenCover(isPresented: $spotifyLibraryOpen) { MusicSpotifyLibraryView() }
         .musicSpotifyDestinationHost()
+    }
+
+    /// (open-items sweep 3) Now Playing closed with no track loaded ("Stop and close player",
+    /// MusicPlayer.close): the dock the ring opened it from is gone, and tvOS dropped the ring
+    /// wherever it resets focus. use-bp-focus recovers into the page (bp-focus-core recoverBpFocus:
+    /// the page's autofocus seed); the room's first control is the mast's Search.
+    private func dockClosed() {
+        guard player.current == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { searchFocused = true }
     }
 
     private var mast: some View {
@@ -71,6 +84,7 @@ struct MusicView: View {
                 Label(copy("music.searchPlaceholder", "Search songs, albums, artists"), systemImage: "magnifyingglass")
             }
             .buttonStyle(BPActionStyle(primary: true))
+            .focused($searchFocused)
             .accessibilityIdentifier("music-search")
             // music-library.tsx "Spotify" view (music-spotify-library.tsx): Liked songs and playlists.
             if spotify.connected {
