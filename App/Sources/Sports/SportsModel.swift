@@ -89,6 +89,10 @@ final class SportsModel: ObservableObject {
         // (bug pass) weekday labels in Harbor's UI language, as the upstream date band does.
         days = (try? await HarborEngine.shared.call("sports.days", [AnyJSON.null, AnyJSON.string(L10n.language)])) ?? []
         await reload()
+        // (device-flow pass 12) A cover that came up while this start was still reading (an event
+        // or a player opened in the first second) cancelled its `.task` and stopped polling before
+        // the poll below existed: the 60 s reload then ran under the cover until it closed.
+        if Task.isCancelled { return }
         poll?.cancel()
         poll = Task { [weak self] in
             // use-hub.ts: 60 s repoll for day/live boards (the engine decides what is fresh).

@@ -265,7 +265,7 @@ struct PlaylistVodView: View {
                 if let s = model.selected {
                     VodSeriesDetail(series: s, loading: model.loadingSeries, error: model.seriesError,
                                     onBack: { closeSeries() },
-                                    onPlay: { ep in Task { playing = await model.playback(series: s, episode: ep) } })
+                                    onPlay: { ep in Task { let p = await model.playback(series: s, episode: ep); presentPlayback(p) } })
                 } else {
                     header
                     content
@@ -302,6 +302,15 @@ struct PlaylistVodView: View {
     private func closeSeries() {
         returnTo = openedSeries
         model.closeSeries()
+    }
+
+    /// (device-flow pass 12) The stream URL is asked of the engine before the player opens, so a
+    /// second Select (the same title, or the next card the ring moved to) answered while the first
+    /// player was up and swapped the cover's item under it. The first answer plays; later ones are
+    /// dropped until the player closes.
+    private func presentPlayback(_ p: PlaylistVodModel.Playback?) {
+        guard let p, playing == nil else { return }
+        playing = p
     }
 
     // playlist-vod.tsx header: SourcePicker, the Movies / Shows tabs with counts, the search.
@@ -384,7 +393,7 @@ struct PlaylistVodView: View {
                         ForEach(model.items) { item in
                             VodCard(item: item) {
                                 if item.kind == "series" { openedSeries = item.id; Task { await model.open(item) } }
-                                else { Task { playing = await model.playback(movie: item) } }
+                                else { Task { let p = await model.playback(movie: item); presentPlayback(p) } }
                             }
                             .focused($gridFocus, equals: item.id)
                             .id(item.id)
@@ -454,9 +463,10 @@ struct VodCard: View {
         .buttonStyle(BPTileStyle())
     }
 
-    /// episode-row.tsx clock(): "1h 5m" / "42m".
+    /// episode-row.tsx clock(): "1h 5m" / "42m". (device-flow pass 12) The seconds come from the
+    /// provider (Xtream durations, the resume store), so the Int goes through clampedInt.
     static func clock(_ sec: Double) -> String {
-        let s = max(0, Int(sec))
+        let s: Int = max(0, clampedInt(sec))
         let h = s / 3600, m = (s % 3600) / 60
         return h > 0 ? "\(h)h \(m)m" : "\(m)m"
     }

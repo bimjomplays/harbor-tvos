@@ -28,6 +28,10 @@ struct LiveChannelBrowser: View {
     @FocusState private var focused: String?
     /// Channels whose now/next was asked for by a row coming on screen.
     @State private var asked: Set<String> = []
+    /// (device-flow pass 12) The list's first ring is placed once. The list is rebuilt whenever it
+    /// comes back from empty (an empty Favorites or group, a query with no match, another source
+    /// loading), and each rebuild pulled the ring off the rail or the search field onto its first row.
+    @State private var seeded = false
 
     /// (live sources device pass) use-channel-filter is a useMemo over (channels, group, query). Here
     /// the whole source was filtered again, every name lowercased, on each render, and the list
@@ -105,6 +109,8 @@ struct LiveChannelBrowser: View {
                         .onAppear {
                             // The ring lands on the playing channel (or the first row), never on the
                             // search field; a lazy row far down is scrolled into being first.
+                            guard !seeded else { return }
+                            seeded = true
                             let playing = currentId.flatMap { id in shown.contains(where: { $0.id == id }) ? id : nil }
                             let target = playing ?? shown.first?.id
                             if let playing { proxy.scrollTo(playing, anchor: .center) }
@@ -246,6 +252,20 @@ struct LivePlayerGuidePanel: View {
 
     private var groupNames: [String] { model.groups.map(\.name) }
 
+    /// (device-flow pass 12) current-channel-info.tsx FavoriteButton: the playing channel can be
+    /// starred from the in-player guide. Read from the loaded list (the channel the player holds is
+    /// a copy taken when it was tuned); a channel the source no longer lists has no star.
+    private var currentFavorite: Bool {
+        guard let id = current?.id else { return false }
+        return model.channel(id)?.favorite ?? false
+    }
+
+    private var starCurrent: (() -> Void)? {
+        guard let id = current?.id, let ch = model.channel(id) else { return nil }
+        let live = model
+        return { Task { await live.toggleFavorite(ch) } }
+    }
+
     // overlay.tsx search placeholder: the favourites count in Favorites, else the source's channels.
     private var searchPlaceholder: String {
         if group == LiveChannelBrowser.favKey {
@@ -260,7 +280,8 @@ struct LivePlayerGuidePanel: View {
             HStack(alignment: .top, spacing: BP.px(16)) {
                 Button(action: onClose) { Label("Close", systemImage: "xmark") }
                     .buttonStyle(BPActionStyle())
-                LiveCurrentChannelInfo(channel: current, nowNext: current.flatMap { model.guide[$0.id] })
+                LiveCurrentChannelInfo(channel: current, nowNext: current.flatMap { model.guide[$0.id] },
+                                       favorite: currentFavorite, onStar: starCurrent)
             }
             .focusSection()
             HStack(spacing: BP.px(12)) {
@@ -285,6 +306,9 @@ struct LivePlayerGuidePanel: View {
 struct LiveCurrentChannelInfo: View {
     let channel: LiveModel.Channel?
     let nowNext: LiveModel.NowNext?
+    /// FavoriteButton (variant "inline") beside the name; nil draws no star.
+    var favorite = false
+    var onStar: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: BP.px(14)) {
@@ -299,14 +323,26 @@ struct LiveCurrentChannelInfo: View {
                             Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
                             Text("Live").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.live)
                         }
+                        if let onStar {
+                            Button(action: onStar) {
+                                Image(systemName: favorite ? "star.fill" : "star")
+                                    .font(.system(size: BP.px(16), weight: .bold))
+                                    .foregroundStyle(favorite ? BP.accent : BP.inkMuted)
+                                    .frame(width: BP.px(44), height: BP.px(44))
+                            }
+                            .buttonStyle(BPTileStyle(radius: BP.rSM))
+                            .accessibilityLabel(favorite ? T("Remove from favorites") : T("Add to favorites"))
+                        }
                     }
                     if let p = nowNext?.now {
-                        let now = Date().timeIntervalSince1970 * 1000
-                        let left = max(0, Int(((p.endMs - now) / 60_000).rounded(.up)))
+                        let now: Double = Date().timeIntervalSince1970 * 1000
+                        // current-channel-info.tsx remainingMin: Math.round, never below 0; EPG
+                        // times come from the source, so the Int goes through clampedInt.
+                        let left: Int = max(0, clampedInt(((p.endMs - now) / 60_000).rounded()))
                         HStack(spacing: BP.px(8)) {
                             Text(p.title).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                             Text(LiveChannelRow.range(p)).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
-                            Text("\(left)m left").font(BP.sans(12)).foregroundStyle(BP.inkMuted).monospacedDigit()
+                            Text(T("%lldm left", left)).font(BP.sans(12)).foregroundStyle(BP.inkMuted).monospacedDigit()
                         }
                     } else {
                         Text("No program info available").font(BP.sans(12.5)).foregroundStyle(BP.inkSubtle)

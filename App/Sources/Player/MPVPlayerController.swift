@@ -91,6 +91,7 @@ final class MPVPlayerController: UIViewController {
     func stop() {
         timer?.invalidate()
         timer = nil
+        DisplayAwake.shared.hold(self, awake: false)
         teardown()
     }
 
@@ -806,6 +807,9 @@ final class MPVPlayerController: UIViewController {
                 if PlaybackEnd.isNatural(position: s.position, duration: s.duration) { sendEnded() }
             }
         }
+        // (device-flow pass 12) use-power-inhibit.ts: the screen stays on while this plays. A guide
+        // preview does not hold it (it plays for as long as the ring rests on a guide cell).
+        DisplayAwake.shared.hold(self, awake: !preview && !tornDown && status.state == "playing")
         report()
     }
 
@@ -897,5 +901,23 @@ enum TrackLanguage {
         let raw: String = code.trimmingCharacters(in: .whitespaces).lowercased()
         let lang: String = alias[raw] ?? raw
         return Locale(identifier: "en").localizedString(forLanguageCode: lang)
+    }
+}
+
+/// (device-flow pass 12) use-power-inhibit.ts (power_inhibit while the snapshot is "playing"): the
+/// tvOS screen saver and sleep wait while an mpv player plays. AVPlayer does this by itself
+/// (preventsDisplaySleepDuringVideoPlayback); mpv draws into a Metal layer, which tvOS does not
+/// count as video, so a live channel or four Multiview tiles went to the screen saver after its
+/// idle delay. Held per player (weakly), so a player that goes away lets go with it; a paused or
+/// buffering player does not hold it, as upstream.
+@MainActor
+final class DisplayAwake {
+    static let shared = DisplayAwake()
+    private let holders = NSHashTable<AnyObject>.weakObjects()
+
+    func hold(_ holder: AnyObject, awake: Bool) {
+        if awake { holders.add(holder) } else { holders.remove(holder) }
+        let on: Bool = !holders.allObjects.isEmpty
+        if UIApplication.shared.isIdleTimerDisabled != on { UIApplication.shared.isIdleTimerDisabled = on }
     }
 }

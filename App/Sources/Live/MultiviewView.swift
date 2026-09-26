@@ -232,7 +232,9 @@ struct MultiviewView: View {
             Text("Most IPTV providers cap simultaneous streams per account (commonly 1–2). If a tile drops to \"Stream offline\" while others play, your provider may be throttling. Try closing a stream and retrying.")
                 .font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Dismiss") { model.dismissBanner() }.buttonStyle(BPActionStyle())
+            // (device-flow pass 12) The banner goes with the button under the ring: the ring moves
+            // down to the first tile instead of falling wherever the focus engine put it.
+            Button("Dismiss") { model.dismissBanner(); focusLater(.cell(0)) }.buttonStyle(BPActionStyle())
         }
         .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2.opacity(0.6)))
@@ -268,8 +270,11 @@ struct MultiviewView: View {
         return MultiviewCell(slot: i, channel: ch, audio: model.audioFocus == i && scenePhase != .background,
                              nowTitle: ch.flatMap { live.guide[$0.id]?.now?.title },
                              // The `audio` background mode keeps the app alive off screen: every
-                             // tile lets go of its stream until the scene is active again.
-                             suspended: fullScreen != nil || scenePhase != .active,
+                             // tile lets go of its stream until the scene is back on screen.
+                             // (device-flow pass 12) Off screen only: Control Center or the app
+                             // switcher (inactive, the grid still showing) dropped all four streams,
+                             // which reconnected at once when it closed (IPTV connection caps).
+                             suspended: fullScreen != nil || scenePhase == .background,
                              focus: $focus,
                              onPick: { pickerSlot = i },
                              onClose: { model.close(i); focusLater(.cell(i)) },
@@ -537,6 +542,13 @@ struct MultiviewPicker: View {
         return out
     }
 
+    /// channel-picker.tsx sumChannels: the Live room's source plus every other source loaded.
+    private var allCount: Int {
+        var n: Int = live.channels.count
+        for pl in live.playlists where pl.id != currentId { n += model.otherChannels[pl.id]?.count ?? 0 }
+        return n
+    }
+
     private var channels: [LiveModel.Channel] {
         if scopeId == Self.allPlaylists { return allChannels }
         if scopeId == currentId { return live.channels }
@@ -593,7 +605,9 @@ struct MultiviewPicker: View {
                 // PlaylistDropdown: All playlists, then each source with its channel count.
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
-                        scopeChip(id: Self.allPlaylists, label: T("All playlists"), sub: nil)
+                        // (device-flow pass 12) PlaylistDropdown: All playlists carries the channel
+                        // count of every source loaded so far (sumChannels).
+                        scopeChip(id: Self.allPlaylists, label: T("All playlists"), sub: allCount == 1 ? T("%lld channel", 1) : T("%lld channels", allCount))
                         ForEach(live.playlists) { pl in
                             let n = pl.id == currentId ? live.channels.count : model.otherChannels[pl.id]?.count
                             scopeChip(id: pl.id, label: pl.name, sub: n.map { $0 == 1 ? T("%lld channel", 1) : T("%lld channels", $0) } ?? (model.loadingOther.contains(pl.id) ? T("Loading…") : nil))

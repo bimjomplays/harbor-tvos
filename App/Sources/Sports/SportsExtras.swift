@@ -43,7 +43,8 @@ struct StandingsSection: View {
 
     private static func cell(_ v: Double?) -> String {
         guard let v else { return "-" }
-        return v == v.rounded() ? String(Int(v)) : String(v)
+        // (device-flow pass 12) A feed's number: clampedInt, as a bare Int traps past Int's range.
+        return v == v.rounded() ? String(clampedInt(v)) : String(v)
     }
 
     var body: some View {
