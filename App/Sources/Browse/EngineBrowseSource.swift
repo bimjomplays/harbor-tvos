@@ -195,7 +195,7 @@ struct EngineBrowseSource: BrowseSource {
                                 season: season, episode: episode,
                                 progress: dur > 0 ? min(1, max(0, off / dur)) : 0,
                                 lastWatched: (i.state?.lastWatched ?? i._mtime).flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) },
-                                durationMs: dur, timeOffsetMs: off,
+                                durationMs: dur, timeOffsetMs: off, videoId: i.state?.video_id,
                                 watched: i._cw?.watched ?? false, newEpisode: i._cw?.newEpisode ?? 0, upNext: i._cw?.upNext ?? false,
                                 waitingForAir: i._cw?.waitingForAir ?? false, nextAirDate: i._cw?.nextAirDate, watcher: i._cw?.watcher, external: i._cw?.external,
                                 anime: room == .anime || (i._cw?.anime ?? false))

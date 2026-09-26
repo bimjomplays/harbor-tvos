@@ -4,6 +4,12 @@ import SwiftUI
 struct ContinueCardView: View {
     let item: ContinueItem
     var focused = false
+    /// bp-cw-card-meta episodeTitleFor: fetched the first time the card takes the ring.
+    @State private var episodeTitle = ""
+    @State private var titleAskedFor: String?
+    /// bp-cw-card-meta episodeTitleFor: fetched the first time the card takes the ring.
+    @State private var episodeTitle = ""
+    @State private var titleAskedFor: String?
     /// (P11) snapshots.ts useSnapshotVersion: a frame saved while the card is on screen redraws it.
     @ObservedObject private var snapshots = ExitSnapshotVersion.shared
 
@@ -48,6 +54,8 @@ struct ContinueCardView: View {
                     }
                     if let w = item.watcher { Text("Watched by \(w)").font(BP.sans(9.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 }
+                if !episodeTitle.isEmpty { Text(episodeTitle).font(BP.sans(10.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
+                if !episodeTitle.isEmpty { Text(episodeTitle).font(BP.sans(10.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 ZStack(alignment: .leading) {
                     Capsule().fill(BP.edge2)
                     Capsule().fill(BP.accent).frame(width: max(0, (Self.width - BP.px(22)) * item.progress))
@@ -59,6 +67,17 @@ struct ContinueCardView: View {
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+        .onChange(of: focused, initial: true) { _, on in
+            guard on, titleAskedFor != item.id, (item.episode ?? 0) > 0 || (item.videoId?.split(separator: ":").count ?? 0) == 3 else { return }
+            titleAskedFor = item.id
+            Task {
+                let p = ProfilesStore.shared.active
+                let wire: AnyJSON = .object(["id": .string(item.id), "name": .string(item.name), "season": item.season.map { .number(Double($0)) } ?? .null,
+                                             "episode": item.episode.map { .number(Double($0)) } ?? .null, "videoId": item.videoId.map { .string($0) } ?? .null])
+                let t: String = (try? await HarborEngine.shared.call("rooms.cwEpisodeTitle", [wire, p?.id ?? "default", p?.linked ?? true])) ?? ""
+                if !t.isEmpty { episodeTitle = t }
+            }
+        }
         // bp-cw-row.tsx aria-label={bpCwCardLabel(…)}: name, state, badges as one phrase (the logo
         // art carries no name of its own).
         .accessibilityElement(children: .ignore)

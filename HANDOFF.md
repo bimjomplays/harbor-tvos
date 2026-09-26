@@ -21,9 +21,9 @@ everything builds on GitHub Actions and ships to TestFlight **internal testing o
   (`// bp-foo.tsx: …`), keep names and copy the same as upstream.
 
 ## Where things stand (updated 2026-09-25, end of the UTC day)
-- **Branch.** All work since 09-24 is on `claude/determined-hopper-smvu37`, not `main`. `Build` only
-  runs by itself on `main`, so every batch is a `workflow_dispatch` on the branch
-  (`gh workflow run Build --ref claude/determined-hopper-smvu37`; add `-f testflight=true` to upload).
+- **Branch.** Everything is on `main` again (the 09-24/25 branch was fast-forwarded into it on
+  2026-09-26). `Build` runs by itself on every push to `main`; TestFlight is
+  `gh workflow run Build -f testflight=true` on `main` (owner only).
 - **CI.** `Build` runs 222 through 257 and later are green (compile + simulator UI tests), apart
   from four whose failures were fixed straight after: 235, 236 and 251, where new navigation UI tests caught
   real focus bugs, and 249, one compile error (see the rules below). The simulator runs

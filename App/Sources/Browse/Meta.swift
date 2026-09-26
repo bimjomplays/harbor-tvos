@@ -148,6 +148,7 @@ struct ContinueItem: Identifiable, Equatable {
     var lastWatched: Date?
     var durationMs: Double = 0
     var timeOffsetMs: Double = 0
+    var videoId: String? = nil
     // bp-cw-card-meta extras
     var watched = false
     var newEpisode = 0

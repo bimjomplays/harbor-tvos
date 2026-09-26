@@ -468,3 +468,30 @@ export async function anime(): Promise<RoomBuild> {
   lastBuilds.set("anime", rows);
   return { rows: rows.map((r) => strip(r)), hero: rows[0]?.metas.slice(0, 6) ?? [], failed: rows.length === 0 };
 }
+
+
+// ------------------------------------------------------- CW card episode title (on focus)
+// bp-cw-card-meta episodeTitleFor: asked when a card takes the ring, never for the whole row.
+import { animeKitsuMeta as cwKitsuMeta } from "@/lib/providers/anime-kitsu-addon";
+import { fetchSeasonEpisodes as cwSeasonEpisodes } from "@/lib/series-episodes";
+import { episodeFromVideoId as cwEpisodeFromVideoId } from "@/lib/stremio";
+const CW_ANIME_ID = /^(kitsu|mal|anilist|anidb):/;
+export async function cwEpisodeTitle(item: { id: string; name: string; season: number | null; episode: number | null; videoId: string | null }, profileId: string, linked: boolean): Promise<string> {
+  const videoId = item.videoId ?? "";
+  if (CW_ANIME_ID.test(item.id)) {
+    const three = videoId.split(":").length === 3;
+    const num = three ? Number(videoId.split(":")[2]) : (item.episode ?? cwEpisodeFromVideoId(videoId)?.episode ?? 0);
+    const m = await cwKitsuMeta(item.id).catch(() => null);
+    if (!m) return "";
+    const byId = m.videos.find((v) => v.id === videoId);
+    const byNum = Number.isFinite(num) && num > 0 ? m.videos.find((v) => v.episode === num) : undefined;
+    return (byId ?? byNum)?.title ?? "";
+  }
+  const parsed = cwEpisodeFromVideoId(videoId);
+  const season = (item.season ?? 0) > 0 ? item.season! : parsed?.season ?? 0;
+  const episode = (item.episode ?? 0) > 0 ? item.episode! : parsed?.episode ?? 0;
+  if (episode <= 0) return "";
+  const tmdbKey = loadEffective(profileId, linked).tmdbKey;
+  const eps = await cwSeasonEpisodes({ id: item.id, type: "series", name: item.name } as Meta, season, { tmdbKey }).catch(() => []);
+  return (eps as Array<{ episode: number; name?: string }>).find((e) => e.episode === episode)?.name ?? "";
+}

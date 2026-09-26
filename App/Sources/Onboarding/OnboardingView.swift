@@ -591,7 +591,7 @@ struct HarborSignInForm: View {
             BPField(label: "Password", placeholder: creating ? "Choose a password" : "Your Harbor password", text: $password, secure: true)
             HStack(spacing: BP.px(12)) {
                 Button(busy ? "Working…" : (creating ? "Create account" : "Sign in")) { Task { await submit() } }
-                    .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                    .buttonStyle(BPActionStyle(primary: true, busy: busy)).disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty || (creating && password.count < 8))
                 // (device-flow pass 5) account-auth-form.tsx: switching mode clears the last error
                 // (a sign-in's "don't match" stayed up over the new account's fields).
                 Button(creating ? "I have an account" : "Create an account") { creating.toggle(); error = nil }.buttonStyle(BPActionStyle())
@@ -602,6 +602,8 @@ struct HarborSignInForm: View {
             }
             if let error { BPNote(text: error, tone: BP.danger) }
             // account-auth-form.tsx, under the sign-up fields.
+            // account-auth-form: the identity API refuses passwords under 8 characters; say so before the round trip.
+            if creating, !password.isEmpty, password.count < 8 { BPNote(text: T("Use at least 8 characters."), tone: BP.inkMuted) }
             if creating { BPNote(text: "We'll show a one-time recovery key right after you sign up. Save it: it's the only way back in if you forget your password.") }
             BPNote(text: "Your profiles, settings and themes follow this account to every Harbor install.")
         }

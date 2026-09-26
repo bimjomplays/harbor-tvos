@@ -333,6 +333,7 @@ struct CollectionsView: View {
                         }
                     }
                     .padding(.vertical, BP.px(14))
+                    .prefersDefaultFocus(true, in: shellNS ?? localNS)
                     .focusSection()
                     if model.busy && !model.cards.isEmpty {
                         HStack(spacing: BP.px(8)) {

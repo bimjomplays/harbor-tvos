@@ -8,6 +8,8 @@ struct DiscoverView: View {
     /// A tab the profile's PIN locks (Profiles/ParentalGate.swift): the chip that leads to it is not offered.
     @ObservedObject private var parental = ParentalGate.shared
     @State private var detail: Meta?
+    @Environment(\.shellFocusNamespace) private var shellNS
+    @Namespace private var localNS
     @State private var awardDetail: DiscoverModel.Awards.Summary?
     @State private var animeAward: DiscoverModel.AnimeAwardTile?
     @State private var genrePage: BrowseRow?
@@ -136,6 +138,8 @@ struct DiscoverView: View {
                         }
                     }
                 }
+                // bp-discover places its own first focus (audit: "no first focus of its own").
+                .prefersDefaultFocus(true, in: shellNS ?? localNS)
             }
         }
         .task { await model.load() }
