@@ -72,7 +72,7 @@ struct EngineBrowseSource: BrowseSource {
     /// A curated TMDB collection card as a tile (Home's Collections row, Discover's Collections band).
     /// bp-collection-card metaLine for a TMDB entry: "{count} films", else "Collection".
     static func collectionMeta(_ c: CollectionsModel.Card) -> Meta {
-        let line: String = c.count.map { T("%lld films", $0) } ?? T("Collection")
+        let line: String = c.count.map { TCount($0, one: "%lld film", "%lld films") } ?? T("Collection")
         return Meta(id: "collection:tmdb:\(c.ref)", type: "collection", name: c.name, poster: nil, background: c.image, logo: nil,
                     description: line, releaseInfo: nil, releaseDate: nil, inTheaters: nil,
                     imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: true, providerBadge: nil, videos: nil)

@@ -63,7 +63,7 @@ final class HomeServersModel: ObservableObject {
                     }
                 }
             }
-        } catch { say("Plex sign-in failed: \(error.localizedDescription)") }
+        } catch { say(T("Plex sign-in failed: %@", error.localizedDescription)) }
     }
 
     func addPlex(_ server: Poll.Server) async {
@@ -104,10 +104,10 @@ final class HomeServersModel: ObservableObject {
         progress[id] = "Connecting…"
         do {
             let o: Out = try await HarborEngine.shared.call("homeServers.sync", [id])
-            say("Indexed \(o.itemCount) items from \(o.libraries) libraries.", ok: true)
+            say(T("Indexed %lld items from %lld libraries.", o.itemCount, o.libraries), ok: true)
         } catch {
             let line: String = "\(error)".split(separator: "\n").first.map(String.init) ?? ""
-            say("Sync failed: \(line)")
+            say(T("Sync failed: %@", line))
         }
         progress[id] = nil
         await load()
@@ -324,7 +324,7 @@ struct HomeServersPanel: View {
         // RefreshDaysField keeps 1…365; a synced value is bounded before Int() (which traps on huge/NaN).
         let raw: Double = c.refreshEveryDays ?? 1
         let days: Int = raw.isFinite ? Int(min(365, max(1, raw.rounded()))) : 1
-        return days == 1 ? "Every day" : "Every \(days) days"
+        return days == 1 ? T("Every day") : T("Every %lld days", days)
     }
 
     private func summary(_ c: HomeServersModel.Connection) -> String {

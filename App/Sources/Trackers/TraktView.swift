@@ -38,6 +38,15 @@ final class TraktModel: ObservableObject {
         return service == "trakt" ? T("Connected as @%@", u) : T("Connected as %@", u)
     }
 
+    /// trakt-device-modal.tsx / simkl-device-modal.tsx "Code expired" message (upstream's key).
+    private static var expiredNote: String { T("The authorization code timed out before you finished. Try again.") }
+
+    /// trakt-device-modal.tsx "Access denied" message. Simkl's modal has no denied state, so its
+    /// line stays the TV's own, as a format key a future catalog can pick up.
+    private var deniedNote: String {
+        service == "trakt" ? T("Trakt reported that authorization was denied. Try again if this was unintentional.") : T("%@ said no.", label)
+    }
+
     func connect() async {
         say(nil)
         connectGen &+= 1
@@ -64,8 +73,8 @@ final class TraktModel: ObservableObject {
                         self.say(self.connectedNote(r.username ?? self.status.username), ok: true)
                         return
                     case "slow_down": interval += 2
-                    case "expired": self.code = nil; self.say("That code expired. Try again."); return
-                    case "denied": self.code = nil; self.say("\(self.label) said no."); return
+                    case "expired": self.code = nil; self.say(TraktModel.expiredNote); return
+                    case "denied": self.code = nil; self.say(self.deniedNote); return
                     case "error": self.say(r.message)
                     default: break
                     }
@@ -73,7 +82,7 @@ final class TraktModel: ObservableObject {
                 // The code's own lifetime ran out without a verdict (Simkl never says "expired").
                 guard let self, !Task.isCancelled, self.code?.deviceCode == c.deviceCode else { return }
                 self.code = nil
-                self.say("That code expired. Try again.")
+                self.say(TraktModel.expiredNote)
             }
         } catch {
             say(error.localizedDescription)

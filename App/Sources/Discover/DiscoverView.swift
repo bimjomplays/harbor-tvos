@@ -489,7 +489,7 @@ struct AwardsBandView: View {
     }
 
     private func winsLine(_ a: DiscoverModel.Awards.Summary) -> String {
-        let wins: String = T("%lld winners", a.wins)
+        let wins: String = TCount(a.wins, one: "%lld winner", "%lld winners")
         return a.span.isEmpty ? wins : wins + "  •  " + a.span
     }
 

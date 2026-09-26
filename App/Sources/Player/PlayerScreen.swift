@@ -2122,6 +2122,14 @@ struct PlayerScreen: View {
 
     private func fmt(_ s: Double) -> String { PlayerClock.fmt(s) }
 
+    /// The resume fork's line: title, episode, then "{a} of {b}" through the catalogs (the literal
+    /// Text was the letter-free key "%@%@ · %@%@", with an English " of " baked into an argument).
+    private func resumeLine(_ sec: Double, duration: Double) -> String {
+        let head: String = title + (subtitle.map { " · " + $0 } ?? "")
+        let at: String = duration > 0 ? T("%@ of %@", fmt(sec), fmt(duration)) : fmt(sec)
+        return head + " · " + at
+    }
+
     /// lib/trakt/scrobble-hook.ts: "start" when playing, "pause" on pause, "stop" at the end.
     private func scrobbleTick() {
         guard let context, !context.playlistVod, !isLive, clock.snap.duration > 150 else { return }
@@ -2242,7 +2250,7 @@ struct PlayerScreen: View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             Spacer()
             Text("Pick up where you left off").font(BP.display(34)).foregroundStyle(BP.ink)
-            Text("\(title)\(subtitle.map { " · \($0)" } ?? "") · \(fmt(sec))\(duration > 0 ? " of \(fmt(duration))" : "")")
+            Text(verbatim: resumeLine(sec, duration: duration))
                 .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineLimit(1)
             if duration > 0 {
                 GeometryReader { g in

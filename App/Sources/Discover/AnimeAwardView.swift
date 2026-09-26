@@ -122,7 +122,7 @@ struct AnimeAwardView: View {
                             Button { year = year == y.year ? nil : y.year } label: { chipLabel(String(y.year), y.count) }
                                 .buttonStyle(BPActionStyle(primary: year == y.year)).bpSelected(year == y.year)
                                 // ariaLabel `${y}, ${t("{n} winners", { n })}`.
-                                .accessibilityLabel(Text(verbatim: String(y.year) + ", " + T("%lld winners", y.count)))
+                                .accessibilityLabel(Text(verbatim: String(y.year) + ", " + TCount(y.count, one: "%lld winner", "%lld winners")))
                         }
                     }
                     .padding(.vertical, BP.px(6))
