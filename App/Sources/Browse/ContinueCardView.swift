@@ -7,9 +7,6 @@ struct ContinueCardView: View {
     /// bp-cw-card-meta episodeTitleFor: fetched the first time the card takes the ring.
     @State private var episodeTitle = ""
     @State private var titleAskedFor: String?
-    /// bp-cw-card-meta episodeTitleFor: fetched the first time the card takes the ring.
-    @State private var episodeTitle = ""
-    @State private var titleAskedFor: String?
     /// (P11) snapshots.ts useSnapshotVersion: a frame saved while the card is on screen redraws it.
     @ObservedObject private var snapshots = ExitSnapshotVersion.shared
 
