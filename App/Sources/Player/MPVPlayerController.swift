@@ -814,7 +814,11 @@ final class MPVPlayerController: UIViewController {
         }
         // (device-flow pass 12) use-power-inhibit.ts: the screen stays on while this plays. A guide
         // preview does not hold it (it plays for as long as the ring rests on a guide cell).
-        DisplayAwake.shared.hold(self, awake: !preview && !tornDown && status.state == "playing")
+        // (review 37 follow-up) A live stream's cache refill reads core-idle for a tick: held on too
+        // while mpv is not paused, so a long unattended stretch never meets a one-tick release.
+        let unpaused: Bool = string("pause") == "no"
+        let rolling: Bool = status.state == "playing" || (status.state == "buffering/paused" && unpaused)
+        DisplayAwake.shared.hold(self, awake: !preview && !tornDown && rolling)
         report()
     }
 
