@@ -1449,6 +1449,49 @@ function plexHubRow(config: PlexConfig, hub: Record<string, unknown>): MusicCata
   return row(`plex:hub:${identifier}`, title, true, config.server, layout, "plex", items);
 }
 
+/**
+ * (leftovers batch) Upstream's Plex music connector (session.rs) sends no timeline calls at all;
+ * the TV adds "now playing" and "stopped" pings and a mark-played scrobble the way its video Plex
+ * connector already does (lib/media-server/plex.ts reportProgress /:/timeline, setWatched
+ * /:/scrobble), so a track played from the TV shows up on the server like any other Plex client.
+ * Best-effort throughout, like Jellyfin's session reports above: a failure here never stops
+ * playback, and nothing here is awaited by resolve() or the scrobble threshold.
+ */
+let plexSession: { config: PlexConfig; key: string } | null = null;
+async function plexNotify(config: PlexConfig, path: string): Promise<void> {
+  try {
+    await request(`${config.origin}${path}`, { headers: plexHeaders(config.clientId, config.token), timeoutMs: 6000 });
+  } catch {
+    /* best-effort: a failed report must not stop playback */
+  }
+}
+function plexTimelinePath(key: string, state: "playing" | "stopped", timeMs: number): string {
+  return `/:/timeline?ratingKey=${plexEncode(key)}&key=${plexEncode(`/library/metadata/${key}`)}&state=${state}&time=${Math.max(0, Math.floor(timeMs))}&identifier=com.plexapp.plugins.library`;
+}
+/** The held report a resolved Plex track sends once it is actually heard (music.started). */
+function plexReportPlaying(config: PlexConfig, key: string): void {
+  const previous = plexSession;
+  plexSession = { config, key };
+  if (previous && previous.key !== key) void plexNotify(previous.config, plexTimelinePath(previous.key, "stopped", 0));
+  void plexNotify(config, plexTimelinePath(key, "playing", 0));
+}
+/** The listener stopped the player: close the open Plex "now playing" session, if any. */
+export function plexStopped(): void {
+  const session = plexSession;
+  plexSession = null;
+  if (session) void plexNotify(session.config, plexTimelinePath(session.key, "stopped", 0));
+}
+/** accounts.rs scrobble_track's Plex leg (there is no upstream one to port; see plexReportPlaying
+ * above): mark the track played, the same call the video connector's setWatched(true) makes. */
+export async function plexScrobble(track: MusicTrack): Promise<boolean> {
+  if (track.connectorId !== "plex") return false;
+  const c = await plexConfig();
+  if (!c) return false;
+  const key = plexSafeKey(track.sourceId ?? track.id.replace(/^plex:/, ""));
+  await plexNotify(c, `/:/scrobble?key=${plexEncode(key)}&identifier=com.plexapp.plugins.library`);
+  return true;
+}
+
 function plexConnector(): Connector {
   const need = async (): Promise<PlexConfig> => {
     const c = await plexConfig();
@@ -1506,6 +1549,11 @@ function plexConnector(): Connector {
           const part = media ? plexNodes(media, "Part")[0] : undefined;
           const partKey = text(part?.key);
           const container = (text(part?.container) ?? text(media?.container) ?? text(media?.audioCodec) ?? "").toLowerCase();
+          // Upstream's own Plex music connector sends no timeline calls at all (session.rs has
+          // none); the TV reports "now playing" the way its video Plex connector already does
+          // (lib/media-server/plex.ts reportProgress /:/timeline), held until the track is heard
+          // (see holdReport / jfResolve above).
+          holdReport(track, () => plexReportPlaying(c, key));
           // AVPlayer cannot open Ogg/Opus/Vorbis, so those go through the transcoder on tvOS.
           const avplayable = !["ogg", "opus", "vorbis", "mka", "webm", "wv"].includes(container);
           if (partKey && avplayable) {

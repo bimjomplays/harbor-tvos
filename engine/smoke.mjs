@@ -1257,6 +1257,7 @@ r.ok("benchmark still works", (() => {
       if (!plexUp) return { status: 503, statusText: "Service Unavailable", headers: {}, url: req.url, body: "" };
       if (u.pathname === "/library/sections") return json(req, { MediaContainer: { Directory: [{ key: "3", type: "artist", title: "Music" }] } });
       if (u.pathname === "/hubs/search") return json(req, { MediaContainer: { Hub: [{ type: "track", Metadata: [{ ratingKey: "71", title: "Starlight", grandparentTitle: "Muse", parentTitle: "Black Holes", duration: 240000 }] }] } });
+      if (u.pathname === "/library/metadata/71") return json(req, { MediaContainer: { Metadata: [{ ratingKey: "71", Media: [{ container: "mp3", bitrate: 320, Part: [{ key: "/library/parts/71/file.mp3", container: "mp3" }] }] }] } });
     }
     return musicFetch(req);
   };
@@ -1269,6 +1270,28 @@ r.ok("benchmark still works", (() => {
   const plexBack = await m.search("starlight", "plex").catch((e) => ({ tracks: [], error: e.message }));
   r.ok("music: a Plex server that missed the first probe is probed again (no five-minute blackout)", plexDown !== "found" && plexBack.tracks[0]?.title === "Starlight" && plexBack.tracks[0]?.track.connectorId === "plex", JSON.stringify({ plexDown, plexBack }));
 
+  // (leftovers batch 2) Plex timeline reporting: upstream's own Plex music connector sends none
+  // (session.rs has no timeline calls), so the TV adds "now playing" / "stopped" pings and a
+  // mark-played scrobble the way its video Plex connector already does (/:/timeline, /:/scrobble).
+  hits.length = 0;
+  const plexTrack = plexBack.tracks[0].track;
+  const plexPrepared = await m.prepare(plexTrack, null, null);
+  r.ok("Plex resolve returns the direct file URL and reports 'now playing' at once (music.ts prepare: a track that starts now reports now, same as Jellyfin's)", plexPrepared.stream.url === `${px}/library/parts/71/file.mp3?X-Plex-Token=ptok` && hits.some((h) => h.includes("/:/timeline?") && h.includes("ratingKey=71") && h.includes("state=playing") && h.includes("time=0")), JSON.stringify({ plexPrepared, hits }));
+  hits.length = 0;
+  m.stopped();
+  r.ok("music.stopped closes the Plex session with a final 'stopped' timeline ping", hits.some((h) => h.includes("/:/timeline?") && h.includes("ratingKey=71") && h.includes("state=stopped")), JSON.stringify(hits));
+  hits.length = 0;
+  const preloaded = await m.prepare(plexTrack, null, null, true);
+  r.ok("a gapless preload holds its Plex report until started() (bug pass 2's pattern, same as Jellyfin's)", preloaded.stream.url.includes("file.mp3") && !hits.some((h) => h.includes(":/timeline")), JSON.stringify({ preloaded, hits }));
+  m.started(preloaded.track);
+  r.ok("music.started flushes the held Plex 'now playing' report", hits.some((h) => h.includes("/:/timeline?") && h.includes("state=playing")), JSON.stringify(hits));
+  hits.length = 0;
+  const plexScrobbleResult = await m.scrobble(plexPrepared.track, Math.floor(Date.now() / 1000) - 200);
+  r.ok("music.scrobble marks a heard Plex track played (/:/scrobble)", hits.some((h) => h.includes("/:/scrobble?") && h.includes("key=71")), JSON.stringify({ plexScrobbleResult, hits }));
+  hits.length = 0;
+  await m.scrobble({ ...plexTrack, connectorId: "catalog" }, Math.floor(Date.now() / 1000) - 200);
+  r.ok("music.scrobble leaves non-Plex tracks alone", !hits.some((h) => h.includes("/:/scrobble")), JSON.stringify(hits));
+
   // Now Playing "About the artist" (music-listening-details.tsx): the recording's credits give
   // the primary artist directly, then artist-profile.ts's MusicBrainz + Wikidata/Wikipedia bio.
   const about = await m.aboutArtist(seedTrack, "en");
@@ -1280,6 +1303,37 @@ r.ok("benchmark still works", (() => {
   const museTrack = { id: "soundcloud:999", connectorId: "soundcloud", sourceId: "999", title: "Hysteria", artist: "Muse", album: "Absolution", durationSeconds: 227, durationLabel: "3:47" };
   const museAbout = await m.aboutArtist(museTrack, "en");
   r.ok("music.aboutArtist falls back to resolveArtist (Deezer artist search) when no recording could be matched; no MusicBrainz identity for it here, so no bio", museAbout.artist?.title === "Muse" && museAbout.credits.length === 0 && museAbout.biography === "", JSON.stringify(museAbout));
+
+  // The track page's own Credits panel (music-listening-details.tsx MusicTrackCredits): the same
+  // recording credits as the About tab, but with no resolveArtist fallback (upstream's standalone
+  // component only reads useRecordingProfile).
+  const trackCredits = await m.trackCredits(seedTrack);
+  r.ok("music.trackCredits: the recording's own Deezer + MusicBrainz credits, same shape as aboutArtist's", trackCredits.credits.length === 2 && trackCredits.credits[0].name === "Daft Punk" && trackCredits.credits[0].roleLabel === "Main artist" && trackCredits.credits[1].name === "Pharrell Williams" && trackCredits.creditSources.length === 1 && trackCredits.creditSources[0].name === "Deezer", JSON.stringify(trackCredits));
+  const museTrackCredits = await m.trackCredits(museTrack);
+  r.ok("music.trackCredits: empty (not a fallback artist bio) when no recording could be matched", museTrackCredits.credits.length === 0 && museTrackCredits.creditSources.length === 0, JSON.stringify(museTrackCredits));
+
+  // Harbor's own playlists (library.rs / lib/music/library.ts, music-library.tsx "Playlists"
+  // view): create / rename / delete, add / dedupe / remove / reorder tracks, all in engine
+  // storage (no SQLite database on tvOS, same as liked tracks and recents above).
+  r.eq("music.playlists starts empty", m.playlists(), []);
+  r.ok("music.createPlaylist trims the name and stamps createdAt/updatedAt", (() => { const created = m.createPlaylist("  Evening  "); return created.name === "Evening" && created.tracks.length === 0 && created.createdAt === created.updatedAt && typeof created.id === "string" && created.id.length > 0; })());
+  const evening = m.playlists()[0];
+  r.ok("music.createPlaylist rejects an empty or too-long name", (() => { try { m.createPlaylist("   "); return false; } catch (e) { return /1 and 100 characters/.test(e.message); } })() && (() => { try { m.createPlaylist("x".repeat(101)); return false; } catch (e) { return /1 and 100 characters/.test(e.message); } })());
+  const withTrack = m.addToPlaylist(evening.id, seedTrack);
+  r.ok("music.addToPlaylist adds the track and bumps updatedAt", withTrack.tracks.length === 1 && withTrack.tracks[0].id === seedTrack.id && Number(withTrack.updatedAt) >= Number(evening.updatedAt));
+  const withBoth = m.addTracksToPlaylist(evening.id, [seedTrack, museTrack]);
+  r.ok("music.addTracksToPlaylist skips a track already in the playlist (INSERT OR IGNORE) but keeps the new one", withBoth.tracks.length === 2 && withBoth.tracks[0].id === seedTrack.id && withBoth.tracks[1].id === museTrack.id, JSON.stringify(withBoth.tracks.map((t) => t.id)));
+  const renamed = m.renamePlaylist(evening.id, "  Late night  ");
+  r.eq("music.renamePlaylist trims the name and leaves the tracks alone", [renamed.name, renamed.tracks.length], ["Late night", 2]);
+  const reordered = m.reorderPlaylist(evening.id, museTrack.id, 0);
+  r.eq("music.reorderPlaylist moves the track to its new index", reordered.tracks.map((t) => t.id), [museTrack.id, seedTrack.id]);
+  const removed = m.removeFromPlaylist(evening.id, seedTrack.id);
+  r.eq("music.removeFromPlaylist drops only that track", removed.tracks.map((t) => t.id), [museTrack.id]);
+  r.ok("music.playlists lists newest activity first", (() => { const another = m.createPlaylist("Drive"); return m.playlists()[0].id === another.id; })());
+  const missingPlaylistOps = [() => m.renamePlaylist("missing", "x"), () => m.addToPlaylist("missing", seedTrack), () => m.removeFromPlaylist("missing", "x"), () => m.reorderPlaylist("missing", "x", 0), () => m.deletePlaylist("missing")];
+  r.ok("an unknown playlist id is a clear error, for rename/add/remove/reorder/delete alike", missingPlaylistOps.every((run) => { try { run(); return false; } catch (e) { return e.message === "Music playlist was not found"; } }));
+  m.deletePlaylist(evening.id);
+  r.ok("music.deletePlaylist removes it (and only it)", !m.playlists().some((pl) => pl.id === evening.id) && m.playlists().some((pl) => pl.name === "Drive"));
 
   // The per-source picker (music-source-picker.tsx): every source's match for a track, the
   // remembered preference (SOURCE_KEY), and choosing one (fromCollection + writeMusicPreference).

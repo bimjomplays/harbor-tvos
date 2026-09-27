@@ -1377,6 +1377,16 @@ export const music = {
   sourcePreference: musicGlue.sourcePreference,
   sourceCandidates: musicGlue.sourceCandidates,
   chooseSource: musicGlue.chooseSource,
+  // leftovers batch 2: Harbor's own playlists (library.rs) and the track page's Credits panel.
+  playlists: musicGlue.playlists,
+  createPlaylist: musicGlue.createPlaylist,
+  renamePlaylist: musicGlue.renamePlaylist,
+  deletePlaylist: musicGlue.deletePlaylist,
+  addToPlaylist: musicGlue.addToPlaylist,
+  addTracksToPlaylist: musicGlue.addTracksToPlaylist,
+  removeFromPlaylist: musicGlue.removeFromPlaylist,
+  reorderPlaylist: musicGlue.reorderPlaylist,
+  trackCredits: musicGlue.trackCredits,
 };
 
 // ================================================================================== runtime

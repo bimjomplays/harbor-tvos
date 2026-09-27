@@ -14,6 +14,7 @@ struct MusicView: View {
     @State private var sourcesOpen = false
     @State private var nowPlayingOpen = false
     @State private var spotifyLibraryOpen = false
+    @State private var libraryOpen = false
     /// (open-items sweep 3) The mast's Search, where the ring goes when Now Playing's "Stop and
     /// close player" took the room's own dock from under it (MusicDockHost.ringTo does this for the
     /// room's layers; the room draws its dock itself).
@@ -61,7 +62,8 @@ struct MusicView: View {
         .fullScreenCover(isPresented: $sourcesOpen, onDismiss: { Task { await model.load(force: true) } }) { MusicSourcesView() }
         .fullScreenCover(isPresented: $nowPlayingOpen, onDismiss: { dockClosed() }) { MusicNowPlayingView() }
         .fullScreenCover(isPresented: $spotifyLibraryOpen) { MusicSpotifyLibraryView() }
-        .musicSpotifyDestinationHost()
+        .fullScreenCover(isPresented: $libraryOpen) { MusicLibraryView() }
+        .musicTrackActionsHost()
     }
 
     /// (open-items sweep 3) Now Playing closed with no track loaded ("Stop and close player",
@@ -86,6 +88,12 @@ struct MusicView: View {
             .buttonStyle(BPActionStyle(primary: true))
             .focused($searchFocused)
             .accessibilityIdentifier("music-search")
+            // music-library.tsx "Playlists" view (library.rs): Harbor's own playlists.
+            Button { libraryOpen = true } label: {
+                Label(copy("music.playlists", "Playlists"), systemImage: "list.bullet")
+            }
+            .buttonStyle(BPActionStyle())
+            .accessibilityIdentifier("music-library")
             // music-library.tsx "Spotify" view (music-spotify-library.tsx): Liked songs and playlists.
             if spotify.connected {
                 Button { spotifyLibraryOpen = true } label: {
@@ -327,15 +335,15 @@ struct MusicTrackMenuItems: View {
     let track: MusicTrack
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
-    @ObservedObject private var spotify = SpotifyPlayback.shared
-    @Environment(\.musicAddToSpotifyPlaylist) private var addToSpotifyPlaylist
+    @Environment(\.musicAddToPlaylist) private var addToPlaylist
+    @Environment(\.musicShowTrackCredits) private var showTrackCredits
     var body: some View {
         Button { player.playNext(track) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
         Button { player.enqueue(track) } label: { Label(copy("music.card.addToQueue", "Add to queue"), systemImage: "text.append") }
-        // music-track-row.tsx onAddToPlaylist → music-playlist-picker.tsx. The TV has no Harbor
-        // playlists yet, so the picker is its Spotify destination, offered for Spotify tracks.
-        if let addToSpotifyPlaylist, spotify.connected, track.spotifyTrackUri != nil {
-            Button { addToSpotifyPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
+        // music-track-row.tsx onAddToPlaylist → music-playlist-picker.tsx: a Harbor playlist, or
+        // (when Spotify is connected) its own destination (MusicPlaylistPickerView).
+        if let addToPlaylist {
+            Button { addToPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
         }
         // music-track-menu.tsx "Start radio" (radio.ts): a station seeded by this track.
         Button { player.startRadio(track) } label: { Label(copy("music.card.startRadio", "Start radio"), systemImage: "dot.radiowaves.left.and.right") }
@@ -343,6 +351,10 @@ struct MusicTrackMenuItems: View {
             player.isLiked(track)
                 ? Label(copy("music.unsaveTrack", "Remove from saved tracks"), systemImage: "heart.slash")
                 : Label(copy("music.saveTrack", "Save track"), systemImage: "heart")
+        }
+        // music-listening-details.tsx MusicTrackCredits, reachable from any track (MusicLibrary.swift).
+        if let showTrackCredits {
+            Button { showTrackCredits(track) } label: { Label(copy("music.credits.title", "Credits"), systemImage: "info.circle") }
         }
     }
 }

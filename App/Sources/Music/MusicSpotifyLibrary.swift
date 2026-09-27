@@ -6,8 +6,10 @@ import SwiftUI
 /// library.rs through `music.spotifyLibraryPage`: the listener's Spotify playlists or Liked songs,
 /// 50 a page with Load more, a readable playlist (owned or collaborative) opened in place, a new
 /// private playlist, and upstream's permission / reconnect notices. Upstream's "Import to Harbor"
-/// is not offered: the TV has no Harbor playlists yet. "Open on Spotify" shows the link as a QR
-/// code for the phone (the TV has no browser).
+/// (bringing a whole Spotify playlist in as a new Harbor one) is not offered; adding one Spotify
+/// track to a Harbor playlist goes through the generic picker instead (MusicPlaylistPickerView,
+/// MusicLibrary.swift). "Open on Spotify" shows the link as a QR code for the phone (the TV has
+/// no browser).
 struct MusicSpotifyLibraryView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var player = MusicPlayer.shared
@@ -82,7 +84,7 @@ struct MusicSpotifyLibraryView: View {
             }
         }) { MusicSpotifyView() }
         .fullScreenCover(item: $webLink) { link in MusicSpotifyWebLinkView(link: link) }
-        .musicSpotifyDestinationHost()
+        .musicTrackActionsHost()
     }
 
     private func text(_ key: String) -> String { MusicSpotifyCopy.text(key) }
@@ -397,12 +399,17 @@ struct MusicSpotifyWebLinkView: View {
 
 // MARK: - Add to a Spotify playlist
 
-/// music-spotify-destination.tsx (the Spotify side of music-playlist-picker.tsx): the listener's
-/// playlists, the ones Spotify lets this account change enabled, a private one created on the spot,
-/// then the track is added (library.rs music_spotify_add_to_playlist) and the sheet closes.
-struct MusicSpotifyDestinationView: View {
+/// music-spotify-destination.tsx: the listener's playlists, the ones Spotify lets this account
+/// change enabled, a private one created on the spot, then the track is added (library.rs
+/// music_spotify_add_to_playlist).
+/// The Spotify side of music-playlist-picker.tsx's destination toggle (music-spotify-destination.tsx):
+/// its own playlists, ready to add this track to, or a private one created on the spot. Embedded
+/// directly in MusicPlaylistPickerView's sheet (MusicLibrary.swift) when Spotify is chosen there,
+/// so upstream's single modal with a destination toggle stays a single sheet on the TV too.
+struct MusicSpotifyDestinationContent: View {
     let track: MusicTrack
-    @Environment(\.dismiss) private var dismiss
+    /// A save (or a permission-only view) finished: the caller's sheet may close.
+    var onDone: () -> Void = {}
     @ObservedObject private var copy = MusicCopy.shared
     @ObservedObject private var spotify = SpotifyPlayback.shared
     @State private var page: MusicSpotifyLibraryPage?
@@ -418,27 +425,12 @@ struct MusicSpotifyDestinationView: View {
     private func text(_ key: String) -> String { MusicSpotifyCopy.text(key) }
 
     var body: some View {
-        ZStack {
-            BP.void_.opacity(0.92).ignoresSafeArea()
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: BP.px(14)) {
-                    Text(copy("music.card.addToPlaylist", "Add to playlist")).font(BP.sans(24, .bold)).foregroundStyle(BP.ink)
-                    Text([track.title, track.artist].filter { !$0.isEmpty }.joined(separator: " · ")).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(1)
-                    content
-                    Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
-                }
-                .padding(BP.px(32))
-            }
-            .frame(width: BP.px(820))
-            .frame(maxHeight: BP.px(900))
-            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
-        }
-        .onExitCommand { dismiss() }
-        .task { if spotify.connected, track.spotifyTrackUri != nil { await load() } }
-        .onChange(of: spotify.connected) { _, now in if now, track.spotifyTrackUri != nil { Task { await load() } } }
-        .fullScreenCover(isPresented: $setupOpen, onDismiss: {
-            if spotify.connected, track.spotifyTrackUri != nil { Task { await load() } }
-        }) { MusicSpotifyView() }
+        content
+            .task { if spotify.connected, track.spotifyTrackUri != nil { await load() } }
+            .onChange(of: spotify.connected) { _, now in if now, track.spotifyTrackUri != nil { Task { await load() } } }
+            .fullScreenCover(isPresented: $setupOpen, onDismiss: {
+                if spotify.connected, track.spotifyTrackUri != nil { Task { await load() } }
+            }) { MusicSpotifyView() }
     }
 
     @ViewBuilder private var content: some View {
@@ -556,7 +548,7 @@ struct MusicSpotifyDestinationView: View {
             spotify.libraryChanged()
             busy = false
             try? await Task.sleep(for: .milliseconds(500))
-            dismiss()
+            onDone()
             return
         } catch EngineError.js(let message) {
             error = MusicPlayer.cleanJSError(message)
@@ -630,28 +622,3 @@ enum MusicSpotifyCopy {
     ]
 }
 
-private struct MusicAddToSpotifyPlaylistKey: EnvironmentKey {
-    static let defaultValue: ((MusicTrack) -> Void)? = nil
-}
-
-extension EnvironmentValues {
-    /// The track menu's "Add to playlist": set by the screen that presents the Spotify destination.
-    var musicAddToSpotifyPlaylist: ((MusicTrack) -> Void)? {
-        get { self[MusicAddToSpotifyPlaylistKey.self] }
-        set { self[MusicAddToSpotifyPlaylistKey.self] = newValue }
-    }
-}
-
-/// Presents music-spotify-destination.tsx for a track picked from any track menu on this screen.
-struct MusicSpotifyDestinationHost: ViewModifier {
-    @State private var target: MusicTrack?
-    func body(content: Content) -> some View {
-        content
-            .environment(\.musicAddToSpotifyPlaylist, { track in target = track })
-            .fullScreenCover(item: $target) { track in MusicSpotifyDestinationView(track: track) }
-    }
-}
-
-extension View {
-    func musicSpotifyDestinationHost() -> some View { modifier(MusicSpotifyDestinationHost()) }
-}

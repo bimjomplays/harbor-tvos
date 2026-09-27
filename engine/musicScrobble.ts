@@ -11,7 +11,7 @@ import type { MusicTrack } from "@/lib/music/types";
 import { LASTFM_API_KEY, LASTFM_API_SECRET, LASTFM_SESSION_KEY, LASTFM_USERNAME } from "@/lib/music/lastfm";
 import { getSecret, setSecret } from "@/lib/secret-store";
 import { md5Hex } from "./md5";
-import { subsonicPairing, subsonicScrobble } from "./musicSources";
+import { plexScrobble, subsonicPairing, subsonicScrobble } from "./musicSources";
 
 const LASTFM_API = "https://ws.audioscrobbler.com/2.0/";
 
@@ -191,6 +191,13 @@ export async function scrobble(track: MusicTrack, startedAt: number): Promise<{ 
     await subsonicTrackScrobble(track, startedAt);
   } catch {
     /* accounts.rs: a Subsonic failure is only logged */
+  }
+  try {
+    // (leftovers batch) There is no upstream Plex scrobble to port (musicSources.ts plexScrobble);
+    // a failure here is only logged too, the same as Subsonic's above.
+    await plexScrobble(track);
+  } catch {
+    /* a Plex failure is only logged */
   }
   try {
     const done = await recorded(lastfmScrobble(track, startedAt));
