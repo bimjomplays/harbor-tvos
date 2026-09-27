@@ -174,7 +174,12 @@ final class NavigationTests5: XCTestCase {
         require(waitForFocus(app, timeout: 10, where: { $0 == "ebook-collections" }) != nil, "closing Collections did not return the ring to its card (focus: \(focusNote(app)))", app)
         require(app.buttons["tab-ebook"].isSelected, "Collections left the eBook tab", app)
         sleep(1)
-        require(press(.down, app, max: 10, until: { $0 == "ebook-filter-type" }) != nil, "Down never reached the browse filter chips (focus: \(focusNote(app)))", app)
+        // Down off the cards row can skip the chip row for the results grid below it (run
+        // 36304417732): land anywhere in the browse section, then walk back Up onto the chips.
+        if press(.down, app, max: 10, until: { $0.hasPrefix("ebook-filter-") }) == nil {
+            require(press(.up, app, max: 8, until: { $0.hasPrefix("ebook-filter-") }) != nil, "could not reach the browse filter chips (focus: \(focusNote(app)))", app)
+        }
+        require(seek("ebook-filter-type", app, max: 6, first: .left), "could not reach the Type chip along the chip row (focus: \(focusNote(app)))", app)
         let type = app.buttons["ebook-filter-type"]
         require(type.label == "Type: All", "the Type chip started as \"\(type.label)\", not \"Type: All\"", app)
         sleep(1)
@@ -220,7 +225,12 @@ final class NavigationTests5: XCTestCase {
         require(app.buttons["tile-ebook-popular-0"].waitForExistence(timeout: 30), "the eBook room never showed its Popular rail (the Gutendex fixture add did not land?)", app)
         sleep(1)
         // Down into the browse row lands on its first button (Refresh source); Manage is to its right.
-        require(press(.down, app, max: 14, until: { $0 == "ebook-manage-sources" || $0 == "ebook-refresh-source" }) != nil, "Down never reached the browse row (focus: \(focusNote(app)))", app)
+        // Down off the cards row can skip the browse row for the results grid below it (run
+        // 36304417732): land anywhere in the browse section, then walk back Up onto the row.
+        let browseRow: (String) -> Bool = { $0 == "ebook-manage-sources" || $0 == "ebook-refresh-source" }
+        if press(.down, app, max: 14, until: browseRow) == nil {
+            require(press(.up, app, max: 8, until: browseRow) != nil, "could not reach the browse row (focus: \(focusNote(app)))", app)
+        }
         require(seek("ebook-manage-sources", app, max: 4), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
@@ -264,7 +274,13 @@ final class NavigationTests5: XCTestCase {
             require(seek("music-toggle", app, max: 6, first: .left), "could not reach Play/Pause along the transport row (focus: \(focusNote(app)))", app)
         }
         sleep(1)
-        require(press(.up, app, max: 8, until: { $0 == "music-now-tab-about" }) != nil, "the ring never reached the About the artist tab (focus: \(focusNote(app)))", app)
+        // The tabs sit at the top of the right column: Up the left column to the seek row, Right out
+        // of it, then Up to the tab row and along it (run 36304417732: Up alone stops at the seek row).
+        let leftColumn: Set<String> = transport.union(["gobackward.10", "goforward.10", "music-mute", "minus", "plus"])
+        require(press(.up, app, max: 6, until: { $0 == "gobackward.10" || $0 == "goforward.10" }) != nil, "Up never reached the seek row (focus: \(focusNote(app)))", app)
+        require(press(.right, app, max: 6, until: { !leftColumn.contains($0) }) != nil, "Right never left the left column (focus: \(focusNote(app)))", app)
+        require(press(.up, app, max: 8, until: { $0.hasPrefix("music-now-tab-") }) != nil, "Up never reached the tab row (focus: \(focusNote(app)))", app)
+        require(seek("music-now-tab-about", app, max: 4), "could not reach the About the artist tab (focus: \(focusNote(app)))", app)
         sleep(1)
         require(press(.down, app, max: 8, until: { $0 == "music-toggle" }) != nil, "could not return to the transport row (focus: \(focusNote(app)))", app)
         require(press(.right, app, max: 6, until: { $0 == "music-now-picker" }) != nil, "Right along the transport row did not reach the source picker button (focus: \(focusNote(app)))", app)

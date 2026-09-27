@@ -382,8 +382,9 @@ struct MusicNowPlayingView: View {
                     ZStack {
                         if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
                     }
-                    // 280 (was 340) leaves room for the volume row without pushing the transport off screen (review 37).
-                    .frame(width: BP.px(280), height: BP.px(280))
+                    // 240 (was 340, then 280 in review 37): CI's 1080p screenshot (run 36304417732) still
+                    // had the transport row cut off at the bottom once the error/resolving note drew.
+                    .frame(width: BP.px(240), height: BP.px(240))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
                     .shadow(color: .black.opacity(0.55), radius: 40, y: 20)
                     Text(player.current?.title ?? "").font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(2)
@@ -441,7 +442,7 @@ struct MusicNowPlayingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, BP.gutter)
-            .padding(.top, BP.px(70))
+            .padding(.top, BP.px(50))
         }
         .focusScope(focusNS)
         .onExitCommand { dismiss() }
@@ -460,6 +461,8 @@ struct MusicNowPlayingView: View {
     private func tab(_ id: String, _ title: String) -> some View {
         Button { panel = id } label: {
             Text(title).font(BP.sans(15, .semibold))
+                // One line: "About the artist" wrapped onto three in the tab row (CI screenshot).
+                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))
                 .background(Capsule().fill(panel == id ? BP.ink.opacity(0.14) : .clear))
         }
