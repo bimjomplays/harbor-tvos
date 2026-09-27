@@ -51,6 +51,9 @@ struct ProfileEditorView: View {
                         Text(editing == nil ? "New profile" : "Edit profile").font(BP.display(32)).foregroundStyle(BP.ink)
                     }
                     BPField(label: "Name", placeholder: "Who is this for?", text: $name)
+                        // UI tests (NavigationTests6): Save is disabled until this has text, so the
+                        // create-profile test needs to type into it.
+                        .accessibilityIdentifier("profile-name-field")
                     HStack(spacing: BP.px(8)) {
                         Text("Colour").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
                         ForEach(colors, id: \.self) { c in
@@ -162,15 +165,19 @@ struct ProfileEditorView: View {
 
     // MARK: PIN & sidebar locks (editor-view.tsx SecurityRow / SecurityView / TabsView)
 
-    /// editor-view.tsx `showAdvanced`: the primary profile edits another profile's advanced
-    /// settings, and a new profile gets them in the same form. (NavigationTests6 fix) This file's
-    /// only two call sites always pass `editing: profiles.active` (self-edit), so `editing` and
-    /// `profiles.active` are the same profile and the old `profiles.active?.isPrimary == true` term
-    /// collapsed to "editing is primary" — which `showKidToggle` then excludes outright, so a
-    /// non-primary profile's own kid toggle and PIN & sidebar locks could never be reached again
-    /// after creation. Self-editing your own profile is always "advanced"; the `isPrimary` term is
-    /// kept for a future call site that lets the primary open someone else's editor without it.
-    private var showAdvanced: Bool { editing == nil || editing?.id == profiles.active?.id || profiles.active?.isPrimary == true }
+    /// editor-view.tsx lines 111-113/496-500: `canEditAdvanced = activeIsPrimary`,
+    /// `showAdvanced = canEditAdvanced || mode.kind === "create"`. This is parental control by
+    /// design: a non-primary profile editing ITSELF never gets the kid toggle or PIN & sidebar locks
+    /// either (only the primary, or the create form) — upstream's own `isOwnProfile` only widens a
+    /// separate gate (letting a non-primary open its own editor at all, `!isOwnProfile &&
+    /// !canEditAdvanced` → BlockedView) and is never part of `showAdvanced` itself. (NavigationTests6
+    /// review) An earlier version of this line treated self-edit as advanced too, matching upstream's
+    /// visible symptom (a non-primary profile could never re-open its own kid toggle after creation)
+    /// but not the cause: the actual gap is that this app has no call site at all for "the primary
+    /// opens ANOTHER profile's editor" (Settings' `.editProfile` always passes `profiles.active`), so
+    /// upstream's one intended path to a non-primary profile's advanced settings does not exist here
+    /// yet — tracked in docs/parity-gaps.md rather than worked around by loosening this rule.
+    private var showAdvanced: Bool { editing == nil || profiles.active?.isPrimary == true }
 
     /// editor-view.tsx `showAdvanced && !isPrimary`: KidToggle is never shown for the primary
     /// profile (it can't become a kid — ProfilesStore.setKid refuses it too).

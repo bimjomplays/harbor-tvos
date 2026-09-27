@@ -31,9 +31,12 @@ everything builds on GitHub Actions and ships to TestFlight **internal testing o
   `NavigationTests.swift`, `NavigationTests2.swift`, `NavigationTests3.swift`, `NavigationTests4.swift`,
   `NavigationTests5.swift`, `NavigationTests6.swift` (5 + 5 + 5 + 6 + 6 + 2 remote-walk tests on offline
   fixtures: `--fixtures shell`, `who`, `roomfail`, `calfail`, `detail`, `kidsfail`, `discfail`, `bands`,
-  `ebook`, `music`). `NavigationTests6` also caught a real bug: the Profiles editor's kid toggle and
-  "PIN & sidebar locks" section could never be reached again for any existing profile once created
-  (see PROJECT_STATE.md's Status). Engine: `node build.mjs` ≈ 4.6 MB, `node smoke.mjs --offline` = 1105 checks.
+  `ebook`, `music`). `NavigationTests6` proves the Profiles editor's kid toggle and "PIN & sidebar
+  locks" section only ever show for the primary profile or the create form, matching upstream by
+  design (`editor-view.tsx` `showAdvanced`) — an earlier version of this pass loosened that rule and
+  was reverted; see PROJECT_STATE.md's Status and `docs/parity-gaps.md`'s "Still open" for the real
+  gap (the primary has no way to open ANOTHER existing profile's editor on this TV). Engine:
+  `node build.mjs` ≈ 4.6 MB, `node smoke.mjs --offline` = 1105 checks.
 - **TestFlight.** Build 220 (the branch up to `37aa626`, uploaded ~11:07 UTC 09-25) is the newest on
   TestFlight. Run 221's upload hit Apple's daily upload limit (code **90382**) at 11:22 UTC 09-25, so
   every run since has been a compile check (`testflight=false`). The retry is scheduled for

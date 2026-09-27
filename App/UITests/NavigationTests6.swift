@@ -2,11 +2,14 @@ import XCTest
 
 /// Remote-navigation checks, sixth batch: Settings' Spoilers panel persistence (proving the Slice
 /// decoder fix in ef2a2eb round-trips the nested spoiler keys through a real relaunch) and the
-/// Profiles editor's Kids setup (App/Sources/Profiles/ProfileEditorView.swift). The kid toggle,
-/// age pills and curfew pills only ever appear when editing a profile that is not the primary one;
-/// this app's only path to a non-primary profile's own editor is to switch the active profile to it
-/// first (Settings' "Edit profile" always opens `profiles.active`), so this batch also switches to
-/// the fixture's PIN-protected Guest profile along the way. `--fixtures shell` only.
+/// Profiles editor's Kids setup (App/Sources/Profiles/ProfileEditorView.swift). The kid toggle and
+/// the "PIN & sidebar locks" section only ever show for the primary profile (editing itself or
+/// anyone else) or on the create form (editor-view.tsx `canEditAdvanced`/`showAdvanced`) — a
+/// non-primary profile editing itself gets neither, by upstream's own design, so this batch proves
+/// that for both the fixture's primary (Skipper) and its PIN-protected Guest ("1234", reached by
+/// switching the active profile to it via Who's watching, since Settings' "Edit profile" only ever
+/// opens `profiles.active`), and proves the positive case on the create form instead, since this
+/// app has no path for the primary to open another EXISTING profile's editor. `--fixtures shell` only.
 final class NavigationTests6: XCTestCase {
     override func setUp() { continueAfterFailure = false }
 
@@ -187,20 +190,29 @@ final class NavigationTests6: XCTestCase {
         require(waitUntil(timeout: 5) { master.label == "Blur spoilers: Off" }, "could not turn Blur spoilers back off after the relaunch check (now \"\(master.label)\")", app)
     }
 
-    /// Profiles editor Kids setup (App/Sources/Profiles/ProfileEditorView.swift): the kid toggle only
-    /// shows for a non-primary profile, and Settings' "Edit profile" always opens `profiles.active`,
-    /// so the fixture's primary (Skipper) proves the negative and the PIN-protected Guest ("1234")
-    /// is made active to prove the positive. Turning Kids on shows the age and curfew pills and hides
-    /// the "PIN & sidebar locks" section; Save commits the picks, and reopening the editor (still the
-    /// same Settings visit, no relaunch needed) shows them unchanged. Kids is turned back off and
-    /// saved at the end so Guest is clean for later tests (each `--fixtures shell` launch actually
-    /// reinstalls the three fixture profiles from scratch anyway — Fixtures.installIfRequested calls
-    /// `profiles.reset()` first — but this also leaves the profile clean within this one run).
+    /// Profiles editor Kids setup (App/Sources/Profiles/ProfileEditorView.swift): upstream's own rule
+    /// (reference/harbor/src/components/profile-picker/editor-view.tsx lines 111-113/496-500,
+    /// `canEditAdvanced = activeIsPrimary`, `showAdvanced = canEditAdvanced || mode.kind === "create"`)
+    /// is parental control by design — a non-primary profile editing ITSELF never gets the kid toggle
+    /// or the "PIN & sidebar locks" section, only the primary (editing anyone) or the create form do.
+    /// This proves both halves: editing the fixture's primary (Skipper, active by fixture) shows
+    /// neither, editing the fixture's PIN-protected Guest ("1234") as itself shows neither either, and
+    /// creating a brand-new profile (as Skipper, via Settings' own "Add profile") shows both, lets
+    /// Kids be turned on with an age and curfew pick, and Save creates it (checked via the Profiles
+    /// row's own count text — there is no UI path on this TV for the primary to open ANOTHER existing
+    /// profile's editor to prove the positive case there instead; tracked in docs/parity-gaps.md).
+    /// The created profile needs no cleanup: `Fixtures.installIfRequested`
+    /// (App/Sources/App/Fixtures.swift) calls `profiles.reset()` (wipes `KeyValueStore`/`Prefs`) then
+    /// `installFixture(...)` (sets the roster in memory without persisting) on every `--fixtures
+    /// shell` launch, so nothing created here survives to the next one — confirmed by reading
+    /// `ProfilesStore.reset()`/`installFixture()` directly rather than assumed.
     func testKidsProfileEditorSetup() {
         let app = launch("shell")
         waitForHome(app)
         openSettings(app)
         openProfilesRow(app)
+
+        // Editing the primary (Skipper, active by fixture) itself: never gets the kid toggle.
         sleep(1)
         require(seek("settings-edit-profile", app, max: 4), "could not reach Edit profile from Switch profile (focus: \(focusNote(app)))", app)
         sleep(1)
@@ -211,8 +223,64 @@ final class NavigationTests6: XCTestCase {
         remote.press(.menu)
         require(waitForGone(app.staticTexts["Edit profile"], timeout: 10), "Menu did not close Skipper's editor", app)
 
-        // Switch the active profile to Guest: the only way this app's Settings reaches a non-primary
-        // profile's own editor.
+        // Create (Add profile), still as Skipper: upstream's other showAdvanced path
+        // (`mode.kind === "create"`) — shows both the kid toggle and the locks section.
+        openProfilesRow(app)
+        sleep(1)
+        require(seek("settings-add-profile", app, max: 6), "could not reach Add profile from Switch profile (focus: \(focusNote(app)))", app)
+        sleep(1)
+        remote.press(.select)
+        require(app.staticTexts["New profile"].waitForExistence(timeout: 15), "Add profile did not open the create form", app)
+        require(app.buttons["profile-kid-toggle"].waitForExistence(timeout: 10), "the kid toggle is missing on the create form", app)
+        require(app.staticTexts["PIN & sidebar locks"].waitForExistence(timeout: 10), "the PIN & sidebar locks section is missing on the create form", app)
+
+        // Name is required (Save is disabled while it's empty): type into it while it still has the
+        // form's initial focus, before any Down navigation moves the ring elsewhere.
+        let nameField = app.textFields["profile-name-field"]
+        require(nameField.waitForExistence(timeout: 10), "the Name field is missing on the create form", app)
+        nameField.typeText("Kid test")
+        require(waitUntil(timeout: 10) { (nameField.value as? String) == "Kid test" }, "typing into the Name field did not set it (value: \(String(describing: nameField.value)))", app)
+        sleep(1)
+
+        let kidToggle = app.buttons["profile-kid-toggle"]
+        require(press(.down, app, max: 8, until: { $0 == "profile-kid-toggle" }) != nil, "Down never reached the kid toggle (focus: \(focusNote(app)))", app)
+        sleep(1)
+        remote.press(.select)
+        require(waitUntil(timeout: 5) { kidToggle.label == "On" }, "Select on the kid toggle did not turn Kids on (now \"\(kidToggle.label)\")", app)
+        require(app.buttons["profile-kid-age-7"].waitForExistence(timeout: 10), "turning Kids on did not show the age pills", app)
+        require(app.buttons["profile-kid-curfew-none"].waitForExistence(timeout: 5), "turning Kids on did not show the curfew pills", app)
+        require(waitForGone(app.staticTexts["PIN & sidebar locks"], timeout: 10), "turning Kids on did not hide the PIN & sidebar locks section", app)
+        sleep(1)
+        // The toggle sits at the right edge of its row (a trailing Spacer pushes it there), so Down
+        // may not land on the age row's own leftmost pill: match any age pill first, then seek the
+        // exact one — same for the curfew row and the final Save/Cancel row below.
+        require(press(.down, app, max: 8, until: { $0.hasPrefix("profile-kid-age-") }) != nil, "Down never reached the age pills (focus: \(focusNote(app)))", app)
+        require(seek("profile-kid-age-7", app, max: 6), "could not reach the age 7 pill (focus: \(focusNote(app)))", app)
+        sleep(1)
+        remote.press(.select)
+        require(waitUntil(timeout: 5) { app.buttons["profile-kid-age-7"].isSelected }, "Select on the age 7 pill did not select it", app)
+        sleep(1)
+        require(press(.down, app, max: 8, until: { $0.hasPrefix("profile-kid-curfew-") }) != nil, "Down never reached the curfew pills (focus: \(focusNote(app)))", app)
+        require(seek("profile-kid-curfew-60", app, max: 6), "could not reach the 1 hour curfew pill (focus: \(focusNote(app)))", app)
+        sleep(1)
+        remote.press(.select)
+        require(waitUntil(timeout: 5) { app.buttons["profile-kid-curfew-60"].isSelected }, "Select on the 1 hour curfew pill did not select it", app)
+        sleep(1)
+        // Past the (unfocusable) parent PIN field and the avatar catalog to the form's Save/Cancel
+        // row; Down may land on either button in it, so seek recovers if it is Cancel.
+        require(press(.down, app, max: 120, until: { $0 == "profile-save" || $0 == "profile-cancel" }) != nil, "Down never reached the Save/Cancel row (focus: \(focusNote(app)))", app)
+        require(seek("profile-save", app, max: 3), "could not reach Save from the Save/Cancel row (focus: \(focusNote(app)))", app)
+        sleep(1)
+        remote.press(.select)
+        require(waitForGone(app.staticTexts["New profile"], timeout: 15), "Save did not close the create form", app)
+        let count4 = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", "4 profiles on this account"))
+        require(count4.firstMatch.waitForExistence(timeout: 10), "the Profiles row did not read 4 profiles after Save created one", app)
+
+        // A non-primary profile editing ITSELF (Guest, PIN "1234") also never gets the kid toggle or
+        // the locks section — same upstream rule; switch the active profile to Guest via Who's
+        // watching first, since Settings' "Edit profile" only ever opens `profiles.active` and this
+        // app has no path for the primary to open ANOTHER profile's editor without switching to it
+        // (tracked in docs/parity-gaps.md).
         openProfilesRow(app)
         sleep(1)
         remote.press(.select)
@@ -257,65 +325,10 @@ final class NavigationTests6: XCTestCase {
         sleep(1)
         remote.press(.select)
         require(app.staticTexts["Edit profile"].waitForExistence(timeout: 15), "Edit profile did not open for Guest", app)
-        let kidToggle = app.buttons["profile-kid-toggle"]
-        require(kidToggle.waitForExistence(timeout: 15), "the kid toggle is missing while editing the non-primary profile Guest", app)
-        require(app.staticTexts["PIN & sidebar locks"].waitForExistence(timeout: 10), "Guest's own PIN & sidebar locks section never appeared", app)
-        require(press(.down, app, max: 6, until: { $0 == "profile-kid-toggle" }) != nil, "Down never reached the kid toggle (focus: \(focusNote(app)))", app)
+        require(!app.buttons["profile-kid-toggle"].exists, "the kid toggle shows while Guest edits itself (upstream: only the primary, or Create)", app)
+        require(!app.staticTexts["PIN & sidebar locks"].exists, "the PIN & sidebar locks section shows while Guest edits itself", app)
         sleep(1)
-        remote.press(.select)
-        require(waitUntil(timeout: 5) { kidToggle.label == "On" }, "Select on the kid toggle did not turn Kids on (now \"\(kidToggle.label)\")", app)
-        require(app.buttons["profile-kid-age-7"].waitForExistence(timeout: 10), "turning Kids on did not show the age pills", app)
-        require(app.buttons["profile-kid-curfew-none"].waitForExistence(timeout: 5), "turning Kids on did not show the curfew pills", app)
-        require(waitForGone(app.staticTexts["PIN & sidebar locks"], timeout: 10), "turning Kids on did not hide the PIN & sidebar locks section", app)
-        sleep(1)
-        // The toggle sits at the right edge of its row (a trailing Spacer pushes it there), so Down
-        // may not land on the age row's own leftmost pill: match any age pill first, then seek the
-        // exact one — same for the curfew row and the final Save/Cancel row below.
-        require(press(.down, app, max: 8, until: { $0.hasPrefix("profile-kid-age-") }) != nil, "Down never reached the age pills (focus: \(focusNote(app)))", app)
-        require(seek("profile-kid-age-7", app, max: 6), "could not reach the age 7 pill (focus: \(focusNote(app)))", app)
-        sleep(1)
-        remote.press(.select)
-        require(waitUntil(timeout: 5) { app.buttons["profile-kid-age-7"].isSelected }, "Select on the age 7 pill did not select it", app)
-        sleep(1)
-        require(press(.down, app, max: 8, until: { $0.hasPrefix("profile-kid-curfew-") }) != nil, "Down never reached the curfew pills (focus: \(focusNote(app)))", app)
-        require(seek("profile-kid-curfew-60", app, max: 6), "could not reach the 1 hour curfew pill (focus: \(focusNote(app)))", app)
-        sleep(1)
-        remote.press(.select)
-        require(waitUntil(timeout: 5) { app.buttons["profile-kid-curfew-60"].isSelected }, "Select on the 1 hour curfew pill did not select it", app)
-        sleep(1)
-        // Past the (unfocusable) parent PIN field and the avatar catalog to the form's Save/Cancel
-        // row; Down may land on either button in it, so seek recovers if it is Cancel.
-        require(press(.down, app, max: 120, until: { $0 == "profile-save" || $0 == "profile-cancel" }) != nil, "Down never reached the Save/Cancel row (focus: \(focusNote(app)))", app)
-        require(seek("profile-save", app, max: 3), "could not reach Save from the Save/Cancel row (focus: \(focusNote(app)))", app)
-        sleep(1)
-        remote.press(.select)
-        require(waitForGone(app.staticTexts["Edit profile"], timeout: 15), "Save did not close the editor", app)
-
-        // Reopen (same Settings visit, no relaunch): the picks and the master toggle must have
-        // survived the round trip through ProfilesStore.setKid.
-        openProfilesRow(app)
-        sleep(1)
-        require(seek("settings-edit-profile", app, max: 4), "could not reach Edit profile to reopen Guest (focus: \(focusNote(app)))", app)
-        sleep(1)
-        remote.press(.select)
-        require(app.staticTexts["Edit profile"].waitForExistence(timeout: 15), "Edit profile did not reopen for Guest", app)
-        let reopenedToggle = app.buttons["profile-kid-toggle"]
-        require(waitUntil(timeout: 10) { reopenedToggle.label == "On" }, "Kids did not read On on reopen (now \"\(reopenedToggle.label)\")", app)
-        require(app.buttons["profile-kid-age-7"].isSelected, "age 7 was not still picked on reopen", app)
-        require(app.buttons["profile-kid-curfew-60"].isSelected, "the 1 hour curfew was not still picked on reopen", app)
-
-        // Turn Kids back off and save, so Guest is clean for later tests.
-        require(press(.down, app, max: 6, until: { $0 == "profile-kid-toggle" }) != nil, "Down never reached the kid toggle again (focus: \(focusNote(app)))", app)
-        sleep(1)
-        remote.press(.select)
-        require(waitUntil(timeout: 5) { reopenedToggle.label == "Off" }, "Select on the kid toggle did not turn Kids back off (now \"\(reopenedToggle.label)\")", app)
-        sleep(1)
-        // Kids is off again, so this Down instead crosses the (now visible) PIN & sidebar locks
-        // section before the avatar catalog and the Save/Cancel row.
-        require(press(.down, app, max: 120, until: { $0 == "profile-save" || $0 == "profile-cancel" }) != nil, "Down never reached the Save/Cancel row again (focus: \(focusNote(app)))", app)
-        require(seek("profile-save", app, max: 3), "could not reach Save again from the Save/Cancel row (focus: \(focusNote(app)))", app)
-        sleep(1)
-        remote.press(.select)
-        require(waitForGone(app.staticTexts["Edit profile"], timeout: 15), "Save did not close the editor after turning Kids off", app)
+        remote.press(.menu)
+        require(waitForGone(app.staticTexts["Edit profile"], timeout: 10), "Menu did not close Guest's editor", app)
     }
 }
