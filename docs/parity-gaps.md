@@ -105,8 +105,6 @@ closed these Big Picture behaviours that were outside the table:
 - Detail's Play with no resume point starts the first episode of the season chip on screen and
   says so ("Play S3 E1"); upstream's bp-resume-mark plays the first regular episode whatever the
   chip. With a resume point both play it. Left as a TV choice (sweep 3 checked it).
-- Specials and episode 0 stay in the episode strip; Big Picture drops them (they no longer
-  auto-advance into S1 E1).
 - eBook chapters opened from the panel or bar start at line 0; upstream restores the saved line
   (owner to decide, see HANDOFF.md).
 - Discover and Collections place no first focus of their own.
@@ -118,11 +116,23 @@ closed these Big Picture behaviours that were outside the table:
   dismissed toast hands the ring to the room's default, not the exact tile; the mismatch chip can
   show the old length for under 1 s after a guest's swap; a host swap stuck connecting holds the
   guests; PiP drops on a live reconnect.
-- Up from a tile under its row's See all can land on See all (upstream's Up goes to the row above).
-- Onboarding's Harbor step lacks the side cards; there is no client-side 8-character password check.
-- The content advisory toast's corner when the stats overlay is up.
-- Player panels: the Anime4K sidebar lets the ring reach the chrome; a reload under Subtitles does
-  not re-read the offset.
+- Player panels: a reload under Subtitles does not re-read the offset.
+
+**Closed by sweep 4** (2026-09-27): Up from a tile under its row's See all landing on See all
+(BPRowView.seeAllArmed keeps the chip unfocusable except on the two presses meant to reach it, so a
+native Up finds the row above instead — bp-row-header.tsx / use-bp-rail.ts bpRailStep never lets a
+vertical rail step land on a row's own see-all). The Anime4K sidebar letting the ring reach the
+player chrome behind it (PlayerScreen: `.allowsHitTesting(panel != .anime4k)` alongside `.disabled`,
+since a raw `.focusable()` control ignored the disabled environment). The content advisory toast's
+corner when the stats overlay is up (Big Picture has no stats overlay to port at all — the TV's own
+top-left occupant is the X-Ray rail; the toast now moves to the trailing corner while X-Ray is up,
+player-overlay-layers.tsx contentAdvisoryPosition, instead of disappearing). Onboarding's Harbor step
+lacking the side cards (bp-step-harbor.tsx's two Note cards, ported under the TV's own typed sign-in
+form; the client-side 8-character password check this bullet also named was already fixed by an
+earlier merge, abef01e). Specials and episode 0 staying in the episode strip (DetailModel.buildEpisodes
+now drops season ≤ 0 or episode ≤ 0 like use-bp-episode-strip.ts's collect(), including from the
+season chips, which upstream never shows a Specials entry in either — the engine's own video lists
+used by the player, Live TV and Kids are untouched).
 
 ### Ported since this audit
 

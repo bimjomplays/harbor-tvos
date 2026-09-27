@@ -606,6 +606,10 @@ struct HarborSignInForm: View {
             if creating, !password.isEmpty, password.count < 8 { BPNote(text: T("Use at least 8 characters."), tone: BP.inkMuted) }
             if creating { BPNote(text: "We'll show a one-time recovery key right after you sign up. Save it: it's the only way back in if you forget your password.") }
             BPNote(text: "Your profiles, settings and themes follow this account to every Harbor install.")
+            // (open-items sweep 4) bp-step-harbor.tsx's two Note cards (Themes and lists / Friends),
+            // ported beside the TV's own typed sign-in (upstream has no TV typing path at all and
+            // shows these next to BpHarborSync, its phone-link widget instead).
+            HarborAccountNotes()
         }
         .frame(maxWidth: BP.px(560))
         .onAppear { seedLater() }
@@ -632,6 +636,34 @@ struct HarborSignInForm: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// bp-step-harbor.tsx `Note`: two side cards ("Themes and lists" / "Friends") explaining what
+/// linking a Harbor account gets you. Upstream shows them beside BpHarborSync, its phone-link
+/// widget; the TV has its own typed form instead (HarborSignInForm), so these sit under it.
+struct HarborAccountNotes: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: BP.px(14)) {
+            note(icon: "paintpalette", title: "Themes and lists",
+                 body: "Publish a theme, share a list, keep both when you reinstall.")
+            note(icon: "person.2", title: "Friends",
+                 body: "See what the people you follow are watching right now.")
+        }
+    }
+
+    private func note(icon: String, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: BP.px(14)) {
+            Image(systemName: icon).font(.system(size: BP.px(20), weight: .regular)).foregroundStyle(BP.inkSubtle)
+            VStack(alignment: .leading, spacing: BP.px(4)) {
+                Text(T(title)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
+                Text(T(body)).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, BP.px(18)).padding(.vertical, BP.px(14))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
     }
 }
 
