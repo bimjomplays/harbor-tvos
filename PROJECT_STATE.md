@@ -5,7 +5,46 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
-2026-09-27 (subagent) Navigation UI tests pass 6: `App/UITests/NavigationTests6.swift`, 2 remote-walk
+2026-09-27 (subagent, follow-up) Navigation UI tests pass 6, correction: the `showAdvanced` change in
+the entry directly below was **wrong and has been reverted**. Coordinator review caught it against
+upstream (`reference/harbor/src/components/profile-picker/editor-view.tsx` lines 111-113/496-500:
+`canEditAdvanced = activeIsPrimary`, `showAdvanced = canEditAdvanced || mode.kind === "create"`) —
+a non-primary profile editing ITSELF never gets the kid toggle or "PIN & sidebar locks" either; only
+the primary (editing anyone) or the create form do. That is parental control by design, not a bug:
+the previous change let a Guest make itself a kid or set its own tab locks. `showAdvanced` is back to
+`editing == nil || profiles.active?.isPrimary == true`, with a comment citing the upstream lines and
+noting the real gap (below). `testKidsProfileEditorSetup` (`App/UITests/NavigationTests6.swift`) was
+rewritten around the paths that actually exist: as Skipper (primary, active by fixture), editing
+itself still shows no kid toggle; **Add profile** (`settings-add-profile`, a fresh identifier) opens
+the create form, which shows both the kid toggle and "PIN & sidebar locks" (upstream's other
+`showAdvanced` path, `mode.kind === "create"`) — turns Kids on (pills appear, locks hide), picks age 7
+and 60 min, types a name (`profile-name-field`, required — Save is disabled while it's empty; typed
+with `XCUIElement.typeText`, the standard tvOS text-entry API, not previously used in this suite —
+flagged as the one step here nobody has verified against a real simulator), and Save closes the form
+and is confirmed by the Profiles row's count text going from 3 to 4 profiles (`NSPredicate` on
+`.descendants(matching: .any)`, since the row is one `.accessibilityElement(children: .combine)`
+element, not a plain `staticText`). Also switches to the fixture's PIN-protected Guest ("1234", same
+Who's-watching + PIN-grid path as before) and confirms Guest editing itself shows NEITHER the kid
+toggle NOR the locks section. Checked whether a created profile persists to the next launch by
+reading `Fixtures.installIfRequested`/`ProfilesStore.reset()`/`installFixture()`
+(`App/Sources/App/Fixtures.swift`, `App/Sources/Profiles/ProfilesStore.swift`) directly: `reset()`
+wipes `KeyValueStore`/`Prefs` and `installFixture()` does not call `persist()`, so every
+`--fixtures shell` launch starts from exactly the three fixture profiles regardless of what a prior
+run created — no delete/cleanup step is needed. New identifier beyond the previous entry's list:
+`profile-name-field`. `docs/parity-gaps.md` → "Still open" gets a new line: "Profiles: the primary
+cannot open another profile's editor on TV (upstream's profile picker lets the primary edit any
+profile: kid toggle, PIN & sidebar locks, transfer); size S–M" — this is the actual gap the previous
+entry's change was trying to work around by loosening a rule instead. 41 UI tests, unchanged. Not run
+against the simulator (no Swift compiler here) — this pass carries more unverified risk than most:
+the `typeText` call on a plain SwiftUI `TextField`/tvOS system keyboard has no precedent anywhere in
+this test suite (Search's own keyboard is a custom in-app one, `key-q` etc., a different mechanism),
+so it is the first thing to check on the next CI run. Merged `origin/main` first (translation coverage
+6, the audit reconciliation, and CI run 36302158467's fixes — all already in the entries below by the
+time this pass started; no further conflict beyond this file, kept both entries per this file's own
+convention).
+
+2026-09-27 (subagent) Navigation UI tests pass 6 (**superseded above — the `showAdvanced` change in
+this entry was reverted**): `App/UITests/NavigationTests6.swift`, 2 remote-walk
 tests on `--fixtures shell`. `testSpoilersNestedTogglesAndPersistence` proves the ef2a2eb Slice-decoder
 fix end to end: turns Blur spoilers on (nested toggles appear), flips one nested toggle and flips it
 back, turns the master off (nested toggles gone) and back on, then does a real `app.terminate()` +

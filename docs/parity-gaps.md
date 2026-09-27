@@ -100,6 +100,8 @@ closed these Big Picture behaviours that were outside the table:
 - L2: the addon mark on slots that already have titles.
 - TMDB episode titles on Continue Watching cards (not ported with H2).
 - O2: avatar and name write-back to the Harbor account (owner decision).
+- Profiles: the primary cannot open another profile's editor on TV (upstream's profile picker lets
+  the primary edit any profile: kid toggle, PIN & sidebar locks, transfer); size S–M.
 
 **Added 2026-09-27 (from reconciling `parity-audit-2026-09-23.md` and `parity-audit-2026-09-24.md`
 against the current code — see those files' own "Reconciliation" sections for the full evidence).**
