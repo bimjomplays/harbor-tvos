@@ -315,6 +315,16 @@ struct LibraryView: View {
     /// under it so the ring can be handed on (handOnFilterRing).
     @State private var lastFilterChip: String?
 
+    /// SH-1 (bp-ambient.tsx TITLE_ART_ROUTES has "library" alongside "home"): the focused tile's
+    /// own art, read back off `focusedKey` so there is no second piece of state to keep in step.
+    private var focusedMeta: Meta? {
+        guard let focusedKey, let f = model.shownFeed else { return nil }
+        for s in f.sections {
+            if let e = s.items.first(where: { $0.key == focusedKey }) { return e.meta }
+        }
+        return nil
+    }
+
     private func closePanels() {
         let chip = model.showSearch ? "search" : (model.showFilters ? "filters" : "repair")
         let inGrid = focusedKey != nil
@@ -333,7 +343,9 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        ZStack(alignment: .topLeading) {
+            BPAmbientBackground(focused: focusedMeta)
+            ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: BP.px(16)) {
                 tabRow
                 if model.showFilters { filters }
@@ -457,6 +469,7 @@ struct LibraryView: View {
         .onExitCommand(perform: exitAction)
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
         .fullScreenCover(isPresented: $showStats) { WrappedView() }
+        }
     }
 
     // bp-library.tsx chip row: tabs, then Filters / Search / Refresh.

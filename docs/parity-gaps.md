@@ -366,7 +366,7 @@ Left:
 | V1 (ported) | Award page | `bp-award.tsx`, `use-bp-award-work.ts` | Year and category chips ("All years", "All categories"). Every winner is a poster tile that resolves to a TMDB title and opens its page ("Checking with TMDB…" / "No match found"). The whole list pages in. | `AwardDetailView` (`DiscoverView.swift:403-475`) is text only, 12 entries per category, with nothing to open. | M | Yes |
 | V3 (ported except the rail headers, pass 3) | Discover finish | `bp-discover-wash.tsx`; `bp-discover.tsx:261-263` "{n} picks, refreshed daily"; `bp-people-band.tsx:52,74` "{n} award wins", "Start at number one" | A colour wash from the focused cell, headers on the "Picked for you" rails, and award counts on people. | None of these. | S | Low |
 
-### Home, rooms and cards (6)
+### Home, rooms and cards (7)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
@@ -376,6 +376,7 @@ Left:
 | H4 (RPDB / poster-host URLs ported, pass 3) | Poster chain | `bp-poster-chain.ts` (`useTitlePoster`, `usePosterChain`, `rpdbKey`) | Shows the poster the viewer pinned on desktop, then RPDB rating posters, then localized TMDB art. | Tiles use `meta.poster`. `entry.ts:296` exports `rpdbPoster`, but no caller uses it. | M | Yes, for RPDB users |
 | H5 (rows ported, pass 3; open-anywhere and the Controls legend open) | Quick panel global rows | `bp-quick-panel.tsx:188-226` | Opens anywhere (Y or Tab), including with no title focused. It has Interface sounds (cycle the sound pack), Animated backdrop on/off, and a Controls legend. | `QuickPanelView.swift` opens only on a title and has only title actions. | S | Low |
 | H6 (ported) | Card options | `bp-tile.tsx:144,229` (`hidePosterTitles`, `cardBadgeLimit`) | Hide the title on poster cards; cap the score chips per card. | Titles always follow the tile rules. `ScoreChipsView.swift:8` has a fixed `limit = 4`. | S | Low |
+| SH-1 (ported 2026-09-27, Collections/Library only) | Dynamic ambient backdrop | `bp-ambient.tsx`, `bp-ambient-layers.tsx`, `bp-backdrop-commit.ts` | The background cross-fades to the focused title's own backdrop (else poster) behind the room — BP's signature look; upstream's `TITLE_ART_ROUTES` includes "home", "library" and "collection" alike. | Home, Movies, Shows, Anime and Discover already had this (`SpotlightView`/`BPTitleArt`, wired through `RoomView`/`DiscoverView`'s `onFocus`). Collections and Library fell through to `BPAmbientBackground`'s static poster mosaic. Both now pass their focused card/tile's `Meta` into a new `BPAmbientBackground(focused:)`, which shows a `BPTitleArt` cross-fade (440 ms show/hide, 480 ms per-image, same as `BP_TITLE_ART_FADE_MS`) over the mosaic when the tile has art, and falls back to the mosaic otherwise. | M | Yes |
 
 ### Search and Library (3)
 
