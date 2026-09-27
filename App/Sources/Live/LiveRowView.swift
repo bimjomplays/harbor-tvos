@@ -117,6 +117,7 @@ struct LiveRowView: View {
             HStack(spacing: BP.px(8)) {
                 RemoteImage(url: c.channel.logo, contentMode: .fit).frame(width: BP.px(56), height: BP.px(32))
                     .background(RoundedRectangle(cornerRadius: BP.px(5), style: .continuous).fill(BP.void_.opacity(0.6)))
+                    .accessibilityHidden(true)
                 Text(c.channel.shownName).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 if let b = c.channel.badge { Text(b).font(BP.sans(8, .bold)).foregroundStyle(BP.inkMuted) }
                 Spacer(minLength: 0)
@@ -126,6 +127,7 @@ struct LiveRowView: View {
             if let p = progress(c) {
                 ZStack(alignment: .leading) { Capsule().fill(BP.edge2); Capsule().fill(BP.live).frame(width: (BP.px(250) - BP.px(24)) * min(1, max(0, p))) }
                     .frame(height: BP.px(3))
+                    .bpProgressValue(p)
             }
             if let n = c.next { Text(T("Next:") + " " + n.title).font(BP.sans(10.5)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
         }

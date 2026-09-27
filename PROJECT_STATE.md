@@ -335,6 +335,20 @@ after this branch started; merged that revert in before the final commit). HANDO
 count updated to 39. Not run against a simulator (no Xcode here); the Music test's directional
 assumption (Up from the transport reaches the About tab) and the exact hop counts are the main risk
 if CI turns up red — see the branch's final report for the full list of what could not be verified.
+2026-09-27 07:04 UTC: Accessibility pass 1 (Stage 14) — VoiceOver over Settings/Library/Live/Sports/
+Search/Collections/Discover/Profiles/Onboarding, five subagents in parallel, each cross-checking
+`reference/harbor/src` `aria-label`/`aria-hidden` per control before writing anything. Most files had
+already been through earlier passes (`bpSelected`, `bpProgressValue`, `T(...)` labels already common),
+so most of the ~62 files needed nothing; 35 were touched. Counts (label / value·trait / hidden / combine,
+files touched): Settings 0/1/0/3 (4 files) · Library 0/0/0/2 (2) · Live 9/6/15/3 (8) · Sports 3/4/15/4 (9)
+· Search 1/0/7/1 (2) · Collections 1/0/2/0 (2) · Discover 4/1/6/1 (5) · Profiles 0/1/0/0 (1) · Onboarding
+0/1/4/1 (2). Also fixed several pre-existing bare-string `.accessibilityLabel("...")` calls (not wrapped
+in `T(...)`, so untranslatable) in LiveView, MultiviewView, PlaylistVodView, SearchView, SportsEventView.
+No `.accessibilityIdentifier(...)`, layout, or focus code touched anywhere (grepped the full diff to
+confirm). Position/grid announcements (rule 6) mostly skipped — no matching upstream `aria-posinset`
+pattern found in any of these rooms except QueueDeckView, where an existing label was silently dropping
+the visible "N of M" text and got it back. Not run against a simulator (no Xcode here); brace/paren
+counts verified balanced in every touched file as a syntax sanity check.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.

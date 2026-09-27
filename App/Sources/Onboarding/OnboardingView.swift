@@ -483,7 +483,9 @@ struct RecapRow: View {
     let text: String
     var body: some View {
         HStack(spacing: BP.px(10)) {
+            // Decorative: the text on every row already says whether that item is done.
             Image(systemName: ok ? "checkmark.circle.fill" : "circle.dashed").foregroundStyle(ok ? BP.live : BP.inkSubtle)
+                .accessibilityHidden(true)
             Text(T(text)).font(BP.sans(15)).foregroundStyle(BP.ink)
         }
     }
@@ -654,7 +656,10 @@ struct HarborAccountNotes: View {
 
     private func note(icon: String, title: String, body: String) -> some View {
         HStack(alignment: .top, spacing: BP.px(14)) {
+            // bp-step-harbor.tsx Note: the icon carries no text of its own upstream either; the
+            // title and body already say everything it stands for.
             Image(systemName: icon).font(.system(size: BP.px(20), weight: .regular)).foregroundStyle(BP.inkSubtle)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 Text(T(title)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
                 Text(T(body)).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).fixedSize(horizontal: false, vertical: true)
@@ -664,6 +669,8 @@ struct HarborAccountNotes: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+        // One card, one VoiceOver stop: title and body read together instead of two swipes.
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -769,6 +776,8 @@ struct StreamingServicesStep: View {
                         }
                         .buttonStyle(BPTileStyle(radius: BP.rSM))
                         .focused($ring, equals: "s:\(i.value)")
+                        // bp-step-streaming.tsx aria-pressed={enabled}.
+                        .bpSelected(i.on)
                     }
                 }
                 .focusSection()

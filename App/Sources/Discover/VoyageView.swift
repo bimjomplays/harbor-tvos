@@ -129,6 +129,7 @@ struct VoyageView: View {
                             Button { model.length = n } label: { Text(verbatim: "\(n)") }
                                 .buttonStyle(VoyageSegmentStyle(selected: model.length == n))
                                 .focused($focus, equals: "len-\(n)")
+                                .bpSelected(model.length == n)
                         }
                     }
                     .padding(BP.px(4))
@@ -398,7 +399,7 @@ struct VoyageThemeTile: View {
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [from, to], startPoint: .topLeading, endPoint: .bottomTrailing)
             if let bg = theme.backdrop {
-                RemoteImage(url: bg)
+                RemoteImage(url: bg).accessibilityHidden(true)
                 BP.canvas.opacity(focused ? 0.28 : 0.45)
             }
             LinearGradient(stops: [.init(color: BP.canvas.opacity(0.92), location: 0), .init(color: BP.canvas.opacity(0.66), location: 0.4),
@@ -414,7 +415,7 @@ struct VoyageThemeTile: View {
             accent.frame(height: BP.px(2)).frame(maxHeight: .infinity, alignment: .bottom)
             if busy {
                 BP.canvas.opacity(0.5)
-                ProgressView().tint(BP.ink).frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView().tint(BP.ink).frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityHidden(true)
             }
         }
         .frame(height: BP.px(132))
@@ -465,7 +466,10 @@ struct VoyageRouteRail: View {
                 // The slot's tick and bar: "Watched", or "{n}% watched".
                 .accessibilityValue(Text(verbatim: slotValue(slot)))
         } else if let m = slot.meta {
+            // Not playable yet (still picking): nothing else on screen names this slot's film.
             poster(slot, m)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: m.name))
         } else {
             Text(verbatim: "\(slot.index + 1)").font(BP.sans(11, .semibold)).monospacedDigit().foregroundStyle(BP.inkSubtle)
                 .frame(width: slotW, height: slotW * 1.5)
@@ -538,8 +542,10 @@ struct VoyagePortCard: View {
                         HStack(spacing: -BP.px(8)) {
                             if !loaded {
                                 ForEach(0..<4, id: \.self) { _ in Circle().fill(BP.raised).frame(width: BP.px(32), height: BP.px(32)) }
+                                    .accessibilityHidden(true)
                             } else {
                                 ForEach(faces) { p in face(p) }
+                                    .accessibilityHidden(true)
                                 if extra > 0 {
                                     Text(verbatim: "+\(extra)").font(BP.sans(10.5, .semibold)).monospacedDigit().foregroundStyle(BP.inkMuted)
                                         .frame(width: BP.px(32), height: BP.px(32)).background(Circle().fill(BP.raised))
@@ -562,6 +568,8 @@ struct VoyagePortCard: View {
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.elevated))
         .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
         .animation(BP.easeFast, value: meta.id)
+        // A hover card, not a control of its own: its facts read as one stop, not a scatter of them.
+        .accessibilityElement(children: .combine)
     }
 
     private func face(_ p: VoyageModel.Credits.Person) -> some View {

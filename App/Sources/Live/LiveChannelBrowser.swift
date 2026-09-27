@@ -188,6 +188,7 @@ struct LiveChannelBrowser: View {
                 RemoteImage(url: ch.logo, contentMode: .fit)
                     .frame(width: BP.px(72), height: BP.px(40))
                     .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     HStack(spacing: BP.px(6)) {
                         if ch.favorite { Image(systemName: "star.fill").font(.system(size: BP.px(10))).foregroundStyle(BP.inkMuted).accessibilityLabel(Text(T("Favorite"))) }
@@ -203,6 +204,7 @@ struct LiveChannelBrowser: View {
                 .frame(width: BP.px(240), alignment: .leading)
                 HStack(spacing: BP.px(8)) {
                     Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
+                        .accessibilityHidden(true)
                     Text(nn?.now?.title ?? T(nn?.known == true ? "No program info" : "Live"))
                         .font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     if let p = nn?.now { Text(LiveChannelRow.range(p)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1) }
@@ -217,6 +219,7 @@ struct LiveChannelBrowser: View {
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(isCurrent ? BP.on : BP.panel2))
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .bpSelected(isCurrent)
         .focused($focused, equals: ch.id)
     }
 }
@@ -316,11 +319,13 @@ struct LiveCurrentChannelInfo: View {
                 RemoteImage(url: channel.logo, contentMode: .fit)
                     .frame(width: BP.px(96), height: BP.px(54))
                     .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     HStack(spacing: BP.px(8)) {
                         Text(channel.shownName).font(BP.sans(18, .bold)).foregroundStyle(BP.ink).lineLimit(1)
                         HStack(spacing: BP.px(5)) {
                             Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
+                                .accessibilityHidden(true)
                             Text("Live").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.live)
                         }
                         if let onStar {
@@ -344,6 +349,7 @@ struct LiveCurrentChannelInfo: View {
                             Text(LiveChannelRow.range(p)).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
                             Text(T("%lldm left", left)).font(BP.sans(12)).foregroundStyle(BP.inkMuted).monospacedDigit()
                         }
+                        .accessibilityElement(children: .combine)
                     } else {
                         Text("No program info available").font(BP.sans(12.5)).foregroundStyle(BP.inkSubtle)
                     }

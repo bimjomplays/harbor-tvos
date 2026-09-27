@@ -278,6 +278,7 @@ struct SearchView: View {
                         } label: {
                             HStack(spacing: BP.px(10)) {
                                 RemoteImage(url: hit.logo, contentMode: .fit).frame(width: BP.px(36), height: BP.px(36)).clipShape(RoundedRectangle(cornerRadius: BP.px(8)))
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(hit.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                     HStack(spacing: BP.px(4)) {
@@ -342,7 +343,7 @@ struct SearchView: View {
                     ForEach(model.chips) { chip in
                         Button { model.filter = chip.filter } label: {
                             HStack(spacing: BP.px(6)) {
-                                if model.filter == chip.filter { Circle().frame(width: BP.px(8), height: BP.px(8)) }
+                                if model.filter == chip.filter { Circle().frame(width: BP.px(8), height: BP.px(8)).accessibilityHidden(true) }
                                 Text(T(chip.filter.label))
                                 Text("\(chip.count)").font(BP.sans(11, .bold)).opacity(0.6)
                             }
@@ -410,6 +411,7 @@ struct SearchView: View {
                         Button { channel = ch } label: {
                             VStack(spacing: BP.px(6)) {
                                 RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(120), height: BP.px(60))
+                                    .accessibilityHidden(true)
                                 Text(ch.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(2).multilineTextAlignment(.center)
                                 Text(ch.group ?? ch.playlistName).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                             }
@@ -541,7 +543,7 @@ struct SearchView: View {
                                         Button(T("Remove %@", q), role: .destructive) { removeRecent(q) }
                                     }
                             }
-                            Button { keyboardFocus += 1; model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel("Clear recent searches")
+                            Button { keyboardFocus += 1; model.clearRecent() } label: { Image(systemName: "trash") }.buttonStyle(BPActionStyle()).accessibilityLabel(T("Clear recent searches"))
                         }
                         .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
                     }
@@ -620,6 +622,7 @@ struct SearchView: View {
                             Button { if person.tmdbId != nil { self.person = person } } label: {
                                 VStack(spacing: BP.px(8)) {
                                     RemoteImage(url: person.profile).frame(width: BP.px(110), height: BP.px(110)).clipShape(Circle())
+                                        .accessibilityHidden(true)
                                     Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                     if let k = person.knownFor, !k.isEmpty { Text(k).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
                                 }
@@ -665,6 +668,7 @@ struct TopMatchPanel: View {
             RemoteImage(url: meta.background ?? meta.poster)
                 .frame(width: BP.px(200), height: BP.px(112))
                 .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+                .accessibilityHidden(true)
         }
         .padding(BP.px(16))
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
@@ -680,7 +684,7 @@ struct SearchCollectionCell: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             BP.panel
-            RemoteImage(url: hit.image).opacity(0.7)
+            RemoteImage(url: hit.image).opacity(0.7).accessibilityHidden(true)
             LinearGradient(colors: [BP.void_.opacity(0.92), BP.void_.opacity(0.45), .clear], startPoint: .bottom, endPoint: .top)
             HStack(spacing: BP.px(8)) {
                 Image(systemName: "square.stack.3d.up").font(.system(size: BP.px(15), weight: .semibold)).foregroundStyle(BP.inkSubtle)
@@ -822,7 +826,7 @@ struct SearchAddonPlate: View {
             onRetry()
         } label: {
             HStack(spacing: BP.px(8)) {
-                Image(systemName: "arrow.clockwise").font(.system(size: BP.px(14), weight: .semibold))
+                Image(systemName: "arrow.clockwise").font(.system(size: BP.px(14), weight: .semibold)).accessibilityHidden(true)
                 Text(T("Try again")).font(BP.sans(13, .semibold))
             }
             .foregroundStyle(BP.inkMuted)
