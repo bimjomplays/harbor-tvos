@@ -296,6 +296,21 @@ the Collections card, and the toast all need a real TV pass. Skipped (see docs/e
 AniList list tracking, offline export, translation, annotations, in-chapter search, the legacy
 chapter migration.
 
+2026-09-27 (subagent) Crash audit 2 (09-27 merges): read every diff in 8eaeaef, 127b3ea, 162973a,
+ac1aa3e, 4f7eac1, bad1bc2 and abef01e (Spoilers panel, sweep 4, eBook NYT/browse/collections, music
+About-the-artist + source picker, ContinueCardView/DiscoverView/CollectionsView) against the
+force-unwrap / Int(Double) / bounds / null-decode checklist from the 09-25 audit. No crash or hang
+found: every new `HarborEngine.shared.call` site uses `try?` into an optional (or an already-
+optional engine return, e.g. `nytBestsellerRank`/`collectionsResolved`), array/string indexing is
+guarded (`ordered`'s `candidates.first`, `DetailModel.buildEpisodes`'s new `s > 0, e > 0` guard),
+and the one `DispatchQueue.main.asyncAfter` added (bad1bc2's Connect → Connections handoff) matches
+the existing sequential-fullScreenCover pattern already used in DetailView.swift. One non-crash bug
+found and left alone (out of this audit's scope, doesn't trap): `ContinueCardView.swift`'s episode-
+title `Text(episodeTitle)` line is duplicated (two identical `if !episodeTitle.isEmpty { Text(...) }`
+lines) — a leftover of the same abef01e/113a5f9 duplicate-state merge that 113a5f9 only half-fixed
+(it deduped the `@State` declarations, not the body). Cosmetic double-line, not a crash; worth a
+one-line dedup whenever that file is next touched. Engine untouched this pass.
+
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
 - `reference/harbor` — shallow clone of `harborstremio/harbor` `beta-branch` @ `f289f8f3` (was 1bfcfb6 until 09-24) (will become a submodule).
