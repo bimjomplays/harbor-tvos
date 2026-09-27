@@ -37,9 +37,16 @@ struct MusicView: View {
                     if model.loaded, model.bands.isEmpty, !model.failed {
                         BPNote(text: copy("music.row.emptyRow", "Nothing here yet.")).padding(.horizontal, BP.gutter)
                     }
-                    Color.clear.frame(height: BP.hintHeight + (player.current == nil ? BP.px(20) : BP.px(110)))
+                    Color.clear.frame(height: BP.px(20))
                 }
                 .padding(.top, BP.barHeight + BP.px(12))
+            }
+            // (CI 2026-09-27, run 36321942113 screenshot) The dock is drawn over the scroll view, and
+            // a trailing spacer alone did not make tvOS scroll a focused row out from under it: the
+            // focus engine only keeps the ring inside the scroll view's visible rect, dock included.
+            // A bottom safe-area inset the size of the dock (plus the hint bar) is what it honours.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: BP.hintHeight + (player.current == nil ? BP.px(20) : BP.px(110)))
             }
             if player.current != nil {
                 MusicDockView(onExpand: { nowPlayingOpen = true })
