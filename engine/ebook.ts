@@ -73,8 +73,16 @@ import {
   type EBookResume,
 } from "@/lib/ebook/reader-state";
 import { ebookParagraphs, ebookTextIdentity } from "@/lib/ebook/chapter-locations";
-import { getEBookTracking } from "@/lib/ebook/tracking";
+import {
+  fetchEBookListCollection,
+  flushPendingEBookTracking,
+  getEBookTracking,
+  saveEBookTracking,
+} from "@/lib/ebook/tracking";
 import { booksBySameAuthor } from "@/lib/ebook/universes";
+// AniList list tracking (lib/ebook/tracking.ts) reuses the session engine/trackers.ts signs in
+// (anilist.status/authorizeUrl/complete): there is no separate eBook sign-in, upstream or here.
+import * as anilistSession from "@/lib/anilist/session";
 
 // ------------------------------------------------------------------------------ sources
 
@@ -415,6 +423,47 @@ export function statuses(pid: string, ids: string[]): Record<string, "read" | "p
     else if (partial) out[id] = "partial";
   }
   return out;
+}
+
+// ------------------------------------------------------------------------------ AniList tracking
+
+/** getEBookTracking, exposed directly: the wheel menu's own read/unread toggle state
+ *  (status === "COMPLETED"), kept separate from the merged read/partial badge `statuses()`
+ *  computes from resume too — upstream keeps the two apart (a book can be resume-complete
+ *  without ever being marked read on AniList, or marked read without a saved position at all). */
+export function trackingFor(id: string) {
+  return getEBookTracking(id);
+}
+
+/**
+ * ebook-wheel-menu.tsx markCompleted: the desktop's only AniList list action for an eBook is this
+ * one toggle (there is no in-between "Reading"/"Paused" picker in the eBook UI, unlike the anime
+ * tracker panel) — Completed sets progress to the book's full chapter/volume count, PLANNING
+ * clears it back to 0. `saveEBookTracking` (lib/ebook/tracking.ts) persists locally at once and,
+ * when the book has an `anilistId` and the AniList session from engine/trackers.ts is signed in,
+ * pushes the same mutation upstream's `SaveMediaListEntry` uses; it throws on a failed push so the
+ * caller can fall back to "saved locally" copy, exactly as the wheel menu's try/catch does.
+ */
+export async function toggleRead(ebook: EBook) {
+  const next = getEBookTracking(ebook.id).status !== "COMPLETED";
+  return saveEBookTracking(ebook, {
+    status: next ? "COMPLETED" : "PLANNING",
+    progress: next ? (ebook.chapters ?? getEBookTracking(ebook.id).progress) : 0,
+    progressVolumes: next ? (ebook.volumes ?? getEBookTracking(ebook.id).progressVolumes) : 0,
+  });
+}
+
+/**
+ * views/ebook.tsx loadAnilistLibrary, run once when the room opens: flush anything saved while
+ * signed out, then pull the AniList list collection so `statuses()` picks up ranks set from the
+ * AniList site itself (mediaListEntry.progress) without a per-book round trip. A no-op when the
+ * shared AniList session (engine/trackers.ts `anilist.*`) isn't signed in.
+ */
+export async function refreshAnilistLibrary(): Promise<void> {
+  const session = anilistSession.getSession();
+  if (!session || !anilistSession.isAuthenticated()) return;
+  await flushPendingEBookTracking().catch(() => {});
+  await fetchEBookListCollection(session.userId).catch(() => {});
 }
 
 /** views/ebook.tsx continueBookmarks: every known book with a resume, newest first. */

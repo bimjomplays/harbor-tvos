@@ -4316,6 +4316,25 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   const built2 = eb.collections(scope, pid, [seriesA, seriesB, duneBook, ...p1.items]);
   r.eq("ebook.collections: the scope's award search is fresh now, no new token", built2.token, null);
 
+  // AniList list tracking (lib/ebook/tracking.ts, ebook-wheel-menu.tsx markCompleted): the eBook
+  // room reuses the same AniList session engine/trackers.ts signs in, so with no session set up
+  // in this fixture every save stays local/pending and refreshAnilistLibrary never calls out.
+  const freshBook = { id: "source:fresh:9999", source: "source", title: "Fresh Book", authors: [], description: "", genres: [] };
+  r.eq("ebook.trackingFor: an untouched book defaults to PLANNING/0", eb.trackingFor(freshBook.id), { status: "PLANNING", progress: 0, progressVolumes: 0, sync: "local" });
+  r.eq("ebook.statuses: an untouched book has no read mark", eb.statuses("default", [freshBook.id])[freshBook.id], undefined);
+  r.eq("ebook.toggleRead marks a book with no anilistId complete, locally only", await eb.toggleRead(freshBook), { status: "COMPLETED", progress: 0, progressVolumes: 0, sync: "local" });
+  r.eq("ebook.trackingFor now reports it complete (the detail page's Mark as Read toggle state)", eb.trackingFor(freshBook.id).status, "COMPLETED");
+  r.eq("ebook.statuses reads that AniList-tracked completion even with no resume at all (views/ebook.tsx useEBookReadStatus)", eb.statuses("default", [freshBook.id])[freshBook.id], "read");
+  r.eq("ebook.toggleRead unmarks it (progress and status back to their defaults)", await eb.toggleRead(freshBook), { status: "PLANNING", progress: 0, progressVolumes: 0, sync: "local" });
+  r.eq("ebook.statuses: unmarked and never opened, no read mark again", eb.statuses("default", [freshBook.id])[freshBook.id], undefined);
+  const trackedBook = { ...freshBook, id: "anilist:tracked-test", anilistId: 4242 };
+  const hitsBeforeTracking = hits.length;
+  r.eq("ebook.toggleRead with an anilistId but no AniList session queues the mutation as pending (ebook-wheel-menu markCompleted)",
+    await eb.toggleRead(trackedBook), { status: "COMPLETED", progress: 0, progressVolumes: 0, sync: "pending" });
+  r.eq("ebook.toggleRead never calls out to AniList while it isn't signed in", hits.length, hitsBeforeTracking);
+  await eb.refreshAnilistLibrary();
+  r.eq("ebook.refreshAnilistLibrary is a no-op while AniList is signed out (engine/trackers.ts anilist.status would say so too)", hits.length, hitsBeforeTracking);
+
   const s2 = await eb.removeSource(pid);
   r.eq("ebook.removeSource drops Project Gutenberg", [s2.providers.length, s2.hasGutendex], [0, false]);
   rec.dispose();

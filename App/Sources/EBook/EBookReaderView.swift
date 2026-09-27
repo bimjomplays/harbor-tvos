@@ -114,7 +114,11 @@ struct EBookReaderView: View {
                             .buttonStyle(BPActionStyle(primary: true))
                             if model.hasNext {
                                 Button("Next chapter") {
-                                    model.goToChapter(model.index + 1, line: 0)
+                                    // harbor-reader.tsx's per-chapter effect always restores
+                                    // loadEBookProgress for the chapter it lands on, panel/bar
+                                    // jumps included: goToChapter's own restore (no explicit
+                                    // line) does the same (owner decision, docs/ebook-spec.md).
+                                    model.goToChapter(model.index + 1)
                                     DispatchQueue.main.async { focus = .surface }
                                 }
                                 .buttonStyle(BPActionStyle())
@@ -236,8 +240,11 @@ struct EBookReaderView: View {
             // wider than the screen between the gutters and got squeezed and cut off.
             VStack(alignment: .leading, spacing: BP.px(12)) {
                 HStack(spacing: BP.px(8)) {
-                    barButton("prev", "Previous chapter", icon: "backward.end.fill", enabled: model.hasPrevious) { model.goToChapter(model.index - 1, line: 0); closeMenu() }
-                    barButton("next", "Next chapter", icon: "forward.end.fill", enabled: model.hasNext) { model.goToChapter(model.index + 1, line: 0); closeMenu() }
+                    // (owner decision, docs/ebook-spec.md) No explicit line: goToChapter restores
+                    // that chapter's own saved position, as harbor-reader.tsx's per-chapter effect
+                    // does for every entry point (bar, panel, or the very first open) alike.
+                    barButton("prev", "Previous chapter", icon: "backward.end.fill", enabled: model.hasPrevious) { model.goToChapter(model.index - 1); closeMenu() }
+                    barButton("next", "Next chapter", icon: "forward.end.fill", enabled: model.hasNext) { model.goToChapter(model.index + 1); closeMenu() }
                     barButton("chapters", "Chapters", icon: "list.bullet") { openPanel(.chapters) }
                     barButton("bookmarks", "Bookmarks", icon: "bookmark.fill") { openPanel(.bookmarks) }
                 }
@@ -308,7 +315,9 @@ struct EBookReaderView: View {
         Text(T("%@ chapters", String(model.chapters.count))).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
         ForEach(Array(model.chapters.enumerated()), id: \.element.id) { i, ch in
             Button {
-                model.goToChapter(i, line: i == model.index ? nil : 0)
+                // No explicit line for any chapter, current one included: goToChapter restores
+                // its own saved position (owner decision, docs/ebook-spec.md).
+                model.goToChapter(i)
                 closePanel()
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
