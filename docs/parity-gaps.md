@@ -105,8 +105,6 @@ closed these Big Picture behaviours that were outside the table:
 - Detail's Play with no resume point starts the first episode of the season chip on screen and
   says so ("Play S3 E1"); upstream's bp-resume-mark plays the first regular episode whatever the
   chip. With a resume point both play it. Left as a TV choice (sweep 3 checked it).
-- eBook chapters opened from the panel or bar start at line 0; upstream restores the saved line
-  (owner to decide, see HANDOFF.md).
 - Discover and Collections place no first focus of their own.
 - Deep links open once the covers close rather than on top of them (upstream's openMeta/openList/
   pushFrame push onto the nav stack unconditionally; stacking a presentation over whatever tvOS view

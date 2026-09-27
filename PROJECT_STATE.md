@@ -375,6 +375,29 @@ confirm). Position/grid announcements (rule 6) mostly skipped — no matching up
 pattern found in any of these rooms except QueueDeckView, where an existing label was silently dropping
 the visible "N of M" text and got it back. Not run against a simulator (no Xcode here); brace/paren
 counts verified balanced in every touched file as a syntax sanity check.
+2026-09-27 12:30 UTC: eBook AniList list tracking (subagent, docs/ebook-spec.md, commit `892e7eb` +
+merge `4b9b3d3`). `lib/ebook/tracking.ts` ported into `engine/ebook.ts` (`toggleRead`, `trackingFor`,
+`refreshAnilistLibrary`), reusing the AniList session `engine/trackers.ts` already signs in — upstream
+has no separate eBook sign-in either. Upstream's own AniList surface for an eBook is a single
+read/unread toggle (`ebook-wheel-menu.tsx markCompleted`, not an in-between status picker like the
+anime tracker panel); ported as a "Mark as Read" action in `EBookDetailView`'s action row next to
+Bookmark/favourite/Source (the wheel menu itself is a desktop right-click radial menu with no TV
+equivalent, but every one of its other actions already lives in that row). The room warms the
+tracking cache once per visit (`EBookView.task` → `EBookStore.refreshAnilistLibrary`), like upstream's
+`loadAnilistLibrary`. The detail page's read/partial corner badge now reads the same
+tracking-and-resume-aware status the room's cards already used (`engine ebook.statuses`) instead of
+its own resume-only copy, so a book marked read purely through AniList (no local resume at all) shows
+the badge too. Also closed the owner-decision item in `docs/ebook-spec.md` §3/§5: the reader bar's
+Previous/Next chapter, the failed-chapter card's Next chapter, and the chapters panel's chapter list
+all forced `line: 0` on any chapter but the one already open; upstream's `harbor-reader.tsx` per-chapter
+effect always restores `loadEBookProgress` for whichever chapter it lands on regardless of entry point,
+and `EBookReaderModel.goToChapter`'s own restore path (no explicit line) already does the same, so
+those four call sites in `EBookReaderView.swift` now pass none. `engine/smoke.mjs` gained 10 offline
+checks (local/pending sync branches, tracking-aware `statuses()`, `refreshAnilistLibrary`'s no-op
+guarantee while signed out — asserted by fetch-hit count, not just "didn't throw"). Not run against a
+simulator (no Xcode here): the Mark as Read button's focus/label in the action row, the toast, and the
+chapter-restore fix all need a device/CI pass. `node build.mjs` 4653 KB, `node smoke.mjs --offline`
+1152/1152 passed (was 1142 before this batch).
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
