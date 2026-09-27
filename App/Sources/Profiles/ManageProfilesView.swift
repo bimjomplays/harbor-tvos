@@ -32,6 +32,8 @@ struct ManageProfilesView: View {
         }
         .fullScreenCover(item: $editing) { p in
             ProfileEditorView(editing: p, dismiss: { editing = nil })
+                // (review) A cover nested in Settings' cover: re-inject the store the editor reads.
+                .environmentObject(profiles)
         }
         .onExitCommand { dismiss() }
     }
