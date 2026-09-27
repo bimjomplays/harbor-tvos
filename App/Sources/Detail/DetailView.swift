@@ -76,6 +76,20 @@ struct DetailView: View {
     @State private var pageProbe = DetailPageProbe()
     struct ClosedPlay { let at: Date; let season: Int?; let episode: Int? }
     struct OwnInviteKey: Equatable { let at: Double?; let onScreen: Bool }
+    /// (Watch Together sweep) An invite to a title other than this page's own, while this page
+    /// covers the shell. together-invite-toast.tsx mounts at the app's root, outside the whole
+    /// router, so it draws over every page (App.tsx); root.presentedViewController stays non-nil
+    /// for as long as a Detail page is up, so the shell's own TogetherToastHost (ShellView) never
+    /// shows for it either, and it waited for the page to close. This page now shows it over
+    /// itself instead, exactly as it already does for its own title (ownInvite), and opens the
+    /// invited title as a further cover from here (chained presenting is fine; only presenting
+    /// from the shell while this page already covers it is dropped).
+    @State private var foreignInvite: TogetherModel.IncomingInvite?
+    @State private var foreignInviteShownAt: Date?
+    @State private var foreignInviteProgress: Double = 0
+    @State private var foreignHandledInviteAt: Double?
+    @State private var foreignOpen: TogetherOpen?
+    struct ForeignInviteKey: Equatable { let at: Double?; let onScreen: Bool }
     /// together-invite-toast.tsx AUTO_JOIN_MS.
     private static let inviteAutoJoinS = 4.0
     private static let followWindowS = 5.0
@@ -219,6 +233,18 @@ struct DetailView: View {
                     .padding(.leading, BP.gutter).padding(.bottom, BP.hintHeight + BP.px(16))
             }
         }
+        // (Watch Together sweep) together-invite-toast.tsx for an invite to some other title while
+        // this page covers the shell: see runForeignInvite.
+        .overlay(alignment: .bottomLeading) {
+            if let inv = foreignInvite, inv.at != foreignHandledInviteAt, foreignInviteShownAt != nil {
+                TogetherInviteCard(invite: inv, progress: foreignInviteProgress, onJoin: { joinForeignInvite(inv) },
+                                   onDismiss: { dismissForeignInvite(inv) })
+                    .padding(.leading, BP.gutter).padding(.bottom, BP.hintHeight + BP.px(16))
+            }
+        }
+        // The invited title opens as a further cover from this page (chained presenting works;
+        // presenting straight from the shell while this page already covers it does not).
+        .fullScreenCover(item: $foreignOpen) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
         .task {
             model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) } ?? episodeHint?.season
             // A Continue Watching one-press resume names its episode only for that one play (bp-detail
@@ -241,14 +267,20 @@ struct DetailView: View {
         // episode, or started it from here): see runOwnInvite.
         .onReceive(TogetherModel.shared.$view.map(\.incomingInvite).removeDuplicates()) { inv in
             var mine: TogetherModel.IncomingInvite? = nil
-            if let i = inv, i.invite.mediaId == model.meta.id { mine = i }
+            var other: TogetherModel.IncomingInvite? = nil
+            if let i = inv {
+                if i.invite.mediaId == model.meta.id { mine = i } else { other = i }
+            }
             if ownInvite != mine { ownInvite = mine }
+            // (Watch Together sweep) The same invite this page does not own: see runForeignInvite.
+            if foreignInvite != other { foreignInvite = other }
         }
         // Keyed by the invite and by the page being on screen: a cover over the page stops the
         // countdown, and the page coming back (the player closing) starts it again.
         .task(id: OwnInviteKey(at: ownInvite?.at, onScreen: onScreen)) { await runOwnInvite() }
+        .task(id: ForeignInviteKey(at: foreignInvite?.at, onScreen: onScreen)) { await runForeignInvite() }
         .onAppear { onScreen = true }
-        .onDisappear { onScreen = false; hideOwnInvite() }
+        .onDisappear { onScreen = false; hideOwnInvite(); hideForeignInvite() }
         // A Watch Together host who closed the player to reopen (Sources, Switch source, another
         // episode, a send-back) and leaves the picker with no pick has left the video (TogetherModel.abandonReopen).
         .fullScreenCover(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } }), onDismiss: { pickerAttempt = 0; TogetherModel.shared.abandonReopen() }) {
@@ -425,6 +457,9 @@ struct DetailView: View {
         if awardType != nil || trackerDialog != nil { return true }
         if listDialog || factsDialog || seasonsSheet || rateDialog { return true }
         if autoPlay && !autoPlayFired { return true }
+        // (Watch Together sweep) A foreign invite's own title page is up over this one: waits like
+        // any other cover, same as this page's own title page (picker) does above.
+        if foreignOpen != nil { return true }
         return pageProbe.somethingOver()
     }
 
@@ -455,6 +490,70 @@ struct DetailView: View {
     private func hideOwnInvite() {
         if inviteShownAt != nil { inviteShownAt = nil }
         if inviteProgress != 0 { inviteProgress = 0 }
+    }
+
+    // MARK: foreign invite (Watch Together sweep)
+
+    /// together-invite-toast.tsx for an invite to a title other than this page's own: the same 4 s
+    /// countdown and cover-wait as runOwnInvite (ownInviteHeld is about this page's own screen, not
+    /// the invite's title, so it applies here too), but Join opens the invited title as a further
+    /// cover (foreignOpen) instead of this page's own in-place picker; there is no auto-advance
+    /// case to join at once for, since the invite is not for the video this page just played.
+    private func runForeignInvite() async {
+        hideForeignInvite()
+        guard foreignInvite != nil, onScreen else { return }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        while !Task.isCancelled {
+            guard tickForeignInvite() else { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    /// One look at the foreign invite: false once it is spent (joined, dismissed, dropped or gone).
+    private func tickForeignInvite() -> Bool {
+        guard let inv = foreignInvite, inv.at != foreignHandledInviteAt else {
+            hideForeignInvite()
+            return false
+        }
+        let room = TogetherModel.shared
+        let pending: Bool = room.view.inSession && room.view.incomingInvite?.at == inv.at
+        guard pending else {
+            hideForeignInvite()
+            return true
+        }
+        guard !ownInviteHeld() else {
+            hideForeignInvite()
+            return true
+        }
+        let now = Date()
+        let start: Date = foreignInviteShownAt ?? now
+        if foreignInviteShownAt == nil { foreignInviteShownAt = start }
+        foreignInviteProgress = min(1, now.timeIntervalSince(start) / Self.inviteAutoJoinS)
+        if foreignInviteProgress >= 1 {
+            joinForeignInvite(inv)
+            return false
+        }
+        return true
+    }
+
+    private func joinForeignInvite(_ inv: TogetherModel.IncomingInvite) {
+        foreignHandledInviteAt = inv.at
+        hideForeignInvite()
+        TogetherModel.shared.dismiss("invite")
+        let i = inv.invite
+        let meta = Meta(id: i.mediaId, type: i.mediaType, name: i.mediaTitle, poster: i.posterUrl, background: i.backgroundUrl, logo: i.logoUrl, releaseInfo: i.releaseInfo)
+        foreignOpen = TogetherOpen(meta: meta, episode: i.episode, guestPick: i.guestPick == true)
+    }
+
+    private func dismissForeignInvite(_ inv: TogetherModel.IncomingInvite) {
+        foreignHandledInviteAt = inv.at
+        hideForeignInvite()
+        TogetherModel.shared.dismiss("invite")
+    }
+
+    private func hideForeignInvite() {
+        if foreignInviteShownAt != nil { foreignInviteShownAt = nil }
+        if foreignInviteProgress != 0 { foreignInviteProgress = 0 }
     }
 
     /// A room invite to this title that the page will join or show (auto-advance leaves the next

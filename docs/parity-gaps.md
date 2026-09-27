@@ -112,10 +112,12 @@ closed these Big Picture behaviours that were outside the table:
   the player; a link page over the intro wall on a cold launch, links under the curfew lock or
   screensaver, and a theme or language rebuild dropping a re-presented page are unhandled.
 - A sync-pulled theme or language drops a non-player cover.
-- Watch Together: an invite to another title waits under a Detail page for the shell's toast; a
-  dismissed toast hands the ring to the room's default, not the exact tile; the mismatch chip can
-  show the old length for under 1 s after a guest's swap; a host swap stuck connecting holds the
-  guests; PiP drops on a live reconnect.
+- Watch Together: PiP drops on a live reconnect. Upstream never tears down the player object a
+  reconnect reloads (mpv's own window on desktop, the one `<video>` element on the web bridge), so
+  its PiP survives one by construction; the TV's reload recreates the whole controller (`.id
+  (reloadToken)`, `engineReplaced()`, PlayerScreen.swift) on every one, live or not, which is what a
+  genuine fix would have to stop doing for this case without touching every other reload path (VOD
+  retries, quality and source switches) that also relies on it. Documented rather than changed.
 - Player panels: a reload under Subtitles does not re-read the offset.
 
 **Closed by sweep 4** (2026-09-27): Up from a tile under its row's See all landing on See all
@@ -138,6 +140,27 @@ used by the player, Live TV and Kids are untouched).
 Right-off-the-last-tile hop in CI (`testRowSeeAllEdge`, `testHomeBandRowLeads`: the chip was not yet
 focusable in the update that asked for it) and was reverted. "Up from a tile under the row's See all
 can land on See all" is open again; a fix must keep the chip focusable at the moment of the hop.
+
+**Closed by Watch Together sweep** (2026-09-27): An invite to another title waited under a Detail
+page for the shell's toast (`root.presentedViewController != nil` for as long as the page is up):
+DetailView now shows it over itself too, for a foreign title exactly as it already did for its own
+(together-invite-toast.tsx mounts outside the whole router in App.tsx and draws over every page;
+`DetailView.swift` `foreignInvite` / `runForeignInvite` / `foreignOpen`). A dismissed invite toast
+handed the ring to the room's default (`ShellFocus.requestDefault`) rather than the exact tile it
+came from; recoverBpFocus's "marked cell" survives upstream's toast (it sits outside Big Picture's
+own focus scope), so a weak `UIFocusSystem` pointer to that tile, kept fresh while the invite is
+pending and the ring is not already on its card, now lets Dismiss ask for it back directly
+(`TogetherOverlays.swift` `RingAnchor` / `restoreRingToPreviousTile`). The duration-mismatch chip
+could show the old length for under 1 s after a guest's swap (`PlayerClock.snap` held the left
+file's numbers until the new controller's first tick; nothing else cleared it): cleared with the
+rest of a swap's reset, as the browser's own `duration` already resets on upstream's `src` swap
+(`PlayerClock.resetForSwap`, called from `PlayerScreen.switchStream`). A host's swap stuck
+connecting held every guest for good (neither the heartbeat, which needs a real duration and
+position, nor `sourceFailed`, which needs `status.state == "error"`, ever fires for a stream that
+just sits on "Connecting…"): let go past the same ceiling upstream's own stall-wait falls back to
+for a stream that never starts (`lib/player/stall-wait.ts` `FALLBACK_SEC`), as a failed swap already
+is (`TogetherPlayback.swift` `swapStallS` / `swapHoldSince`, checked in `tick()`). PiP dropping on a
+live reconnect was looked at and left open — see the bullet above.
 
 ### Ported since this audit
 

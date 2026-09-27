@@ -30,6 +30,17 @@ final class PlayerClock: ObservableObject {
         if sec != buffered { buffered = sec }
     }
 
+    /// (Watch Together sweep) A stream swap (PlayerScreen.switchStream): nothing else clears `snap`,
+    /// so it kept the left file's own numbers until the new controller's first tick, up to 1 s away
+    /// (this clock's own tick rate) — long enough for duration-mismatch-chip.tsx's guest-side chip
+    /// to read the old length against the room's (new) host length for a moment. Upstream reads the
+    /// video element's own `duration`, which the browser already resets on a `src` swap; this gives
+    /// the TV's copy of it the same shape. `lastGoodPos` (kept, for Switch source) still answers
+    /// "where were we" while this reads 0.
+    func resetForSwap() {
+        if snap.position != 0 || snap.duration != 0 { snap = (0, 0, snap.paused) }
+    }
+
     /// bp-player-scrub.tsx fmtTime: m:ss, or h:mm:ss from an hour.
     static func fmt(_ s: Double) -> String {
         guard s.isFinite, s > 0 else { return "0:00" }

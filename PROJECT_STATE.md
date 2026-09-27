@@ -312,6 +312,31 @@ lines) — a leftover of the same abef01e/113a5f9 duplicate-state merge that 113
 (it deduped the `@State` declarations, not the body). Cosmetic double-line, not a crash; worth a
 one-line dedup whenever that file is next touched. Engine untouched this pass.
 
+2026-09-27 (subagent) Watch Together sweep: closed 4 of the 5 remaining docs/parity-gaps.md smaller
+behaviour differences, each against the cited upstream file. An invite to another title waiting
+under a Detail page for the shell's toast (`root.presentedViewController != nil` the whole time the
+page is up) — DetailView now shows it over itself too, for a foreign title exactly as it already
+did for its own (`DetailView.swift` `foreignInvite`/`runForeignInvite`/`foreignOpen`, opening a
+further cover from the page rather than the shell). A dismissed invite toast handing the ring to
+the room's default instead of the exact tile — a weak `UIFocusSystem` pointer to the tile, kept
+fresh while an invite is pending and the ring is not on its card yet, lets Dismiss ask for it back
+directly (`TogetherOverlays.swift` `RingAnchor`/`restoreRingToPreviousTile`; `handRingToRoom` still
+covers the post-watch hand-off, untouched). The duration-mismatch chip showing the old length for
+under 1 s after a guest's swap (`PlayerClock.snap` held the left file's numbers until the new
+controller's first tick) — cleared with the rest of a swap's reset (`PlayerClock.resetForSwap`,
+called from `PlayerScreen.switchStream`). A host's swap stuck connecting holding every guest for
+good (neither the heartbeat nor `sourceFailed` ever fires for a stream that just sits on
+"Connecting…") — let go past the same ceiling upstream's own stall-wait falls back to for a stream
+that never starts (`TogetherPlayback.swift` `swapStallS`/`swapHoldSince`, checked in `tick()`).
+PiP dropping on a live reconnect was looked at and left open: upstream never tears down the player
+object a reconnect reloads (mpv's own window, or the web bridge's one persistent `<video>`), so PiP
+survives by construction; the TV's reload recreates the whole controller on every one via `.id
+(reloadToken)` (`engineReplaced()`), which every other reload path (VOD retries, quality/source
+switches) also relies on — a real fix needs a broader rework of that shared mechanism, not a
+one-line change; documented in parity-gaps.md instead. No engine files touched (build/smoke not
+re-run). Device check: all five, especially the ring-restore (UIFocusSystem.requestFocusUpdate) and
+the foreign-invite cover chaining, since this environment has no Swift compiler.
+
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
 - `reference/harbor` — shallow clone of `harborstremio/harbor` `beta-branch` @ `f289f8f3` (was 1bfcfb6 until 09-24) (will become a submodule).

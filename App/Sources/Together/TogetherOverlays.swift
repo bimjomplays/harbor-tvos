@@ -1,6 +1,13 @@
 import SwiftUI
 import UIKit
 
+/// (Watch Together sweep) A weak pointer to whatever UIView the ring was on, so a caller can ask
+/// UIFocusSystem to put it straight back there later without holding it alive.
+private final class RingAnchor {
+    weak var view: UIView?
+    init(_ view: UIView?) { self.view = view }
+}
+
 /// The room's toasts outside the player: together-invite-toast.tsx (auto-joins after 4 s unless
 /// dismissed), together-summon-toast.tsx, together-participant-left-toast.tsx and
 /// together-chat-toast.tsx. Mounted over the shell and over the room screen.
@@ -30,6 +37,13 @@ struct TogetherToastHost: View {
     /// (open-items sweep 2) A title page opened from the toast while it held the ring (Join, Sure,
     /// or the 4 s running out under it): the room takes the ring back when that page closes.
     @State private var ringInCover = false
+    /// (Watch Together sweep) The tile the ring was on right before it might move onto the invite
+    /// card, kept fresh while an invite is pending and the ring is not already on it: upstream's
+    /// toast sits outside Big Picture's own focus scope, so recoverBpFocus's "marked cell" (the
+    /// tile) survives it and a dismissed invite hands the ring straight back there, falling back to
+    /// the scope's autofocus seed only when there is no mark. tvOS has no such mark; this keeps a
+    /// weak pointer to the same tile instead, so Dismiss can ask the focus system for it directly.
+    @State private var ringAnchor: RingAnchor?
 
     // together-invite-toast.tsx AUTO_JOIN_MS / together-chat-toast.tsx VISIBLE_MS
     private static let autoJoinS = 4.0
@@ -46,7 +60,16 @@ struct TogetherToastHost: View {
         }
         .padding(.leading, BP.gutter).padding(.bottom, BP.hintHeight + BP.px(16))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .onReceive(clock) { _ in tickInvite() }
+        .onReceive(clock) { _ in
+            tickInvite()
+            // (Watch Together sweep) Captured only while an invite is actually pending and the ring
+            // is not already on its card: stops the instant it is joined or dismissed, so a whole
+            // video's worth of ticks afterwards (the ring now somewhere inside the player) never
+            // overwrites this with something restoreRingToPreviousTile must not use.
+            if inviteStarted != nil, !inviteRing, let window = HarborOverlayWindow.mainWindow {
+                ringAnchor = RingAnchor(UIFocusSystem.focusSystem(for: window)?.focusedItem as? UIView)
+            }
+        }
         // (bug pass) Keyed on the newest line, not the count: the engine keeps the last 200 lines
         // (provider-events.ts CHAT_HISTORY_LIMIT), so once a room reached 200 the count stopped
         // changing and no chat toast ever showed again.
@@ -82,6 +105,19 @@ struct TogetherToastHost: View {
         guard ringInCover else { return }
         ringInCover = false
         handRingToRoom()
+    }
+
+    /// (Watch Together sweep) Dismiss puts the ring back on the exact tile it was on (the fresh
+    /// end of `ringAnchor`, UIFocusSystem.requestFocusUpdate), not just the room's default seed;
+    /// false when that tile is gone (a row reflowed, the room changed) so the caller falls back to
+    /// handRingToRoom as before. Not used by coverClosed: that hand-off follows watching a whole
+    /// invited title, by which point the anchor is stale (captured before Join, not after).
+    private func restoreRingToPreviousTile() -> Bool {
+        guard !inRoomScreen, let view = ringAnchor?.view, view.window != nil,
+              let fs = UIFocusSystem.focusSystem(for: view) else { return false }
+        fs.requestFocusUpdate(to: view)
+        fs.updateFocusIfNeeded()
+        return true
     }
 
     // MARK: invite
@@ -135,7 +171,7 @@ struct TogetherToastHost: View {
                                handledInviteAt = inv.at
                                room.dismiss("invite")
                                inviteRing = false
-                               handRingToRoom()
+                               if !restoreRingToPreviousTile() { handRingToRoom() }
                            },
                            onRing: { inviteRing = $0 })
     }
