@@ -1281,7 +1281,7 @@ struct PlayPickerView: View {
         resolving = nil
         if r.ok, let ready = Self.playable(r) { openGated(nil, ready, focusKey: "copy:" + copy.key) }
         else if r.ok, r.data != nil { resolveError = Self.badLinkMessage }   // (bug pass 2)
-        else { resolveError = "This server couldn't start playback (\(r.code ?? "unknown"))." }
+        else { resolveError = T("This server couldn't start playback (%@).", r.code ?? "unknown") }
     }
 
     private func badges(_ s: ScoredStream) -> [String] {
@@ -1329,11 +1329,13 @@ struct PlayPickerView: View {
         } else {
             failedIds.insert(s.id)
             if countDebridFailure(r) { dialog = .debridDown; return }
-            resolveError = r.message ?? "Couldn't get a playable link (\(r.code ?? "unknown")). Try another stream."
+            resolveError = r.message ?? T("Couldn't get a playable link (%@). Try another stream.", r.code ?? "unknown")
         }
     }
 
-    static let badLinkMessage = "This stream's link isn't a valid address. Try another stream."
+    // `static var`, not `let`: a `let` would cache the first-run language forever (T() re-reads
+    // L10n.language on every call, a later language switch would otherwise never take).
+    static var badLinkMessage: String { T("This stream's link isn't a valid address. Try another stream.") }
 
     // MARK: (S4) the subtitle step (use-bp-stream-play openPlayerGated / startPreselect / cancelPreselect)
 

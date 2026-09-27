@@ -88,7 +88,7 @@ struct PasteTrackerPanel: View {
                         Text("1. Scan the code (or open the link) on your phone and sign in to \(model.label).").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                         Text(url).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(3)
                         Text("2. Copy the code it shows and paste it here (the iPhone keyboard for Apple TV can paste).").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
-                        BPField(label: "Code from \(model.label)", placeholder: "Paste the code or the whole page address", text: $pasted, phone: true)
+                        BPField(label: T("Code from %@", model.label), placeholder: "Paste the code or the whole page address", text: $pasted, phone: true)
                         HStack(spacing: BP.px(8)) {
                             // (settings pass 2) Dimmed, not disabled, while the field is empty, so
                             // the ring can wait here for the pasted code.
