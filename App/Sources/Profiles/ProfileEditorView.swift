@@ -169,7 +169,7 @@ struct ProfileEditorView: View {
     private var showSecurity: Bool { showAdvanced && !isKid }
 
     /// editor-view.tsx `canSave`'s kid half: `!draftKid || !draftParentPin || draftParentPin.length === 4`.
-    private var kidPinDraftValid: Bool { kidParentPin.isEmpty || ProfilesStore.isValidPin(kidParentPin) }
+    private var kidPinDraftValid: Bool { !isKid || kidParentPin.isEmpty || ProfilesStore.isValidPin(kidParentPin) }
 
     /// editor-view.tsx `locked`: the profile has a PIN (or the new one will).
     private var hasPin: Bool { editing.map { $0.passwordHash != nil } ?? ProfilesStore.isValidPin(draftPin) }
