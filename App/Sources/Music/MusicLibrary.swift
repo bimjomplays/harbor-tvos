@@ -614,6 +614,9 @@ private struct MusicAddToPlaylistKey: EnvironmentKey {
 private struct MusicShowTrackCreditsKey: EnvironmentKey {
     static let defaultValue: ((MusicTrack) -> Void)? = nil
 }
+private struct MusicShowSimilarKey: EnvironmentKey {
+    static let defaultValue: ((MusicTrack) -> Void)? = nil
+}
 
 extension EnvironmentValues {
     /// The track menu's "Add to playlist": set by the screen that hosts MusicPlaylistPickerView.
@@ -626,20 +629,30 @@ extension EnvironmentValues {
         get { self[MusicShowTrackCreditsKey.self] }
         set { self[MusicShowTrackCreditsKey.self] = newValue }
     }
+    /// The track menu's "More like this" (music-similar-page.tsx): set by the screen that hosts
+    /// MusicSimilarPageView.
+    var musicShowSimilar: ((MusicTrack) -> Void)? {
+        get { self[MusicShowSimilarKey.self] }
+        set { self[MusicShowSimilarKey.self] = newValue }
+    }
 }
 
-/// Presents MusicPlaylistPickerView / MusicTrackCreditsView for a track picked from any track
-/// menu on this screen (replaces the Spotify-only destination host now that Harbor has its own
-/// playlists: every track offers "Add to playlist", not only ones already on Spotify).
+/// Presents MusicPlaylistPickerView / MusicTrackCreditsView / MusicSimilarPageView for a track
+/// picked from any track menu on this screen (replaces the Spotify-only destination host now
+/// that Harbor has its own playlists: every track offers "Add to playlist", not only ones already
+/// on Spotify).
 struct MusicTrackActionsHost: ViewModifier {
     @State private var addTarget: MusicTrack?
     @State private var creditsTarget: MusicTrack?
+    @State private var similarTarget: MusicTrack?
     func body(content: Content) -> some View {
         content
             .environment(\.musicAddToPlaylist, { track in addTarget = track })
             .environment(\.musicShowTrackCredits, { track in creditsTarget = track })
+            .environment(\.musicShowSimilar, { track in similarTarget = track })
             .fullScreenCover(item: $addTarget) { track in MusicPlaylistPickerView(track: track) }
             .fullScreenCover(item: $creditsTarget) { track in MusicTrackCreditsView(track: track) }
+            .fullScreenCover(item: $similarTarget) { track in MusicSimilarPageView(seed: track) }
     }
 }
 

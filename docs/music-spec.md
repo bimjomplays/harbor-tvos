@@ -32,7 +32,7 @@ is `engine/music.ts`, and playback is AVFoundation in Swift (`App/Sources/Music/
 | **Spotify** (`music/spotify`, librespot 0.8) | Bring-your-own Spotify app client id, OAuth PKCE with a loopback redirect to `127.0.0.1:8898` in the desktop browser (`auth.rs`), then librespot streams Premium audio through its rodio/cpal sink (`player.rs`); browse/search over the Web API with that token (`browse.rs`, `api.rs`, `tokens.rs`). | No browser on the TV and the loopback redirect cannot be caught on a phone; librespot's audio backends have no tvOS output; `open` (librespot-oauth's browser launcher) does not compile for tvOS. | **Built (batch 3), needs a Premium account on a device.** Phone hand-off for OAuth, librespot 0.8 inside `rust/harbor-ffi` with a ring-buffer sink drained by AVAudioEngine, Web API browse/search in the engine. Details in "Spotify on the TV" below. |
 | **YouTube Music** (`connectors/youtube_music`) | InnerTube browse/search + **yt-dlp** (a downloaded helper binary, auto-updated) to extract stream URLs; the full YouTube Music web app in a native child web view. | No helper programs, no web view (PLAN §5). InnerTube player URLs without yt-dlp need signature deciphering and PO tokens that change weekly. | **Not possible** on the TV. The catalog + SoundCloud / server matching stands in: a chart track plays from whichever connected source matches it. |
 | **Local files** (`connectors/local`) | Folder scan with tag reading, SQLite index. | No user-visible file system on tvOS. | **Not possible.** A home server covers "your own files". |
-| Radio (`lib/music/radio.ts`) | Seeded track radio from Last.fm / YouTube / Deezer radio / related lanes, re-ranked by audio features, spaced by artist, extended near the end of the queue (`armTrackRadio`). | TS over HTTP. | **Shipped (batch 2)** as `engine/musicRadio.ts`: hold Select on any track › **Start radio** (music-track-menu). Same lanes, weights, variant filter, Deezer feature enrichment, ranking and spacing; the YouTube lane is left out (no YouTube source); the Last.fm lane runs when a Last.fm API key is saved. `MusicPlayer` arms the extension: within four entries of the end it asks `music.radioExtend` for 18 more seeded by the last three. Jellyfin InstantMix and Plex station hubs still give server radio. |
+| Radio (`lib/music/radio.ts`) | Seeded track radio from Last.fm / YouTube / Deezer radio / related lanes, re-ranked by audio features, spaced by artist, extended near the end of the queue (`armTrackRadio`). | TS over HTTP. | **Shipped (batch 2)** as `engine/musicRadio.ts`: hold Select on any track › **Start radio** (music-track-menu). Same lanes, weights, variant filter, Deezer feature enrichment, ranking and spacing; the YouTube lane is left out (no YouTube source); the Last.fm lane runs when a Last.fm API key is saved. `MusicPlayer` arms the extension: within four entries of the end it asks `music.radioExtend` for 18 more seeded by the last three. Jellyfin InstantMix and Plex station hubs still give server radio. **"More Like This" (leftovers batch 3):** the same track's own menu now also has **More like this**, upstream's newer `onMoreLikeThis` (`music-similar-page.tsx`, shipped at upstream's `a821e273` — ahead of the pinned `770ca0bd`, see "Upstream drift" below): `music.similarTracks` (`loadSimilarTracks` + `withSeedArtist` in `engine/musicRadio.ts`) builds the same lane-built mix minus the seed track, topped up with at least four of the seed's own artist, and Swift shows it as its own browsable page (`MusicSimilarPageView`, `App/Sources/Music/MusicSimilarPage.swift`) — Play all, Add to queue, Save as playlist — rather than queuing it straight away. Start radio is kept as-is alongside it rather than replaced (it is already shipped and UI-tested); upstream itself removed Start radio from the track menu in favour of More Like This, but this port did not follow that removal. |
 | Internet radio (station streams, radio-browser) | **Not in upstream** (no radio-browser / Icecast / TuneIn source anywhere in `reference/harbor`). | — | Not added: the port follows upstream. "Radio" on the TV is upstream's track radio above plus the servers' stations. |
 | **Last.fm scrobbling** (`music/lastfm.rs`, `music-lastfm.tsx`) | Bring-your-own API key + shared secret, `auth.getToken`, approval in the desktop browser, `auth.getSession`; signed `track.scrobble` once a track that was heard for half its length or four minutes (`engine.rs should_scrobble`) ends. No "now playing" call. | HTTPS + md5 signatures. | **Shipped (batch 2)**: Music › Connections › Last.fm › Connect: API key and shared secret (phone typing), **Authorize Last.fm** shows the approval page as a QR code (as the tracker sign-ins do), then **Finish connection**. Keys are upstream's `harbor.lastfm.v1.*` (already Keychain tier). `MusicPlayer` counts the seconds actually heard (forward steps of at most 2 s, so seeks do not count, `listened_increment`) and scrobbles on finish, skip, stop or advance, once. Navidrome tracks also get the server-side scrobble (`accounts.rs scrobble_track`). |
 | ListenBrainz scrobbling | **Not in upstream** (ListenBrainz is only a catalog source there). | — | Not added. |
@@ -163,7 +163,9 @@ the phone hand-off).
   all → one (one replays a track that ends by itself; Next still moves on), a Play next pick
   plays next in any mode, and Now Playing's Up next lists what will really play. The album
   page's Shuffle toggles the mode. **Gapless:** the next entry is resolved in the
-  last 30 s and queued behind the current item in an `AVQueuePlayer`. **Now Playing** and
+  last 30 s and queued behind the current item in an `AVQueuePlayer`. **Now Playing**'s Play/Pause
+  seeds the ring when the screen opens with an explicit `@FocusState` (`prefersDefaultFocus`
+  alone did not seed it in the CI simulator, run 36302158467) and
   **remote commands** (play/pause/toggle/next/previous/seek, change shuffle / repeat mode) through `MPNowPlayingInfoCenter` /
   `MPRemoteCommandCenter`. **Background audio:** `UIBackgroundModes: [audio]` in `project.yml`,
   `.playback` audio session; upstream keeps playing with its window hidden, so the TV keeps
@@ -225,10 +227,22 @@ the phone hand-off).
 - Spotify: Import to Harbor (bringing a whole Spotify playlist in as a new one — Harbor playlists
   exist now, so only the bulk-import command itself is unported); EQ through an AVAudioEngine
   graph (the Spotify output is already an AVAudioEngine).
+- **Shipped (leftovers batch 3):** "More Like This" (see the Radio row above): `music.similarTracks`
+  (`engine/musicRadio.ts` `loadSimilarTracks` + `withSeedArtist`) and `MusicSimilarPageView`
+  (`App/Sources/Music/MusicSimilarPage.swift`), reached through a new `musicShowSimilar`
+  environment closure + `similarTarget` state on `MusicTrackActionsHost`
+  (`App/Sources/Music/MusicLibrary.swift`), same pattern as Credits / Add to playlist. Not ported:
+  this page's own new copy (`music.similar.*` upstream, not in the pinned catalog to translate
+  through `MusicCopy`) is plain English `T(...)` literals — "Songs like %@", "%lld songs from
+  %lld artists", "Play all", "Save as playlist", "More like this" — untranslated into the other 14
+  languages until a translation-coverage pass adds them to `tools/locales-tvos.json` (this pass
+  could not touch that file); the subtitle's artist count is distinct full artist strings, not
+  upstream's lead-artist-name split (no Swift `artistCreditParts` equivalent exists yet).
 - Needs a device: the About tab's Deezer/MusicBrainz/Wikidata/Wikipedia round trip (offline smoke
   covers it against mocked hosts, docs/music-spec.md → "Needs a device or an account to verify");
   the source picker's focus/remote flow and its nested Connections cover; the Playlists button
   and the Add-to-playlist picker's focus/remote flow (destination toggle, create-then-add); a Plex
   server with a music library, to see the new "now playing" / mark-played reports in its own
   activity (Plex apps / plex.tv) rather than only in the mocked-host smoke check; the track page's
-  Credits panel reachable from a real track's hold-Select menu.
+  Credits panel reachable from a real track's hold-Select menu; the More Like This page's focus
+  and remote flow (Play all / Add to queue / Save as playlist row, the track list's own menu).

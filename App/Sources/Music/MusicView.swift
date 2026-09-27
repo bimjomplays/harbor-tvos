@@ -339,6 +339,7 @@ struct MusicTrackMenuItems: View {
     @ObservedObject private var copy = MusicCopy.shared
     @Environment(\.musicAddToPlaylist) private var addToPlaylist
     @Environment(\.musicShowTrackCredits) private var showTrackCredits
+    @Environment(\.musicShowSimilar) private var showSimilar
     var body: some View {
         Button { player.playNext(track) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
         Button { player.enqueue(track) } label: { Label(copy("music.card.addToQueue", "Add to queue"), systemImage: "text.append") }
@@ -348,8 +349,14 @@ struct MusicTrackMenuItems: View {
             Button { addToPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
         }
         // music-track-menu.tsx "More Like This" (radio.ts loadSimilarTracks, a821e273): replaces
-        // the upstream "Start radio" entry with a fixed mix seeded by this track.
-        Button { player.startSimilar(track) } label: { Label(copy("music.card.moreLikeThis", "More like this"), systemImage: "sparkles") }
+        // the upstream "Start radio" entry. With a host (MusicTrackActionsHost) it opens the
+        // browsable "Songs like <track>" page (music-similar-page.tsx, MusicSimilarPage.swift);
+        // without one it queues the fixed mix straight away.
+        if let showSimilar {
+            Button { showSimilar(track) } label: { Label(copy("music.card.moreLikeThis", "More like this"), systemImage: "sparkles") }
+        } else {
+            Button { player.startSimilar(track) } label: { Label(copy("music.card.moreLikeThis", "More like this"), systemImage: "sparkles") }
+        }
         Button { player.toggleLiked(track) } label: {
             player.isLiked(track)
                 ? Label(copy("music.unsaveTrack", "Remove from saved tracks"), systemImage: "heart.slash")
@@ -520,6 +527,9 @@ struct MusicTransportButtons: View {
     var compact = false
     /// The screen's focus scope, when Play/Pause should take the focus as it opens (Now Playing).
     var focusNamespace: Namespace.ID? = nil
+    /// The explicit @FocusState fallback for the same case: prefersDefaultFocus(in:) alone did not
+    /// seed the ring in the CI simulator (run 36302158467), so MusicNowPlayingView also drives this.
+    var playFocus: FocusState<Bool>.Binding? = nil
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
 
@@ -532,6 +542,7 @@ struct MusicTransportButtons: View {
                  player.phase == .playing ? copy("music.pause", "Pause") : copy("music.play", "Play"), big: true) { player.toggle() }
                 .accessibilityIdentifier("music-toggle")
                 .modifier(MusicPrefersFocus(namespace: focusNamespace))
+                .modifier(MusicFocusBinding(focus: playFocus))
             icon("forward.fill", copy("music.next", "Next track")) { player.next() }
             icon(player.repeatMode == .one ? "repeat.1" : "repeat", repeatLabel, on: player.repeatMode != .off) { player.cycleRepeat() }
                 .accessibilityIdentifier("music-repeat")
@@ -619,6 +630,19 @@ private struct MusicPrefersFocus: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if let namespace {
             content.prefersDefaultFocus(true, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+/// .focused(_:) with an optional binding: MusicTransportButtons is also used compactly (the
+/// dock, MusicPages' MusicCollectionPlayButton row) where nothing drives Play/Pause's focus.
+private struct MusicFocusBinding: ViewModifier {
+    let focus: FocusState<Bool>.Binding?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let focus {
+            content.focused(focus)
         } else {
             content
         }

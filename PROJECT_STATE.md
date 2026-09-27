@@ -47,6 +47,51 @@ renamed/moved export touches any engine glue module (`music.ts`, `musicSources.t
 follow-up are next in this session. Unverified: device/CI (no Mac, no compiler here).
 
 ## Status (2026-09-23 09:25 EDT)
+2026-09-27 09:07 UTC (subagent, worktree agent-afcdebc423a573fb9): ported upstream's "More Like
+This" similar-tracks page (commit `b3a02ce`). `reference/harbor` stays pinned at `770ca0bd`;
+upstream's `music-similar-page.tsx` and `lib/music/{radio,playback-origin}.ts`'s "similar" kind
+ship 11 commits ahead at `a821e273` (docs/upstream-drift-2026-09-27.md) — read via
+`git show a821e273:<path>` inside the submodule (its own already-fetched commit; the tracked pin
+never moved). `engine/musicRadio.ts` gets `loadSimilarTracks` + `withSeedArtist` (the same
+lane-built mix as Start radio, minus the seed, topped up with ≥4 of the seed's own artist);
+`engine/music.ts` exposes `music.similarTracks` (registered in `engine/entry.ts`), wrapping
+failure in `music.radio.error` like `radio()` beside it. New `App/Sources/Music/MusicSimilarPage.swift`
+(`MusicSimilarPageView`): "Songs like <track>", MusicPlaylistDetailView's own row style, Play all,
+Add to queue (reusing `music.card.addToQueue`), Save as playlist (`music.createPlaylist` +
+`music.addTracksToPlaylist`, `music.saved` for the confirmation), loading/failed notes reusing
+`music.loading` / `music.radio.error`. Reached from any track's menu through a new
+`musicShowSimilar` environment closure + `similarTarget` state on `MusicTrackActionsHost`
+(`App/Sources/Music/MusicLibrary.swift`), exactly like `creditsTarget`/`addTarget`.
+`MusicTrackMenuItems` gets a new "More like this" entry *alongside* the existing "Start radio" one
+(kept, not replaced: Start radio is already shipped and UI-tested here; upstream itself removed it
+in favour of More Like This, this port did not follow that removal — worth an owner call later).
+This page's own new copy ("Songs like %@", "%lld songs from %lld artists", "Play all", "Save as
+playlist", "More like this") is plain `T(...)` literals, correct English now but untranslated into
+the other 14 languages until a translation-coverage pass adds them to `tools/locales-tvos.json`
+(out of this worktree's file scope); its artist count is distinct full artist strings, not
+upstream's lead-artist-name split (no Swift `artistCreditParts` equivalent exists yet). New
+identifiers, all additive: `music-similar-play`, `music-similar-queue`, `music-similar-save`.
+`node build.mjs`: 4662 KB (was ≈4.6 MB). `node smoke.mjs --offline`: 1172 checks passed, 0 failed
+(added one for `music.similarTracks`, up from 1171). App/UITests untouched. Not device-tested (no
+Swift compiler here): the Swift file was read-checked by hand against every call site
+(HarborEngine.call's existing heterogeneous-array precedents for the new engine calls; every
+touched/added `accessibilityIdentifier` diffed — none renamed or removed). Device check, once
+buildable: a track's "More like this" opens the mix page with a working Play all / Add to queue /
+Save as playlist and a reachable track list; Start radio still works unchanged.
+
+2026-09-27 09:07 UTC (subagent, worktree agent-afcdebc423a573fb9): Now Playing's Play/Pause focus
+seed (commit `774503f`). `prefersDefaultFocus(true, in: focusNS)` alone did not seed the ring in
+the CI simulator (run 36302158467: it landed on `music-now-seek-back` instead). Added the same
+explicit `@FocusState` fallback other screens use (MusicPageView.playFocused, ActionDialogs'
+nameFocused): `MusicTransportButtons` takes an optional `playFocus: FocusState<Bool>.Binding?`
+threaded alongside `focusNamespace` (`App/Sources/Music/MusicView.swift`, new private
+`MusicFocusBinding` modifier), and `MusicNowPlayingView` drives it true one runloop after
+`onAppear` (`App/Sources/Music/MusicPages.swift`). `music-toggle` and every other existing
+`music-*` identifier/label unchanged; App/UITests untouched. Not device-tested (no Swift compiler
+here): read-checked by hand against the existing `FocusState<Bool>.Binding?` parameter pattern
+already used elsewhere (e.g. `App/Sources/Design/BPStyles.swift`). Device check, once buildable:
+Now Playing opens with the ring on Play/Pause, not the seek row.
+
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
 2026-09-27 (subagent): Closed the parity gap the 09-27 Navigation UI tests pass 6 line below left open —
 "there is no other UI path to a non-primary profile's own editor" for the primary. Upstream
