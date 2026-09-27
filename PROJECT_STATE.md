@@ -3,6 +3,34 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — SH-1 remaining routes)
+2026-09-27 UTC: SH-1 finished for every route in upstream's `bp-ambient.tsx` `TITLE_ART_ROUTES`
+(`home shows movies anime service detail person library collection tmdb-collection addon`). Audited
+all ~27 `BPAmbientBackground(` call sites under `App/Sources` against that set and against whether
+each already has a `SpotlightView`/`BPTitleArt` hero of its own: Home/Movies/Shows/Anime/service
+(`RoomView`), Addon catalog pages (`AddonPageView`) and "See all" grids (`CatalogPageView`) already
+cross-fade via `SpotlightView`'s own `onChange(of: focusedId)`; Detail draws its own subject's art
+directly, never through the mosaic; Collections and Library were wired in commit 336623b earlier
+today. Only **Person** (`PersonView.swift`, route "person") was still a gap: bp-person.tsx's Known
+For, IMDb Top and each filmography `BPRowView` row already handed back the focused `Meta` but
+discarded it (`onFocus: { _ in }`); now a new `@State focusedMeta: Meta?` is set by all three and
+passed to `BPAmbientBackground(focused:)`, same pattern as Collections/Library. Collaborators (a
+`Person`, not a `Meta`) are correctly left out. Skipped, with reasons: **Search** (route "search" is
+not in `TITLE_ART_ROUTES`), **Discover** and its **Voyages**/anime-**Awards** overlays (route
+"discover" is not in the set; Voyages/Awards have no upstream Big Picture route of their own and sit
+over Discover), **Calendar** and **Kids home** (neither has any matching kind in upstream's
+`BigPictureRoute` union at all — Kids never mounts `BpAmbient`, it uses its own `KidsTheme`), and the
+addon store/installer (`AddonsView`/`AddonConfigureView` — tiles are `AddonCard`/manifest data, not
+`Meta`, so `focused: Meta?` doesn't apply; also not the "addon" route, which is `AddonPageView`).
+Checked for the glow tint too: upstream's colour wash over the ambient (`useArtGlow`/`band?.tint` in
+`bp-ambient.tsx`) is gated by `useBpBandState`'s band mechanism, populated only by Home/Live/anime
+hero bands and addon-row posters — Person (like Library/Collections before it) never populates a
+band, so no tint ever applies there upstream either; nothing to add. Files: `App/Sources/Detail/
+PersonView.swift` (+`focusedMeta` state, 3 `onFocus` wirings, `BPAmbientBackground(focused:)`),
+`docs/parity-gaps.md` (SH-1 row + the 09-27 reconciliation note). No engine files touched, so no
+`build.mjs`/`smoke.mjs` run. Not device-tested: PersonView's ambient cross-fade/focus behaviour on a
+real Apple TV — no Swift compiler here, checked by brace/paren balance and a careful diff read.
+
 ## Status (2026-09-27, subagent — upstream drift part 3/3)
 2026-09-27 UTC: Ported upstream's Music "More Like This" (a821e273, `music-track-menu.tsx`
 `onStartRadio` → `onMoreLikeThis`) minimally into the track/album menu. `engine/musicRadio.ts`:
