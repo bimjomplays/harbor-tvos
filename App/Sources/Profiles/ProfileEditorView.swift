@@ -117,6 +117,9 @@ struct ProfileEditorView: View {
                             .buttonStyle(BPActionStyle(busy: deleting))
                         }
                     }
+                    // (CI fix 2026-09-27) Full width: Down from a right-hand avatar found no overlap with
+                    // this left-aligned row and went nowhere (run 36333757566).
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .focusSection()
                     if confirmDelete { BPNote(text: "This removes the profile from every device on your account, with its PIN and resume points on this TV.", tone: BP.danger) }
                 }
@@ -341,6 +344,7 @@ struct ProfileEditorView: View {
                 BPNote(text: lockedCount == 0 ? "No tabs selected" : (hasPin ? T("%lld selected · locked tabs disappear until this profile's PIN is entered.", lockedCount) : T("%lld selected · Locks only activate once a PIN is set.", lockedCount)))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .focusSection()
     }
 

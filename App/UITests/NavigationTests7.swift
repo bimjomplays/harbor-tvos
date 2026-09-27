@@ -182,9 +182,10 @@ final class NavigationTests7: XCTestCase {
                 throw XCTSkip("holding Select on the Liked songs card did not open its track menu in the simulator (\(item) never appeared)")
             }
         }
-        // The focused menu row reports no identifier (run 36330637617: focus ""), so callers poll
-        // this element's own `hasFocus` rather than the identifier walk.
-        return entry
+        // The menu draws each item as a Cell that carries the focus (run 36333757566 hierarchy:
+        // "Cell … Focused", no identifier), with the identified element inside it: callers poll
+        // the containing cell's `hasFocus`.
+        return app.cells.containing(.any, identifier: item).firstMatch
     }
 
     // MARK: tests
