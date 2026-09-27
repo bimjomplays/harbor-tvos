@@ -4,6 +4,19 @@
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
 ## Status (2026-09-23 09:25 EDT)
+2026-09-27 09:07 UTC (subagent, worktree agent-afcdebc423a573fb9): Now Playing's Play/Pause focus
+seed (commit `774503f`). `prefersDefaultFocus(true, in: focusNS)` alone did not seed the ring in
+the CI simulator (run 36302158467: it landed on `music-now-seek-back` instead). Added the same
+explicit `@FocusState` fallback other screens use (MusicPageView.playFocused, ActionDialogs'
+nameFocused): `MusicTransportButtons` takes an optional `playFocus: FocusState<Bool>.Binding?`
+threaded alongside `focusNamespace` (`App/Sources/Music/MusicView.swift`, new private
+`MusicFocusBinding` modifier), and `MusicNowPlayingView` drives it true one runloop after
+`onAppear` (`App/Sources/Music/MusicPages.swift`). `music-toggle` and every other existing
+`music-*` identifier/label unchanged; App/UITests untouched. Not device-tested (no Swift compiler
+here): read-checked by hand against the existing `FocusState<Bool>.Binding?` parameter pattern
+already used elsewhere (e.g. `App/Sources/Design/BPStyles.swift`). Device check, once buildable:
+Now Playing opens with the ring on Play/Pause, not the seek row.
+
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
 2026-09-27 08:27 UTC: Accessibility pass 2 (Stage 14, 5 parallel subagents + this session's review).
 Pass 1 (`d9918a2`) covered Settings/Library/Live/Sports/Search/Collections/Discover/Profiles/Onboarding;

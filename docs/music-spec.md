@@ -163,7 +163,9 @@ the phone hand-off).
   all → one (one replays a track that ends by itself; Next still moves on), a Play next pick
   plays next in any mode, and Now Playing's Up next lists what will really play. The album
   page's Shuffle toggles the mode. **Gapless:** the next entry is resolved in the
-  last 30 s and queued behind the current item in an `AVQueuePlayer`. **Now Playing** and
+  last 30 s and queued behind the current item in an `AVQueuePlayer`. **Now Playing**'s Play/Pause
+  seeds the ring when the screen opens with an explicit `@FocusState` (`prefersDefaultFocus`
+  alone did not seed it in the CI simulator, run 36302158467) and
   **remote commands** (play/pause/toggle/next/previous/seek, change shuffle / repeat mode) through `MPNowPlayingInfoCenter` /
   `MPRemoteCommandCenter`. **Background audio:** `UIBackgroundModes: [audio]` in `project.yml`,
   `.playback` audio session; upstream keeps playing with its window hidden, so the TV keeps
