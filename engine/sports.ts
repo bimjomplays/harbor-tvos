@@ -618,7 +618,11 @@ function sceneryUrl(game: SportsGame): string {
   const rev = typeof __HARBOR_UPSTREAM_REV_FULL__ === "string" ? __HARBOR_UPSTREAM_REV_FULL__ : "";
   if (!rev) return "";
   const group = bpSportsGroup(game);
-  const path = bpSportsScenery(group, game.league).split("?")[0];
+  const raw = bpSportsScenery(group, game.league);
+  // (review) The esports group's art is already an absolute URL (ESPORTS_GAMES `art`: Riot / Steam
+  // CDN), not a /sports/hero-photos path under public/.
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const path = raw.split("?")[0];
   return `https://raw.githubusercontent.com/harborstremio/harbor/${rev}/public${path}`;
 }
 /** lib/sports/hub-artwork: TheSportsDB backdrop/poster/team art for a card or hero with none of its

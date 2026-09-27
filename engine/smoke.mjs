@@ -1696,6 +1696,12 @@ r.ok("benchmark still works", (() => {
   r.eq("sports.artwork: a soccer league with no art falls back to the soccer scenery photo",
     laliga.backdrop, `https://raw.githubusercontent.com/harborstremio/harbor/${rev}/public/sports/hero-photos/soccer.webp`);
 
+  // (review) The esports group's scenery is already an absolute CDN URL (ESPORTS_GAMES `art`), not
+  // a /sports/hero-photos path: it must come back untouched, never prefixed with the raw.githubusercontent base.
+  const lck = await S.artwork(base("LCK"));
+  r.ok("sports.artwork: an esports league's scenery is an absolute URL, not a mangled raw.githubusercontent path",
+    /^https?:\/\//.test(lck.backdrop ?? "") && !(lck.backdrop ?? "").includes("/publichttp"));
+
   // A game that already carries its own artwork or poster never touches the scenery fallback.
   const own = await S.artwork({ ...base("MLB"), artwork: "https://poster.example.invalid/mlb.jpg" });
   r.eq("sports.artwork: the game's own artwork wins over the scenery fallback", own.backdrop, "https://poster.example.invalid/mlb.jpg");
