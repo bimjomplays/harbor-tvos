@@ -3,6 +3,46 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — translation coverage 7, kid-profile/music/theme sweep)
+2026-09-27 UTC: l10n pass over today's new/changed screens (`ManageProfilesView.swift`,
+`ProfileEditorView.swift`, `SpoilersPanel.swift`, `MusicLibrary.swift`, `MusicSimilarPage.swift`,
+`MusicPages.swift`, `EBookDetailView.swift`, `Together/*.swift`, `DetailView.swift`,
+`Design/Theme.swift`; Kids play/arcade copy skipped per standing project decision). Ran
+`node tools/l10n_coverage.mjs --lang de --list <file>` per file: `SpoilersPanel.swift`,
+`MusicSimilarPage.swift`, `EBookDetailView.swift`, all four `Together/*.swift` files were already
+100%; `Theme.swift` (0/7) is all noise (`Switzer-*`/`Sentient-*` font-family names, not copy).
+Real misses found and fixed, all in `tools/locales-tvos.json` (new entries, all 15 languages,
+upstream `reference/harbor` catalogs checked first — none had matching keys for the profile-panel
+copy; French formal *vous*, German/Spanish informal *du*/*tú*, matching pass 5/6's convention;
+`sidebar`/`parent PIN`/`kids space`/`daily limit` vocabulary reused from upstream's own translated
+strings for consistency): `ManageProfilesView.swift` — "Pick a profile to edit its name, avatar, kid
+setup, PIN and sidebar locks.", "Kid profile" (reuses existing "Kids profile" wording — same
+meaning), "Standard profile" (3 keys, file now 6/6). `ProfileEditorView.swift` — "Gives this profile
+its own Kids space, a kid-safe catalog, an optional daily watch limit and a parent PIN — instead of
+PIN & sidebar locks." (1 key, file now 38/40). `MusicLibrary.swift` — "Name and create playlists in
+your library" (the `copy("music.row.newPlaylistHint", …)` fallback; upstream defines this id key in
+`en/music.ts` but ships **zero** language translations for it, so it always fell back to English
+everywhere, not just German) (1 key, file now 51/52). 5 new keys total, `tools/locales-tvos.json`
+382 → 387 tvOS keys per `build_locales.mjs`'s count. Left as follow-up (cannot fix from
+`locales-tvos.json`/`PROJECT_STATE.md` alone, per this pass's scope): `ProfileEditorView.swift:338`
+— two `BPNote(text:)` strings build their key as `"\(lockedCount) selected · …"` inside a ternary
+before lookup (interpolation baked in before translation, the same class of bug pass 6 fixed
+elsewhere), needs `T("%lld selected · …", lockedCount)` in Swift; `MusicLibrary.swift:349` — `copy(
+"music.library.recent", "Recently played")` has translations for this id key in **all 15** upstream
+catalogs already, but `engine/music.ts`'s `COPY_KEYS` array never lists `"music.library.recent"`, so
+`copy()` never surfaces it — a one-line `engine/music.ts` add, out of scope here (only
+`tools/locales-tvos.json`/`PROJECT_STATE.md` touchable this pass). Skipped as noise (brand names /
+data, not copy): `Theme.swift`'s 7 font-family literals; `DetailView.swift:1422` "IMDb " (brand
+prefix); `MusicPages.swift:721` "Wikipedia" (brand name) and `:1663` `"\(…)?code=…"` (a URL query
+string, not prose). `node tools/check_placeholders.mjs` → OK (all 15 languages, both before and
+after — none of the 5 new keys have placeholders). `node tools/l10n_coverage.mjs --lang de` (whole
+`App/Sources`): 3305/3699 89.3% before → 3310/3699 89.5% after (denominator unchanged, as expected —
+these fixes make existing literals match, they don't add new countable ones); spot-checked
+fr/es/ar/ja/zh on `ManageProfilesView.swift` — all 6/6 100% too, confirming the new keys reach every
+language. Files: `tools/locales-tvos.json`. Needed `engine/node_modules` (symlinked from the main
+checkout — this worktree had none, so `build_locales.mjs`'s `esbuild` dependency was missing) to run
+`build_locales.mjs`/verify; no engine source touched, so `build.mjs`/`smoke.mjs` not run.
+
 ## Status (2026-09-27, subagent — NavigationTests7)
 2026-09-27 UTC: Added `App/UITests/NavigationTests7.swift` (2 tests, 42 → 44 UI tests), `--fixtures
 music` only. `testMusicPlaylistsCreateAddAndDetail`: MusicLibraryView create-playlist flow
