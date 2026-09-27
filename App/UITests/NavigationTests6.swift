@@ -122,10 +122,11 @@ final class NavigationTests6: XCTestCase {
 
     /// The Profiles section's own row is far down the Settings page; every visit walks Down to it
     /// from wherever the ring currently is (the top of a fresh page, or already on that row), then
-    /// lands on whichever of its four buttons is nearest and seeks the exact one — Down between
-    /// sections does not always keep the same column.
+    /// lands on whichever of its buttons is nearest and seeks the exact one — Down between
+    /// sections does not always keep the same column. Four buttons for a non-primary active
+    /// profile, five (a trailing "Manage profiles") for the primary (SettingsView.swift).
     private static func inProfilesRow(_ id: String) -> Bool {
-        ["settings-switch-profile", "settings-pin-button", "settings-edit-profile", "settings-add-profile"].contains(id)
+        ["settings-switch-profile", "settings-pin-button", "settings-edit-profile", "settings-add-profile", "settings-manage-profiles"].contains(id)
     }
 
     private func openProfilesRow(_ app: XCUIApplication) {
@@ -328,5 +329,36 @@ final class NavigationTests6: XCTestCase {
         sleep(1)
         remote.press(.menu)
         require(waitForGone(app.staticTexts["Edit profile"], timeout: 10), "Menu did not close Guest's editor", app)
+    }
+
+    /// Manage profiles (Settings/SettingsView.swift's Profiles row → Profiles/ManageProfilesView.swift):
+    /// editor-view.tsx `canEditAdvanced = activeIsPrimary` and picker-modal.tsx `ListView`'s
+    /// `canEditThis = isPrimary || own` let the primary open any profile's own editor. Unlike
+    /// testKidsProfileEditorSetup above, the fixture's primary (Skipper) is already active, so this
+    /// test never switches profiles: it opens Manage profiles straight from the Profiles row, picks
+    /// the PIN-protected Guest ("p_fix_2") from the list it shows, and checks that Guest's own kid
+    /// toggle and "PIN & sidebar locks" section are reachable — both hidden when the primary edits
+    /// itself, both open here because the *active* profile, not the one being edited, is primary.
+    /// Backs out with Menu (editor, then the panel) rather than Save, so no fixture profile changes.
+    func testManageProfilesOpensGuestEditor() {
+        let app = launch("shell")
+        waitForHome(app)
+        openSettings(app)
+        openProfilesRow(app)
+        require(seek("settings-manage-profiles", app, max: 5), "could not reach Manage profiles from Switch profile (focus: \(focusNote(app)))", app)
+        remote.press(.select)
+        require(app.staticTexts["Manage profiles"].waitForExistence(timeout: 15), "Manage profiles did not open", app)
+        let guestRow = app.buttons["manage-profile-p_fix_2"]
+        require(guestRow.waitForExistence(timeout: 10), "Guest's row is missing from Manage profiles", app)
+        require(seek("manage-profile-p_fix_2", app, max: 6, first: .down), "could not reach Guest's row in Manage profiles (focus: \(focusNote(app)))", app)
+        remote.press(.select)
+        require(app.staticTexts["Edit profile"].waitForExistence(timeout: 15), "Select on Guest's row in Manage profiles did not open its editor", app)
+        require(app.buttons["profile-kid-toggle"].waitForExistence(timeout: 10), "the kid toggle is missing while the primary edits Guest through Manage profiles", app)
+        require(app.staticTexts["PIN & sidebar locks"].waitForExistence(timeout: 10), "Guest's PIN & sidebar locks section is missing while the primary edits it through Manage profiles", app)
+        remote.press(.menu)
+        require(waitForGone(app.staticTexts["Edit profile"], timeout: 10), "Menu did not close Guest's editor back to Manage profiles", app)
+        require(guestRow.waitForExistence(timeout: 10), "Manage profiles did not return after closing Guest's editor", app)
+        remote.press(.menu)
+        require(waitForGone(app.staticTexts["Manage profiles"], timeout: 10), "Menu did not close the Manage profiles panel", app)
     }
 }

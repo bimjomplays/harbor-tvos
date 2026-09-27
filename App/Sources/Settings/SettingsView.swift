@@ -34,7 +34,7 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsBridge
     /// The eBook tab (EBook/EBookModels.swift EBookGate): a choice for this TV.
     @AppStorage(EBookGate.key) private var ebookOn = false
-    enum Sheet: Identifiable { case harbor, stremio, pin, removePin, spikes, tmdb, addons, subLangs, newProfile, editProfile, connect; var id: Int { hashValue } }
+    enum Sheet: Identifiable { case harbor, stremio, pin, removePin, spikes, tmdb, addons, subLangs, newProfile, editProfile, manageProfiles, connect; var id: Int { hashValue } }
 
 
     var body: some View {
@@ -192,6 +192,14 @@ struct SettingsView: View {
                                 .accessibilityIdentifier("settings-edit-profile")
                             Button("Add profile") { sheet = .newProfile }.buttonStyle(BPActionStyle())
                                 .accessibilityIdentifier("settings-add-profile")
+                            // editor-view.tsx canEditAdvanced = activeIsPrimary, picker-modal.tsx
+                            // ListView canEditThis = isPrimary || own: the primary can open any
+                            // profile's own editor, not just its own ("Edit profile" above always
+                            // opens `profiles.active`). ManageProfilesView is that route.
+                            if p.isPrimary {
+                                Button("Manage profiles") { sheet = .manageProfiles }.buttonStyle(BPActionStyle())
+                                    .accessibilityIdentifier("settings-manage-profiles")
+                            }
                         }
                     }
                 }
@@ -296,6 +304,8 @@ struct SettingsView: View {
                     ProfileEditorView(editing: nil, dismiss: { sheet = nil })
                 case .editProfile:
                     ProfileEditorView(editing: profiles.active, dismiss: { sheet = nil })
+                case .manageProfiles:
+                    ManageProfilesView(dismiss: { sheet = nil })
                 case .subLangs:
                     ScrollView {
                         VStack(alignment: .leading, spacing: BP.px(12)) {

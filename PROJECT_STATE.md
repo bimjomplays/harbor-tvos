@@ -48,6 +48,30 @@ follow-up are next in this session. Unverified: device/CI (no Mac, no compiler h
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
+2026-09-27 (subagent): Closed the parity gap the 09-27 Navigation UI tests pass 6 line below left open —
+"there is no other UI path to a non-primary profile's own editor" for the primary. Upstream
+(`profile-picker/editor-view.tsx` `canEditAdvanced = activeIsPrimary`; `picker-modal.tsx` `ListView`
+`canEditThis = isPrimary || own`) lets the primary edit any profile's advanced settings from
+"Who's watching?"; the TV port had `ProfileEditorView.showAdvanced` right (fixed by that earlier
+pass) but no route to it beyond self-edit. Added a "Manage profiles" button to Settings' Profiles
+row (`settings-manage-profiles`, shown only when the active profile is primary) opening
+`ManageProfilesView` (new file), a panel listing every profile (`manage-profile-<id>`); Select opens
+`ProfileEditorView(editing:)` for that profile with the primary still active. Checked every write
+path in `ProfileEditorView.save()` and `ProfilesStore` (`update`, `setKid`, `setLockedTabs`,
+`setPin`) for a `profiles.active` assumption instead of the edited profile's own id — none found,
+all already keyed off `editing`'s id from the same 09-27 pass. Added one UI test,
+`testManageProfilesOpensGuestEditor` (`App/UITests/NavigationTests6.swift`, now 3 tests in that
+file, 42 total), which reaches Guest (`p_fix_2`) through the new button with the fixture's primary
+(Skipper) still active — no profile switch, unlike `testKidsProfileEditorSetup` above it — and
+checks the kid toggle and "PIN & sidebar locks" section show. Files: `Settings/SettingsView.swift`,
+`Profiles/ManageProfilesView.swift` (new), `App/UITests/NavigationTests6.swift`, `HANDOFF.md`,
+`docs/parity-gaps.md`. Not run: `engine/build.mjs`/`smoke.mjs` (no `engine/` files touched); no
+Swift compiler here, so every edit was read-checked by hand (brace balance, modifier placement, the
+`Sheet` enum's new case covered by the switch's existing `default: break` in `afterCover`, nested
+`fullScreenCover` environment-object inheritance matches the existing `ProfileEditorView` sibling
+case). Device check: Manage profiles' layout with 5+ profiles and its focus order, since this
+adds a fifth button to the already-four-wide Profiles row on a real TV screen.
+
 2026-09-27 08:36 UTC: SH-1 ambient backdrop cross-fade (subagent, docs/parity-gaps.md, size M).
 Found Home/Movies/Shows/Anime/Discover already do this (`SpotlightView`/`BPTitleArt`, wired through
 `RoomView`/`DiscoverView`'s tile `onFocus` from an earlier pass, not new here) — only Collections

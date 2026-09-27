@@ -27,16 +27,16 @@ everything builds on GitHub Actions and ships to TestFlight **internal testing o
 - **CI.** `Build` runs 222 through 257 and later are green (compile + simulator UI tests), apart
   from four whose failures were fixed straight after: 235, 236 and 251, where new navigation UI tests caught
   real focus bugs, and 249, one compile error (see the rules below). The simulator runs
-  **41 UI tests**: `App/UITests/ScreenshotTests.swift` (12, the screen walk with screenshots) and
+  **42 UI tests**: `App/UITests/ScreenshotTests.swift` (12, the screen walk with screenshots) and
   `NavigationTests.swift`, `NavigationTests2.swift`, `NavigationTests3.swift`, `NavigationTests4.swift`,
-  `NavigationTests5.swift`, `NavigationTests6.swift` (5 + 5 + 5 + 6 + 6 + 2 remote-walk tests on offline
+  `NavigationTests5.swift`, `NavigationTests6.swift` (5 + 5 + 5 + 6 + 6 + 3 remote-walk tests on offline
   fixtures: `--fixtures shell`, `who`, `roomfail`, `calfail`, `detail`, `kidsfail`, `discfail`, `bands`,
   `ebook`, `music`). `NavigationTests6` proves the Profiles editor's kid toggle and "PIN & sidebar
   locks" section only ever show for the primary profile or the create form, matching upstream by
-  design (`editor-view.tsx` `showAdvanced`) — an earlier version of this pass loosened that rule and
-  was reverted; see PROJECT_STATE.md's Status and `docs/parity-gaps.md`'s "Still open" for the real
-  gap (the primary has no way to open ANOTHER existing profile's editor on this TV). Engine:
-  `node build.mjs` ≈ 4.6 MB, `node smoke.mjs --offline` = 1105 checks.
+  design (`editor-view.tsx` `showAdvanced`), and its third test (09-27) proves the primary can reach
+  any other profile's editor through Settings → Profiles → Manage profiles (the gap an earlier
+  version of the pass had papered over by loosening the rule; reverted). Engine:
+  `node build.mjs` ≈ 4.68 MB, `node smoke.mjs --offline` = 1180 checks.
 - **TestFlight.** Build 220 (the branch up to `37aa626`, uploaded ~11:07 UTC 09-25) is the newest on
   TestFlight. Run 221's upload hit Apple's daily upload limit (code **90382**) at 11:22 UTC 09-25, so
   every run since has been a compile check (`testflight=false`). The retry is scheduled for
