@@ -1230,9 +1230,14 @@ r.ok("benchmark still works", (() => {
   {
     const down = loadEngine({ storage: new Map(), onFetch: () => { throw new Error("no network"); } });
     const dm = down.engine.music;
-    await dm.setLiked(seedTrack, true);
+    // A liked track with no artwork (a fixture, a local file): the card must still carry a string
+    // artwork — Swift's MusicCard.artwork is non-optional and a null failed the whole home decode
+    // (run 36319174872: the room kept its old shelves, or "Music could not load").
+    await dm.setLiked({ ...seedTrack, id: "fixture-song", sourceId: "fixture-song", artwork: null }, true);
     const home = await dm.home(true, []);
-    r.ok("music.home keeps the Liked shelf when every catalog source throws", home.bands.some((b) => b.key === "liked") && !home.failed);
+    const liked = home.bands.find((b) => b.key === "liked");
+    r.ok("music.home keeps the Liked shelf when every catalog source throws", !!liked && !home.failed);
+    r.ok("music.home track cards never carry a null artwork", !!liked && liked.cards.every((c) => typeof c.artwork === "string" && typeof c.subtitle === "string"));
   }
   // Track radio (radio.ts): Deezer radio + related-artist lanes, variants dropped, spaced by artist
   const station = await m.radio(seedTrack);

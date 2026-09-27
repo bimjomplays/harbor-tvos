@@ -202,7 +202,7 @@ export function card(item: MusicCatalogItem): MusicCard {
   switch (item.kind) {
     case "track": {
       const { kind: _kind, ...track } = item;
-      return { ...base, key: `track:${src.sourceKey(track)}`, title: item.title, subtitle: item.artist, artwork: item.artwork, artworks: [], circle: false, track };
+      return { ...base, key: `track:${src.sourceKey(track)}`, title: item.title, subtitle: item.artist ?? "", artwork: item.artwork ?? "", artworks: [], circle: false, track };
     }
     case "album":
       return { ...base, key: `album:${item.connectorId}:${item.id}`, title: item.title, subtitle: [item.artist, item.year].filter(Boolean).join(" · "), artwork: item.artwork, artworks: [], circle: false, track: null };
