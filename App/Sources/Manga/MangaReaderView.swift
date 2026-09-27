@@ -322,6 +322,8 @@ struct MangaReaderView: View {
         .padding(.horizontal, BP.px(28)).padding(.vertical, BP.px(22))
         .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel.opacity(0.94)))
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+        // Non-interactive card, several lines: one VoiceOver stop instead of three or four stray ones.
+        .accessibilityElement(children: .combine)
     }
 
     private var failedCard: some View {
@@ -374,6 +376,8 @@ struct MangaReaderView: View {
         .font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)
         .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(6))
         .background(Capsule().fill(BP.void_.opacity(0.78)))
+        // Non-interactive chapter/page/zoom counter: one stop, not three or four.
+        .accessibilityElement(children: .combine)
     }
 
     private static let modes: [(String, String)] = [("long", "Long strip"), ("paged", "Single"), ("double", "Double")]
@@ -396,6 +400,8 @@ struct MangaReaderView: View {
                         .font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Title + chapter subtitle read as one header line, not two stray elements.
+                .accessibilityElement(children: .combine)
                 if showsCount { counterPill.allowsHitTesting(false) }
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.px(36)).padding(.bottom, BP.px(60))
@@ -413,6 +419,8 @@ struct MangaReaderView: View {
                     barButton("dir", model.prefs.rtl ? "Right to left" : "Left to right", icon: "arrow.left.arrow.right") {
                         model.patch(["rtl": .bool(!model.prefs.rtl)])
                     }
+                    // The direction picked, same trait as the mode/auto buttons' own selected state.
+                    .bpSelected(model.prefs.rtl)
                     barButton("fit", labelOf(Self.fits, model.prefs.fit), icon: "arrow.up.left.and.arrow.down.right") {
                         model.patch(["fit": .string(nextOf(Self.fits, model.prefs.fit))])
                     }

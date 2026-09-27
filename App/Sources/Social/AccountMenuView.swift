@@ -260,7 +260,7 @@ struct AccountMenuView: View {
 
     private var header: some View {
         HStack(spacing: BP.px(14)) {
-            if let p = profiles.active { ProfileFace(profile: p, size: BP.px(52)) }
+            if let p = profiles.active { ProfileFace(profile: p, size: BP.px(52)).accessibilityHidden(true) }
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 Text(profiles.active?.name ?? "Harbor").font(BP.display(24)).foregroundStyle(BP.ink)
                 if center.me.signedIn {
@@ -269,6 +269,8 @@ struct AccountMenuView: View {
                     Text("Not signed in to a Harbor account").font(BP.sans(14)).foregroundStyle(BP.inkSubtle)
                 }
             }
+            // Name + handle (or "Not signed in…") read as one line, not two stray elements.
+            .accessibilityElement(children: .combine)
         }
     }
 

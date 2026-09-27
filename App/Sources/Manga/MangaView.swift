@@ -231,6 +231,8 @@ struct MangaView: View {
             LinearGradient(colors: [BP.void_.opacity(0.2), BP.void_.opacity(0.8), BP.void_], startPoint: .top, endPoint: .init(x: 0.5, y: 0.55))
         }
         .ignoresSafeArea()
+        // Ambient backdrop only; heroCopy's own title and synopsis carry the same information.
+        .accessibilityHidden(true)
     }
 
     /// manga-hero: the focused (or first featured) title's cover, name and synopsis.
@@ -240,6 +242,7 @@ struct MangaView: View {
                 RemoteImage(url: h.cover)
                     .frame(width: BP.px(110), height: BP.px(165))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Text("Manga").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.accent)
                     Text(h.title).font(BP.display(34)).foregroundStyle(BP.ink).lineLimit(2)
@@ -301,7 +304,7 @@ struct MangaView: View {
     private func continueCard(_ e: MangaProgressEntry) -> some View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             ZStack(alignment: .bottomLeading) {
-                RemoteImage(url: e.cover)
+                RemoteImage(url: e.cover).accessibilityHidden(true)
                 if opening == e.id {
                     BP.void_.opacity(0.6)
                     ProgressView().tint(BP.ink).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -311,6 +314,7 @@ struct MangaView: View {
                         Capsule().fill(BP.accent).frame(width: g.size.width * e.fraction, height: BP.px(3))
                     }
                     .frame(height: BP.px(3))
+                    .bpProgressValue(e.fraction)
                 }
             }
             .frame(width: BPTileView.posterSize.width, height: BPTileView.posterSize.height)
