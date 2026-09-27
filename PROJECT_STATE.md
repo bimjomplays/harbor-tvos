@@ -395,6 +395,33 @@ confirm). Position/grid announcements (rule 6) mostly skipped — no matching up
 pattern found in any of these rooms except QueueDeckView, where an existing label was silently dropping
 the visible "N of M" text and got it back. Not run against a simulator (no Xcode here); brace/paren
 counts verified balanced in every touched file as a syntax sanity check.
+2026-09-27 08:00 UTC: Music leftovers batch 2 (docs/music-spec.md → Next, items 2–3): Harbor's own
+playlists (library.rs / lib/music/library.ts) in `engine/musicPlaylists.ts` — list/create/rename/
+delete, add/dedupe/remove/reorder tracks in engine storage (`harbor.music.playlists.v1`, same
+pattern as liked tracks and recents), a "Playlists" button in the Music mast (`MusicLibraryView` /
+`MusicPlaylistDetailView`, `App/Sources/Music/MusicLibrary.swift`), and a generalized "Add to
+playlist" (`MusicPlaylistPickerView`) on every track's hold-Select menu now that Harbor has its
+own playlists — it replaces the old Spotify-only destination host, offering a Harbor/Spotify
+destination toggle when Spotify is connected (`MusicSpotifyDestinationContent`, split out of the
+old `MusicSpotifyDestinationView` so both hosts embed the same content). Not ported: M3U import/
+export (no user-visible file system on tvOS). Plex timeline reporting: upstream's own Plex music
+connector sends no timeline calls at all (unlike its video connector's `lib/media-server/plex.ts`
+`reportProgress`); the TV adds "now playing" / "stopped" `/:/timeline` pings (held until the track
+is actually heard, same pattern as the Jellyfin session reports beside it) and a mark-played
+`/:/scrobble` at the same `should_scrobble` threshold Subsonic and Last.fm already use
+(`engine/musicSources.ts`, wired into `musicScrobble.ts` and `music.ts stopped()`). Track page
+Credits (`music-listening-details.tsx` MusicTrackCredits): `music.trackCredits` reuses
+recording-profile.ts's credits (already bundled for the About tab) independent of its
+resolveArtist fallback; `MusicCreditsBlock` (Swift) is the credits UI factored out of the About
+tab's own `creditsSection` so both draw it the same way. Grepped every caller of `.musicSpotify
+DestinationHost()` (renamed `.musicTrackActionsHost()`, 5 call sites) and of `aboutArtist`'s
+credit-flattening (only the About tab); no other signature changed. 19 new offline smoke checks
+(playlist CRUD incl. dedupe/reorder/not-found errors, Plex resolve/started/stopped/scrobble
+against a mocked host, `music.trackCredits` against the existing Deezer/MusicBrainz fixtures).
+`node build.mjs` 4656 KB (unchanged), `node smoke.mjs --offline` 1161/1161. Not run against a
+simulator (no Xcode here); needs a device: the Music library button/picker's focus/remote flow,
+a Plex server with a music library (the timeline pings and the mark-played scrobble), the track
+Credits panel's MusicBrainz/Deezer round trip.
 2026-09-27 12:30 UTC: eBook AniList list tracking (subagent, docs/ebook-spec.md, commit `892e7eb` +
 merge `4b9b3d3`). `lib/ebook/tracking.ts` ported into `engine/ebook.ts` (`toggleRead`, `trackingFor`,
 `refreshAnilistLibrary`), reusing the AniList session `engine/trackers.ts` already signs in — upstream

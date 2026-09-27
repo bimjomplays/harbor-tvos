@@ -148,6 +148,24 @@ struct MusicLibraryState: Decodable {
     var recents: [MusicTrack]
 }
 
+/// engine/musicPlaylists.ts MusicPlaylist (library.rs MusicPlaylist): Harbor's own playlist,
+/// with its tracks, since tvOS has no SQLite database to keep them apart (as it has none for
+/// liked tracks or recents above either).
+struct MusicPlaylist: Codable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var createdAt: String
+    var updatedAt: String
+    var tracks: [MusicTrack]
+}
+
+/// engine/music.ts trackCredits (music-listening-details.tsx MusicTrackCredits, flattened): a
+/// track's own recording credits, independent of Now Playing's About-the-artist bio.
+struct MusicTrackCreditsResult: Decodable {
+    var credits: [MusicAboutArtistCredit]
+    var creditSources: [MusicAboutArtistLink]
+}
+
 struct MusicConnectionRow: Decodable, Identifiable {
     var id: String
     var name: String
