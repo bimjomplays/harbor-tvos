@@ -357,13 +357,15 @@ struct MusicSearchView: View {
 // MARK: - Now Playing
 
 /// music-now-playing.tsx: large art, title and credit, the seekable bar, transport, and beside
-/// them the tabbed panel: the queue (music-queue.tsx) or the lyrics. Left/Right on the bar seeks
-/// 10 s. Upstream's other two tabs (About the artist, Signal) are not on the TV yet.
+/// them the tabbed panel: the queue (music-queue.tsx), the lyrics, or About the artist
+/// (music-listening-details.tsx). Left/Right on the bar seeks 10 s. Upstream's Signal tab (mpv/
+/// librespot stream diagnostics) and the karaoke view are not ported, docs/music-spec.md.
 struct MusicNowPlayingView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
     @State private var panel = "queue"
+    @State private var sourcePickerOpen = false
     /// (device-flow pass) Play/Pause takes the focus when the screen opens: the top-most control,
     /// the Up next tab, did before, a long way from the transport.
     @Namespace private var focusNS
@@ -405,6 +407,12 @@ struct MusicNowPlayingView: View {
                     HStack(spacing: BP.px(18)) {
                         MusicTransportButtons(focusNamespace: focusNS)
                         Spacer()
+                        // music-dock.tsx's source button (MusicServiceLogo): opens the per-source
+                        // picker (music-source-picker.tsx) anchored at the dock there; the TV opens
+                        // it as its own panel instead (no anchored popovers).
+                        Button { sourcePickerOpen = true } label: { Image(systemName: "arrow.triangle.branch").font(.system(size: BP.px(15), weight: .semibold)) }
+                            .buttonStyle(MusicIconStyle())
+                            .accessibilityLabel(copy("music.source.another", "Try another source"))
                         // music-dock.tsx's close: an X titled "Stop and close player". Icon-only now
                         // Shuffle and Repeat share the row (the labelled button no longer fit 560).
                         Button { player.close(); dismiss() } label: { Image(systemName: "xmark").font(.system(size: BP.px(16), weight: .semibold)) }
@@ -417,10 +425,15 @@ struct MusicNowPlayingView: View {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     HStack(spacing: BP.px(10)) {
                         tab("queue", copy("music.now.next", "Up next"))
+                        tab("about", copy("music.artist.about", "About the artist"))
                         tab("lyrics", copy("Lyrics", "Lyrics"))
                     }
                     .focusSection()
-                    if panel == "lyrics" { MusicLyricsPanel(clock: player.clock) } else { MusicQueueList(showsTitle: false, suggests: true) }
+                    switch panel {
+                    case "lyrics": MusicLyricsPanel(clock: player.clock)
+                    case "about": MusicAboutArtistPanel()
+                    default: MusicQueueList(showsTitle: false, suggests: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -435,6 +448,7 @@ struct MusicNowPlayingView: View {
         // host of its own the environment reached MusicView's, which cannot present while this
         // screen is up, so the choice did nothing.
         .musicSpotifyDestinationHost()
+        .fullScreenCover(isPresented: $sourcePickerOpen) { MusicSourcePickerView() }
     }
 
     private func tab(_ id: String, _ title: String) -> some View {
@@ -581,6 +595,392 @@ struct MusicLyricsPanel: View {
         let target = offset + delta
         Task {
             if let stored: Double = try? await HarborEngine.shared.call("music.setLyricOffset", [track, target]) { offset = stored }
+        }
+    }
+}
+
+/// openUrl on the TV: a URL as a QR code for the phone (as the sign-ins and the Spotify library's
+/// open.spotify.com links do). Generic over MusicSpotifyWebLinkView so artist/credit links reuse it.
+struct MusicWebLink: Identifiable, Hashable { var url: String; var id: String { url } }
+struct MusicWebLinkView: View {
+    let link: MusicWebLink
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ZStack {
+            BP.void_.opacity(0.92).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: BP.px(16)) {
+                Text(T("Open on your phone")).font(BP.sans(24, .bold)).foregroundStyle(BP.ink)
+                HStack(alignment: .top, spacing: BP.px(18)) {
+                    if let qr = QRCode.image(link.url) {
+                        Image(uiImage: qr).interpolation(.none).resizable().frame(width: BP.px(190), height: BP.px(190)).accessibilityLabel(Text(T("QR code")))
+                            .padding(BP.px(8)).background(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(.white))
+                    }
+                    VStack(alignment: .leading, spacing: BP.px(8)) {
+                        Text(T("Scan the code to open it on your phone.")).font(BP.sans(15)).foregroundStyle(BP.ink)
+                        Text(link.url).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).lineLimit(2)
+                    }
+                }
+                Button(T("Close")) { dismiss() }.buttonStyle(BPActionStyle())
+            }
+            .padding(BP.px(32))
+            .frame(width: BP.px(760))
+            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
+        }
+        .onExitCommand { dismiss() }
+    }
+}
+
+/// music-listening-details.tsx MusicListeningDetails (bio: music-artist-overview.tsx
+/// MusicArtistStory; credits: MusicCredits): Now Playing's "About the artist" tab. The engine
+/// already resolves and flattens the recording's credits and the MusicBrainz/Wikidata/Wikipedia
+/// bio (music.ts aboutArtist), so this view only draws it. Not ported: upstream's filmography /
+/// tour dates (music-artist-extras.tsx) and "Where to buy" (MusicWhereToBuy), docs/music-spec.md.
+struct MusicAboutArtistPanel: View {
+    @ObservedObject private var player = MusicPlayer.shared
+    @ObservedObject private var copy = MusicCopy.shared
+    @ObservedObject private var settings = SettingsBridge.shared
+    @State private var about: MusicAboutArtist?
+    @State private var state = "loading"
+    @State private var expanded = false
+    @State private var page: MusicPageTarget?
+    @State private var webLink: MusicWebLink?
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: BP.px(16)) {
+                if let about, !about.isEmpty {
+                    content(about)
+                } else if state == "loading" {
+                    ProgressView()
+                } else {
+                    BPNote(text: T("Nothing to show about this artist."))
+                }
+            }
+            .padding(.top, BP.px(4))
+            .padding(.trailing, BP.px(10))
+            .padding(.bottom, BP.px(30))
+        }
+        .task(id: player.current?.queueKey) { await load() }
+        .fullScreenCover(item: $page) { MusicPageView(target: $0) }
+        .fullScreenCover(item: $webLink) { MusicWebLinkView(link: $0) }
+    }
+
+    @ViewBuilder private func content(_ about: MusicAboutArtist) -> some View {
+        if !about.artwork.isEmpty {
+            RemoteImage(url: about.artwork)
+                .frame(height: BP.px(190))
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+        }
+        if let artist = about.artist {
+            Button { page = MusicPageTarget(card: artist) } label: {
+                Label(artist.title, systemImage: "arrow.up.right").font(BP.sans(22, .bold))
+            }
+            .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .accessibilityIdentifier("music-about-artist")
+        }
+        if !about.biography.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(8)) {
+                Text(about.biography).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(expanded ? nil : 6)
+                HStack(spacing: BP.px(14)) {
+                    if about.biography.count > 320 {
+                        Button(copy(expanded ? "music.artist.readLess" : "music.artist.readMore", expanded ? "Show less" : "Read more")) { expanded.toggle() }
+                            .buttonStyle(BPTileStyle(radius: BP.rSM))
+                    }
+                    if let url = about.biographyUrl {
+                        Button { webLink = MusicWebLink(url: url) } label: { Label("Wikipedia", systemImage: "arrow.up.right") }
+                            .buttonStyle(BPTileStyle(radius: BP.rSM))
+                    }
+                }
+            }
+            .focusSection()
+        }
+        facts(about)
+        if !about.genres.isEmpty {
+            HStack(spacing: BP.px(8)) {
+                ForEach(about.genres, id: \.self) { genre in
+                    Text(genre).font(BP.sans(12.5, .semibold)).foregroundStyle(BP.inkMuted)
+                        .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(6))
+                        .background(Capsule().fill(BP.glass))
+                }
+            }
+        }
+        if !about.credits.isEmpty { creditsSection(about) }
+        if !about.members.isEmpty { cardsSection(copy("music.artist.connections", "Members & collaborators"), about.members) }
+        if !about.links.isEmpty { linksSection(about) }
+    }
+
+    @ViewBuilder private func facts(_ about: MusicAboutArtist) -> some View {
+        let began = about.began.isEmpty ? "" : (about.ended.isEmpty ? about.began : "\(about.began) – \(about.ended)")
+        if !about.origin.isEmpty || !began.isEmpty || !about.aliases.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(4)) {
+                if !about.origin.isEmpty { fact(copy("music.artist.origin", "From"), about.origin) }
+                if !began.isEmpty { fact(copy("music.artist.began", "Born / formed"), began) }
+                if !about.aliases.isEmpty { fact(copy("music.artist.aliases", "Also known as"), about.aliases.joined(separator: " · ")) }
+            }
+        }
+    }
+    private func fact(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: BP.px(8)) {
+            Text(label).font(BP.sans(12.5, .semibold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
+            Text(value).font(BP.sans(13.5)).foregroundStyle(BP.inkMuted)
+        }
+    }
+
+    private func creditsSection(_ about: MusicAboutArtist) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            HStack(spacing: BP.px(10)) {
+                Text(copy("music.credits.title", "Credits")).font(BP.sans(15, .bold)).foregroundStyle(BP.ink)
+                ForEach(about.creditSources, id: \.self) { source in
+                    Button { webLink = MusicWebLink(url: source.url) } label: { Label(source.name, systemImage: "arrow.up.right") }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                }
+            }
+            .focusSection()
+            ForEach(about.credits) { credit in
+                Button { page = MusicPageTarget(card: credit.artist) } label: {
+                    HStack(spacing: BP.px(10)) {
+                        VStack(alignment: .leading, spacing: BP.px(2)) {
+                            Text(credit.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                            Text(([credit.roleLabel] + credit.attributes).joined(separator: ", ")).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkSubtle)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.right").font(.system(size: BP.px(12)))
+                    }
+                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
+                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.glass))
+                }
+                .buttonStyle(BPTileStyle(radius: BP.rSM))
+            }
+        }
+        .focusSection()
+    }
+
+    private func cardsSection(_ title: String, _ cards: [MusicCard]) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text(title).font(BP.sans(15, .bold)).foregroundStyle(BP.ink)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: BP.px(12)) {
+                    ForEach(cards) { card in
+                        Button { page = MusicPageTarget(card: card) } label: { MusicCoverCell(card: card) }
+                            .buttonStyle(BPTileStyle(radius: BP.rSM))
+                    }
+                }
+                .padding(.vertical, BP.px(4))
+            }
+            .scrollClipDisabled()
+        }
+        .focusSection()
+    }
+
+    private func linksSection(_ about: MusicAboutArtist) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text(copy("music.artist.aroundWeb", "Explore & support")).font(BP.sans(15, .bold)).foregroundStyle(BP.ink)
+            HStack(spacing: BP.px(10)) {
+                ForEach(about.links, id: \.self) { link in
+                    Button { webLink = MusicWebLink(url: link.url) } label: { Label(linkTitle(link), systemImage: "arrow.up.right") }
+                        .buttonStyle(BPTileStyle(radius: BP.rSM))
+                }
+            }
+        }
+        .focusSection()
+    }
+
+    private func linkTitle(_ link: MusicAboutArtistLink) -> String {
+        switch link.kind {
+        case "official": return copy("music.artist.official", "Official website")
+        case "store": return copy("music.artist.store", "Artist store")
+        case "merch": return copy("music.artist.merch", "Merchandise")
+        case "tour": return copy("music.extras.tour", "Live shows")
+        default: return link.name
+        }
+    }
+
+    private func load() async {
+        guard let track = player.current else { return }
+        about = nil
+        state = "loading"
+        let language = L10n.normalize(settings.slice.uiLanguage)
+        // music-listening-details.tsx has no explicit timeout of its own (loadArtistProfile's own
+        // per-request timeouts bound it); MusicLyricsPanel's giveUp is the TV's usual pattern for a
+        // tab that must not spin forever on a slow or dead network.
+        let giveUp = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled, state == "loading" else { return }
+            state = "empty"
+        }
+        defer { giveUp.cancel() }
+        let result: MusicAboutArtist? = await withTaskCancellationHandler {
+            try? await HarborEngine.shared.call("music.aboutArtist", [track, language])
+        } onCancel: {
+            giveUp.cancel()
+        }
+        guard !Task.isCancelled, player.current?.queueKey == track.queueKey else { return }
+        about = result
+        state = (result?.isEmpty ?? true) ? "empty" : "ready"
+    }
+}
+
+/// music-source-picker.tsx MusicSourcePicker: every source's match for the current track, so the
+/// listener can choose which one plays. Upstream opens this from music-dock.tsx's source button
+/// (always shown while a track plays, `forceChoice: true`) and from the error card's "Pick another
+/// source"; the TV opens it the same way from Now Playing (both live over the same panel, since
+/// the TV's Now Playing is always the dock's stand-in). `ordered`'s sort (the remembered
+/// preference first among the alternatives, upstream's connector priority, the source that just
+/// failed pushed to the end, not hidden) is kept here.
+struct MusicSourcePickerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var player = MusicPlayer.shared
+    @ObservedObject private var copy = MusicCopy.shared
+    @ObservedObject private var spotify = SpotifyPlayback.shared
+    @State private var candidates: [MusicSourceCandidate] = []
+    @State private var loading = true
+    @State private var error: String?
+    @State private var pending: String?
+    @State private var connectionsOpen = false
+
+    /// music-dock.tsx's picker always passes the playing track's error as `failure`/`failedTrack`.
+    private var failedSource: String? { player.phase == .error ? player.current?.connectorId : nil }
+
+    private static func priority(_ id: String) -> Int {
+        switch id {
+        case "spotify": return 0
+        case "soundcloud": return 1
+        case "youtube": return 2
+        default: return 3
+        }
+    }
+    /// `ordered` (music-source-picker.tsx): the track as asked stays first; the alternatives sort
+    /// by the remembered preference, then connector priority; then whichever just failed sinks to
+    /// the end (a stable partition, since Array.sort/toSorted are stable and Swift's is not).
+    private var ordered: [MusicSourceCandidate] {
+        guard let first = candidates.first else { return [] }
+        var rest = Array(candidates.dropFirst())
+        rest.sort { a, b in a.preferred != b.preferred ? a.preferred : Self.priority(a.connectorId) < Self.priority(b.connectorId) }
+        let all = [first] + rest
+        guard let failedSource else { return all }
+        return all.filter { $0.connectorId != failedSource } + all.filter { $0.connectorId == failedSource }
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            BP.canvas.ignoresSafeArea()
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: BP.px(16)) {
+                    header
+                    if !spotify.connected { connectSpotifyRow }
+                    if loading {
+                        ProgressView().padding(.top, BP.px(20))
+                    } else if ordered.isEmpty {
+                        BPNote(text: copy("music.source.none", "No matching source is available right now."))
+                    } else {
+                        ForEach(ordered) { row($0) }
+                    }
+                    if let error { BPNote(text: error, tone: BP.danger) }
+                    Color.clear.frame(height: BP.px(40))
+                }
+                .padding(.horizontal, BP.gutter)
+                .padding(.top, BP.px(60))
+                .frame(maxWidth: BP.px(900), alignment: .leading)
+            }
+        }
+        .onExitCommand { dismiss() }
+        .task { await load() }
+        .fullScreenCover(isPresented: $connectionsOpen) { MusicSourcesView() }
+    }
+
+    private var header: some View {
+        HStack(spacing: BP.px(16)) {
+            ZStack {
+                if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
+            }
+            .frame(width: BP.px(56), height: BP.px(56))
+            .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+            VStack(alignment: .leading, spacing: BP.px(2)) {
+                Text(copy("music.source.playOn", "Play on...")).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkSubtle)
+                Text(player.current?.title ?? "").font(BP.display(24)).foregroundStyle(BP.ink).lineLimit(1)
+                Text(player.current?.artist ?? "").font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(1)
+            }
+            Spacer()
+            Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: BP.px(15), weight: .semibold)) }
+                .buttonStyle(MusicIconStyle())
+        }
+        .focusSection()
+    }
+
+    /// music-source-picker.tsx: not connected shows Spotify's own connect row (`music.spotify.connect`).
+    private var connectSpotifyRow: some View {
+        Button { connectionsOpen = true } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: BP.px(2)) {
+                    Text(copy("music.spotify.connect", "Spotify Premium")).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
+                    Text(copy("music.recovery.spotifySetup", "Set up your Spotify app, then sign in with Premium.")).font(BP.sans(12.5)).foregroundStyle(BP.inkSubtle)
+                }
+                Spacer()
+                Text(copy("music.spotify.connectAction", "Connect")).font(BP.sans(13, .semibold)).foregroundStyle(BP.canvas)
+                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(8)).background(Capsule().fill(BP.ink))
+            }
+            .padding(BP.px(16))
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rMD))
+        .accessibilityIdentifier("music-picker-connect-spotify")
+    }
+
+    private func row(_ candidate: MusicSourceCandidate) -> some View {
+        Button { select(candidate) } label: {
+            HStack(spacing: BP.px(14)) {
+                VStack(alignment: .leading, spacing: BP.px(3)) {
+                    HStack(spacing: BP.px(8)) {
+                        Text(candidate.connectorName).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
+                        if candidate.preferred {
+                            Text(copy("music.source.preferred", "Preferred")).font(BP.sans(11, .semibold)).foregroundStyle(BP.live)
+                                .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(2)).background(Capsule().fill(BP.glass))
+                        }
+                    }
+                    Text(candidate.track.title).font(BP.sans(13)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+                }
+                Spacer()
+                if pending == candidate.connectorId {
+                    ProgressView()
+                } else if candidate.health == "offline" {
+                    Image(systemName: "wifi.slash").foregroundStyle(BP.inkSubtle)
+                } else {
+                    Image(systemName: "chevron.right").font(.system(size: BP.px(13))).foregroundStyle(BP.inkSubtle)
+                }
+            }
+            .padding(BP.px(16))
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rMD))
+        .disabled(pending != nil)
+        .accessibilityIdentifier("music-picker-source-\(candidate.connectorId)")
+    }
+
+    private func load() async {
+        guard let track = player.current else { return }
+        loading = true
+        let list: [MusicSourceCandidate]? = try? await HarborEngine.shared.call("music.sourceCandidates", [track])
+        candidates = list ?? []
+        loading = false
+    }
+
+    /// music-source-picker.tsx select: writeMusicPreference + fromCollection (engine chooseSource),
+    /// then playMusic with the queue's matching entry swapped, same as the automatic match does.
+    private func select(_ candidate: MusicSourceCandidate) {
+        guard let original = player.current else { return }
+        pending = candidate.connectorId
+        error = nil
+        Task {
+            let chosen: MusicTrack? = try? await HarborEngine.shared.call("music.chooseSource", [original, candidate.track])
+            guard let chosen else {
+                pending = nil
+                error = copy("music.recovery.search", "Sources could not be checked. Check your connection and try again.")
+                return
+            }
+            let queue = player.queue.map { $0.queueKey == original.queueKey ? chosen : $0 }
+            player.play(chosen, queue: queue)
+            dismiss()
         }
     }
 }

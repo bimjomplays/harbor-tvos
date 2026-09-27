@@ -1372,6 +1372,11 @@ export const music = {
   spotifyCreatePlaylist: musicGlue.spotifyCreatePlaylist,
   spotifyAddToPlaylist: musicGlue.spotifyAddToPlaylist,
   artistMore: musicGlue.artistMore,
+  // leftovers batch: Now Playing's "About the artist" tab and the per-source picker panel.
+  aboutArtist: musicGlue.aboutArtist,
+  sourcePreference: musicGlue.sourcePreference,
+  sourceCandidates: musicGlue.sourceCandidates,
+  chooseSource: musicGlue.chooseSource,
 };
 
 // ================================================================================== runtime

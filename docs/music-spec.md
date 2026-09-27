@@ -189,9 +189,20 @@ the phone hand-off).
 
 ## Next
 
-- Upstream's other Now Playing tabs (About the artist, Signal), the karaoke view, and the
-  per-source picker (music-source-picker.tsx) for choosing which match plays.
+- **Shipped (leftovers batch):** Now Playing's "About the artist" tab (music-listening-details.tsx:
+  the recording's Deezer/MusicBrainz credits give the primary artist when the track matches a
+  catalog recording, else artist-authority.ts resolveArtist ranks the name across every connected
+  source; the bio is MusicBrainz + Wikidata/Wikipedia through artist-profile.ts loadArtistProfile;
+  flattened into cards and role labels by `music.aboutArtist`) and the per-source picker
+  (music-source-picker.tsx, `MusicSourcePickerView`), reachable from Now Playing's transport row
+  like the dock's always-on source button (`music.sourceCandidates` / `music.chooseSource` /
+  `music.sourcePreference`). Upstream's Signal tab (mpv/librespot stream diagnostics), the karaoke
+  view, filmography/tour dates (music-artist-extras.tsx) and "Where to buy" (MusicWhereToBuy) were
+  not ported.
 - Library sync of liked tracks / playlists and upstream's playlists (library.rs), Plex timeline
-  scrobbles, MusicBrainz credits on the track page (recording-profile.ts is already bundled).
+  scrobbles.
 - Spotify: Import to Harbor (with Harbor playlists); EQ through an AVAudioEngine graph
   (the Spotify output is already an AVAudioEngine).
+- Needs a device: the About tab's Deezer/MusicBrainz/Wikidata/Wikipedia round trip (offline smoke
+  covers it against mocked hosts, docs/music-spec.md → "Needs a device or an account to verify");
+  the source picker's focus/remote flow and its nested Connections cover.
