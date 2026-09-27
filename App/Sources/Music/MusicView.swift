@@ -191,6 +191,8 @@ struct MusicBandView: View {
                         .buttonStyle(BPTileStyle(radius: BP.rSM))
                         .focused($focused, equals: i)
                         .musicTrackMenu(card.track)
+                        // UI tests (NavigationTests7): a home-row tile to hold Select on.
+                        .accessibilityIdentifier("music-card-\(band.key)-\(i)")
                 }
             }
         } else {
@@ -200,6 +202,7 @@ struct MusicBandView: View {
                         .buttonStyle(BPTileStyle(radius: card.circle ? BP.px(80) : BP.rSM))
                         .focused($focused, equals: i)
                         .musicTrackMenu(card.track)
+                        .accessibilityIdentifier("music-card-\(band.key)-\(i)")
                 }
                 if let onMore, band.more != nil {
                     Button(action: onMore) { MusicMoreTile() }
@@ -347,6 +350,8 @@ struct MusicTrackMenuItems: View {
         // (when Spotify is connected) its own destination (MusicPlaylistPickerView).
         if let addToPlaylist {
             Button { addToPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
+                // UI tests (NavigationTests7): opens MusicPlaylistPickerView.
+                .accessibilityIdentifier("music-menu-add-to-playlist")
         }
         // music-track-menu.tsx "More Like This" (radio.ts loadSimilarTracks, a821e273): replaces
         // the upstream "Start radio" entry. With a host (MusicTrackActionsHost) it opens the
@@ -354,8 +359,10 @@ struct MusicTrackMenuItems: View {
         // without one it queues the fixed mix straight away.
         if let showSimilar {
             Button { showSimilar(track) } label: { Label(copy("music.card.moreLikeThis", "More like this"), systemImage: "sparkles") }
+                .accessibilityIdentifier("music-menu-more-like-this")
         } else {
             Button { player.startSimilar(track) } label: { Label(copy("music.card.moreLikeThis", "More like this"), systemImage: "sparkles") }
+                .accessibilityIdentifier("music-menu-more-like-this")
         }
         Button { player.toggleLiked(track) } label: {
             player.isLiked(track)
@@ -382,7 +389,9 @@ struct MusicRadioStatusNote: View {
                 BPNote(text: copy("music.loading", "Loading music"))
             }
         case .some(.failed(let message)):
-            BPNote(text: message, tone: BP.danger)
+            // UI tests (NavigationTests7): "More like this" offline (music.similarTracks needs
+            // Deezer/MusicBrainz, so `--fixtures music` always lands here, not on a similar-tracks page).
+            BPNote(text: message, tone: BP.danger).accessibilityIdentifier("music-similar-error")
         case .none:
             EmptyView()
         }
@@ -548,6 +557,10 @@ struct MusicTransportButtons: View {
                 .accessibilityIdentifier("music-repeat")
             icon(player.isLiked(player.current) ? "heart.fill" : "heart",
                  player.isLiked(player.current) ? copy("music.unsaveTrack", "Remove from saved tracks") : copy("music.saveTrack", "Save track")) { player.toggleLiked() }
+                // UI tests (NavigationTests7): liking the current track from here is the only
+                // offline way to get a home-row card with the full track menu (Up next is empty for
+                // the fixture's single-track queue, and every catalog shelf needs the network).
+                .accessibilityIdentifier("music-save-track")
         }
     }
 

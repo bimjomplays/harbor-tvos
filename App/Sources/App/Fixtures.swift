@@ -52,6 +52,15 @@ enum Fixtures {
         return args[i + 1]
     }
 
+    /// `--new-playlist-name <text>` prefills MusicLibraryView's create-playlist form Name the same
+    /// way `--new-profile-name` seeds the profile editor (NavigationTests7: no system keyboard here
+    /// either).
+    static var newPlaylistName: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--new-playlist-name"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
     static func installIfRequested(into app: AppModel) {
         guard active, let stage else { return }
         app.profiles.reset()

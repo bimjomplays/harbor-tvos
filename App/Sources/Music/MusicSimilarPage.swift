@@ -94,6 +94,8 @@ struct MusicSimilarPageView: View {
         if let error {
             VStack(alignment: .leading, spacing: BP.px(12)) {
                 BPNote(text: error, tone: BP.danger)
+                    // UI tests (NavigationTests7): offline, music.similarTracks fails and this shows.
+                    .accessibilityIdentifier("music-similar-error")
                 Button(copy("music.offline.retry", "Try sources again")) {
                     guard !retrying else { return }
                     Task {
