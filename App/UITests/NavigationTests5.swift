@@ -276,8 +276,9 @@ final class NavigationTests5: XCTestCase {
         sleep(1)
         // The tabs sit at the top of the right column: Up the left column to the seek row, Right out
         // of it, then Up to the tab row and along it (run 36304417732: Up alone stops at the seek row).
-        let leftColumn: Set<String> = transport.union(["gobackward.10", "goforward.10", "music-mute", "minus", "plus"])
-        require(press(.up, app, max: 6, until: { $0 == "gobackward.10" || $0 == "goforward.10" }) != nil, "Up never reached the seek row (focus: \(focusNote(app)))", app)
+        let seekRow: Set<String> = ["music-now-seek-back", "music-now-seek-forward", "gobackward.10", "goforward.10"]
+        let leftColumn: Set<String> = transport.union(seekRow).union(["music-mute", "minus", "plus"])
+        require(press(.up, app, max: 6, until: { seekRow.contains($0) }) != nil, "Up never reached the seek row (focus: \(focusNote(app)))", app)
         require(press(.right, app, max: 6, until: { !leftColumn.contains($0) }) != nil, "Right never left the left column (focus: \(focusNote(app)))", app)
         require(press(.up, app, max: 8, until: { $0.hasPrefix("music-now-tab-") }) != nil, "Up never reached the tab row (focus: \(focusNote(app)))", app)
         require(seek("music-now-tab-about", app, max: 4), "could not reach the About the artist tab (focus: \(focusNote(app)))", app)

@@ -405,10 +405,12 @@ struct MusicNowPlayingView: View {
                         Button { player.skip(by: -10) } label: { Image(systemName: "gobackward.10").font(.system(size: BP.px(15), weight: .semibold)) }
                             .buttonStyle(MusicIconStyle())
                             .accessibilityLabel(T("Seek back 10 seconds"))
+                            .accessibilityIdentifier("music-now-seek-back")
                         MusicProgressBar(clock: player.clock)
                         Button { player.skip(by: 10) } label: { Image(systemName: "goforward.10").font(.system(size: BP.px(15), weight: .semibold)) }
                             .buttonStyle(MusicIconStyle())
                             .accessibilityLabel(T("Seek forward 10 seconds"))
+                            .accessibilityIdentifier("music-now-seek-forward")
                     }
                     .focusSection()
                     // The dock's mute button and volume slider (music-dock.tsx), by remote.
