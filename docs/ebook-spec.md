@@ -71,7 +71,14 @@ never renders the book's own XHTML/CSS. That makes a native port straightforward
 - Position: `persistReadingPosition` is ported (`engine/ebook.ts savePosition`):
   `harbor.ebook.progress.v1.<profile>.<book>.<chapterId>:harbor` = paragraph line, and the resume
   (`chapterProgress`, `bookProgress`, `chapterIndex`, `totalChapters`, `textIdentity`). Opening a
-  chapter saves the resume first, as EBookDetails `readChapter` does.
+  chapter saves the resume first, as EBookDetails `readChapter` does. Every entry point restores
+  that chapter's own saved line: upstream's per-chapter `harbor-reader.tsx` effect (`loadEBookProgress`
+  keyed on `progressId`) runs the same way whether the chapter changed by the first open, the
+  reader bar's Previous/Next chapter, or the chapters panel, so the TV's `EBookReaderModel.goToChapter`
+  and `ebook.openChapter` restore path (no explicit line) now match it there too (2026-09-27; this
+  used to force line 0 from the bar/panel — see `PROJECT_STATE.md` → Status for the fix). A bookmark
+  jump is the one exception, on both sides: it seeks the bookmark's own line, not the chapter's last
+  saved one.
 - Settings panel from upstream's reader settings: Paper (dark / dim / light, upstream's
   colours), Type (literary / arabic / classic → Georgia / Geeza Pro / Palatino, system serif
   fallback), Text size 15–34, Line height 1.25–2.4, Page width 520–1080, Brightness 55–120,
@@ -101,9 +108,10 @@ first). Narration stops at the chapter's end, as upstream's does.
   (6a), paging with loadMore's stale-page streak, each page's metadata pass folded in when it
   lands).
 - `EBookDetailView` (EBookDetails): the book, Start / Continue Reading (the wheel menu's action),
-  Bookmark (the shelf, `toggleEBookLibrary`), favourite, the Source picker, description, chapters,
-  a New York Times Bestseller rank pill when it's on a current list (6a), "More by …" and
-  "Recommended eBooks" (same logic as upstream, in `engine/ebook.ts`).
+  Bookmark (the shelf, `toggleEBookLibrary`), favourite, Mark as Read (AniList list tracking, 6b),
+  the Source picker, description, chapters, a New York Times Bestseller rank pill when it's on a
+  current list (6a), "More by …" and "Recommended eBooks" (same logic as upstream, in
+  `engine/ebook.ts`).
 - Sources page: Project Gutenberg's quick add and removal of stored sources, and the NYT Books
   API key row (6a).
 - "Read the eBook": `MangaHeroEntry` now handles a light-novel adaptation (`kind: "ebook"`):
@@ -116,8 +124,7 @@ first). Narration stops at the chapter's end, as upstream's does.
 ## 6. Not done (and why)
 
 - Local folders, HTML sources and extensions: see section 1.
-- AniList list tracking, offline export/download, translation, annotations, in-chapter search:
-  desktop surfaces.
+- Offline export/download, translation, annotations, in-chapter search: desktop surfaces.
 - Legacy chapter-location migration (`restoreSourceEBookChapters`): needs upstream's EPUB parse
   in JS; TV-read books never have legacy chapter ids.
 
@@ -153,3 +160,43 @@ Ported by a fresh-context subagent (2026-09-27); see `PROJECT_STATE.md` → Stat
 commit, bundle size and smoke count. Unverified: no device check yet (no Swift compiler in this
 environment) — the two-row browse chips, the NYT key row's focus, the Collections card's layout,
 and the toast on an unmatched bestseller all need a real TV pass.
+
+### 6b. AniList list tracking (ported since, 2026-09-27)
+
+- **`lib/ebook/tracking.ts`** (unchanged) → `engine/ebook.ts trackingFor` / `toggleRead` /
+  `refreshAnilistLibrary`, reusing the AniList session `engine/trackers.ts` already signs in
+  (`anilist.status` / `authorizeUrl` / `complete`, Settings → Trackers) — there is no separate
+  eBook sign-in, upstream or here. Upstream's own AniList surface for an eBook is a single
+  read/unread toggle, not an in-between status picker like the anime tracker panel: the desktop's
+  only mutation is `ebook-wheel-menu.tsx markCompleted`, which sets `status: COMPLETED` (progress
+  = the book's full chapter/volume count) or `PLANNING` (progress 0) and pushes it through AniList's
+  `SaveMediaListEntry` when the book has a matched `anilistId` and a signed-in session, else it just
+  persists locally (`sync: "local"` with no `anilistId`, `"pending"` signed out, `"synced"` once the
+  push lands). Ported as-is: `ebook.toggleRead` runs the identical branch, `ebook.trackingFor`
+  exposes `getEBookTracking` directly for the toggle's own on/off state.
+- **The wheel menu itself is a desktop right-click radial menu** the TV has no mouse for; every one
+  of its other actions (Start/Continue Reading, Shelf, favourite) already lives in
+  `EBookDetailView`'s action row (not the wheel), so Mark as Read / Marked as read joins them there
+  too — the same small, low-risk TV adaptation already used for the room's other wheel-menu ports,
+  not a new upstream layout.
+- **The room's own warm-up**: `EBookView`'s room `.task` calls `EBookStore.refreshAnilistLibrary()`
+  once per visit, porting `views/ebook.tsx loadAnilistLibrary` (flush anything saved while signed
+  out via `flushPendingEBookTracking`, then `fetchEBookListCollection` to pull AniList's own list so
+  a status set on anilist.co — not just the TV's toggle — reaches `statuses()`). A no-op while
+  signed out.
+- **The corner badge** (`EBookReadMark`, room cards and the detail page alike) already read
+  `getEBookTracking` merged with the resume (`engine ebook.statuses`, upstream's
+  `useEBookReadStatus`) from the previous eBooks batch; this batch only fixed
+  `EBookDetailView`'s own badge, which had drifted to a resume-only copy that missed an
+  AniList-only "read" (marked complete, never opened on the TV).
+- Not ported: the AniList `progressVolumes`/chapter-by-chapter numeric stepper upstream itself has
+  none of either — its own UI is the same binary toggle; a number only ever gets there through
+  AniList's own site or `fetchEBookListCollection`'s pull, both of which flow straight into the
+  merged badge already.
+
+Ported by a fresh-context subagent (2026-09-27); see `PROJECT_STATE.md` → Status for the batch's
+commit, bundle size and smoke count (offline-only: local/pending sync branches, tracking-aware
+`statuses()`, `refreshAnilistLibrary`'s no-op guarantee). Unverified: no device check yet (no Swift
+compiler in this environment) — the Mark as Read button's focus/label in the now six-wide action
+row and its toast need a real TV pass; a real signed-in AniList push (`sync: "synced"`) was not
+exercised, only the local/pending branches offline smoke can reach without a network round trip.
