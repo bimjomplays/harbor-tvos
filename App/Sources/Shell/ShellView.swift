@@ -415,7 +415,7 @@ struct TopBarView: View {
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .focused($focusedTab, equals: .settings)
                 .accessibilityIdentifier("tab-settings")
-                .accessibilityLabel("Settings")
+                .accessibilityLabel(T(Room.settings.label))
                 .bpSelected(app.room == .settings)
             StatusGlyphs()
             ClockView().padding(.leading, BP.px(6))
@@ -501,7 +501,7 @@ struct StatusGlyphs: View {
         HStack(spacing: BP.px(10)) {
             if sync.stale(at: now) {
                 Image(systemName: "icloud.slash").foregroundStyle(BP.danger)
-                    .accessibilityLabel("Changes not saved to your Harbor account yet")
+                    .accessibilityLabel(T("Changes not saved to your Harbor account yet"))
             }
             Image(systemName: net.online ? "wifi" : "wifi.slash").foregroundStyle(net.online ? BP.inkMuted : BP.danger)
                 // bp-status.tsx: a connected glyph is nothing to announce; the offline one still reads.

@@ -152,6 +152,8 @@ struct HomeBandBackdrop: View {
         .animation(.easeInOut(duration: 0.26), value: band.posters.count >= HomeBand.mosaicMin)
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        // bp-ambient-layers.tsx: the whole art stage (still, mosaic, split panels) is aria-hidden.
+        .accessibilityHidden(true)
     }
 }
 
@@ -190,6 +192,9 @@ struct BandIdentityView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        // bp-section.tsx BpBandIdentity: this whole overlay is aria-hidden; the focused band tile
+        // (its own row cell) already carries the accessible name this echoes.
+        .accessibilityHidden(true)
     }
 }
 
@@ -282,6 +287,8 @@ struct LiveHeroPreview: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        // bp-live-hero.tsx: the ambient video preview is aria-hidden.
+        .accessibilityHidden(true)
         .task(id: channel?.id) {
             armedId = ""; playing = false
             guard let id = channel?.id else { return }

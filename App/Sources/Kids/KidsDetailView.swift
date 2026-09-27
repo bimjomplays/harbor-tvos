@@ -334,6 +334,7 @@ struct KidsDetailView: View {
                     let on = s.seasonNumber == model.season
                     Button { model.choose(s.seasonNumber) } label: { Text("Season \(s.seasonNumber)") }
                         .buttonStyle(KidsPillStyle(fill: on ? KidsTheme.teal : .white.opacity(0.7), ink: on ? .white : KidsTheme.deep))
+                        .bpSelected(on)
                 }
             }
             .padding(.horizontal, BP.gutter)
@@ -353,10 +354,13 @@ struct KidsDetailView: View {
                         HStack(spacing: BP.px(8)) {
                             Text("Season \(model.season)")
                             Image(systemName: seasonGrid ? "chevron.up" : "chevron.down")
+                                // The trait below already says whether the grid is open.
+                                .accessibilityHidden(true)
                         }
                         .frame(minWidth: BP.px(150))
                     }
                     .buttonStyle(KidsPillStyle(fill: KidsTheme.teal, ink: .white))
+                    .bpSelected(seasonGrid)
                     .focused($seasonPillFocused)
                     Button { if idx < seasons.count - 1 { model.choose(seasons[idx + 1].seasonNumber) } } label: { Image(systemName: "chevron.forward") }
                         .buttonStyle(KidsPillStyle(ink: KidsTheme.teal))

@@ -112,6 +112,8 @@ struct CatalogPageView: View {
                 Text(row.title).font(BP.display(30)).foregroundStyle(BP.ink)
                 Text("\(metas.count) titles").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
             }
+            // The row's title and its title count read as one line, not two separate swipes.
+            .accessibilityElement(children: .combine)
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
             .opacity(spotlight == nil ? 1 : 0)
         }

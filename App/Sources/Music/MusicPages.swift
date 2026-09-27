@@ -100,7 +100,7 @@ struct MusicPageView: View {
         HStack(alignment: .bottom, spacing: BP.px(28)) {
             ZStack {
                 let art = data?.artwork.isEmpty == false ? data!.artwork : target.card.artwork
-                if art.isEmpty { BP.panel2 } else { RemoteImage(url: art) }
+                if art.isEmpty { BP.panel2 } else { RemoteImage(url: art).accessibilityHidden(true) }
             }
             .frame(width: BP.px(200), height: BP.px(200))
             .clipShape(RoundedRectangle(cornerRadius: target.card.circle ? BP.px(100) : BP.rMD, style: .continuous))
@@ -193,11 +193,16 @@ struct MusicTrackLine: View {
     var body: some View {
         HStack(spacing: BP.px(14)) {
             Group {
-                if playing { Image(systemName: "waveform").foregroundStyle(BP.accent) } else { Text("\(number)").foregroundStyle(BP.inkSubtle) }
+                if playing {
+                    Image(systemName: "waveform").foregroundStyle(BP.accent)
+                        .accessibilityLabel(Text(verbatim: MusicCopy.shared("music.nowPlaying", "Now playing")))
+                } else {
+                    Text("\(number)").foregroundStyle(BP.inkSubtle)
+                }
             }
             .font(BP.sans(14, .semibold)).frame(width: BP.px(28))
             ZStack {
-                if let art = track.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
+                if let art = track.artwork, !art.isEmpty { RemoteImage(url: art).accessibilityHidden(true) } else { BP.panel2 }
             }
             .frame(width: BP.px(40), height: BP.px(40))
             .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
@@ -376,11 +381,12 @@ struct MusicNowPlayingView: View {
             BP.canvas.ignoresSafeArea()
             if let art = player.current?.artwork, !art.isEmpty {
                 RemoteImage(url: art).blur(radius: 80).opacity(0.35).ignoresSafeArea()
+                    .accessibilityHidden(true)
             }
             HStack(alignment: .top, spacing: BP.px(50)) {
                 VStack(alignment: .leading, spacing: BP.px(18)) {
                     ZStack {
-                        if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
+                        if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art).accessibilityHidden(true) } else { BP.panel2 }
                     }
                     // 240 (was 340, then 280 in review 37): CI's 1080p screenshot (run 36304417732) still
                     // had the transport row cut off at the bottom once the error/resolving note drew.
@@ -394,13 +400,15 @@ struct MusicNowPlayingView: View {
                     if player.phase == .resolving { BPNote(text: copy("music.row.resolving", "Finding a source for this")) }
                     // The seek bar with ten-second steps either side (the dock's scrub, by remote).
                     HStack(spacing: BP.px(12)) {
+                        // remote-app.tsx label={t("Seek back 10 seconds")}: distinct labels, not both
+                        // "Track position" (that's the scrub bar's own label, MusicProgressBar below).
                         Button { player.skip(by: -10) } label: { Image(systemName: "gobackward.10").font(.system(size: BP.px(15), weight: .semibold)) }
                             .buttonStyle(MusicIconStyle())
-                            .accessibilityLabel(copy("music.position", "Track position"))
+                            .accessibilityLabel(T("Seek back 10 seconds"))
                         MusicProgressBar(clock: player.clock)
                         Button { player.skip(by: 10) } label: { Image(systemName: "goforward.10").font(.system(size: BP.px(15), weight: .semibold)) }
                             .buttonStyle(MusicIconStyle())
-                            .accessibilityLabel(copy("music.position", "Track position"))
+                            .accessibilityLabel(T("Seek forward 10 seconds"))
                     }
                     .focusSection()
                     // The dock's mute button and volume slider (music-dock.tsx), by remote.
@@ -680,6 +688,7 @@ struct MusicAboutArtistPanel: View {
                 .frame(height: BP.px(190))
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+                .accessibilityHidden(true)
         }
         if let artist = about.artist {
             Button { page = MusicPageTarget(card: artist) } label: {
@@ -734,6 +743,7 @@ struct MusicAboutArtistPanel: View {
             Text(label).font(BP.sans(12.5, .semibold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(120), alignment: .leading)
             Text(value).font(BP.sans(13.5)).foregroundStyle(BP.inkMuted)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func creditsSection(_ about: MusicAboutArtist) -> some View {
@@ -876,7 +886,7 @@ struct MusicSourcePickerView: View {
     private var header: some View {
         HStack(spacing: BP.px(16)) {
             ZStack {
-                if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
+                if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art).accessibilityHidden(true) } else { BP.panel2 }
             }
             .frame(width: BP.px(56), height: BP.px(56))
             .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
@@ -1087,6 +1097,7 @@ struct MusicQueueList: View {
         let canMove: Bool = !player.shuffle && upcoming
         return Button { player.jump(to: i) } label: { MusicTrackLine(track: track, number: position + 1) }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
+            .bpSelected(player.isCurrent(track))
             .contextMenu {
                 // music-queue.tsx row actions: Play next, Move up / down, Remove.
                 if position > 0 {

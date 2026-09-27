@@ -240,6 +240,7 @@ struct TogetherView: View {
                         } label: {
                             HStack(spacing: BP.px(12)) {
                                 RemoteImage(url: media.posterUrl).frame(width: BP.px(46), height: BP.px(68)).clipShape(RoundedRectangle(cornerRadius: BP.px(4)))
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: BP.px(2)) {
                                     Text("Now watching").textCase(.uppercase).font(BP.sans(10, .bold)).tracking(2).foregroundStyle(BP.live)
                                     Text(media.mediaTitle ?? T("Untitled")).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
@@ -276,6 +277,7 @@ struct TogetherView: View {
                         Label("Guests pick their own source", systemImage: v.guestsPick ? "checkmark.circle.fill" : "circle")
                     }
                     .buttonStyle(BPActionStyle())
+                    .bpSelected(v.guestsPick)
                 }
                 Button { draft = room.view.displayName; typing = .name } label: { Label(T("Your name") + ": " + v.displayName, systemImage: "pencil") }.buttonStyle(BPActionStyle())
                     .focused($focus, equals: "roomName")
@@ -289,6 +291,8 @@ struct TogetherView: View {
     private func participantRow(_ p: TogetherModel.Participant) -> some View {
         HStack(spacing: BP.px(10)) {
             SocialAvatar(url: p.avatar, name: p.name, size: BP.px(36), tint: Color.room(p.color) ?? BP.accent)
+                // The name sits right beside it below; the face adds nothing VoiceOver needs.
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(1)) {
                 HStack(spacing: BP.px(6)) {
                     Text(p.isSelf ? p.name + T(" (you)") : p.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
@@ -298,6 +302,9 @@ struct TogetherView: View {
                 if let loc = p.locationLabel, !p.isSelf { Text(loc).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1) }
             }
         }
+        // Name, the Host badge, Ready and the location are separate Text/Image nodes on one row;
+        // read them as a single stop rather than four.
+        .accessibilityElement(children: .combine)
     }
 
     /// chat-panel.tsx: newest at the bottom; "Say hi." when empty.
@@ -314,6 +321,7 @@ struct TogetherView: View {
                             .foregroundStyle(Color.room(room.view.participants.first(where: { $0.id == m.from })?.color) ?? BP.accent)
                         Text(m.text).font(BP.sans(14)).foregroundStyle(BP.ink).fixedSize(horizontal: false, vertical: true)
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
             .padding(BP.px(14)).frame(maxWidth: BP.px(900), alignment: .leading)

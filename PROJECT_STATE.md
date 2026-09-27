@@ -5,6 +5,36 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
+2026-09-27 08:27 UTC: Accessibility pass 2 (Stage 14, 5 parallel subagents + this session's review).
+Pass 1 (`d9918a2`) covered Settings/Library/Live/Sports/Search/Collections/Discover/Profiles/Onboarding;
+this pass does the rest of the app: `App/Sources/Player` + `Streams/PlayPickerView.swift` (`0a48173`),
+`Detail` + `Browse` (`5c6ef5b`), `Music` + `EBook` (`92b9358`), `Kids` + `Together` + `Calendar`
+(`0623ee7`), and `Manga` + `Shell`'s top bar/account menu (`3e784f5`) — `App/Sources/Anime` named in
+the task doesn't exist (`Room.anime` reuses the generic Browse/RoomView machinery, already covered);
+`Manga` (the manga/anime reader room) stood in for it. Each subagent cross-checked
+`reference/harbor/src` aria-label/aria-hidden per control before writing anything. Added
+`.accessibilityLabel(T(...))` on icon-only/ambiguous controls (subtitle-panel steppers' −/value/+
+chips, several bare-string labels wrapped in `T(...)` so they translate), `.accessibilityHidden(true)`
+on decorative art and redundant spinners/glyphs beside already-descriptive text (hero/backdrop
+stills, cast/collaborator/gallery/album/cover art, status dots, chevrons beside a new `.bpSelected`
+trait), `.bpSelected` on toggles and selected-among-many rows (leave-confirm, highlighted stream row,
+music queue's now-playing row, manga reading-direction/current-chapter, Kids season chips, Calendar
+filter-group header, Together's guests-pick toggle), `.bpProgressValue`/`.accessibilityValue` on
+drawn progress bars (player resume fork, eBook/manga chapter and book progress, Browse
+ContinueCardView's resume bar — previously silent since its container ignores children), and
+`.accessibilityElement(children: .combine)` on non-interactive multi-Text rows across all five areas.
+Fixed one real bug along the way: Music Now Playing's Back-10s/Forward-10s buttons both read "Track
+position" (copied from the scrub bar's own label) — now distinct "Seek back/forward 10 seconds" per
+`remote-app.tsx`. Every subagent grepped `App/UITests` for every identifier/label it touched before
+and after editing; this session re-verified across the combined diff (`git diff` for
+`accessibilityIdentifier` additions/removals — none; for any `Button`-carrying line newly wrapped in
+`.accessibilityHidden`/`.accessibilityElement(children: .combine/.ignore)` — none; brace-balance on
+every touched file — clean; every new `T("...", args)` call's `%@`/`%lld` count against its args —
+correct). No accessibilityIdentifier, layout, or focus code changed anywhere. Files: 37 across
+`App/Sources/{Player,Streams,Detail,Browse,Music,EBook,Kids,Together,Calendar,Manga,Shell,Social}`.
+Not run: engine build/smoke (no engine/ files touched) — Swift not compiled (no Mac here), so **not
+device-tested**; a VoiceOver walk of these ten areas is the natural next check.
+
 
 2026-09-27 (subagent) Navigation UI tests pass 6: `App/UITests/NavigationTests6.swift`, 2 remote-walk
 tests on `--fixtures shell`. `testSpoilersNestedTogglesAndPersistence` proves the ef2a2eb Slice-decoder

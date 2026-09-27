@@ -105,11 +105,14 @@ struct CardMarksOverlay: View {
                 if marks?.bookmark == "bottomStart" { circle("bookmark.fill") }
             }
             if let side = marks?.top10, let ribbon = Self.ribbon(side: side) {
+                // bp-card-marks.tsx: no aria-label of its own upstream either; the tile that hosts
+                // this overlay already speaks its own name (and, where it applies, its marks).
                 Image(uiImage: ribbon)
                     .resizable().aspectRatio(contentMode: .fit)
                     .frame(width: min(max(size.width * 0.27, BP.px(34)), BP.px(72)))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: side == "left" ? .topLeading : .topTrailing)
                     .padding(.horizontal, BP.px(7))
+                    .accessibilityHidden(true)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -131,6 +134,8 @@ struct CardMarksOverlay: View {
             .frame(maxWidth: size.width - BP.px(56), alignment: .leading)
     }
 
+    // bp-card-state-marks.tsx BpStateCircle aria-label={label}: the glyph itself carries no name;
+    // the tile that hosts this overlay already speaks "Watched" / "In watchlist" in its own value.
     private func circle(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.system(size: BP.px(11), weight: .heavy))
@@ -138,6 +143,7 @@ struct CardMarksOverlay: View {
             .frame(width: BP.px(26), height: BP.px(26))
             .background(Circle().fill(BP.void_.opacity(0.92)))
             .overlay(Circle().strokeBorder(BP.edge2, lineWidth: 1))
+            .accessibilityHidden(true)
     }
 
     private static var cache: [String: UIImage] = [:]

@@ -478,9 +478,14 @@ struct PlayerSubtitlesPanel: View {
     private func stepper(_ label: String, value: Int, reset: @escaping () -> Void, step: @escaping (Int) -> Void) -> some View {
         HStack(spacing: BP.px(8)) {
             PlayerRowLabel(text: label)
+            // bp-subtitle-parts.tsx Stepper: aria-label t("Decrease {name}") / t("Reset {name}") /
+            // t("Increase {name}") — a bare glyph or number is not a name on its own.
             chip("−", id: "dec-\(label)", action: { step(-1) })
+                .accessibilityLabel(Text(T("Decrease %@", T(label))))
             chip("\(value)", id: "val-\(label)", action: reset)
+                .accessibilityLabel(Text(T("Reset %@", T(label))))
             chip("+", id: "inc-\(label)", action: { step(1) })
+                .accessibilityLabel(Text(T("Increase %@", T(label))))
         }
     }
 
@@ -605,8 +610,11 @@ struct PlayerSubtitlesPanel: View {
             }
             PlayerRowLabel(text: "Opacity")
             chip("−", id: "dec-Opacity") { stepLook("subOpacity", clamp(((opacity - 0.1) * 100).rounded() / 100, 0.1, 1)) }
+                .accessibilityLabel(Text(T("Decrease %@", T("Opacity"))))
             chip("\(Int((opacity * 100).rounded()))%", id: "val-Opacity") { update(["subOpacity": .number(1)]) }
+                .accessibilityLabel(Text(T("Reset %@", T("Opacity"))))
             chip("+", id: "inc-Opacity") { stepLook("subOpacity", clamp(((opacity + 0.1) * 100).rounded() / 100, 0.1, 1)) }
+                .accessibilityLabel(Text(T("Increase %@", T("Opacity"))))
         }
         PlayerChipRow {
             let style = s.subStyle ?? "shadow"

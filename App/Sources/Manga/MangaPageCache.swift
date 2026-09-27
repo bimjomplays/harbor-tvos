@@ -147,7 +147,10 @@ struct MangaPageImage: View {
     var body: some View {
         ZStack {
             if let image {
+                // The page art itself: no text alternative exists for it, and the reader's invisible
+                // surface button already names the book for VoiceOver.
                 Image(uiImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                    .accessibilityHidden(true)
             } else if failed {
                 VStack(spacing: BP.px(6)) {
                     Image(systemName: "exclamationmark.triangle").font(.system(size: BP.px(20))).accessibilityHidden(true)

@@ -265,8 +265,10 @@ struct MusicCoverCell: View {
                 HStack(spacing: 0) { RemoteImage(url: card.artworks[0]).clipped(); RemoteImage(url: card.artworks[1]).clipped() }
                 HStack(spacing: 0) { RemoteImage(url: card.artworks[2]).clipped(); RemoteImage(url: card.artworks[3]).clipped() }
             }
+            .accessibilityHidden(true)
         } else if !card.artwork.isEmpty {
             RemoteImage(url: card.artwork)
+                .accessibilityHidden(true)
         } else {
             ZStack {
                 BP.panel2
@@ -290,7 +292,7 @@ struct MusicTrackCell: View {
                 Text("\(number)").font(BP.sans(14, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(22))
             }
             ZStack {
-                if card.artwork.isEmpty { BP.panel2 } else { RemoteImage(url: card.artwork) }
+                if card.artwork.isEmpty { BP.panel2 } else { RemoteImage(url: card.artwork).accessibilityHidden(true) }
                 if playing {
                     BP.void_.opacity(0.55)
                     Image(systemName: "waveform").font(.system(size: BP.px(16), weight: .bold)).foregroundStyle(BP.ink)
@@ -391,7 +393,7 @@ struct MusicDockView: View {
                 Button(action: onExpand) {
                     HStack(spacing: BP.px(12)) {
                         ZStack {
-                            if let art = t.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
+                            if let art = t.artwork, !art.isEmpty { RemoteImage(url: art).accessibilityHidden(true) } else { BP.panel2 }
                         }
                         .frame(width: BP.px(52), height: BP.px(52))
                         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
@@ -651,6 +653,8 @@ struct MusicVolumeControl: View {
                 }
             }
             .frame(height: BP.px(4))
+            // Decorative: the −/+ buttons and the trailing "Music volume · N%" text already say the level.
+            .accessibilityHidden(true)
             Button { player.stepVolume(by: 0.05) } label: { Image(systemName: "plus").font(.system(size: BP.px(15), weight: .semibold)) }
                 .buttonStyle(MusicIconStyle())
                 .accessibilityLabel(label + " +")

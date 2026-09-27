@@ -68,10 +68,11 @@ struct CalendarView: View {
             }
             Spacer(minLength: BP.px(12))
             Button { model.prev() } label: { Image(systemName: "chevron.backward") }
-                .buttonStyle(BPActionStyle()).accessibilityLabel("Previous month")
+                .buttonStyle(BPActionStyle()).accessibilityLabel(T("Previous month"))
             Button("Today") { model.today() }.buttonStyle(BPActionStyle())
             HStack(spacing: BP.px(6)) {
                 Image(systemName: "calendar").foregroundStyle(BP.inkSubtle)
+                    .accessibilityHidden(true)
                 Text(monthLabel).foregroundStyle(BP.ink)
             }
             .font(BP.sans(14, .semibold))
@@ -79,7 +80,7 @@ struct CalendarView: View {
             .frame(minWidth: BP.px(150), minHeight: BP.tabItem)
             .overlay(Capsule().stroke(BP.edge2, lineWidth: 1))
             Button { model.next() } label: { Image(systemName: "chevron.forward") }
-                .buttonStyle(BPActionStyle()).accessibilityLabel("Next month")
+                .buttonStyle(BPActionStyle()).accessibilityLabel(T("Next month"))
             Rectangle().fill(BP.edge2).frame(width: 1, height: BP.px(22)).padding(.horizontal, BP.px(4))
             // components/reminders-manager.tsx RemindersManagerButton: bell + count.
             Button { showReminders = true } label: {
@@ -92,7 +93,7 @@ struct CalendarView: View {
                 }
             }
             .buttonStyle(BPActionStyle())
-            .accessibilityLabel("Reminders")
+            .accessibilityLabel(T("Reminders"))
         }
         .focusSection()
         .task { reminderCount = await reminders.list().count }
@@ -406,6 +407,8 @@ struct CalendarChip: View {
             RemoteImage(url: item.poster)
                 .frame(width: BP.px(large ? 17 : 12), height: BP.px(large ? 25 : 17))
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                // The name sits right beside it; the tiny poster is decorative.
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: BP.px(4)) {
                     Text(item.name).font(BP.sans(9.5, .medium)).foregroundStyle(BP.ink).lineLimit(1)
@@ -469,6 +472,6 @@ struct CalendarSkeleton: View {
             }
         }
         .redacted(reason: .placeholder)
-        .accessibilityLabel("Loading")
+        .accessibilityLabel(T("Loading"))
     }
 }

@@ -1249,10 +1249,11 @@ struct PlayerScreen: View {
     /// bp-up-next.tsx CountdownRing: whole seconds left, the ring filling toward the jump.
     private func countdownRing(seconds: Int, progress: Double) -> some View {
         ZStack {
-            Circle().stroke(BP.edge2, lineWidth: 3.5)
+            Circle().stroke(BP.edge2, lineWidth: 3.5).accessibilityHidden(true)
             Circle().trim(from: 0, to: progress)
                 .stroke(BP.accent, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .accessibilityHidden(true)
             Text("\(seconds)").font(BP.sans(15, .bold)).foregroundStyle(BP.ink).monospacedDigit()
         }
         .frame(width: BP.px(46), height: BP.px(46))
@@ -1367,6 +1368,9 @@ struct PlayerScreen: View {
         // bp-player-scrub.tsx draws the track from the physical left (left-0, left: %) under rtl too;
         // mirrored, the fill ran from the right and the pending-seek mark's offset left the bar.
         .environment(\.layoutDirection, .leftToRight)
+        // Decorative: the invisible stage surface (bp-player-scrub role="slider") already carries the
+        // real position as its VoiceOver value (PlayerSeekValue); this drawn track would only repeat it.
+        .accessibilityHidden(true)
     }
 
     private func fraction(_ sec: Double, of duration: Double) -> CGFloat {
@@ -1393,6 +1397,8 @@ struct PlayerScreen: View {
         }
         .font(BP.sans(13, .semibold))
         .monospacedDigit()
+        // Position, "{n} left" and "Ends {time}" are one readout: read as a single stop, not three.
+        .accessibilityElement(children: .combine)
     }
 
     /// bp-player-scrub.tsx nudge(): each press adds a step to one pending seek, committed 420 ms after
@@ -1510,7 +1516,7 @@ struct PlayerScreen: View {
                 ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                     Button { setAnime4k(o.0) } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack { Text(T(o.1)).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark") } }
+                            HStack { Text(T(o.1)).font(BP.sans(14, .semibold)); Spacer(); if current == o.0 { Image(systemName: "checkmark").accessibilityHidden(true) } }
                             Text(T(o.2)).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(2)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -1896,7 +1902,7 @@ struct PlayerScreen: View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             Spacer()
             HStack(spacing: BP.px(10)) {
-                Image(systemName: "antenna.radiowaves.left.and.right.slash").foregroundStyle(BP.danger)
+                Image(systemName: "antenna.radiowaves.left.and.right.slash").foregroundStyle(BP.danger).accessibilityHidden(true)
                 Text("This channel isn't responding").font(BP.display(30)).foregroundStyle(BP.ink)
             }
             Text("It looks offline right now. Free playlists often include channels that have gone dark, so another one is usually a click away.")
@@ -1956,7 +1962,7 @@ struct PlayerScreen: View {
         let elapsed = Int(Date().timeIntervalSince(loadingSince))
         return VStack(alignment: .leading, spacing: BP.px(10)) {
             Spacer()
-            HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink); Text("Connecting…").font(BP.display(28)).foregroundStyle(BP.ink) }
+            HStack(spacing: BP.px(10)) { ProgressView().tint(BP.ink).accessibilityHidden(true); Text("Connecting…").font(BP.display(28)).foregroundStyle(BP.ink) }
             if TorrentEngine.streamRef(playURL) != nil {
                 // bp-connecting with a torrent: bp-p2p-status's stage, readiness and peers/speed.
                 TorrentReadout(url: playURL)
@@ -2285,6 +2291,7 @@ struct PlayerScreen: View {
                         Capsule().fill(BP.accent).frame(width: g.size.width * min(1, max(0, sec / duration)))
                     }
                 }.frame(width: BP.px(420), height: BP.px(6))
+                    .bpProgressValue(sec / duration)
             }
             HStack(spacing: BP.px(10)) {
                 chip("Pick up where you left off", "play.fill") { acknowledgeResume(true) }
@@ -2369,7 +2376,7 @@ struct PlayerScreen: View {
         ZStack {
             BP.void_.ignoresSafeArea()
             VStack(spacing: BP.px(14)) {
-                Image(systemName: "pip").font(.system(size: BP.px(56), weight: .light)).foregroundStyle(BP.inkMuted)
+                Image(systemName: "pip").font(.system(size: BP.px(56), weight: .light)).foregroundStyle(BP.inkMuted).accessibilityHidden(true)
                 Text(T("Picture in Picture")).font(BP.display(30)).foregroundStyle(BP.ink)
                 Text(verbatim: shownTitle).font(BP.sans(16, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1)
                 HStack(spacing: BP.px(10)) {
@@ -2395,7 +2402,7 @@ struct PlayerScreen: View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
             Spacer()
             HStack(spacing: BP.px(10)) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(BP.danger)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(BP.danger).accessibilityHidden(true)
                 Text("Harbor couldn't play this source").font(BP.display(30)).foregroundStyle(BP.ink)
             }
             Text("The source responded but the stream would not open. Try a different one.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
@@ -2528,6 +2535,7 @@ struct PlayerScreen: View {
                     finish(natural: false)
                 }
                 chip("Don't ask again", leaveRemember ? "checkmark.circle.fill" : "circle") { leaveRemember.toggle() }
+                    .bpSelected(leaveRemember)
             }
             .focusSection()
         }

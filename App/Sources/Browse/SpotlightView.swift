@@ -38,6 +38,8 @@ struct SpotlightView: View {
                 BandMark(url: mark, height: BP.px(20.5), maxWidth: BP.px(200))
                     .opacity(0.85)
                     .padding(.bottom, BP.px(8))
+                    // bp-spotlight data-bp-hero-mark: the provider badge mark has alt="" upstream.
+                    .accessibilityHidden(true)
             }
             if let logo = meta?.logo, !logo.isEmpty {
                 RemoteImage(url: logo, contentMode: .fit)

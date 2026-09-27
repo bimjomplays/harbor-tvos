@@ -185,6 +185,8 @@ struct MangaDetailView: View {
             LinearGradient(colors: [BP.void_.opacity(0.9), .clear], startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
         }
         .ignoresSafeArea()
+        // Ambient backdrop only; hero's own cover and title carry the same information.
+        .accessibilityHidden(true)
     }
 
     /// manga-detail MangaDetailError.
@@ -220,12 +222,16 @@ struct MangaDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
+                // manga-detail.tsx: the cover carries alt="" — the title beside it names the book.
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(12)) {
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     Text(model.detail?.title ?? T("Untitled")).font(BP.display(40)).foregroundStyle(BP.ink).lineLimit(2)
                     if let alt = model.detail?.altTitle, !alt.isEmpty { Text(alt).font(BP.sans(15)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                     if let a = model.detail?.author, !a.isEmpty { Text("by \(a)").font(BP.sans(14)).foregroundStyle(BP.inkMuted) }
                 }
+                // Title + alt title + author read as one VoiceOver stop instead of up to three.
+                .accessibilityElement(children: .combine)
                 HStack(spacing: BP.px(8)) {
                     if let ext = model.extName { pill(ext, strong: true) }
                     ForEach(pills, id: \.self) { p in pill(p, dot: p == model.detail?.statusLabel) }
@@ -245,7 +251,8 @@ struct MangaDetailView: View {
 
     private func pill(_ text: String, strong: Bool = false, dot: Bool = false) -> some View {
         HStack(spacing: BP.px(6)) {
-            if dot { Circle().fill(text.lowercased().contains("ongoing") ? BP.live : BP.inkSubtle).frame(width: BP.px(7), height: BP.px(7)) }
+            // manga-detail.tsx: the status dot beside the pill's own text is aria-hidden upstream.
+            if dot { Circle().fill(text.lowercased().contains("ongoing") ? BP.live : BP.inkSubtle).frame(width: BP.px(7), height: BP.px(7)).accessibilityHidden(true) }
             Text(text)
         }
         .font(BP.sans(12.5, strong ? .semibold : .regular)).foregroundStyle(strong ? BP.ink : BP.inkMuted)
@@ -298,7 +305,8 @@ struct MangaDetailView: View {
                 Image(systemName: model.favorite ? "heart.fill" : "heart")
             }
             .buttonStyle(BPActionStyle(primary: model.favorite))
-            .accessibilityLabel(model.favorite ? "Remove favorite" : "Add favorite")
+            // manga-detail.tsx aria-label={isFavorite ? t("Remove favorite") : t("Add favorite")}.
+            .accessibilityLabel(model.favorite ? T("Remove favorite") : T("Add favorite"))
             .disabled(model.detail == nil)
         }
         .focusSection()
@@ -314,6 +322,8 @@ struct MangaDetailView: View {
                 if model.pending { Text("checking other sources").font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
                 Spacer()
             }
+            // Non-interactive heading + count (+ status): one VoiceOver stop instead of up to three.
+            .accessibilityElement(children: .combine)
             if model.langs.count > 1 || !model.langFiltered.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
@@ -351,6 +361,8 @@ struct MangaDetailView: View {
                         } label: { chapterRow(c) }
                             .buttonStyle(BPTileStyle(radius: BP.rSM))
                             .focused($chapterFocus, equals: c.id)
+                            // The chapter the reader is currently on, drawn with its own accent/background.
+                            .bpSelected(model.progress?.chapterId == c.id)
                     }
                     if ordered.count > model.visibleCount {
                         Button("Show \(min(MangaDetailModel.pageSize, ordered.count - model.visibleCount)) more") {
@@ -391,6 +403,7 @@ struct MangaDetailView: View {
                             }
                         }
                         .frame(width: BP.px(120), height: BP.px(3))
+                        .bpProgressValue(p.fraction)
                         Text("\(Int(p.page))/\(Int(p.totalPages))").font(BP.sans(11, .semibold)).monospacedDigit().foregroundStyle(BP.inkSubtle)
                     }
                 }

@@ -605,6 +605,8 @@ struct DetailView: View {
                 .flipsForRightToLeftLayoutDirection(true)
         }
         .ignoresSafeArea()
+        // hero-backdrop.tsx: the layered still is alt="" aria-hidden; the logo/title over it names the page.
+        .accessibilityHidden(true)
     }
 
     private var hero: some View {
@@ -927,7 +929,8 @@ struct DetailView: View {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {
                                     Circle().fill(BP.panel2)
-                                    if let p = person.profile { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
+                                    // bp-cast-row.tsx img alt="": the name and character below already name the cell.
+                                    if let p = person.profile { RemoteImage(url: p).clipShape(Circle()).accessibilityHidden(true) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
                                 }
                                 .frame(width: BP.px(110), height: BP.px(110))
                                 Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -1006,6 +1009,8 @@ struct DetailView: View {
             Text(T(label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
             Text(value).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
         }
+        // Not a control: the label and its names read as one row ("Directed by, ...") not two stops.
+        .accessibilityElement(children: .combine)
     }
 
     /// The season buttons: the first eight, plus the season on screen when it sits past them (a

@@ -43,6 +43,8 @@ struct ScoreChipsView: View {
                         .background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.ink))
                     Text(b.text).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).monospacedDigit()
                 }
+                // Not a control: source mark and value read as one chip ("IMDb 7.8"), not two stops.
+                .accessibilityElement(children: .combine)
             }
         }
         .task(id: meta?.id) {

@@ -59,7 +59,10 @@ struct LightboxView: View {
         ZStack {
             BP.void_.ignoresSafeArea()
             if images.indices.contains(index) {
+                // bp-gallery-row.tsx BpGalleryLightbox img alt="": the invisible surface below
+                // carries the "Image {n}" label and the count, so the picture itself says nothing.
                 RemoteImage(url: images[index], contentMode: .fit).padding(BP.px(60)).id(index).transition(.opacity)
+                    .accessibilityHidden(true)
             }
             VStack {
                 Spacer()

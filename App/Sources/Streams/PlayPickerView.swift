@@ -225,6 +225,7 @@ struct PlayPickerView: View {
                     if stubNotice { stubBanner }
                     if let resolveError { BPNote(text: resolveError, tone: BP.danger) }
                     RemoteImage(url: meta.poster).frame(width: BP.px(177), height: BP.px(265)).clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous)).padding(.top, BP.px(10))
+                        .accessibilityHidden(true)
                 }
                 .frame(width: BP.px(300), alignment: .leading)
                 list
@@ -261,6 +262,7 @@ struct PlayPickerView: View {
                         if !summary.isEmpty { Text(summary.joined(separator: " · ")) }
                     }
                     .font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle)
+                    .accessibilityElement(children: .combine)
                 }
                 .padding(BP.px(14)).frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
@@ -505,7 +507,7 @@ struct PlayPickerView: View {
         if model.p2pStarting {
             // A torrent is fetching its metadata in the TV's engine (bp-p2p-status "Looking for peers…").
             HStack(spacing: BP.px(8)) {
-                ProgressView().tint(BP.accent)
+                ProgressView().tint(BP.accent).accessibilityHidden(true)
                 Text("Looking for peers…").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
             }
         }
@@ -926,7 +928,7 @@ struct PlayPickerView: View {
                         .font(BP.sans(13, .medium)).foregroundStyle(BP.inkSubtle).lineLimit(1)
                     if model.p2pStarting {
                         HStack(spacing: BP.px(8)) {
-                            ProgressView().tint(BP.accent)
+                            ProgressView().tint(BP.accent).accessibilityHidden(true)
                             Text("Looking for peers…").font(BP.sans(13, .semibold)).foregroundStyle(BP.ink)
                         }
                     }
@@ -993,7 +995,7 @@ struct PlayPickerView: View {
     private var emptyList: some View {
         VStack(spacing: BP.px(12)) {
             if listLoading {
-                ProgressView().tint(BP.inkSubtle)
+                ProgressView().tint(BP.inkSubtle).accessibilityHidden(true)
             } else {
                 Image(systemName: "shippingbox").font(.system(size: BP.px(30), weight: .regular)).foregroundStyle(BP.inkSubtle)
                     .accessibilityHidden(true)
@@ -1077,7 +1079,7 @@ struct PlayPickerView: View {
                             .fixedSize()
                     }
                     if let labels = s.tvLabels { availabilityMark(labels) }
-                    if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
+                    if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7).accessibilityHidden(true) }
                 }
                 let headline = s.tvRow?.headline ?? s.parsedTitle ?? s.title ?? s.name ?? "Stream"
                 Text(headline).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -1116,6 +1118,7 @@ struct PlayPickerView: View {
         // its resolve began, so the ring was thrown onto the filter chips and stayed there when the
         // link failed ("Unavailable, try another."), a whole list away from the next row to try.
         .focused($rowFocus, equals: "stream:" + s.id)
+        .bpSelected(highlight)
         .accessibilityIdentifier("stream-\(s.index)")
     }
 
@@ -1216,6 +1219,7 @@ struct PlayPickerView: View {
         if kind == "cached" {
             HStack(spacing: BP.px(6)) {
                 Image(systemName: "checkmark").font(.system(size: BP.px(13), weight: .heavy)).foregroundStyle(BP.live)
+                    .accessibilityHidden(true)
                 Text(verbatim: cachedText(labels)).font(BP.sans(11.5, .bold)).foregroundStyle(BP.ink).lineLimit(1)
             }
             .fixedSize()
@@ -1237,6 +1241,7 @@ struct PlayPickerView: View {
     private func markPill(_ text: String, icon: String) -> some View {
         HStack(spacing: BP.px(5)) {
             Image(systemName: icon).font(.system(size: BP.px(11), weight: .bold))
+                .accessibilityHidden(true)
             Text(verbatim: text).lineLimit(1)
         }
         .font(BP.sans(11, .bold)).foregroundStyle(BP.inkMuted)
@@ -1261,7 +1266,7 @@ struct PlayPickerView: View {
                     if c.progressMs > 0 { Text("Resume").font(BP.sans(10, .bold)).textCase(.uppercase).foregroundStyle(BP.canvas).padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(2)).background(RoundedRectangle(cornerRadius: BP.px(4)).fill(BP.live)) }
                     Spacer()
                     Text(c.sourceLabel).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
-                    if resolving == c.key { ProgressView().tint(BP.inkMuted).scaleEffect(0.7) }
+                    if resolving == c.key { ProgressView().tint(BP.inkMuted).scaleEffect(0.7).accessibilityHidden(true) }
                 }
                 Text(c.label).font(BP.sans(14)).foregroundStyle(BP.ink).lineLimit(2)
                 if let b = c.sizeBytes, b > 0 { Text(ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .file)).font(BP.sans(11)).foregroundStyle(BP.inkSubtle) }

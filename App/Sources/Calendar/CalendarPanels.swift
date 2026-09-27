@@ -22,6 +22,7 @@ struct CalendarDayView: View {
                     Text(cell.items.count == 1 ? "\(cell.items.count) title" : "\(cell.items.count) titles")
                         .font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
                 }
+                .accessibilityElement(children: .combine)
                 .padding(BP.px(20))
                 Rectangle().fill(BP.edge).frame(height: 1)
                 ScrollView(.vertical, showsIndicators: false) {
@@ -59,6 +60,8 @@ struct CalendarDayView: View {
             RemoteImage(url: item.poster)
                 .frame(width: BP.px(large ? 78 : 52), height: BP.px(large ? 117 : 78))
                 .clipShape(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous))
+                // The title is read right after it; the poster is decorative.
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 HStack(spacing: BP.px(8)) {
                     if !hideTypeTag { CalendarTypeTag(item: item, size: 8.5) }
@@ -126,6 +129,8 @@ struct RemindersManagerView: View {
                                         }
                                         .frame(width: BP.px(30), height: BP.px(40))
                                         .clipShape(RoundedRectangle(cornerRadius: BP.px(5), style: .continuous))
+                                        // The show's name is read right after it either way.
+                                        .accessibilityHidden(true)
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(r.name).font(BP.sans(13.5, .medium)).foregroundStyle(BP.ink).lineLimit(1)
                                             Text(r.summary).font(BP.sans(11.5)).foregroundStyle(BP.inkSubtle).lineLimit(1)
@@ -140,7 +145,7 @@ struct RemindersManagerView: View {
                                 .focused($focus, equals: r.id)
                                 Button { Task { await remove(r) } } label: { Image(systemName: "xmark") }
                                     .buttonStyle(BPActionStyle())
-                                    .accessibilityLabel("Remove reminder")
+                                    .accessibilityLabel(T("Remove reminder"))
                             }
                             .focusSection()
                         }
@@ -236,6 +241,7 @@ struct CalendarConfigRailView: View {
                             Text("Filters").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                             Text(rail?.summary ?? "").font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(2)
                         }
+                        .accessibilityElement(children: .combine)
                         Spacer()
                         // result-pill.tsx
                         Text(resultCount == 1 ? "1 " + T("result") : T("%lld results", resultCount))
@@ -315,6 +321,8 @@ struct CalendarConfigRailView: View {
                 } label: {
                     HStack(spacing: BP.px(8)) {
                         Image(systemName: open.contains(g.id) ? "chevron.down" : "chevron.forward")
+                            // The trait below already says whether the group is open.
+                            .accessibilityHidden(true)
                         Text(g.title)
                         if g.count > 0 { Text("\(g.count)").foregroundStyle(BP.accent) }
                         if !g.summary.isEmpty && !open.contains(g.id) {
@@ -324,6 +332,7 @@ struct CalendarConfigRailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(BPActionStyle())
+                .bpSelected(open.contains(g.id))
                 .focused($focus, equals: "group:" + g.id)
                 // (home device pass) Clear leaves with the group's picks: the ring goes to the group's header.
                 if g.count > 0 { Button("Clear") { toggle("clear:\(g.id)") { _ in "group:" + g.id } }.buttonStyle(BPActionStyle()) }
@@ -418,7 +427,7 @@ struct CalendarTabBadge: View {
                 .background(Capsule().fill(BP.danger))
                 .offset(x: BP.px(3), y: -BP.px(3))
                 .allowsHitTesting(false)
-                .accessibilityLabel("\(center.unseen) new reminders")
+                .accessibilityLabel(T("%lld new reminders", center.unseen))
         }
     }
 }
@@ -491,6 +500,7 @@ struct CalendarPeopleSearchView: View {
                             Button { add(person) } label: {
                                 HStack(spacing: BP.px(12)) {
                                     RemoteImage(url: person.profile).frame(width: BP.px(44), height: BP.px(44)).clipShape(Circle())
+                                        .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(person.name).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                         if !person.knownFor.isEmpty { Text(person.knownFor).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1) }

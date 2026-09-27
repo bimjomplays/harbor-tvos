@@ -121,6 +121,9 @@ struct AddonPageView: View {
                     Text(name).font(BP.display(30)).foregroundStyle(BP.ink)
                     Text(loading && metas.isEmpty ? "Loading…" : metas.isEmpty ? "" : "\(metas.count) results").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
+                // addons/bp-addon.tsx header: the addon's name and its result count read as one
+                // line, not two separate swipes.
+                .accessibilityElement(children: .combine)
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20))
             .opacity(spotlight == nil ? 1 : 0)
@@ -188,6 +191,9 @@ struct AnimeHeroActionsView: View {
                     if resume != nil, !i.episode.isEmpty { Text(i.episode + (i.minutesLeft.isEmpty ? "" : " · \(i.minutesLeft)")).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                 }
             }
+            // bp-anime-hero-meta data-bp-anime-facts: the award pill, score, dub badge, country and
+            // episode line read as one fact line, not a scatter of separate swipes.
+            .accessibilityElement(children: .combine)
             HStack(spacing: BP.px(10)) {
                 // bp-anime-hero-actions: RotateCcw for Resume, the filled Play for Start Watching.
                 Button { onPlay(meta) } label: { Label(resume != nil ? "Resume" : "Start Watching", systemImage: resume != nil ? "arrow.counterclockwise" : "play.fill") }.buttonStyle(BPActionStyle(primary: true))

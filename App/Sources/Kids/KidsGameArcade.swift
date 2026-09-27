@@ -125,6 +125,7 @@ struct KidsGameArcade: View {
                                                    focusedFill: on ? KidsTheme.sunny : Color.white.opacity(0.3),
                                                    ink: on ? KidsTheme.sunnyInk : Color.white,
                                                    height: BP.px(48)))
+                        .bpSelected(on)
                 }
             }
             .frame(maxWidth: .infinity)

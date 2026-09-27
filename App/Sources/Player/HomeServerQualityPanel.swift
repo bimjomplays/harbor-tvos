@@ -39,7 +39,9 @@ struct HomeServerQualityPanel: View {
                                 Text(verbatim: q.label).font(BP.sans(15, .semibold)).lineLimit(1)
                                 Spacer(minLength: 0)
                                 if switching == q.id {
-                                    ProgressView().tint(BP.ink).scaleEffect(0.7)
+                                    // Decorative: the row's own label already reads; nothing here needs a
+                                    // separate VoiceOver announcement while the switch is in flight.
+                                    ProgressView().tint(BP.ink).scaleEffect(0.7).accessibilityHidden(true)
                                 } else if current == q.id {
                                     Image(systemName: "checkmark").font(.system(size: BP.px(15), weight: .bold)).accessibilityHidden(true)
                                 }

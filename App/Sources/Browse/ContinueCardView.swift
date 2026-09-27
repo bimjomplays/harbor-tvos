@@ -78,6 +78,9 @@ struct ContinueCardView: View {
         // art carries no name of its own).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: accessibilityText))
+        // The resume bar drawn below (Capsule/Capsule fraction): children are ignored above, so the
+        // value has to sit on this same merged element to be read at all.
+        .bpProgressValue(item.progress)
     }
 
     /// bp-cw-card-meta.tsx bpCwCardLabel: name, episode, state, badges.
