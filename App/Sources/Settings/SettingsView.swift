@@ -180,11 +180,18 @@ struct SettingsView: View {
                             }
                             .buttonStyle(BPActionStyle())
                             .focused($returnFocus, equals: "switch")
+                            // UI tests (NavigationTests6): reaching Guest's own advanced settings
+                            // needs it made active first, since Edit profile below only ever opens
+                            // `profiles.active`'s own editor.
+                            .accessibilityIdentifier("settings-switch-profile")
                             Button(p.passwordHash == nil ? "Set a PIN" : "Remove PIN") {
                                 if p.passwordHash == nil { pinDraft = ""; sheet = .pin } else { sheet = .removePin }
                             }.buttonStyle(BPActionStyle())
+                                .accessibilityIdentifier("settings-pin-button")
                             Button("Edit profile") { sheet = .editProfile }.buttonStyle(BPActionStyle())
+                                .accessibilityIdentifier("settings-edit-profile")
                             Button("Add profile") { sheet = .newProfile }.buttonStyle(BPActionStyle())
+                                .accessibilityIdentifier("settings-add-profile")
                         }
                     }
                 }

@@ -93,7 +93,13 @@ struct ProfileEditorView: View {
                     HStack(spacing: BP.px(10)) {
                         Button(editing == nil ? "Create" : "Save") { Task { await save() } }
                         .buttonStyle(BPActionStyle(primary: true, busy: saving)).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pinDraftValid || !kidPinDraftValid)
+                        // UI tests (NavigationTests6): the one button that commits everything in this
+                        // form, including the kid parent PIN field above (it has no Save of its own).
+                        .accessibilityIdentifier("profile-save")
                         Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
+                            // UI tests (NavigationTests6): Down from the avatar catalog can land on
+                            // either button in this row; this lets a test recover from landing here.
+                            .accessibilityIdentifier("profile-cancel")
                         if let e = editing, !e.isPrimary {
                             Button(confirmDelete ? "Delete for real" : "Delete profile") {
                                 // (profiles device pass) The delete awaits two engine calls before the
@@ -157,8 +163,14 @@ struct ProfileEditorView: View {
     // MARK: PIN & sidebar locks (editor-view.tsx SecurityRow / SecurityView / TabsView)
 
     /// editor-view.tsx `showAdvanced`: the primary profile edits another profile's advanced
-    /// settings, and a new profile gets them in the same form.
-    private var showAdvanced: Bool { editing == nil || profiles.active?.isPrimary == true }
+    /// settings, and a new profile gets them in the same form. (NavigationTests6 fix) This file's
+    /// only two call sites always pass `editing: profiles.active` (self-edit), so `editing` and
+    /// `profiles.active` are the same profile and the old `profiles.active?.isPrimary == true` term
+    /// collapsed to "editing is primary" — which `showKidToggle` then excludes outright, so a
+    /// non-primary profile's own kid toggle and PIN & sidebar locks could never be reached again
+    /// after creation. Self-editing your own profile is always "advanced"; the `isPrimary` term is
+    /// kept for a future call site that lets the primary open someone else's editor without it.
+    private var showAdvanced: Bool { editing == nil || editing?.id == profiles.active?.id || profiles.active?.isPrimary == true }
 
     /// editor-view.tsx `showAdvanced && !isPrimary`: KidToggle is never shown for the primary
     /// profile (it can't become a kid — ProfilesStore.setKid refuses it too).
@@ -212,6 +224,8 @@ struct ProfileEditorView: View {
                 // No SwiftUI Toggle/switch elsewhere on this remote-driven UI: a two-state button
                 // matches the lock tiles below (BPActionStyle(primary:) reads as the "on" state).
                 Button(isKid ? "On" : "Off") { isKid.toggle() }.buttonStyle(BPActionStyle(primary: isKid)).bpSelected(isKid)
+                    // UI tests (NavigationTests6): the master toggle for the kid setup panel below.
+                    .accessibilityIdentifier("profile-kid-toggle")
             }
             if !isKid {
                 BPNote(text: "Gives this profile its own Kids space, a kid-safe catalog, an optional daily watch limit and a parent PIN — instead of PIN & sidebar locks.")
@@ -238,6 +252,8 @@ struct ProfileEditorView: View {
                     HStack(spacing: BP.px(8)) {
                         ForEach(Self.kidAges, id: \.self) { a in
                             Button("\(a)") { kidAge = a }.buttonStyle(BPActionStyle(primary: kidAge == a)).bpSelected(kidAge == a)
+                                // UI tests (NavigationTests6): one identifier per age pill.
+                                .accessibilityIdentifier("profile-kid-age-\(a)")
                         }
                     }
                     Text("Sets the age level for the kids space.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
@@ -248,6 +264,8 @@ struct ProfileEditorView: View {
                     HStack(spacing: BP.px(8)) {
                         ForEach(Self.kidCurfews, id: \.label) { c in
                             Button(T(c.label)) { kidCurfewMinutes = c.minutes }.buttonStyle(BPActionStyle(primary: kidCurfewMinutes == c.minutes)).bpSelected(kidCurfewMinutes == c.minutes)
+                                // UI tests (NavigationTests6): one identifier per curfew pill, "none" for "No limit".
+                                .accessibilityIdentifier("profile-kid-curfew-\(c.minutes.map { String($0) } ?? "none")")
                         }
                     }
                     Text("Stops playback when the daily limit is reached. A parent PIN lets you allow more time.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)

@@ -5,6 +5,43 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
+
+2026-09-27 (subagent) Navigation UI tests pass 6: `App/UITests/NavigationTests6.swift`, 2 remote-walk
+tests on `--fixtures shell`. `testSpoilersNestedTogglesAndPersistence` proves the ef2a2eb Slice-decoder
+fix end to end: turns Blur spoilers on (nested toggles appear), flips one nested toggle and flips it
+back, turns the master off (nested toggles gone) and back on, then does a real `app.terminate()` +
+relaunch of the same fixture and checks the master still reads On (the default is Off, so this is the
+persistence proof) before turning it back off. `testKidsProfileEditorSetup` exercises
+`ProfileEditorView`'s Kids setup (added by the 09-27 kids parity pass, never previously UI-tested —
+that pass's own Status entry above flagged "editing an existing kid's age/curfew/PIN" as needing a
+device check): the kid toggle is absent editing the primary (Skipper) and present for a non-primary
+profile, so the test switches the active profile to the fixture's PIN-protected Guest ("1234", via
+Who's watching) first, since Settings' "Edit profile" only ever opens `profiles.active` — there is no
+other UI path to a non-primary profile's own editor. **Found and fixed a real bug in the process**:
+`ProfileEditorView.showAdvanced` compared `profiles.active?.isPrimary` against the profile it was
+already editing (this file's only two call sites always pass `editing: profiles.active`, so the two
+are always the same profile), collapsing to "editing is primary" — which `showKidToggle` then
+excludes outright, so the kid toggle and "PIN & sidebar locks" section could never be reached again
+for ANY existing profile once created (self-editing a non-primary profile always hid them; a primary
+self-editing was already fine only because it never needed the kid toggle). Fixed by also treating
+self-edit as advanced (`App/Sources/Profiles/ProfileEditorView.swift`, `showAdvanced`), which un-hides
+"PIN & sidebar locks" for a self-edited non-primary profile too (previously unreachable — worth an
+owner device check, since it changes real behaviour, not just test reachability). New identifiers,
+all additive: `profile-save`, `profile-cancel`, `profile-kid-toggle`, `profile-kid-age-<n>`,
+`profile-kid-curfew-<minutes|none>` (`ProfileEditorView.swift`); `settings-switch-profile`,
+`settings-pin-button`, `settings-edit-profile`, `settings-add-profile` (`SettingsView.swift`, the
+Profiles row — needed because Down between Settings sections does not reliably keep the same column,
+so a test landing anywhere in that four-button row needs an identifier on each button to recover).
+Not added: an identifier for "the parent PIN field's Save/primary button" — there is no such button;
+the kid's own parent-PIN field has no Save of its own (unlike the eBook NYT key row), it is committed
+by the whole form's one Save button, which `profile-save` already covers. 41 UI tests now. Not run
+against the simulator here (no Swift compiler in this environment) — every identifier addition and
+the `showAdvanced` change were read-checked by hand against every call site; engine untouched, so
+`node build.mjs`/`smoke.mjs` were not re-run. Device check: editing an existing non-primary profile's
+Kids toggle, age and curfew, confirming the "PIN & sidebar locks" section now shows for it when Kids
+is off (this was previously always hidden — confirm the newly-visible tab-lock tiles behave correctly
+for a non-primary profile before shipping).
+
 2026-09-27 (translation coverage 6, subagent): fixed the 14 sites (of the "12 strings" flagged, actually 15 listed call sites minus 1 out of scope) that coverage pass 5 (07:47 UTC line below) left as "literally unfixable without a Swift change" — a value interpolated straight into a plain `String`/`T()` key before lookup, so no catalog entry could ever match: `HarborAPI.request`'s `Request failed (N).` fallback, `StremioAPI.call`'s two `Failure(message:)` strings, `SettingsView`'s Stremio-profile/TMDB-key-length/sync-queue/profile-count/Build detail lines, `AppearancePanel`'s font-pairing note, `PasteTrackerView.PasteTrackerPanel`'s `BPField` label, and `PlayPickerView`'s three playback-error strings (`pick(copy:)`, `start(_:forceP2p:)`, `badLinkMessage`). Each now builds its key with `T(_:_:)`'s format-args form (`T("… %@ …", value)` / `TCount` for the sync-queue plural) instead of baking the value in first; `PlayPickerView.badLinkMessage` also changed `static let` → `static var` (a `let` would have cached whatever language was active on first read forever, since Swift only evaluates a `static let` once). Added the 14 new keys to `tools/locales-tvos.json` for all 15 languages (upstream's `reference/harbor` catalogs checked first — no matching upstream string for any of these TV-only lines, so freshly written, not native-reviewed, same register convention as pass 5: French formal *vous*, German informal *du*). Left `EBookReaderModel.swift`'s selected-line default untouched: `App/Sources/EBook` is on this worktree's do-not-touch list, so that one site is still open for a session allowed to edit it. `node tools/check_placeholders.mjs` → OK (all 15 languages). `node tools/l10n_coverage.mjs --lang de`: 3225/3614 89.2%, up from 3183/3581 88.9% (pass 5's figure; the denominator moved because the fix sites are now counted at all, not because anything regressed) — every touched file now scores 100% except `SettingsView.swift` (97%, 4 unrelated pre-existing misses) and `PlayPickerView.swift` (94%, 5 unrelated codec-badge literals), neither in this pass's scope. Files: `App/Sources/Account/HarborAPI.swift`, `App/Sources/Account/StremioAPI.swift`, `App/Sources/Settings/SettingsView.swift`, `App/Sources/Settings/AppearancePanel.swift`, `App/Sources/Trackers/PasteTrackerView.swift`, `App/Sources/Streams/PlayPickerView.swift`, `tools/locales-tvos.json`. Not run: `engine/build.mjs`/`smoke.mjs` (no `engine/` files touched). No Swift compiler here: re-read every edited line in place, grepped every caller of `PlayPickerView.badLinkMessage` (2 in `PlayPickerView.swift`, 1 in `App/Sources/Player/PlayerKids.swift`, all reads — a computed `static var` is a drop-in replacement for the old `static let`), and checked every touched value's Swift type (`Int`/`String`/`String?`) against the `%lld`/`%@` chosen.
 
 2026-09-27 (audit reconciliation): Full reconciliation of `docs/parity-audit-2026-09-23.md` and
