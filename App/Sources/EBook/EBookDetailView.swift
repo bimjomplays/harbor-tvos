@@ -297,6 +297,9 @@ struct EBookDetailView: View {
             EBookReaderView(launch: l) { reader = nil }
         }
         .fullScreenCover(item: $nested) { o in EBookDetailView(open: o) }
+        // (review) Menu closes the page, like every other cover here: without this a tvOS
+        // fullScreenCover does not dismiss on Menu at all.
+        .onExitCommand { dismiss() }
         .confirmationDialog("Source", isPresented: $sourcePicker) {
             ForEach(model.sourceOptions) { s in
                 Button(s.providerName ?? s.title) { model.sourceRoute = s.id }

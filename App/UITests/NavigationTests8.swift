@@ -32,7 +32,7 @@ import XCTest
 /// the detail page beyond the cached title/cover need `gutendex.com` and, to open the reader at all,
 /// the book's actual archive.org (or equivalent) EPUB URL too. There is no way to reach the reader
 /// under any offline fixture, so this covers the Detail page instead, guarded the same way
-/// NavigationTests5's eBook tests already tolerate the runner's own flaky network: `waitUntil` on the
+/// NavigationTests7 (XCTSkip precedent) already tolerate the runner's own flaky network: `waitUntil` on the
 /// Popular rail's first card, `XCTSkip` (not a failure) if it never appears within the timeout. Once
 /// on the Detail page, the action row's Mark as Read toggle (`ebook-mark-read`, added by this batch)
 /// needs no further network to flip: `EBookDetailModel.toggleRead` persists the tracking entry
