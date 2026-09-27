@@ -71,10 +71,21 @@ struct BPRowView: View {
             // FocusState assignment tried to land on it, and the hop silently dropped (testRowSeeAllEdge,
             // testHomeBandRowLeads: "did not reach seeall-… (focus: none)"). One runloop later the
             // gate has already committed, so the hop lands.
-            seeAllArmed = true
-            DispatchQueue.main.async { seeAllFocused = true }
+            armSeeAll()
         } else if dir == startDir, index == 0, let onNavEdge {
             onNavEdge()
+        }
+    }
+
+    /// Arm the chip, hop onto it a runloop later, and self-disarm if that hop never lands
+    /// (review 2026-09-27: a row rebuild or a faster second press between the arm and the
+    /// deferred assignment could drop the hop, leaving `seeAllArmed` true for the row's
+    /// lifetime — the always-reachable chip the arm gate exists to prevent).
+    private func armSeeAll() {
+        seeAllArmed = true
+        DispatchQueue.main.async { seeAllFocused = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            if !seeAllFocused { seeAllArmed = false }
         }
     }
 
@@ -88,8 +99,7 @@ struct BPRowView: View {
         // in that same update as the catch (fine: nothing asks for focus yet), so by the time the
         // dispatched line below runs, both presence and the `.focusable` gate are already settled.
         if lastHeld == id, onSeeAll != nil {
-            seeAllArmed = true
-            DispatchQueue.main.async { seeAllFocused = true }
+            armSeeAll()
         } else {
             DispatchQueue.main.async { focusedId = id }
         }
