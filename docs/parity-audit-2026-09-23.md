@@ -212,11 +212,11 @@ Home Live TV row → HM-2. Multiview, DVR, in-player channel picker: not in BP.
 
 ## 15. Sports
 
-Verified present: consent, modes/groups chips, date band, hero cycle, rows, Explore grid, event detail (stats bars, play-by-play, lineups), personalize (sports → leagues), watch flow over Live TV channels with picker + pin.
+Verified present: consent, modes/groups chips, date band, hero cycle, rows, Explore grid, event detail (stats bars, play-by-play, lineups), personalize (sports → leagues), watch flow over Live TV channels with picker + pin, sport-specific live diagrams (SP-1, below).
 
 | # | Upstream | Behaviour | Engine | Effort | Impact |
 |---|---|---|---|---|---|
-| SP-1 | `sports/bp-sports-live-court.tsx`, `-diamond`, `-field`, `-kit`, `-plays`, `-situation` | Sport-specific live diagrams (court, diamond, field, formation, plays, situation cell) in the Stats row while live. Port: generic stat bars + text list. | no | L | H (sports fans) |
+| SP-1 | `sports/bp-sports-live-court.tsx`, `-diamond`, `-field`, `-kit`, `-plays`, `-situation` | Sport-specific live diagrams (court, diamond, field, formation, plays, situation cell) in the Stats row while live. **Done (2026-09-27 verification of the 09-24 Sports parity batch, commit `0211981`):** `engine/sportsEvent.ts` `eventRows()` reuses upstream's pure helpers directly from `reference/harbor` (`bpSportsSituationKind`, `bpSportsHasDiamond/-Field/-Court`, `bpSportsHasPlays`, `basketballFive`, `playIcon`) to compute `situation.{diamond,field,court}` and `plays` exactly as upstream does; Swift draws them with SwiftUI `GeometryReader`/shapes in `App/Sources/Sports/SportsLiveViews.swift` (`SportsDiamondView`, `SportsFieldView`, `SportsCourtView`, `SportsStatsRowView.playsCell`), shown in `SportsEventView`'s Stats row only when `sports.eventRows` returns a non-null `situation`/`plays` (upstream's own live/state gating, not a blanket `state == "in"` check). `engine/smoke.mjs` has mocked-summary checks per sport (NBA court, MLB diamond, NFL field, EPL pitch/lineups, no-detail fallback). | yes | L | H (sports fans) |
 | SP-2 | `sports/bp-sports-who-*.tsx` | Tap a team/athlete → bio panel. Port: sides not tappable. | no | M | M |
 | SP-3 | `sports/bp-sports-addon-*.tsx` | Stremio addon catalogs as sports sources (plan `"addons"`), fallback when no channel match. Port `watch()` plans: channel/picker/setup/finished only (`sports.ts:332`). | no | M | M |
 | SP-4 | `lib/sports/reminders.ts`, `reminder-state.ts` | Bell on the event hero arms a Discord/Telegram webhook reminder. Port: none, but the consent copy promises it. | no | M | M (or edit the copy: S) |
@@ -254,7 +254,7 @@ Verified present: consent, modes/groups chips, date band, hero cycle, rows, Expl
 
 Cheap correctness fixes to fold into any of the above (all S): ST-1 Setup row state, PL-5 leave confirm, SH-6 confirmation dialogs, PL-9 skip-pill focus steal, DT-10 Videos row (data already returned), SH-5 top-bar sync/offline icon, OB-1 streaming step, SP-4 consent copy (if reminders stay unbuilt).
 
-Honourable mentions (high impact for a subset, L effort): HM-2 Home Live TV row, SP-1 live-situation diagrams, LV-1 guide portal (M), SH-3 quick panel (M), ST-2/OB-4/SR-7 phone handoff (one shared L piece of infrastructure that unlocks three gaps).
+Honourable mentions (high impact for a subset, L effort): HM-2 Home Live TV row, LV-1 guide portal (M), SH-3 quick panel (M), ST-2/OB-4/SR-7 phone handoff (one shared L piece of infrastructure that unlocks three gaps). (SP-1 live-situation diagrams shipped 09-24/verified 09-27; removed from this list.)
 
 ## 17. Things the port does that Big Picture does not
 

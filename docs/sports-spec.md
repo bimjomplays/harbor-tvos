@@ -688,6 +688,16 @@ renders `null`):
    "Live now" while any live element is present and the game is in progress, else
    "Odds and statistics"/"Key statistics"/"Market odds"/"Play by play"/a
    sport-surface name, singular label suppressed if it equals the row title.
+   **Ported** (parity-audit SP-1, done 09-24, verified 09-27): `engine/sportsEvent.ts`
+   `eventRows()` calls upstream's `bpSportsSituationKind`/`bpSportsHasDiamond`/
+   `-Field`/`-Court`/`bpSportsHasPlays`/`basketballFive` directly (imported through
+   the `@/` alias into `reference/harbor/src`, no reimplementation), so the
+   diamond/field/court/plays gating is byte-for-byte upstream's own logic; market-
+   odds cells are intentionally skipped (§4.2 note above, gated off on tvOS). Swift
+   draws the three diagrams and the plays list with SwiftUI shapes in
+   `App/Sources/Sports/SportsLiveViews.swift` (`SportsDiamondView`, `SportsFieldView`,
+   `SportsCourtView`, `SportsStatsRowView`), on the same percentage coordinates
+   upstream computes (`placed()`/`GeometryReader`, no images).
 2. **Lineups** (`BpSportsLineupsRow`, `bp-sports-event-rows.tsx:232-271`) — an
    optional pitch/formation diagram cell (soccer-like sports,
    `bpSportsHasPitch`), then away/home roster cells (starters shown first, "Show
