@@ -66,6 +66,10 @@ struct PersonView: View {
     @State private var detail: Meta?
     @State private var other: PersonModel.Collaborator?
     @State private var bioExpanded = false
+    /// SH-1 (bp-ambient.tsx TITLE_ART_ROUTES includes "person"): the focused credit's own art
+    /// cross-fades in over the mosaic, same as Collections/Library. Known For, IMDb Top and each
+    /// filmography row already hand back the focused Meta; only the ambient wasn't reading it.
+    @State private var focusedMeta: Meta?
     /// The Sort / Rating chips ("Sort:popularity", "Rating:0" …), so the empty state's "Any rating"
     /// can hand the ring to the Rating row's "Any rating" before it goes away.
     @FocusState private var chipFocus: String?
@@ -95,15 +99,15 @@ struct PersonView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            BPAmbientBackground()
+            BPAmbientBackground(focused: focusedMeta)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(24)) {
                     hero.padding(.horizontal, BP.gutter)
                     if let pg = model.page {
                         // (device-flow pass 6) bp-person.tsx's no-key BpEmptyState copy (the TV has no Setup to open).
                         if !pg.hasKey { BPNote(text: "Filmographies come from TMDB. Add a key in Setup to fill this page.").padding(.horizontal, BP.gutter) }
-                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: T("Known For"), metas: k), onFocus: { _ in }, onSelect: { openTitle($0) }, restoreCell: leadCell("knownFor")) }
-                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: T("IMDb Top"), metas: t), onFocus: { _ in }, onSelect: { openTitle($0) }, restoreCell: leadCell("topRated")) }
+                        if let k = pg.knownFor, !k.isEmpty { BPRowView(row: BrowseRow(key: "knownFor", title: T("Known For"), metas: k), onFocus: { focusedMeta = $0 }, onSelect: { openTitle($0) }, restoreCell: leadCell("knownFor")) }
+                        if let t = pg.topRated, !t.isEmpty { BPRowView(row: BrowseRow(key: "topRated", title: T("IMDb Top"), metas: t), onFocus: { focusedMeta = $0 }, onSelect: { openTitle($0) }, restoreCell: leadCell("topRated")) }
                         if let c = pg.collaborators, c.count >= 3 { collaborators(c) }
                         // bp-person.tsx: the Filmography heading and the Sort / Rating rows stand while
                         // the person has any credit (total > 0). (device-flow pass) They hung off the
@@ -122,7 +126,7 @@ struct PersonView: View {
                             }
                             .padding(.horizontal, BP.gutter)
                         }
-                        ForEach(pg.sections ?? []) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { _ in }, onSelect: { openTitle($0) }, restoreCell: leadCell("film:\(s.id)")) }
+                        ForEach(pg.sections ?? []) { s in BPRowView(row: BrowseRow(key: "film:\(s.id)", title: s.title, metas: s.metas), onFocus: { focusedMeta = $0 }, onSelect: { openTitle($0) }, restoreCell: leadCell("film:\(s.id)")) }
                         // bp-person.tsx BpEmptyState when nothing is shown (the no-key note is above).
                         if pg.hasKey, !model.loading, (pg.shownTotal ?? 0) == 0 {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
