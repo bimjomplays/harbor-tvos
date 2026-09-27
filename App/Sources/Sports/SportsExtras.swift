@@ -95,6 +95,7 @@ struct StandingsSection: View {
                                         .foregroundStyle(on ? BP.ink : BP.inkMuted).frame(width: BP.px(58), alignment: .trailing)
                                 }
                             }
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 }
@@ -115,6 +116,7 @@ struct SportsArtView: View {
             if let u = url ?? game.artwork ?? game.poster {
                 RemoteImage(url: u).frame(width: width).clipped().opacity(0.5)
                     .mask(LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing))
+                    .accessibilityHidden(true)
             }
         }
         .task(id: game.id) {

@@ -100,6 +100,7 @@ struct AIResultRow: View {
                 .frame(width: BP.px(64), height: BP.px(96))
                 .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 if result.isEpisode {
                     Text(T("S%lld · E%lld", result.season ?? 0, result.episode ?? 0))
@@ -143,7 +144,7 @@ struct AIThinkingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(16)) {
             HStack(spacing: BP.px(14)) {
-                ProgressView().tint(BP.accent)
+                ProgressView().tint(BP.accent).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label).font(BP.sans(11, .semibold)).textCase(.uppercase).tracking(2).foregroundStyle(BP.accent)
                     TimelineView(.periodic(from: .now, by: 1.4)) { ctx in
@@ -152,6 +153,8 @@ struct AIThinkingView: View {
                     }
                 }
             }
+            // The spinner has nothing to say on its own; the phrase already reads as the busy state.
+            .accessibilityElement(children: .combine)
             ForEach(0..<4, id: \.self) { _ in
                 HStack(spacing: BP.px(16)) {
                     RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2).frame(width: BP.px(64), height: BP.px(96))
@@ -162,6 +165,7 @@ struct AIThinkingView: View {
                 }
                 .padding(.horizontal, BP.px(12))
             }
+            .accessibilityHidden(true)
         }
     }
 }

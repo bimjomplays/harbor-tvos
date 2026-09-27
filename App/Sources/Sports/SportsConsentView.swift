@@ -90,6 +90,7 @@ struct SportsConsentView: View {
             }
             .buttonStyle(BPActionStyle(primary: acknowledged))
             .bpSelected(acknowledged)
+            .accessibilityValue(acknowledged ? T("On") : T("Off"))
             HStack(spacing: BP.px(10)) {
                 Button("Agree and open Sports") { accept() }.buttonStyle(BPActionStyle(primary: true)).disabled(!acknowledged)
                 Button("Decline and hide Sports") { decline() }.buttonStyle(BPActionStyle())

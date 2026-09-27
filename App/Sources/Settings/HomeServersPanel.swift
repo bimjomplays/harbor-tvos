@@ -161,6 +161,7 @@ struct HomeServersPanel: View {
                         Text(model.progress[c.id].map { T($0) } ?? summary(c)).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
                     }
                     .frame(width: BP.px(420), alignment: .leading)
+                    .accessibilityElement(children: .combine)
                     Button(model.progress[c.id] == nil ? "Sync now" : "Syncing…") {
                         guard model.progress[c.id] == nil else { return }
                         Task { await model.sync(c.id) }

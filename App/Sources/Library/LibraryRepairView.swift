@@ -185,5 +185,6 @@ struct LibraryRepairPanel: View {
             Text(T(label)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
             Text(T(sub)).font(BP.sans(13)).foregroundStyle(tone).fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .combine)
     }
 }

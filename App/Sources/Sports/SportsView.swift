@@ -197,7 +197,7 @@ struct SportsView: View {
             ForEach(p.explore) { g in
                 Button { model.browse(g.key) } label: {
                     VStack(spacing: BP.px(8)) {
-                        Text(g.icon ?? "").font(.system(size: BP.px(30)))
+                        Text(g.icon ?? "").font(.system(size: BP.px(30))).accessibilityHidden(true)
                         Text(g.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     }
                     .frame(width: BP.px(150), height: BP.px(110))
@@ -272,6 +272,8 @@ struct SportsHeroView: View {
                         HStack(spacing: BP.px(4)) {
                             ForEach(0..<max(count, 1), id: \.self) { i in Circle().fill(i == index ? BP.ink : BP.edge2).frame(width: BP.px(5), height: BP.px(5)) }
                         }
+                        // bp-hero-pips.tsx: position only, deliberately aria-hidden upstream.
+                        .accessibilityHidden(true)
                     }
                 }
                 Spacer(minLength: 0)

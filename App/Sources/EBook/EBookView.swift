@@ -485,6 +485,8 @@ struct EBookView: View {
             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
+        // UI tests (NavigationTests5): opens EBookCollectionsView.
+        .accessibilityIdentifier("ebook-collections")
     }
 
     /// The Shelf card (views/ebook.tsx): the books saved to the shelf, in a page of their own.
@@ -506,6 +508,8 @@ struct EBookView: View {
             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
+        // UI tests (NavigationTests5): distinguishes it from the Collections card beside it.
+        .accessibilityIdentifier("ebook-shelf")
     }
 
     // MARK: browse
@@ -528,6 +532,8 @@ struct EBookView: View {
                     .buttonStyle(BPActionStyle())
                 Button { sourcesOpen = true } label: { Label("Manage eBook sources", systemImage: "gearshape") }
                     .buttonStyle(BPActionStyle())
+                    // UI tests (NavigationTests5): opens EBookSourcesView (the NYT key row lives there).
+                    .accessibilityIdentifier("ebook-manage-sources")
             }
             .focusSection()
             // The Catalog dropdown: only when there is more than one to pick ("All Sources" + each).
@@ -569,12 +575,12 @@ struct EBookView: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: BP.px(8)) {
-                filterChip(T("Type"), T(model.filterType), Self.typeOptions, $model.filterType)
+                filterChip(T("Type"), T(model.filterType), Self.typeOptions, $model.filterType, testId: "ebook-filter-type")
                 let genreOptions = [""] + EBookRoomModel.genreOptions(for: model.filterType)
-                filterChip(T("Genre"), model.filterGenre.isEmpty ? T("All genres") : T(model.filterGenre), genreOptions, $model.filterGenre)
-                filterChip(T("Status"), T(Self.statusLabels[model.filterStatus] ?? model.filterStatus), Self.statusOptions, $model.filterStatus)
-                filterChip(T("Language"), T(Self.languageLabels[model.filterLanguage] ?? model.filterLanguage), Self.languageOptions, $model.filterLanguage)
-                filterChip(T("Sort by"), T(Self.sortLabels[model.filterSort] ?? model.filterSort), Self.sortOptions, $model.filterSort)
+                filterChip(T("Genre"), model.filterGenre.isEmpty ? T("All genres") : T(model.filterGenre), genreOptions, $model.filterGenre, testId: "ebook-filter-genre")
+                filterChip(T("Status"), T(Self.statusLabels[model.filterStatus] ?? model.filterStatus), Self.statusOptions, $model.filterStatus, testId: "ebook-filter-status")
+                filterChip(T("Language"), T(Self.languageLabels[model.filterLanguage] ?? model.filterLanguage), Self.languageOptions, $model.filterLanguage, testId: "ebook-filter-language")
+                filterChip(T("Sort by"), T(Self.sortLabels[model.filterSort] ?? model.filterSort), Self.sortOptions, $model.filterSort, testId: "ebook-filter-sort")
             }
             .padding(.vertical, BP.px(4))
         }
@@ -591,7 +597,7 @@ struct EBookView: View {
     private static let sortLabels = ["popular": "Popular", "name": "Name", "chapters": "Chapters", "rating": "Rating", "trending": "Trending"]
 
     /// A single cycling chip: tapping steps to the next option, wrapping to the first.
-    private func filterChip(_ label: String, _ valueLabel: String, _ options: [String], _ binding: Binding<String>) -> some View {
+    private func filterChip(_ label: String, _ valueLabel: String, _ options: [String], _ binding: Binding<String>, testId: String) -> some View {
         let active = options.first != binding.wrappedValue
         return Button("\(label): \(valueLabel)") {
             let i = options.firstIndex(of: binding.wrappedValue) ?? 0
@@ -599,6 +605,8 @@ struct EBookView: View {
         }
         .buttonStyle(BPActionStyle(primary: active))
         .bpSelected(active)
+        // UI tests (NavigationTests5): each chip cycles and applies its filter at once.
+        .accessibilityIdentifier(testId)
     }
 
     @ViewBuilder private var grid: some View {
@@ -831,6 +839,9 @@ struct EBookSourcesView: View {
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: empty))
+                // UI tests (NavigationTests5): proves the NYT key row itself takes focus (a
+                // SecureField has no `hasFocus` button match; this row's own Save does).
+                .accessibilityIdentifier("ebook-nyt-save")
                 if !settings.slice.nytKey.isEmpty {
                     Button(T("Remove")) {
                         Task {
@@ -884,7 +895,10 @@ struct EBookCollectionsView: View {
                     } else if collections.isEmpty {
                         BPNote(text: "No collections were found in the installed source catalog.")
                     }
+                    // UI tests (NavigationTests5): Menu already closes this page (onExitCommand); Back
+                    // does the same by remote select.
                     Button("Back", action: onClose).buttonStyle(BPActionStyle())
+                        .accessibilityIdentifier("ebook-collections-back")
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(60))
                 .frame(maxWidth: .infinity, alignment: .leading)

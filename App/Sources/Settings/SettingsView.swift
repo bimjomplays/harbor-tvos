@@ -378,6 +378,7 @@ struct SettingsView: View {
             Text(T(title)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
             Text(T(detail)).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

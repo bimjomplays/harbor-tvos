@@ -41,6 +41,7 @@ struct SportsWhereRowView: View {
                                 if !m.logo.isEmpty {
                                     RemoteImage(url: m.logo, contentMode: .fit).frame(width: BP.px(40), height: BP.px(40))
                                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .accessibilityHidden(true)
                                 }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(m.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -73,6 +74,7 @@ struct SportsWhereRowView: View {
             if !v.image.isEmpty {
                 RemoteImage(url: v.image).frame(width: BP.px(560), height: BP.px(315)).clipped()
                     .overlay(LinearGradient(colors: [BP.void_, .clear], startPoint: .bottom, endPoint: UnitPoint(x: 0.5, y: 0.38)))
+                    .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: BP.px(6)) {
                 Label("Venue", systemImage: "mappin.and.ellipse").font(BP.sans(11, .bold)).textCase(.uppercase).foregroundStyle(BP.inkSubtle)

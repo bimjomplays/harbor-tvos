@@ -26,6 +26,17 @@ struct BPRowView: View {
     var onSeeAllHold: ((Bool) -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var seeAllFocused: Bool
+    /// (fix 2026-09-27, docs/parity-gaps.md "Up from a tile under See all") The chip is drawn
+    /// whenever the row holds the ring (`focusedId != nil`), so with no gate of its own it sat in
+    /// every Up press's candidate pool the whole time a tile was focused — tvOS could resolve Up
+    /// off an early tile (the header has no Spacer; a short title puts the chip over one) straight
+    /// onto it instead of carrying on to the row above. Upstream never offers that choice at all:
+    /// use-bp-rail.ts bpRailStep index-steps between rows without ever measuring the row's own
+    /// [data-bp-row-see-all], and bp-row-header keeps it out of the geometric pool by construction.
+    /// `.focusable(seeAllArmed || seeAllFocused)` below reproduces that: the chip is un-focusable
+    /// (though still visible) except in the two explicit hops that mean to land on it, so plain Up
+    /// from any tile never finds it as a candidate.
+    @State private var seeAllArmed = false
     /// (navigation UI test, run 258) A 2 pt catch after the last cell of a row with a see-all. On a
     /// short row (Home's three-tile Your streaming) Right off the last cell found nothing in the row,
     /// and tvOS carried the ring diagonally into another row before bpSeeAllEnter could act; the catch
@@ -53,7 +64,15 @@ struct BPRowView: View {
     /// cell reaches the top bar, on the tab the row names (RoomView / DiscoverView pass it).
     private func tileMove(_ dir: MoveCommandDirection, at index: Int, count: Int) {
         if dir == endDir, index == count - 1, onSeeAll != nil {
-            seeAllFocused = true
+            // (fix 2026-09-27) Arm now — the chip is already mounted (a tile holds the ring, which
+            // alone satisfies the `if` around it in `body`), so this only flips its `.focusable`
+            // gate true. Asking for focus in the SAME update as that flip is what sweep 4's revert
+            // was: the focus engine had not yet registered the newly-focusable chip when the
+            // FocusState assignment tried to land on it, and the hop silently dropped (testRowSeeAllEdge,
+            // testHomeBandRowLeads: "did not reach seeall-… (focus: none)"). One runloop later the
+            // gate has already committed, so the hop lands.
+            seeAllArmed = true
+            DispatchQueue.main.async { seeAllFocused = true }
         } else if dir == startDir, index == 0, let onNavEdge {
             onNavEdge()
         }
@@ -65,8 +84,11 @@ struct BPRowView: View {
         guard let last = items.last else { return }
         let id: String = last.id
         // A runloop later: the see-all is drawn only while the row (the catch included) holds the
-        // ring, so it comes into the tree in the same update the catch took focus.
+        // ring, so it comes into the tree in the same update the catch took focus. Arming here runs
+        // in that same update as the catch (fine: nothing asks for focus yet), so by the time the
+        // dispatched line below runs, both presence and the `.focusable` gate are already settled.
         if lastHeld == id, onSeeAll != nil {
+            seeAllArmed = true
             DispatchQueue.main.async { seeAllFocused = true }
         } else {
             DispatchQueue.main.async { focusedId = id }
@@ -96,6 +118,11 @@ struct BPRowView: View {
                 if let onSeeAll, focusedId != nil || seeAllFocused || endGuard {
                     Button(T(seeAllLabel), action: onSeeAll)
                         .buttonStyle(BPSeeAllStyle())
+                        // (fix 2026-09-27) Out of every directional candidate pool — Up included —
+                        // except the two hops that mean to land here (tileMove, endCatch), which arm
+                        // this a runloop before they ask for focus. Never gates visibility: the chip
+                        // still draws (and dims/brightens) exactly as before, per the `if` above.
+                        .focusable(seeAllArmed || seeAllFocused)
                         .focused($seeAllFocused)
                         .accessibilityIdentifier("seeall-\(row.key)")
                         // bp-row-see-all.ts bpSeeAllExit: Left off the see-all goes straight back to
@@ -168,7 +195,13 @@ struct BPRowView: View {
         // ring there: Home's band let go (the spotlight crossfaded back in over a services or addons
         // row) and the rail dropped the row's zIndex, then both came back on Left.
         .onChange(of: focusedId != nil || seeAllFocused || endGuard) { _, held in onHold?(held) }
-        .onChange(of: seeAllFocused) { _, on in onSeeAllHold?(on) }
+        .onChange(of: seeAllFocused) { _, on in
+            onSeeAllHold?(on)
+            // (fix 2026-09-27) Disarm the moment the ring leaves the chip (Left off it, or any other
+            // way focus moves on), so a later plain Up press finds it `.focusable(false)` again
+            // rather than staying reachable for the rest of the row's visit.
+            if !on { seeAllArmed = false }
+        }
     }
 }
 
