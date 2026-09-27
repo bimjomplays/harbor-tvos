@@ -33,6 +33,11 @@ struct ContentAdvisoryLayer: View {
     let playing: Bool
     /// stage-overlays `!pipMode`.
     let hidden: Bool
+    /// (open-items sweep 4) player-overlay-layers.tsx topLeftOccupied: something else (upstream's
+    /// stats overlay, or the TV's X-Ray rail) already holds the top-leading corner, so the toast
+    /// takes contentAdvisoryPosition's "top-end" instead of "top-start". The TV has no room-avatar
+    /// corner to fight over too, so this is binary, never upstream's third "top-center" case.
+    var cornerTaken: Bool = false
     @ObservedObject var clock: PlayerClock
 
     @State private var info: ContentAdvisoryInfo?
@@ -46,18 +51,21 @@ struct ContentAdvisoryLayer: View {
     private static let holdSec: UInt64 = 28
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: cornerTaken ? .topTrailing : .topLeading) {
             if shown, !hidden, let info {
                 card(info)
                     .transition(AnyTransition.opacity.combined(with: AnyTransition.offset(y: -BP.px(10))))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // content-advisory-toast positionClass "start-6 top-20" (top-start: the TV's room overlays
-        // sit top-right, so the top-left corner is never taken).
-        .padding(.leading, BP.px(24))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: cornerTaken ? .topTrailing : .topLeading)
+        // content-advisory-toast positionClass: "start-6 top-20" (top-start) normally, else "end-6
+        // top-20" (top-end) once topLeftOccupied — the TV's room overlays sit top-right already, so
+        // that corner is only ever taken by X-Ray, never by both at once.
+        .padding(.leading, cornerTaken ? 0 : BP.px(24))
+        .padding(.trailing, cornerTaken ? BP.px(24) : 0)
         .padding(.top, BP.px(80))
         .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.3), value: cornerTaken)
         .animation(.easeOut(duration: 0.42), value: shown)
         .task(id: imdbId ?? metaId ?? "") {
             info = nil

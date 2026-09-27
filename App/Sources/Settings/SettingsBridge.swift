@@ -134,6 +134,14 @@ final class SettingsBridge: ObservableObject {
         /// DUB/SUB pill (showDubBadge), both on by default (settings/defaults.ts).
         var showQualityBadge: Bool? = true
         var showDubBadge: Bool? = true
+        /// lib/spoilers.ts SpoilerSettings (settings/defaults.ts:411-415), read through
+        /// episodeWatched.state/upNextMask for the actual masking; kept here only so the
+        /// Settings screen's toggles (SpoilersPanel) can show and flip them.
+        var hideSpoilers: Bool? = false
+        var spoilerHideThumbnails: Bool? = true
+        var spoilerHideTitles: Bool? = true
+        var spoilerHideDescriptions: Bool? = true
+        var spoilerSkipNext: Bool? = true
         /// bp-tile.tsx showTitle = !settings.hidePosterTitles: poster cards print no title (off by default).
         var hidePosterTitles: Bool? = false
         /// (parity pass 3, H4) bp-poster-chain.ts: settings.rpdbKey (RPDB rating posters) and

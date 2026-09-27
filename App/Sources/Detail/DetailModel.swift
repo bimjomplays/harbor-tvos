@@ -759,7 +759,9 @@ final class DetailModel: ObservableObject {
     /// next episode used to get the up-next card and an auto-advance into a picker with no streams.
     /// (device-flow pass 6) Nor do specials lead anywhere: series-episodes.ts loadCinemetaEpisodes
     /// and tmdbSeason drop season < 1 from the adjacency list, so a special has no next episode.
-    /// Specials sort first here, so the last special ran on into S1 E1 (up-next card, auto-advance).
+    /// (open-items sweep 4) `episodes` itself never holds a special or an episode 0 any more
+    /// (buildEpisodes), so the two `season > 0` guards below are now belt and suspenders, not the
+    /// only thing keeping a special from being treated as a "next episode".
     func airedNext(season s: Int, episode e: Int) -> Episode? {
         guard s > 0, let idx = episodes.firstIndex(where: { $0.season == s && $0.episode == e }), idx + 1 < episodes.count else { return nil }
         let next = episodes[idx + 1]
@@ -805,6 +807,13 @@ final class DetailModel: ObservableObject {
         var out: [Episode] = []
         for v in videos {
             guard let s = v["season"]?.number, let e = (v["episode"] ?? v["number"])?.number else { continue }
+            // (open-items sweep 4) use-bp-episode-strip.ts collect(): `if (season <= 0 || episode <=
+            // 0) continue` drops specials (season 0) and any episode numbered 0 from the strip; since
+            // bySeason (and so state.seasons, BpEpisodeSeasonChips's own list) is built from the same
+            // loop, Big Picture never shows a Specials chip either. This is this Detail page's own
+            // episode strip only: the engine's raw video lists (the player, Live TV, Kids) are
+            // untouched, so a special is still playable from a deep link or a library resume.
+            guard s > 0, e > 0 else { continue }
             let id = v["id"]?.string ?? "\(meta.id):\(Int(s)):\(Int(e))"
             let title = v["name"]?.string ?? v["title"]?.string ?? T("Episode %lld", Int(e))
             let rel = (v["released"] ?? v["firstAired"])?.string
@@ -821,9 +830,10 @@ final class DetailModel: ObservableObject {
         out.sort { ($0.season, $0.episode) < ($1.season, $1.episode) }
         // (bug pass) Cinemeta / addon video lists can repeat an id; the strip's ForEach needs unique ones.
         episodes = out.uniquedById()
-        let all = Array(Set(out.map(\.season))).sorted()
-        // Specials (season 0) go last, like upstream.
-        seasons = all.filter { $0 > 0 } + all.filter { $0 == 0 }
+        // (open-items sweep 4) `out` never carries season 0 now, so this is just every season sorted
+        // (BpEpisodeSeasonChips reads the same seasons list use-bp-episode-strip built, and it never
+        // saw a Specials group to begin with).
+        seasons = Array(Set(out.map(\.season))).sorted()
         if let first = seasons.first, !seasons.contains(season) { season = first }
     }
 }

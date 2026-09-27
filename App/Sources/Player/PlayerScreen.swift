@@ -324,10 +324,16 @@ struct PlayerScreen: View {
             // (player parity pass 2) stage-overlays.tsx ContentAdvisoryToast (contentAdvisoryToast, off by default).
             if !isLive, let context {
                 // (player regression pass) Keyed by src.url (a source swapped in place keeps it, as
-                // player.tsx passes src.url to useContentAdvisory), and out of the way of the X-Ray
-                // rail, which the TV draws in the same top-left corner while paused.
+                // player.tsx passes src.url to useContentAdvisory).
+                // (open-items sweep 4) player-overlay-layers.tsx contentAdvisoryPosition: "top-start"
+                // unless topLeftOccupied (upstream's stats overlay, or a room's avatar/chat corner),
+                // which moves it to "top-end" rather than hiding it. Big Picture has no stats overlay
+                // (docs/parity-audit-2026-09-23.md), so the TV's own top-left occupant is the X-Ray
+                // rail (drawn while paused, in the same topLeading corner); the toast now moves to the
+                // trailing corner while X-Ray is up instead of disappearing.
                 ContentAdvisoryLayer(imdbId: context.imdbId, metaId: context.meta.id, playKey: srcURL,
-                                     playing: status.state == "playing", hidden: pipActive || xrayMeta != nil, clock: clock)
+                                     playing: status.state == "playing", hidden: pipActive,
+                                     cornerTaken: xrayMeta != nil, clock: clock)
             }
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
@@ -364,8 +370,16 @@ struct PlayerScreen: View {
                 // (`kid && !pipMode`; TransportKids has no PiP control, so a kid never leaves for PiP).
                 // (review 34) The Anime4K sidebar keeps the transport on screen beside it, but out of
                 // the ring's reach while it is open (Left from the sidebar reached the rail).
+                // (open-items sweep 4) .disabled() dims Buttons but a raw `.focusable()` control (the
+                // scrub surface's kin inside the transport) ignores the ambient isEnabled and stayed a
+                // candidate, so the ring could still reach the chrome the Subtitles / Sources panels
+                // never render in the first place (chromeShown is false for them). allowsHitTesting
+                // pulls the whole group out of the focus engine's hit-test tree the same way it does
+                // everywhere else this app hides a live-but-unfocusable layer (ContentAdvisoryToast,
+                // RoomView's spotlight copy), without hiding it from view.
                 Group { if isKid { kidsChrome } else { chromeView } }
                     .disabled(panel == .anime4k)
+                    .allowsHitTesting(panel != .anime4k)
                     .transition(.opacity)
             }
             if let resumePending {
