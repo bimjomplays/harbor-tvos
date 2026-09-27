@@ -156,6 +156,8 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Music / Manga / eBook
 
+- [ ] Music room: hold Select on any track card (e.g. the Liked tracks shelf) → the track menu opens (Play next, Add to queue, Add to playlist, Credits, More like this); the simulator never opened it under XCUITest, so this is untested. (`9b4c9ef`, run 36321942113)
+- [ ] Music room: focus the Liked tracks shelf just above the dock → the page scrolls the focused card fully above the dock (in the CI screenshot it sat underneath). (run 36321942113)
 - [ ] Music mast → "Playlists" → create, rename, delete a Harbor playlist; hold Select on any track → "Add to playlist" (also with Spotify connected: its own destination) and "Credits"; both work from inside a playlist too. (`0a2262d`, `7a81d32`)
 - [ ] Hold Select on a track → "More like this" → the "Songs like <track>" page lists a mix; Play all, Add to queue and Save as playlist work; Menu closes it. Start radio is gone from the menu, matching upstream. (`d3a8ade`, `b3a02ce`)
 - [ ] Now Playing on a 1080p set: the transport row is fully visible with the error/resolving note showing; the three tabs read on one line; with nothing queued, Right from the seek or transport row reaches the tab row. (`136b410`, `7dda75e`)
