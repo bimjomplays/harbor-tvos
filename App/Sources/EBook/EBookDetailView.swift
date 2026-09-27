@@ -311,6 +311,7 @@ struct EBookDetailView: View {
                 RemoteImage(url: art).blur(radius: model.ebook?.banner == nil ? 28 : 0).scaleEffect(1.18).opacity(0.45)
                     .frame(maxWidth: .infinity).frame(height: BP.px(560)).clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
+                    .accessibilityHidden(true)
             }
             LinearGradient(colors: [BP.void_.opacity(0.3), BP.void_.opacity(0.85), BP.void_], startPoint: .top, endPoint: .init(x: 0.5, y: 0.6))
         }
@@ -324,6 +325,7 @@ struct EBookDetailView: View {
                     .frame(width: BP.px(208), height: BP.px(312))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                     .shadow(color: .black.opacity(0.6), radius: 24, y: 14)
+                    .accessibilityHidden(true)
                 if let status = model.readStatus { EBookReadMark(status: status).padding(BP.px(8)) }
             }
             VStack(alignment: .leading, spacing: BP.px(12)) {
@@ -424,7 +426,7 @@ struct EBookDetailView: View {
                     .foregroundStyle(model.favorite ? BP.accent : BP.ink)
             }
             .buttonStyle(BPActionStyle())
-            .accessibilityLabel(model.favorite ? "Remove favorite" : "Add favorite")
+            .accessibilityLabel(model.favorite ? T("Remove favorite") : T("Add favorite"))
             // ebook-wheel-menu.tsx "watched" action (Mark as Read / Marked as read): the wheel menu
             // itself is a desktop right-click radial menu with no TV equivalent, but every one of
             // its other actions already lives in this row, so this one joins them. Reuses the
@@ -497,6 +499,8 @@ struct EBookDetailView: View {
                     }
                 }
                 .frame(height: BP.px(3))
+                // ebook.tsx EBookProgressSeeker aria-label={t("Chapter")}: this chapter's own progress.
+                .bpProgressValue(p / 100, key: "%lld%% read")
             }
         }
         .padding(BP.px(12))

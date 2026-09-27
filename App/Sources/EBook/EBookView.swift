@@ -401,6 +401,7 @@ struct EBookView: View {
                 RemoteImage(url: h.cover)
                     .frame(width: BP.px(110), height: BP.px(165))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Text("eBooks").font(BP.sans(11, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.accent)
                     Text(h.title).font(BP.display(34)).foregroundStyle(BP.ink).lineLimit(2)
@@ -444,10 +445,13 @@ struct EBookView: View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             ZStack(alignment: .bottomLeading) {
                 RemoteImage(url: c.ebook.cover)
+                    .accessibilityHidden(true)
                 GeometryReader { g in
                     Capsule().fill(BP.accent).frame(width: g.size.width * c.resume.bookFraction, height: BP.px(3))
                 }
                 .frame(height: BP.px(3))
+                // ebook.tsx EBookProgressSeeker aria-label={t("Complete book")}: the whole book's progress.
+                .bpProgressValue(c.resume.bookFraction, key: "%lld%% read")
             }
             .frame(width: BPTileView.posterSize.width, height: BPTileView.posterSize.height)
             .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
@@ -648,6 +652,7 @@ struct EBookCardView: View {
                 RemoteImage(url: ebook.cover)
                     .frame(width: BPTileView.posterSize.width, height: BPTileView.posterSize.height)
                     .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+                    .accessibilityHidden(true)
                 if let status { EBookReadMark(status: status).padding(BP.px(6)) }
             }
             Text(ebook.title).font(BP.sans(11.5, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
@@ -672,7 +677,7 @@ struct EBookReadMark: View {
             .foregroundStyle(status == "read" ? BP.canvas : BP.ink)
             .frame(width: BP.px(22), height: BP.px(22))
             .background(Circle().fill(status == "read" ? BP.accent : BP.void_.opacity(0.75)))
-            .accessibilityLabel(status == "read" ? "Read" : "In progress")
+            .accessibilityLabel(status == "read" ? T("Read") : T("In progress"))
     }
 }
 

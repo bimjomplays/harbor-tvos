@@ -336,7 +336,7 @@ struct MusicSpotifyPlaylistRow: View {
         HStack(spacing: BP.px(14)) {
             ZStack {
                 if let art = playlist.artwork.first, !art.isEmpty {
-                    RemoteImage(url: art)
+                    RemoteImage(url: art).accessibilityHidden(true)
                 } else {
                     BP.panel2
                     Image(systemName: "music.note.list").font(.system(size: BP.px(20))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true)

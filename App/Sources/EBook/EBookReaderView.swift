@@ -100,6 +100,7 @@ struct EBookReaderView: View {
             }
             .font(BP.sans(11, .medium)).foregroundStyle(Color(hex: paper.muted))
             .frame(height: BP.px(26))
+            .accessibilityElement(children: .combine)
             ZStack {
                 if model.loading {
                     ProgressView().tint(Color(hex: paper.muted))
@@ -164,6 +165,7 @@ struct EBookReaderView: View {
         .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(5))
         .background(Capsule().fill(Color(hex: paper.desk).opacity(0.85)))
         .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
     }
 
     private func showCounter() {
@@ -362,7 +364,7 @@ struct EBookReaderView: View {
                     model.removeBookmark(bm.id)
                 } label: { Image(systemName: "trash") }
                     .buttonStyle(BPActionStyle())
-                    .accessibilityLabel("Delete bookmark")
+                    .accessibilityLabel(T("Delete bookmark"))
             }
         }
     }
