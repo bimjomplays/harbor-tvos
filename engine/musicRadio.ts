@@ -297,6 +297,49 @@ export async function loadTrackRadio(track: MusicTrack, familiar: MusicTrack[]):
   return [{ ...track, mediaKind: "audio" }, ...following];
 }
 
+const SEED_ARTIST_TARGET = 4;
+
+/**
+ * radio.ts withSeedArtist (a821e273): wanting more of a song usually means wanting a little more
+ * of who made it, not a solo mix -- top up the seed artist's own tracks toward a minimum share.
+ */
+async function withSeedArtist(seed: Seed, track: MusicTrack, mix: MusicTrack[]): Promise<MusicTrack[]> {
+  if (!seed.artistId) return mix;
+  const credited = new Set(
+    [track.artist, ...artistCreditParts(track.artist)].map(normalizeName).filter(Boolean),
+  );
+  const held = mix.filter((entry) => credited.has(leadOf(entry))).length;
+  const want = SEED_ARTIST_TARGET - held;
+  if (want <= 0) return mix;
+  const seen = new Set([trackKey(track), ...mix.map(trackKey)]);
+  const page = await deezer(`artist/${seed.artistId}/top?limit=12`).catch(() => ({}) as Obj);
+  const extra: MusicTrack[] = [];
+  for (const entry of rows(page.data)) {
+    const candidate = deezerTrack(entry);
+    if (!candidate || seen.has(trackKey(candidate))) continue;
+    seen.add(trackKey(candidate));
+    extra.push({ ...candidate, mediaKind: "audio" });
+    if (extra.length >= want) break;
+  }
+  if (!extra.length) return mix;
+  const out = [...mix];
+  extra.forEach((entry, index) => out.splice(Math.min(out.length, 3 + index * 6), 0, entry));
+  return out;
+}
+
+/**
+ * radio.ts loadSimilarTracks (a821e273): music-track-menu.tsx's "More Like This" mix, replacing
+ * Start Radio -- the same lane builder, without the seed track itself, topped up with the seed
+ * artist's own tracks. Throws the same internal "music.radio.error" marker upstream does; the
+ * caller (engine/music.ts similarTracks) translates it to the similar-mix copy.
+ */
+export async function loadSimilarTracks(track: MusicTrack, familiar: MusicTrack[]): Promise<MusicTrack[]> {
+  const seed = await resolveSeed(track);
+  const following = await build([seed], new Set([trackKey(track)]), STATION_SIZE, familiar);
+  if (following.length < 5) throw new Error("music.radio.error");
+  return withSeedArtist(seed, track, following);
+}
+
 /**
  * radio.ts armTrackRadio's extension step: seeded by the last three entries up to the playing
  * one, excluding everything already queued. Swift appends the result to its queue.

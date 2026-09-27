@@ -117,11 +117,31 @@ touch these; confirmed no import path.
   ported here — they belong to "More Like This" (see below), not this dedup fix.
 
 **Needs real port work (don't fold into a routine re-sync):**
-- The "More Like This" feature (replaces "Start Radio" in the track menu; new similar-tracks page,
-  recent-contexts band, up-next row). This changes an existing, already-ported affordance
-  (`MusicView.swift`'s Start Radio entry) as well as adding new screens — treat as its own
-  parity-gap item with a design decision (keep Start Radio as-is, add More Like This alongside, or
-  replace it to match upstream) before writing Swift.
+- The "More Like This" **menu action is done (2026-09-27)**: `music-track-menu.tsx`'s replacement of
+  `onStartRadio` with `onMoreLikeThis` is ported minimally — `engine/musicRadio.ts` gained
+  `loadSimilarTracks`/`withSeedArtist` (ported verbatim from upstream `radio.ts`), `engine/music.ts`
+  wraps it as `similarTracks()` (localizes the internal `music.radio.error` marker to
+  `t("music.similar.error")`, same pattern as `radio()`), registered in `engine/entry.ts`.
+  `App/Sources/Music/MusicView.swift`'s `MusicTrackMenuItems` (shared by every track row, the album
+  page and Spotify library — confirmed the only Swift call site) now shows **More Like This**
+  (`copy("music.card.moreLikeThis", …)`, `sparkles` icon) instead of Start Radio, calling new
+  `MusicPlayer.startSimilar(_:)` (same `radioStatus` loading/failed UI as `startRadio`, but never
+  arms the queue-extension — `loadSimilarTracks` is a fixed mix, not a growing station, matching
+  upstream). Two copy keys added (`music.card.moreLikeThis`, `music.similar.error`); both already
+  exist in every upstream locale catalog (`src/lib/i18n/locales/*/music-similar.ts`, reached through
+  the same `@` alias `en.ts` → `en/music.ts` → `music-similar.ts` chain), so no translation work was
+  needed. Two smoke checks added (dedup already covered above is separate; this feature's check
+  proves the seed track is excluded and the mix is topped up to 4 seed-artist tracks).
+  **Not built:** the new `music-similar-page.tsx` (a dedicated "Songs like X" browse page with
+  Play all / Save as playlist) and `recordMusicSimilarPlayback`/`playback-origin.ts`'s `"similar"`
+  kind — out of scope per the task ("keep the identifier/label pattern of the surrounding buttons");
+  on the TV, tapping **More Like This** plays the mix immediately into the existing queue/Now
+  Playing UI instead of opening a browse page first. `startRadio`/`radioArmed`/`extendRadioIfDue`
+  (the queue-growing "armed" mechanic) are now unreferenced from any UI button, same as upstream (its
+  own `startRadio`/`onStartRadio` are gone too — only `up-next.ts`'s suggestions still call the
+  underlying `musicRadioTracks`/`radio()` station builder) — left in place as harmless dead code
+  rather than removed, to keep this change minimal; a future pass could either wire a real "Radio"
+  entry point back in or delete the mechanic.
 - Recent-contexts band / up-next row / video-transport surface / hidden-recents unhide-on-replay:
   net-new Music UI, no current TV equivalent. Bundle into a future Music feature pass rather than
   this drift check.

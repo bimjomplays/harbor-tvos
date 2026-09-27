@@ -1149,6 +1149,8 @@ r.ok("benchmark still works", (() => {
       if (u.pathname === "/artist/28/top") return json(req, { data: [dzTrack(2, "D.A.N.C.E.", 28, "Justice"), dzTrack(6, "Phantom", 28, "Justice")] });
       if (u.pathname === "/artist/31/top") return json(req, { data: [dzTrack(7, "1999", 31, "Cassius"), dzTrack(8, "Feeling for You", 31, "Cassius")] });
       if (u.pathname === "/artist/40/top") return json(req, { data: [dzTrack(50, "Duplicate Justice Track", 40, "JUSTICE")] });
+      // radio.ts withSeedArtist (a821e273): More Like This tops up the seed artist's own tracks.
+      if (u.pathname === "/artist/27/top") return json(req, { data: [dzTrack(60, "Around the World", 27, "Daft Punk"), dzTrack(61, "One More Time", 27, "Daft Punk"), dzTrack(62, "Robot Rock", 27, "Daft Punk")] });
     }
     return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
   };
@@ -1230,6 +1232,11 @@ r.ok("benchmark still works", (() => {
   // before any top-tracks lookup, keeping the higher-nb_fan one — the lower-fan duplicate (id 40)
   // is never fetched and its tracks never reach the station.
   r.ok("music.radio relatedLane dedups a case-insensitive duplicate artist, keeping the higher nb_fan one", !hits.some((h) => h.includes("/artist/40/top")) && !station.some((t) => t.title === "Duplicate Justice Track"), JSON.stringify(hits.filter((h) => h.includes("api.deezer.com"))));
+  // music-track-menu.tsx "More Like This" (a821e273, replaces Start Radio): same lane builder,
+  // seed track left out, topped up with the seed artist's own tracks (SEED_ARTIST_TARGET = 4).
+  const similar = await m.similarTracks(seedTrack);
+  const dpCount = similar.filter((t) => t.artist === "Daft Punk").length;
+  r.ok("music.similarTracks (More Like This) excludes the seed track and tops up to 4 seed-artist tracks", !similar.some((t) => t.title === seedTrack.title && t.artist === seedTrack.artist) && dpCount >= 4 && similar.some((t) => t.title === "Around the World"), JSON.stringify(similar.map((t) => `${t.artist} - ${t.title}`)));
   const more = await m.radioExtend(station, station.length - 2);
   r.ok("music.radioExtend never repeats a queued track", Array.isArray(more) && more.every((t) => !station.some((s) => s.title === t.title && s.artist === t.artist)), JSON.stringify(more.map((t) => t.title)));
   // up-next.ts (upstream 770ca0bd): Now Playing's Up next when nothing follows the current track

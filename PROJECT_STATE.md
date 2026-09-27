@@ -3,6 +3,28 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — upstream drift part 3/3)
+2026-09-27 UTC: Ported upstream's Music "More Like This" (a821e273, `music-track-menu.tsx`
+`onStartRadio` → `onMoreLikeThis`) minimally into the track/album menu. `engine/musicRadio.ts`:
+`loadSimilarTracks`/`withSeedArtist` (ported verbatim from `radio.ts`). `engine/music.ts`:
+`similarTracks()` wrapper (localizes to `music.similar.error`), two new copy keys
+(`music.card.moreLikeThis`, `music.similar.error` — both already in every upstream locale catalog,
+free via the `@` alias, no translation work needed). `engine/entry.ts`: registered
+`music.similarTracks`. `App/Sources/Music/MusicView.swift`'s `MusicTrackMenuItems` (the one shared
+menu for every track row, album page and Spotify library — grepped every `.musicTrackMenu(` caller,
+7 hits, all this one component) now shows **More Like This** (`sparkles` icon) instead of Start
+Radio, calling new `App/Sources/Music/MusicPlayer.swift` `startSimilar(_:)` (same `radioStatus`
+loading/failed UI as `startRadio`, never arms the extension — a fixed mix, not a growing station,
+matching upstream). `node build.mjs` 4671 KB → 4672 KB; `node smoke.mjs --offline` 1153 → 1154
+checks passed, 0 failed (new check: seed track excluded from the mix, topped up to 4 seed-artist
+tracks). `startRadio`/`radioArmed`/`extendRadioIfDue` are now unreferenced from any UI button
+(matches upstream — its own `onStartRadio` is gone too, only `up-next.ts` still uses the underlying
+station builder) — left in place as harmless dead code, not removed, per the task's minimal-scope
+instruction. Not built: `music-similar-page.tsx`'s dedicated browse page (Play all/Save as
+playlist) or `playback-origin.ts`'s `"similar"` kind — out of scope; the TV plays the mix straight
+into the existing queue instead. All three upstream-drift-2026-09-27.md follow-ups now done. No
+Swift compiler here — every signature change was grepped for callers by hand; unverified: device/CI.
+
 ## Status (2026-09-27, subagent — upstream drift part 2/3)
 2026-09-27 UTC: Ported upstream `radio.ts`'s `relatedLane` artist-dedup (a821e273) into
 `engine/musicRadio.ts`'s `relatedLane`: case-insensitive name dedup keeping the higher-`nb_fan`

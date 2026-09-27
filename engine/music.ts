@@ -42,6 +42,8 @@ const COPY_KEYS = [
   "music.lastfm.connected", "music.lastfm.saved", "music.lastfm.history", "music.lastfm.live", "music.lastfm.connect", "music.lastfm.disconnect",
   "music.lastfm.apiKey", "music.lastfm.secret", "music.lastfm.finish", "music.lastfm.authorize", "music.lastfm.browserPrompt",
   "music.card.startRadio", "music.radio.error", "music.now.next",
+  // music-track-menu.tsx (a821e273): "More Like This" replaces Start Radio in the track/album menu
+  "music.card.moreLikeThis", "music.similar.error",
   // up-next.ts (upstream 770ca0bd): Now Playing's Up next while radio suggestions load
   "music.now.queueBuilding",
   // music-queue.tsx row actions (Now Playing's queue: Move up / down, Remove)
@@ -449,6 +451,17 @@ export async function upNext(track: MusicTrack): Promise<MusicTrack[]> {
 /** radio.ts armTrackRadio's extension, asked for by Swift near the end of a radio queue. */
 export async function radioExtend(queue: MusicTrack[], index: number): Promise<MusicTrack[]> {
   return radioLib.extendTrackRadio(queue ?? [], index, familiar()).catch(() => []);
+}
+/**
+ * music-track-menu.tsx onMoreLikeThis (a821e273) -> radio.ts loadSimilarTracks: the "More Like
+ * This" mix that replaces Start Radio in the track/album actions.
+ */
+export async function similarTracks(track: MusicTrack): Promise<MusicTrack[]> {
+  try {
+    return await radioLib.loadSimilarTracks(track, familiar());
+  } catch {
+    throw new Error(t("music.similar.error"));
+  }
 }
 
 /**
