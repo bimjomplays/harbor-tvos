@@ -33,6 +33,10 @@ final class TogetherPlayback: ObservableObject {
     /// sourceFailed (an errored one) ever fires for a swap that just sits on "Connecting…" (a P2P
     /// source with no peers, a debrid link that never resolves).
     static let swapStallS = 10.0
+    /// (review) The ceiling actually used: the viewer's own stall tolerance (Settings' "wait for a
+    /// stalled stream", PlayerPrefs.autoNextStreamOnStallSec) once the player has loaded it, so a
+    /// swap is never called failed sooner than the same source would be in solo playback.
+    var swapStallSec: Double = TogetherPlayback.swapStallS
 
     struct ForeignNotice: Equatable { var title: String?; var from: String }
 
@@ -255,7 +259,7 @@ final class TogetherPlayback: ObservableObject {
         // guest at the swap spot for good: neither the heartbeat above (it never plays) nor
         // sourceFailed (status.state never reaches "error") ever ran to let it go. Past swapStallS
         // it is let go exactly as a failed swap is.
-        if let since = swapHoldSince, Date().timeIntervalSince(since) >= Self.swapStallS { sourceFailed() }
+        if let since = swapHoldSince, Date().timeIntervalSince(since) >= swapStallSec { sourceFailed() }
     }
 
     /// use-playback-controls playPauseToggle. Returns true when the room took the press.

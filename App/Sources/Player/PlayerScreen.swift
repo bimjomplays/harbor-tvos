@@ -561,6 +561,8 @@ struct PlayerScreen: View {
             do {
                 let loaded: PlayerPrefs = try await HarborEngine.shared.call("player.prefs", [profile?.id ?? "default", profile?.linked ?? true])
                 prefs = loaded
+                // (Watch Together review) The swap hold waits as long as solo playback would.
+                together.swapStallSec = max(5, min(120, loaded.autoNextStreamOnStallSec))
                 // A player that closed meanwhile must not claim Now Playing back (review 28).
                 if !Task.isCancelled, !finishing { beginNowPlaying() }   // the remote's skip intervals follow the seek steps
             } catch {}
