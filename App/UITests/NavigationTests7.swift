@@ -47,7 +47,9 @@ final class NavigationTests7: XCTestCase {
 
     /// The identifier of the focused button, if one has focus.
     private func focusedId(_ app: XCUIApplication) -> String? {
-        let f = app.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        // Any element type, not only buttons: this file is the suite's first to walk a tvOS
+        // `.contextMenu`, whose rows may not be reported as XCUIElementTypeButton.
+        let f = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
         return f.exists ? f.identifier : nil
     }
 
@@ -275,17 +277,14 @@ final class NavigationTests7: XCTestCase {
     }
 
     /// "More like this" (music-track-menu.tsx onMoreLikeThis, MusicTrackMenuItems in
-    /// MusicView.swift): there is no MusicSimilarPage anywhere in this codebase (grepping the whole
-    /// App/Sources tree for "MusicSimilarPage" and "music-similar" before this batch found nothing
-    /// but the new identifier added for it) -- MusicPlayer.startSimilar reuses radioStatus's own
-    /// loading/failed note, the same inline note Start Radio's own error uses
-    /// (MusicRadioStatusNote, MusicView.swift), never a separate screen. Reached the same way the
-    /// sibling test reaches a home-row track menu offline (liking the fixture track from the dock;
-    /// see the class doc comment for why nothing else offline has a track menu at all): holding
-    /// Select opens the menu, "More like this" (`music-menu-more-like-this`) calls startSimilar, and
-    /// since `--fixtures music` has no network for music.similarTracks, the error note
-    /// (`music-similar-error`) appears back in the room -- there is nothing to Menu closed, and the
-    /// room (and the Music tab) are never left. Unlikes the track afterwards, as the sibling test does.
+    /// MusicView.swift) opens MusicSimilarPageView ("Songs like <track>", MusicSimilarPage.swift) as
+    /// a cover over the room. Reached the same way the sibling test reaches a home-row track menu
+    /// offline (liking the fixture track from the dock; see the class doc comment for why nothing
+    /// else offline has a track menu at all): holding Select opens the menu, "More like this"
+    /// (`music-menu-more-like-this`) opens the page, and since `--fixtures music` has no network for
+    /// music.similarTracks the page shows its error note (`music-similar-error`); Menu closes the
+    /// page back onto the room, still on the Music tab. Unlikes the track afterwards, as the sibling
+    /// test does.
     func testMusicMoreLikeThisPageOffline() {
         let app = launch("music")
         waitForHome(app)
