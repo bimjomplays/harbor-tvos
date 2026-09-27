@@ -6581,5 +6581,39 @@
   "tr": "Kitaplığında çalma listelerine ad ver ve oluştur",
   "vi": "Đặt tên và tạo danh sách phát trong thư viện của bạn",
   "zh": "在你的媒体库中命名并创建播放列表"
+ },
+ "%lld selected · locked tabs disappear until this profile's PIN is entered.": {
+  "ar": "%lld محدّدة · تختفي التبويبات المؤمَّنة إلى أن يتم إدخال رمز PIN لهذا الملف.",
+  "de": "%lld ausgewählt · Gesperrte Tabs verschwinden erst, wenn die PIN dieses Profils eingegeben wird.",
+  "es": "%lld seleccionadas · Las pestañas bloqueadas desaparecen hasta que se introduce el PIN de este perfil.",
+  "fr": "%lld sélectionné(s) · Les onglets verrouillés disparaissent tant que le code PIN de ce profil n’est pas saisi.",
+  "hi": "%lld चुने गए · लॉक किए गए टैब तब तक गायब रहेंगे जब तक इस प्रोफ़ाइल का PIN दर्ज न किया जाए।",
+  "id": "%lld dipilih · Tab yang terkunci akan hilang sampai PIN profil ini dimasukkan.",
+  "it": "%lld selezionate · Le schede bloccate scompaiono finché non viene inserito il PIN di questo profilo.",
+  "ja": "%lld件選択中 · ロックされたタブは、このプロフィールのPINが入力されるまで表示されません。",
+  "ko": "%lld개 선택됨 · 잠긴 탭은 이 프로필의 PIN을 입력할 때까지 사라집니다.",
+  "pl": "%lld wybrano · Zablokowane karty znikają, dopóki nie zostanie wpisany PIN tego profilu.",
+  "pt": "%lld selecionadas · As abas bloqueadas desaparecem até que o PIN deste perfil seja digitado.",
+  "ru": "%lld выбрано · Заблокированные разделы скрыты, пока не введён PIN этого профиля.",
+  "tr": "%lld seçildi · Kilitli sekmeler, bu profilin PIN'i girilene kadar kaybolur.",
+  "vi": "%lld đã chọn · Các thẻ đã khóa sẽ biến mất cho đến khi nhập mã PIN của hồ sơ này.",
+  "zh": "已选择 %lld 个 · 锁定的标签页会一直隐藏，直到输入此个人资料的 PIN。"
+ },
+ "%lld selected · Locks only activate once a PIN is set.": {
+  "ar": "%lld محدّدة · لا تُفعَّل الأقفال إلا بعد تعيين رمز PIN.",
+  "de": "%lld ausgewählt · Sperren werden erst aktiv, wenn eine PIN festgelegt ist.",
+  "es": "%lld seleccionadas · Los bloqueos solo se activan cuando se configura un PIN.",
+  "fr": "%lld sélectionné(s) · Les verrous ne s’activent qu’une fois un code PIN défini.",
+  "hi": "%lld चुने गए · PIN सेट होने के बाद ही लॉक सक्रिय होते हैं।",
+  "id": "%lld dipilih · Penguncian baru aktif setelah PIN ditetapkan.",
+  "it": "%lld selezionate · I blocchi si attivano solo dopo aver impostato un PIN.",
+  "ja": "%lld件選択中 · PINが設定されるまでロックは有効になりません。",
+  "ko": "%lld개 선택됨 · PIN을 설정해야 잠금이 활성화됩니다.",
+  "pl": "%lld wybrano · Blokady aktywują się tylko po ustawieniu PIN-u.",
+  "pt": "%lld selecionadas · Os bloqueios só ficam ativos depois que um PIN é definido.",
+  "ru": "%lld выбрано · Блокировки активируются только после установки PIN.",
+  "tr": "%lld seçildi · Kilitler yalnızca bir PIN ayarlandığında etkinleşir.",
+  "vi": "%lld đã chọn · Khóa chỉ hoạt động sau khi đặt mã PIN.",
+  "zh": "已选择 %lld 个 · 只有设置 PIN 后锁定才会生效。"
  }
 }
