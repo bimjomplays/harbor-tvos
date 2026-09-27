@@ -366,6 +366,7 @@ struct MusicNowPlayingView: View {
     @ObservedObject private var copy = MusicCopy.shared
     @State private var panel = "queue"
     @State private var sourcePickerOpen = false
+    @State private var connectionsFromPicker = false
     /// (device-flow pass) Play/Pause takes the focus when the screen opens: the top-most control,
     /// the Up next tab, did before, a long way from the transport.
     @Namespace private var focusNS
@@ -448,7 +449,10 @@ struct MusicNowPlayingView: View {
         // host of its own the environment reached MusicView's, which cannot present while this
         // screen is up, so the choice did nothing.
         .musicSpotifyDestinationHost()
-        .fullScreenCover(isPresented: $sourcePickerOpen) { MusicSourcePickerView() }
+        .fullScreenCover(isPresented: $sourcePickerOpen) {
+            MusicSourcePickerView { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { connectionsFromPicker = true } }
+        }
+        .fullScreenCover(isPresented: $connectionsFromPicker) { MusicSourcesView() }
     }
 
     private func tab(_ id: String, _ title: String) -> some View {
@@ -829,6 +833,8 @@ struct MusicAboutArtistPanel: View {
 /// preference first among the alternatives, upstream's connector priority, the source that just
 /// failed pushed to the end, not hidden) is kept here.
 struct MusicSourcePickerView: View {
+    /// music-source-picker.tsx `connect`: onClose() first, then the parent opens Connections (never nested here).
+    var onConnect: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
@@ -837,7 +843,6 @@ struct MusicSourcePickerView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var pending: String?
-    @State private var connectionsOpen = false
 
     /// music-dock.tsx's picker always passes the playing track's error as `failure`/`failedTrack`.
     private var failedSource: String? { player.phase == .error ? player.current?.connectorId : nil }
@@ -886,7 +891,6 @@ struct MusicSourcePickerView: View {
         }
         .onExitCommand { dismiss() }
         .task { await load() }
-        .fullScreenCover(isPresented: $connectionsOpen) { MusicSourcesView() }
     }
 
     private var header: some View {
@@ -910,7 +914,7 @@ struct MusicSourcePickerView: View {
 
     /// music-source-picker.tsx: not connected shows Spotify's own connect row (`music.spotify.connect`).
     private var connectSpotifyRow: some View {
-        Button { connectionsOpen = true } label: {
+        Button { dismiss(); onConnect() } label: {
             HStack {
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     Text(copy("music.spotify.connect", "Spotify Premium")).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink)
@@ -933,7 +937,8 @@ struct MusicSourcePickerView: View {
                 VStack(alignment: .leading, spacing: BP.px(3)) {
                     HStack(spacing: BP.px(8)) {
                         Text(candidate.connectorName).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
-                        if candidate.preferred {
+                        // music-source-picker.tsx: the badge never sits on the source that just failed.
+                        if candidate.preferred, candidate.connectorId != failedSource {
                             Text(copy("music.source.preferred", "Preferred")).font(BP.sans(11, .semibold)).foregroundStyle(BP.live)
                                 .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(2)).background(Capsule().fill(BP.glass))
                         }
