@@ -134,6 +134,11 @@ now drops season ≤ 0 or episode ≤ 0 like use-bp-episode-strip.ts's collect()
 season chips, which upstream never shows a Specials entry in either — the engine's own video lists
 used by the player, Live TV and Kids are untouched).
 
+**Reopened 2026-09-27:** sweep 4's See-all fix (the chip `.focusable` only while armed) broke the
+Right-off-the-last-tile hop in CI (`testRowSeeAllEdge`, `testHomeBandRowLeads`: the chip was not yet
+focusable in the update that asked for it) and was reverted. "Up from a tile under the row's See all
+can land on See all" is open again; a fix must keep the chip focusable at the moment of the hop.
+
 ### Ported since this audit
 
 The player, Browse and Picker/Detail parity passes (PROJECT_STATE, 2026-09-25 15:57-16:08 UTC)

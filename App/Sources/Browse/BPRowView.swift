@@ -34,14 +34,6 @@ struct BPRowView: View {
     /// The last cell of this row that held the ring (never cleared): the catch reads it to tell a
     /// Right off the last cell (→ see-all) from an arrival out of another row (→ the last cell).
     @State private var lastHeld: String?
-    /// (open-items sweep 4) True only in the one render that asks the see-all to take focus (Right at
-    /// the last cell, or the end catch). use-bp-rail's own vertical move is index-stepped
-    /// (bpRailStep), so it can never land on a row's own see-all the way tvOS's native geometric Up
-    /// could: with the chip a plain `.focused($seeAllFocused)` target, a tile under it in the header's
-    /// row scored the chip as the nearest thing above and moved there instead of the row above.
-    /// Gating `.focusable` on this (armed together with the request, in the same update) keeps the
-    /// chip out of that search except on the two presses that are meant to reach it.
-    @State private var seeAllArmed = false
     /// Bumped to bring the last cell into existence (the track is lazy) before the ring goes there.
     @State private var revealLast = 0
     @Environment(\.shellFocusNamespace) private var shellNS
@@ -61,7 +53,6 @@ struct BPRowView: View {
     /// cell reaches the top bar, on the tab the row names (RoomView / DiscoverView pass it).
     private func tileMove(_ dir: MoveCommandDirection, at index: Int, count: Int) {
         if dir == endDir, index == count - 1, onSeeAll != nil {
-            seeAllArmed = true
             seeAllFocused = true
         } else if dir == startDir, index == 0, let onNavEdge {
             onNavEdge()
@@ -76,7 +67,7 @@ struct BPRowView: View {
         // A runloop later: the see-all is drawn only while the row (the catch included) holds the
         // ring, so it comes into the tree in the same update the catch took focus.
         if lastHeld == id, onSeeAll != nil {
-            DispatchQueue.main.async { seeAllArmed = true; seeAllFocused = true }
+            DispatchQueue.main.async { seeAllFocused = true }
         } else {
             DispatchQueue.main.async { focusedId = id }
         }
@@ -106,11 +97,6 @@ struct BPRowView: View {
                     Button(T(seeAllLabel), action: onSeeAll)
                         .buttonStyle(BPSeeAllStyle())
                         .focused($seeAllFocused)
-                        // (open-items sweep 4) Focusable only while armed or already focused: a plain
-                        // Up from a tile whose column sits under this chip (title + chip share the
-                        // header's row, with no tile-height gap under them) must reach the row above,
-                        // not scoring the nearest thing here the way bpRailStep never lets it.
-                        .focusable(seeAllArmed || seeAllFocused)
                         .accessibilityIdentifier("seeall-\(row.key)")
                         // bp-row-see-all.ts bpSeeAllExit: Left off the see-all goes straight back to
                         // the last cell of its own row (Right under RTL).
@@ -182,12 +168,7 @@ struct BPRowView: View {
         // ring there: Home's band let go (the spotlight crossfaded back in over a services or addons
         // row) and the rail dropped the row's zIndex, then both came back on Left.
         .onChange(of: focusedId != nil || seeAllFocused || endGuard) { _, held in onHold?(held) }
-        .onChange(of: seeAllFocused) { _, on in
-            onSeeAllHold?(on)
-            // (open-items sweep 4) Once it is not the target, drop the arming: a later Up from some
-            // other tile must find it unfocusable again, not still armed from the last visit.
-            if !on { seeAllArmed = false }
-        }
+        .onChange(of: seeAllFocused) { _, on in onSeeAllHold?(on) }
     }
 }
 
