@@ -13,7 +13,7 @@ in the status-log clock. Lines without a date are 09-23. `(Next)` is PROJECT_STA
 item 1. When something fails, note the build number, the engine (mpv or AVPlayer) and the source
 type (debrid, torrent, HLS, home server, IPTV).
 
-## Next TestFlight build (first upload since build 220)
+## Next TestFlight build (build 291, uploaded 2026-09-27 15:15 UTC — everything since build 220)
 
 Added 2026-09-25 for the upload retried on 2026-09-26. Build 220 carries the branch up to `37aa626`
 (~11:07 UTC 09-25); this build carries everything after it (`a8ac757` onward: 2026-09-25 11:02 →

@@ -242,12 +242,14 @@ final class NavigationTests5: XCTestCase {
         // row's search field (no identifier), and Manage sits to its right (run 36306455265).
         let browseRow: (String) -> Bool = { $0 == "ebook-manage-sources" || $0 == "ebook-refresh-source" }
         if press(.down, app, max: 14, until: browseRow) == nil {
-            if press(.up, app, max: 8, until: { browseRow($0) || $0.hasPrefix("ebook-filter-") }) == nil {
-                require(false, "could not reach the browse section (focus: \(focusNote(app)))", app)
-            }
-            if !browseRow(focusNote(app)) { remote.press(.up); sleep(1) }
+            // Land anywhere in the browse section: the row itself, the filter chips, or one of its
+            // identifier-less controls (the search field, a catalog chip — run 36327952413 landed
+            // on "" and the walk gave up), then climb to the row.
+            let inSection: (String) -> Bool = { browseRow($0) || $0.hasPrefix("ebook-filter-") || $0.isEmpty }
+            require(press(.up, app, max: 8, until: inSection) != nil, "could not reach the browse section (focus: \(focusNote(app)))", app)
+            if !browseRow(focusNote(app)) && !focusNote(app).isEmpty { _ = press(.up, app, max: 4, until: { browseRow($0) || $0.isEmpty }); sleep(1) }
         }
-        require(seek("ebook-manage-sources", app, max: 5), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
+        require(seek("ebook-manage-sources", app, max: 6), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         let save = app.buttons["ebook-nyt-save"]
