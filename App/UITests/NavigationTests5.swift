@@ -41,6 +41,13 @@ final class NavigationTests5: XCTestCase {
         return f.exists ? f.identifier : nil
     }
 
+    /// A chip re-renders when its value cycles, so a captured element can vanish mid-read ("Failed
+    /// to get matching snapshot", run 36313558727): read the label through a fresh, exists-guarded query.
+    private func chipLabel(_ id: String, _ app: XCUIApplication) -> String {
+        let e = app.buttons[id]
+        return e.exists ? e.label : ""
+    }
+
     private func focusNote(_ app: XCUIApplication) -> String { focusedId(app) ?? "none" }
 
     /// Polls until the focused button's identifier matches; returns it, or nil on timeout.
@@ -186,31 +193,31 @@ final class NavigationTests5: XCTestCase {
         require(type.label == "Type: All", "the Type chip started as \"\(type.label)\", not \"Type: All\"", app)
         sleep(1)
         remote.press(.select)
-        require(waitUntil(timeout: 5) { type.label == "Type: Fiction" }, "Select on the Type chip did not cycle it to Fiction (now \"\(type.label)\")", app)
+        require(waitUntil(timeout: 5) { chipLabel("ebook-filter-type", app) == "Type: Fiction" }, "Select on the Type chip did not cycle it to Fiction (now \"\(type.label)\")", app)
         require(press(.right, app, max: 3, until: { $0 == "ebook-filter-genre" }) != nil, "Right did not reach the Genre chip (focus: \(focusNote(app)))", app)
         let genre = app.buttons["ebook-filter-genre"]
         let genreBefore = genre.label
         sleep(1)
         remote.press(.select)
-        require(waitUntil(timeout: 5) { genre.label != genreBefore }, "Select on the Genre chip did not change it (still \"\(genre.label)\")", app)
+        require(waitUntil(timeout: 5) { chipLabel("ebook-filter-genre", app) != genreBefore }, "Select on the Genre chip did not change it (still \"\(genre.label)\")", app)
         require(press(.right, app, max: 3, until: { $0 == "ebook-filter-status" }) != nil, "Right did not reach the Status chip (focus: \(focusNote(app)))", app)
         let status = app.buttons["ebook-filter-status"]
         require(status.label == "Status: Any", "the Status chip started as \"\(status.label)\", not \"Status: Any\"", app)
         sleep(1)
         remote.press(.select)
-        require(waitUntil(timeout: 5) { status.label == "Status: Ongoing" }, "Select on the Status chip did not cycle it to Ongoing (now \"\(status.label)\")", app)
+        require(waitUntil(timeout: 5) { chipLabel("ebook-filter-status", app) == "Status: Ongoing" }, "Select on the Status chip did not cycle it to Ongoing (now \"\(status.label)\")", app)
         require(press(.right, app, max: 3, until: { $0 == "ebook-filter-language" }) != nil, "Right did not reach the Language chip (focus: \(focusNote(app)))", app)
         let language = app.buttons["ebook-filter-language"]
         require(language.label == "Language: Any", "the Language chip started as \"\(language.label)\", not \"Language: Any\"", app)
         sleep(1)
         remote.press(.select)
-        require(waitUntil(timeout: 5) { language.label == "Language: Chinese" }, "Select on the Language chip did not cycle it to Chinese (now \"\(language.label)\")", app)
+        require(waitUntil(timeout: 5) { chipLabel("ebook-filter-language", app) == "Language: Chinese" }, "Select on the Language chip did not cycle it to Chinese (now \"\(language.label)\")", app)
         require(press(.right, app, max: 3, until: { $0 == "ebook-filter-sort" }) != nil, "Right did not reach the Sort by chip (focus: \(focusNote(app)))", app)
         let sort = app.buttons["ebook-filter-sort"]
         require(sort.label == "Sort by: Popular", "the Sort by chip started as \"\(sort.label)\", not \"Sort by: Popular\"", app)
         sleep(1)
         remote.press(.select)
-        require(waitUntil(timeout: 5) { sort.label == "Sort by: Name" }, "Select on the Sort by chip did not cycle it to Name (now \"\(sort.label)\")", app)
+        require(waitUntil(timeout: 5) { chipLabel("ebook-filter-sort", app) == "Sort by: Name" }, "Select on the Sort by chip did not cycle it to Name (now \"\(sort.label)\")", app)
     }
 
     /// eBook Sources (App/Sources/EBook/EBookView.swift EBookSourcesView), opened from the browse

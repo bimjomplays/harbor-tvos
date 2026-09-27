@@ -137,7 +137,9 @@ final class NavigationTests7: XCTestCase {
     /// and Now Playing, so the dock alone (no need to open Now Playing) can flip it. This is the
     /// batch's whole reason a home-row track card exists at all offline: see the class doc comment.
     private func setLiked(_ liked: Bool, _ app: XCUIApplication) {
-        require(press(.down, app, max: 10, until: { $0 == "music-dock-open" }) != nil, "Down never reached the dock (focus: \(focusNote(app)))", app)
+        // Down lands on whichever dock control is nearest (run 36313558727: "backward.fill").
+        let dock: Set<String> = ["music-dock-open", "music-save-track", "music-toggle", "music-shuffle", "music-repeat", "backward.fill", "forward.fill", "music-sources", "music-mute"]
+        require(press(.down, app, max: 10, until: { dock.contains($0) }) != nil, "Down never reached the dock (focus: \(focusNote(app)))", app)
         let save = app.buttons["music-save-track"]
         require(seek("music-save-track", app, max: 8), "could not reach the dock's Save track button (focus: \(focusNote(app)))", app)
         sleep(1)
@@ -154,7 +156,10 @@ final class NavigationTests7: XCTestCase {
     private func openTrackMenu(item: String, _ app: XCUIApplication) -> XCUIElement {
         // The liked shelf sits mid-page (engine music.ts home(): after charts, before the stations and
         // the catalog rows), a LazyVStack row per Up press from the dock — allow a long walk.
-        require(seek("music-card-liked-0", app, max: 30, first: .up), "liking the track did not add a Liked songs card to the Music room (focus: \(focusNote(app)))", app)
+        // Walk from the top of the room down to it (run 36313558727: an Up/Down walk from the dock
+        // never met it): Up to the tab bar first, which also proves the dock hands focus back.
+        require(press(.up, app, max: 40, until: { $0.hasPrefix("tab-") }) != nil, "Up from the dock never reached the tab bar (focus: \(focusNote(app)))", app)
+        require(press(.down, app, max: 30, until: { $0 == "music-card-liked-0" }) != nil, "liking the track did not add a Liked songs card to the Music room (focus: \(focusNote(app)))", app)
         sleep(1)
         // tvOS reveals a SwiftUI .contextMenu on a press-and-hold of Select, not a plain press
         // (developer.apple.com/documentation/xcuiautomation/xcuiremote/press(_:forduration:)).
