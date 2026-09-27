@@ -530,6 +530,8 @@ struct EBookView: View {
                 }
                 Button { refresh() } label: { Label("Refresh source", systemImage: "arrow.clockwise") }
                     .buttonStyle(BPActionStyle())
+                    // UI tests (NavigationTests5): Down into the browse row lands here first.
+                    .accessibilityIdentifier("ebook-refresh-source")
                 Button { sourcesOpen = true } label: { Label("Manage eBook sources", systemImage: "gearshape") }
                     .buttonStyle(BPActionStyle())
                     // UI tests (NavigationTests5): opens EBookSourcesView (the NYT key row lives there).

@@ -132,7 +132,12 @@ struct BPRowView: View {
                         // except the two hops that mean to land here (tileMove, endCatch), which arm
                         // this a runloop before they ask for focus. Never gates visibility: the chip
                         // still draws (and dims/brightens) exactly as before, per the `if` above.
-                        .focusable(seeAllArmed || seeAllFocused)
+                        // (CI fix 2026-09-27) `.disabled`, not `.focusable(gate)`: a `.focusable`
+                        // modifier on a Button takes the Select press for itself on tvOS, so the ring
+                        // reached Manage and Select did nothing (testHomeBandRowLeads). A disabled
+                        // button is out of every focus pool the same way, keeps its identifier and
+                        // label for the tests, and BPSeeAllStyle does not dim on isEnabled.
+                        .disabled(!(seeAllArmed || seeAllFocused))
                         .focused($seeAllFocused)
                         .accessibilityIdentifier("seeall-\(row.key)")
                         // bp-row-see-all.ts bpSeeAllExit: Left off the see-all goes straight back to
