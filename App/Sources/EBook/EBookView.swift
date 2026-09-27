@@ -822,7 +822,7 @@ struct EBookSourcesView: View {
                     guard !empty else { return }
                     Task {
                         try? await settings.patch(["nytKey": .string(nytDraft.trimmingCharacters(in: .whitespaces))])
-                        nytFlash = true
+                        nytFlash = true; DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { nytFlash = false }
                     }
                 }
                 .buttonStyle(BPActionStyle(primary: true, busy: empty))
