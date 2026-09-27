@@ -136,6 +136,12 @@ struct BPAmbientBackground: View {
     /// RootView's (and the PiP browse layer's) instance: the fallback under screens that draw
     /// no background of their own, so any other instance showing in its window outranks it.
     var root = false
+    /// SH-1 (bp-ambient.tsx TITLE_ART_ROUTES includes "collection" and "library", same as "home"):
+    /// the tile the room currently has focused, wired through its cards' own onFocus. Its own
+    /// backdrop (else poster) cross-fades in over the mosaic, the way Home's hero already does via
+    /// SpotlightView/BPTitleArt for the routes that use it; nil, or a tile with neither field,
+    /// leaves the mosaic showing.
+    var focused: Meta? = nil
     @ObservedObject private var pool = AmbientPool.shared
     /// (perf pass 2) Only one mosaic in the app runs: see AmbientCoverage.
     @ObservedObject private var coverage = AmbientCoverage.shared
@@ -144,19 +150,38 @@ struct BPAmbientBackground: View {
     /// this view watches changed until the next cover or room switch.
     @ObservedObject private var settings = SettingsBridge.shared
     @State private var id = UUID()
+
+    private var hasFocusedArt: Bool {
+        !(focused?.background ?? "").isEmpty || !(focused?.poster ?? "").isEmpty
+    }
+
     var body: some View {
         // `mosaic` can change while the instance stays up (RootView's follows the stage and the
         // room), so the fade keys on both.
         let on = mosaic && coverage.live == id
+        let animated = settings.slice.bigPictureMosaic ?? true
+        let artOn = on && animated && hasFocusedArt
         ZStack {
             // --bp-void, or the theme's own backdrop (Stage 9); plain void on Harbor default.
             BPThemeBackdrop()
-            if on, settings.slice.bigPictureMosaic ?? true, pool.posters.count >= 12 {
+            // The focused tile's own art outranks the poster mosaic (upstream never shows both);
+            // a room with no focused tile, or a tile with no art, falls back to the mosaic exactly
+            // as before.
+            if artOn {
+                BPTitleArt(meta: focused, drift: true)
+                    .opacity(0.18)
+                    .mask(LinearGradient(colors: [.clear, .black, .black, .clear],
+                                         startPoint: .top, endPoint: .bottom))
+                    .transition(.opacity)
+            } else if on, animated, pool.posters.count >= 12 {
                 BPMosaicView(posters: pool.posters).opacity(0.13).transition(.opacity)
             }
             RadialGradient(colors: [BP.accent.opacity(0.10), .clear], center: .topTrailing, startRadius: 0, endRadius: 1300)
             LinearGradient(colors: [BP.canvas.opacity(0.9), .clear], startPoint: .bottom, endPoint: .center)
         }
+        // bp-ambient-layers BP_TITLE_ART_FADE_MS (440 ms): the art layer's own show/hide toggle;
+        // BPTitleArt cross-fades what is drawn inside it on its own 480 ms timer.
+        .animation(.easeInOut(duration: 0.44), value: artOn)
         .animation(BP.easeSlow, value: on)
         .background(AmbientProbe(id: id))
         .ignoresSafeArea()

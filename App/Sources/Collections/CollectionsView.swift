@@ -23,6 +23,11 @@ final class CollectionsModel: ObservableObject {
         var name: String; var image: String?; var count: Int?; var byline: String?; var description: String?; @LossyArray var items: [Item]   // (bug pass 2) lossy
         var hidden: Int?
         var id: String { key }
+        /// SH-1: the card's own cover as the ambient backdrop while it holds focus (bp-ambient.tsx
+        /// TITLE_ART_ROUTES has "collection" and "tmdb-collection" alongside "home").
+        var meta: Meta {
+            Meta(id: "collection:" + key, type: "collection", name: name, poster: nil, background: image, logo: nil, description: description, releaseInfo: nil, releaseDate: nil, inTheaters: nil, imdbRating: nil, tmdbScore: nil, runtime: nil, genres: nil, adult: nil, isCollection: nil, providerBadge: nil, videos: nil)
+        }
     }
     /// `communityFailed`: engine collectionsRoom.all (bp-collection-steps stepCommunity ctx.communityFailed).
     struct All: Decodable { @LossyArray var mine: [Card]; @LossyArray var community: [Card]; var communityFailed: Bool? }
@@ -293,8 +298,16 @@ struct CollectionsView: View {
     static let cardWidth = BP.px(230)
     private static let columns = Array(repeating: GridItem(.fixed(cardWidth), spacing: BP.px(16)), count: 4)
 
+    /// SH-1: the focused card's own cover, read back off `focus` (no extra state to keep in step).
+    private var focusedMeta: Meta? {
+        guard let focus, focus.hasPrefix("card:") else { return nil }
+        let key = String(focus.dropFirst("card:".count))
+        return model.cards.first { $0.key == key }?.meta
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
+            BPAmbientBackground(focused: focusedMeta)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(16)) {
                     Text("Collections").font(BP.display(36)).foregroundStyle(BP.ink)

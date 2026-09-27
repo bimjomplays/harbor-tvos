@@ -48,6 +48,35 @@ follow-up are next in this session. Unverified: device/CI (no Mac, no compiler h
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
+2026-09-27 08:36 UTC: SH-1 ambient backdrop cross-fade (subagent, docs/parity-gaps.md, size M).
+Found Home/Movies/Shows/Anime/Discover already do this (`SpotlightView`/`BPTitleArt`, wired through
+`RoomView`/`DiscoverView`'s tile `onFocus` from an earlier pass, not new here) — only Collections
+and Library still fell back to `BPAmbientBackground`'s static mosaic. `BPAmbientBackground`
+(`Design/Theme.swift`) gained a `focused: Meta?` param: when the focused tile has a backdrop or
+poster it cross-fades in a `BPTitleArt` layer over the mosaic (440 ms show/hide + 480 ms per-image,
+matching upstream's `BP_TITLE_ART_FADE_MS`/per-layer timing), gated by the same "Animated backdrop"
+setting and the `AmbientCoverage` rank the mosaic already used; falls back to the mosaic when the
+tile has no art. Wired in `CollectionsView` (new `Card.meta`, `focusedMeta` off the existing `focus`
+`@FocusState`) and `LibraryView` (`focusedMeta` off `focusedKey` against the shown feed's sections);
+both now mount their own `BPAmbientBackground(focused:)` where neither mounted one before. `node
+build.mjs` 4654 KB, `node smoke.mjs --offline` 1152/1152 passed (engine untouched by this part). Not
+device-tested: the Collections/Library ambient cross-fade's focus/fade behaviour on a real Apple TV
+— no Swift compiler here, checked by brace/paren balance and a careful read of both edited views.
+
+2026-09-27 08:20 UTC: SP-9 sports scenery fallback (subagent, docs/parity-gaps.md, size S).
+`engine/sports.ts` `artwork()` now falls back past TheSportsDB to upstream's own
+`bpSportsGroup`/`bpSportsScenery` (`sports/bp-sports-art.ts`, imported through the `@/` alias, no
+reimplementation) when a game has no art of its own and TheSportsDB found none either; the returned
+relative path resolves against `raw.githubusercontent.com/harborstremio/harbor/<full submodule
+SHA>/public/sports/hero-photos/*.webp` (new `upstreamRevFull`/`__HARBOR_UPSTREAM_REV_FULL__`,
+`engine/bundle-config.mjs` + `entry.ts`) so the ~7 MB of generated photos stay in upstream's repo
+instead of the bundle; no Swift change needed (`SportsArtView`'s existing `sports.artwork` call
+picks it up unchanged). 6 new offline smoke checks (`engine/smoke.mjs`: `runtime.upstreamRevFull`
+shape, MLB/LALIGA scenery fallback, a game's own artwork winning over it, NBA TheSportsDB hit vs
+miss). `node build.mjs` 4654 KB (was 4653 KB), `node smoke.mjs --offline` 1158/1158 passed (was
+1152). Not device-tested: raw.githubusercontent.com reachability from tvOS itself (works from this
+dev machine; the URL is content-addressed by the pinned submodule's full commit SHA).
+
 2026-09-27 (subagent, follow-up) Navigation UI tests pass 6, correction: the `showAdvanced` change in
 the entry directly below was **wrong and has been reverted**. Coordinator review caught it against
 upstream (`reference/harbor/src/components/profile-picker/editor-view.tsx` lines 111-113/496-500:

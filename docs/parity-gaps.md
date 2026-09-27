@@ -383,7 +383,7 @@ Left:
 | V1 (ported) | Award page | `bp-award.tsx`, `use-bp-award-work.ts` | Year and category chips ("All years", "All categories"). Every winner is a poster tile that resolves to a TMDB title and opens its page ("Checking with TMDB…" / "No match found"). The whole list pages in. | `AwardDetailView` (`DiscoverView.swift:403-475`) is text only, 12 entries per category, with nothing to open. | M | Yes |
 | V3 (ported except the rail headers, pass 3) | Discover finish | `bp-discover-wash.tsx`; `bp-discover.tsx:261-263` "{n} picks, refreshed daily"; `bp-people-band.tsx:52,74` "{n} award wins", "Start at number one" | A colour wash from the focused cell, headers on the "Picked for you" rails, and award counts on people. | None of these. | S | Low |
 
-### Home, rooms and cards (6)
+### Home, rooms and cards (7)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
@@ -393,6 +393,7 @@ Left:
 | H4 (RPDB / poster-host URLs ported, pass 3) | Poster chain | `bp-poster-chain.ts` (`useTitlePoster`, `usePosterChain`, `rpdbKey`) | Shows the poster the viewer pinned on desktop, then RPDB rating posters, then localized TMDB art. | Tiles use `meta.poster`. `entry.ts:296` exports `rpdbPoster`, but no caller uses it. | M | Yes, for RPDB users |
 | H5 (rows ported, pass 3; open-anywhere and the Controls legend open) | Quick panel global rows | `bp-quick-panel.tsx:188-226` | Opens anywhere (Y or Tab), including with no title focused. It has Interface sounds (cycle the sound pack), Animated backdrop on/off, and a Controls legend. | `QuickPanelView.swift` opens only on a title and has only title actions. | S | Low |
 | H6 (ported) | Card options | `bp-tile.tsx:144,229` (`hidePosterTitles`, `cardBadgeLimit`) | Hide the title on poster cards; cap the score chips per card. | Titles always follow the tile rules. `ScoreChipsView.swift:8` has a fixed `limit = 4`. | S | Low |
+| SH-1 (ported 2026-09-27, Collections/Library only) | Dynamic ambient backdrop | `bp-ambient.tsx`, `bp-ambient-layers.tsx`, `bp-backdrop-commit.ts` | The background cross-fades to the focused title's own backdrop (else poster) behind the room — BP's signature look; upstream's `TITLE_ART_ROUTES` includes "home", "library" and "collection" alike. | Home, Movies, Shows, Anime and Discover already had this (`SpotlightView`/`BPTitleArt`, wired through `RoomView`/`DiscoverView`'s `onFocus`). Collections and Library fell through to `BPAmbientBackground`'s static poster mosaic. Both now pass their focused card/tile's `Meta` into a new `BPAmbientBackground(focused:)`, which shows a `BPTitleArt` cross-fade (440 ms show/hide, 480 ms per-image, same as `BP_TITLE_ART_FADE_MS`) over the mosaic when the tile has art, and falls back to the mosaic otherwise. | M | Yes |
 
 ### Search and Library (3)
 
@@ -402,13 +403,14 @@ Left:
 | L2 (ported, pass 3) | Per-addon result plates | `search/bp-search-group.tsx`, `search/bp-search-results.tsx` | Every addon has a fixed slot: a quiet placeholder while it answers, "Didn't answer" with Try again when it fails. The rows do not jump. | Late rows are inserted in place. Failed addons only appear in the empty-state count (`SearchView.swift:371`). There is no retry. | S-M | Medium |
 | L3 (ported, pass 3) | Library auto-paging | `bp-library-sections.tsx` (sentinel) | The grid loads more as the ring nears the bottom. | A "Show more (n of m)" button (`LibraryView.swift:339`). | S | Low (the button works well on a remote) |
 
-### Live TV and Sports (3)
+### Live TV and Sports (4)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
 | X1 (ported) | Search playlists for a channel and pin it | `sports/bp-sports-broadcast-search.tsx` | Type a channel name, match it across every playlist, play it, and "Always use for {league}". | The picker lists only auto-matched channels (`SportsEventView.swift:300-340`). When nothing matches, its note tells the viewer to "Search your channels", but no text search exists. Only the addon panel has a field. | S-M | Yes |
 | X2 (ported, pass 3) | Saved event and feed notes | `sports/bp-sports-event-hero.tsx:285-291` | "Showing saved match details." when offline, plus source notes for TheSportsDB, ONE Championship and promoter-published cards. | None. | S | Low |
 | X3 (ported, pass 3, except the sampled glow) | Live band art | `bp-live-split.tsx`, `use-bp-live-panels.ts` | The Home Live band shows two channels' art side by side, plus a fallback ladder of panels. | `HomeBands.swift` shows a single still or mosaic. | S-M | Low |
+| SP-9 (ported 2026-09-27) | TheSportsDB artwork + per-sport scenery fallback | `sports/bp-sports-art.ts` `SCENERY_GROUPS`, `lib/sports/hub-artwork.ts` | A game with no art of its own (most games) and no TheSportsDB hit still gets a neutral per-sport photo (a soccer pitch, a basketball court, …) instead of nothing. | `engine.sports.artwork()` (`SportsArtView.swift`) fell back to TheSportsDB only; a miss there showed nothing. Now it calls upstream's own `bpSportsGroup`/`bpSportsScenery` (via the `@/` alias) and resolves the returned path against `raw.githubusercontent.com/harborstremio/harbor/<pinned full SHA>/public/...` so the ~7 MB of generated photos stay in upstream's repo instead of the bundle. | S | Yes |
 
 ### Profiles, onboarding and account (4)
 
@@ -427,11 +429,11 @@ Left:
 | Stream picker | 4 | 2 | 1 | 1 |
 | Detail and Person | 5 | 3 | 2 | 0 |
 | Discover and Awards | 3 | 2 | 0 | 1 |
-| Home, rooms and cards | 6 | 5 | 0 | 1 |
+| Home, rooms and cards | 7 | 5 | 0 | 2 |
 | Search and Library | 3 | 2 | 1 | 0 |
-| Live TV and Sports | 3 | 1 | 2 | 0 |
+| Live TV and Sports | 4 | 2 | 2 | 0 |
 | Profiles, onboarding and account | 4 | 3 | 1 | 0 |
-| **Total** | **38** | **25** | **8** | **5** |
+| **Total** | **40** | **26** | **8** | **6** |
 
 No L-sized gap remains in the Big Picture scope. The large items left are blocked on tvOS or on the
 owner (see below).

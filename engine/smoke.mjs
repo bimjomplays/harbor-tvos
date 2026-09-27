@@ -1675,6 +1675,56 @@ r.ok("benchmark still works", (() => {
   rec.dispose();
 }
 
+// ------------------------- sports art: per-sport scenery photo beneath the TheSportsDB fallback (SP-9)
+{
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const S = rec.engine.sports;
+  S.accept();
+  const rev = rec.engine.runtime.upstreamRevFull;
+  r.ok("runtime.upstreamRevFull is the submodule's full commit SHA", typeof rev === "string" && /^[0-9a-f]{40}$/.test(rev), rev);
+  const side = (id, name, abbr) => ({ id, name, abbr, logo: "", score: "0", winner: false });
+  const base = (league) => ({ id: "g-" + league, league, state: "pre", detail: "", home: side("h", "Home Side", "HOM"), away: side("a", "Away Side", "AWY"), startMs: Date.now() + 3600000 });
+
+  // MLB and LALIGA never reach TheSportsDB (bp-sports-art.ts: only F1/NBA/EPL/UFC/BOXING do), so a
+  // game with none of its own artwork resolves straight to bpSportsScenery's per-sport photo.
+  const mlb = await S.artwork(base("MLB"));
+  r.eq("sports.artwork: MLB with no art of its own falls back to the baseball scenery photo",
+    mlb.backdrop, `https://raw.githubusercontent.com/harborstremio/harbor/${rev}/public/sports/hero-photos/baseball.webp`);
+  const laliga = await S.artwork(base("LALIGA"));
+  r.eq("sports.artwork: a soccer league with no art falls back to the soccer scenery photo",
+    laliga.backdrop, `https://raw.githubusercontent.com/harborstremio/harbor/${rev}/public/sports/hero-photos/soccer.webp`);
+
+  // A game that already carries its own artwork or poster never touches the scenery fallback.
+  const own = await S.artwork({ ...base("MLB"), artwork: "https://poster.example.invalid/mlb.jpg" });
+  r.eq("sports.artwork: the game's own artwork wins over the scenery fallback", own.backdrop, "https://poster.example.invalid/mlb.jpg");
+
+  // NBA is one of the LEAGUE_IDS TheSportsDB asks league fanart for: a hit wins over scenery, a miss
+  // still falls back to the basketball photo.
+  const nbaOk = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  nbaOk.engine.sports.accept();
+  nbaOk.node.host.fetch = async (req) => /lookupleague\.php/.test(req.url)
+    ? { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify({ leagues: [{ strFanart1: "https://thesportsdb.example.invalid/nba-fanart.jpg" }] }) }
+    : { status: 404, statusText: "", headers: {}, url: req.url, body: "" };
+  const nbaHit = await nbaOk.engine.sports.artwork(base("NBA"));
+  r.eq("sports.artwork: a TheSportsDB league backdrop wins over the basketball scenery photo", nbaHit.backdrop, "https://thesportsdb.example.invalid/nba-fanart.jpg");
+  nbaOk.dispose();
+
+  const nbaMiss = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  nbaMiss.engine.sports.accept();
+  nbaMiss.node.host.fetch = async (req) => ({ status: 404, statusText: "", headers: {}, url: req.url, body: "" });
+  const nbaFail = await nbaMiss.engine.sports.artwork(base("NBA"));
+  r.eq("sports.artwork: TheSportsDB finding nothing for NBA still falls back to the basketball scenery photo",
+    nbaFail.backdrop, `https://raw.githubusercontent.com/harborstremio/harbor/${rev}/public/sports/hero-photos/basketball.webp`);
+  nbaMiss.dispose();
+  rec.dispose();
+}
+
 // ---------------------------------------- sports feeds that fail back off (Kids/Sports bug pass)
 {
   const rec = loadEngine({ storage: new Map([
