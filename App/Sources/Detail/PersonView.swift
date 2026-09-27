@@ -111,7 +111,7 @@ struct PersonView: View {
                         // (and the ring) away with no way back to "Any rating" short of leaving.
                         if (pg.total ?? 0) > 0 {
                             VStack(alignment: .leading, spacing: BP.px(10)) {
-                                Text("Filmography").font(BP.display(24)).foregroundStyle(BP.ink)
+                                Text("Filmography").font(BP.display(24)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
                                 filterRow("Sort", [("popularity", "Popularity"), ("rating", "Rating"), ("newest", "Newest")], active: model.sort, trailing: T("%lld of %lld", pg.shownTotal ?? 0, pg.total ?? 0)) { model.sort = $0; Task { await model.load() } }
                                 filterRow("Rating", [("0", "Any rating"), ("6", T("Rated %lld+", 6)), ("7", T("Rated %lld+", 7)), ("8", T("Rated %lld+", 8))], active: String(model.minRating), trailing: nil) { model.minRating = Int($0) ?? 0; Task { await model.load() } }
                                 // (device-flow pass 6) bp-person.tsx BpFilterRow caption (filmography-rank.ts
@@ -189,13 +189,16 @@ struct PersonView: View {
                     .overlay(Capsule().stroke(BP.edge2, lineWidth: 1))
             }
         }
+        // bp-person.tsx: the department eyebrow and the "Top {n}" pill read as one line, not two stops.
+        .accessibilityElement(children: .combine)
     }
 
     private var hero: some View {
         HStack(alignment: .top, spacing: BP.px(24)) {
             ZStack {
                 Circle().fill(BP.panel2)
-                if let p = model.page?.person?.portrait { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").accessibilityHidden(true).font(.system(size: BP.px(48))).foregroundStyle(BP.inkSubtle) }
+                // bp-person.tsx portrait img alt="": the name text beside it names the person.
+                if let p = model.page?.person?.portrait { RemoteImage(url: p).clipShape(Circle()).accessibilityHidden(true) } else { Image(systemName: "person.fill").accessibilityHidden(true).font(.system(size: BP.px(48))).foregroundStyle(BP.inkSubtle) }
             }
             .frame(width: BP.px(160), height: BP.px(160))
             VStack(alignment: .leading, spacing: BP.px(8)) {
@@ -213,6 +216,9 @@ struct PersonView: View {
                             Text(p.biography).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineSpacing(4).lineLimit(bioExpanded ? nil : 4).frame(maxWidth: BP.px(760), alignment: .leading)
                         }
                         .buttonStyle(.plain)
+                        // bp-person.tsx's own "Read more" / "Show less" chip toggles this text there;
+                        // here the paragraph itself is the toggle, so VoiceOver needs the same word for what Select does.
+                        .accessibilityHint(T(bioExpanded ? "Show less" : "Read more"))
                     }
                 }
                 Button { close() } label: { Label("Back", systemImage: "chevron.backward") }.buttonStyle(BPActionStyle())
@@ -272,7 +278,8 @@ struct PersonView: View {
                             VStack(spacing: BP.px(8)) {
                                 ZStack {
                                     Circle().fill(BP.panel2)
-                                    if let p = c.portrait { RemoteImage(url: p).clipShape(Circle()) } else { Image(systemName: "person.fill").accessibilityHidden(true).font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle) }
+                                    // bp-collaborators.tsx img alt="": the name and title count below already name the cell.
+                                    if let p = c.portrait { RemoteImage(url: p).clipShape(Circle()).accessibilityHidden(true) } else { Image(systemName: "person.fill").accessibilityHidden(true).font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle) }
                                 }
                                 .frame(width: BP.px(110), height: BP.px(110))
                                 Text(c.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)

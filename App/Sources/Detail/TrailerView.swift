@@ -20,10 +20,13 @@ struct TrailerView: View {
             BP.void_.opacity(0.94).ignoresSafeArea()
             HStack(alignment: .center, spacing: BP.px(48)) {
                 VStack(alignment: .leading, spacing: BP.px(14)) {
+                    // The thumbnail stands in for the video tvOS can't embed; the title text right
+                    // below already names it, so the still itself has nothing to say.
                     RemoteImage(url: "https://img.youtube.com/vi/\(ytId)/hqdefault.jpg")
                         .aspectRatio(16 / 9, contentMode: .fill)
                         .frame(width: BP.px(560), height: BP.px(315))
                         .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+                        .accessibilityHidden(true)
                     Text(title).font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(2)
                     if let c = clipName, !c.isEmpty { Text(c).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                     HStack(spacing: BP.px(10)) {

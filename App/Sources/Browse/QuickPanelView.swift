@@ -29,11 +29,15 @@ struct QuickPanelView: View {
             BP.void_.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 HStack(spacing: BP.px(14)) {
+                    // The poster carries no name of its own; the title beside it already does.
                     RemoteImage(url: meta.poster).frame(width: BP.px(64), height: BP.px(96)).clipShape(RoundedRectangle(cornerRadius: BP.px(6)))
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(meta.name).font(BP.sans(17, .bold)).foregroundStyle(BP.ink).lineLimit(2)
                         Text(meta.facts).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1)
                     }
+                    // Not a control: the title and its facts line read as one, not two stops.
+                    .accessibilityElement(children: .combine)
                 }
                 .padding(.bottom, BP.px(6))
                 action("Play", "play.fill") { detail = Target(meta: meta, autoPlay: true) }
@@ -118,7 +122,8 @@ struct QuickPanelView: View {
             run()
         } label: {
             HStack(spacing: BP.px(12)) {
-                Image(systemName: icon).frame(width: BP.px(22))
+                // Decorative: the row's own label and detail text already say what this setting is.
+                Image(systemName: icon).frame(width: BP.px(22)).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     Text(T(label))
                     Text(detail).font(BP.sans(11, .medium)).foregroundStyle(BP.inkSubtle)
