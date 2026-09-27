@@ -477,6 +477,18 @@ export async function upNext(track: MusicTrack): Promise<MusicTrack[]> {
 export async function radioExtend(queue: MusicTrack[], index: number): Promise<MusicTrack[]> {
   return radioLib.extendTrackRadio(queue ?? [], index, familiar()).catch(() => []);
 }
+/**
+ * player.ts musicSimilarTracks -> radio.ts loadSimilarTracks: the "More Like This" mix (ahead of
+ * the pinned submodule, docs/upstream-drift-2026-09-27.md), shown as a browsable page
+ * (MusicSimilarPageView) rather than queued straight away like radio() above.
+ */
+export async function similarTracks(track: MusicTrack): Promise<MusicTrack[]> {
+  try {
+    return await radioLib.loadSimilarTracks(track, familiar());
+  } catch {
+    throw new Error(t("music.radio.error"));
+  }
+}
 
 /**
  * music-now-playing.tsx lyrics panel: lyrics.ts loadTrackLyrics (LRCLIB, synced lines only)

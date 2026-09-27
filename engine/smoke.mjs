@@ -1225,6 +1225,10 @@ r.ok("benchmark still works", (() => {
   r.ok("music.radio seeds the station with the track, then ranked Deezer picks without karaoke variants", station.length >= 6 && station[0].id === seedTrack.id && !station.some((t) => /karaoke/i.test(t.title)) && station.slice(1).every((t) => t.connectorId === "catalog" && t.mediaKind === "audio"), JSON.stringify(station.map((t) => `${t.artist} - ${t.title}`)));
   const more = await m.radioExtend(station, station.length - 2);
   r.ok("music.radioExtend never repeats a queued track", Array.isArray(more) && more.every((t) => !station.some((s) => s.title === t.title && s.artist === t.artist)), JSON.stringify(more.map((t) => t.title)));
+  // music-similar-page.tsx (a821e273, ahead of the pinned submodule, docs/upstream-drift-2026-09-27.md):
+  // the "More Like This" mix, minus the seed itself (Swift shows it as its own page, not queued).
+  const similar = await m.similarTracks(seedTrack);
+  r.ok("music.similarTracks builds the mix without the seed track, ranked Deezer picks, no karaoke variants", similar.length >= 5 && !similar.some((t) => t.connectorId === seedTrack.connectorId && t.id === seedTrack.id) && !similar.some((t) => /karaoke/i.test(t.title)) && similar.every((t) => t.connectorId === "catalog" && t.mediaKind === "audio"), JSON.stringify(similar.map((t) => `${t.artist} - ${t.title}`)));
   // up-next.ts (upstream 770ca0bd): Now Playing's Up next when nothing follows the current track
   const suggested = await m.upNext(seedTrack);
   r.ok("music.upNext offers the track's radio without the track itself", suggested.length === station.length - 1 && suggested.length > 0 && !suggested.some((t) => t.connectorId === seedTrack.connectorId && t.id === seedTrack.id) && suggested[0].id === station[1].id, JSON.stringify(suggested.map((t) => t.id)));

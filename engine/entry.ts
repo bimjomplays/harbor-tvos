@@ -1361,6 +1361,7 @@ export const music = {
   shouldScrobble: musicGlue.shouldScrobble,
   radio: musicGlue.radio,
   radioExtend: musicGlue.radioExtend,
+  similarTracks: musicGlue.similarTracks,
   upNext: musicGlue.upNext,
   lyrics: musicGlue.lyrics,
   setLyricOffset: musicGlue.setLyricOffset,

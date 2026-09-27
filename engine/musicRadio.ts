@@ -294,3 +294,48 @@ export async function extendTrackRadio(queue: MusicTrack[], index: number, famil
   if (!seeds.length) return [];
   return build(seeds, new Set(queue.map(trackKey)), EXTEND_SIZE, familiar);
 }
+
+// ---------------------------------------------------------- More Like This (music-similar-page)
+// radio.ts withSeedArtist / loadSimilarTracks, ported ahead of the pinned submodule: not in
+// reference/harbor at 770ca0bd (docs/upstream-drift-2026-09-27.md), added upstream at a821e273's
+// e28bc25d ("More Like This" replaces the track menu's own onStartRadio there; the TV keeps its
+// existing Start radio station alongside it — MusicView.swift's MusicTrackMenuItems). Read from
+// the submodule's already-fetched-but-unpinned a821e273 commit (`git show a821e273:<path>`
+// inside reference/harbor, which never moved its checked-out commit).
+const SEED_ARTIST_TARGET = 4;
+
+/** Wanting more of a song usually means wanting a little more of who made it, not a solo mix. */
+async function withSeedArtist(seed: Seed, track: MusicTrack, mix: MusicTrack[]): Promise<MusicTrack[]> {
+  if (!seed.artistId) return mix;
+  const credited = new Set([track.artist, ...artistCreditParts(track.artist)].map(normalizeName).filter(Boolean));
+  const lead = (entry: MusicTrack) => normalizeName(artistCreditParts(entry.artist)[0] ?? entry.artist);
+  const held = mix.filter((entry) => credited.has(lead(entry))).length;
+  const want = SEED_ARTIST_TARGET - held;
+  if (want <= 0) return mix;
+  const seen = new Set([trackKey(track), ...mix.map(trackKey)]);
+  const page = await deezer(`artist/${seed.artistId}/top?limit=12`).catch(() => ({}) as Obj);
+  const extra: MusicTrack[] = [];
+  for (const entry of rows(page.data)) {
+    const candidate = deezerTrack(entry);
+    if (!candidate || seen.has(trackKey(candidate))) continue;
+    seen.add(trackKey(candidate));
+    extra.push({ ...candidate, mediaKind: "audio" });
+    if (extra.length >= want) break;
+  }
+  if (!extra.length) return mix;
+  const out = [...mix];
+  extra.forEach((entry, index) => out.splice(Math.min(out.length, 3 + index * 6), 0, entry));
+  return out;
+}
+
+/**
+ * radio.ts loadSimilarTracks: the same lane-built mix as Start radio, minus the seed track
+ * itself (music-similar-page.tsx shows it separately as "seed"), topped up with the seed's own
+ * artist. Swift shows this as a browsable page (MusicSimilarPageView) rather than queuing it.
+ */
+export async function loadSimilarTracks(track: MusicTrack, familiar: MusicTrack[]): Promise<MusicTrack[]> {
+  const seed = await resolveSeed(track);
+  const following = await build([seed], new Set([trackKey(track)]), STATION_SIZE, familiar);
+  if (following.length < 5) throw new Error("music.radio.error");
+  return withSeedArtist(seed, track, following);
+}

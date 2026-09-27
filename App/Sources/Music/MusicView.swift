@@ -339,6 +339,7 @@ struct MusicTrackMenuItems: View {
     @ObservedObject private var copy = MusicCopy.shared
     @Environment(\.musicAddToPlaylist) private var addToPlaylist
     @Environment(\.musicShowTrackCredits) private var showTrackCredits
+    @Environment(\.musicShowSimilar) private var showSimilar
     var body: some View {
         Button { player.playNext(track) } label: { Label(copy("music.queue.playNext", "Play next"), systemImage: "text.line.first.and.arrowtriangle.forward") }
         Button { player.enqueue(track) } label: { Label(copy("music.card.addToQueue", "Add to queue"), systemImage: "text.append") }
@@ -347,8 +348,15 @@ struct MusicTrackMenuItems: View {
         if let addToPlaylist {
             Button { addToPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
         }
-        // music-track-menu.tsx "Start radio" (radio.ts): a station seeded by this track.
+        // music-track-menu.tsx "Start radio" (radio.ts): a station seeded by this track. Kept
+        // alongside upstream's newer "More Like This" below rather than replaced (docs/
+        // upstream-drift-2026-09-27.md): Start radio is already shipped and UI-tested here.
         Button { player.startRadio(track) } label: { Label(copy("music.card.startRadio", "Start radio"), systemImage: "dot.radiowaves.left.and.right") }
+        // music-track-menu.tsx onMoreLikeThis (a821e273, ahead of the pinned submodule):
+        // MusicSimilarPageView, a browsable "Songs like <track>" mix (MusicSimilarPage.swift).
+        if let showSimilar {
+            Button { showSimilar(track) } label: { Label(T("More like this"), systemImage: "square.stack") }
+        }
         Button { player.toggleLiked(track) } label: {
             player.isLiked(track)
                 ? Label(copy("music.unsaveTrack", "Remove from saved tracks"), systemImage: "heart.slash")
