@@ -69,6 +69,7 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Home & browse (Home, Discover, Collections, Calendar)
 
+- [ ] Collections and Library: focusing a tile cross-fades its backdrop in behind the page (Animated backdrop on); a tile with no art falls back to the mosaic; nothing draws under a cover or during playback. (`336623b`)
 - [ ] Press Right off a Home row's last tile and Left off its first → See all takes the ring, then the top bar on that row's tab; the hero keeps cycling while the ring is on See all. (`3ca744f`, `cdc57a6`, `bb117ed`) *(UI test: testRowSeeAllEdge covers Right/Left)*
 - [ ] Look at Continue Watching cards → "S1 E3 · 42m left" / "Almost done" / "Episode 12"; air countdowns read in your language. (`3ca744f`, `cdc57a6`)
 - [ ] With an RPDB key synced from desktop, browse rows including a title with no poster → RPDB posters draw, a bad key does not make posters blink back each visit, the title plate shows only when no art draws. (`c156ac3`, `ee5e7c2`, `f182d83`)
@@ -124,6 +125,7 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Profiles / Kids
 
+- [ ] Settings → Profiles → "Manage profiles" (primary only) → pick Guest → the editor shows the kid toggle and PIN & sidebar locks; change and Save → Guest carries it; Menu unwinds editor → list → Settings. Editing your own non-primary profile shows neither. (`06cef75`, `7670556`)
 - [ ] Settings → Profiles → edit a non-primary profile → "Kids profile" toggle shows (not on the primary) → turn it on → age pills (3/5/7/9/12), daily watch time pills (No limit…180 min), the 5 kid avatars and a 4-digit Parent PIN field appear; PIN & sidebar locks section hides while Kids is on → Save → the Who tile carries the kid look and entering it opens the kids shell; leaving asks for the PIN. (`7aca941`)
 - [ ] Turn Kids on, type 2 digits of PIN, turn Kids off → Save is enabled again (no stuck-disabled Save). (`55815fd`)
 - [ ] Set a 30-minute daily limit on a kid, watch past it → the curfew lock draws; the limit resets at local midnight. (`docs/kids-parity.md`)
@@ -140,6 +142,7 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Live TV / Sports
 
+- [ ] Sports: a game with no art of its own and no TheSportsDB hit shows the per-sport scenery photo; an esports game (LCK, DOTA2) shows its game art, not a broken image. (`b9308c9`, `5c9c020`)
 - [ ] Pull the network on a live channel for a few seconds → it reconnects by itself (1.5 s / 4 s); the error card only after the tries run out. (`feec966`)
 - [ ] Let the guide fail late with the ring in the grid → the list opens on the same channel. (`5d8a86b`, `64ca414`)
 - [ ] Leave the in-player TV Guide open a few minutes → "{n}m left" and the airing bars move each minute. (`6ac33ed`)
@@ -153,6 +156,10 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Music / Manga / eBook
 
+- [ ] Music mast → "Playlists" → create, rename, delete a Harbor playlist; hold Select on any track → "Add to playlist" (also with Spotify connected: its own destination) and "Credits"; both work from inside a playlist too. (`0a2262d`, `7a81d32`)
+- [ ] Hold Select on a track → "More like this" → the "Songs like <track>" page lists a mix; Play all, Add to queue and Save as playlist work; Menu closes it. Start radio is gone from the menu, matching upstream. (`d3a8ade`, `b3a02ce`)
+- [ ] Now Playing on a 1080p set: the transport row is fully visible with the error/resolving note showing; the three tabs read on one line; with nothing queued, Right from the seek or transport row reaches the tab row. (`136b410`, `bf6f0bc`)
+- [ ] Plex music: play a track from a Plex library → Plex shows it as now playing, and marks it played past the scrobble point. (`0a2262d`)
 - [ ] Open Now Playing from the dock → the ring is on Play/Pause (the simulator lands on the seek row instead: `ef2a2eb`; if the device does the same, the prefersDefaultFocus seed needs an explicit FocusState fallback).
 - [ ] eBook Detail (AniList signed in) → "Mark as Read" in the action row → the corner badge reads Read, AniList shows the entry completed; press again → unread; signed out → "Saved locally; AniList sync is pending" and the push lands after signing in. (`892e7eb`)
 - [ ] eBook reader: read to the middle of chapter 3, jump to chapter 2 from the bar, then Next chapter → chapter 3 opens at the saved position, not line 0 (the chapters panel too); a bookmark still opens at its own line. (`892e7eb`)
