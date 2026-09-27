@@ -7,7 +7,10 @@ import Foundation
 /// list (DetailModel reads it instead of Cinemeta), and `kidsfail` is Who's watching with the kids
 /// page failing to build (NavigationTests3). `discfail` is the shell with every Discover build
 /// failing, and `bands` the shell whose Home carries the Your streaming, Your addons and
-/// Collections band rows (NavigationTests4).
+/// Collections band rows (NavigationTests4). `ebook` is the shell with a Gutendex source already
+/// installed (EBookStore.addGutendex, a local config write) and the eBook tab turned on, and
+/// `music` is the shell with a fixture track already handed to MusicPlayer, so the dock and Now
+/// Playing have something to open (NavigationTests5).
 @MainActor
 enum Fixtures {
     static var active: Bool { ProcessInfo.processInfo.arguments.contains("--fixtures") }
@@ -17,7 +20,7 @@ enum Fixtures {
         switch args[i + 1] {
         case "onboarding": return .onboarding
         case "who", "kidsfail": return .whoIsWatching
-        case "shell", "spikes", "live", "roomfail", "calfail", "detail", "discfail", "bands": return .shell
+        case "shell", "spikes", "live", "roomfail", "calfail", "detail", "discfail", "bands", "ebook", "music": return .shell
         default: return nil
         }
     }
@@ -25,6 +28,14 @@ enum Fixtures {
     static var openSpikes: Bool { ProcessInfo.processInfo.arguments.contains("spikes") }
     /// `--fixtures live`: fixture profiles, but rooms come from the real engine (network).
     static var liveRooms: Bool { ProcessInfo.processInfo.arguments.contains("live") }
+    /// `--fixtures ebook`: EBookGate is turned on and a Gutendex source installed at boot, so the
+    /// room's browse chips, Collections card and Sources page render without ever asking the real
+    /// Gutendex API for books (NavigationTests5).
+    static var installEBookSource: Bool { ProcessInfo.processInfo.arguments.contains("ebook") }
+    /// `--fixtures music`: MusicPlayer starts a fixture track at boot. Its connector matches no real
+    /// source, so it resolves to the same "couldn't play" phase a real mismatched source would; Now
+    /// Playing and the dock already draw that state (NavigationTests5).
+    static var startMusicFixture: Bool { ProcessInfo.processInfo.arguments.contains("music") }
     /// `--query <text>` prefills the Search room for screenshots.
     static var query: String? {
         let args = ProcessInfo.processInfo.arguments
@@ -44,5 +55,19 @@ enum Fixtures {
             // A parent PIN on the kid, so leaving the kids shell asks for it (NavigationTests2).
             .init(id: "p_fix_3", syncId: "s_3", name: "Kiddo", avatar: "/kids/avatars/kid-2.webp", color: "#fbbf24", isPrimary: false, kid: .init(age: 7, curfewMinutes: nil, parentPinHash: ProfilesStore.hashPin("4321")), passwordHash: nil, createdAt: now + 2),
         ], activeId: stage == .shell ? "p_fix_1" : nil)
+        if installEBookSource {
+            UserDefaults.standard.set(true, forKey: EBookGate.key)
+            // A local config write (lib/ebook/sources.ts addEBookGutendex): no network, so this is
+            // safe to fire and forget before the eBook tab is even reachable.
+            Task {
+                let installed: EBookState? = try? await HarborEngine.shared.call("ebook.addGutendex")
+                _ = installed
+            }
+        }
+        if startMusicFixture {
+            MusicPlayer.shared.play(MusicTrack(id: "fixture-song", title: "Fixture Song", artist: "Fixture Artist", album: "Fixture Album",
+                                                artwork: nil, durationSeconds: 180, durationLabel: "3:00", connectorId: "fixture", sourceId: nil,
+                                                playbackUrl: nil, explicit: false, version: nil, mediaKind: nil, collectionOrigin: nil))
+        }
     }
 }

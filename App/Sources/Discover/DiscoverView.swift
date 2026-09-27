@@ -284,6 +284,7 @@ struct QueueBandView: View {
             ZStack(alignment: .leading) {
                 if let bed = queue?.backdrop ?? queue?.posters.first {
                     RemoteImage(url: bed).blur(radius: 18).opacity(queue?.backdrop == nil ? 0.45 : 0.8)
+                        .accessibilityHidden(true)
                 }
                 LinearGradient(colors: [BP.panel, BP.panel.opacity(0.6), .clear], startPoint: .leading, endPoint: .trailing)
                     .flipsForRightToLeftLayoutDirection(true)   // bp-queue-band.tsx --bp-scrim-side under rtl
@@ -307,6 +308,7 @@ struct QueueBandView: View {
                                 .zIndex(Double(4 - i))
                         }
                     }
+                    .accessibilityHidden(true)
                     .frame(width: BP.px(200), height: height)
                     .padding(.trailing, BP.px(26))
                 }
@@ -411,6 +413,7 @@ struct GenresBandView: View {
                             .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.14, d: 1, tx: CGFloat(i - 1) * 6, ty: 0))
                     }
                 }
+                .accessibilityHidden(true)
                 to.blendMode(.multiply)
             }
             LinearGradient(colors: [.clear, to], startPoint: .center, endPoint: .bottom).frame(height: cell * 0.8 * 0.4).frame(maxHeight: .infinity, alignment: .bottom)

@@ -173,6 +173,7 @@ struct SportsChannelSearchView: View {
     @ViewBuilder private func logo(_ row: Row) -> some View {
         if let l = row.logo, !l.isEmpty {
             RemoteImage(url: l, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous))
+                .accessibilityHidden(true)
         } else {
             Image(systemName: "tv").font(.system(size: BP.px(18), weight: .semibold)).foregroundStyle(BP.inkMuted).accessibilityHidden(true)
         }

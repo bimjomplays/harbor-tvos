@@ -136,10 +136,17 @@ now drops season ≤ 0 or episode ≤ 0 like use-bp-episode-strip.ts's collect()
 season chips, which upstream never shows a Specials entry in either — the engine's own video lists
 used by the player, Live TV and Kids are untouched).
 
-**Reopened 2026-09-27:** sweep 4's See-all fix (the chip `.focusable` only while armed) broke the
-Right-off-the-last-tile hop in CI (`testRowSeeAllEdge`, `testHomeBandRowLeads`: the chip was not yet
-focusable in the update that asked for it) and was reverted. "Up from a tile under the row's See all
-can land on See all" is open again; a fix must keep the chip focusable at the moment of the hop.
+**Reopened 2026-09-27, refixed same day:** sweep 4's See-all fix (the chip `.focusable` only while
+armed) broke the Right-off-the-last-tile hop in CI (`testRowSeeAllEdge`, `testHomeBandRowLeads`: the
+chip was not yet focusable in the update that asked for it) and was reverted. Refixed in BPRowView.swift:
+the two hops that mean to land on the chip (`tileMove`'s Right-off-last-tile, `endCatch`) now set a new
+`seeAllArmed` flag a runloop *before* the deferred `seeAllFocused = true` that requests focus, so the
+`.focusable(seeAllArmed || seeAllFocused)` gate has already committed true by the time the hop asks for
+focus — the same one-runloop separation `endCatch` already used, just applied to the gate too. Plain Up
+from a tile no longer finds the chip at all (armed/focused both false), which is what actually stops Up
+landing on it; `seeAllArmed` resets to false as soon as the chip loses focus so it stays unreachable for
+the rest of the row's visit. `testRowSeeAllEdge` and `testHomeBandRowLeads` don't exercise Up on this
+row at all, so neither is affected by the new gate.
 
 **Closed by Watch Together sweep** (2026-09-27): An invite to another title waited under a Detail
 page for the shell's toast (`root.presentedViewController != nil` for as long as the page is up):

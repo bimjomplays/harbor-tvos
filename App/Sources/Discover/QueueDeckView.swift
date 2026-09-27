@@ -118,6 +118,7 @@ struct QueueDeckView: View {
                 RemoteImage(url: c.meta.background ?? c.meta.poster).ignoresSafeArea().id(c.id)
                     .transition(.opacity)
                     .opacity(railFocused ? 0.6 : 1)   // bp-queue-stage dimmed={zone === "rail"}
+                    .accessibilityHidden(true)
                 LinearGradient(colors: [BP.void_.opacity(0.2), BP.void_.opacity(0.75), BP.void_.opacity(0.97)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 LinearGradient(colors: [BP.void_.opacity(0.9), .clear], startPoint: .leading, endPoint: .init(x: 0.6, y: 0.5)).ignoresSafeArea()
                     .flipsForRightToLeftLayoutDirection(true)   // bp-tokens.ts --bp-scrim-side under rtl
@@ -145,7 +146,9 @@ struct QueueDeckView: View {
                     }
                     .buttonStyle(QueueDeckCellStyle())
                     .focused($focus, equals: "deck")
-                    .accessibilityLabel(Text(verbatim: c.meta.name))
+                    // The visible line says "N of M" too; without it here VoiceOver loses the deck
+                    // position that Left/Right steps through.
+                    .accessibilityLabel(Text(verbatim: c.meta.name + ", " + T("%lld of %lld", model.index + 1, model.entries.count)))
                     HStack(spacing: BP.px(10)) {
                         chip("Play now", "play.fill") { detail = DetailTarget(meta: c.meta, autoPlay: true) }
                         chip(model.saved.contains(c.id) ? "Saved" : "Save", model.saved.contains(c.id) ? "bookmark.fill" : "bookmark", key: "save") { Task { await model.toggleSave() } }

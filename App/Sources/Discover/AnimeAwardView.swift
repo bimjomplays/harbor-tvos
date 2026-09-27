@@ -118,6 +118,8 @@ struct AnimeAwardView: View {
                         // label and count were one key ("All years  %lld") no catalog carries.
                         Button { year = nil } label: { chipLabel(T("All years"), d.totalWins) }
                             .buttonStyle(BPActionStyle(primary: year == nil)).bpSelected(year == nil)
+                            // Matches the per-year chips below: the bare count reads as a stray number otherwise.
+                            .accessibilityLabel(Text(verbatim: T("All years") + ", " + TCount(d.totalWins, one: "%lld winner", "%lld winners")))
                         ForEach(d.perYear, id: \.year) { y in
                             Button { year = year == y.year ? nil : y.year } label: { chipLabel(String(y.year), y.count) }
                                 .buttonStyle(BPActionStyle(primary: year == y.year)).bpSelected(year == y.year)

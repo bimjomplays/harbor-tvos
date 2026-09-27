@@ -66,6 +66,7 @@ struct CollectionItemsOverlay: View {
                     .opacity(0.22)
                     .overlay(LinearGradient(colors: [BP.void_.opacity(0.55), BP.void_.opacity(0.88), BP.void_], startPoint: .top, endPoint: .bottom))
                     .ignoresSafeArea()
+                    .accessibilityHidden(true)
             }
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: BP.px(14)) {

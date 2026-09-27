@@ -395,6 +395,7 @@ struct LiveGuideView: View {
             Button { starPressed(ch) } label: {
                 HStack(spacing: BP.px(10)) {
                     RemoteImage(url: ch.logo, contentMode: .fit).frame(width: BP.px(64), height: BP.px(36))
+                        .accessibilityHidden(true)
                     Text(ch.shownName).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(2)
                     Spacer(minLength: 0)
                     Image(systemName: ch.favorite ? "star.fill" : "star").font(.system(size: BP.px(12), weight: .bold)).foregroundStyle(ch.favorite ? BP.ink : BP.inkSubtle)
@@ -475,6 +476,7 @@ struct LiveGuideView: View {
                             }
                         }
                         .frame(height: BP.px(3))
+                        .bpProgressValue((now - p.startMs) / max(1, p.endMs - p.startMs))
                     }
                 }
             }

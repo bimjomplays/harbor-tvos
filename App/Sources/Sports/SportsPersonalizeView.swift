@@ -72,7 +72,7 @@ struct SportsPersonalizeView: View {
                             let on = t.followed.contains(team.id)
                             Button { Task { await toggle(team) } } label: {
                                 HStack(spacing: BP.px(8)) {
-                                    RemoteImage(url: team.logo.isEmpty ? nil : team.logo, contentMode: .fit).frame(width: BP.px(28), height: BP.px(28))
+                                    RemoteImage(url: team.logo.isEmpty ? nil : team.logo, contentMode: .fit).frame(width: BP.px(28), height: BP.px(28)).accessibilityHidden(true)
                                     Text(team.name).font(BP.sans(13, on ? .bold : .semibold)).foregroundStyle(on ? BP.ink : BP.inkMuted).lineLimit(1)
                                     Spacer(minLength: 0)
                                     if on { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink).accessibilityHidden(true) }
@@ -163,7 +163,7 @@ struct SportsPersonalizeView: View {
                     }
                 } label: {
                     VStack(spacing: BP.px(6)) {
-                        Text(g.icon ?? "").font(.system(size: BP.px(28)))
+                        Text(g.icon ?? "").font(.system(size: BP.px(28))).accessibilityHidden(true)
                         Text(g.label).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     }
                     .frame(width: BP.px(150), height: BP.px(100))
@@ -171,6 +171,7 @@ struct SportsPersonalizeView: View {
                     .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).strokeBorder(groups.contains(g.key) ? BP.ink : BP.edge2, lineWidth: 1))
                 }
                 .buttonStyle(BPTileStyle(radius: BP.rSM))
+                .bpSelected(groups.contains(g.key))
             }
         }
         .focusSection()
@@ -187,7 +188,7 @@ struct SportsPersonalizeView: View {
                                 if leagues.contains(l.key) { leagues.remove(l.key) } else { leagues.insert(l.key) }
                             } label: {
                                 HStack(spacing: BP.px(8)) {
-                                    RemoteImage(url: l.logo.isEmpty ? nil : l.logo, contentMode: .fit).frame(width: BP.px(22), height: BP.px(22))
+                                    RemoteImage(url: l.logo.isEmpty ? nil : l.logo, contentMode: .fit).frame(width: BP.px(22), height: BP.px(22)).accessibilityHidden(true)
                                     Text(l.label).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                     Spacer()
                                     if leagues.contains(l.key) { Image(systemName: "checkmark").font(.system(size: BP.px(11), weight: .bold)).foregroundStyle(BP.ink).accessibilityHidden(true) }
