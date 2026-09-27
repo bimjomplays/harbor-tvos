@@ -164,7 +164,7 @@ struct BPField: View {
         }
         .fullScreenCover(isPresented: $phoneOpen) {
             PhoneTypingSheet(label: label, placeholder: placeholder, text: $text, secure: secure,
-                             purpose: "Scan this with your phone camera, then type straight into “\(label)” on your phone.",
+                             purpose: T("Scan this with your phone camera, then type straight into “%@” on your phone.", T(label)),
                              onClose: { phoneOpen = false })
         }
     }
