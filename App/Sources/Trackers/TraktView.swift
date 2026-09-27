@@ -34,7 +34,7 @@ final class TraktModel: ObservableObject {
     /// trakt-device-modal.tsx / simkl-device-modal.tsx success line: "Connected as @{username}"
     /// (Trakt) or "Connected as {username}" (Simkl), else "Connected to Trakt" / "Connected to Simkl".
     private func connectedNote(_ username: String?) -> String {
-        guard let u = username, !u.isEmpty else { return T("Connected to \(label)") }
+        guard let u = username, !u.isEmpty else { return T("Connected to %@", label) }
         return service == "trakt" ? T("Connected as @%@", u) : T("Connected as %@", u)
     }
 
