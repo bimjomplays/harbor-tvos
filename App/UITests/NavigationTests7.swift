@@ -152,7 +152,9 @@ final class NavigationTests7: XCTestCase {
     /// (`music-card-liked-0`, trackGrid layout, MusicTrackCell + the full MusicTrackMenuItems menu)
     /// and returns once the given menu item exists.
     private func openTrackMenu(item: String, _ app: XCUIApplication) -> XCUIElement {
-        require(seek("music-card-liked-0", app, max: 12, first: .up), "liking the track did not add a Liked songs card to the Music room (focus: \(focusNote(app)))", app)
+        // The liked shelf sits mid-page (engine music.ts home(): after charts, before the stations and
+        // the catalog rows), a LazyVStack row per Up press from the dock — allow a long walk.
+        require(seek("music-card-liked-0", app, max: 30, first: .up), "liking the track did not add a Liked songs card to the Music room (focus: \(focusNote(app)))", app)
         sleep(1)
         // tvOS reveals a SwiftUI .contextMenu on a press-and-hold of Select, not a plain press
         // (developer.apple.com/documentation/xcuiautomation/xcuiremote/press(_:forduration:)).
@@ -194,6 +196,9 @@ final class NavigationTests7: XCTestCase {
         sleep(1)
 
         // Create the playlist from the mast's Playlists button.
+        // The mast is the row under the tab bar: Down into it first (run 36310907311: a sideways seek
+        // from the Music tab only walked the bar), then along it to Playlists.
+        require(press(.down, app, max: 4, until: { $0 == "music-library" || $0 == "music-search" || $0 == "music-sources" }) != nil, "Down never reached the mast (focus: \(focusNote(app)))", app)
         require(seek("music-library", app, max: 6), "could not reach the Playlists button in the mast (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)

@@ -860,6 +860,10 @@ struct EBookSourcesView: View {
                     Text(T("Saved")).font(BP.sans(13, .semibold)).foregroundStyle(nytFlash ? BP.accent : BP.inkSubtle)
                 }
             }
+            // (CI fix 2026-09-27) Full width: Down from the key field's phone button found no overlap
+            // with the Save row below (run 36310907311); a full-width section takes the move.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .focusSection()
         }
         .focusSection()
     }

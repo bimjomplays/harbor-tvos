@@ -440,6 +440,9 @@ struct MusicNowPlayingView: View {
                     .focusSection()
                 }
                 .frame(width: BP.px(560), alignment: .leading)
+                // (CI fix 2026-09-27) Symmetric to the right column's section: Left from the tab row
+                // found nothing at its own height in the left column (run 36310907311).
+                .focusSection()
                 VStack(alignment: .leading, spacing: BP.px(14)) {
                     HStack(spacing: BP.px(10)) {
                         tab("queue", copy("music.now.next", "Up next"))
