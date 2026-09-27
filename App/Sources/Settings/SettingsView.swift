@@ -123,6 +123,10 @@ struct SettingsView: View {
                         onOff("Confirm before leaving the player", settings.slice.playerConfirmLeave ?? true, key: "playerConfirmLeave")
                     }
                 }
+                // views/settings/library-panel/detail-tab.tsx "Spoilers" section: the Detail page's
+                // episode strip already masks per lib/spoilers.ts (DetailView.EpisodeCell); this is
+                // where the viewer turns it on.
+                section("Spoilers") { SpoilersPanel() }
                 section("Anime4K") { Anime4KPanel() }
                 // settings.homeRows (lib/home-customization) and the Simkl home rails (Settings/HomeRowsPanel.swift).
                 section("Home rows") { HomeRowsPanel() }
