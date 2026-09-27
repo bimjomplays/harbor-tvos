@@ -317,7 +317,10 @@ struct PlayerScreen: View {
                     .ignoresSafeArea()
                     .id(reloadToken)
             } else {
-                BP.void_.ignoresSafeArea()
+                // Plain black, not the theme's void: the hosting UIViews are hard-coded black too,
+                // and a light theme painted this reload/swap fallback as a bright slab over the
+                // video slot (build 291 device report: "big white box over the stream").
+                Color.black.ignoresSafeArea()
             }
             // Watch Together: roster, lobby, room chat lines, drawings/cursors (view-only, no focus).
             TogetherPlayerLayer(playback: together)
