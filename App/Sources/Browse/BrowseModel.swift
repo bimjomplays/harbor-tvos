@@ -358,16 +358,29 @@ struct FixtureBrowseSource: BrowseSource {
                 BrowseRow(key: "collections", title: "Collections", metas: collections, shape: .collection)]
     }
 
-    /// One season of six episodes for a fixture series (Cinemeta's `videos` shape).
+    /// One season of six episodes for a fixture series (Cinemeta's `videos` shape), plus a Special
+    /// (season 0) and an episode 0 (NavigationTests5): raw entries DetailModel.buildEpisodes' `guard
+    /// s > 0, e > 0` (open-items sweep 4) drops, so the fixture has something real for that filter
+    /// to remove. They sort to the ends and never change `seasons` (still just `[1]`), so
+    /// NavigationTests3's "a one-season series shows a lone Season 1 chip" check is unaffected.
     static func fixtureVideos(_ id: String) -> [AnyJSON] {
         let numbers: [Int] = [1, 2, 3, 4, 5, 6]
-        return numbers.map { n -> AnyJSON in
+        var out: [AnyJSON] = numbers.map { n -> AnyJSON in
             let fields: [String: AnyJSON] = [
                 "id": .string("\(id):1:\(n)"), "season": .number(1), "episode": .number(Double(n)),
                 "name": .string("Episode \(n)"), "released": .string("2024-01-0\(n)T00:00:00.000Z"),
             ]
             return AnyJSON.object(fields)
         }
+        out.append(.object([
+            "id": .string("\(id):0:1"), "season": .number(0), "episode": .number(1),
+            "name": .string("Special"), "released": .string("2023-12-25T00:00:00.000Z"),
+        ]))
+        out.append(.object([
+            "id": .string("\(id):1:0"), "season": .number(1), "episode": .number(0),
+            "name": .string("Episode 0"), "released": .string("2023-12-20T00:00:00.000Z"),
+        ]))
+        return out
     }
 
     func rows(for room: Room) async throws -> [BrowseRow] {
