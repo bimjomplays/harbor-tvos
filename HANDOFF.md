@@ -27,7 +27,7 @@ everything builds on GitHub Actions and ships to TestFlight **internal testing o
 - **CI.** `Build` runs 222 through 257 and later are green (compile + simulator UI tests), apart
   from four whose failures were fixed straight after: 235, 236 and 251, where new navigation UI tests caught
   real focus bugs, and 249, one compile error (see the rules below). The simulator runs
-  **44 UI tests**: `App/UITests/ScreenshotTests.swift` (12, the screen walk with screenshots) and
+  **43 UI tests** (2 skip in the simulator: NavigationTests7's track context menu): `App/UITests/ScreenshotTests.swift` (12, the screen walk with screenshots) and
   `NavigationTests.swift`, `NavigationTests2.swift`, `NavigationTests3.swift`, `NavigationTests4.swift`,
   `NavigationTests5.swift`, `NavigationTests6.swift`, `NavigationTests7.swift` (5 + 5 + 5 + 6 + 6 + 3 + 2
   remote-walk tests on offline fixtures: `--fixtures shell`, `who`, `roomfail`, `calfail`, `detail`,
