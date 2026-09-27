@@ -197,6 +197,51 @@ struct MusicLyrics: Decodable {
     var offset: Double
 }
 
+/// engine/music.ts aboutArtistLink (music-artist-overview.tsx ArtistLink, flattened): official /
+/// store / merch / source / tour, opened as a QR code (the TV has no browser).
+struct MusicAboutArtistLink: Decodable, Hashable { var url: String; var kind: String; var name: String }
+
+/// engine/music.ts aboutArtistCredit (music-listening-details.tsx MusicCredits, flattened): a
+/// Deezer or MusicBrainz contributor, already carrying an openable artist card.
+struct MusicAboutArtistCredit: Decodable, Identifiable {
+    var name: String
+    var role: String
+    var roleLabel: String
+    var attributes: [String]
+    var artist: MusicCard
+    var id: String { "\(artist.key):\(role)" }
+}
+
+/// engine/music.ts aboutArtist (music-listening-details.tsx MusicListeningDetails, flattened):
+/// Now Playing's "About the artist" tab. `artist` opens as a page like any other MusicCard.
+struct MusicAboutArtist: Decodable {
+    var artist: MusicCard?
+    var biography: String
+    var biographyUrl: String?
+    var origin: String
+    var began: String
+    var ended: String
+    var aliases: [String]
+    var genres: [String]
+    var artwork: String
+    var members: [MusicCard]
+    var links: [MusicAboutArtistLink]
+    var credits: [MusicAboutArtistCredit]
+    var creditSources: [MusicAboutArtistLink]
+    var isEmpty: Bool { artist == nil && credits.isEmpty }
+}
+
+/// engine/music.ts sourceCandidates (music-source-picker.tsx MusicSourceCandidate): one source's
+/// match for a track, marked with the remembered preference (SOURCE_KEY).
+struct MusicSourceCandidate: Decodable, Identifiable {
+    var connectorId: String
+    var connectorName: String
+    var health: String
+    var preferred: Bool
+    var track: MusicTrack
+    var id: String { "\(connectorId):\(track.id)" }
+}
+
 /// The room's copy, from upstream's English (or the profile's language) through lib/i18n.
 @MainActor
 final class MusicCopy: ObservableObject {

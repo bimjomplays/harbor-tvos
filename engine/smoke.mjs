@@ -1024,6 +1024,17 @@ r.ok("benchmark still works", (() => {
   const p = await m.prepare(catalogTrack, null, null);
   r.ok("music.prepare matches the chart track to the SoundCloud upload (not the cover) and resolves AAC HLS, never Opus", p.track.connectorId === "soundcloud" && p.track.sourceId === "2" && p.track.collectionOrigin.id === catalogTrack.id && p.stream.mimeType === "application/vnd.apple.mpegurl" && p.stream.url.startsWith("https://playback.media-streaming.soundcloud.cloud/") && p.stream.bitrate === 160000, JSON.stringify(p));
   r.ok("SoundCloud client id is scraped from the web app's bundle and cached", hits.some((x) => x.includes("a-v2.sndcdn.com/assets/49-def.js")) && rec.node.storage.get("harbor.music.soundcloud-client-id") === "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345");
+
+  // The per-source picker (music-source-picker.tsx): registry.rs candidates (the same list
+  // prepare()'s automatic failover reads) marked with the remembered preference, and choosing
+  // one (fromCollection + writeMusicPreference(SOURCE_KEY)).
+  const cands = await m.sourceCandidates(catalogTrack);
+  r.ok("music.sourceCandidates: the track as asked, then the best match from every other playable source, none preferred yet", cands.length === 2 && cands[0].connectorId === "catalog" && cands[0].preferred === false && cands[1].connectorId === "soundcloud" && cands[1].track.sourceId === "2" && cands[1].preferred === false, JSON.stringify(cands));
+  const chosen = m.chooseSource(catalogTrack, cands[1].track);
+  r.ok("music.chooseSource remembers the source and carries the original's collection origin (fromCollection), like the automatic match does", chosen.connectorId === "soundcloud" && chosen.sourceId === "2" && chosen.collectionOrigin.id === catalogTrack.id && m.sourcePreference() === "soundcloud", JSON.stringify(chosen));
+  const cands2 = await m.sourceCandidates(catalogTrack);
+  r.ok("music.sourceCandidates marks the remembered source preferred on the next look", cands2.find((c) => c.connectorId === "soundcloud").preferred === true && cands2.find((c) => c.connectorId === "catalog").preferred === false, JSON.stringify(cands2));
+
   const lib = m.setLiked(p.track, true);
   r.ok("music.setLiked / isLiked follow liked.ts (the playing copy answers to its catalog origin)", lib.liked.length === 1 && m.isLiked(p.track) && !m.isLiked(catalogTrack) && m.setLiked(p.track, false).liked.length === 0);
   m.addRecent(p.track);
@@ -1058,6 +1069,7 @@ r.ok("benchmark still works", (() => {
   const json = (req, body, status = 200) => ({ status, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: typeof body === "string" ? body : JSON.stringify(body) });
   const ok = (extra = {}) => ({ "subsonic-response": { status: "ok", version: "1.16.1", type: "navidrome", ...extra } });
   const mbRelease = "1b6c4560-1234-4e7c-bd9f-a5f31d5cfe1a";
+  const daftPunkMbid = "056e4f3e-d505-4dad-8ec1-d04f521cbb56";
   const seedTrack = { id: "deezer:track:3135556", connectorId: "catalog", sourceId: "3135556", title: "Harder, Better, Faster, Stronger", artist: "Daft Punk", album: "Discovery", artwork: "", durationSeconds: 224, durationLabel: "3:44" };
   const dzTrack = (id, title, artistId, artist) => ({ id, title, duration: 200, artist: { id: artistId, name: artist }, album: { title: `${title} LP`, cover_big: "https://cdn.example.invalid/c.jpg" } });
   rec.node.host.fetch = async (req) => {
@@ -1095,12 +1107,40 @@ r.ok("benchmark still works", (() => {
       { artist_credit_name: "Bonobo", caa_id: 34059386237, caa_release_mbid: "cd21d4e9-af51-4e7c-bd9f-a5f31d5cfe1a", release_date: "2026-08-29", release_group_mbid: "6e335887-60ba-38f0-95af-fae7774336bf", release_group_primary_type: "Album", release_mbid: mbRelease, release_name: "Fragments" },
     ] } });
     if (u.host === "musicbrainz.org" && u.pathname === `/ws/2/release/${mbRelease}`) return json(req, { media: [{ tracks: [{ id: "11111111-2222-3333-4444-555555555555", title: "Polyghost", recording: { id: "99999999-2222-3333-4444-555555555555", title: "Polyghost", length: 245000, "artist-credit": [{ name: "Bonobo", joinphrase: " & " }, { name: "Jacob Lusk" }] } }] }] });
+    // artist-profile.ts identity(): the recording's Deezer artist links to a MusicBrainz artist
+    // through a `url` relation (musicSourceLink -> /ws/2/url), then the full artist is fetched.
+    if (u.host === "musicbrainz.org" && u.pathname === "/ws/2/url" && u.searchParams.get("resource") === "https://www.deezer.com/artist/27") return json(req, { relations: [{ artist: { id: daftPunkMbid } }] });
+    if (u.host === "musicbrainz.org" && u.pathname === `/ws/2/artist/${daftPunkMbid}`) return json(req, {
+      id: daftPunkMbid, name: "Daft Punk", "begin-area": { name: "Paris" }, "life-span": { begin: "1993", end: "2021" },
+      aliases: [{ name: "Daft Punk" }, { name: "DP" }],
+      genres: [{ name: "house", count: 5 }, { name: "electronic", count: 3 }],
+      relations: [
+        { type: "member of band", artist: { id: "8fecacf5-3d67-4e29-9b8c-c9c8d19a5e3c", name: "Thomas Bangalter" } },
+        { type: "member of band", artist: { id: "9b8c6c9e-2b3d-4e5f-8a1b-2c3d4e5f6a7b", name: "Guy-Manuel de Homem-Christo" } },
+        { type: "official homepage", url: { resource: "https://daftpunk.com" } },
+        { type: "social network", url: { resource: "https://open.spotify.com/artist/4tZwfgrHOc3mvqYlEYSvVi" } },
+        { type: "wikidata", url: { resource: "https://www.wikidata.org/wiki/Q1428" } },
+      ],
+    });
+    // artist-profile.ts loadArtistProfile's Wikidata/Wikipedia bio (P434 must confirm the MBID).
+    if (u.host === "www.wikidata.org" && u.pathname === "/wiki/Special:EntityData/Q1428.json") return json(req, { entities: { Q1428: {
+      claims: { P434: [{ mainsnak: { datavalue: { value: daftPunkMbid } } }], P18: [{ mainsnak: { datavalue: { value: "Daft_Punk_2011.jpg" } } }] },
+      descriptions: { en: { value: "French electronic music duo" } },
+      sitelinks: { enwiki: { title: "Daft Punk", url: "https://en.wikipedia.org/wiki/Daft_Punk" } },
+    } } });
+    if (u.host === "en.wikipedia.org" && u.pathname === "/api/rest_v1/page/summary/Daft%20Punk") return json(req, {
+      type: "standard", extract: "Daft Punk were a French electronic music duo.",
+      originalimage: { source: "https://upload.wikimedia.org/wikipedia/en/daftpunk-original.jpg" },
+    });
+    // artist-authority.ts resolveArtist's Deezer artist search (the fallback when no recording
+    // profile could be matched, e.g. a home-server track with no ISRC or Deezer identity).
+    if (u.host === "api.deezer.com" && u.pathname === "/search/artist") return json(req, { data: [{ id: 401, name: "Muse", nb_fan: 5000000, nb_album: 10 }] });
     if (u.host === "lrclib.net") {
       if (u.pathname === "/api/get") return json(req, { id: 1, duration: 224, instrumental: false, plainLyrics: "Work it", syncedLyrics: "[00:01.50]Work it\n[00:03.2]Make it\n[00:05.00][00:07.00]Do it" });
       return json(req, []);
     }
     if (u.host === "api.deezer.com") {
-      if (u.pathname === "/track/3135556") return json(req, { id: 3135556, type: "track", title: "Harder, Better, Faster, Stronger", duration: 224, bpm: 123, release_date: "2001-03-07", artist: { id: 27, name: "Daft Punk" }, album: { id: 302127, title: "Discovery" } });
+      if (u.pathname === "/track/3135556") return json(req, { id: 3135556, type: "track", title: "Harder, Better, Faster, Stronger", duration: 224, bpm: 123, release_date: "2001-03-07", artist: { id: 27, name: "Daft Punk" }, album: { id: 302127, title: "Discovery" }, contributors: [{ id: 27, name: "Daft Punk", role: "Main" }, { id: 9001, name: "Pharrell Williams", role: "Featured" }] });
       if (u.pathname === "/album/302127") return json(req, { id: 302127, release_date: "2001-03-07", genres: { data: [{ id: 113 }] } });
       if (u.pathname === "/artist/27/radio") return json(req, { data: [dzTrack(1, "Da Funk", 27, "Daft Punk"), dzTrack(2, "D.A.N.C.E.", 28, "Justice"), dzTrack(3, "Music Sounds Better", 29, "Stardust"), dzTrack(4, "Karaoke Version of Around", 30, "Karaoke Kings"), dzTrack(5, "Genesis", 28, "Justice")] });
       if (u.pathname === "/artist/27/related") return json(req, { data: [{ id: 28, name: "Justice" }, { id: 31, name: "Cassius" }] });
@@ -1228,6 +1268,24 @@ r.ok("benchmark still works", (() => {
   plexUp = true;
   const plexBack = await m.search("starlight", "plex").catch((e) => ({ tracks: [], error: e.message }));
   r.ok("music: a Plex server that missed the first probe is probed again (no five-minute blackout)", plexDown !== "found" && plexBack.tracks[0]?.title === "Starlight" && plexBack.tracks[0]?.track.connectorId === "plex", JSON.stringify({ plexDown, plexBack }));
+
+  // Now Playing "About the artist" (music-listening-details.tsx): the recording's credits give
+  // the primary artist directly, then artist-profile.ts's MusicBrainz + Wikidata/Wikipedia bio.
+  const about = await m.aboutArtist(seedTrack, "en");
+  r.ok("music.aboutArtist: the recording profile's primary artist, its Deezer + MusicBrainz credits", about.artist?.title === "Daft Punk" && about.artist.kind === "artist" && about.credits.length === 2 && about.credits[0].roleLabel === "Main artist" && about.credits[1].roleLabel === "Featured artist" && about.credits[1].name === "Pharrell Williams" && about.creditSources.length === 1 && about.creditSources[0].name === "Deezer", JSON.stringify(about));
+  r.ok("music.aboutArtist: the MusicBrainz artist (origin, dates, aliases, genres, members) reached through the Deezer link", about.origin === "Paris" && about.began === "1993" && about.ended === "2021" && about.aliases.join(",") === "DP" && about.genres.join(",") === "house,electronic" && about.members.length === 2 && about.members.some((mem) => mem.title === "Thomas Bangalter"), JSON.stringify(about));
+  r.ok("music.aboutArtist: the Wikipedia summary wins over Wikidata's description, and its image over Wikidata's photo", about.biography === "Daft Punk were a French electronic music duo." && about.biographyUrl === "https://en.wikipedia.org/wiki/Daft_Punk" && about.artwork === "https://upload.wikimedia.org/wikipedia/en/daftpunk-original.jpg" && about.links.some((l) => l.kind === "official" && l.name === "daftpunk.com") && about.links.some((l) => l.kind === "source" && l.name === "Spotify"), JSON.stringify(about));
+  // No recording profile could be matched (a home-server track, no ISRC): the artist-authority.ts
+  // fallback ranks the track's artist name across every connected source instead.
+  const museTrack = { id: "soundcloud:999", connectorId: "soundcloud", sourceId: "999", title: "Hysteria", artist: "Muse", album: "Absolution", durationSeconds: 227, durationLabel: "3:47" };
+  const museAbout = await m.aboutArtist(museTrack, "en");
+  r.ok("music.aboutArtist falls back to resolveArtist (Deezer artist search) when no recording could be matched; no MusicBrainz identity for it here, so no bio", museAbout.artist?.title === "Muse" && museAbout.credits.length === 0 && museAbout.biography === "", JSON.stringify(museAbout));
+
+  // The per-source picker (music-source-picker.tsx): every source's match for a track, the
+  // remembered preference (SOURCE_KEY), and choosing one (fromCollection + writeMusicPreference).
+  r.eq("music.sourcePreference starts unset", m.sourcePreference(), null);
+  const museCandidates = await m.sourceCandidates(museTrack);
+  r.ok("music.sourceCandidates: the track as asked, none preferred yet", museCandidates.length >= 1 && museCandidates[0].connectorId === "soundcloud" && museCandidates[0].preferred === false, JSON.stringify(museCandidates));
   rec.dispose();
 }
 

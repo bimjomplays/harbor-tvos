@@ -14,6 +14,10 @@ import { favoriteArtists } from "@/lib/music/sources";
 import { isMusicLiked, likedIdsFor } from "@/lib/music/liked";
 import { loadTrackLyrics } from "@/lib/music/lyrics";
 import { getLyricOffset, setLyricOffset as storeLyricOffset } from "@/lib/music/lyric-offset";
+import { loadRecordingProfile } from "@/lib/music/recording-profile";
+import { loadArtistProfile } from "@/lib/music/artist-profile";
+import { resolveArtist } from "@/lib/music/artist-authority";
+import { readMusicPreference, writeMusicPreference } from "@/lib/music/preferences";
 import * as src from "./musicSources";
 import * as radioLib from "./musicRadio";
 import * as scrobbling from "./musicScrobble";
@@ -62,6 +66,14 @@ const COPY_KEYS = [
   "music.volume", "music.mute", "music.unmute",
   // music-dock.tsx / music-collection-controls.tsx / music-queue.tsx: the Shuffle and Repeat modes
   "music.transport.shuffle", "music.transport.repeat", "music.transport.repeatAll", "music.transport.repeatOne", "music.queue.shuffleNote",
+  // leftovers batch: Now Playing's "About the artist" tab (music-listening-details.tsx,
+  // music-artist-overview.tsx, music-artist-extras.ts) and the per-source picker (music-source-picker.tsx)
+  "music.artist.about", "music.artist.readMore", "music.artist.readLess", "music.artist.origin", "music.artist.began", "music.artist.aliases",
+  "music.artist.connections", "music.artist.aroundWeb", "music.artist.store", "music.artist.merch", "music.artist.official", "music.extras.tour",
+  "music.credits.title", "music.credits.main", "music.credits.featured", "music.credits.composer", "music.credits.lyricist", "music.credits.producer",
+  "music.credits.performer",
+  "music.source.playOn", "music.source.another", "music.source.preferred",
+  "music.recovery.title", "music.recovery.search",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */
@@ -541,6 +553,122 @@ export async function artistMore(item: MusicCatalogItem, cursor: string): Promis
   if (item.kind !== "artist" || item.connectorId !== spotify.CONNECTOR) throw new Error("Only Spotify artists page their albums");
   const page = await spotify.artistAlbums(item, cursor);
   return { cards: page.items.map(card), more: page.nextCursor === cursor ? null : page.nextCursor };
+}
+
+// -------------------------------------------------------------------- about the artist
+/** music-listening-details.tsx MusicCredits roles: the labelled ones; anything else shows the
+ * provider's own word (upstream falls back to `credit.role` unchanged). */
+const CREDIT_ROLE_KEYS: Record<string, string> = {
+  "main artist": "music.credits.main",
+  "featured artist": "music.credits.featured",
+  composer: "music.credits.composer",
+  lyricist: "music.credits.lyricist",
+  producer: "music.credits.producer",
+  performer: "music.credits.performer",
+  vocal: "music.credits.performer",
+  instrument: "music.credits.performer",
+};
+type ArtistLike = { id: string; connectorId: string; name: string; artwork?: string; subtitle?: string };
+function artistCard(ref: ArtistLike): MusicCard {
+  return card({ kind: "artist", id: ref.id, connectorId: ref.connectorId, name: ref.name, artwork: ref.artwork, subtitle: ref.subtitle });
+}
+export type MusicAboutArtistLink = { url: string; kind: string; name: string };
+export type MusicAboutArtistCredit = { name: string; role: string; roleLabel: string; attributes: string[]; artist: MusicCard };
+export type MusicAboutArtist = {
+  artist: MusicCard | null;
+  biography: string;
+  biographyUrl: string | null;
+  origin: string;
+  began: string;
+  ended: string;
+  aliases: string[];
+  genres: string[];
+  artwork: string;
+  members: MusicCard[];
+  links: MusicAboutArtistLink[];
+  credits: MusicAboutArtistCredit[];
+  creditSources: MusicAboutArtistLink[];
+};
+const EMPTY_ABOUT: MusicAboutArtist = { artist: null, biography: "", biographyUrl: null, origin: "", began: "", ended: "", aliases: [], genres: [], artwork: "", members: [], links: [], credits: [], creditSources: [] };
+
+/**
+ * music-now-playing.tsx "About" tab (music-listening-details.tsx MusicListeningDetails):
+ * the recording's credits (recording-profile.ts, already bundled for radio's feature lookup)
+ * give the primary artist when the track is matched to a Deezer/MusicBrainz recording;
+ * otherwise artist-authority.ts resolveArtist ranks the artist's name across every connected
+ * source, exactly as the desktop's fallback does. The bio is MusicBrainz + Wikidata/Wikipedia
+ * through artist-profile.ts loadArtistProfile. Flattened into cards and role labels here so the
+ * TV draws the panel without its own copy of the ranking/credit logic.
+ */
+export async function aboutArtist(track: MusicTrack, language: string): Promise<MusicAboutArtist> {
+  const profile = await loadRecordingProfile(track).catch(() => null);
+  let artist: ArtistLike | null = profile?.primaryArtist ?? null;
+  if (!artist) {
+    try {
+      artist = (await resolveArtist(track.artist, { track })).canonical;
+    } catch {
+      artist = null;
+    }
+  }
+  const credits: MusicAboutArtistCredit[] = (profile?.credits ?? []).map((c) => ({
+    name: c.name,
+    role: c.role,
+    roleLabel: CREDIT_ROLE_KEYS[c.role.toLowerCase()] ? t(CREDIT_ROLE_KEYS[c.role.toLowerCase()]) : c.role,
+    attributes: c.attributes ?? [],
+    artist: artistCard(c.artist),
+  }));
+  const creditSources: MusicAboutArtistLink[] = [...new Map((profile?.credits ?? []).map((c) => [c.source, c.sourceUrl] as const))].map(([name, url]) => ({ name, url, kind: "source" }));
+  if (!artist && !credits.length) return EMPTY_ABOUT;
+  const bio = artist ? await loadArtistProfile(artist, language).catch(() => null) : null;
+  return {
+    artist: artist ? artistCard(artist) : null,
+    biography: bio?.biography ?? "",
+    biographyUrl: bio?.biographyUrl ?? null,
+    origin: bio?.origin ?? "",
+    began: bio?.began ?? "",
+    ended: bio?.ended ?? "",
+    aliases: bio?.aliases ?? [],
+    genres: bio?.genres ?? [],
+    artwork: bio?.artwork || artist?.artwork || "",
+    // (TV) music-artist-overview.tsx MusicArtistStory drops "merch" links from this list because
+    // MusicWhereToBuy shows them instead; the TV has no MusicWhereToBuy (docs/music-spec.md), so
+    // merch stays here rather than being silently dropped.
+    members: (bio?.members ?? []).map(artistCard),
+    links: (bio?.links ?? []).map((l) => ({ url: l.url, kind: l.kind, name: l.name })),
+    credits,
+    creditSources,
+  };
+}
+
+// ------------------------------------------------------------ per-source picker
+/** music-source-picker.tsx SOURCE_KEY: the remembered source, kept across tracks and restarts. */
+const PREFERRED_SOURCE_KEY = "harbor.music.preferred-source.v1";
+export type MusicSourceCandidate = { connectorId: string; connectorName: string; health: string; preferred: boolean; track: MusicTrack };
+
+/** readMusicPreference(SOURCE_KEY) */
+export function sourcePreference(): string | null {
+  return readMusicPreference(PREFERRED_SOURCE_KEY);
+}
+
+/**
+ * music-source-picker.tsx MusicSourcePicker: every source's match for this track (registry.rs
+ * candidates, the same list `prepare`'s automatic failover reads), marked with the remembered
+ * preference so the panel can show it first. `ordered`'s "push the failed source down, don't
+ * hide it" sort is left to the caller (Swift), which also knows which candidate just failed.
+ */
+export async function sourceCandidates(track: MusicTrack): Promise<MusicSourceCandidate[]> {
+  const preferred = sourcePreference();
+  const list = await src.candidates(track);
+  return list.map((c) => ({ connectorId: c.connectorId, connectorName: c.connectorName, health: c.health, preferred: c.connectorId === preferred, track: c.track }));
+}
+
+/**
+ * music-source-picker.tsx select: writeMusicPreference(SOURCE_KEY, …) plus fromCollection, so the
+ * chosen source's track keeps the original's place in whatever album/playlist/queue it came from.
+ */
+export function chooseSource(original: MusicTrack, candidate: MusicTrack): MusicTrack {
+  writeMusicPreference(PREFERRED_SOURCE_KEY, candidate.connectorId ?? "");
+  return withOrigin(candidate, original);
 }
 
 // ------------------------------------------------------------------ sources + consent
