@@ -1225,6 +1225,15 @@ r.ok("benchmark still works", (() => {
   const none = await m.lyrics({ ...seedTrack, id: "x", album: undefined, title: "Unknown", artist: "Nobody" });
   r.eq("music.lyrics is empty when LRCLIB has nothing", none.lines.length, 0);
 
+  // (CI 2026-09-27) music.home survives a browseHome that throws: the liked shelf still comes back
+  // with the failure listed in errors, not a thrown "Music could not load".
+  {
+    const down = loadEngine({ storage: new Map(), onFetch: () => { throw new Error("no network"); } });
+    const dm = down.engine.music;
+    await dm.setLiked(seedTrack, true);
+    const home = await dm.home(true, []);
+    r.ok("music.home keeps the Liked shelf when every catalog source throws", home.bands.some((b) => b.key === "liked") && !home.failed);
+  }
   // Track radio (radio.ts): Deezer radio + related-artist lanes, variants dropped, spaced by artist
   const station = await m.radio(seedTrack);
   r.ok("music.radio seeds the station with the track, then ranked Deezer picks without karaoke variants", station.length >= 6 && station[0].id === seedTrack.id && !station.some((t) => /karaoke/i.test(t.title)) && station.slice(1).every((t) => t.connectorId === "catalog" && t.mediaKind === "audio"), JSON.stringify(station.map((t) => `${t.artist} - ${t.title}`)));

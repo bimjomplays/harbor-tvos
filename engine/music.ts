@@ -271,7 +271,15 @@ export async function home(force: boolean, upcoming: MusicTrack[] | null): Promi
   const key = connectionsKey();
   let loaded: { rows: MusicCatalogRow[]; errors: Array<{ source: string; message: string }> };
   if (force || !homeCache || homeCache.key !== key || Date.now() - homeCache.at > HOME_TTL) {
-    loaded = await src.browseHome();
+    // (CI 2026-09-27) A browseHome that throws outright (no network at all, a source that rejects
+    // before answering) must not take the library shelves down with it: views/music.tsx still
+    // draws Recents / Liked with the offline card over an empty catalog. Swift's caller treated
+    // the throw as "Music could not load" even with liked tracks to show (run 36316387652).
+    try {
+      loaded = await src.browseHome();
+    } catch (e) {
+      loaded = { rows: [], errors: [{ source: "home", message: e instanceof Error ? e.message : String(e) }] };
+    }
     // (bug pass 3) catalog_commands.rs music_browse_home stores rows only when there are some,
     // and serves the cache only when it is not empty. Caching an empty answer (the Apple TV
     // opened Music before its network was up) kept the home empty for six hours: a listener

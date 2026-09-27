@@ -159,7 +159,10 @@ final class NavigationTests7: XCTestCase {
         // Walk from the top of the room down to it (run 36313558727: an Up/Down walk from the dock
         // never met it): Up to the tab bar first, which also proves the dock hands focus back.
         require(press(.up, app, max: 40, until: { $0.hasPrefix("tab-") }) != nil, "Up from the dock never reached the tab bar (focus: \(focusNote(app)))", app)
-        require(press(.down, app, max: 30, until: { $0 == "music-card-liked-0" }) != nil, "liking the track did not add a Liked songs card to the Music room (focus: \(focusNote(app)))", app)
+        // Down lands on whichever card of the shelf is nearest, not always the first (run
+        // 36316387652): match the shelf, then walk Left to its first card.
+        require(press(.down, app, max: 30, until: { $0.hasPrefix("music-card-liked-") }) != nil, "liking the track did not add a Liked songs card to the Music room (focus: \(focusNote(app)))", app)
+        require(seek("music-card-liked-0", app, max: 8, first: .left), "could not reach the Liked shelf's first card (focus: \(focusNote(app)))", app)
         sleep(1)
         // tvOS reveals a SwiftUI .contextMenu on a press-and-hold of Select, not a plain press
         // (developer.apple.com/documentation/xcuiautomation/xcuiremote/press(_:forduration:)).
