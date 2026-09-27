@@ -114,6 +114,7 @@ struct ContentAdvisoryLayer: View {
             HStack(spacing: BP.px(8)) {
                 HStack(spacing: BP.px(6)) {
                     Image(systemName: "exclamationmark.shield").font(.system(size: BP.px(11.5), weight: .semibold))
+                        .accessibilityHidden(true)
                     Text(info.title.uppercased()).font(BP.sans(9.5, .semibold)).tracking(BP.px(1.5)).lineLimit(1)
                 }
                 .foregroundStyle(Color.white.opacity(0.5))
@@ -141,6 +142,7 @@ struct ContentAdvisoryLayer: View {
         return HStack(spacing: BP.px(8)) {
             Image(systemName: Self.icon(row.kind)).font(.system(size: BP.px(13), weight: .medium)).foregroundStyle(tint)
                 .frame(width: BP.px(16))
+                .accessibilityHidden(true)
             Text(row.label).font(BP.sans(11.5)).foregroundStyle(Color.white.opacity(0.9)).lineLimit(1)
             Spacer(minLength: BP.px(6))
             HStack(spacing: BP.px(2.5)) {

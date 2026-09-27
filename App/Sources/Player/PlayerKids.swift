@@ -282,6 +282,8 @@ struct KidsSeaBackdrop: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        // Bubbles and octopus doodles are pure backdrop; nothing here has a state to read out.
+        .accessibilityHidden(true)
     }
 
     /// One `.curfew-bubble`: duration `6 + i % 4` s, delay `-(1 + (i * 1.7) % 6)` s.
@@ -449,6 +451,7 @@ struct KidsPlayerLoader: View {
                     .saturation(1.5)
                     .blur(radius: BP.px(36), opaque: true)
                     .opacity(0.2)
+                    .accessibilityHidden(true)
             }
             KidsSeaBackdrop(bubbles: [8, 20, 33, 47, 60, 72, 85, 94], bubbleStep: 6, veil: (0.85, 0.88, 0.94),
                             octoRed: (0.14, 0.10, 96, 0.85), octoPurple: (0.12, 0.12, 80, 0.75), orangeStar: true)
@@ -478,7 +481,7 @@ struct KidsPlayerLoader: View {
                 } else {
                     // HarborLoader size="md" with its caption.
                     VStack(spacing: BP.px(12)) {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(.white).accessibilityHidden(true)
                         Text(T(isLocalFile ? "Loading" : "Connecting"))
                             .font(BP.sans(12.5, .medium)).textCase(.uppercase).tracking(BP.px(2.25))
                             .foregroundStyle(.white.opacity(0.7))
@@ -725,7 +728,7 @@ struct KidsStreamSwitcher: View {
                 .foregroundStyle(current ? KidsPlayerColors.ink : .white)
                 Spacer(minLength: 0)
                 Group {
-                    if busy { ProgressView().tint(.white) }
+                    if busy { ProgressView().tint(.white).accessibilityHidden(true) }
                     else { Image(systemName: "play.fill").font(.system(size: BP.px(22), weight: .black)).accessibilityHidden(true) }
                 }
                 .foregroundStyle(.white)

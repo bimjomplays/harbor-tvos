@@ -203,10 +203,10 @@ struct PlayerXRayOverlay: View {
                         Text(T("No cast information for this title.")).font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     } else if model.loading || model.payload == nil {
-                        ProgressView().tint(BP.inkMuted)
+                        ProgressView().tint(BP.inkMuted).accessibilityHidden(true)
                         Text("Reading the cast").font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
                     } else if let status = model.payload?.railStatus {
-                        Circle().fill(BP.accent).frame(width: BP.px(6), height: BP.px(6))
+                        Circle().fill(BP.accent).frame(width: BP.px(6), height: BP.px(6)).accessibilityHidden(true)
                         Text(verbatim: status).font(BP.sans(12.5)).foregroundStyle(BP.inkMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -237,7 +237,7 @@ struct PlayerXRayOverlay: View {
     private func railCard(_ p: PlayerXRayModel.Person) -> some View {
         Button { openPerson(p) } label: {
             HStack(spacing: BP.px(12)) {
-                photo(p, radius: BP.px(11)).frame(width: BP.px(48), height: BP.px(48))
+                photo(p, radius: BP.px(11)).frame(width: BP.px(48), height: BP.px(48)).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(2)) {
                     Text(verbatim: p.name).font(BP.sans(13.5, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     if let sub = p.sub { Text(verbatim: sub).font(BP.sans(12)).foregroundStyle(BP.inkMuted).lineLimit(1) }
@@ -334,7 +334,7 @@ struct PlayerXRayOverlay: View {
                     ForEach(people, id: \.key) { p in
                         Button { openPerson(p) } label: {
                             VStack(alignment: .leading, spacing: BP.px(8)) {
-                                photo(p, radius: BP.px(16)).aspectRatio(1, contentMode: .fit)
+                                photo(p, radius: BP.px(16)).aspectRatio(1, contentMode: .fit).accessibilityHidden(true)
                                 Text(verbatim: p.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                 Text(verbatim: p.sub ?? " ").font(BP.sans(12.5)).foregroundStyle(BP.inkMuted).lineLimit(1)
                             }
@@ -366,6 +366,9 @@ struct PlayerXRayOverlay: View {
                 }
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: BP.px(16), style: .continuous))
+                // The hero still and title logo are decorative; the title itself reads from the text
+                // column to the right.
+                .accessibilityHidden(true)
                 if a.showStrip {
                     HStack(spacing: BP.px(8)) {
                         ForEach(a.videos, id: \.ytId) { v in
@@ -427,6 +430,8 @@ struct PlayerXRayOverlay: View {
                                 Text(verbatim: f.label).font(BP.sans(10.5, .semibold)).textCase(.uppercase).foregroundStyle(BP.inkSubtle)
                                 Text(verbatim: f.value).font(BP.sans(13)).foregroundStyle(BP.ink.opacity(0.85)).lineLimit(1)
                             }
+                            // The label and its value are one fact ("Rating" / "8.5"); read as one stop.
+                            .accessibilityElement(children: .combine)
                         }
                     }
                 }
