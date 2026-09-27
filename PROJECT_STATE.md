@@ -257,6 +257,24 @@ Also: preferred audio/subtitle language auto-select (ISO 639-2 alias table), sub
 Engine: `cd engine && npm test` = 117 shim + 71 smoke checks (live network; Jikan check skips when api.jikan.moe is down). Glue files: rooms.ts, discover.ts, streams.ts, player.ts, subtitles.ts, live.ts.
 Docs: browse-spec, big-picture-design, harbor-protocol, engine-report, detail-spec, player-spec, livetv-spec.
 
+2026-09-27 05:33 UTC: Stage 13 eBook leftovers — NYT bestsellers, browse filters, Collections
+(subagent, docs/ebook-spec.md §6a). `engine/ebook.ts` gains `nytRail`/`nytBestsellerRank` (upstream's
+own nyt.ts/nyt-rail.ts/nyt-match.ts/nyt-availability.ts unchanged; a free NYT Books API key, entered
+on the eBook Sources page like tmdbKey, resolves the primary list against the installed sources;
+unmatched books stay `nyt:<title>|<rank>` placeholders — a toast, not a cover), `browseCategories`/
+`applyBrowseFilters` (Type/Genre/Status/Language/Sort as chips that cycle and apply at once, the
+stream picker's own facet-chip idiom, instead of upstream's dropdowns + Apply), and
+`collectionScope`/`collections`/`collectionsResolved` (lib/ebook/collections.ts unchanged: series,
+the source's own catalog, award winners — a new "Collections" card beside "Shelf"). Swift:
+`EBookView` (NYT rail + hero preference, filter chips, Collections/Shelf row, a toast for an
+unmatched bestseller), `EBookDetailView` (the "#N New York Times Bestseller" + weeks pill),
+`EBookSourcesView` (the NYT key row), new `EBookCollectionsView`, `SettingsBridge.Slice.nytKey`.
+Bundle 4592 → 4622 KB, offline smoke 1117 → 1132 (15 new checks, all passing). Unverified: no
+device check (no Swift compiler in this environment) — the browse chips, the NYT key row's focus,
+the Collections card, and the toast all need a real TV pass. Skipped (see docs/ebook-spec.md §6):
+AniList list tracking, offline export, translation, annotations, in-chapter search, the legacy
+chapter migration.
+
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
 - `reference/harbor` — shallow clone of `harborstremio/harbor` `beta-branch` @ `f289f8f3` (was 1bfcfb6 until 09-24) (will become a submodule).

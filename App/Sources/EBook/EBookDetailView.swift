@@ -30,6 +30,8 @@ final class EBookDetailModel: ObservableObject {
     @Published private(set) var authorBooks: [EBook] = []
     @Published private(set) var recommendations: [EBook] = []
     @Published private(set) var recommendationsFailed = false
+    /// views/ebook.tsx detailRank: nytRankFor(list, ebook) ?? nytBestsellerFor(snapshot, ebook)?.book.
+    @Published private(set) var nytRank: EBookNytRank?
 
     private(set) var epub: EPUBBook?
     private(set) var paths: [String] = []
@@ -66,6 +68,7 @@ final class EBookDetailModel: ObservableObject {
             }
         }
         guard let book = ebook else { loadFailed = true; return }
+        nytRank = try? await HarborEngine.shared.call("ebook.nytBestsellerRank", [book])
         await refreshFlags()
         await resolveSources(book)
         async let more: [EBook] = (try? await HarborEngine.shared.call("ebook.moreByAuthor", [book])) ?? []
@@ -289,6 +292,7 @@ struct EBookDetailView: View {
                         Text(T("by %@", book.authors.joined(separator: ", "))).font(BP.sans(14)).foregroundStyle(BP.inkMuted)
                     }
                 }
+                if let rank = model.nytRank { nytRankRow(rank) }
                 let facts = factList(book)
                 if !facts.isEmpty || !book.genres.isEmpty {
                     HStack(spacing: BP.px(8)) {
@@ -316,6 +320,25 @@ struct EBookDetailView: View {
         }
         .padding(.horizontal, BP.gutter)
         .focusSection()
+    }
+
+    /// views/ebook.tsx detailRank pills: "#{rank} New York Times Bestseller" + the weeks-on-list
+    /// note, when the resolved copy (or another edition of it) is on a current NYT list.
+    private func nytRankRow(_ rank: EBookNytRank) -> some View {
+        HStack(spacing: BP.px(8)) {
+            HStack(spacing: BP.px(6)) {
+                NytMarkView()
+                Text(T("#%lld New York Times Bestseller", rank.rank)).font(BP.sans(13, .semibold)).foregroundStyle(BP.accent)
+            }
+            .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(6))
+            .background(Capsule().fill(BP.accent.opacity(0.16)))
+            if rank.weeksOnList > 0 {
+                Text(rank.weeksOnList == 1 ? T("1 week on the list") : T("%lld weeks on the list", rank.weeksOnList))
+                    .font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                    .padding(.horizontal, BP.px(12)).padding(.vertical, BP.px(6))
+                    .background(Capsule().fill(BP.panel2))
+            }
+        }
     }
 
     private func factList(_ book: EBook) -> [String] {

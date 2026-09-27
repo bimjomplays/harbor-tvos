@@ -4120,6 +4120,24 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
     hits.push(req.url);
     const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
     const u = new URL(req.url);
+    if (u.origin === "https://api.nytimes.com") {
+      return json({
+        results: {
+          published_date: "2026-09-20",
+          lists: [
+            {
+              list_name: "Combined Print and E-Book Fiction",
+              list_name_encoded: "combined-print-and-e-book-fiction",
+              display_name: "Combined Print & E-Book Fiction",
+              books: [
+                { rank: 1, rank_last_week: 2, weeks_on_list: 5, title: "Pride and Prejudice", author: "Jane Austen", description: "A classic.", publisher: "Gutenberg Editions", primary_isbn13: "9780000000001", book_image: "https://example.invalid/pride.jpg" },
+                { rank: 2, rank_last_week: 0, weeks_on_list: 1, title: "The Silent Patient", author: "Alex Michaelides", description: "A thriller.", publisher: "Celadon", primary_isbn13: "9780000000002", book_image: "https://example.invalid/silent.jpg" },
+              ],
+            },
+          ],
+        },
+      });
+    }
     if (u.origin !== "https://gutendex.com") return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
     if (u.pathname === "/books/1342") return json(pride);
     if (u.pathname === "/books/158") return json(emma);
@@ -4190,6 +4208,51 @@ r.eq("personRoom.page without a TMDB key", await engine.personRoom.page(287, "de
   r.ok("ebook.savePrefs merges into upstream's reader prefs", pf.fontSize === 24 && pf.background === "light" && pf.lineHeight === 1.85 && pf.narrationVoice === "en-US-AvaNeural" && eb.prefs().fontSize === 24, JSON.stringify(pf));
   const bms = eb.addBookmark("default", route, chs[0], 1, o1.paragraphs[1]);
   r.ok("ebook.addBookmark then removeBookmark", bms.length === 1 && bms[0].line === 1 && bms[0].preview === o1.paragraphs[1] && eb.removeBookmark("default", route, bms[0].id).length === 0, JSON.stringify(bms));
+  // (Stage 13 eBooks leftovers, docs/ebook-spec.md §6) NYT bestsellers, browse filters, collections.
+  const rail1 = await eb.nytRail("test-key");
+  r.ok("ebook.nytRail: the primary list resolved against the source (a match) and left as a placeholder (no match)",
+    rail1.attribution === "Data provided by The New York Times" && rail1.items.length === 2 &&
+      rail1.items[0].id === route && rail1.items[1].id === "nyt:The Silent Patient|2" && rail1.items[1].source === "source",
+    JSON.stringify(rail1).slice(0, 300));
+  r.eq("ebook.nytBestsellerRank: the matched book's rank and weeks on the primary list", eb.nytBestsellerRank(d), { rank: 1, weeksOnList: 5 });
+  r.eq("ebook.nytBestsellerRank: nothing for a book off every list", eb.nytBestsellerRank({ ...d, id: "x", title: "Not On Any List", isbn: undefined, authors: [] }), null);
+
+  const cats = eb.browseCategories();
+  r.ok("ebook.browseCategories: EBOOK_CATEGORIES's own key order, plus the filter genre list",
+    cats.order[0] === "Fiction" && cats.order[1] === "Non-fiction" && cats.groups.Fiction.includes("Fantasy") && cats.genres.includes("Cultivation"),
+    JSON.stringify(cats).slice(0, 200));
+
+  const fBook = (id, title, status, language, genre, score) => ({ id, source: "source", title, authors: [], description: "", genres: [genre], status, originalLanguage: language, score });
+  const f1 = fBook("f1", "Zeta", "ongoing", "ja", "Philosophy", 9);
+  const f2 = fBook("f2", "Alpha", "completed", "en", "Romance", 5);
+  const f3 = fBook("f3", "Mid", "ongoing", "en", "Fantasy", 7);
+  const anyFilters = { type: "All", genre: "", status: "any", language: "any", sort: "popular" };
+  r.eq("ebook.applyBrowseFilters: status", eb.applyBrowseFilters([f1, f2, f3], { ...anyFilters, status: "completed" }).map((b) => b.id), ["f2"]);
+  r.eq("ebook.applyBrowseFilters: language", eb.applyBrowseFilters([f1, f2, f3], { ...anyFilters, language: "japanese" }).map((b) => b.id), ["f1"]);
+  r.eq("ebook.applyBrowseFilters: sort by name", eb.applyBrowseFilters([f1, f2, f3], { ...anyFilters, sort: "name" }).map((b) => b.id), ["f2", "f3", "f1"]);
+  r.eq("ebook.applyBrowseFilters: sort by rating", eb.applyBrowseFilters([f1, f2, f3], { ...anyFilters, sort: "rating" }).map((b) => b.id), ["f1", "f3", "f2"]);
+  r.eq("ebook.applyBrowseFilters: Type=Fiction keeps its genres, drops a Non-fiction one", eb.applyBrowseFilters([f1, f2, f3], { ...anyFilters, type: "Fiction" }).map((b) => b.id), ["f2", "f3"]);
+  r.eq("ebook.applyBrowseFilters: a specific Genre overrides Type", eb.applyBrowseFilters([f1, f2, f3], { ...anyFilters, type: "Non-fiction", genre: "Fantasy" }).map((b) => b.id), ["f3"]);
+
+  const seriesA = { id: "s1", source: "source", title: "Realm One", seriesTitle: "The Realm Saga", authors: ["A. Writer"], description: "", genres: [], cover: "https://example.invalid/s1.jpg" };
+  const seriesB = { id: "s2", source: "source", title: "Realm Two", seriesTitle: "The Realm Saga", authors: ["A. Writer"], description: "", genres: [], cover: "https://example.invalid/s2.jpg" };
+  const duneBook = { id: "award1", source: "source", title: "Dune", authors: ["Frank Herbert"], description: "", genres: [], cover: "https://example.invalid/dune.jpg" };
+  const scope = eb.collectionScope(pid, [pid]);
+  const built = eb.collections(scope, pid, [seriesA, seriesB, duneBook, ...p1.items]);
+  r.ok("ebook.collections: a series (2+ books), the source's own catalog, and a matched award winner",
+    built.collections.some((c) => c.kind === "series" && c.name === "The Realm Saga" && c.books.length === 2) &&
+      built.collections.some((c) => c.kind === "catalog" && c.books.length >= 1) &&
+      built.collections.some((c) => c.kind === "award" && c.id === "award:hugo" && c.books.some((b) => b.id === "award1")),
+    JSON.stringify(built.collections.map((c) => [c.kind, c.id, c.books.length])));
+  r.ok("ebook.collections: a token while the scope's award search isn't fresh yet", typeof built.token === "number", String(built.token));
+  const resolved = await eb.collectionsResolved(built.token);
+  r.ok("ebook.collectionsResolved: the background award search lands without throwing (nothing new to find, Dune stays)",
+    Array.isArray(resolved) && resolved.some((c) => c.id === "award:hugo" && c.books.some((b) => b.id === "award1")),
+    JSON.stringify(resolved?.map((c) => c.id)));
+  r.eq("ebook.collectionsResolved: a spent token answers nothing twice", await eb.collectionsResolved(built.token), null);
+  const built2 = eb.collections(scope, pid, [seriesA, seriesB, duneBook, ...p1.items]);
+  r.eq("ebook.collections: the scope's award search is fresh now, no new token", built2.token, null);
+
   const s2 = await eb.removeSource(pid);
   r.eq("ebook.removeSource drops Project Gutenberg", [s2.providers.length, s2.hasGutendex], [0, false]);
   rec.dispose();

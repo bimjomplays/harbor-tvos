@@ -150,6 +150,10 @@ final class SettingsBridge: ObservableObject {
         /// settings.cwSnapshotFullQuality (off), set on desktop (Player/ExitSnapshot.swift reads them).
         var cwSnapshotRetentionDays: Double? = 30
         var cwSnapshotFullQuality: Bool? = false
+        /// (Stage 13 eBooks leftovers, docs/ebook-spec.md §6) settings.nytKey: the free NYT Books
+        /// API key for the eBook room's bestseller rail and hero (lib/ebook/nyt.ts). Saved on this
+        /// device only, like tmdbKey; entered from the eBook room's own Sources settings page.
+        var nytKey: String = ""
     }
 
     /// Manga is switched on: its tab may show and the manga hooks run (use-bp-search gates
@@ -451,5 +455,6 @@ extension SettingsBridge.Slice {
         // (ExitSnapshotSettings: 30 days, thumbnails).
         cwSnapshotRetentionDays = c.lenient("cwSnapshotRetentionDays")
         cwSnapshotFullQuality = c.lenient("cwSnapshotFullQuality")
+        nytKey = c.lenient("nytKey") ?? nytKey
     }
 }

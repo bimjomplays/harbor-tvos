@@ -84,6 +84,10 @@ struct EBook: Codable, Identifiable, Hashable {
              releaseInfo: year.map { String(Int($0)) })
     }
 
+    /// nyt-rail.ts PREFIX ("nyt:"): a bestseller the room's sources don't have a copy of yet
+    /// (engine ebook.nytRail leaves it as a placeholder). Selecting one is a toast, not a cover.
+    var isNytPlaceholder: Bool { id.hasPrefix("nyt:") }
+
     /// EBookCard's facts line: "{n} books · {year} · {n} vols".
     var cardFacts: String {
         var parts: [String] = []
@@ -203,6 +207,47 @@ struct EBookContinue: Decodable, Identifiable, Hashable {
     var id: String { ebook.id }
 }
 
+/// engine ebook.nytRail(apiKey): the primary NYT list resolved against the installed sources.
+struct EBookNytRail: Decodable {
+    var attribution: String
+    var items: [EBook]
+}
+
+/// engine ebook.nytBestsellerRank(ebook): views/ebook.tsx detailRank / the hero's weeksLabel.
+struct EBookNytRank: Decodable, Equatable {
+    var rank: Int
+    var weeksOnList: Int
+}
+
+/// engine ebook.browseCategories(): lib/ebook/api.ts EBOOK_CATEGORIES (in its own key order) plus
+/// browse-filters.ts EBOOK_FILTER_GENRES, for the Type / Genre browse chips.
+struct EBookBrowseCategories: Decodable {
+    var order: [String]
+    var groups: [String: [String]]
+    var genres: [String]
+}
+
+/// views/ebook.tsx browseStatus / browseLanguage / browseSort / categoryGroup / category, cycled
+/// by the room's browse chips (App/Sources/EBook/EBookView.swift) instead of upstream's dropdowns
+/// + Apply button, like the stream picker's own facet chips.
+struct EBookBrowseFilters: Encodable, Equatable {
+    var type = "All"
+    var genre = ""
+    var status = "any"
+    var language = "any"
+    var sort = "popular"
+}
+
+/// engine lib/ebook/collections.ts EBookSourceCollection: a series, the source's own catalog, or
+/// an award-winner shelf built from books the installed source already has.
+struct EBookCollection: Decodable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var subtitle: String
+    var kind: String
+    var books: [EBook]
+}
+
 /// Whether the eBook tab shows. Upstream's desktop sidebar always lists eBooks and gates the
 /// room behind its setup screen; on the TV the tab stays hidden, like Manga, until it is turned
 /// on in Settings. A device choice, kept with the app's own preferences.
@@ -220,6 +265,8 @@ final class EBookStore: ObservableObject {
     @Published private(set) var favorites: [EBook] = []
     /// Bumped whenever a reading position may have changed (harbor:ebook-resume).
     @Published private(set) var resumeVersion = 0
+    /// engine ebook.browseCategories(): static, fetched once (the Type / Genre browse chips).
+    @Published private(set) var browseCategories: EBookBrowseCategories?
 
     /// reader-state keys position by the active profile ("default" without one).
     var pid: String { ProfilesStore.shared.active?.id ?? "default" }
@@ -229,6 +276,9 @@ final class EBookStore: ObservableObject {
         // eBook room (re-read on every visit and when Sources closes) swapped its home for the
         // loading spinner, with the ring under it, until something read it again.
         if let s: EBookState = try? await HarborEngine.shared.call("ebook.state") { state = s }
+        if browseCategories == nil {
+            browseCategories = try? await HarborEngine.shared.call("ebook.browseCategories")
+        }
         await refreshLists()
     }
 

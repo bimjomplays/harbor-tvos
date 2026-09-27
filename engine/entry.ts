@@ -1250,6 +1250,14 @@ export const ebook = {
   bookmarks: ebookGlue.bookmarks,
   addBookmark: ebookGlue.addBookmark,
   removeBookmark: ebookGlue.removeBookmark,
+  // (Stage 13 eBooks leftovers, docs/ebook-spec.md §6) NYT bestsellers, browse filters, collections.
+  nytRail: ebookGlue.nytRail,
+  nytBestsellerRank: ebookGlue.nytBestsellerRank,
+  browseCategories: ebookGlue.browseCategories,
+  applyBrowseFilters: ebookGlue.applyBrowseFilters,
+  collectionScope: ebookGlue.collectionScope,
+  collections: ebookGlue.collections,
+  collectionsResolved: ebookGlue.collectionsResolved,
 };
 
 // ================================================================================== social

@@ -19,7 +19,38 @@ import {
 } from "@/lib/ebook/providers";
 import { addEBookGutendex, hasEBookGutendex, listEBookSources, removeEBookSource } from "@/lib/ebook/sources";
 import { gutendexDetail } from "@/lib/ebook/gutendex";
-import { dedupeEBooks, eBooksMatch, ebookDetail, mergeEBookMetadata, searchEBooks, type EBook } from "@/lib/ebook/api";
+import {
+  dedupeEBooks,
+  eBooksMatch,
+  ebookDetail,
+  EBOOK_CATEGORIES,
+  mergeEBookMetadata,
+  searchEBooks,
+  type EBook,
+  type EBookCategoryGroup,
+} from "@/lib/ebook/api";
+import {
+  applyEBookBrowseFilters,
+  EBOOK_FILTER_GENRES,
+  ebookMatchesGenre,
+  type EBookBrowseLanguage,
+  type EBookBrowseSort,
+  type EBookBrowseStatus,
+} from "@/lib/ebook/browse-filters";
+import {
+  buildSourceEBookCollections,
+  eBookCollectionCacheScope,
+  markSourceEBookAwardsResolved,
+  readSourceEBookCollections,
+  sourceEBookAwardsAreFresh,
+  streamSourceEBookAwardMatches,
+  writeSourceEBookCollections,
+  type EBookSourceCollection,
+} from "@/lib/ebook/collections";
+import { NYT_ATTRIBUTION, NYT_PRIMARY_LIST, loadNytBestsellers, nytList, readNytSnapshot } from "@/lib/ebook/nyt";
+import { nytRailItems, nytRankFor as nytRankInList } from "@/lib/ebook/nyt-rail";
+import { nytBestsellerFor } from "@/lib/ebook/nyt-match";
+import { resolveNytBooks } from "@/lib/ebook/nyt-availability";
 import {
   ebookInLibrary,
   ebookIsFavorite,
@@ -446,4 +477,139 @@ export function addBookmark(pid: string, bookId: string, chapter: EBookChapter, 
 
 export function removeBookmark(pid: string, bookId: string, id: string) {
   return removeEBookBookmark(pid, bookId, id);
+}
+
+// ------------------------------------------------------------------------------ NYT bestsellers
+//
+// (docs/ebook-spec.md §6 "Not done"): views/ebook.tsx's bestseller rail and hero, lib/ebook/nyt.ts
+// + nyt-rail.ts + nyt-match.ts + nyt-availability.ts unchanged. Placeholders (no source copy yet:
+// nyt-rail.ts PREFIX "nyt:") are told apart in Swift by that same id prefix; opening one shows a
+// toast instead (views/ebook.tsx isNytPlaceholder → emitListToast).
+
+/**
+ * views/ebook.tsx `const bestsellerList = useNytList(); useResolveNytBooks(bestsellerList, 15);`:
+ * the primary list ("combined-print-and-e-book-fiction") resolved against the installed sources,
+ * as the room's "New York Times Bestsellers" rail (and its hero, once 3+ have a cover) show it.
+ * Cheap to call every time the room opens without a key, or between weekly refreshes: nyt.ts
+ * loadNytBestsellers only fetches once the cached snapshot is 7 days old, and does nothing at all
+ * beyond reading that cache when apiKey is empty (refreshNytBestsellers's own early return).
+ */
+export async function nytRail(apiKey: string): Promise<{ attribution: string; items: EBook[] }> {
+  const snapshot = await loadNytBestsellers(apiKey ?? "").catch(() => null);
+  const list = nytList(snapshot, NYT_PRIMARY_LIST);
+  if (!list) return { attribution: NYT_ATTRIBUTION, items: [] };
+  await resolveNytBooks(list.books.slice(0, 15)).catch(() => {});
+  return { attribution: NYT_ATTRIBUTION, items: nytRailItems(list) ?? [] };
+}
+
+/**
+ * views/ebook.tsx EBookLibraryHero / EBookDetails: `nytRankFor(list, ebook) ?? nytBestsellerFor(
+ * snapshot, ebook)?.book`, read from whatever NYT snapshot nytRail above has cached (no network:
+ * this never fetches, so the detail page and the hero can call it for every book on screen).
+ */
+export function nytBestsellerRank(ebook: EBook): { rank: number; weeksOnList: number } | null {
+  const snapshot = readNytSnapshot();
+  const list = nytList(snapshot, NYT_PRIMARY_LIST);
+  const best = nytRankInList(list, ebook) ?? nytBestsellerFor(snapshot, ebook)?.book ?? null;
+  return best ? { rank: best.rank, weeksOnList: best.weeksOnList } : null;
+}
+
+// ------------------------------------------------------------------------------ browse filters
+//
+// views/ebook.tsx Type / Genre / Status / Language / Sort dropdowns (browseStatus, browseLanguage,
+// browseSort, categoryGroup, category), applied together the way the view's own matchesCategory +
+// applyEBookBrowseFilters(filteredSourceItems, ...).filter(matchesCategory) does. The TV turns the
+// dropdowns into chips that cycle their value and apply at once (no separate Apply/Reset step,
+// like the stream picker's own facet chips, App/Sources/Streams/PlayPickerView.swift).
+
+export type EBookBrowseCategories = { order: EBookCategoryGroup[]; groups: Record<string, string[]>; genres: readonly string[] };
+
+/** EBOOK_CATEGORIES's own key order, so the Swift "All" case can flatten it the way
+ *  `Object.values(EBOOK_CATEGORIES)` does (Fiction, then Non-fiction). */
+export function browseCategories(): EBookBrowseCategories {
+  return { order: Object.keys(EBOOK_CATEGORIES) as EBookCategoryGroup[], groups: EBOOK_CATEGORIES, genres: EBOOK_FILTER_GENRES };
+}
+
+export type EBookBrowseFiltersArg = {
+  type: EBookCategoryGroup | "All";
+  genre: string;
+  status: EBookBrowseStatus;
+  language: EBookBrowseLanguage;
+  sort: EBookBrowseSort;
+};
+
+/** applyEBookBrowseFilters (status, language, then sort) followed by the view's own
+ *  matchesCategory (Type / Genre, ebookMatchesGenre): the Browse eBooks grid's five chips. */
+export function applyBrowseFilters(items: EBook[], filters: EBookBrowseFiltersArg): EBook[] {
+  const base = applyEBookBrowseFilters(items, { status: filters.status, language: filters.language, sort: filters.sort });
+  const wanted = filters.genre || (filters.type === "All" ? "" : filters.type);
+  if (!wanted) return base;
+  const categories = filters.genre
+    ? [filters.genre]
+    : [filters.type, ...(EBOOK_CATEGORIES[filters.type as EBookCategoryGroup] ?? [])];
+  return base.filter((ebook) => categories.some((item) => ebookMatchesGenre(ebook.genres, item)));
+}
+
+// ------------------------------------------------------------------------------ collections
+//
+// views/ebook.tsx screen "collections" (lib/ebook/collections.ts unchanged): series, the
+// installed source's own catalog, and award-winner shelves built from books the source already
+// has. Data-only and portable (docs/ebook-spec.md §6): no AniList list tracking, no offline
+// export, no annotations here, just the collections the view itself builds from source items.
+
+/** eBookCollectionCacheScope(providerId, providerIds): the collections screen's cache key. */
+export function collectionScope(providerId: string, providerIds: string[]): string {
+  return eBookCollectionCacheScope(providerId, providerIds);
+}
+
+const collectionJobs = new Map<number, Promise<EBookSourceCollection[]>>();
+let collectionSeq = 0;
+
+/**
+ * The collections screen's instant state: the cached collections (readSourceEBookCollections)
+ * folded with whatever buildSourceEBookCollections finds among the catalog items the room hands
+ * over (it pages the source ahead of what the browse grid has loaded first, like the view's own
+ * loadCatalog effect). Returns that at once, and a token when the scope's award search isn't
+ * fresh yet (sourceEBookAwardsAreFresh): collectionsResolved awaits it, the way the view's own
+ * effect streams new award matches in as streamSourceEBookAwardMatches finds them.
+ */
+export function collections(
+  scope: string,
+  providerId: string,
+  items: EBook[],
+): { collections: EBookSourceCollection[]; token: number | null } {
+  const cached = readSourceEBookCollections(scope);
+  const cachedAwardBooks = cached.filter((c) => c.kind === "award").flatMap((c) => c.books);
+  const live = buildSourceEBookCollections([...items, ...cachedAwardBooks]);
+  if (live.length) writeSourceEBookCollections(scope, live);
+  const merged = new Map(cached.map((c) => [c.id, c] as const));
+  for (const c of live) merged.set(c.id, c);
+  const resolved = [...merged.values()];
+  if (!scope || sourceEBookAwardsAreFresh(scope)) return { collections: resolved, token: null };
+  const token = ++collectionSeq;
+  const job = (async () => {
+    const found = await streamSourceEBookAwardMatches(
+      [...items, ...cachedAwardBooks],
+      (title) => searchSourceEBookCatalog(title, providerId),
+      () => {},
+    );
+    markSourceEBookAwardsResolved(scope);
+    const withAwards = buildSourceEBookCollections([...items, ...cachedAwardBooks, ...found]);
+    if (withAwards.length) writeSourceEBookCollections(scope, withAwards);
+    const finalMerged = new Map(cached.map((c) => [c.id, c] as const));
+    for (const c of withAwards) finalMerged.set(c.id, c);
+    return [...finalMerged.values()];
+  })();
+  collectionJobs.set(token, job);
+  job.catch(() => {});
+  while (collectionJobs.size > 4) collectionJobs.delete(collectionJobs.keys().next().value!);
+  return { collections: resolved, token };
+}
+
+/** collections()'s background award search, once it lands. */
+export async function collectionsResolved(token: number): Promise<EBookSourceCollection[] | null> {
+  const pending = collectionJobs.get(token);
+  if (!pending) return null;
+  collectionJobs.delete(token);
+  return (await pending.catch(() => null)) ?? null;
 }

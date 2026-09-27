@@ -19,7 +19,7 @@ DecompressionStream and no Tauri.
 | Extensions (`extensions.ts`) | IndexedDB for repos/plugins, `PluginWorker` (Worker) | Not possible in JSC. The bundle swaps the module for `engine/ebookExtensions.ts` (no repos, no plugins), because upstream's loader would reject and take `providers()` down with it. |
 | Metadata (`api.ts`: AniList, Google Books, Open Library, Wikidata) | fetch + JSON | Works unchanged (`fetchEBookMetadata`, `mergeEBookMetadata`, `dedupeEBooks`, `eBooksMatch`). |
 | Translation (`translation.ts`, DeepSeek) | fetch; IndexedDB cache is optional (`cache.ts` checks `typeof indexedDB`) | Bundled (its `?raw` prompt is loaded as text) but not surfaced: no key UI on the TV. |
-| NYT bestsellers, collections, awards, universes rails | fetch + localStorage | Not surfaced yet (see 6). `booksBySameAuthor` from `universes.ts` is used for "More by". |
+| NYT bestsellers, collections, awards, universes rails | fetch + localStorage | Works (see 6a): the rail/hero, and the Collections page's series / catalog / award shelves. `booksBySameAuthor` from `universes.ts` is used for "More by". |
 
 So the TV reads Project Gutenberg, which upstream's own sources panel offers as a one-click add
 ("GutenbergQuickAdd"). Everything that keys data (source ids, routes, chapter ids, progress
@@ -94,14 +94,18 @@ first). Narration stops at the chapter's end, as upstream's does.
 ## 5. Room, detail, gating
 
 - `EBookView` (views/ebook.tsx): EBookSetup until a source exists; then the hero, Favorites,
-  "Continue your bookmarks" (opens straight into the reader: readIntent), Popular eBooks, the
-  Shelf page, and "Browse eBooks" (search after 2 characters with a 300 ms debounce, catalog
-  picker when several providers exist, paging with loadMore's stale-page streak, each page's
-  metadata pass folded in when it lands).
+  "Continue your bookmarks" (opens straight into the reader: readIntent), New York Times
+  Bestsellers (once a key is saved, or a still-fresh cached snapshot), Popular eBooks, the
+  Collections and Shelf cards, and "Browse eBooks" (search after 2 characters with a 300 ms
+  debounce, catalog picker when several providers exist, Type/Genre/Status/Language/Sort chips
+  (6a), paging with loadMore's stale-page streak, each page's metadata pass folded in when it
+  lands).
 - `EBookDetailView` (EBookDetails): the book, Start / Continue Reading (the wheel menu's action),
   Bookmark (the shelf, `toggleEBookLibrary`), favourite, the Source picker, description, chapters,
-  "More by …" and "Recommended eBooks" (same logic as upstream, in `engine/ebook.ts`).
-- Sources page: Project Gutenberg's quick add and removal of stored sources.
+  a New York Times Bestseller rank pill when it's on a current list (6a), "More by …" and
+  "Recommended eBooks" (same logic as upstream, in `engine/ebook.ts`).
+- Sources page: Project Gutenberg's quick add and removal of stored sources, and the NYT Books
+  API key row (6a).
 - "Read the eBook": `MangaHeroEntry` now handles a light-novel adaptation (`kind: "ebook"`):
   `ebookDetail("anilist:<id>")` then the detail page, which searches the sources for the book.
 - Gating: upstream's desktop sidebar always lists eBooks (parentalKey "anime") and gates the room
@@ -112,9 +116,40 @@ first). Narration stops at the chapter's end, as upstream's does.
 ## 6. Not done (and why)
 
 - Local folders, HTML sources and extensions: see section 1.
-- NYT bestsellers rail/hero, Collections (series, catalog, awards), AniList list tracking and the
-  browse filters (type, genre, status, language, sort): pure data, portable later; left out to
-  keep this batch to reading.
-- Offline export/download, translation, annotations, in-chapter search: desktop surfaces.
+- AniList list tracking, offline export/download, translation, annotations, in-chapter search:
+  desktop surfaces.
 - Legacy chapter-location migration (`restoreSourceEBookChapters`): needs upstream's EPUB parse
   in JS; TV-read books never have legacy chapter ids.
+
+### 6a. Ported since (Stage 13 leftovers, "pure data, portable later")
+
+- **NYT bestsellers rail/hero** (`lib/ebook/nyt.ts`, `nyt-rail.ts`, `nyt-match.ts`,
+  `nyt-availability.ts`, unchanged) → `engine/ebook.ts nytRail` / `nytBestsellerRank`. A free NYT
+  Books API key, entered on the eBook Sources page (`EBookSourcesView.nytKeyRow`, a regular
+  device-local setting like `tmdbKey`, not a Keychain secret — upstream keeps it in
+  `settings.nytKey` too), resolves the primary list's first 15 books against the installed
+  sources; unmatched ones stay `nyt:<title>|<rank>` placeholders (opening one is a toast, not a
+  cover — `EBook.isNytPlaceholder`, matching the "nyt:" prefix `nyt-rail.ts` uses). The room's
+  hero prefers 3+ bestsellers with a cover, else falls back to the popular-source set; the detail
+  page shows the "#N New York Times Bestseller" + weeks-on-list pills. The NYT mark sits beside
+  the rail's attribution line and the detail pill instead of the row's own title, since
+  `BPRowView` draws the title itself with no slot for a mark next to it — a small, low-risk TV
+  adaptation, not upstream's own layout.
+- **Browse filters** (`lib/ebook/browse-filters.ts` + the view's own Type/Genre matching,
+  unchanged) → `engine/ebook.ts browseCategories` / `applyBrowseFilters`. Type, Genre, Status,
+  Language and Sort became five chips that cycle their value and apply at once
+  (`EBookView.filterChips`), like the stream picker's own facet chips
+  (`App/Sources/Streams/PlayPickerView.swift`), instead of upstream's dropdowns + a separate Apply
+  / Reset step — the TV has no pointer-driven dropdown menu, and immediate cycling chips are
+  already this app's own established remote-input idiom.
+- **Collections** (`lib/ebook/collections.ts`, unchanged: series, the installed source's own
+  catalog, and award-winner shelves) → `engine/ebook.ts collectionScope` / `collections` /
+  `collectionsResolved`, a "Collections" quick-launch card beside "Shelf"
+  (`EBookCollectionsView`). Data-only and fit cleanly: no AniList tracking, no annotations, just
+  what the source catalog already has, resolved the same way the view's own effect does (an
+  instant sync merge, then a background award search a fresh cache skips).
+
+Ported by a fresh-context subagent (2026-09-27); see `PROJECT_STATE.md` → Status for the batch's
+commit, bundle size and smoke count. Unverified: no device check yet (no Swift compiler in this
+environment) — the two-row browse chips, the NYT key row's focus, the Collections card's layout,
+and the toast on an unmatched bestseller all need a real TV pass.

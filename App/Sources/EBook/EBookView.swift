@@ -8,15 +8,59 @@ final class EBookRoomModel: ObservableObject {
 
     @Published private(set) var providerId = ""
     /// The provider's catalog (sourceItems); nil while it loads.
-    @Published private(set) var items: [EBook]?
+    @Published private(set) var items: [EBook]? { didSet { Task { await applyFilters() } } }
     /// A search's results; nil when no query is active or while one loads.
-    @Published private(set) var results: [EBook]?
+    @Published private(set) var results: [EBook]? { didSet { Task { await applyFilters() } } }
     @Published var query = "" { didSet { if query != oldValue { search() } } }
     @Published private(set) var hasMore = false
     @Published private(set) var loadingMore = false
     @Published private(set) var failed = false
     /// useEBookReadStatus per book on screen.
     @Published private(set) var statuses: [String: String] = [:]
+
+    // MARK: browse filters (views/ebook.tsx browseStatus / browseLanguage / browseSort /
+    // categoryGroup / category). The TV cycles these on chips and applies at once, instead of
+    // upstream's dropdowns + Apply button (App/Sources/Streams/PlayPickerView's own facet chips).
+    @Published var filterType = "All" {
+        didSet {
+            guard filterType != oldValue else { return }
+            if !EBookRoomModel.genreOptions(for: filterType).contains(filterGenre) { filterGenre = "" }
+            Task { await applyFilters() }
+        }
+    }
+    @Published var filterGenre = "" { didSet { if filterGenre != oldValue { Task { await applyFilters() } } } }
+    @Published var filterStatus = "any" { didSet { if filterStatus != oldValue { Task { await applyFilters() } } } }
+    @Published var filterLanguage = "any" { didSet { if filterLanguage != oldValue { Task { await applyFilters() } } } }
+    @Published var filterSort = "popular" { didSet { if filterSort != oldValue { Task { await applyFilters() } } } }
+    /// `shown` (below) after ebook.applyBrowseFilters; nil while it loads, same as `shown`.
+    @Published private(set) var displayed: [EBook]?
+    private var filterSeq = 0
+
+    /// browse-filters.ts EBOOK_CATEGORIES[type] (+ EBOOK_FILTER_GENRES for "All" or "Fiction"),
+    /// deduped in order, like the view's own Genre dropdown options.
+    static func genreOptions(for type: String) -> [String] {
+        guard let cats = EBookStore.shared.browseCategories else { return [] }
+        var list: [String] = []
+        if type == "All" {
+            for key in cats.order { list.append(contentsOf: cats.groups[key] ?? []) }
+            list.append(contentsOf: cats.genres)
+        } else {
+            list.append(contentsOf: cats.groups[type] ?? [])
+            if type == "Fiction" { list.append(contentsOf: cats.genres) }
+        }
+        var seen = Set<String>()
+        return list.filter { seen.insert($0).inserted }
+    }
+
+    func applyFilters() async {
+        filterSeq += 1
+        let seq = filterSeq
+        guard let items = shown else { displayed = nil; return }
+        let filters = EBookBrowseFilters(type: filterType, genre: filterGenre, status: filterStatus, language: filterLanguage, sort: filterSort)
+        let result: [EBook]? = try? await HarborEngine.shared.call("ebook.applyBrowseFilters", [items, filters])
+        guard seq == filterSeq else { return }
+        displayed = result ?? items
+    }
 
     private var cursor: [String: Double] = [:]
     private var sourceSeq = 0
@@ -158,6 +202,12 @@ struct EBookView: View {
     @State private var loadedFor: String?
     @FocusState private var gridFocus: String?
     @FocusState private var searchFocused: Bool
+    /// engine ebook.nytRail(apiKey): nil while it loads or without a key and no cached snapshot.
+    @State private var nyt: EBookNytRail?
+    @State private var collectionsOpen = false
+    /// views/ebook.tsx isNytPlaceholder → emitListToast("Not available in your sources yet").
+    @State private var toast: String?
+    @ObservedObject private var settingsBridge = SettingsBridge.shared
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -168,12 +218,22 @@ struct EBookView: View {
             } else {
                 home
             }
+            if let toast {
+                Text(toast).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(18)).padding(.vertical, BP.px(12))
+                    .background(Capsule().fill(BP.panel2))
+                    .padding(.bottom, BP.px(50))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
         }
         .task {
             await store.refresh()
             reloadIfNeeded()
         }
         .task(id: continueKey) { await refreshContinue() }
+        .task(id: settingsBridge.slice.nytKey) { await loadNyt() }
         .fullScreenCover(item: $open, onDismiss: { Task { await store.refreshLists(); await model.refreshStatuses() } }) { o in
             EBookDetailView(open: o, candidates: model.shown ?? [])
         }
@@ -187,6 +247,34 @@ struct EBookView: View {
         }) {
             EBookShelfView(onOpen: { b in shelfPick = EBookOpen(id: b.id); shelfOpen = false }, onClose: { shelfOpen = false })
         }
+        .fullScreenCover(isPresented: $collectionsOpen) {
+            EBookCollectionsView(
+                providerId: model.providerId,
+                providerIds: store.state?.providers.map(\.id) ?? [],
+                seedItems: model.items ?? [],
+                onOpen: { b in open = EBookOpen(id: b.id) },
+                onClose: { collectionsOpen = false }
+            )
+        }
+    }
+
+    /// views/ebook.tsx isNytPlaceholder guard on a rail/hero open: a toast instead of a cover.
+    private func showToast(_ text: String) {
+        toast = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if toast == text { withAnimation { toast = nil } }
+        }
+    }
+
+    /// engine ebook.nytRail: cheap to call every time the room opens (nyt.ts only refetches once
+    /// the cached snapshot is a week old, and does nothing at all without a key beyond that read).
+    private func loadNyt() async {
+        nyt = try? await HarborEngine.shared.call("ebook.nytRail", [settingsBridge.slice.nytKey])
+    }
+
+    private func openNyt(_ ebook: EBook) {
+        if ebook.isNytPlaceholder { showToast(T("Not available in your sources yet")) } else { open = EBookOpen(id: ebook.id) }
     }
 
     /// Feeds reload when the provider list changes (subscribeEBookSources → loadSources).
@@ -233,7 +321,13 @@ struct EBookView: View {
         }
     }
 
-    private var hero: EBook? { spotlight ?? featured.first }
+    /// views/ebook.tsx bestsellerHero: bestseller books with a cover, up to 5, when there are 3+
+    /// of them; otherwise the popular-source fallback (featured).
+    private var bestsellerHero: [EBook] {
+        Array((nyt?.items ?? []).filter { $0.cover != nil }.prefix(5))
+    }
+    private var heroPool: [EBook] { bestsellerHero.count >= 3 ? bestsellerHero : featured }
+    private var hero: EBook? { spotlight ?? heroPool.first }
 
     private var home: some View {
         ZStack(alignment: .top) {
@@ -241,20 +335,38 @@ struct EBookView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: BP.rowGap) {
                     heroCopy.frame(height: BP.px(300), alignment: .bottomLeading)
-                    // views/ebook.tsx rails: Favorites (source books), Continue your bookmarks, Popular.
+                    // views/ebook.tsx rails: Favorites (source books), Continue your bookmarks,
+                    // New York Times Bestsellers, Popular.
                     let favs = store.favorites.filter { $0.source == "source" }
                     if !favs.isEmpty {
                         rail("ebook-favorites", "Favorites", "Stories you love", favs)
                     }
                     if !continueRows.isEmpty { continueRow }
+                    if let nyt, !nyt.items.isEmpty { nytRailSection(nyt) }
                     if let items = model.items, !items.isEmpty {
                         rail("ebook-popular", "Popular eBooks", "Popular titles from the installed source", Array(items.prefix(24)))
                     }
-                    shelfButton
+                    collectionsAndShelfRow
                     browseSection
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }
             }
+        }
+    }
+
+    /// views/ebook.tsx EBookRail(bestsellerItems, mark: <NytMark/>, subtitle: NYT_ATTRIBUTION).
+    /// The mark sits beside the attribution line instead of the row's own title (BPRowView draws
+    /// the title itself, with no slot for a mark next to it) — a small, low-risk TV adaptation.
+    private func nytRailSection(_ nyt: EBookNytRail) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(2)) {
+            BPRowView(row: BrowseRow(key: "ebook-nyt", title: T("New York Times Bestsellers"), metas: nyt.items.map(\.meta)),
+                      onFocus: { m in spotlight = nyt.items.first { $0.id == m.id } },
+                      onSelect: { m in if let b = nyt.items.first(where: { $0.id == m.id }) { openNyt(b) } })
+            HStack(spacing: BP.px(6)) {
+                NytMarkView()
+                Text(T(nyt.attribution)).font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
+            }
+            .padding(.horizontal, BP.gutter)
         }
     }
 
@@ -340,6 +452,36 @@ struct EBookView: View {
         .frame(width: BPTileView.posterWidth, alignment: .leading)
     }
 
+    /// views/ebook.tsx's "Collections" and "Shelf" quick-launch cards, side by side.
+    private var collectionsAndShelfRow: some View {
+        HStack(spacing: BP.px(14)) {
+            collectionsButton
+            shelfButton
+        }
+        .padding(.horizontal, BP.gutter)
+        .focusSection()
+    }
+
+    /// The Collections card (views/ebook.tsx setScreen("collections")): series, the source's own
+    /// catalog and award winners, in a page of their own.
+    private var collectionsButton: some View {
+        Button { collectionsOpen = true } label: {
+            HStack(spacing: BP.px(14)) {
+                Image(systemName: "square.stack.3d.up.fill").font(.system(size: BP.px(20), weight: .semibold)).foregroundStyle(BP.accent).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Collections").font(BP.sans(15.5, .semibold)).foregroundStyle(BP.ink)
+                    Text("Shelves built from your installed source catalog").font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(1)
+                }
+                Spacer(minLength: BP.px(20))
+                Image(systemName: "chevron.forward").foregroundStyle(BP.inkSubtle).accessibilityHidden(true)
+            }
+            .padding(.horizontal, BP.px(20)).padding(.vertical, BP.px(14))
+            .frame(width: BP.px(420), alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+        }
+        .buttonStyle(BPTileStyle(radius: BP.rMD))
+    }
+
     /// The Shelf card (views/ebook.tsx): the books saved to the shelf, in a page of their own.
     private var shelfButton: some View {
         Button { shelfOpen = true } label: {
@@ -359,8 +501,6 @@ struct EBookView: View {
             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
-        .padding(.horizontal, BP.gutter)
-        .focusSection()
     }
 
     // MARK: browse
@@ -399,11 +539,12 @@ struct EBookView: View {
                 .scrollClipDisabled()
                 .focusSection()
             }
+            filterChips
             grid
         }
         .padding(.horizontal, BP.gutter)
         .onChange(of: gridFocus) { _, id in
-            if let id, let b = model.shown?.first(where: { $0.id == id }) { spotlight = b }
+            if let id, let b = model.displayed?.first(where: { $0.id == id }) { spotlight = b }
         }
     }
 
@@ -418,8 +559,45 @@ struct EBookView: View {
         }
     }
 
+    /// views/ebook.tsx Type / Genre / Status / Language / Sort dropdowns, as chips that cycle
+    /// their value and apply at once (App/Sources/Streams/PlayPickerView's own facet chips).
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: BP.px(8)) {
+                filterChip(T("Type"), T(model.filterType), Self.typeOptions, $model.filterType)
+                let genreOptions = [""] + EBookRoomModel.genreOptions(for: model.filterType)
+                filterChip(T("Genre"), model.filterGenre.isEmpty ? T("All genres") : T(model.filterGenre), genreOptions, $model.filterGenre)
+                filterChip(T("Status"), T(Self.statusLabels[model.filterStatus] ?? model.filterStatus), Self.statusOptions, $model.filterStatus)
+                filterChip(T("Language"), T(Self.languageLabels[model.filterLanguage] ?? model.filterLanguage), Self.languageOptions, $model.filterLanguage)
+                filterChip(T("Sort by"), T(Self.sortLabels[model.filterSort] ?? model.filterSort), Self.sortOptions, $model.filterSort)
+            }
+            .padding(.vertical, BP.px(4))
+        }
+        .scrollClipDisabled()
+        .focusSection()
+    }
+
+    private static let typeOptions = ["All", "Fiction", "Non-fiction"]
+    private static let statusOptions = ["any", "ongoing", "completed", "hiatus"]
+    private static let statusLabels = ["any": "Any", "ongoing": "Ongoing", "completed": "Completed", "hiatus": "Hiatus"]
+    private static let languageOptions = ["any", "chinese", "korean", "japanese"]
+    private static let languageLabels = ["any": "Any", "chinese": "Chinese", "korean": "Korean", "japanese": "Japanese"]
+    private static let sortOptions = ["popular", "name", "chapters", "rating", "trending"]
+    private static let sortLabels = ["popular": "Popular", "name": "Name", "chapters": "Chapters", "rating": "Rating", "trending": "Trending"]
+
+    /// A single cycling chip: tapping steps to the next option, wrapping to the first.
+    private func filterChip(_ label: String, _ valueLabel: String, _ options: [String], _ binding: Binding<String>) -> some View {
+        let active = options.first != binding.wrappedValue
+        return Button("\(label): \(valueLabel)") {
+            let i = options.firstIndex(of: binding.wrappedValue) ?? 0
+            binding.wrappedValue = options[(i + 1) % options.count]
+        }
+        .buttonStyle(BPActionStyle(primary: active))
+        .bpSelected(active)
+    }
+
     @ViewBuilder private var grid: some View {
-        if let books = model.shown {
+        if let books = model.displayed {
             if books.isEmpty {
                 BPNote(text: model.failed ? "This source did not answer. Try again, or try another source." : "No eBooks found.")
             } else {
@@ -483,6 +661,18 @@ struct EBookReadMark: View {
     }
 }
 
+/// components/icons/nyt-mark.tsx NytMark: a bordered "NYT" wordmark (no logo asset on the TV).
+struct NytMarkView: View {
+    var body: some View {
+        Text(verbatim: "NYT")
+            .font(.system(size: BP.px(10), weight: .bold, design: .serif))
+            .foregroundStyle(BP.ink)
+            .padding(.horizontal, BP.px(5)).padding(.vertical, BP.px(1))
+            .overlay(RoundedRectangle(cornerRadius: BP.px(3), style: .continuous).stroke(BP.ink, lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+}
+
 /// views/ebook.tsx screen "shelf": every book saved to the shelf, as a grid.
 @MainActor
 struct EBookShelfView: View {
@@ -537,6 +727,10 @@ struct EBookShelfView: View {
 struct EBookSourcesView: View {
     let onClose: () -> Void
     @ObservedObject private var store = EBookStore.shared
+    @ObservedObject private var settings = SettingsBridge.shared
+    @State private var nytDraft = ""
+    /// (device-flow pass style) "Saved" flashes for a moment after a save, like AISearchPanel.
+    @State private var nytFlash = false
 
     static let tvNote = "Apple TV reads Project Gutenberg's public-domain library. Local folders, site sources and extensions are available in Harbor on your computer."
 
@@ -596,6 +790,7 @@ struct EBookSourcesView: View {
                         // focusable (a disabled focused tile threw the ring off the page) and does nothing.
                     }
                     .focusSection()
+                    nytKeyRow
                     Button("Done", action: onClose).buttonStyle(BPActionStyle())
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(60))
@@ -604,6 +799,133 @@ struct EBookSourcesView: View {
         }
         .ignoresSafeArea()
         .onExitCommand(perform: onClose)
-        .task { await store.refresh() }
+        .task {
+            await store.refresh()
+            nytDraft = settings.slice.nytKey
+        }
+    }
+
+    /// views/settings/library-panel/provider-keys.tsx's NYT KeyField, moved to the eBook room's
+    /// own Sources page (the TV has no general "library keys" settings panel): the free NYT
+    /// Books API key for the bestseller rail and hero (engine ebook.nytRail).
+    private var nytKeyRow: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            Text(verbatim: "New York Times bestsellers").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
+            Text(T("Adds the New York Times bestseller lists to the eBook page, on the hero and as a row, with rank and weeks on the list. Free key at") + " developer.nytimes.com. " + T("Enable the Books API on your app. Lists refresh weekly."))
+                .font(BP.sans(13)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: BP.px(760), alignment: .leading)
+            BPField(label: "New York Times · bestseller lists", placeholder: "NYT Books API key", text: $nytDraft, secure: true, phone: true)
+                .frame(width: BP.px(520))
+            HStack(spacing: BP.px(10)) {
+                let empty = nytDraft.trimmingCharacters(in: .whitespaces).isEmpty
+                Button(T("Save")) {
+                    guard !empty else { return }
+                    Task {
+                        try? await settings.patch(["nytKey": .string(nytDraft.trimmingCharacters(in: .whitespaces))])
+                        nytFlash = true
+                    }
+                }
+                .buttonStyle(BPActionStyle(primary: true, busy: empty))
+                if !settings.slice.nytKey.isEmpty {
+                    Button(T("Remove")) {
+                        Task {
+                            try? await settings.patch(["nytKey": .string("")])
+                            nytDraft = ""
+                        }
+                    }
+                    .buttonStyle(BPActionStyle())
+                    Text(T("Saved")).font(BP.sans(13, .semibold)).foregroundStyle(nytFlash ? BP.accent : BP.inkSubtle)
+                }
+            }
+        }
+        .focusSection()
+    }
+}
+
+/// views/ebook.tsx screen "collections" (lib/ebook/collections.ts): series, the installed
+/// source's own catalog, and award-winner shelves built from books it already has. Data-only
+/// (docs/ebook-spec.md §6): no AniList list tracking here, just what the source catalog gives.
+@MainActor
+struct EBookCollectionsView: View {
+    let providerId: String
+    let providerIds: [String]
+    /// Whatever the room's Popular rail already loaded, so the page has something at once while
+    /// it pages the source further (views/ebook.tsx's own loadCatalog effect).
+    let seedItems: [EBook]
+    let onOpen: (EBook) -> Void
+    let onClose: () -> Void
+
+    @State private var collections: [EBookCollection] = []
+    @State private var loading = true
+
+    private var series: [EBookCollection] { collections.filter { $0.kind == "series" } }
+    private var catalog: [EBookCollection] { collections.filter { $0.kind == "catalog" } }
+    private var awards: [EBookCollection] { collections.filter { $0.kind == "award" } }
+
+    var body: some View {
+        ZStack {
+            BPAmbientBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: BP.px(28)) {
+                    Text("Collections").font(BP.display(34)).foregroundStyle(BP.ink)
+                    if !series.isEmpty { collectionSection("Book Series", series) }
+                    if !catalog.isEmpty { collectionSection("From the Installed Source", catalog) }
+                    if !awards.isEmpty { collectionSection("Award Winners", awards) }
+                    if loading && collections.isEmpty {
+                        HStack(spacing: BP.px(10)) {
+                            ProgressView().tint(BP.inkMuted)
+                            Text("Loading book collections…").font(BP.sans(14)).foregroundStyle(BP.inkMuted)
+                        }
+                    } else if collections.isEmpty {
+                        BPNote(text: "No collections were found in the installed source catalog.")
+                    }
+                    Button("Back", action: onClose).buttonStyle(BPActionStyle())
+                }
+                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(60))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .ignoresSafeArea()
+        .onExitCommand(perform: onClose)
+        .task { await load() }
+    }
+
+    private func collectionSection(_ title: String, _ items: [EBookCollection]) -> some View {
+        VStack(alignment: .leading, spacing: BP.px(20)) {
+            Text(T(title)).font(BP.display(24)).foregroundStyle(BP.ink)
+            ForEach(items) { collection in
+                VStack(alignment: .leading, spacing: BP.px(2)) {
+                    BPRowView(row: BrowseRow(key: collection.id, title: T(collection.name), metas: collection.books.map(\.meta)),
+                              onFocus: { _ in },
+                              onSelect: { m in if let b = collection.books.first(where: { $0.id == m.id }) { onOpen(b) } })
+                    Text(T(collection.subtitle)).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.horizontal, BP.gutter)
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        // views/ebook.tsx loadCatalog: up to 4 pages ahead of what the room's Popular rail has,
+        // stopping once a page brings nothing new.
+        var items = seedItems
+        var cursor: [String: Double]?
+        for _ in 0..<4 {
+            struct Page: Decodable { var items: [EBook]; var fresh: Int; var cursor: [String: Double]; var hasMore: Bool }
+            guard let page: Page = try? await HarborEngine.shared.call("ebook.page", [Optional<String>.none, providerId, cursor, Optional<String>.none, items]) else { break }
+            items = page.items
+            cursor = page.cursor
+            if page.fresh == 0 || !page.hasMore { break }
+        }
+        let scope: String = (try? await HarborEngine.shared.call("ebook.collectionScope", [providerId, providerIds])) ?? ""
+        struct Result: Decodable { var collections: [EBookCollection]; var token: Int? }
+        guard let result: Result = try? await HarborEngine.shared.call("ebook.collections", [scope, providerId, items]) else {
+            loading = false
+            return
+        }
+        collections = result.collections
+        loading = false
+        if let token = result.token, let resolved: [EBookCollection] = try? await HarborEngine.shared.call("ebook.collectionsResolved", [token]) {
+            collections = resolved
+        }
     }
 }
