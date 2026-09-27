@@ -5,6 +5,30 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
+2026-09-27 07:05 UTC: Deep links over covers, follow-up (subagent; docs/parity-gaps.md's smaller
+behaviour differences). Three fixes. (1) An addon install link now closes the player first with no
+"Keep watching?" dialog (`PlaybackState.setCloseHandler`/`forceCloseIfPlaying`, registered by
+PlayerScreen on appear; `AppModel.handle(url:)` calls it for a stremio://…/manifest.json link),
+matching upstream's emitDeepLinkInstall → setView("addons") resetting the whole nav stack, the
+player's frame included (lib/view.tsx setView's `v === "addons"` branch). (2) A link no longer opens
+unseen under the intro wall on a cold launch, the curfew lock or the screensaver: `AppModel.shellReachable`
+(new) gates ShellView's and KidsShellView's wait-for-clear poll on `IntroModel.wallShowing` (a new
+static mirror of the wall's phase, since RootView owns the only instance) and
+CurfewState.locked/ScreensaverModel.active; `handle(url:)` wakes the screensaver (never the curfew
+lock, which the link waits out like `promptWhoOnReturn` already does). (3) A sync-pulled theme or
+language no longer drops an open Detail/Settings/Addons/etc. cover: `CoverPresence` (new, polls
+`HarborOverlayWindow.noCoverPresented` twice a second like PreviewGate) drives
+`ThemeStore.holdingForCover` and RootView's `heldLanguage` the same way `PlaybackState.active`
+already holds them through playback, so the tree's `.id(theme.revision|language)` rebuild waits for
+the cover to close instead of dropping its `@State` with nothing to show for it. Not closed: a deep
+link still waits for every cover to close rather than opening on top of them the way upstream's
+openMeta/openList/pushFrame push onto the nav stack unconditionally; doing that on tvOS would mean
+presenting nested from whichever view controller is currently topmost instead of from ShellView's
+own single binding, which touches most of the ~40 cover-hosting views and is unverifiable without a
+compiler, so it stays open (see parity-gaps.md). Files: App/Sources/App/AppModel.swift, RootView.swift,
+IntroView.swift, App/Sources/Shell/ShellView.swift, Screensaver.swift, App/Sources/Kids/KidsShellView.swift,
+App/Sources/Player/PlayerScreen.swift, App/Sources/Design/ThemeStore.swift. Swift only (no engine
+change); not device-tested.
 2026-09-27 (09-27 late): Reviews 38–39 + crash audit 2 applied (music Preferred badge / Connect flow, NYT Saved flash, CW title drawn once). Sweep 4's See-all focus gate reverted: CI's NavigationTests caught that a chip made `.focusable` only when armed is not focusable yet in the update that requests the hop (`testRowSeeAllEdge`, `testHomeBandRowLeads` failed with focus: none); the Up-lands-on-See-all item is open again.
 Repo public; CI green on every push tonight; TestFlight builds dispatched after each (latest ≈ build 70; check App Store Connect). User's TMDB key still unresolved (Settings → Artwork and rows → **Test saved key** prints TMDB's answer).
 Built tonight (all simulator-tested, none device-tested yet): Stage 3 detail page (episodes, seasons, credits, watchlist, Resume label + progress, watched marks from the Stremio bitfield), stream picker (flat cached-first list, quality/Cached/addon chips), debrid resolve, player (chrome, seek, pause, audio/subtitle panels, online subtitles via OpenSubtitles/Wyzie/addons, up-next pill, next-episode advance, resume + 4 s progress saves to local + Stremio), Addons manager, Library room, Anime room (Jikan), Live TV slice (M3U playlists → channel grid → live mpv mode), onboarding layout + subtitles steps, subtitle-language setting. Three fresh-context Sonnet reviews applied (10 fixes incl. mpv teardown race, zlib vs raw deflate for watched bitfields, Set→array across the JSON bridge, settingsLinked).

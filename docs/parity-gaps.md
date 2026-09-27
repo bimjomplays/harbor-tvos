@@ -108,10 +108,17 @@ closed these Big Picture behaviours that were outside the table:
 - eBook chapters opened from the panel or bar start at line 0; upstream restores the saved line
   (owner to decide, see HANDOFF.md).
 - Discover and Collections place no first focus of their own.
-- Deep links open once the covers close rather than on top of them, and an install does not close
-  the player; a link page over the intro wall on a cold launch, links under the curfew lock or
-  screensaver, and a theme or language rebuild dropping a re-presented page are unhandled.
-- A sync-pulled theme or language drops a non-player cover.
+- Deep links open once the covers close rather than on top of them (upstream's openMeta/openList/
+  pushFrame push onto the nav stack unconditionally; stacking a presentation over whatever tvOS view
+  controller is currently topmost, rather than from ShellView's own single binding, touches most of
+  the ~40 cover-hosting views and is unverifiable without a compiler — left open). Closed by the
+  09-27 follow-up: an install link now closes the player first (PlaybackState.forceCloseIfPlaying,
+  matching setView("addons") resetting the whole nav stack); a link page over the intro wall on a
+  cold launch and links under the curfew lock or screensaver are handled (AppModel.shellReachable
+  gates the wait, the screensaver wakes, the curfew lock is never bypassed).
+- A sync-pulled theme or language dropping a non-player cover is closed by the 09-27 follow-up:
+  CoverPresence holds ThemeStore.holdingForCover and RootView's heldLanguage while any cover is up,
+  the same way playback already holds them.
 - Watch Together: an invite to another title waits under a Detail page for the shell's toast; a
   dismissed toast hands the ring to the room's default, not the exact tile; the mismatch chip can
   show the old length for under 1 s after a guest's swap; a host swap stuck connecting holds the

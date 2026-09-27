@@ -13,6 +13,12 @@ final class IntroModel: ObservableObject {
     /// The wall's posters, frozen at the first render so the mosaic never reshuffles mid-intro.
     @Published private(set) var posters: [String] = []
 
+    /// (deep links) Whether the wall still blocks input, mirrored statically: RootView owns the
+    /// one instance as a `@StateObject`, and a link waiting for the shell to be reachable
+    /// (AppModel.shellReachable) has no reference to it. Only `.showing` disables the tree below
+    /// (RootView `.disabled(phase == .showing)`); `.leaving`'s fade does not, so a link may show then.
+    private(set) static var wallShowing = true
+
     private static let minVisible: TimeInterval = 5, maxVisible: TimeInterval = 8
     private static let minAfterMount: TimeInterval = 3.5, fade: TimeInterval = 0.62
     /// bp-intro.tsx COLUMNS × PER_COLUMN.
@@ -27,6 +33,7 @@ final class IntroModel: ObservableObject {
 
     init(enabled: Bool) {
         phase = enabled ? .showing : .done
+        Self.wallShowing = enabled
     }
 
     /// bp-shell mounts the intro once per session, the moment Big Picture is up (here: the boot
@@ -86,6 +93,7 @@ final class IntroModel: ObservableObject {
         guard !left, phase == .showing else { return }
         left = true
         cap?.cancel(); leaveTimer?.cancel()
+        Self.wallShowing = false
         withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: Self.fade)) { phase = .leaving }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.fade))

@@ -495,8 +495,13 @@ struct PlayerScreen: View {
                 controller?.setRate(r)
             }
             beginNowPlaying()
+            // (addons bug pass, follow-up) An addon install deep link closes this player first, with
+            // no "Keep watching?" dialog (finish(natural: false), like the curfew lock's own forced
+            // close below, .onReceive(CurfewState.shared.$locked)).
+            PlaybackState.shared.setCloseHandler(nowPlayingId) { finish(natural: false) }
         }
         .onDisappear {
+            PlaybackState.shared.setCloseHandler(nowPlayingId, nil)
             SleepTimer.shared.unregister(nowPlayingId)
             skipHideTask?.cancel()
             seekCommit?.cancel()
