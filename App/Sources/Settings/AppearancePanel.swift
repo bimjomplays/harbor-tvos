@@ -31,7 +31,7 @@ struct AppearancePanel: View {
                 BPNote(text: "Pick a display and body pairing.")
                 // applyTheme: a preset with its own pairing (Stremio, Crunchy, Noir, MinUI) wins over this pick.
                 if s.presetOwnsFont, let name = s.presets.first(where: { $0.id == s.active })?.name {
-                    BPNote(text: "\(name) uses its own pairing while it is the theme.")
+                    BPNote(text: T("%@ uses its own pairing while it is the theme.", name))
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: BP.px(10)), count: 3), spacing: BP.px(10)) {
                     ForEach(s.fontPairs) { f in fontTile(f, active: f.id == s.pickedFontPair) }
