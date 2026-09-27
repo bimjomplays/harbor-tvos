@@ -39,14 +39,14 @@ enum StremioAPI {
         return o.addons
     }
 
-    private static func call<T: Decodable>(_ path: String, _ body: [String: Any]) async throws -> T {
+    private static func call<R: Decodable>(_ path: String, _ body: [String: Any]) async throws -> R {
         var req = URLRequest(url: base.appendingPathComponent(path))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         req.timeoutInterval = 20
         let (data, resp) = try await URLSession.shared.data(for: req)
-        let env = try JSONDecoder().decode(Envelope<T>.self, from: data)
+        let env = try JSONDecoder().decode(Envelope<R>.self, from: data)
         if let err = env.error { throw Failure(message: err.message ?? T("Stremio request failed")) }
         guard let result = env.result else {
             throw Failure(message: T("stremio %@ failed (%lld)", path, (resp as? HTTPURLResponse)?.statusCode ?? 0))
