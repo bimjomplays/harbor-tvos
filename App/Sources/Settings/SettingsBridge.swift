@@ -203,6 +203,19 @@ final class SettingsBridge: ObservableObject {
         await navEdit("navEdit.reset", [])
     }
 
+    /// Settings → Tabs "Streaming only" (owner request, 2026-09-27): keep the film / series / anime
+    /// side of the app and hide every other tab in one press — Home, Discover, Shows, Movies,
+    /// Anime, Search, Library and Settings stay; Sports, Live TV, Music, eBook, Manga, Calendar and
+    /// Collections go to the hidden tray ("Show all tabs" brings them back).
+    static let streamingTabs: Set<Room> = [.home, .discover, .shows, .movies, .anime, .search, .library, .settings]
+    func streamingOnlyTabs() async {
+        for room in Room.tabs where room.navEditable {
+            let hidden = Set(navLayout?.hidden ?? []).contains(room.rawValue)
+            let keep = Self.streamingTabs.contains(room)
+            if keep == hidden { await toggleTabHidden(room) }
+        }
+    }
+
     private func navEdit(_ fn: String, _ lead: [any Encodable]) async {
         let p = ProfilesStore.shared.active
         let tabs: [String] = Room.tabs.map(\.rawValue)

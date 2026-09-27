@@ -276,7 +276,11 @@ final class NavigationTests7: XCTestCase {
 
         // Back into the playlist: the track landed.
         sleep(1)
-        require(seek("music-library", app, max: 12, first: .up), "could not reach the Playlists button again (focus: \(focusNote(app)))", app)
+        // Up from the dock to the mast passes every shelf above the Liked one (run 36337586097: 12
+        // presses were not enough); the tab bar is the sure stop, then Down once into the mast.
+        require(press(.up, app, max: 40, until: { $0.hasPrefix("tab-") }) != nil, "Up never reached the tab bar again (focus: \(focusNote(app)))", app)
+        require(press(.down, app, max: 4, until: { $0 == "music-library" || $0 == "music-search" || $0 == "music-sources" }) != nil, "Down never reached the mast again (focus: \(focusNote(app)))", app)
+        require(seek("music-library", app, max: 6), "could not reach the Playlists button again (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         require(row.waitForExistence(timeout: 15), "the Playlists button did not reopen MusicLibraryView", app)
@@ -329,7 +333,9 @@ final class NavigationTests7: XCTestCase {
         sleep(1)
         remote.press(.menu)
         require(waitForGone(error, timeout: 10), "Menu did not close the Songs like page", app)
-        require(app.buttons["music-search"].waitForExistence(timeout: 10), "closing the Songs like page did not return to the Music room", app)
+        // The room is a LazyVStack scrolled to the Liked shelf: the mast is off screen, so the dock
+        // (always drawn while the fixture track plays) proves the room is back (run 36337586097).
+        require(app.buttons["music-dock-open"].waitForExistence(timeout: 10), "closing the Songs like page did not return to the Music room", app)
         require(app.buttons["tab-music"].isSelected, "the Songs like page left the Music tab", app)
 
         // Cleanup (see the class doc comment): unlike the track.

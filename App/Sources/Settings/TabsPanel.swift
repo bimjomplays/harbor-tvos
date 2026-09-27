@@ -41,6 +41,11 @@ struct TabsPanel: View {
             }
             if hidden.isEmpty { BPNote(text: "Nothing hidden.") }
             HStack(spacing: BP.px(12)) {
+                // One press keeps Home, Discover, Shows, Movies, Anime, Search, Library and Settings
+                // and hides the rest (Sports, Live TV, Music, eBook, Manga, Calendar, Collections).
+                Button(T("Streaming only")) { Task { await settings.streamingOnlyTabs() } }
+                    .buttonStyle(BPActionStyle(primary: true))
+                    .accessibilityIdentifier("tabs-streaming-only")
                 // Pressing it empties the hidden set: dimmed rather than disabled under the ring.
                 let none = hidden.isEmpty
                 Button(T("Show all tabs")) { if !none { Task { await settings.showAllTabs() } } }
