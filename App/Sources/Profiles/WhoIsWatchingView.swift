@@ -143,6 +143,9 @@ struct WhoIsWatchingView: View {
         .accessibilityIdentifier("who-tile-\(p.id)")
         // bp-who-is-watching-tile.tsx aria-label t("Switch to {name}"); the lock badge adds "PIN".
         .accessibilityLabel(Text(verbatim: p.passwordHash != nil ? "\(T("Switch to %@", p.name)), \(T("PIN"))" : T("Switch to %@", p.name)))
+        // Upstream draws data-bp-who-active with no ARIA of its own; VoiceOver has no other way to
+        // tell which of several faces is the one already watching.
+        .bpSelected(p.id == profiles.activeId)
     }
 
     /// (profiles device pass) bp-who-is-watching-sync useBpWhoSyncPhase: "pending" is the FIRST

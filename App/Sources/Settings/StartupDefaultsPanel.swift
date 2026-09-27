@@ -67,6 +67,7 @@ struct StartupDefaultsPanel: View {
             Text(T(title)).font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
             Text(T(detail)).font(BP.sans(14)).foregroundStyle(BP.inkMuted).fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .combine)
     }
 
     /// startup-defaults.tsx `update({ [key]: value })`: the effective settings of the profile in use.

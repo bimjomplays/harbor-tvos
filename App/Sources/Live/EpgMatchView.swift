@@ -97,6 +97,7 @@ struct EpgMatchView: View {
             .opacity(busy ? 0.6 : 1)
         }
         .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .accessibilityAddTraits(matched ? .isSelected : [])
     }
 
     /// The first call seeds the field with the channel's name; later edits search after a short pause.

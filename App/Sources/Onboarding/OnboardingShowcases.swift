@@ -117,6 +117,9 @@ struct OnboardLanguageStep: View {
                 }
                 .frame(width: BP.px(48), height: BP.px(48))
                 .clipShape(Circle())
+                // bp-step-language.tsx: the flag <img> has alt="" (and the paired-flag divider is
+                // aria-hidden); the row's own nativeLabel/label already name the language.
+                .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: BP.px(3)) {
                     Text(l.nativeLabel).font(BP.sans(20, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     Text(l.label).font(BP.sans(13, .medium)).foregroundStyle(BP.ink.opacity(0.65)).lineLimit(1)
@@ -126,6 +129,9 @@ struct OnboardLanguageStep: View {
                     .font(l.rtl ? Font.system(size: BP.px(20), weight: .medium) : BP.display(20, .medium))
                     .foregroundStyle(BP.inkSubtle)
                     .lineLimit(1)
+                    // bp-step-language.tsx: the greeting span is aria-hidden (decorative script,
+                    // redundant with the native/English name VoiceOver already reads).
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, BP.px(20)).padding(.vertical, BP.px(12))
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -107,6 +107,11 @@ private struct LivePips: View {
             }
             Text(T(label)).font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
         }
+        // The pips are plain shapes with no default accessibility label; VoiceOver would say
+        // nothing about how many are filled without stating the count explicitly.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(T(label)))
+        .accessibilityValue(Text(verbatim: "\(filled)/\(total)"))
     }
 }
 
@@ -135,6 +140,11 @@ private struct LiveSeat: View {
         }
         .frame(width: BP.px(70))
         .opacity(faded ? 0.45 : 1)
+        // Jersey number, goal count and name are three separate text nodes on the seat; read them
+        // as one stop instead of three.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: name.isEmpty ? T("Player") : name))
+        .accessibilityValue(Text(verbatim: goals > 0 ? "#\(jersey) · \(goals)" : "#\(jersey)"))
     }
 }
 
@@ -183,6 +193,7 @@ struct SportsStatsRowView: View {
                         .foregroundStyle(e.icon == "yellow_card" ? Color(hex: 0xf3c84d) : e.icon == "red_card" ? Color(hex: 0xe43a44) : e.loud ? BP.canvas : BP.inkSubtle)
                         .frame(width: BP.px(32), height: BP.px(32))
                         .background(Circle().fill(e.loud ? BP.ink : BP.void_.opacity(0.6)))
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(e.text).font(BP.sans(13, e.loud ? .semibold : .regular)).foregroundStyle(e.loud ? BP.ink : BP.inkMuted).lineLimit(2)
                         if !e.participant.isEmpty { Text(e.participant).font(BP.sans(11)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
@@ -285,6 +296,9 @@ struct SportsDiamondView: View {
                     }
                 }
                 .frame(width: BP.px(200), height: BP.px(200))
+                // The bases drawing has no text of its own; who is on base is already read from
+                // `d.runners` below, so this diagram would only repeat it.
+                .accessibilityHidden(true)
                 HStack(alignment: .bottom, spacing: BP.px(26)) {
                     if let b = d.balls { LiveFigure(value: "\(b)", label: "Balls") }
                     if let s = d.strikes { LiveFigure(value: "\(s)", label: "Strikes") }
@@ -320,7 +334,7 @@ struct SportsFieldView: View {
                 if let o = f.owner {
                     VStack(alignment: .leading, spacing: BP.px(4)) {
                         HStack(spacing: BP.px(10)) {
-                            if !o.logo.isEmpty { RemoteImage(url: o.logo, contentMode: .fit).frame(width: BP.px(36), height: BP.px(36)) }
+                            if !o.logo.isEmpty { RemoteImage(url: o.logo, contentMode: .fit).frame(width: BP.px(36), height: BP.px(36)).accessibilityHidden(true) }
                             Text(o.abbr).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                         }
                         Text("Ball possession").font(BP.sans(11, .semibold)).foregroundStyle(BP.inkMuted)
@@ -344,6 +358,8 @@ struct SportsFieldView: View {
             .background(BP.void_.opacity(0.55))
             .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
+            // The marker has no text of its own; the same yard line is already read below.
+            .accessibilityHidden(true)
             if !f.yardLine.isEmpty { Text(T("Yard line") + ": " + f.yardLine).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).lineLimit(1) }
             Text("Latest reported play").font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
         }
@@ -493,6 +509,7 @@ struct SportsLineupsRowView: View {
                             else { Image(systemName: "person.fill").font(.system(size: BP.px(13))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
                         }
                         .frame(width: BP.px(30), height: BP.px(30)).background(Circle().fill(BP.void_.opacity(0.7))).clipShape(Circle())
+                        .accessibilityHidden(true)
                         Text(row.name).font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

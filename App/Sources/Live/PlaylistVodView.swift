@@ -433,6 +433,7 @@ struct VodCard: View {
                     RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).fill(BP.panel2)
                     if let logo = item.logo, !logo.isEmpty {
                         RemoteImage(url: logo)
+                            .accessibilityHidden(true)
                     } else {
                         Text(item.title).font(BP.sans(14, .semibold)).foregroundStyle(BP.inkMuted)
                             .multilineTextAlignment(.center).padding(BP.px(10))
@@ -499,7 +500,7 @@ struct VodSeriesDetail: View {
             HStack(alignment: .top, spacing: BP.px(18)) {
                 Button(action: onBack) { Image(systemName: "chevron.backward") }
                     .buttonStyle(BPActionStyle())
-                    .accessibilityLabel("Back to library")
+                    .accessibilityLabel(T("Back to library"))
                 RemoteImage(url: series.logo)
                     .frame(width: BP.px(80), height: BP.px(120))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
@@ -551,6 +552,7 @@ struct VodEpisodeRow: View {
             HStack(alignment: .top, spacing: BP.px(16)) {
                 ZStack(alignment: .bottomLeading) {
                     RemoteImage(url: episode.logo ?? fallbackLogo)
+                        .accessibilityHidden(true)
                     if episode.progress > 0 {
                         GeometryReader { g in
                             ZStack(alignment: .leading) {

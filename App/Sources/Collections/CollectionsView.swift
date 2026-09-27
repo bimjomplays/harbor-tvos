@@ -324,6 +324,9 @@ struct CollectionsView: View {
                                 .buttonStyle(BPTileStyle())
                                 .focused($focus, equals: "card:" + c.key)
                                 .accessibilityIdentifier("collection-\(c.key)")
+                                // bp-collection-card.tsx aria-label={entry.name}: just the name, not the
+                                // byline/count line too.
+                                .accessibilityLabel(Text(verbatim: c.name))
                         }
                         if model.showAllTvdb {
                             // bp-collections showAllTvdb: the card unmounts under the ring, which goes to the TVDB chip.
@@ -473,6 +476,7 @@ struct CollectionCardView: View {
         VStack(alignment: .leading, spacing: BP.px(6)) {
             ZStack(alignment: .bottomLeading) {
                 RemoteImage(url: card.image)
+                    .accessibilityHidden(true)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.85)], startPoint: .center, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(card.name).font(BP.sans(14, .bold)).foregroundStyle(BP.ink).lineLimit(1)

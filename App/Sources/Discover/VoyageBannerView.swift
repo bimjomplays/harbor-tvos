@@ -46,10 +46,28 @@ struct VoyageBannerView: View {
         .buttonStyle(BPTileStyle(radius: BP.rMD))
         .focused($focused)
         .accessibilityIdentifier("voyage-band")
-        .accessibilityLabel(Text(T("Open Voyages")))
+        // The banner's own progress line ("N of M films picked" / "watched so far") is drawn, not
+        // spoken, unless it is folded into the label here too.
+        .accessibilityLabel(Text(verbatim: bannerAccessibilityLabel(active: active)))
         .padding(.horizontal, BP.gutter)
         .padding(.vertical, BP.px(14))
         .onChange(of: focused) { _, held in onHold?(held) }
+    }
+
+    /// The same pitch text `copy(active:accent:)` draws, without the colour, for VoiceOver.
+    private func bannerAccessibilityLabel(active: VoyageModel.Active?) -> String {
+        let name = active?.themeLabel ?? T("Set a course")
+        let sailing = active?.sailing ?? false
+        let ready = active.map { !$0.sailing && $0.picked >= $0.targetLength } ?? false
+        let pitch: String
+        if let a = active {
+            pitch = sailing ? T("%lld of %lld watched so far.", a.played, a.slots.count)
+                : ready ? T("Your queue is full. Start whenever you're ready.")
+                : T("%lld of %lld films picked.", a.picked, a.targetLength)
+        } else {
+            pitch = T("A short run of films you'll actually finish. You pick every stop.")
+        }
+        return T("Open Voyages") + ", " + name + ", " + pitch
     }
 
     private func copy(active: VoyageModel.Active?, accent: Color) -> some View {

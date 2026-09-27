@@ -102,7 +102,7 @@ struct HomeRowsPanel: View {
                     HStack(spacing: BP.px(8)) {
                         Text(T("When the latest episode ends")).font(BP.sans(14)).foregroundStyle(BP.ink).lineLimit(1)
                         Button(T("Hide")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("hide")]) } }
-                            .buttonStyle(BPActionStyle(primary: cw.animeCwEnd != "timer"))
+                            .buttonStyle(BPActionStyle(primary: cw.animeCwEnd != "timer")).bpSelected(cw.animeCwEnd != "timer")
                         Button(T("Timer")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("timer")]) } }
                             .buttonStyle(BPActionStyle(primary: cw.animeCwEnd == "timer")).bpSelected(cw.animeCwEnd == "timer")
                     }

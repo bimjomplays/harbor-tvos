@@ -30,6 +30,8 @@ IntroView.swift, App/Sources/Shell/ShellView.swift, Screensaver.swift, App/Sourc
 App/Sources/Player/PlayerScreen.swift, App/Sources/Design/ThemeStore.swift. Swift only (no engine
 change); not device-tested.
 2026-09-27 (09-27 late): Reviews 38–39 + crash audit 2 applied (music Preferred badge / Connect flow, NYT Saved flash, CW title drawn once). Sweep 4's See-all focus gate reverted: CI's NavigationTests caught that a chip made `.focusable` only when armed is not focusable yet in the update that requests the hop (`testRowSeeAllEdge`, `testHomeBandRowLeads` failed with focus: none); the Up-lands-on-See-all item is open again.
+2026-09-27 06:41 UTC: SP-1 (sport-specific live diagrams) verification — found already fully ported by the 09-24 Sports parity batch (commit `0211981`), which `docs/parity-audit-2026-09-23.md`'s SP-1 row and its "Honourable mentions" line had never been updated to reflect. Confirmed against upstream (`bp-sports-live-court/-diamond/-field/-kit/-plays/-situation.tsx`): `engine/sportsEvent.ts` `eventRows()` calls upstream's own `bpSportsSituationKind`/`bpSportsHasDiamond/-Field/-Court`/`bpSportsHasPlays`/`basketballFive` through the `@/` alias (no reimplementation of the gating logic), and `App/Sources/Sports/SportsLiveViews.swift` (`SportsDiamondView`/`SportsFieldView`/`SportsCourtView`/plays list) draws them with SwiftUI shapes on the same percentage coordinates, wired into `SportsEventView`'s Stats row via `sports.eventRows`. `engine/smoke.mjs` already has mocked-summary checks per sport (NBA court, MLB diamond, NFL field, EPL pitch). No code changes needed; updated `docs/parity-audit-2026-09-23.md` (SP-1 row → "yes", honourable mentions) and `docs/sports-spec.md` §4.2 with a "Ported" note. Re-verified: `node build.mjs` 4649 KB, `node smoke.mjs --offline` 1142/1142 passed.
+2026-09-27 06:46 UTC: Up-lands-on-See-all refixed (BPRowView.swift). The chip drew whenever the row held the ring (`focusedId != nil`), so with no gate of its own it sat in every Up press's candidate pool the whole time — no Spacer between the title and the chip means a short row title puts the chip over an early tile, not just the last one, so Up off that tile could resolve straight onto it instead of carrying on to the row above. New `seeAllArmed` @State plus `.focusable(seeAllArmed || seeAllFocused)` on the chip takes it out of every directional pool, Up included, except the two hops that mean to land there: `tileMove`'s Right-off-last-tile and `endCatch` now set `seeAllArmed = true` synchronously (a runloop before the already-deferred `seeAllFocused = true`), so the focus engine has the newly-focusable chip registered before the hop asks for focus there — this is exactly what sweep 4's revert was missing (it flipped focusable and requested focus in the same update). `seeAllArmed` resets to false the moment the chip loses focus, so it's unreachable again for the rest of the row's visit. No public signature changed (grepped every `BPRowView(`/`BPRailView(` caller — RoomView, DetailView, PersonView, DiscoverView, EBookDetailView, EBookView, MangaView, SearchView — none touch the internal focus state), so no caller needed changes. `testRowSeeAllEdge` and `testHomeBandRowLeads` only exercise Right/Left/Down on this row, never Up, so the new gate doesn't touch their path; not run against the simulator here (no Swift compiler in this environment) — needs a CI/device check. Engine untouched; `node build.mjs` (bundle 4649 KB) and `node smoke.mjs --offline` (1142 checks) still pass. Device check: Up from an early tile in a row with a See all chip (should now reach the row above, never the chip); Right off the last tile still reaches the chip and stays (twice); Left off the chip still returns to the last tile.
 Repo public; CI green on every push tonight; TestFlight builds dispatched after each (latest ≈ build 70; check App Store Connect). User's TMDB key still unresolved (Settings → Artwork and rows → **Test saved key** prints TMDB's answer).
 Built tonight (all simulator-tested, none device-tested yet): Stage 3 detail page (episodes, seasons, credits, watchlist, Resume label + progress, watched marks from the Stremio bitfield), stream picker (flat cached-first list, quality/Cached/addon chips), debrid resolve, player (chrome, seek, pause, audio/subtitle panels, online subtitles via OpenSubtitles/Wyzie/addons, up-next pill, next-episode advance, resume + 4 s progress saves to local + Stremio), Addons manager, Library room, Anime room (Jikan), Live TV slice (M3U playlists → channel grid → live mpv mode), onboarding layout + subtitles steps, subtitle-language setting. Three fresh-context Sonnet reviews applied (10 fixes incl. mpv teardown race, zlib vs raw deflate for watched bitfields, Set→array across the JSON bridge, settingsLinked).
 Morning 2026-09-23 (user asleep, "keep working"): skip intro/outro/recap pill (engine `skip.segments` over AniSkip/SkipDB/TheIntroDB/IntroDB App), display-mode matching via `AVDisplayCriteria(refreshRate:formatDescription:)` + `UIWindow.avDisplayManager` (AVKit; only acts when the viewer's Match Content is on).
@@ -335,6 +337,42 @@ title `Text(episodeTitle)` line is duplicated (two identical `if !episodeTitle.i
 lines) — a leftover of the same abef01e/113a5f9 duplicate-state merge that 113a5f9 only half-fixed
 (it deduped the `@State` declarations, not the body). Cosmetic double-line, not a crash; worth a
 one-line dedup whenever that file is next touched. Engine untouched this pass.
+
+2026-09-27 (subagent) Navigation UI tests pass 5: `App/UITests/NavigationTests5.swift`, 6 remote-walk
+tests for the 09-27 merges — Settings → Spoilers (master toggle shows/hides the nested three, Menu
+goes Home like any other Settings row with no column open), eBook's five browse filter chips
+(Type/Status/Language/Sort by to a known next value, Genre just changes) and its Collections card
+(opens EBookCollectionsView, Menu closes it back onto the card), the eBook Sources page's NYT key
+row (its Save button takes the ring), Music Now Playing (About the artist tab reachable from the
+transport, the source picker's Connect row closes the picker and opens Connections over Now Playing
+— not nested on the picker — Menu unwinds), and the `detail` fixture's episode strip (no Special /
+episode-0 cell). Added identifiers: `ebook-filter-{type,genre,status,language,sort}`,
+`ebook-collections`, `ebook-shelf`, `ebook-manage-sources`, `ebook-collections-back`,
+`ebook-nyt-save`, `music-now-picker`. Two new offline fixtures (`--fixtures ebook` installs a
+Gutendex source + turns the eBook tab on; `--fixtures music` hands MusicPlayer a fixture track so
+the dock/Now Playing have something to open), both local-only (no network). Extended
+`FixtureBrowseSource.fixtureVideos` with a raw Special (season 0) and episode 0 so
+`DetailModel.buildEpisodes`'s `s > 0, e > 0` guard has something real to drop, without adding a
+second season (NavigationTests3's "lone Season 1" check is unaffected). Per the coordinator: did
+**not** touch `BPRowView` or write a See-all-focus test (sweep 4's gate was reverted on `main`
+after this branch started; merged that revert in before the final commit). HANDOFF.md's UI test
+count updated to 39. Not run against a simulator (no Xcode here); the Music test's directional
+assumption (Up from the transport reaches the About tab) and the exact hop counts are the main risk
+if CI turns up red — see the branch's final report for the full list of what could not be verified.
+2026-09-27 07:04 UTC: Accessibility pass 1 (Stage 14) — VoiceOver over Settings/Library/Live/Sports/
+Search/Collections/Discover/Profiles/Onboarding, five subagents in parallel, each cross-checking
+`reference/harbor/src` `aria-label`/`aria-hidden` per control before writing anything. Most files had
+already been through earlier passes (`bpSelected`, `bpProgressValue`, `T(...)` labels already common),
+so most of the ~62 files needed nothing; 35 were touched. Counts (label / value·trait / hidden / combine,
+files touched): Settings 0/1/0/3 (4 files) · Library 0/0/0/2 (2) · Live 9/6/15/3 (8) · Sports 3/4/15/4 (9)
+· Search 1/0/7/1 (2) · Collections 1/0/2/0 (2) · Discover 4/1/6/1 (5) · Profiles 0/1/0/0 (1) · Onboarding
+0/1/4/1 (2). Also fixed several pre-existing bare-string `.accessibilityLabel("...")` calls (not wrapped
+in `T(...)`, so untranslatable) in LiveView, MultiviewView, PlaylistVodView, SearchView, SportsEventView.
+No `.accessibilityIdentifier(...)`, layout, or focus code touched anywhere (grepped the full diff to
+confirm). Position/grid announcements (rule 6) mostly skipped — no matching upstream `aria-posinset`
+pattern found in any of these rooms except QueueDeckView, where an existing label was silently dropping
+the visible "N of M" text and got it back. Not run against a simulator (no Xcode here); brace/paren
+counts verified balanced in every touched file as a syntax sanity check.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
