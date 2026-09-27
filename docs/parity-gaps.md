@@ -339,6 +339,28 @@ Left:
 - The "Start as" launch stamps `harbor.profile.lastSelectAt` (ProfilesStore.select); upstream's launchDefault does not, so its first timed prompt counts from the last hand-picked profile. Left as is: without the stamp a TV resumed a minute after launch could ask at once.
 - Checked, not a gap: the Play Zone has no dock, as upstream's (kids/play/play-zone.tsx is `fixed z-[150]`, over the dock's `z-[120]`).
 
+### Profiles: the primary couldn't open another profile's editor (closed 2026-09-27)
+
+`profile-picker/editor-view.tsx`: `canEditAdvanced = activeIsPrimary` and `showAdvanced =
+canEditAdvanced || mode.kind === "create"` let the primary edit any profile's advanced settings
+(kid toggle, PIN & sidebar locks, transfer/share); `picker-modal.tsx`'s `ListView` gives every
+profile tile in "Who's watching?" an edit affordance when `canEditThis = isPrimary || p.id ===
+activeProfile?.id`, opening `EditorView` for that profile. The TV had `showAdvanced` right
+(`ProfileEditorView.showAdvanced`, fixed by the 09-27 UI-tests-6 pass to read `editing == nil ||
+editing?.id == profiles.active?.id || profiles.active?.isPrimary == true`), but no route to reach
+it: Settings' "Edit profile" only ever opened `profiles.active`'s own editor, so the primary could
+reach a non-primary profile's advanced settings only by first switching the active profile to it.
+Closed by a new "Manage profiles" button in Settings' Profiles row (`settings-manage-profiles`,
+shown only when the active profile is primary) that opens `ManageProfilesView`, a panel listing
+every profile (`manage-profile-<id>`); Select opens `ProfileEditorView(editing:)` for that profile
+directly, with the primary still active, so `showAdvanced`'s third clause applies. `ProfilesStore`'s
+write paths (`update`, `setKid`, `setLockedTabs`, `setPin`) already took an explicit profile id
+(`ProfileEditorView.save()`'s `e.id`/`p.id`, never `profiles.active`), so no change was needed there.
+`App/UITests/NavigationTests6.swift`'s `testManageProfilesOpensGuestEditor` reaches Guest
+(`p_fix_2`) through the new button without switching profiles and checks its kid toggle and "PIN &
+sidebar locks" section show. | `Settings/SettingsView.swift`, `Profiles/ManageProfilesView.swift`,
+`Profiles/ProfileEditorView.swift`, `Profiles/ProfilesStore.swift`
+
 ### Player (10)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
