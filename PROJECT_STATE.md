@@ -3,6 +3,26 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — MusicSimilarPage l10n check)
+2026-09-27 UTC: Task was to add tools/locales-tvos.json entries for `MusicSimilarPage.swift`'s
+`T("…")` keys (`"Songs like %@"`, `"%lld songs from %lld artists"`, `"Play all"`,
+`"Save as playlist"`). Grepped the file (13 `T`/`copy` sites total) and ran
+`node tools/l10n_coverage.mjs --lang <lang> --list App/Sources/Music/MusicSimilarPage.swift` for
+all 15 languages: **already 13/13 (100%) everywhere, zero misses** — no locales-tvos.json edit
+needed. Cause: upstream a821e273 (the pin this worktree is on) ships a dedicated
+`reference/harbor/src/lib/i18n/locales/<lang>/music-similar.ts` per language with
+`music.similar.title` = `"Songs like {title}"`, `music.similar.subtitle` =
+`"{count} songs from {artists} artists"`, `music.similar.playAll` = `"Play all"`,
+`music.similar.save` = `"Save as playlist"` already translated; `tools/build_locales.mjs` folds
+id-style upstream keys to their English value automatically (step 2, "id-style keys are shown in
+English by their en value"), so these four strings were already in every `<lang>.lproj/Localizable.strings`
+before this task started. Spot-checked `de`: `"Songs like %@" = "Songs wie %1$@"`, `"%lld songs
+from %lld artists" = "%1$lld Songs von %2$lld Künstlern"`, `"Play all" = "Alle abspielen"`,
+`"Save as playlist" = "Als Playlist speichern"`. `node tools/check_placeholders.mjs` → OK (15
+languages, no regressions). Fast-forwarded this worktree's branch onto local `main` (23680ea,
+"Merge Music focus seed + Songs-like page") to get the file at all — `origin/main` doesn't have it
+yet, only local `main` does; not pushed, per instructions. No files changed besides this entry.
+
 ## Status (2026-09-27, subagent — upstream drift part 3/3)
 2026-09-27 UTC: Ported upstream's Music "More Like This" (a821e273, `music-track-menu.tsx`
 `onStartRadio` → `onMoreLikeThis`) minimally into the track/album menu. `engine/musicRadio.ts`:
