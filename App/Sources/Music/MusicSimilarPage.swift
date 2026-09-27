@@ -154,7 +154,7 @@ struct MusicSimilarPageView: View {
         } catch EngineError.js(let message) {
             error = MusicPlayer.cleanJSError(message)
         } catch {
-            self.error = MusicCopy.shared("music.radio.error", "Couldn’t start radio. Try again or choose another source.")
+            self.error = MusicCopy.shared("music.similar.error", "Could not build a mix.")
         }
     }
 
