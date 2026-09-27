@@ -17,3 +17,4 @@ App/Upstream/
 App/Engine/awards.json
 # tools/build_locales.mjs output (upstream catalogs as .strings / .stringsdict / engine JSON)
 App/Locales/
+.claude/

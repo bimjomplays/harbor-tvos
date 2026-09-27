@@ -1674,6 +1674,11 @@ r.ok("benchmark still works", (() => {
 // ------------------------------------------------------------------------ settings
 const defaults = engine.settings.DEFAULT;
 r.ok("settings.DEFAULT is a populated object", Object.keys(defaults).length > 50, `${Object.keys(defaults).length} keys`);
+// lib/spoilers.ts SpoilerSettings keys (settings/defaults.ts:411-415): Settings/SpoilersPanel.swift
+// and SettingsBridge.Slice hardcode these same names and defaults for the "Spoilers" screen.
+r.eq("settings.DEFAULT: the spoiler keys SpoilersPanel reads/writes",
+  [defaults.hideSpoilers, defaults.spoilerHideThumbnails, defaults.spoilerHideTitles, defaults.spoilerHideDescriptions, defaults.spoilerSkipNext],
+  [false, true, true, true, true]);
 r.eq("settings.STORAGE_KEY", engine.settings.STORAGE_KEY, "harbor.settings");
 const loaded = engine.settings.load();
 r.ok("settings.load() with empty storage returns defaults", loaded.tmdbKey === defaults.tmdbKey && loaded.uiLanguage === defaults.uiLanguage);
