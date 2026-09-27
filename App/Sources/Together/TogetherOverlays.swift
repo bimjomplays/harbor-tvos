@@ -223,10 +223,13 @@ struct TogetherToastHost: View {
     private func leftToast(_ left: TogetherModel.IncomingParticipantLeft) -> some View {
         HStack(spacing: BP.px(10)) {
             SocialAvatar(url: nil, name: left.name, size: BP.px(32), tint: Color.room(left.color) ?? BP.inkSubtle)
+                // The toast's own text already names who left; the face is decorative here.
+                .accessibilityHidden(true)
             Text("\(left.name) left the room").font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
         }
         .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
         .background(Capsule().fill(BP.panel))
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: chat (together-chat-toast.tsx: others' messages while the room panel is closed)
@@ -245,6 +248,8 @@ struct TogetherToastHost: View {
         .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
         .frame(maxWidth: BP.px(560), alignment: .leading)
         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel.opacity(0.92)))
+        // Sender and message are two Text nodes; one VoiceOver stop reads them together.
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -359,6 +364,9 @@ struct TogetherPlayerLayer: View {
             ForEach(v.participants) { p in
                 SocialAvatar(url: p.avatar, name: p.name, size: BP.px(34), tint: Color.room(p.color) ?? BP.accent)
                     .overlay(Circle().stroke(p.host ? BP.accent : BP.void_, lineWidth: 2))
+                    // The overlapping faces are the roster's only way to say who is here; unlike the
+                    // toasts above, no adjacent text already names each one.
+                    .accessibilityLabel(Text(verbatim: p.name))
             }
             Text(T("Room code") + " " + (v.room ?? "")).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted).padding(.leading, BP.px(16))
         }

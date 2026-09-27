@@ -275,7 +275,7 @@ struct KidsMemoryMatch: View {
                         Button { tap(card.key) } label: { face(card, up: up) }
                             .buttonStyle(KidsCardStyle(radius: BP.px(16), ring: 0))
                             .focused($ring, equals: card.key)
-                            .accessibilityLabel(up ? "Card" : "Hidden card")
+                            .accessibilityLabel(up ? T("Card") : T("Hidden card"))
                     }
                 }
                 .focusSection()
@@ -440,7 +440,7 @@ struct KidsBubblePop: View {
                                 .opacity(popped ? 0 : 1)
                                 .scaleEffect(popped ? 1.5 : 1)
                                 .animation(.easeOut(duration: 0.3), value: popped)
-                                .accessibilityLabel("Bubble \(b.n)")
+                                .accessibilityLabel(T("Bubble %lld", b.n))
                                 .position(x: x, y: y)
                             }
                         }
