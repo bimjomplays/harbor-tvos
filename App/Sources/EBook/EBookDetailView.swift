@@ -442,6 +442,8 @@ struct EBookDetailView: View {
             }
             .buttonStyle(BPActionStyle(busy: model.trackingBusy))
             .bpSelected(completed)
+            // UI tests (NavigationTests8): the detail page's read/unread toggle in the action row.
+            .accessibilityIdentifier("ebook-mark-read")
             if model.sourceOptions.count > 1, let route = model.sourceRoute {
                 let name = model.sourceOptions.first { $0.id == route }?.providerName ?? T("Source")
                 Button { sourcePicker = true } label: { Label(name, systemImage: "books.vertical") }

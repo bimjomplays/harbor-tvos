@@ -3,6 +3,38 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — NavigationTests8)
+2026-09-27 UTC: Added `App/UITests/NavigationTests8.swift` (2 tests, 43 → 45 UI tests; unverified —
+written with no Swift compiler or simulator available, same caveat as NavigationTests7).
+`testManageProfilesKidSetupWrites` (`--fixtures shell`) is the write half NavigationTests6/7 opened
+but never exercised: Settings → Profiles → Manage profiles → Guest's editor (the primary editing
+another profile), turns `profile-kid-toggle` on, picks `profile-kid-age-9` and
+`profile-kid-curfew-30`, Saves, and checks the Manage list's own Guest row — not just that the editor
+closed without error. `ManageProfilesView.swift`'s row already computed `subtitle(p)` == "Kid
+profile" once `p.kid != nil`, but that `Text` sits inside the row's `Button`, which (like every
+other row in this file's family) carries an explicit `.accessibilityLabel` that collapses the row to
+one accessibility element on tvOS, so the subtitle was never queryable on its own; added
+`.accessibilityValue(Text(verbatim: subtitle(p)))` to the row instead of a second identifier (same
+technique `BPTileView.swift` already uses for its mark-chip text, read the same way
+NavigationTests/NavigationTests4 already read a PIN field's value — `.value as? String`). Reopens
+Guest to confirm age 9 and the 30 min curfew come back selected, then turns Kids back off and Saves
+so the profile is left as the fixture started it. `testEBookDetailMarkAsReadTogglesAndMenuReturns`
+(`--fixtures ebook`) was asked for as the eBook reader restoring its chapter position, ported from
+upstream's own resume behaviour — traced why that path has no offline route in this port at all:
+`EBookDetailModel.loadChapters` needs the engine's `ebook.epub` (itself a Gutendex call) for a URL,
+then `EPUBLibrary.book(key:url:)` (`EPUBBook.swift`) fetches that URL with a real
+`URLSession.shared.data(for:)` call, with no bundled or local EPUB fallback anywhere in the port, and
+`Fixtures.installEBookSource` only pre-installs the Gutendex *source* (a config write), never a
+catalog page or an EPUB body. Covers the eBook detail page's Mark as Read action instead: opens a
+Popular-rail tile (guarded with `waitUntil`/`XCTSkip`, since that rail needs `gutendex.com` too — the
+same runner flakiness NavigationTests5's own eBook tests already tolerate), then flips
+`ebook-mark-read` (a new identifier on `EBookDetailView.swift`'s action-row button) between "Mark as
+Read" and "Marked as read" and back — no further network needed, since `EBookDetailModel.toggleRead`
+saves the tracking entry locally before it ever reaches AniList — and Menu closes the page back onto
+the room, still on the eBook tab. Files: `App/UITests/NavigationTests8.swift` (new),
+`App/Sources/Profiles/ManageProfilesView.swift`, `App/Sources/EBook/EBookDetailView.swift`,
+`HANDOFF.md` (test count). No engine change, so `build.mjs`/`smoke.mjs` not run.
+
 ## Status (2026-09-27, subagent — translation coverage 7, kid-profile/music/theme sweep)
 2026-09-27 UTC: l10n pass over today's new/changed screens (`ManageProfilesView.swift`,
 `ProfileEditorView.swift`, `SpoilersPanel.swift`, `MusicLibrary.swift`, `MusicSimilarPage.swift`,

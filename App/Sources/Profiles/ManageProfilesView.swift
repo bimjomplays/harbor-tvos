@@ -59,6 +59,12 @@ struct ManageProfilesView: View {
         // UI tests (NavigationTests6): one identifier per profile row, keyed by id like who-tile-<id>.
         .accessibilityIdentifier("manage-profile-\(p.id)")
         .accessibilityLabel(Text(verbatim: T("Edit %@", p.name)))
+        // UI tests (NavigationTests8): the row's own accessibilityLabel already replaces its
+        // children's combined text (an explicit label collapses a Button to one element on tvOS,
+        // same as every other row in this file's family — who-tile-<id>, manage-profile-<id> —
+        // so the subtitle Text below is never queryable on its own); accessibilityValue exposes it
+        // as this element's own `.value`, the same technique BPTileView.swift uses for its mark text.
+        .accessibilityValue(Text(verbatim: subtitle(p)))
     }
 
     private func subtitle(_ p: ProfilesStore.Profile) -> String {
