@@ -127,7 +127,13 @@ struct MusicLibraryView: View {
             }
         }
         .onExitCommand { dismiss() }
-        .task { await load() }
+        .task {
+            // UI tests (NavigationTests7): XCUITest cannot type into a tvOS TextField without the
+            // system keyboard up, so --new-playlist-name seeds this the way --new-profile-name seeds
+            // ProfileEditorView's Name field.
+            if Fixtures.active { name = Fixtures.newPlaylistName ?? "" }
+            await load()
+        }
         .fullScreenCover(item: $opened, onDismiss: { Task { await load() } }) { MusicPlaylistDetailView(playlist: $0) }
     }
 
@@ -140,6 +146,7 @@ struct MusicLibraryView: View {
             Spacer()
             Button { creating.toggle(); if creating { createFocused = true } } label: { Label(copy("music.row.newPlaylist", "New playlist"), systemImage: "plus") }
                 .buttonStyle(BPActionStyle(primary: true))
+                .accessibilityIdentifier("music-playlist-new")
         }
         .padding(.horizontal, BP.gutter)
         .focusSection()
@@ -151,6 +158,7 @@ struct MusicLibraryView: View {
             Button { Task { await create() } } label: { Label(copy("music.playlist.create", "Create playlist"), systemImage: "plus") }
                 .buttonStyle(BPActionStyle(busy: busy))
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
+                .accessibilityIdentifier("music-playlist-create")
         }
         .padding(.horizontal, BP.gutter)
         .focusSection()
@@ -170,6 +178,10 @@ struct MusicLibraryView: View {
                     }
                 }
                 .buttonStyle(BPTileStyle(radius: BP.rMD))
+                // UI tests (NavigationTests7): named, not indexed, so a playlist left over from an
+                // earlier run (music.playlists appends, it does not front-insert) never shifts which
+                // row this is — the test always seeds a known name via --new-playlist-name.
+                .accessibilityIdentifier("music-playlist-\(playlist.name)")
             }
         }
         .padding(.horizontal, BP.gutter)
@@ -263,6 +275,8 @@ struct MusicPlaylistDetailView: View {
                                 Button { player.play(track, queue: playlist.tracks) } label: { MusicTrackLine(track: track, number: i + 1) }
                                     .buttonStyle(BPTileStyle(radius: BP.rSM))
                                     .contextMenu { MusicPlaylistTrackMenu(track: track, index: i, count: playlist.tracks.count, playlist: playlist, onChanged: { playlist = $0 }) }
+                                    // UI tests (NavigationTests7): proves a track landed in the playlist.
+                                    .accessibilityIdentifier("music-playlist-track-\(i)")
                             }
                         }
                         .padding(.horizontal, BP.gutter)
@@ -538,6 +552,9 @@ struct MusicPlaylistPickerView: View {
                     }
                     .buttonStyle(BPTileStyle(radius: BP.rSM))
                     .disabled(busy)
+                    // UI tests (NavigationTests7): named like MusicLibraryView's own grid row, so a
+                    // leftover playlist from an earlier run never shifts which row this is.
+                    .accessibilityIdentifier("music-picker-playlist-\(playlist.name)")
                 }
             }
             .focusSection()

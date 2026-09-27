@@ -3,6 +3,39 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — NavigationTests7)
+2026-09-27 UTC: Added `App/UITests/NavigationTests7.swift` (2 tests, 42 → 44 UI tests), `--fixtures
+music` only. `testMusicPlaylistsCreateAddAndDetail`: MusicLibraryView create-playlist flow
+(`--new-playlist-name` seeds the Name field, same trick as `--new-profile-name`) → open the empty
+row → Menu back → "Add to playlist" from a track's hold-Select menu → MusicPlaylistPickerView →
+the created playlist → reopen it, the track is there. `testMusicMoreLikeThisPageOffline`: "More like
+this" from the same menu; confirmed by reading engine/music.ts and this file's own part-3/3 entry
+above ("Not built: `music-similar-page.tsx`'s dedicated browse page … the TV plays the mix straight
+into the existing queue instead") that there is no MusicSimilarPageView anywhere in this port, so the
+test instead proves `radioStatus`'s offline failed note (`music-similar-error`) shows in the Music
+room itself and nothing is ever pushed/dismissed. Key finding, confirmed by reading
+engine/music.ts's `home()`: under `--fixtures music` there is no home-row track card to hold Select
+on _at all_ — the fixture's single-track queue leaves `MusicPlayer.upcoming` empty (no "Up next"
+shelf) and every other shelf needs Deezer/MusicBrainz. Both tests work around this by liking the
+fixture track from the dock's transport row first (`music-save-track`, a new identifier; purely
+local `music.setLiked`), which makes `music.home()`'s own "liked" shelf show the track as a card
+with the full track menu (`music-card-liked-0`) — the only offline route to one. New identifiers, all
+in `App/Sources/Music/` (MusicView.swift, MusicLibrary.swift) plus `App/Sources/App/Fixtures.swift`'s
+`--new-playlist-name`: `music-card-<band.key>-<i>`, `music-menu-add-to-playlist`,
+`music-menu-more-like-this`, `music-similar-error`, `music-save-track`, `music-playlist-new`,
+`music-playlist-create`, `music-playlist-<name>` (named, not indexed — `music.playlists()` appends,
+so an earlier run's leftover playlist would otherwise take row 0), `music-playlist-track-<i>`,
+`music-picker-playlist-<name>`. The mast's Playlists button already had an identifier
+(`music-library`); no `music-playlists` was added. Both tests unlike the track again at the end
+(`ProfilesStore.reset()`, read directly, only clears its own keys, not `harbor.music.liked.v1` or the
+playlists store, so a fixture launch does not otherwise clean this up); the created playlist is left
+behind on purpose (harmless given the name-keyed identifiers, and there is no tested way yet to drive
+MusicPlaylistDetailView's delete-playlist confirmation alert). No Swift compiler or simulator here:
+unverified, in particular whether tvOS reports a SwiftUI `.contextMenu`'s rows to XCUITest as
+`XCUIElementTypeButton` (this file's first use of one — `remote.press(.select, forDuration:)` opens
+it; `app.buttons[id]` is used to seek within it, same convention as the rest of this file) — flag for
+the next device/CI check.
+
 ## Status (2026-09-27, subagent — upstream drift part 3/3)
 2026-09-27 UTC: Ported upstream's Music "More Like This" (a821e273, `music-track-menu.tsx`
 `onStartRadio` → `onMoreLikeThis`) minimally into the track/album menu. `engine/musicRadio.ts`:
