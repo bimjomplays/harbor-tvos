@@ -388,6 +388,6 @@ struct TogetherOpen: Identifiable, Equatable {
     var guestPick: Bool
     var id: String {
         guard let s = episode?["season"]?.number, let e = episode?["episode"]?.number else { return meta.id }
-        return "\(meta.id):\(Int(s)):\(Int(e))"
+        return "\(meta.id):\(clampedInt(s)):\(clampedInt(e))"
     }
 }

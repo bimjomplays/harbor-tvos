@@ -389,10 +389,10 @@ struct EBookDetailView: View {
 
     private func factList(_ book: EBook) -> [String] {
         var out: [String] = []
-        if let y = book.year { out.append(String(Int(y))) }
+        if let y = book.year { out.append(String(clampedInt(y))) }
         if let s = book.status, !s.isEmpty { out.append(s.prefix(1).uppercased() + s.dropFirst().lowercased()) }
-        if let v = book.volumes, v > 0 { out.append(T("%lld volumes", Int(v))) }
-        if let c = model.chapters?.count, c > 0 { out.append(T("%lld chapters", c)) } else if let c = book.chapters, c > 0 { out.append(T("%lld chapters", Int(c))) }
+        if let v = book.volumes, v > 0 { out.append(T("%lld volumes", clampedInt(v))) }
+        if let c = model.chapters?.count, c > 0 { out.append(T("%lld chapters", c)) } else if let c = book.chapters, c > 0 { out.append(T("%lld chapters", clampedInt(c))) }
         return out
     }
 

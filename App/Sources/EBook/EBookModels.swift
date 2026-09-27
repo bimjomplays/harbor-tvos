@@ -81,7 +81,7 @@ struct EBook: Codable, Identifiable, Hashable {
     /// A poster tile (BPTileView reads id, name and poster).
     var meta: Meta {
         Meta(id: id, type: "ebook", name: title, poster: cover, background: cover, description: description,
-             releaseInfo: year.map { String(Int($0)) })
+             releaseInfo: year.map { String(clampedInt($0)) })
     }
 
     /// nyt-rail.ts PREFIX ("nyt:"): a bestseller the room's sources don't have a copy of yet
@@ -92,8 +92,8 @@ struct EBook: Codable, Identifiable, Hashable {
     var cardFacts: String {
         var parts: [String] = []
         if let b = books, !b.isEmpty { parts.append(T("%lld books", b.count)) }
-        if let y = year { parts.append(String(Int(y))) }
-        if let v = volumes, v > 0 { parts.append(T("%lld vols", Int(v))) }
+        if let y = year { parts.append(String(clampedInt(y))) }
+        if let v = volumes, v > 0 { parts.append(T("%lld vols", clampedInt(v))) }
         return parts.joined(separator: " · ")
     }
 
