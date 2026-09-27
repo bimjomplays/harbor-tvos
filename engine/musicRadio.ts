@@ -136,15 +136,29 @@ async function deezerRadioLane(seed: Seed): Promise<[MusicTrack, number][]> {
 
 async function relatedLane(seed: Seed): Promise<[MusicTrack, number][]> {
   if (!seed.artistId) return [];
-  const related = rows((await deezer(`artist/${seed.artistId}/related?limit=8`)).data).slice(0, 6);
+  // radio.ts relatedLane (2026-09-26, a821e273): case-insensitive name dedup keeping the artist
+  // with the higher nb_fan, widened related pool 8 -> 14 candidates, 6 -> 12 kept after dedup.
+  const RELATED_DEPTH = 14;
+  const found = rows((await deezer(`artist/${seed.artistId}/related?limit=${RELATED_DEPTH}`)).data);
+  const best = new Map<string, Obj>();
+  for (const artist of found) {
+    const name = text(artist.name).toLowerCase();
+    if (!name) continue;
+    const held = best.get(name);
+    if (!held || (num(artist.nb_fan) ?? 0) > (num(held.nb_fan) ?? 0)) best.set(name, artist);
+  }
+  const related = [...best.values()].slice(0, 12);
   const tops = await Promise.all(
     related.map((artist, rank) =>
-      deezer(`artist/${num(artist.id)}/top?limit=8`)
+      deezer(`artist/${num(artist.id)}/top?limit=5`)
         .then((page) =>
           rows(page.data)
             .map(deezerTrack)
             .filter((track): track is MusicTrack => !!track)
-            .map((track, index): [MusicTrack, number] => [track, (1 - rank / 8) * (1 - index / 10)]),
+            .map((track, index): [MusicTrack, number] => [
+              track,
+              (1 - rank / RELATED_DEPTH) * (1 - index / 10),
+            ]),
         )
         .catch(() => [] as [MusicTrack, number][]),
     ),

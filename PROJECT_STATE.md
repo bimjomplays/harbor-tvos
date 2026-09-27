@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — upstream drift part 2/3)
+2026-09-27 UTC: Ported upstream `radio.ts`'s `relatedLane` artist-dedup (a821e273) into
+`engine/musicRadio.ts`'s `relatedLane`: case-insensitive name dedup keeping the higher-`nb_fan`
+artist, related pool 8→14, kept-after-dedup 6→12, per-artist top-tracks limit 8→5. Added a smoke
+check (a case-insensitive "Justice"/"JUSTICE" duplicate, different `nb_fan`) proving the lower-fan
+duplicate's `/top` endpoint is never fetched and its track never reaches the station. `node build.mjs`
+4670 KB → 4671 KB; `node smoke.mjs --offline` 1152 → 1153 checks passed, 0 failed. `loadSimilarTracks`/
+`withSeedArtist` from the same upstream commit intentionally left for part 3 (More Like This).
+
 ## Status (2026-09-27, subagent — upstream drift part 1/3)
 2026-09-27 UTC: Bumped `reference/harbor` pin `770ca0bd4` → `a821e273` (docs/upstream-drift-2026-09-27.md's
 follow-up 1). `node build.mjs` 4653 KB → 4670 KB (within the ≈4.66 MB expectation, no new inlined lazy

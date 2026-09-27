@@ -107,9 +107,14 @@ touch these; confirmed no import path.
   `musicRadio.ts`, `rooms.ts`, `kids.ts`) imports (confirmed by grep + a clean rebuild). The
   `page-rows.ts` stable-insert fix (`orderedRowKeys`/`applyPageRows`) is now in the bundle, unchanged
   function signatures, free pickup as predicted.
-- While re-syncing, hand-port `relatedLane`'s artist-dedup improvement into `engine/musicRadio.ts`'s
-  equivalent lane-builder (small, self-contained, improves the existing "Start Radio" station's
-  variety — no new feature surface, no new UI). — tracked as its own step below.
+- **Done (2026-09-27).** Hand-ported `relatedLane`'s artist-dedup improvement into
+  `engine/musicRadio.ts`'s `relatedLane`: case-insensitive name dedup keeping the higher-`nb_fan`
+  artist, related pool widened 8 → 14, kept-after-dedup 6 → 12, per-artist top-tracks limit 8 → 5
+  (matches upstream `radio.ts` at `a821e273` exactly, `RELATED_DEPTH` weighting included). New smoke
+  check in `engine/smoke.mjs` (a case-insensitive "Justice"/"JUSTICE" duplicate with different
+  `nb_fan`) asserts the lower-fan duplicate's top-tracks endpoint is never fetched and its track never
+  reaches the station. `loadSimilarTracks`/`withSeedArtist` (the same upstream commit) were **not**
+  ported here — they belong to "More Like This" (see below), not this dedup fix.
 
 **Needs real port work (don't fold into a routine re-sync):**
 - The "More Like This" feature (replaces "Start Radio" in the track menu; new similar-tracks page,
