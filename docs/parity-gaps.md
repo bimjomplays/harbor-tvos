@@ -385,13 +385,14 @@ Left:
 | L2 (ported, pass 3) | Per-addon result plates | `search/bp-search-group.tsx`, `search/bp-search-results.tsx` | Every addon has a fixed slot: a quiet placeholder while it answers, "Didn't answer" with Try again when it fails. The rows do not jump. | Late rows are inserted in place. Failed addons only appear in the empty-state count (`SearchView.swift:371`). There is no retry. | S-M | Medium |
 | L3 (ported, pass 3) | Library auto-paging | `bp-library-sections.tsx` (sentinel) | The grid loads more as the ring nears the bottom. | A "Show more (n of m)" button (`LibraryView.swift:339`). | S | Low (the button works well on a remote) |
 
-### Live TV and Sports (3)
+### Live TV and Sports (4)
 
 | # | Gap | Upstream | What it does for the viewer | TV today | Size | Worth it on TV? |
 |---|---|---|---|---|---|---|
 | X1 (ported) | Search playlists for a channel and pin it | `sports/bp-sports-broadcast-search.tsx` | Type a channel name, match it across every playlist, play it, and "Always use for {league}". | The picker lists only auto-matched channels (`SportsEventView.swift:300-340`). When nothing matches, its note tells the viewer to "Search your channels", but no text search exists. Only the addon panel has a field. | S-M | Yes |
 | X2 (ported, pass 3) | Saved event and feed notes | `sports/bp-sports-event-hero.tsx:285-291` | "Showing saved match details." when offline, plus source notes for TheSportsDB, ONE Championship and promoter-published cards. | None. | S | Low |
 | X3 (ported, pass 3, except the sampled glow) | Live band art | `bp-live-split.tsx`, `use-bp-live-panels.ts` | The Home Live band shows two channels' art side by side, plus a fallback ladder of panels. | `HomeBands.swift` shows a single still or mosaic. | S-M | Low |
+| SP-9 (ported 2026-09-27) | TheSportsDB artwork + per-sport scenery fallback | `sports/bp-sports-art.ts` `SCENERY_GROUPS`, `lib/sports/hub-artwork.ts` | A game with no art of its own (most games) and no TheSportsDB hit still gets a neutral per-sport photo (a soccer pitch, a basketball court, …) instead of nothing. | `engine.sports.artwork()` (`SportsArtView.swift`) fell back to TheSportsDB only; a miss there showed nothing. Now it calls upstream's own `bpSportsGroup`/`bpSportsScenery` (via the `@/` alias) and resolves the returned path against `raw.githubusercontent.com/harborstremio/harbor/<pinned full SHA>/public/...` so the ~7 MB of generated photos stay in upstream's repo instead of the bundle. | S | Yes |
 
 ### Profiles, onboarding and account (4)
 

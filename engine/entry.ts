@@ -111,6 +111,7 @@ import * as togetherGlue from "./together";
 import * as voyageGlue from "./voyage";
 
 declare const __HARBOR_UPSTREAM_REV__: string;
+declare const __HARBOR_UPSTREAM_REV_FULL__: string;
 declare const __HARBOR_BUILT_AT__: string;
 
 // ============================================================================ stream engine
@@ -1391,6 +1392,9 @@ export const music = {
  */
 export const runtime = {
   upstreamRev: typeof __HARBOR_UPSTREAM_REV__ === "string" ? __HARBOR_UPSTREAM_REV__ : "unknown",
+  /** Full SHA of the same commit (SP-9): raw.githubusercontent.com asset URLs (sports scenery
+   * photos) need the full hash, not the short one `upstreamRev` reports. */
+  upstreamRevFull: typeof __HARBOR_UPSTREAM_REV_FULL__ === "string" ? __HARBOR_UPSTREAM_REV_FULL__ : "",
   builtAt: typeof __HARBOR_BUILT_AT__ === "string" ? __HARBOR_BUILT_AT__ : "unknown",
   /** Everything the host still has to implement; must be empty before anything else is called. */
   missingHostFunctions: shims.missingHostFunctions,

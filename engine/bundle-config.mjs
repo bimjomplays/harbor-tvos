@@ -50,6 +50,19 @@ export const upstreamRev = (() => {
   }
 })();
 
+/** Full SHA of the same commit: raw.githubusercontent.com needs the full hash, not the short one,
+ * to serve upstream's static assets (e.g. the sports scenery photos) without bundling them here. */
+export const upstreamRevFull = (() => {
+  try {
+    return execFileSync("git", ["-C", path.resolve(here, "../reference/harbor"), "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+})();
+
 export const stubs = {
   name: "harbor-stubs",
   setup(b) {
@@ -262,6 +275,7 @@ export const common = {
     "import.meta.env.MODE": '"production"',
     "process.env.NODE_ENV": '"production"',
     __HARBOR_UPSTREAM_REV__: JSON.stringify(upstreamRev),
+    __HARBOR_UPSTREAM_REV_FULL__: JSON.stringify(upstreamRevFull),
     __HARBOR_BUILT_AT__: JSON.stringify(new Date().toISOString().slice(0, 19) + "Z"),
   },
   loader: { ".json": "json" },

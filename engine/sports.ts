@@ -610,11 +610,30 @@ import { fetchSportsArtwork, cachedArtwork, type SportsArtwork } from "@/lib/spo
 export function standings(leagueTag: string): Promise<StandingsTable | null> {
   return fetchStandingsUpstream(leagueTag).catch(() => null);
 }
-/** lib/sports/hub-artwork: TheSportsDB backdrop/poster/team art for a card or hero with none of its own. */
+declare const __HARBOR_UPSTREAM_REV_FULL__: string;
+/** bp-sports-art.ts bpSportsScenery: upstream's generated per-sport photo (soccer pitch, court, …),
+ * resolved against the exact upstream commit this bundle was built from — the ~7 MB of webp photos
+ * stay in upstream's repo instead of inflating this bundle. */
+function sceneryUrl(game: SportsGame): string {
+  const rev = typeof __HARBOR_UPSTREAM_REV_FULL__ === "string" ? __HARBOR_UPSTREAM_REV_FULL__ : "";
+  if (!rev) return "";
+  const group = bpSportsGroup(game);
+  const path = bpSportsScenery(group, game.league).split("?")[0];
+  return `https://raw.githubusercontent.com/harborstremio/harbor/${rev}/public${path}`;
+}
+/** lib/sports/hub-artwork: TheSportsDB backdrop/poster/team art for a card or hero with none of its
+ * own; bp-sports-art.ts SCENERY_GROUPS beneath that: a neutral per-sport photo when the game has no
+ * art and TheSportsDB found none either. */
 export async function artwork(game: SportsGame): Promise<SportsArtwork> {
   const held = cachedArtwork(game);
   if (held.backdrop || held.poster) return held;
-  return Promise.race([fetchSportsArtwork(game).catch(() => held), new Promise<SportsArtwork>((r) => setTimeout(() => r(held), 6000))]);
+  const fetched = await Promise.race([
+    fetchSportsArtwork(game).catch(() => held),
+    new Promise<SportsArtwork>((r) => setTimeout(() => r(held), 6000)),
+  ]);
+  if (fetched.backdrop || fetched.poster) return fetched;
+  const scenery = sceneryUrl(game);
+  return scenery ? { ...fetched, backdrop: scenery } : fetched;
 }
 
 
@@ -641,7 +660,7 @@ export function favouriteTeams(): FavouriteTeam[] { return readFavourites().team
 // bp-sports-who-panel: a team or athlete bio for one side of a game (bp-sports-who-subject
 // picks which; team-profile / athlete-identity fetch it).
 import { bpSportsWhoSubject, bpSportsWhoPlayerSubject, type BpSportsWhoSubject } from "@/views/big-picture/sports/bp-sports-who-subject";
-import { bpSportsGroup, bpSportsSingleSubject, bpSportsCardArt } from "@/views/big-picture/sports/bp-sports-art";
+import { bpSportsGroup, bpSportsSingleSubject, bpSportsCardArt, bpSportsScenery } from "@/views/big-picture/sports/bp-sports-art";
 import { fetchTeamProfile } from "@/lib/sports/team-profile";
 import { fetchSportsDbAthleteBio, parseEspnAthleteBio } from "@/lib/sports/athlete-identity";
 import { safeFetch as whoFetch } from "@/lib/safe-fetch";
