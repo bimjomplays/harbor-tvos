@@ -375,6 +375,10 @@ struct MusicNowPlayingView: View {
     /// (device-flow pass) Play/Pause takes the focus when the screen opens: the top-most control,
     /// the Up next tab, did before, a long way from the transport.
     @Namespace private var focusNS
+    /// prefersDefaultFocus(in: focusNS) alone did not seed the ring in the CI simulator (run
+    /// 36302158467: it landed on the seek row's "music-now-seek-back" instead) — an explicit
+    /// @FocusState fallback, the way MusicPageView.playFocused and ActionDialogs' nameFocused do.
+    @FocusState private var playFocused: Bool
 
     var body: some View {
         ZStack {
@@ -417,7 +421,7 @@ struct MusicNowPlayingView: View {
                     MusicVolumeControl()
                         .focusSection()
                     HStack(spacing: BP.px(18)) {
-                        MusicTransportButtons(focusNamespace: focusNS)
+                        MusicTransportButtons(focusNamespace: focusNS, playFocus: $playFocused)
                         Spacer()
                         // music-dock.tsx's source button (MusicServiceLogo): opens the per-source
                         // picker (music-source-picker.tsx) anchored at the dock there; the TV opens
@@ -455,6 +459,7 @@ struct MusicNowPlayingView: View {
             .padding(.top, BP.px(50))
         }
         .focusScope(focusNS)
+        .onAppear { DispatchQueue.main.async { playFocused = true } }
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
         .onChange(of: player.current == nil) { _, gone in if gone { dismiss() } }

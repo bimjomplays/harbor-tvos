@@ -519,6 +519,9 @@ struct MusicTransportButtons: View {
     var compact = false
     /// The screen's focus scope, when Play/Pause should take the focus as it opens (Now Playing).
     var focusNamespace: Namespace.ID? = nil
+    /// The explicit @FocusState fallback for the same case: prefersDefaultFocus(in:) alone did not
+    /// seed the ring in the CI simulator (run 36302158467), so MusicNowPlayingView also drives this.
+    var playFocus: FocusState<Bool>.Binding? = nil
     @ObservedObject private var player = MusicPlayer.shared
     @ObservedObject private var copy = MusicCopy.shared
 
@@ -531,6 +534,7 @@ struct MusicTransportButtons: View {
                  player.phase == .playing ? copy("music.pause", "Pause") : copy("music.play", "Play"), big: true) { player.toggle() }
                 .accessibilityIdentifier("music-toggle")
                 .modifier(MusicPrefersFocus(namespace: focusNamespace))
+                .modifier(MusicFocusBinding(focus: playFocus))
             icon("forward.fill", copy("music.next", "Next track")) { player.next() }
             icon(player.repeatMode == .one ? "repeat.1" : "repeat", repeatLabel, on: player.repeatMode != .off) { player.cycleRepeat() }
                 .accessibilityIdentifier("music-repeat")
@@ -618,6 +622,19 @@ private struct MusicPrefersFocus: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if let namespace {
             content.prefersDefaultFocus(true, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+/// .focused(_:) with an optional binding: MusicTransportButtons is also used compactly (the
+/// dock, MusicPages' MusicCollectionPlayButton row) where nothing drives Play/Pause's focus.
+private struct MusicFocusBinding: ViewModifier {
+    let focus: FocusState<Bool>.Binding?
+    @ViewBuilder func body(content: Content) -> some View {
+        if let focus {
+            content.focused(focus)
         } else {
             content
         }
