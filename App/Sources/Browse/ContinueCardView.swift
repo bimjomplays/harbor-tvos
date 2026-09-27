@@ -52,7 +52,6 @@ struct ContinueCardView: View {
                     if let w = item.watcher { Text("Watched by \(w)").font(BP.sans(9.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 }
                 if !episodeTitle.isEmpty { Text(episodeTitle).font(BP.sans(10.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
-                if !episodeTitle.isEmpty { Text(episodeTitle).font(BP.sans(10.5)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 ZStack(alignment: .leading) {
                     Capsule().fill(BP.edge2)
                     Capsule().fill(BP.accent).frame(width: max(0, (Self.width - BP.px(22)) * item.progress))
