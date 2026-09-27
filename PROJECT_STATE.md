@@ -220,7 +220,7 @@ load" even with liked tracks (engine try/catch, smoke 1182); a track card with a
 liked track without art) failed the WHOLE `music.home` decode in Swift (`MusicCard.artwork` is
 non-optional) so the room kept stale shelves (engine `?? ""`, smoke 1183). Still open, from the CI
 screenshot: (1) a SwiftUI `.contextMenu` on a track card does not open in the simulator from either
-`XCUIRemote.press(.select, forDuration:)` or `XCUIElement.press(forDuration:)` — the two NavigationTests7
+`XCUIRemote.press(.select, forDuration:)` (`XCUIElement.press(forDuration:)` is unavailable on tvOS) — the two NavigationTests7
 tests now `XCTSkip` at that step (everything before it runs: liking from the dock, the Liked shelf,
 the mast → Playlists → create flow); the hold-Select track menu is an owner device check. (2) The
 focused "Liked tracks" card sat UNDER the dock overlay (run 36321942113 screenshot): the ScrollView

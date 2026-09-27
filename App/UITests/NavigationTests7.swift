@@ -173,9 +173,9 @@ final class NavigationTests7: XCTestCase {
         // `app.buttons` convention) or some other element type.
         let entry = app.descendants(matching: .any)[item]
         if !entry.waitForExistence(timeout: 8) {
-            // Second style: an element-level long press (run 36321942113: the remote hold alone
-            // opened nothing in the simulator).
-            app.buttons["music-card-liked-0"].press(forDuration: 1.5)
+            // Second try: a longer remote hold (XCUIElement.press(forDuration:) is unavailable on
+            // tvOS; run 36321942113: a 1.5 s hold opened nothing in the simulator).
+            remote.press(.select, forDuration: 3)
             if !entry.waitForExistence(timeout: 8) {
                 // Neither reached the .contextMenu in the simulator; the menu is a device check
                 // (docs/device-checklist.md). Skip rather than fail so the rest of the suite gates CI.
