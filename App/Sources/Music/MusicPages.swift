@@ -93,7 +93,7 @@ struct MusicPageView: View {
             if data?.tracks.isEmpty == false { DispatchQueue.main.async { playFocused = true } }
         }
         .fullScreenCover(item: $child) { t in MusicPageView(target: t) }
-        .musicSpotifyDestinationHost()
+        .musicTrackActionsHost()
     }
 
     private var header: some View {
@@ -274,7 +274,7 @@ struct MusicSearchView: View {
         .onExitCommand { dismiss() }
         .onPlayPauseCommand { player.remoteToggle() }
         .fullScreenCover(item: $page) { t in MusicPageView(target: t) }
-        .musicSpotifyDestinationHost()
+        .musicTrackActionsHost()
         .fullScreenCover(isPresented: $phoneOpen) {
             PhoneTypingSheet(label: copy("music.searchLabel", "Search music"), placeholder: copy("music.searchPlaceholder", "Search songs, albums, artists"),
                              text: $model.query, onClose: { phoneOpen = false })
@@ -382,8 +382,9 @@ struct MusicNowPlayingView: View {
                     ZStack {
                         if let art = player.current?.artwork, !art.isEmpty { RemoteImage(url: art) } else { BP.panel2 }
                     }
-                    // 280 (was 340) leaves room for the volume row without pushing the transport off screen (review 37).
-                    .frame(width: BP.px(280), height: BP.px(280))
+                    // 240 (was 340, then 280 in review 37): CI's 1080p screenshot (run 36304417732) still
+                    // had the transport row cut off at the bottom once the error/resolving note drew.
+                    .frame(width: BP.px(240), height: BP.px(240))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
                     .shadow(color: .black.opacity(0.55), radius: 40, y: 20)
                     Text(player.current?.title ?? "").font(BP.display(30)).foregroundStyle(BP.ink).lineLimit(2)
@@ -441,7 +442,7 @@ struct MusicNowPlayingView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, BP.gutter)
-            .padding(.top, BP.px(70))
+            .padding(.top, BP.px(50))
         }
         .focusScope(focusNS)
         .onExitCommand { dismiss() }
@@ -450,7 +451,7 @@ struct MusicNowPlayingView: View {
         // (device-flow pass) The Up next suggestions' track menu offers Add to playlist: without a
         // host of its own the environment reached MusicView's, which cannot present while this
         // screen is up, so the choice did nothing.
-        .musicSpotifyDestinationHost()
+        .musicTrackActionsHost()
         .fullScreenCover(isPresented: $sourcePickerOpen) {
             MusicSourcePickerView { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { connectionsFromPicker = true } }
         }
@@ -460,6 +461,8 @@ struct MusicNowPlayingView: View {
     private func tab(_ id: String, _ title: String) -> some View {
         Button { panel = id } label: {
             Text(title).font(BP.sans(15, .semibold))
+                // One line: "About the artist" wrapped onto three in the tab row (CI screenshot).
+                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(8))
                 .background(Capsule().fill(panel == id ? BP.ink.opacity(0.14) : .clear))
         }
@@ -734,32 +737,7 @@ struct MusicAboutArtistPanel: View {
     }
 
     private func creditsSection(_ about: MusicAboutArtist) -> some View {
-        VStack(alignment: .leading, spacing: BP.px(10)) {
-            HStack(spacing: BP.px(10)) {
-                Text(copy("music.credits.title", "Credits")).font(BP.sans(15, .bold)).foregroundStyle(BP.ink)
-                ForEach(about.creditSources, id: \.self) { source in
-                    Button { webLink = MusicWebLink(url: source.url) } label: { Label(source.name, systemImage: "arrow.up.right") }
-                        .buttonStyle(BPTileStyle(radius: BP.rSM))
-                }
-            }
-            .focusSection()
-            ForEach(about.credits) { credit in
-                Button { page = MusicPageTarget(card: credit.artist) } label: {
-                    HStack(spacing: BP.px(10)) {
-                        VStack(alignment: .leading, spacing: BP.px(2)) {
-                            Text(credit.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
-                            Text(([credit.roleLabel] + credit.attributes).joined(separator: ", ")).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkSubtle)
-                        }
-                        Spacer()
-                        Image(systemName: "arrow.up.right").font(.system(size: BP.px(12)))
-                    }
-                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
-                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.glass))
-                }
-                .buttonStyle(BPTileStyle(radius: BP.rSM))
-            }
-        }
-        .focusSection()
+        MusicCreditsBlock(credits: about.credits, sources: about.creditSources, onArtist: { page = MusicPageTarget(card: $0) }, onLink: { webLink = MusicWebLink(url: $0) })
     }
 
     private func cardsSection(_ title: String, _ cards: [MusicCard]) -> some View {

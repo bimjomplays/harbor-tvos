@@ -26,7 +26,7 @@ is `engine/music.ts`, and playback is AVFoundation in Swift (`App/Sources/Music/
 | **Open catalog** (`connectors/catalog`) | Deezer charts + editorial, ListenBrainz fresh releases, iTunes + Deezer search, MusicBrainz / Cover Art for credits. Browse and search only, never playable. | All plain HTTPS JSON. | **Shipped**: Deezer chart tracks / albums / artists / editorial, Deezer artist top + albums + related, iTunes song / album / artist search and lookups. **Batch 2:** ListenBrainz fresh releases (`catalog:new-releases`, albums and EPs only, Cover Art Archive thumbnails, `listenbrainz.rs`) fill the "New releases" band; ListenBrainz's sitewide artist chart stands in when Deezer's artist chart fails; MusicBrainz release / artist track lists and artist albums (`musicbrainz.rs`) open those items. Both services are paced to one call a second as upstream does. |
 | **SoundCloud** (`connectors/soundcloud`) | Public `api-v2` with a `client_id` scraped from the soundcloud.com web app's script bundles (`identity.rs`), cached on disk, re-scraped on 401/403. Streams are progressive MP3 or HLS (AAC / MP3 / Opus). Gated by the source-consent dialog. | HTTPS only; AVPlayer plays progressive MP3 and AAC/MP3 HLS, **not Opus/Ogg**. | **Shipped**, behind upstream's consent (only SoundCloud is offered; YouTube is not). Transcoding choice is upstream's `select_transcoding` plus one TV rule: Opus/Ogg is never picked. **Reliability of the client id:** the same scrape upstream relies on (the home page lists `a-v2.sndcdn.com/assets/*.js`; one bundle contains `client_id:"<32 chars>"`). It has worked for years but is unofficial: SoundCloud can move or rename it at any time, and upstream would break in the same release. The id is cached in engine storage and dropped + re-scraped on 401/403, exactly as upstream. It could not be exercised from the build sandbox (egress to soundcloud.com is blocked there); the offline smoke drives the whole path against recorded shapes. |
 | **Jellyfin** (`connectors/jellyfin`) | Adopts the video side's Jellyfin sign-in (`config.rs adopt`), home shelves (recent albums, instant-mix stations, playlists, favourites), typed search, InstantMix, `PlaybackInfo` + `/Audio/{id}/universal` with a device profile, play-session reports. | HTTPS/HTTP to the LAN server. AVPlayer plays MP3, AAC/ALAC (m4a), FLAC, WAV, AIFF. | **Shipped** through the existing Settings › Home servers Jellyfin connection. The direct-play container list is narrowed to what AVPlayer decodes, so Ogg/Opus/WebM/Matroska/WavPack are transcoded to MP3 by the server. Session start/stop reports are sent. |
-| **Plex** (`connectors/plex`) | Finds a server with a music (`artist`) section from the plex.tv account, hub rows, hub search, direct part URLs or the MP3 universal transcoder. | Same as Jellyfin. | **Shipped** through the existing Plex PIN connection (its server origin + token); hubs, search, album/artist/playlist/station tracks, direct part for AVPlayer-playable files, MP3 transcode otherwise. No timeline scrobbles yet. |
+| **Plex** (`connectors/plex`) | Finds a server with a music (`artist`) section from the plex.tv account, hub rows, hub search, direct part URLs or the MP3 universal transcoder. | Same as Jellyfin. | **Shipped** through the existing Plex PIN connection (its server origin + token); hubs, search, album/artist/playlist/station tracks, direct part for AVPlayer-playable files, MP3 transcode otherwise. **Batch (leftovers 2):** timeline reporting — upstream's own Plex music connector sends none (unlike its video connector's `lib/media-server/plex.ts` `reportProgress`); the TV adds "now playing" / "stopped" `/:/timeline` pings held until the track is heard (the Jellyfin session pattern above) and a mark-played `/:/scrobble` at the same `should_scrobble` threshold Subsonic and Last.fm use. |
 | Emby | Not a music source upstream (Jellyfin connector only). | — | Not offered (matches upstream). |
 | **Subsonic / Navidrome** (`connectors/subsonic`) | Address + user + password form, token auth, browse/search/stream. | Plain HTTP(S); md5 token auth (`engine/md5.ts`, JavaScriptCore has no MD5). | **Shipped (batch 2)**: Music › Connections › Navidrome › Connect opens upstream's form (Server URL with placeholder `https://navidrome.local`, Username, Password; every field can be typed on a phone). Same probe ladder (`https://host`, `http://host`, `http://host:4533`), Navidrome's `/auth/login` salt+token exchange first, else a random salt and `md5(password+salt)`, proven by `ping`. Only the pairing (base URL, username, salt, token) is kept, under upstream's keys `harbor.subsonic.v1.*`, which the TV routes to the Keychain tier (`KeyValueStore.secretPrefixes`); the password is never stored. Home shelves (newest / most played / random albums, starred, artists, playlists; empty ones collapse), `search3` search, album (disc then track order), artist (first four albums, 30 tracks), playlist pages. `stream?format=raw`, except that files whose suffix AVPlayer cannot decode (Ogg / Opus / WMA / APE / WavPack …, read with `getSong`) ask the server for 320k MP3. Now-playing (`scrobble submission=false`) on resolve and the submission scrobble at the threshold, as upstream. Upstream names these shelves with keys its catalogs never define (`music.row.serverNewest` …), so the desktop shows raw keys; the TV shows upstream copy with the same meaning ("On your server", "Liked tracks", "Artists", "Your playlists") and plain English for the two without one ("Most played", "Random albums"). |
 | **Spotify** (`music/spotify`, librespot 0.8) | Bring-your-own Spotify app client id, OAuth PKCE with a loopback redirect to `127.0.0.1:8898` in the desktop browser (`auth.rs`), then librespot streams Premium audio through its rodio/cpal sink (`player.rs`); browse/search over the Web API with that token (`browse.rs`, `api.rs`, `tokens.rs`). | No browser on the TV and the loopback redirect cannot be caught on a phone; librespot's audio backends have no tvOS output; `open` (librespot-oauth's browser launcher) does not compile for tvOS. | **Built (batch 3), needs a Premium account on a device.** Phone hand-off for OAuth, librespot 0.8 inside `rust/harbor-ffi` with a ring-buffer sink drained by AVAudioEngine, Web API browse/search in the engine. Details in "Spotify on the TV" below. |
@@ -107,7 +107,9 @@ a time through `artist_catalog.rs`'s artist-bound cursor (a Load more tile ends 
 output stops after a pause or when the queue ends, and MusicPlayer's 250 ms event clock stops while
 nothing plays (both start again on resume or the next track).
 
-**Not ported:** upstream's "Import to Harbor" (the TV has no Harbor playlists yet), liking on Spotify
+**Not ported:** upstream's "Import to Harbor" (bringing a whole Spotify playlist in as a new Harbor
+one — Harbor playlists exist now, leftovers batch 2 below, but the bulk-import command itself is
+not), liking on Spotify
 (upstream's Save is Harbor's own liked list; it writes nothing to `/me/tracks`), saved albums and
 followed artists as library views (upstream's library page has neither; saved albums are already a
 home row, and followed artists would need `user-follow-read`, which upstream does not request),
@@ -170,7 +172,13 @@ the phone hand-off).
   quiet (mpv would otherwise keep sounding under the new background mode).
 - **Library:** liked tracks and recents in engine storage (`harbor.music.liked.v1`,
   `harbor.music.recents.v1`), not the Rust SQLite database; not synced to the desktop yet
-  (upstream does not sync them through the account either).
+  (upstream does not sync them through the account either). **Playlists (leftovers batch 2):**
+  Harbor's own playlists (library.rs / lib/music/library.ts), the same way — `harbor.music.
+  playlists.v1` in engine storage rather than the Rust SQLite database, opened from the Music
+  mast's "Playlists" button (`MusicLibraryView`); create/rename/delete and add/remove/reorder
+  tracks, and any track's hold-Select menu can add it to one (`MusicPlaylistPickerView`, offering
+  Spotify's own destination too when it is connected). M3U import/export is not ported (no
+  user-visible file system on tvOS).
 
 ## Needs a device or an account to verify
 
@@ -199,10 +207,28 @@ the phone hand-off).
   `music.sourcePreference`). Upstream's Signal tab (mpv/librespot stream diagnostics), the karaoke
   view, filmography/tour dates (music-artist-extras.tsx) and "Where to buy" (MusicWhereToBuy) were
   not ported.
-- Library sync of liked tracks / playlists and upstream's playlists (library.rs), Plex timeline
-  scrobbles.
-- Spotify: Import to Harbor (with Harbor playlists); EQ through an AVAudioEngine graph
-  (the Spotify output is already an AVAudioEngine).
+- **Shipped (leftovers batch 2):** Harbor's own playlists (library.rs / lib/music/library.ts,
+  `engine/musicPlaylists.ts`): list/create/rename/delete, add/dedupe/remove/reorder tracks, kept
+  in engine storage like liked tracks and recents (no SQLite database on tvOS). A "Playlists"
+  button in the Music mast opens them (`MusicLibraryView` / `MusicPlaylistDetailView`), and any
+  track's hold-Select menu now has a generalized "Add to playlist" (`MusicPlaylistPickerView`)
+  offering a Harbor playlist or, when Spotify is connected, its own destination — replacing the
+  old Spotify-only picker. Not ported: M3U import/export (music-library.tsx importMusicM3u/
+  exportMusicM3u; no user-visible file system on tvOS). Plex timeline reporting: upstream's own
+  Plex music connector sends no timeline calls at all (its video connector's lib/media-server/
+  plex.ts reportProgress does); the TV adds "now playing" / "stopped" `/:/timeline` pings (held
+  until the track is heard, like the Jellyfin session reports beside it) and a mark-played
+  `/:/scrobble` at the same should_scrobble threshold Subsonic and Last.fm already use. The track
+  page's Credits panel (music-listening-details.tsx MusicTrackCredits): `music.trackCredits`
+  reuses the same recording-profile.ts credits as the About tab, independent of its artist-bio
+  fallback, reachable from any track's menu ("Credits", `MusicTrackCreditsView`).
+- Spotify: Import to Harbor (bringing a whole Spotify playlist in as a new one — Harbor playlists
+  exist now, so only the bulk-import command itself is unported); EQ through an AVAudioEngine
+  graph (the Spotify output is already an AVAudioEngine).
 - Needs a device: the About tab's Deezer/MusicBrainz/Wikidata/Wikipedia round trip (offline smoke
   covers it against mocked hosts, docs/music-spec.md → "Needs a device or an account to verify");
-  the source picker's focus/remote flow and its nested Connections cover.
+  the source picker's focus/remote flow and its nested Connections cover; the Playlists button
+  and the Add-to-playlist picker's focus/remote flow (destination toggle, create-then-add); a Plex
+  server with a music library, to see the new "now playing" / mark-played reports in its own
+  activity (Plex apps / plex.tv) rather than only in the mocked-host smoke check; the track page's
+  Credits panel reachable from a real track's hold-Select menu.

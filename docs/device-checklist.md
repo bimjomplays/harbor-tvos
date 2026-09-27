@@ -104,6 +104,8 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Settings / onboarding / account
 
+- [ ] Settings → Spoilers → Select "Blur spoilers: Off" → it reads On and the four nested toggles (thumbnails, titles, descriptions, skip next) appear; relaunch → still On; open a series in Detail with unwatched episodes → titles/thumbnails are masked until a card is focused. (`ef2a2eb`, the toggle could never turn on before: the settings decoder skipped the spoiler keys)
+- [ ] Settings → Playback: flip "Resume where you left off", "Ask before resuming", "Confirm before leaving the player" → each label flips at once and survives a relaunch (same patch path as Spoilers). (`ef2a2eb`)
 - [ ] With 2+ profiles, set Settings → Startup & default ("Who's watching" interval, "Start as"), cold-launch with each value → the launch follows it; "Start as" paints its theme and language first. (`8543889`, `761d256`) *(UI test: testStartupDefaultsPills covers the pills)*
 - [ ] Leave Harbor for 15+ minutes with the 15 min interval, come back → Who's watching comes up (not over a film, PiP, setup or a PIN-locked kid). (`3ca744f`)
 - [ ] Sign in to Harbor / Stremio from Settings, then sign out → the ring moves to that section's Sign out, then Sign in; the column updates. (`5bbbf5e`)
@@ -122,6 +124,9 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Profiles / Kids
 
+- [ ] Settings → Profiles → edit a non-primary profile → "Kids profile" toggle shows (not on the primary) → turn it on → age pills (3/5/7/9/12), daily watch time pills (No limit…180 min), the 5 kid avatars and a 4-digit Parent PIN field appear; PIN & sidebar locks section hides while Kids is on → Save → the Who tile carries the kid look and entering it opens the kids shell; leaving asks for the PIN. (`7aca941`)
+- [ ] Turn Kids on, type 2 digits of PIN, turn Kids off → Save is enabled again (no stuck-disabled Save). (`55815fd`)
+- [ ] Set a 30-minute daily limit on a kid, watch past it → the curfew lock draws; the limit resets at local midnight. (`docs/kids-parity.md`)
 - [ ] Settings → Switch profile, press Back on Who's watching → the ring returns to Switch profile. (`56796c7`)
 - [ ] On a kid profile hit the curfew with the return interval due → the lock ("The ship is sailing away…") comes first; Who's watching is asked after it lifts. (`56796c7`, `87189d8`, `9ab3745`)
 - [ ] Profile editor → "Enter PIN to change locks" → after the pad the ring is back on that button (or the first lock tile). (`8543889`)
@@ -148,6 +153,10 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Music / Manga / eBook
 
+- [ ] Open Now Playing from the dock → the ring is on Play/Pause (the simulator lands on the seek row instead: `ef2a2eb`; if the device does the same, the prefersDefaultFocus seed needs an explicit FocusState fallback).
+- [ ] eBook Detail (AniList signed in) → "Mark as Read" in the action row → the corner badge reads Read, AniList shows the entry completed; press again → unread; signed out → "Saved locally; AniList sync is pending" and the push lands after signing in. (`892e7eb`)
+- [ ] eBook reader: read to the middle of chapter 3, jump to chapter 2 from the bar, then Next chapter → chapter 3 opens at the saved position, not line 0 (the chapters panel too); a bookmark still opens at its own line. (`892e7eb`)
+- [ ] eBook room: Down from the Popular rail reaches the Collections / Shelf cards, then the browse row (Refresh source, Manage eBook sources); Manage opens Sources with the ring on the NYT key row. (`8b91dc9`, `ef2a2eb`)
 - [ ] In an album of 5+ tracks turn on Shuffle and Repeat all, let it run past the end → gapless hand-offs, a new shuffled lap at the end; the modes survive a relaunch. (`6b01a08`)
 - [ ] Repeat one on a streaming track and a Spotify track; change shuffle/repeat from Control Center → each replays, Next still moves on; the dock and Now Playing follow. (`6b01a08`)
 - [ ] Play next on a heard track, under shuffle then Repeat off, and on a wrapped row → it plays next and the order carries on with nothing skipped. (`531cb93`)
@@ -162,6 +171,9 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Watch Together
 
+- [ ] Guest on a Detail page of another title when the host sends an invite → the invite toast shows over that page and Join opens the invited title as a further cover; Menu unwinds one level at a time. (`92c192c`)
+- [ ] Dismiss an invite toast → the ring returns to the exact tile it was on, not the room default. (`92c192c`)
+- [ ] Host swaps source → the duration-mismatch chip never flashes the previous file's length; a swap that sits on "Connecting…" releases the guests after the player's own stall wait (Settings → stall setting, default 10 s), not sooner. (`92c192c`, `020b8d6`)
 - [ ] As a TV guest: host buffers, give the guest a slow source, drop the TV's network ~30 s → no seek every second or heartbeat; the guest rejoins and resyncs. (`a8ac757`)
 - [ ] As a guest in a paused room press Back ("Leave the show?") → the room is not paused by it; Keep watching leaves the video to the room. (`a8ac757`)
 - [ ] Host moves to the next episode while the TV guest is in the player or on Detail → one invite toast (Join, 4 s auto-join), no second Back; the lobby does not read the guest ready too early. (`a8ac757`, `95f1be7`, `9a9daa1`)
@@ -175,6 +187,10 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Shell / lifecycle / screensaver
 
+- [ ] Open a stremio://…/manifest.json link while a film plays → the player closes at once (no "Keep watching?") and the addon install page opens. (`29b5873`)
+- [ ] Send a harbor:// link during the intro wall on a cold launch, under the curfew lock and under the screensaver → the intro finishes first, the curfew lock stays until it lifts, the screensaver wakes; the linked page then opens (never invisibly underneath). (`29b5873`)
+- [ ] With a Detail page open, change the theme or language on another synced device → the page stays open and the new theme applies once it closes. (`29b5873`)
+- [ ] Home: Up from any tile never lands on its row's "See all" chip (only Right off the last tile does), and Select on that chip opens its page. (`ef2a2eb`, `d46caf7`)
 - [ ] Change the theme and then the language → LB/RB still switch tabs afterwards. (`56796c7`)
 - [ ] Cold-launch with a big library → the boot splash animates smoothly (the engine is no longer built on the main thread). (`56796c7`)
 - [ ] Watch the top-bar clock → it turns on the minute. (`56796c7`)

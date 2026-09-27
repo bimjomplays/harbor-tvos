@@ -84,7 +84,7 @@ enum HarborAPI {
             struct Envelope: Codable { var error: String?; var code: String?; var message: String? }
             let env = try? JSONDecoder().decode(Envelope.self, from: data)
             // client.ts unwrap: the message is the body's `error`, else "Request failed (N).".
-            let fallback: String = "Request failed (\(status))."
+            let fallback: String = T("Request failed (%lld).", status)
             throw APIError(status: status, code: env?.code, reason: env?.message, message: env?.error ?? fallback)
         }
         return data

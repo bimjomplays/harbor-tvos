@@ -47,9 +47,9 @@ enum StremioAPI {
         req.timeoutInterval = 20
         let (data, resp) = try await URLSession.shared.data(for: req)
         let env = try JSONDecoder().decode(Envelope<T>.self, from: data)
-        if let err = env.error { throw Failure(message: err.message ?? "Stremio request failed") }
+        if let err = env.error { throw Failure(message: err.message ?? T("Stremio request failed")) }
         guard let result = env.result else {
-            throw Failure(message: "stremio \(path) failed (\((resp as? HTTPURLResponse)?.statusCode ?? 0))")
+            throw Failure(message: T("stremio %@ failed (%lld)", path, (resp as? HTTPURLResponse)?.statusCode ?? 0))
         }
         return result
     }

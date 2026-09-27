@@ -61,7 +61,7 @@ struct SettingsView: View {
                 section("Stremio") {
                     if let p = profiles.active {
                         if let s = profiles.stremioSession(for: p.id) {
-                            row(T("Signed in as %@", s.user.fullname ?? s.user.email), detail: "For the \(p.name) profile")
+                            row(T("Signed in as %@", s.user.fullname ?? s.user.email), detail: T("For the %@ profile", p.name))
                             // (device-flow pass 5) The column's Setup summary, "Accounts and TMDB" detail
                             // and preview name the Stremio account (engine settingsRoom facts): they are
                             // read again, as a sign-in's closing cover already has them (bp-settings
@@ -69,7 +69,7 @@ struct SettingsView: View {
                             Button("Sign out") { profiles.setStremioSession(nil, for: p.id); coversClosed &+= 1; returnRing(to: "stremio") }.buttonStyle(BPActionStyle())
                                 .focused($accountLead, equals: "stremio-out")
                         } else {
-                            row("Not signed in", detail: "Your Stremio library for the \(p.name) profile")
+                            row("Not signed in", detail: T("Your Stremio library for the %@ profile", p.name))
                             Button("Sign in") { sheet = .stremio }.buttonStyle(BPActionStyle(primary: true))
                                 .focused($accountLead, equals: "stremio")
                         }
@@ -87,7 +87,7 @@ struct SettingsView: View {
                 }
                 section("Artwork and rows") {
                     row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB key saved",
-                        detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : "Saved on this device only (\(settings.slice.tmdbKey.count) characters)")
+                        detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : T("Saved on this device only (%lld characters)", settings.slice.tmdbKey.count))
                     HStack(spacing: BP.px(12)) {
                         Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
                             .focused($tmdbLead)
@@ -162,12 +162,12 @@ struct SettingsView: View {
                             }
                         }
                         .buttonStyle(BPActionStyle(busy: pulling)).disabled(!account.isSignedIn)
-                        BPNote(text: sync.queued > 0 ? "\(sync.queued) change\(sync.queued == 1 ? "" : "s") waiting to upload" : "Profiles, home rows and services sync both ways. PINs never leave this TV.")
+                        BPNote(text: sync.queued > 0 ? TCount(sync.queued, one: "%lld change waiting to upload", "%lld changes waiting to upload") : "Profiles, home rows and services sync both ways. PINs never leave this TV.")
                     }
                 }
                 section("Profiles") {
                     if let p = profiles.active {
-                        row(p.name, detail: "\(profiles.profiles.count) profiles on this account")
+                        row(p.name, detail: T("%lld profiles on this account", profiles.profiles.count))
                         HStack(spacing: BP.px(12)) {
                             Button("Switch profile") {
                                 app.switchProfile()
@@ -224,7 +224,7 @@ struct SettingsView: View {
                     }
                 }
                 section("About") {
-                    row("Harbor for Apple TV", detail: "Build \(build) · upstream beta-branch")
+                    row("Harbor for Apple TV", detail: T("Build %@ · upstream beta-branch", build))
                 }
             }
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(20)).padding(.bottom, BP.hintHeight + BP.px(20))

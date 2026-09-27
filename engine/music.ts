@@ -15,6 +15,7 @@ import { isMusicLiked, likedIdsFor } from "@/lib/music/liked";
 import { loadTrackLyrics } from "@/lib/music/lyrics";
 import { getLyricOffset, setLyricOffset as storeLyricOffset } from "@/lib/music/lyric-offset";
 import { loadRecordingProfile } from "@/lib/music/recording-profile";
+import type { RecordingProfile } from "@/lib/music/recording-profile";
 import { loadArtistProfile } from "@/lib/music/artist-profile";
 import { resolveArtist } from "@/lib/music/artist-authority";
 import { readMusicPreference, writeMusicPreference } from "@/lib/music/preferences";
@@ -74,6 +75,15 @@ const COPY_KEYS = [
   "music.credits.performer",
   "music.source.playOn", "music.source.another", "music.source.preferred",
   "music.recovery.title", "music.recovery.search",
+  // leftovers batch 2: Harbor's own playlists (library.rs, music-library.tsx "Playlists" view,
+  // music-playlist-picker.tsx) and the track page's Credits panel (music-listening-details.tsx
+  // MusicTrackCredits).
+  "music.library", "music.library.permanent", "music.library.reading", "music.library.playlistEmpty",
+  "music.library.savedTracks", "music.library.readyForPlaylist", "music.playlists", "music.row.newPlaylist", "music.row.newPlaylistHint",
+  "music.playlist.create", "music.playlist.rename", "music.playlist.delete", "music.playlist.deleteConfirm",
+  "music.playlist.alreadyAdded", "music.playlist.add", "music.playlist.remove", "music.playlist.first",
+  "music.playlist.moveUp", "music.playlist.moveDown",
+  "music.spotifyLibrary.destination", "music.spotifyLibrary.harbor",
 ] as const;
 
 /** Every string the Swift room shows, in the profile's UI language (lib/i18n). */
@@ -149,6 +159,22 @@ export function setLiked(track: MusicTrack, liked: boolean): MusicLibrary {
   writeList(LIKED_KEY, liked ? [track, ...rest] : rest);
   return library();
 }
+
+// ---------------------------------------------------------------------- Harbor's own playlists
+// library.rs / lib/music/library.ts, ported in full in engine/musicPlaylists.ts (its own module,
+// like liked/recents' Rust file would be, since it is a self-contained CRUD surface). Re-exported
+// here so entry.ts keeps its one flat `music.*` namespace.
+export {
+  type MusicPlaylist,
+  listPlaylists as playlists,
+  createPlaylist,
+  renamePlaylist,
+  deletePlaylist,
+  addToPlaylist,
+  addTracksToPlaylist,
+  removeFromPlaylist,
+  reorderPlaylist,
+} from "./musicPlaylists";
 
 // ----------------------------------------------------------------------------- cards
 export type MusicCard = {
@@ -410,9 +436,10 @@ export function started(track: MusicTrack): void {
   src.playReport(track);
 }
 
-/** The listener stopped the player: close any server-side play session (Jellyfin). */
+/** The listener stopped the player: close any server-side play session (Jellyfin, Plex). */
 export function stopped(): void {
   src.jellyfinStopped();
+  src.plexStopped();
 }
 
 // ----------------------------------------------------------------- radio, lyrics, scrobbles
@@ -591,6 +618,32 @@ export type MusicAboutArtist = {
 };
 const EMPTY_ABOUT: MusicAboutArtist = { artist: null, biography: "", biographyUrl: null, origin: "", began: "", ended: "", aliases: [], genres: [], artwork: "", members: [], links: [], credits: [], creditSources: [] };
 
+/** music-listening-details.tsx MusicCredits, flattened: shared by the About tab (aboutArtist,
+ * below) and the standalone track Credits panel (trackCredits), which upstream draws with the
+ * exact same component. */
+function flattenCredits(profile: RecordingProfile | null): { credits: MusicAboutArtistCredit[]; creditSources: MusicAboutArtistLink[] } {
+  const credits: MusicAboutArtistCredit[] = (profile?.credits ?? []).map((c) => ({
+    name: c.name,
+    role: c.role,
+    roleLabel: CREDIT_ROLE_KEYS[c.role.toLowerCase()] ? t(CREDIT_ROLE_KEYS[c.role.toLowerCase()]) : c.role,
+    attributes: c.attributes ?? [],
+    artist: artistCard(c.artist),
+  }));
+  const creditSources: MusicAboutArtistLink[] = [...new Map((profile?.credits ?? []).map((c) => [c.source, c.sourceUrl] as const))].map(([name, url]) => ({ name, url, kind: "source" }));
+  return { credits, creditSources };
+}
+
+/**
+ * components/music/music-listening-details.tsx MusicTrackCredits: a recording's own credits
+ * (main artist, featured artist, composer, lyricist, producer, performer), independent of the
+ * About tab's artist bio (no resolveArtist fallback: upstream's standalone component only reads
+ * useRecordingProfile). Reachable from any track's hold-Select menu ("Credits").
+ */
+export async function trackCredits(track: MusicTrack): Promise<{ credits: MusicAboutArtistCredit[]; creditSources: MusicAboutArtistLink[] }> {
+  const profile = await loadRecordingProfile(track).catch(() => null);
+  return flattenCredits(profile);
+}
+
 /**
  * music-now-playing.tsx "About" tab (music-listening-details.tsx MusicListeningDetails):
  * the recording's credits (recording-profile.ts, already bundled for radio's feature lookup)
@@ -610,14 +663,7 @@ export async function aboutArtist(track: MusicTrack, language: string): Promise<
       artist = null;
     }
   }
-  const credits: MusicAboutArtistCredit[] = (profile?.credits ?? []).map((c) => ({
-    name: c.name,
-    role: c.role,
-    roleLabel: CREDIT_ROLE_KEYS[c.role.toLowerCase()] ? t(CREDIT_ROLE_KEYS[c.role.toLowerCase()]) : c.role,
-    attributes: c.attributes ?? [],
-    artist: artistCard(c.artist),
-  }));
-  const creditSources: MusicAboutArtistLink[] = [...new Map((profile?.credits ?? []).map((c) => [c.source, c.sourceUrl] as const))].map(([name, url]) => ({ name, url, kind: "source" }));
+  const { credits, creditSources } = flattenCredits(profile);
   if (!artist && !credits.length) return EMPTY_ABOUT;
   const bio = artist ? await loadArtistProfile(artist, language).catch(() => null) : null;
   return {
