@@ -22,6 +22,17 @@ struct ProfileEditorView: View {
     /// editor-view.tsx draftPin: a new profile's PIN, set in the same form.
     @State private var draftPin = ""
     @State private var pinToUnlock = false
+    /// (kids parity pass) kid-toggle.tsx / editor-view.tsx draftKid: on turns the security section
+    /// into the kid setup panel. Never available for the primary profile (KidToggle's `!isPrimary`).
+    @State private var isKid = false
+    /// kids-setup-panel.tsx AGES: cosmetic only (upstream never reads it for content filtering,
+    /// confirmed by grep of kids-specs.ts/kids-filter.ts — the kid-safe rating filter is fixed).
+    @State private var kidAge = 7
+    /// kids-setup-panel.tsx CURFEWS: minutes, nil = "No limit".
+    @State private var kidCurfewMinutes: Int?
+    /// kids-setup-panel.tsx draftParentPin: empty keeps the existing hash (editing a kid that
+    /// already has one); 4 digits replaces it, as editor-view.tsx save does.
+    @State private var kidParentPin = ""
     /// (profiles bug pass) A second Select on Create while the lock value was fetched made a second profile.
     @State private var saving = false
     @State private var deleting = false
@@ -54,6 +65,7 @@ struct ProfileEditorView: View {
                         }
                     }
                     .focusSection()
+                    if showKidToggle { kidSection }
                     if showSecurity { security }
                     ForEach(groups) { g in
                         VStack(alignment: .leading, spacing: BP.px(6)) {
@@ -80,7 +92,7 @@ struct ProfileEditorView: View {
                     }
                     HStack(spacing: BP.px(10)) {
                         Button(editing == nil ? "Create" : "Save") { Task { await save() } }
-                        .buttonStyle(BPActionStyle(primary: true, busy: saving)).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pinDraftValid)
+                        .buttonStyle(BPActionStyle(primary: true, busy: saving)).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pinDraftValid || !kidPinDraftValid)
                         Button("Cancel") { dismiss() }.buttonStyle(BPActionStyle())
                         if let e = editing, !e.isPrimary {
                             Button(confirmDelete ? "Delete for real" : "Delete profile") {
@@ -117,6 +129,12 @@ struct ProfileEditorView: View {
             // overwritten when the task resumed.
             name = editing?.name ?? ""
             avatar = editing?.avatar
+            // (kids parity pass) editor-view.tsx draftKid seed: `editing?.kid ?? null`.
+            if let kid = editing?.kid {
+                isKid = true
+                kidAge = kid.age
+                kidCurfewMinutes = kid.curfewMinutes
+            }
             await parental.loadLockable()
             if case .object(let o)? = editing?.lockedTabs {
                 initialLocks = o.compactMapValues { $0.bool }
@@ -138,11 +156,20 @@ struct ProfileEditorView: View {
 
     // MARK: PIN & sidebar locks (editor-view.tsx SecurityRow / SecurityView / TabsView)
 
-    /// editor-view.tsx `showAdvanced && !draftKid`: the primary profile edits locks, and a new
-    /// profile gets them in the same form; a kid profile has its own parent PIN instead.
-    private var showSecurity: Bool {
-        (editing == nil || profiles.active?.isPrimary == true) && editing?.kid == nil
-    }
+    /// editor-view.tsx `showAdvanced`: the primary profile edits another profile's advanced
+    /// settings, and a new profile gets them in the same form.
+    private var showAdvanced: Bool { editing == nil || profiles.active?.isPrimary == true }
+
+    /// editor-view.tsx `showAdvanced && !isPrimary`: KidToggle is never shown for the primary
+    /// profile (it can't become a kid — ProfilesStore.setKid refuses it too).
+    private var showKidToggle: Bool { showAdvanced && editing?.isPrimary != true }
+
+    /// editor-view.tsx `showAdvanced && !draftKid`: a kid profile has its own parent PIN instead
+    /// of tab locks.
+    private var showSecurity: Bool { showAdvanced && !isKid }
+
+    /// editor-view.tsx `canSave`'s kid half: `!draftKid || !draftParentPin || draftParentPin.length === 4`.
+    private var kidPinDraftValid: Bool { kidParentPin.isEmpty || ProfilesStore.isValidPin(kidParentPin) }
 
     /// editor-view.tsx `locked`: the profile has a PIN (or the new one will).
     private var hasPin: Bool { editing.map { $0.passwordHash != nil } ?? ProfilesStore.isValidPin(draftPin) }
@@ -162,6 +189,82 @@ struct ProfileEditorView: View {
         let pin = T(hasPin ? "PIN on" : "PIN off")
         let tabs = lockedCount == 0 ? T("no tab locks") : (hasPin ? T("%lld tabs locked", lockedCount) : T("Locks only activate once a PIN is set."))
         return "\(pin) · \(tabs)"
+    }
+
+    // MARK: Kid profile setup (kid-toggle.tsx + kids-setup-panel.tsx)
+
+    /// kids-setup-panel.tsx `KID_AVATARS`: 5 kid-themed faces distinct from the general catalog
+    /// below (upstream shows both; the general grid already covers "any avatar for any profile").
+    private static let kidAvatars = (1...5).map { "/kids/avatars/kid-\($0).webp" }
+    /// kids-setup-panel.tsx `AGES`.
+    private static let kidAges = [3, 5, 7, 9, 12]
+    /// kids-setup-panel.tsx `CURFEWS`.
+    private static let kidCurfews: [(label: String, minutes: Int?)] = [
+        ("No limit", nil), ("30 min", 30), ("1 hour", 60), ("1½ hr", 90), ("2 hr", 120), ("3 hr", 180),
+    ]
+
+    @ViewBuilder private var kidSection: some View {
+        VStack(alignment: .leading, spacing: BP.px(10)) {
+            HStack(spacing: BP.px(10)) {
+                Image(systemName: "star.fill").foregroundStyle(isKid ? BP.live : BP.inkMuted).accessibilityHidden(true)
+                Text("Kids profile").font(BP.sans(16, .semibold)).foregroundStyle(BP.ink)
+                Spacer(minLength: 0)
+                // No SwiftUI Toggle/switch elsewhere on this remote-driven UI: a two-state button
+                // matches the lock tiles below (BPActionStyle(primary:) reads as the "on" state).
+                Button(isKid ? "On" : "Off") { isKid.toggle() }.buttonStyle(BPActionStyle(primary: isKid)).bpSelected(isKid)
+            }
+            if !isKid {
+                BPNote(text: "Gives this profile its own Kids space, a kid-safe catalog, an optional daily watch limit and a parent PIN — instead of PIN & sidebar locks.")
+            } else {
+                HStack(spacing: BP.px(10)) {
+                    ForEach(Self.kidAvatars, id: \.self) { path in
+                        Button { avatar = path } label: {
+                            ZStack {
+                                Circle().fill(BP.panel2)
+                                if let img = Self.bundled(path) { Image(uiImage: img).resizable().scaledToFill() }
+                            }
+                            .frame(width: BP.px(56), height: BP.px(56))
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(BP.ink, lineWidth: avatar == path ? 3 : 0))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(verbatim: T("Kids avatar %lld", (Self.kidAvatars.firstIndex(of: path) ?? 0) + 1)))
+                        .bpSelected(avatar == path)
+                    }
+                }
+                .focusSection()
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    Text("Age level").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
+                    HStack(spacing: BP.px(8)) {
+                        ForEach(Self.kidAges, id: \.self) { a in
+                            Button("\(a)") { kidAge = a }.buttonStyle(BPActionStyle(primary: kidAge == a)).bpSelected(kidAge == a)
+                        }
+                    }
+                    Text("Sets the age level for the kids space.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                }
+                .focusSection()
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    Text("Daily watch time").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
+                    HStack(spacing: BP.px(8)) {
+                        ForEach(Self.kidCurfews, id: \.label) { c in
+                            Button(T(c.label)) { kidCurfewMinutes = c.minutes }.buttonStyle(BPActionStyle(primary: kidCurfewMinutes == c.minutes)).bpSelected(kidCurfewMinutes == c.minutes)
+                        }
+                    }
+                    Text("Stops playback when the daily limit is reached. A parent PIN lets you allow more time.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                }
+                .focusSection()
+                VStack(alignment: .leading, spacing: BP.px(4)) {
+                    BPField(label: "Parent PIN", placeholder: editing?.kid?.parentPinHash != nil ? "••••" : "4 digits", text: $kidParentPin, secure: true, keyboard: .numberPad)
+                        .frame(maxWidth: BP.px(420), alignment: .leading)
+                    Text(editing?.kid?.parentPinHash != nil && kidParentPin.isEmpty
+                         ? "PIN set"
+                         : "Optional. Used to allow more watch time. Without a PIN, switch profiles when time is up.")
+                        .font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                    if !kidPinDraftValid { BPNote(text: "Enter all 4 digits to save this PIN.", tone: BP.danger) }
+                }
+            }
+        }
+        .focusSection()
     }
 
     @ViewBuilder private var security: some View {
@@ -240,6 +343,10 @@ struct ProfileEditorView: View {
         if let e = editing {
             profiles.update(e.id, name: name, avatar: .some(avatar), color: color)
             if writeLocks { profiles.setLockedTabs(lockValue, for: e.id) }
+            // (kids parity pass) Only when the toggle was actually shown: `showKidToggle` false
+            // (editing without being the primary profile) means the draft was never editable, so
+            // leave the existing kid config untouched rather than resubmit it.
+            if showKidToggle { profiles.setKid(kidToSave(existing: e.kid), for: e.id) }
         } else {
             let p = profiles.create(name: name, avatar: avatar, color: color)
             if showSecurity, ProfilesStore.isValidPin(draftPin) {
@@ -248,8 +355,18 @@ struct ProfileEditorView: View {
                 profiles.markSessionUnlocked(p.id)
             }
             if writeLocks { profiles.setLockedTabs(lockValue, for: p.id) }
+            if isKid { profiles.setKid(kidToSave(existing: nil), for: p.id) }
         }
         dismiss()
+    }
+
+    /// editor-view.tsx save's `kidToSave`: `nil` when the toggle is off (turns a kid back into an
+    /// adult profile); else the draft age/curfew, keeping the existing parent-PIN hash unless a
+    /// fresh 4-digit PIN was typed.
+    private func kidToSave(existing: ProfilesStore.Profile.Kid?) -> ProfilesStore.Profile.Kid? {
+        guard isKid else { return nil }
+        let hash = ProfilesStore.isValidPin(kidParentPin) ? ProfilesStore.hashPin(kidParentPin) : existing?.parentPinHash
+        return ProfilesStore.Profile.Kid(age: kidAge, curfewMinutes: kidCurfewMinutes, parentPinHash: hash)
     }
 
     private var preview: ProfilesStore.Profile {
