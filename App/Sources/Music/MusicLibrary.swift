@@ -282,6 +282,9 @@ struct MusicPlaylistDetailView: View {
             Text(copy("music.playlist.deleteConfirm", "Delete this playlist? The songs stay in your library."))
         }
         .fullScreenCover(isPresented: $addingOpen) { addPicker }
+        // (review) Its own host: the environment closures otherwise reach MusicView's, which cannot
+        // present a second cover while this screen is up (see MusicNowPlayingView).
+        .musicTrackActionsHost()
     }
 
     private var header: some View {
