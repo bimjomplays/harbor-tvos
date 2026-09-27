@@ -312,6 +312,28 @@ lines) — a leftover of the same abef01e/113a5f9 duplicate-state merge that 113
 (it deduped the `@State` declarations, not the body). Cosmetic double-line, not a crash; worth a
 one-line dedup whenever that file is next touched. Engine untouched this pass.
 
+2026-09-27 (subagent) Navigation UI tests pass 5: `App/UITests/NavigationTests5.swift`, 6 remote-walk
+tests for the 09-27 merges — Settings → Spoilers (master toggle shows/hides the nested three, Menu
+goes Home like any other Settings row with no column open), eBook's five browse filter chips
+(Type/Status/Language/Sort by to a known next value, Genre just changes) and its Collections card
+(opens EBookCollectionsView, Menu closes it back onto the card), the eBook Sources page's NYT key
+row (its Save button takes the ring), Music Now Playing (About the artist tab reachable from the
+transport, the source picker's Connect row closes the picker and opens Connections over Now Playing
+— not nested on the picker — Menu unwinds), and the `detail` fixture's episode strip (no Special /
+episode-0 cell). Added identifiers: `ebook-filter-{type,genre,status,language,sort}`,
+`ebook-collections`, `ebook-shelf`, `ebook-manage-sources`, `ebook-collections-back`,
+`ebook-nyt-save`, `music-now-picker`. Two new offline fixtures (`--fixtures ebook` installs a
+Gutendex source + turns the eBook tab on; `--fixtures music` hands MusicPlayer a fixture track so
+the dock/Now Playing have something to open), both local-only (no network). Extended
+`FixtureBrowseSource.fixtureVideos` with a raw Special (season 0) and episode 0 so
+`DetailModel.buildEpisodes`'s `s > 0, e > 0` guard has something real to drop, without adding a
+second season (NavigationTests3's "lone Season 1" check is unaffected). Per the coordinator: did
+**not** touch `BPRowView` or write a See-all-focus test (sweep 4's gate was reverted on `main`
+after this branch started; merged that revert in before the final commit). HANDOFF.md's UI test
+count updated to 39. Not run against a simulator (no Xcode here); the Music test's directional
+assumption (Up from the transport reaches the About tab) and the exact hop counts are the main risk
+if CI turns up red — see the branch's final report for the full list of what could not be verified.
+
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.
 - `reference/harbor` — shallow clone of `harborstremio/harbor` `beta-branch` @ `f289f8f3` (was 1bfcfb6 until 09-24) (will become a submodule).
