@@ -159,7 +159,8 @@ final class NavigationTests6: XCTestCase {
         let thumb = app.buttons["spoilers-thumb"]
         require(thumb.waitForExistence(timeout: 5), "turning Blur spoilers on did not show the nested toggles", app)
         sleep(1)
-        require(seek("spoilers-thumb", app, max: 4), "could not reach the Thumbnails toggle (focus: \(focusNote(app)))", app)
+        // The nested toggles sit below the master (run 36306455265: Right/Left never left it).
+        require(seek("spoilers-thumb", app, max: 4, first: .down), "could not reach the Thumbnails toggle (focus: \(focusNote(app)))", app)
         let thumbBefore = thumb.label
         sleep(1)
         remote.press(.select)
@@ -316,7 +317,10 @@ final class NavigationTests6: XCTestCase {
         sleep(1)
         remote.press(.select) // "4" completes "1234"
         require(waitForGone(key1, timeout: 10), "the correct PIN did not close the PIN pad", app)
-        waitForHome(app)
+        // After a profile switch Home comes back with the ring on the bar, not a card (run
+        // 36306455265: "tab-home"); either is fine, goToBar copes with both.
+        require(app.buttons["tile-trending-0"].waitForExistence(timeout: 30), "fixture Home rows never appeared after the profile switch", app)
+        require(waitForFocus(app, timeout: 20, where: { Self.isHomeCard($0) || Self.inBar($0) }) != nil, "Home never seeded focus after the profile switch (focus: \(focusNote(app)))", app)
         openSettings(app)
         openProfilesRow(app)
         sleep(1)

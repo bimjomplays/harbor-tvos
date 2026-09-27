@@ -450,6 +450,11 @@ struct MusicNowPlayingView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // (CI fix 2026-09-27) One focus section for the whole right column: with nothing
+                // queued the tabs sit far above the seek/transport rows, and Right out of the left
+                // column found no candidate at its own height (run 36306455265), so the tabs were
+                // unreachable by remote. A section takes the move and lands on its nearest control.
+                .focusSection()
             }
             .padding(.horizontal, BP.gutter)
             .padding(.top, BP.px(50))

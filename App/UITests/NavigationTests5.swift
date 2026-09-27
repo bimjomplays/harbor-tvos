@@ -227,11 +227,16 @@ final class NavigationTests5: XCTestCase {
         // Down into the browse row lands on its first button (Refresh source); Manage is to its right.
         // Down off the cards row can skip the browse row for the results grid below it (run
         // 36304417732): land anywhere in the browse section, then walk back Up onto the row.
+        // Up from the results grid reaches the filter chips first; one more Up lands on the browse
+        // row's search field (no identifier), and Manage sits to its right (run 36306455265).
         let browseRow: (String) -> Bool = { $0 == "ebook-manage-sources" || $0 == "ebook-refresh-source" }
         if press(.down, app, max: 14, until: browseRow) == nil {
-            require(press(.up, app, max: 8, until: browseRow) != nil, "could not reach the browse row (focus: \(focusNote(app)))", app)
+            if press(.up, app, max: 8, until: { browseRow($0) || $0.hasPrefix("ebook-filter-") }) == nil {
+                require(false, "could not reach the browse section (focus: \(focusNote(app)))", app)
+            }
+            if !browseRow(focusNote(app)) { remote.press(.up); sleep(1) }
         }
-        require(seek("ebook-manage-sources", app, max: 4), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
+        require(seek("ebook-manage-sources", app, max: 5), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         let save = app.buttons["ebook-nyt-save"]
