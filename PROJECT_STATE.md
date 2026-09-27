@@ -3,6 +3,52 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — device bug: Home/Movies/Shows/Anime row overlap, build 291)
+2026-09-27 UTC: Fixed the owner's first real-device report (build 291, 1080p/4K): on Home,
+Movies, Shows and Anime a focused tile's caption/ring/shadow ran into the next row's header (the
+"Top 10" heading over a focused title, both unreadable), and rows looked generally misaligned. Two
+separate root causes, found by comparing `App/Sources/Browse/BPRowView.swift`,
+`BPTileView.swift` and `ContinueRowView.swift` against `reference/harbor/src/views/big-picture`
+(`bp-tile.tsx`, `bp-row.tsx`, `bp-row-header.tsx`, `bp-tokens.ts`); `BPFocusModifier`'s caption/ring
+(BPStyles.swift) and the `.clipShape` at the end of `BPTileView.art()` were already correct — the
+caption prints inside the clipped tile and cannot itself escape the frame, matching upstream's
+`overflow-hidden` tile and its own "prints the title inside the art" comment (`bp-tile.tsx:170`,
+already cited); `.lineLimit(2)` with no `.fixedSize` was already right too.
+1. **Rank ("Top 10") cell was ~10% too short.** `BPTileView.rankSize.height` computed
+   `posterWidth × 1.5 × 0.9` (298 × 1.5 × 0.9 = 402pt); upstream's `BP_RANK_CELL_HEIGHT` is
+   `cellWidth × 0.9` where `cellWidth = posterWidth / 0.6`, which is algebraically
+   `posterWidth × 1.5` — i.e. **exactly `posterSize.height`** (447pt), by bp-tile.tsx's own
+   comment: "0.6 of the width at 2/3 is 0.9, so the cell ends exactly where the poster does and a
+   ranked row keeps the same height as its neighbours in the rail." The extra `× 0.9` in the Swift
+   port double-counted that factor, giving a 10:8.1 cell instead of upstream's 10:9 (`RANK_CELL_RATIO`)
+   — the numbered row (and its numeral, and the poster art drawn inside it, which was being
+   stretched into a non-2:3 box) sat shorter than every poster row beside it. Fixed to
+   `posterSize.height` (497×447pt after, was 497×402pt before): now matches its neighbours exactly,
+   and the art inside a rank cell is a true 2:3 poster like upstream's.
+2. **Not enough reserve below a focused row for its own lift/ring/shadow.** `BPFocusModifier` lifts
+   a focused tile ×1.03 and adds a ring (~9.5pt reach) and a soft contact shadow (radius 34, y 26);
+   `BPRowView`'s track and `ContinueRowView`'s track each only padded 14px-canvas (24pt) on *both*
+   edges, and `BPRailView`'s row spacing sat on `BP.rowGap`'s 20px-canvas (34pt) floor — 58pt total
+   between a row's own (unfocused) tile bottom and the next row's header, which the shadow's own
+   blur+offset can reach past. Upstream's own `bp-row.tsx` track reserves a full 60px-canvas
+   (≈101pt) below every row for exactly this ("room for the lift and ring", its own comment), net
+   back to ~22px-canvas via a matching negative margin, plus `--bp-row-gap`. Ported as a simpler,
+   asymmetric SwiftUI equivalent (top reserve untouched — that side only has the row's own header,
+   never the reported side): track bottom padding 14→26px-canvas (24→44pt) in both
+   `BPRowView.swift` and `ContinueRowView.swift`, and `BPRailView`'s row spacing 20→26px-canvas
+   (34→44pt), still inside `--bp-row-gap`'s own clamp(20,2.6vh,40) ceiling so it stays upstream's
+   look. **Before/after: 58pt → 88pt** of clearance below a row's nominal tile edge, comfortably
+   past the lift+ring+shadow's reach at every tile shape (poster, rank, wide, Continue Watching).
+Files: `App/Sources/Browse/BPTileView.swift`, `BPRowView.swift`, `ContinueRowView.swift`. No engine
+change, so `build.mjs`/`smoke.mjs` not run; no `.accessibilityIdentifier` or focus logic touched
+(checked against the 43 UI tests' row/tile identifiers — all still `tile-\(row.key)-\(i)`,
+`cw-\(item.id)`, `seeall-\(row.key)`/`seeall-cw`, unchanged). **Unverified — no Swift compiler or
+simulator available; the exact numbers (298/402/447pt etc.) are derived from `BP.px()`'s own
+`(v × 1920/1140).rounded()` formula and cross-checked against upstream's cited source comments, not
+measured on a device.** Device check: revisit `docs/device-checklist.md` and confirm the "Top 10"
+row's header no longer collides with a focused tile above it on Home/Movies/Shows/Anime, and that
+rank tiles now stand as tall as their poster neighbours.
+
 ## Status (2026-09-27, subagent — NavigationTests8)
 2026-09-27 UTC: Added `App/UITests/NavigationTests8.swift` (2 tests, 43 → 45 UI tests; unverified —
 written with no Swift compiler or simulator available, same caveat as NavigationTests7).

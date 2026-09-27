@@ -174,7 +174,18 @@ struct BPRowView: View {
                         }
                     }
                     .padding(.horizontal, BP.gutter)
-                    .padding(.vertical, BP.px(14))   // room for the lift and ring
+                    .padding(.top, BP.px(14))   // room for the lift and ring, growing up into this row's own header
+                    // (layout pass, 2026-09-27 device bug, build 291) bp-row.tsx's own track pads
+                    // 60px-canvas of room below every row for exactly this (its own comment: "room
+                    // for the lift and ring"), then pulls the next row back up by 38px-canvas with a
+                    // negative margin, netting ~22px-canvas of real gap plus --bp-row-gap. This track
+                    // only reserved the same 14px-canvas on both edges with no such net-back reserve,
+                    // so a focused tile's 1.03 lift + ring + shadow at the row's own trailing edge had
+                    // only BPRailView's row-gap between it and the next row's header — on the TV this
+                    // read as the "Top 10" heading and a focused tile's title overlapping and both
+                    // going unreadable. A bigger bottom-only reserve here (kept off the top, which
+                    // only has this row's own header above it and was never the reported side).
+                    .padding(.bottom, BP.px(26))
                 }
                 .scrollClipDisabled()
                 .onChange(of: revealLast) { _, _ in
@@ -295,7 +306,14 @@ struct BPRailView<Lead: View>: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: BP.rowGap) {
+                // (layout pass, 2026-09-27 device bug, build 291) A little more than the shared
+                // BP.rowGap (bp-tokens.ts --bp-row-gap's own clamp(20px, 2.6vh, 40px) allows up to
+                // 40px-canvas ≈ 67pt; this rail was sitting on its 20px-canvas ≈ 34pt floor) so a
+                // lifted, ringed and shadowed tile settles inside its own row's reserve (the bottom
+                // padding above) before the next row's header starts, at every tile shape — poster,
+                // rank and wide alike. Kept local to the rail rather than raising BP.rowGap itself,
+                // which Manga/EBook/Search also read.
+                LazyVStack(alignment: .leading, spacing: BP.px(26)) {
                     Color.clear.frame(height: topInset).id(Self.topID)
                     // Continue Watching / Live sit here: over the plain rows below them.
                     lead().id("lead").zIndex(1)
