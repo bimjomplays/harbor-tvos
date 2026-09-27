@@ -234,6 +234,9 @@ struct ProfileEditorView: View {
                     // UI tests (NavigationTests6): the master toggle for the kid setup panel below.
                     .accessibilityIdentifier("profile-kid-toggle")
             }
+            // (CI fix 2026-09-27) One section for the toggle row: Up from a pill on the left found
+            // the avatars above rather than the toggle at the right edge (run 36330637617).
+            .focusSection()
             if !isKid {
                 BPNote(text: "Gives this profile its own Kids space, a kid-safe catalog, an optional daily watch limit and a parent PIN — instead of PIN & sidebar locks.")
             } else {

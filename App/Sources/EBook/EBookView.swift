@@ -549,6 +549,8 @@ struct EBookView: View {
                         ForEach(providers) { p in
                             Button(p.name) { model.loadSources(providers, requested: p.id) }
                                 .buttonStyle(BPActionStyle(primary: model.providerId == p.id)).bpSelected(model.providerId == p.id)
+                                // UI tests (NavigationTests5): the walk to the browse row passes here.
+                                .accessibilityIdentifier("ebook-catalog-\(p.id)")
                         }
                     }
                     .padding(.vertical, BP.px(6))

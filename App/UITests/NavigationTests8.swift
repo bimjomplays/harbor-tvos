@@ -250,7 +250,8 @@ final class NavigationTests8: XCTestCase {
 
         // Turn Kids back off and Save, leaving Guest as the fixture started it.
         sleep(1)
-        require(press(.down, app, max: 8, until: { $0 == "profile-kid-toggle" }) != nil, "Down never reached the kid toggle again (focus: \(focusNote(app)))", app)
+        // The toggle row sits above the pills (run 36330637617: Down never met it): Up from a pill.
+        require(seek("profile-kid-toggle", app, max: 6, first: .up), "could not return to the kid toggle (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         require(waitUntil(timeout: 5) { kidToggle.label == "Off" }, "Select on the kid toggle did not turn Kids off again (now \"\(kidToggle.label)\")", app)

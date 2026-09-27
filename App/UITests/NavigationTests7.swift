@@ -182,7 +182,9 @@ final class NavigationTests7: XCTestCase {
                 throw XCTSkip("holding Select on the Liked songs card did not open its track menu in the simulator (\(item) never appeared)")
             }
         }
-        return app.buttons[item]
+        // The focused menu row reports no identifier (run 36330637617: focus ""), so callers poll
+        // this element's own `hasFocus` rather than the identifier walk.
+        return entry
     }
 
     // MARK: tests
@@ -260,7 +262,7 @@ final class NavigationTests7: XCTestCase {
         setLiked(true, app)
         sleep(1)
         let addToPlaylist = try openTrackMenu(item: "music-menu-add-to-playlist", app)
-        require(press(.down, app, max: 4, until: { $0 == "music-menu-add-to-playlist" }) != nil, "Down never reached Add to playlist in the track menu (focus: \(focusNote(app)))", app)
+        require(press(.down, app, max: 4, until: { _ in addToPlaylist.hasFocus }) != nil, "Down never reached Add to playlist in the track menu (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         let pickerRow = app.buttons["music-picker-playlist-\(playlistName)"]
@@ -315,8 +317,8 @@ final class NavigationTests7: XCTestCase {
         setLiked(true, app)
         sleep(1)
 
-        _ = try openTrackMenu(item: "music-menu-more-like-this", app)
-        require(press(.down, app, max: 5, until: { $0 == "music-menu-more-like-this" }) != nil, "Down never reached More like this in the track menu (focus: \(focusNote(app)))", app)
+        let moreLikeThis = try openTrackMenu(item: "music-menu-more-like-this", app)
+        require(press(.down, app, max: 5, until: { _ in moreLikeThis.hasFocus }) != nil, "Down never reached More like this in the track menu (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         let error = app.descendants(matching: .any)["music-similar-error"]

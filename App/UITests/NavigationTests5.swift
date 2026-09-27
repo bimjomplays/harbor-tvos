@@ -245,9 +245,10 @@ final class NavigationTests5: XCTestCase {
             // Land anywhere in the browse section: the row itself, the filter chips, or one of its
             // identifier-less controls (the search field, a catalog chip — run 36327952413 landed
             // on "" and the walk gave up), then climb to the row.
-            let inSection: (String) -> Bool = { browseRow($0) || $0.hasPrefix("ebook-filter-") || $0.isEmpty }
+            let inSection: (String) -> Bool = { browseRow($0) || $0.hasPrefix("ebook-filter-") || $0.hasPrefix("ebook-catalog-") || $0.isEmpty }
             require(press(.up, app, max: 8, until: inSection) != nil, "could not reach the browse section (focus: \(focusNote(app)))", app)
-            if !browseRow(focusNote(app)) && !focusNote(app).isEmpty { _ = press(.up, app, max: 4, until: { browseRow($0) || $0.isEmpty }); sleep(1) }
+            // From the chips or the catalog row, climb to the browse row (its search field reports "").
+            if !browseRow(focusNote(app)) { _ = press(.up, app, max: 4, until: { browseRow($0) || $0.isEmpty }); sleep(1) }
         }
         require(seek("ebook-manage-sources", app, max: 6), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
         sleep(1)
