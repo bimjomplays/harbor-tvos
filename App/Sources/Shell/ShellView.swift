@@ -211,8 +211,14 @@ struct ShellView: View {
 
     /// Nothing is presented over this shell, so a deep-link cover can go up. The app's own shell
     /// never takes one while the PiP browse layer is up over it (the layer's shell does, on its
-    /// own window); the layer's shell only while its window is still up.
+    /// own window); the layer's shell only while its window is still up. (deep links, follow-up)
+    /// Nor while the intro wall, the curfew lock or the screensaver sits over every Big Picture
+    /// layer (AppModel.shellReachable): the main window's own `presentedViewController` check never
+    /// saw any of the three, since they live above it (the intro wall in the same window at a
+    /// higher zIndex, the lock and saver in HarborOverlayWindow), so a link used to open unseen
+    /// under them.
     private var linkClear: Bool {
+        guard AppModel.shellReachable else { return false }
         if inBrowseLayer { return PiPBrowse.shared.layerApp === app && PiPBrowse.shared.noCoverPresented }
         return !PiPBrowse.shared.isUp && !PlaybackState.shared.active && Self.noCoverPresented
     }

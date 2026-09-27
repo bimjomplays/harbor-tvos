@@ -219,6 +219,20 @@ struct EBookNytRank: Decodable, Equatable {
     var weeksOnList: Int
 }
 
+/// lib/ebook/tracking.ts EBookTracking: the AniList list entry behind the detail page's Mark as
+/// Read toggle (engine ebook.trackingFor / ebook.toggleRead), reusing the AniList session
+/// engine/trackers.ts signs in — there is no separate eBook sign-in, upstream or here.
+struct EBookTracking: Decodable, Equatable {
+    var status: String
+    var progress: Double
+    var progressVolumes: Double
+    /// "local" (no anilistId match), "pending" (queued; signed out or the push failed) or "synced".
+    var sync: String
+    var entryId: Double?
+
+    var completed: Bool { status == "COMPLETED" }
+}
+
 /// engine ebook.browseCategories(): lib/ebook/api.ts EBOOK_CATEGORIES (in its own key order) plus
 /// browse-filters.ts EBOOK_FILTER_GENRES, for the Type / Genre browse chips.
 struct EBookBrowseCategories: Decodable {
@@ -315,6 +329,14 @@ final class EBookStore: ObservableObject {
     func statuses(_ ids: [String]) async -> [String: String] {
         guard !ids.isEmpty else { return [:] }
         return (try? await HarborEngine.shared.call("ebook.statuses", [pid, ids])) ?? [:]
+    }
+
+    /// views/ebook.tsx loadAnilistLibrary, run once when the room opens: flush anything saved
+    /// locally while signed out, then warm the tracking cache from AniList's own list, so a status
+    /// set on anilist.co (not just the TV's own Mark as Read) shows up in `statuses()`. A silent
+    /// no-op when the shared AniList session (Settings → Trackers) isn't signed in.
+    func refreshAnilistLibrary() async {
+        _ = try? await HarborEngine.shared.callJSON("ebook.refreshAnilistLibrary", [])
     }
 }
 

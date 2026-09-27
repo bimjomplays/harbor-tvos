@@ -66,7 +66,15 @@ final class ThemeStore: ObservableObject {
     var holdingForPlayback = false {
         didSet { releasePending() }
     }
-    private var held: Bool { holding || holdingForPlayback }
+    /// (cover-rebuild pass) Set while a fullScreenCover is up (RootView follows CoverPresence): a
+    /// theme a profile-sync pull brings while a Detail page, Settings, Addons or another cover is
+    /// open waits the same way, because the rebuild drops that cover's `@State` with nothing to
+    /// show for it (no Back, no dismiss) — see docs/parity-gaps.md's "sync-pulled theme or language
+    /// drops a non-player cover".
+    var holdingForCover = false {
+        didSet { releasePending() }
+    }
+    private var held: Bool { holding || holdingForPlayback || holdingForCover }
     private var pending: Snapshot?
 
     private func releasePending() {

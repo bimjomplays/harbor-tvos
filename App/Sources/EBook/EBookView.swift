@@ -231,6 +231,11 @@ struct EBookView: View {
         .task {
             await store.refresh()
             reloadIfNeeded()
+            // views/ebook.tsx loadAnilistLibrary: warm the AniList tracking cache once per visit,
+            // like the anime rails' own tracker refresh (engine/trackers.ts anilist.rails), then
+            // recompute the cards' read marks in case a status only just landed from AniList.
+            await store.refreshAnilistLibrary()
+            await model.refreshStatuses()
         }
         .task(id: continueKey) { await refreshContinue() }
         .task(id: settingsBridge.slice.nytKey) { await loadNyt() }
@@ -525,6 +530,8 @@ struct EBookView: View {
                 }
                 Button { refresh() } label: { Label("Refresh source", systemImage: "arrow.clockwise") }
                     .buttonStyle(BPActionStyle())
+                    // UI tests (NavigationTests5): Down into the browse row lands here first.
+                    .accessibilityIdentifier("ebook-refresh-source")
                 Button { sourcesOpen = true } label: { Label("Manage eBook sources", systemImage: "gearshape") }
                     .buttonStyle(BPActionStyle())
                     // UI tests (NavigationTests5): opens EBookSourcesView (the NYT key row lives there).

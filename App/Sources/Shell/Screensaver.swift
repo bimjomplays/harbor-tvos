@@ -45,6 +45,22 @@ final class PlaybackState: ObservableObject {
     /// closing, and the late close must not clear the new one's claim (PiPBrowse).
     private var claims: Set<UUID> = []
 
+    /// (deep links) PlayerScreen's forced close, registered like `ShellFocus.shared.request`: an
+    /// addon install link must close it first, as upstream's emitDeepLinkInstall → setView("addons")
+    /// resets the whole nav stack (App.tsx), the player's frame included. Keyed so a second player
+    /// opening while the first still tears down (the PiP hand-off) never clears the newer one's slot.
+    private var closeHandler: (id: UUID, run: () -> Void)?
+
+    func setCloseHandler(_ id: UUID, _ run: (() -> Void)?) {
+        if let run { closeHandler = (id, run) }
+        else if closeHandler?.id == id { closeHandler = nil }
+    }
+
+    /// Ask whatever player is on screen to close now, with no "Keep watching?" dialog (PlayerScreen's
+    /// own `requestClose()` asks first; this calls `finish(natural: false)` straight away, like the
+    /// curfew lock's forced close already does).
+    func forceCloseIfPlaying() { closeHandler?.run() }
+
     func claim(_ id: UUID) {
         claims.insert(id)
         if !active { active = true }
@@ -53,6 +69,31 @@ final class PlaybackState: ObservableObject {
     func release(_ id: UUID) {
         guard claims.remove(id) != nil else { return }
         if claims.isEmpty, active { active = false }
+    }
+}
+
+/// (cover-rebuild pass) Whether a fullScreenCover is presented in the app's own window (a Detail
+/// page, Settings, Addons, a collection page, the account menu, a deep-link page — anything opened
+/// by a room's own `@State`, not RootView's). RootView holds a theme or language a profile-sync
+/// pull brings while one is up (ThemeStore.holdingForCover, RootView.heldLanguage), the same way it
+/// already holds one through playback: its `.id(theme.revision|language)` rebuilds the whole tree,
+/// which throws the cover's `@State` away with nothing to show for it (no Back, no dismiss), unlike
+/// upstream's theme-store.ts, which repaints the page in place under whatever is open. Covers are
+/// not observable, so the main window is polled twice a second, like PreviewGate and AmbientCoverage.
+@MainActor
+final class CoverPresence: ObservableObject {
+    static let shared = CoverPresence()
+    @Published private(set) var up = false
+    private var timer: AnyCancellable?
+
+    private init() {
+        timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in self?.refresh() }
+    }
+
+    private func refresh() {
+        let now = !HarborOverlayWindow.noCoverPresented
+        if now != up { up = now }
     }
 }
 

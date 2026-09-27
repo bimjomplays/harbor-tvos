@@ -55,7 +55,12 @@ enum Fixtures {
             // A parent PIN on the kid, so leaving the kids shell asks for it (NavigationTests2).
             .init(id: "p_fix_3", syncId: "s_3", name: "Kiddo", avatar: "/kids/avatars/kid-2.webp", color: "#fbbf24", isPrimary: false, kid: .init(age: 7, curfewMinutes: nil, parentPinHash: ProfilesStore.hashPin("4321")), passwordHash: nil, createdAt: now + 2),
         ], activeId: stage == .shell ? "p_fix_1" : nil)
-        if installEBookSource {
+        if !installEBookSource {
+            // (CI fix 2026-09-27) The gate is a UserDefaults key: `ebook` runs left it on for every
+            // later fixture launch on the same simulator, and tests that count the bar's tabs
+            // (ScreenshotTests.testSearchRoom) landed one tab short.
+            UserDefaults.standard.removeObject(forKey: EBookGate.key)
+        } else {
             UserDefaults.standard.set(true, forKey: EBookGate.key)
             // A local config write (lib/ebook/sources.ts addEBookGutendex): no network, so this is
             // safe to fire and forget before the eBook tab is even reachable.

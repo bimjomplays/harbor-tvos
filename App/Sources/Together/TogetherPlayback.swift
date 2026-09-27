@@ -26,6 +26,13 @@ final class TogetherPlayback: ObservableObject {
     static let heartbeatS = 1.0
     static let seekApplyDebounceMs = 120
     static let guestEscapeS = 45.0
+    /// (Watch Together sweep) lib/player/stall-wait.ts FALLBACK_SEC: upstream's own ceiling for a
+    /// stream that never starts, for when its setting is unreadable. Upstream itself never holds a
+    /// room for a swap, so it needs no timeout of its own for a stuck one; the TV's hold (review 22
+    /// follow-up) borrows this same ceiling instead, since neither the heartbeat (a played swap) nor
+    /// sourceFailed (an errored one) ever fires for a swap that just sits on "Connecting…" (a P2P
+    /// source with no peers, a debrid link that never resolves).
+    static let swapStallS = 10.0
 
     struct ForeignNotice: Equatable { var title: String?; var from: String }
 
@@ -62,6 +69,9 @@ final class TogetherPlayback: ObservableObject {
     /// the room was playing before it; cleared once the new stream plays (the heartbeat publishes)
     /// or the hold is let go (sourceFailed, closing).
     private var swapHold: (at: Double, playing: Bool)?
+    /// (Watch Together sweep) When this hold was set, for swapStallS: cleared with swapHold, always
+    /// together.
+    private var swapHoldSince: Date?
     private var openedSent = false
     private var lastInRoom: Bool?
     /// The player's playback speed (snap.rate upstream), published with every state.
@@ -238,8 +248,14 @@ final class TogetherPlayback: ObservableObject {
            Date().timeIntervalSince(lastHeartbeat) >= Self.heartbeatS - 0.05 {
             lastHeartbeat = Date()
             swapHold = nil
+            swapHoldSince = nil
             publish(position: snap.position, playing: playing)
         }
+        // (Watch Together sweep) A swap stuck on "Connecting…" (no error, never plays) held every
+        // guest at the swap spot for good: neither the heartbeat above (it never plays) nor
+        // sourceFailed (status.state never reaches "error") ever ran to let it go. Past swapStallS
+        // it is let go exactly as a failed swap is.
+        if let since = swapHoldSince, Date().timeIntervalSince(since) >= Self.swapStallS { sourceFailed() }
     }
 
     /// use-playback-controls playPauseToggle. Returns true when the room took the press.
@@ -281,6 +297,7 @@ final class TogetherPlayback: ObservableObject {
         seekApply?.cancel()
         bag.removeAll()
         swapHold = nil
+        swapHoldSince = nil
         // Opening the next episode or another source keeps the room (and the host role), but the
         // guests should not play on unseen while the host picks: the room holds at this spot.
         if inRoom, isHost, reopening {
@@ -323,6 +340,7 @@ final class TogetherPlayback: ObservableObject {
             // The room's play state before this swap (the host's last heartbeat), for sourceFailed.
             let wasPlaying: Bool = swapHold?.playing ?? room.view.syncState?.playing ?? lastTickPlaying
             swapHold = (at, wasPlaying)
+            swapHoldSince = Date()
             publish(position: at, playing: false)
         } else {
             lobbySeeded = false
@@ -336,9 +354,12 @@ final class TogetherPlayback: ObservableObject {
     /// play on while the host sits on the source error card. The TV's hold is let go here: the room
     /// plays again from the spot it held, when it was playing before the swap. The host's next
     /// stream (Try again, another source) holds it again or pulls the guests back with its heartbeat.
+    /// (Watch Together sweep) Also run past swapStallS by tick() for a swap stuck connecting: that
+    /// state reports no error either, so the room would otherwise hold for good.
     func sourceFailed() {
         guard let hold = swapHold else { return }
         swapHold = nil
+        swapHoldSince = nil
         guard inRoom, isHost, hasStarted, hold.playing else { return }
         publish(position: hold.at, playing: true)
     }

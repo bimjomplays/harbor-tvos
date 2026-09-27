@@ -27,6 +27,12 @@ final class EBookDetailModel: ObservableObject {
     @Published private(set) var onShelf = false
     @Published private(set) var favorite = false
     @Published private(set) var resume: EBookResume?
+    /// lib/ebook/tracking.ts: the AniList list entry behind the Mark as Read toggle below.
+    @Published private(set) var tracking: EBookTracking?
+    @Published private(set) var trackingBusy = false
+    /// useEBookReadStatus (engine ebook.statuses): the corner badge, tracking- and resume-aware —
+    /// kept apart from `tracking` itself, which only reflects the AniList list entry.
+    @Published private(set) var readStatus: String?
     @Published private(set) var authorBooks: [EBook] = []
     @Published private(set) var recommendations: [EBook] = []
     @Published private(set) var recommendationsFailed = false
@@ -100,7 +106,33 @@ final class EBookDetailModel: ObservableObject {
             onShelf = f.shelf
             favorite = f.favorite
         }
-        resume = try? await HarborEngine.shared.call("ebook.resume", [pid, ebook?.id ?? id])
+        let bookId = ebook?.id ?? id
+        resume = try? await HarborEngine.shared.call("ebook.resume", [pid, bookId])
+        tracking = try? await HarborEngine.shared.call("ebook.trackingFor", [bookId])
+        readStatus = await EBookStore.shared.statuses([bookId])[bookId]
+    }
+
+    /// ebook-wheel-menu.tsx markCompleted: the detail page's own Mark as Read action (the wheel
+    /// menu itself is a desktop right-click radial menu the TV has no mouse for; every other one
+    /// of its actions already sits in this page's own action row). Returns the toast text, in
+    /// upstream's own wording, for the view to show.
+    func toggleRead() async -> String {
+        guard let book = ebook, !trackingBusy else { return "" }
+        trackingBusy = true
+        defer { trackingBusy = false }
+        let message: String
+        do {
+            let t: EBookTracking = try await HarborEngine.shared.call("ebook.toggleRead", [book])
+            tracking = t
+            message = t.completed ? "Marked as read" : "Marked as unread"
+        } catch {
+            // saveEBookTracking persists locally before it ever reaches the network, so the local
+            // toggle still took even though the AniList push failed (or there is no session yet).
+            tracking = try? await HarborEngine.shared.call("ebook.trackingFor", [book.id])
+            message = "Saved locally; AniList sync is pending"
+        }
+        readStatus = await EBookStore.shared.statuses([book.id])[book.id]
+        return message
     }
 
     /// EBookDetails source resolution; the first matching copy is read unless one was chosen.
@@ -193,6 +225,9 @@ struct EBookDetailView: View {
     @State private var sourcePicker = false
     @State private var nested: EBookOpen?
     @State private var autoRead: Bool
+    /// ebook-wheel-menu.tsx emitListToast: "Marked as read" / "Marked as unread" / the
+    /// AniList-sync-pending fallback, from the Mark as Read action below.
+    @State private var toast: String?
     @Environment(\.dismiss) private var dismiss
 
     init(open: EBookOpen, candidates: [EBook] = []) {
@@ -239,6 +274,15 @@ struct EBookDetailView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            if let toast {
+                Text(toast).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink)
+                    .padding(.horizontal, BP.px(18)).padding(.vertical, BP.px(12))
+                    .background(Capsule().fill(BP.panel2))
+                    .padding(.bottom, BP.px(50))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
         }
         .ignoresSafeArea()
         .task { await model.load() }
@@ -280,7 +324,7 @@ struct EBookDetailView: View {
                     .frame(width: BP.px(208), height: BP.px(312))
                     .clipShape(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous))
                     .shadow(color: .black.opacity(0.6), radius: 24, y: 14)
-                if let status = readStatus { EBookReadMark(status: status).padding(BP.px(8)) }
+                if let status = model.readStatus { EBookReadMark(status: status).padding(BP.px(8)) }
             }
             VStack(alignment: .leading, spacing: BP.px(12)) {
                 VStack(alignment: .leading, spacing: BP.px(6)) {
@@ -350,11 +394,13 @@ struct EBookDetailView: View {
         return out
     }
 
-    /// useEBookReadStatus from the resume the detail holds.
-    private var readStatus: String? {
-        guard let r = model.resume else { return nil }
-        if let i = r.chapterIndex, let t = r.totalChapters, i == t - 1, (r.chapterProgress ?? 0) >= 100 { return "read" }
-        return (r.chapterProgress ?? 0) > 0 || (r.bookProgress ?? 0) > 0 ? "partial" : nil
+    /// ebook-wheel-menu.tsx emitListToast, shared with the room's own toast (EBookView.showToast).
+    private func showToast(_ text: String) {
+        toast = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if toast == text { withAnimation { toast = nil } }
+        }
     }
 
     private func actions(_ book: EBook) -> some View {
@@ -379,6 +425,21 @@ struct EBookDetailView: View {
             }
             .buttonStyle(BPActionStyle())
             .accessibilityLabel(model.favorite ? "Remove favorite" : "Add favorite")
+            // ebook-wheel-menu.tsx "watched" action (Mark as Read / Marked as read): the wheel menu
+            // itself is a desktop right-click radial menu with no TV equivalent, but every one of
+            // its other actions already lives in this row, so this one joins them. Reuses the
+            // AniList session engine/trackers.ts signs in when the book has an anilistId match.
+            let completed = model.tracking?.completed ?? false
+            Button {
+                Task {
+                    let message = await model.toggleRead()
+                    if !message.isEmpty { showToast(T(message)) }
+                }
+            } label: {
+                Label(completed ? "Marked as read" : "Mark as Read", systemImage: completed ? "checkmark.circle.fill" : "eye")
+            }
+            .buttonStyle(BPActionStyle(busy: model.trackingBusy))
+            .bpSelected(completed)
             if model.sourceOptions.count > 1, let route = model.sourceRoute {
                 let name = model.sourceOptions.first { $0.id == route }?.providerName ?? T("Source")
                 Button { sourcePicker = true } label: { Label(name, systemImage: "books.vertical") }

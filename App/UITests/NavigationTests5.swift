@@ -159,9 +159,11 @@ final class NavigationTests5: XCTestCase {
         require(seek("tab-ebook", app), "could not walk the top bar to eBook (focus: \(focusNote(app)))", app)
         remote.press(.select)
         require(waitUntil(timeout: 15) { app.buttons["tab-ebook"].isSelected }, "Select on the eBook tab did not open it", app)
-        require(app.buttons["ebook-collections"].waitForExistence(timeout: 30), "the eBook room never showed its Collections card (the Gutendex fixture add did not land?)", app)
+        // The room is a LazyVStack: the Popular rail proves the Gutendex fixture add landed, and the
+        // Collections card below it exists only once the ring walks down to it.
+        require(app.buttons["tile-ebook-popular-0"].waitForExistence(timeout: 30), "the eBook room never showed its Popular rail (the Gutendex fixture add did not land?)", app)
         sleep(1)
-        require(press(.down, app, max: 4, until: { $0 == "ebook-collections" }) != nil, "Down never reached the Collections card (focus: \(focusNote(app)))", app)
+        require(press(.down, app, max: 10, until: { $0 == "ebook-collections" }) != nil, "Down never reached the Collections card (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         let back = app.buttons["ebook-collections-back"]
@@ -215,9 +217,11 @@ final class NavigationTests5: XCTestCase {
         require(seek("tab-ebook", app), "could not walk the top bar to eBook (focus: \(focusNote(app)))", app)
         remote.press(.select)
         require(waitUntil(timeout: 15) { app.buttons["tab-ebook"].isSelected }, "Select on the eBook tab did not open it", app)
-        require(app.buttons["ebook-manage-sources"].waitForExistence(timeout: 30), "the eBook room never showed Manage eBook sources", app)
+        require(app.buttons["tile-ebook-popular-0"].waitForExistence(timeout: 30), "the eBook room never showed its Popular rail (the Gutendex fixture add did not land?)", app)
         sleep(1)
-        require(press(.down, app, max: 10, until: { $0 == "ebook-manage-sources" }) != nil, "Down never reached Manage eBook sources (focus: \(focusNote(app)))", app)
+        // Down into the browse row lands on its first button (Refresh source); Manage is to its right.
+        require(press(.down, app, max: 14, until: { $0 == "ebook-manage-sources" || $0 == "ebook-refresh-source" }) != nil, "Down never reached the browse row (focus: \(focusNote(app)))", app)
+        require(seek("ebook-manage-sources", app, max: 4), "could not reach Manage eBook sources along the browse row (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         let save = app.buttons["ebook-nyt-save"]
@@ -252,7 +256,13 @@ final class NavigationTests5: XCTestCase {
         remote.press(.select)
         let aboutTab = app.buttons["music-now-tab-about"]
         require(aboutTab.waitForExistence(timeout: 15), "the dock did not open Now Playing", app)
-        require(waitForFocus(app, timeout: 10, where: { $0 == "music-toggle" }) != nil, "Now Playing did not seed the ring on Play/Pause (focus: \(focusNote(app)))", app)
+        // prefersDefaultFocus should seed Play/Pause; the simulator lands on the seek row instead
+        // (run 36302158467: "gobackward.10"), so walk to the transport row rather than fail on it.
+        let transport: Set<String> = ["music-shuffle", "backward.fill", "music-toggle", "forward.fill", "music-repeat", "music-now-picker", "xmark"]
+        if waitForFocus(app, timeout: 5, where: { $0 == "music-toggle" }) == nil {
+            require(press(.down, app, max: 6, until: { transport.contains($0) }) != nil, "Down never reached the transport row (focus: \(focusNote(app)))", app)
+            require(seek("music-toggle", app, max: 6, first: .left), "could not reach Play/Pause along the transport row (focus: \(focusNote(app)))", app)
+        }
         sleep(1)
         require(press(.up, app, max: 8, until: { $0 == "music-now-tab-about" }) != nil, "the ring never reached the About the artist tab (focus: \(focusNote(app)))", app)
         sleep(1)
@@ -301,8 +311,18 @@ final class NavigationTests5: XCTestCase {
         require(!app.buttons["episode-1-0"].exists, "episode 0 still has a cell in the strip", app)
         let specials = app.buttons.matching(NSPredicate(format: "label == %@", "Specials"))
         require(specials.count == 0, "a Specials chip shows even though the season is dropped from the strip", app)
-        for n in 1...6 {
+        // The strip is a LazyHStack: only the first cells exist until the ring walks the row, so
+        // the six real episodes are proven by walking to the last one.
+        for n in 1...3 {
             require(app.buttons["episode-1-\(n)"].exists, "episode \(n) is missing from the strip", app)
         }
+        let onPlay: String? = waitForFocus(app, timeout: 5, where: { $0 == "detail-play" }) ?? press(.left, app, max: 12, until: { $0 == "detail-play" })
+        require(onPlay != nil, "could not put the ring on Play (focus: \(focusNote(app)))", app)
+        sleep(1)
+        remote.press(.down)
+        require(waitForFocus(app, timeout: 5, where: { $0.hasPrefix("episode-1-") }) != nil, "one Down from Play did not reach the episodes (focus: \(focusNote(app)))", app)
+        sleep(1)
+        require(press(.right, app, max: 8, until: { $0 == "episode-1-6" }) != nil, "Right along the strip never reached episode 6 (focus: \(focusNote(app)))", app)
+        require(!app.buttons["episode-1-0"].exists && !app.buttons["episode-0-1"].exists, "a dropped cell appeared once the strip scrolled", app)
     }
 }

@@ -1258,6 +1258,11 @@ export const ebook = {
   collectionScope: ebookGlue.collectionScope,
   collections: ebookGlue.collections,
   collectionsResolved: ebookGlue.collectionsResolved,
+  // AniList list tracking (lib/ebook/tracking.ts, ebook-wheel-menu.tsx): reuses the AniList
+  // session engine/trackers.ts signs in (anilist.status/authorizeUrl/complete above).
+  trackingFor: ebookGlue.trackingFor,
+  toggleRead: ebookGlue.toggleRead,
+  refreshAnilistLibrary: ebookGlue.refreshAnilistLibrary,
 };
 
 // ================================================================================== social

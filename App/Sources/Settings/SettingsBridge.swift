@@ -464,5 +464,13 @@ extension SettingsBridge.Slice {
         cwSnapshotRetentionDays = c.lenient("cwSnapshotRetentionDays")
         cwSnapshotFullQuality = c.lenient("cwSnapshotFullQuality")
         nytKey = c.lenient("nytKey") ?? nytKey
+        // (CI fix 2026-09-27) The Spoilers panel's keys were never read here, so a patch that the
+        // engine persisted fine still decoded as the default and "Blur spoilers" could never turn on
+        // (NavigationTests5 testSpoilersMasterToggleAndMenu). Absent reads nil; readers `?? default`.
+        hideSpoilers = c.lenient("hideSpoilers")
+        spoilerHideThumbnails = c.lenient("spoilerHideThumbnails")
+        spoilerHideTitles = c.lenient("spoilerHideTitles")
+        spoilerHideDescriptions = c.lenient("spoilerHideDescriptions")
+        spoilerSkipNext = c.lenient("spoilerSkipNext")
     }
 }

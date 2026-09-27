@@ -64,7 +64,6 @@ everything builds on GitHub Actions and ships to TestFlight **internal testing o
 - O2: avatar and name write-back to the Harbor account (not ported, because it writes to the account).
 - Collections with no TMDB key: the TV keeps the feed (Mine, Community, TVDB lists, and the only place
   to edit collections on the TV); upstream replaces the room with BpConnect.
-- eBook chapters opened from the chapter panel or bar start at line 0; upstream restores the saved line.
 
 ## How the work is done (the 09-25 subagent workflow)
 - One subagent per batch, each in its own git worktree, at most ~6 at once. Before its final commit

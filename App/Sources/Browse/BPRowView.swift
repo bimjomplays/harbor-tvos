@@ -71,10 +71,21 @@ struct BPRowView: View {
             // FocusState assignment tried to land on it, and the hop silently dropped (testRowSeeAllEdge,
             // testHomeBandRowLeads: "did not reach seeall-… (focus: none)"). One runloop later the
             // gate has already committed, so the hop lands.
-            seeAllArmed = true
-            DispatchQueue.main.async { seeAllFocused = true }
+            armSeeAll()
         } else if dir == startDir, index == 0, let onNavEdge {
             onNavEdge()
+        }
+    }
+
+    /// Arm the chip, hop onto it a runloop later, and self-disarm if that hop never lands
+    /// (review 2026-09-27: a row rebuild or a faster second press between the arm and the
+    /// deferred assignment could drop the hop, leaving `seeAllArmed` true for the row's
+    /// lifetime — the always-reachable chip the arm gate exists to prevent).
+    private func armSeeAll() {
+        seeAllArmed = true
+        DispatchQueue.main.async { seeAllFocused = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            if !seeAllFocused { seeAllArmed = false }
         }
     }
 
@@ -88,8 +99,7 @@ struct BPRowView: View {
         // in that same update as the catch (fine: nothing asks for focus yet), so by the time the
         // dispatched line below runs, both presence and the `.focusable` gate are already settled.
         if lastHeld == id, onSeeAll != nil {
-            seeAllArmed = true
-            DispatchQueue.main.async { seeAllFocused = true }
+            armSeeAll()
         } else {
             DispatchQueue.main.async { focusedId = id }
         }
@@ -122,7 +132,12 @@ struct BPRowView: View {
                         // except the two hops that mean to land here (tileMove, endCatch), which arm
                         // this a runloop before they ask for focus. Never gates visibility: the chip
                         // still draws (and dims/brightens) exactly as before, per the `if` above.
-                        .focusable(seeAllArmed || seeAllFocused)
+                        // (CI fix 2026-09-27) `.disabled`, not `.focusable(gate)`: a `.focusable`
+                        // modifier on a Button takes the Select press for itself on tvOS, so the ring
+                        // reached Manage and Select did nothing (testHomeBandRowLeads). A disabled
+                        // button is out of every focus pool the same way, keeps its identifier and
+                        // label for the tests, and BPSeeAllStyle does not dim on isEnabled.
+                        .disabled(!(seeAllArmed || seeAllFocused))
                         .focused($seeAllFocused)
                         .accessibilityIdentifier("seeall-\(row.key)")
                         // bp-row-see-all.ts bpSeeAllExit: Left off the see-all goes straight back to

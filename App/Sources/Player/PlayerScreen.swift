@@ -495,8 +495,13 @@ struct PlayerScreen: View {
                 controller?.setRate(r)
             }
             beginNowPlaying()
+            // (addons bug pass, follow-up) An addon install deep link closes this player first, with
+            // no "Keep watching?" dialog (finish(natural: false), like the curfew lock's own forced
+            // close below, .onReceive(CurfewState.shared.$locked)).
+            PlaybackState.shared.setCloseHandler(nowPlayingId) { finish(natural: false) }
         }
         .onDisappear {
+            PlaybackState.shared.setCloseHandler(nowPlayingId, nil)
             SleepTimer.shared.unregister(nowPlayingId)
             skipHideTask?.cancel()
             seekCommit?.cancel()
@@ -1703,6 +1708,11 @@ struct PlayerScreen: View {
         status = MPVPlayerController.Status()
         loadingSince = Date()
         controller = nil
+        // (Watch Together sweep) duration-mismatch-chip.tsx read the left file's own duration for
+        // up to 1 s here (PlayerClock.resetForSwap): mismatchNow's guestSec > 0 now excludes the
+        // whole gap instead, as the browser's own duration going to 0 on a src swap already does
+        // upstream.
+        clock.resetForSwap()
         subDelay = 0
         anime4kAppliedFor = -1
         startAt = nil

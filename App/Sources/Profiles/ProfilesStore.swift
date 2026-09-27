@@ -217,6 +217,15 @@ final class ProfilesStore: ObservableObject {
         sessionUnlockedIds.insert(id)
     }
 
+    /// (kids parity pass) editor-view.tsx save: `kidToSave` — `nil` turns the profile back into an
+    /// adult one (KidToggle off), else `{age, curfewMinutes, parentPinHash}`. Never the primary
+    /// profile (ProfileEditorView's toggle is hidden for it, matching KidToggle's `!isPrimary`).
+    func setKid(_ kid: Profile.Kid?, for id: String) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }), !profiles[i].isPrimary else { return }
+        profiles[i].kid = kid
+        persist()
+    }
+
     /// parental.tsx unlock(pin) after a verified PIN: holds until the active profile changes.
     func unlockParental(_ id: String) {
         guard id == activeId else { return }

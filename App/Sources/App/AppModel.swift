@@ -39,6 +39,16 @@ final class AppModel: ObservableObject {
         let raw = url.absoluteString
         let scheme = (url.scheme ?? "").lowercased()
         guard scheme == "harbor" || scheme == "stremio" else { return }
+        // (deep links over covers, follow-up) use-idle-screensaver.ts: any activity wakes it; a link
+        // arriving under the saver used to sit unseen until a press did. Never the curfew lock: that
+        // stays up (shellReachable) like "Ask a grown-up", and the link waits for it like the return
+        // prompt already does (promptHeldForCurfew).
+        ScreensaverModel.shared.wake()
+        // (addons bug pass, follow-up) An install link closes the player first, like upstream's
+        // emitDeepLinkInstall → setView("addons"): App.tsx's setView resets the whole nav stack to a
+        // fresh Addons frame, the player's frame included (lib/view.tsx setView, the `v === "addons"`
+        // branch). It used to leave a film running behind the install dialog's wait for the shell.
+        if scheme == "stremio", raw.hasSuffix("manifest.json") { PlaybackState.shared.forceCloseIfPlaying() }
         // (review 16) A page that never showed is not "already on top": the same link sent again opens.
         requeueDroppedLink()
         let path = raw.dropFirst(scheme.count + 3)   // "scheme://"
@@ -67,6 +77,14 @@ final class AppModel: ObservableObject {
             guard deepLinkInstall?.url != raw else { return }
             DeepLinkQueue.shared.add(.install(raw))
         }
+    }
+
+    /// (deep links, follow-up) The shell itself is reachable: not behind the intro wall (a cold
+    /// launch), the curfew lock (never bypassed; a link waits for it like `promptWhoOnReturn` already
+    /// does) or the screensaver (`handle(url:)` wakes it, so this clears within its own poll once it
+    /// does). `showWaitingLink` / `requeueDroppedLink` gate on it alongside their own per-layer checks.
+    static var shellReachable: Bool {
+        !IntroModel.wallShowing && !CurfewState.shared.locked && !ScreensaverModel.shared.active
     }
 
     /// (deep links over covers) The shell on screen shows the newest waiting link it may show, once
@@ -122,6 +140,7 @@ final class AppModel: ObservableObject {
     /// (review 16) Nothing is presented over this model's shell: the main window's root, or the PiP
     /// browse layer's while this is the layer's model and its window is up.
     private var shellUncovered: Bool {
+        guard Self.shellReachable else { return false }
         if isBrowseLayer { return PiPBrowse.shared.layerApp === self && PiPBrowse.shared.noCoverPresented }
         return HarborOverlayWindow.noCoverPresented
     }

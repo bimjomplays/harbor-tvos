@@ -5,6 +5,34 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
+2026-09-27 07:47 UTC: Translation coverage 5 (subagent). `tools/l10n_coverage.mjs` (unchanged) found 570 unique Swift literals with no catalog key in any language; most were noise the heuristic can't tell from copy (fixture/demo data in `BrowseModel.bandRows`/`rows`, font/voice/HTTP-status/XML-entity names, sample cast, Kids Game Arcade + Kids Play Zone which already stay English like upstream's, dev-only `Spikes/` screens, keys already reached through an already-translated piece plus a fixed URL) or literally unfixable without a Swift change (a raw `"\(value)"` baked into a lookup key before translation, never a SwiftUI `Text` interpolation) — left as future follow-up, listed in the commit. Of the rest, 229 real untranslated strings (Settings panels — Plex/Jellyfin/Emby, Anime4K, Tabs, Home/Anime rows, TMDB, subtitles, profiles/PINs, sync; onboarding account step; Trakt/Simkl; Letterboxd; eBook NYT bestsellers + EPUB errors; Together; Handoff Wi-Fi; a `+{count} new` badge; 51 subtitle-language display names) got new keys in `tools/locales-tvos.json`, upstream's own `de`/`fr`/`es`/`ar`/`hi`/`id`/`it`/`ja`/`ko`/`pl`/`pt`/`ru`/`tr`/`vi`/`zh` catalogs checked first for a matching concept/register before writing a fresh Claude translation (not native-reviewed) — French formal *vous*, Spanish/German informal, matching each language's own upstream register. Fixed two real bugs found along the way where a value was interpolated into a `T()` key *before* lookup, so the string could never match any catalog entry regardless of translations: `TraktView.connectedNote` ("Connected to Trakt" baked in) and `BPField`'s phone-typing `purpose` (the field's own label baked in) now build the key with `T(_:_:)`'s format-args form instead. New `tools/check_placeholders.mjs` enforces `%@`/`%lld`/`{name}` parity across all 15 languages for every key in `tools/locales-tvos.json` (order-checked for literal `%@`/`%lld`, token-set-checked for `{name}`, which `build_locales.mjs` repositions per language) — run after every edit to that file. Verified the onboarding/Settings language list is not a gap: `OnboardLanguageStep` reads `settingsRoom.languages`, which is upstream's own 16-code `lib/i18n` `LANGUAGES` list end to end (same list `L10n.swift`'s `languages` set and `build_locales.mjs`'s per-language loop use), so the TV already offers exactly what it has catalogs for and `L10n.normalize` falls back to English on anything else; the "26 languages" upstream also defines (`views/settings/tv-panel/model-lists.ts` `TV_LANGS`) is an unrelated settings-sync metadata list, not used by any Swift UI. Coverage (`node tools/l10n_coverage.mjs --lang <code>`, against `App/Sources`): de/fr/es were already identical (upstream's own catalogs are equally complete for all three) at 2947/3581 82.3% before this pass; after, all 15 supported languages read 3183/3581 88.9% (checked individually for every one, not just de/fr/es). Files: `tools/locales-tvos.json`, new `tools/check_placeholders.mjs`, `App/Sources/Trackers/TraktView.swift`, `App/Sources/Design/BPStyles.swift`. Not run: `engine/build.mjs`/`smoke.mjs` (no engine/ files touched, so nothing to check there this pass) — Swift not compiled (no Mac here); read every call site of the two changed lines by hand.
+
+2026-09-27 (kids parity pass, subagent): full kids-mode audit (`docs/kids-parity.md`) against every upstream kid surface (age bands, content gating, curfew, PIN-to-leave, Kids Home/Detail, Play Zone/Learn Zone, kid player UI, kid sounds), each grepped against the port with file:line citations on both sides. Headline: kids mode was already a near-1:1 port (curfew, PIN gating, sync's parentPinHash exclusion, Kids Home/Detail, Play Zone's 3 native activities + the Games QR hand-off, the kid transport/switcher, and the "no kid SFX" fact itself — upstream never built any — all checked clean, several already bug-fixed beyond a literal port). Two real findings, neither previously tracked: (1) M — no way to create/configure a kid profile on the TV itself (`kid-toggle.tsx`/`kids-setup-panel.tsx` had no Swift equivalent; `ProfileEditorView.swift` always saved `kid: nil`); ported this session — a "Kids profile" toggle next to Security (mutually exclusive, never shown for the primary profile), age-level pills (3/5/7/9/12, cosmetic per upstream), daily-watch-time pills (No limit/30/60/90/120/180 min) and a 4-digit parent-PIN field, all in `ProfileEditorView.swift`, saved through new `ProfilesStore.setKid(_:for:)`. (2) L — Learn Zone (`views/kids/learn/**`) has no Swift equivalent, but is itself unreachable dead code upstream (never imported outside its own folder, no route, no entry point from `kids.tsx` or `play-zone.tsx`) — flagged for an owner decision rather than ported. Engine untouched; `node build.mjs` (bundle 4649 KB) and `node smoke.mjs --offline` (1142 checks) unaffected/still pass. No Swift compiler here: every call site of `ProfilesStore.create`/`update`/`setKid` and every `ProfileEditorView(` caller was grepped (2, both in `SettingsView.swift`, signature unchanged). Device check: toggling Kids profile on/off in the editor, saving a new kid profile from the TV and confirming it opens the Kids shell/curfew/PIN as expected, editing an existing kid's age/curfew/PIN.
+
+2026-09-27 07:05 UTC: Deep links over covers, follow-up (subagent; docs/parity-gaps.md's smaller
+behaviour differences). Three fixes. (1) An addon install link now closes the player first with no
+"Keep watching?" dialog (`PlaybackState.setCloseHandler`/`forceCloseIfPlaying`, registered by
+PlayerScreen on appear; `AppModel.handle(url:)` calls it for a stremio://…/manifest.json link),
+matching upstream's emitDeepLinkInstall → setView("addons") resetting the whole nav stack, the
+player's frame included (lib/view.tsx setView's `v === "addons"` branch). (2) A link no longer opens
+unseen under the intro wall on a cold launch, the curfew lock or the screensaver: `AppModel.shellReachable`
+(new) gates ShellView's and KidsShellView's wait-for-clear poll on `IntroModel.wallShowing` (a new
+static mirror of the wall's phase, since RootView owns the only instance) and
+CurfewState.locked/ScreensaverModel.active; `handle(url:)` wakes the screensaver (never the curfew
+lock, which the link waits out like `promptWhoOnReturn` already does). (3) A sync-pulled theme or
+language no longer drops an open Detail/Settings/Addons/etc. cover: `CoverPresence` (new, polls
+`HarborOverlayWindow.noCoverPresented` twice a second like PreviewGate) drives
+`ThemeStore.holdingForCover` and RootView's `heldLanguage` the same way `PlaybackState.active`
+already holds them through playback, so the tree's `.id(theme.revision|language)` rebuild waits for
+the cover to close instead of dropping its `@State` with nothing to show for it. Not closed: a deep
+link still waits for every cover to close rather than opening on top of them the way upstream's
+openMeta/openList/pushFrame push onto the nav stack unconditionally; doing that on tvOS would mean
+presenting nested from whichever view controller is currently topmost instead of from ShellView's
+own single binding, which touches most of the ~40 cover-hosting views and is unverifiable without a
+compiler, so it stays open (see parity-gaps.md). Files: App/Sources/App/AppModel.swift, RootView.swift,
+IntroView.swift, App/Sources/Shell/ShellView.swift, Screensaver.swift, App/Sources/Kids/KidsShellView.swift,
+App/Sources/Player/PlayerScreen.swift, App/Sources/Design/ThemeStore.swift. Swift only (no engine
+change); not device-tested.
 2026-09-27 (09-27 late): Reviews 38–39 + crash audit 2 applied (music Preferred badge / Connect flow, NYT Saved flash, CW title drawn once). Sweep 4's See-all focus gate reverted: CI's NavigationTests caught that a chip made `.focusable` only when armed is not focusable yet in the update that requests the hop (`testRowSeeAllEdge`, `testHomeBandRowLeads` failed with focus: none); the Up-lands-on-See-all item is open again.
 2026-09-27 06:41 UTC: SP-1 (sport-specific live diagrams) verification — found already fully ported by the 09-24 Sports parity batch (commit `0211981`), which `docs/parity-audit-2026-09-23.md`'s SP-1 row and its "Honourable mentions" line had never been updated to reflect. Confirmed against upstream (`bp-sports-live-court/-diamond/-field/-kit/-plays/-situation.tsx`): `engine/sportsEvent.ts` `eventRows()` calls upstream's own `bpSportsSituationKind`/`bpSportsHasDiamond/-Field/-Court`/`bpSportsHasPlays`/`basketballFive` through the `@/` alias (no reimplementation of the gating logic), and `App/Sources/Sports/SportsLiveViews.swift` (`SportsDiamondView`/`SportsFieldView`/`SportsCourtView`/plays list) draws them with SwiftUI shapes on the same percentage coordinates, wired into `SportsEventView`'s Stats row via `sports.eventRows`. `engine/smoke.mjs` already has mocked-summary checks per sport (NBA court, MLB diamond, NFL field, EPL pitch). No code changes needed; updated `docs/parity-audit-2026-09-23.md` (SP-1 row → "yes", honourable mentions) and `docs/sports-spec.md` §4.2 with a "Ported" note. Re-verified: `node build.mjs` 4649 KB, `node smoke.mjs --offline` 1142/1142 passed.
 2026-09-27 06:46 UTC: Up-lands-on-See-all refixed (BPRowView.swift). The chip drew whenever the row held the ring (`focusedId != nil`), so with no gate of its own it sat in every Up press's candidate pool the whole time — no Spacer between the title and the chip means a short row title puts the chip over an early tile, not just the last one, so Up off that tile could resolve straight onto it instead of carrying on to the row above. New `seeAllArmed` @State plus `.focusable(seeAllArmed || seeAllFocused)` on the chip takes it out of every directional pool, Up included, except the two hops that mean to land there: `tileMove`'s Right-off-last-tile and `endCatch` now set `seeAllArmed = true` synchronously (a runloop before the already-deferred `seeAllFocused = true`), so the focus engine has the newly-focusable chip registered before the hop asks for focus there — this is exactly what sweep 4's revert was missing (it flipped focusable and requested focus in the same update). `seeAllArmed` resets to false the moment the chip loses focus, so it's unreachable again for the rest of the row's visit. No public signature changed (grepped every `BPRowView(`/`BPRailView(` caller — RoomView, DetailView, PersonView, DiscoverView, EBookDetailView, EBookView, MangaView, SearchView — none touch the internal focus state), so no caller needed changes. `testRowSeeAllEdge` and `testHomeBandRowLeads` only exercise Right/Left/Down on this row, never Up, so the new gate doesn't touch their path; not run against the simulator here (no Swift compiler in this environment) — needs a CI/device check. Engine untouched; `node build.mjs` (bundle 4649 KB) and `node smoke.mjs --offline` (1142 checks) still pass. Device check: Up from an early tile in a row with a See all chip (should now reach the row above, never the chip); Right off the last tile still reaches the chip and stays (twice); Left off the chip still returns to the last tile.
@@ -376,6 +404,54 @@ against a mocked host, `music.trackCredits` against the existing Deezer/MusicBra
 simulator (no Xcode here); needs a device: the Music library button/picker's focus/remote flow,
 a Plex server with a music library (the timeline pings and the mark-played scrobble), the track
 Credits panel's MusicBrainz/Deezer round trip.
+2026-09-27 12:30 UTC: eBook AniList list tracking (subagent, docs/ebook-spec.md, commit `892e7eb` +
+merge `4b9b3d3`). `lib/ebook/tracking.ts` ported into `engine/ebook.ts` (`toggleRead`, `trackingFor`,
+`refreshAnilistLibrary`), reusing the AniList session `engine/trackers.ts` already signs in — upstream
+has no separate eBook sign-in either. Upstream's own AniList surface for an eBook is a single
+read/unread toggle (`ebook-wheel-menu.tsx markCompleted`, not an in-between status picker like the
+anime tracker panel); ported as a "Mark as Read" action in `EBookDetailView`'s action row next to
+Bookmark/favourite/Source (the wheel menu itself is a desktop right-click radial menu with no TV
+equivalent, but every one of its other actions already lives in that row). The room warms the
+tracking cache once per visit (`EBookView.task` → `EBookStore.refreshAnilistLibrary`), like upstream's
+`loadAnilistLibrary`. The detail page's read/partial corner badge now reads the same
+tracking-and-resume-aware status the room's cards already used (`engine ebook.statuses`) instead of
+its own resume-only copy, so a book marked read purely through AniList (no local resume at all) shows
+the badge too. Also closed the owner-decision item in `docs/ebook-spec.md` §3/§5: the reader bar's
+Previous/Next chapter, the failed-chapter card's Next chapter, and the chapters panel's chapter list
+all forced `line: 0` on any chapter but the one already open; upstream's `harbor-reader.tsx` per-chapter
+effect always restores `loadEBookProgress` for whichever chapter it lands on regardless of entry point,
+and `EBookReaderModel.goToChapter`'s own restore path (no explicit line) already does the same, so
+those four call sites in `EBookReaderView.swift` now pass none. `engine/smoke.mjs` gained 10 offline
+checks (local/pending sync branches, tracking-aware `statuses()`, `refreshAnilistLibrary`'s no-op
+guarantee while signed out — asserted by fetch-hit count, not just "didn't throw"). Not run against a
+simulator (no Xcode here): the Mark as Read button's focus/label in the action row, the toast, and the
+chapter-restore fix all need a device/CI pass. `node build.mjs` 4653 KB, `node smoke.mjs --offline`
+1152/1152 passed (was 1142 before this batch).
+
+2026-09-27 (subagent) Watch Together sweep: closed 4 of the 5 remaining docs/parity-gaps.md smaller
+behaviour differences, each against the cited upstream file. An invite to another title waiting
+under a Detail page for the shell's toast (`root.presentedViewController != nil` the whole time the
+page is up) — DetailView now shows it over itself too, for a foreign title exactly as it already
+did for its own (`DetailView.swift` `foreignInvite`/`runForeignInvite`/`foreignOpen`, opening a
+further cover from the page rather than the shell). A dismissed invite toast handing the ring to
+the room's default instead of the exact tile — a weak `UIFocusSystem` pointer to the tile, kept
+fresh while an invite is pending and the ring is not on its card yet, lets Dismiss ask for it back
+directly (`TogetherOverlays.swift` `RingAnchor`/`restoreRingToPreviousTile`; `handRingToRoom` still
+covers the post-watch hand-off, untouched). The duration-mismatch chip showing the old length for
+under 1 s after a guest's swap (`PlayerClock.snap` held the left file's numbers until the new
+controller's first tick) — cleared with the rest of a swap's reset (`PlayerClock.resetForSwap`,
+called from `PlayerScreen.switchStream`). A host's swap stuck connecting holding every guest for
+good (neither the heartbeat nor `sourceFailed` ever fires for a stream that just sits on
+"Connecting…") — let go past the same ceiling upstream's own stall-wait falls back to for a stream
+that never starts (`TogetherPlayback.swift` `swapStallS`/`swapHoldSince`, checked in `tick()`).
+PiP dropping on a live reconnect was looked at and left open: upstream never tears down the player
+object a reconnect reloads (mpv's own window, or the web bridge's one persistent `<video>`), so PiP
+survives by construction; the TV's reload recreates the whole controller on every one via `.id
+(reloadToken)` (`engineReplaced()`), which every other reload path (VOD retries, quality/source
+switches) also relies on — a real fix needs a broader rework of that shared mechanism, not a
+one-line change; documented in parity-gaps.md instead. No engine files touched (build/smoke not
+re-run). Device check: all five, especially the ring-restore (UIFocusSystem.requestFocusUpdate) and
+the foreign-invite cover chaining, since this environment has no Swift compiler.
 
 ## Key files
 - `PLAN.md` — full plan: architecture, 15 stages (0–14), tvOS limits, open decisions.

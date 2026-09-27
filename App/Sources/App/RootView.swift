@@ -14,9 +14,14 @@ struct RootView: View {
     /// A film or channel is up: a theme or language that profile sync pulls in meanwhile waits for
     /// it to end, because either one rebuilds the whole tree (and the player with it).
     @ObservedObject private var playback = PlaybackState.shared
+    /// (cover-rebuild pass) A fullScreenCover (a Detail page, Settings, Addons, a collection page,
+    /// the account menu…) is up: held the same way playback is, or the rebuild drops it with
+    /// nothing to show for it. See CoverPresence's own comment (Shell/Screensaver.swift).
+    @ObservedObject private var coverPresence = CoverPresence.shared
     /// Picture in Picture's browse layer (Player/PiPBrowse.swift): built here, like the overlay.
     @ObservedObject private var browse = PiPBrowse.shared
-    /// The language the tree was built in, kept while playback runs (nil = follow settings).
+    /// The language the tree was built in, kept while playback or an open cover holds it (nil =
+    /// follow settings).
     @State private var heldLanguage: String?
     private var language: String { heldLanguage ?? L10n.normalize(settings.slice.uiLanguage) }
 
@@ -60,10 +65,8 @@ struct RootView: View {
         .onChange(of: overlayUp) { _, up in syncOverlay(up) }
         .onChange(of: saverBlocked) { _, blocked in saver.blocked = blocked }
         .onChange(of: browse.isUp) { _, up in syncBrowse(up) }
-        .onChange(of: playback.active) { _, on in
-            heldLanguage = on ? language : nil
-            theme.holdingForPlayback = on
-        }
+        .onChange(of: playback.active) { _, _ in syncHold() }
+        .onChange(of: coverPresence.up) { _, _ in syncHold() }
         .onChange(of: pool.posters) { _, posters in
             // bp-shell.tsx: remember this session's art for the next boot, feed the wall if it
             // opened on too little, and let it leave once the art behind it has arrived.
@@ -102,6 +105,18 @@ struct RootView: View {
     private var rootMosaic: Bool {
         app.stage == .shell && intro.phase != .showing && profiles.active?.kid == nil
             && BPAmbientBackground.shellDrawsMosaic(in: app.room)
+    }
+
+    /// (cover-rebuild pass) Keeps the tree's theme and language steady through playback or an open
+    /// cover: either one holds ThemeStore.revision and `heldLanguage` until both have cleared, so a
+    /// theme or language a profile-sync pull brings meanwhile waits instead of rebuilding the tree
+    /// (and dropping the player or the cover with it). Read afresh here (not from the `on`/`up`
+    /// each onChange gets) so one clearing while the other still holds keeps the freeze.
+    private func syncHold() {
+        let held = playback.active || coverPresence.up
+        heldLanguage = held ? (heldLanguage ?? language) : nil
+        theme.holdingForPlayback = playback.active
+        theme.holdingForCover = coverPresence.up
     }
 
     private func syncOverlay(_ up: Bool) {

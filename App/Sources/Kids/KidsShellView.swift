@@ -79,7 +79,9 @@ struct KidsShellView: View {
 
     private func showWaitingLinks() async {
         while !Task.isCancelled, app.hasWaitingLink(kidShell: true) {
-            let clear = !pinUp && !PiPBrowse.shared.isUp && !PlaybackState.shared.active && HarborOverlayWindow.noCoverPresented
+            // (deep links, follow-up) Nor while the intro wall, the curfew lock or the screensaver
+            // sits over the kids surface too (AppModel.shellReachable): see ShellView.linkClear.
+            let clear = AppModel.shellReachable && !pinUp && !PiPBrowse.shared.isUp && !PlaybackState.shared.active && HarborOverlayWindow.noCoverPresented
             if app.showWaitingLink(kidShell: true, clear: clear) { return }
             try? await Task.sleep(for: .milliseconds(500))
         }
