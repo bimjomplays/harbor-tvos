@@ -412,11 +412,11 @@ Left:
 | Stream picker | 4 | 2 | 1 | 1 |
 | Detail and Person | 5 | 3 | 2 | 0 |
 | Discover and Awards | 3 | 2 | 0 | 1 |
-| Home, rooms and cards | 6 | 5 | 0 | 1 |
+| Home, rooms and cards | 7 | 5 | 0 | 2 |
 | Search and Library | 3 | 2 | 1 | 0 |
-| Live TV and Sports | 3 | 1 | 2 | 0 |
+| Live TV and Sports | 4 | 2 | 2 | 0 |
 | Profiles, onboarding and account | 4 | 3 | 1 | 0 |
-| **Total** | **38** | **25** | **8** | **5** |
+| **Total** | **40** | **26** | **8** | **6** |
 
 No L-sized gap remains in the Big Picture scope. The large items left are blocked on tvOS or on the
 owner (see below).
