@@ -136,7 +136,7 @@ struct ProfileEditorView: View {
         .task {
             // (profiles bug pass) Before any await: a name typed while the lock list loaded was
             // overwritten when the task resumed.
-            name = editing?.name ?? ""
+            name = editing?.name ?? (Fixtures.active ? (Fixtures.newProfileName ?? "") : "")
             avatar = editing?.avatar
             // (kids parity pass) editor-view.tsx draftKid seed: `editing?.kid ?? null`.
             if let kid = editing?.kid {

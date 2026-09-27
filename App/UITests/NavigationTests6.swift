@@ -15,9 +15,9 @@ final class NavigationTests6: XCTestCase {
 
     private var remote: XCUIRemote { XCUIRemote.shared }
 
-    private func launch(_ scenario: String) -> XCUIApplication {
+    private func launch(_ scenario: String, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--fixtures", scenario]
+        app.launchArguments = ["--fixtures", scenario] + extra
         app.launch()
         return app
     }
@@ -207,7 +207,7 @@ final class NavigationTests6: XCTestCase {
     /// shell` launch, so nothing created here survives to the next one — confirmed by reading
     /// `ProfilesStore.reset()`/`installFixture()` directly rather than assumed.
     func testKidsProfileEditorSetup() {
-        let app = launch("shell")
+        let app = launch("shell", extra: ["--new-profile-name", "Kid test"])
         waitForHome(app)
         openSettings(app)
         openProfilesRow(app)
@@ -234,12 +234,10 @@ final class NavigationTests6: XCTestCase {
         require(app.buttons["profile-kid-toggle"].waitForExistence(timeout: 10), "the kid toggle is missing on the create form", app)
         require(app.staticTexts["PIN & sidebar locks"].waitForExistence(timeout: 10), "the PIN & sidebar locks section is missing on the create form", app)
 
-        // Name is required (Save is disabled while it's empty): type into it while it still has the
-        // form's initial focus, before any Down navigation moves the ring elsewhere.
-        let nameField = app.textFields["profile-name-field"]
-        require(nameField.waitForExistence(timeout: 10), "the Name field is missing on the create form", app)
-        nameField.typeText("Kid test")
-        require(waitUntil(timeout: 10) { (nameField.value as? String) == "Kid test" }, "typing into the Name field did not set it (value: \(String(describing: nameField.value)))", app)
+        // Name is required (Save is disabled while it's empty): XCUITest cannot type into a tvOS
+        // TextField without the system keyboard up, so the launch seeded it (`--new-profile-name`,
+        // Fixtures.newProfileName, the way `--query` seeds Search).
+        require(app.descendants(matching: .any)["profile-name-field"].waitForExistence(timeout: 10), "the Name field is missing on the create form", app)
         sleep(1)
 
         let kidToggle = app.buttons["profile-kid-toggle"]

@@ -43,6 +43,15 @@ enum Fixtures {
         return args[i + 1]
     }
 
+    /// `--new-profile-name <text>` prefills the create-profile form's Name (NavigationTests6: XCUITest
+    /// cannot type into a tvOS TextField without the system keyboard up, so the test seeds it here
+    /// the same way `--query` seeds Search).
+    static var newProfileName: String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--new-profile-name"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
     static func installIfRequested(into app: AppModel) {
         guard active, let stage else { return }
         app.profiles.reset()
