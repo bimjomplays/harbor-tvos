@@ -26,6 +26,7 @@ import * as spotify from "./musicSpotify";
 
 // ------------------------------------------------------------------------------ copy
 const COPY_KEYS = [
+  "music.library.recent",
   "music.title", "music.loading", "music.error.load", "music.error.search", "music.error.playback", "music.searchPlaceholder", "music.searchEmpty",
   "music.searchResults", "music.search.top", "music.search.tracks", "music.search.albums", "music.search.artists", "music.search.playlists",
   "music.search.scopeAll", "music.search.clear", "music.search.resume", "music.row.tryAgain", "music.row.resolving", "music.row.emptyRow", "music.row.stationBadge",

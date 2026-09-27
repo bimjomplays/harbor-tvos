@@ -335,7 +335,7 @@ struct ProfileEditorView: View {
                         .bpSelected(on)
                     }
                 }
-                BPNote(text: lockedCount == 0 ? "No tabs selected" : (hasPin ? "\(lockedCount) selected · locked tabs disappear until this profile's PIN is entered." : "\(lockedCount) selected · Locks only activate once a PIN is set."))
+                BPNote(text: lockedCount == 0 ? "No tabs selected" : (hasPin ? T("%lld selected · locked tabs disappear until this profile's PIN is entered.", lockedCount) : T("%lld selected · Locks only activate once a PIN is set.", lockedCount)))
             }
         }
         .focusSection()
