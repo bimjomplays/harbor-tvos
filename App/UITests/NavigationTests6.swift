@@ -169,7 +169,7 @@ final class NavigationTests6: XCTestCase {
         remote.press(.select)
         require(waitUntil(timeout: 5) { thumb.label == thumbBefore }, "a second Select on Thumbnails did not flip it back to \"\(thumbBefore)\" (now \"\(thumb.label)\")", app)
         sleep(1)
-        require(seek("spoilers-hide", app, max: 4), "could not walk back to the master toggle (focus: \(focusNote(app)))", app)
+        require(seek("spoilers-hide", app, max: 4, first: .up), "could not walk back to the master toggle (focus: \(focusNote(app)))", app)
         sleep(1)
         remote.press(.select)
         require(waitUntil(timeout: 5) { master.label == "Blur spoilers: Off" }, "Select on Blur spoilers did not turn it off again (now \"\(master.label)\")", app)

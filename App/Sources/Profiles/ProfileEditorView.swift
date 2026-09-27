@@ -265,6 +265,10 @@ struct ProfileEditorView: View {
                     }
                     Text("Sets the age level for the kids space.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
+                // (CI fix 2026-09-27) Full width: the Kids toggle sits at the row's right edge, and a
+                // section only as wide as its pills had no overlap below it, so Down went nowhere
+                // (run 36308550673). A full-width section takes the move and lands on its nearest pill.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .focusSection()
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     Text("Daily watch time").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
@@ -277,6 +281,7 @@ struct ProfileEditorView: View {
                     }
                     Text("Stops playback when the daily limit is reached. A parent PIN lets you allow more time.").font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .focusSection()
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     BPField(label: "Parent PIN", placeholder: editing?.kid?.parentPinHash != nil ? "••••" : "4 digits", text: $kidParentPin, secure: true, keyboard: .numberPad)
