@@ -4,6 +4,38 @@
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
 ## Status (2026-09-23 09:25 EDT)
+2026-09-27 09:07 UTC (subagent, worktree agent-afcdebc423a573fb9): ported upstream's "More Like
+This" similar-tracks page (commit `b3a02ce`). `reference/harbor` stays pinned at `770ca0bd`;
+upstream's `music-similar-page.tsx` and `lib/music/{radio,playback-origin}.ts`'s "similar" kind
+ship 11 commits ahead at `a821e273` (docs/upstream-drift-2026-09-27.md) — read via
+`git show a821e273:<path>` inside the submodule (its own already-fetched commit; the tracked pin
+never moved). `engine/musicRadio.ts` gets `loadSimilarTracks` + `withSeedArtist` (the same
+lane-built mix as Start radio, minus the seed, topped up with ≥4 of the seed's own artist);
+`engine/music.ts` exposes `music.similarTracks` (registered in `engine/entry.ts`), wrapping
+failure in `music.radio.error` like `radio()` beside it. New `App/Sources/Music/MusicSimilarPage.swift`
+(`MusicSimilarPageView`): "Songs like <track>", MusicPlaylistDetailView's own row style, Play all,
+Add to queue (reusing `music.card.addToQueue`), Save as playlist (`music.createPlaylist` +
+`music.addTracksToPlaylist`, `music.saved` for the confirmation), loading/failed notes reusing
+`music.loading` / `music.radio.error`. Reached from any track's menu through a new
+`musicShowSimilar` environment closure + `similarTarget` state on `MusicTrackActionsHost`
+(`App/Sources/Music/MusicLibrary.swift`), exactly like `creditsTarget`/`addTarget`.
+`MusicTrackMenuItems` gets a new "More like this" entry *alongside* the existing "Start radio" one
+(kept, not replaced: Start radio is already shipped and UI-tested here; upstream itself removed it
+in favour of More Like This, this port did not follow that removal — worth an owner call later).
+This page's own new copy ("Songs like %@", "%lld songs from %lld artists", "Play all", "Save as
+playlist", "More like this") is plain `T(...)` literals, correct English now but untranslated into
+the other 14 languages until a translation-coverage pass adds them to `tools/locales-tvos.json`
+(out of this worktree's file scope); its artist count is distinct full artist strings, not
+upstream's lead-artist-name split (no Swift `artistCreditParts` equivalent exists yet). New
+identifiers, all additive: `music-similar-play`, `music-similar-queue`, `music-similar-save`.
+`node build.mjs`: 4662 KB (was ≈4.6 MB). `node smoke.mjs --offline`: 1172 checks passed, 0 failed
+(added one for `music.similarTracks`, up from 1171). App/UITests untouched. Not device-tested (no
+Swift compiler here): the Swift file was read-checked by hand against every call site
+(HarborEngine.call's existing heterogeneous-array precedents for the new engine calls; every
+touched/added `accessibilityIdentifier` diffed — none renamed or removed). Device check, once
+buildable: a track's "More like this" opens the mix page with a working Play all / Add to queue /
+Save as playlist and a reachable track list; Start radio still works unchanged.
+
 2026-09-27 09:07 UTC (subagent, worktree agent-afcdebc423a573fb9): Now Playing's Play/Pause focus
 seed (commit `774503f`). `prefersDefaultFocus(true, in: focusNS)` alone did not seed the ring in
 the CI simulator (run 36302158467: it landed on `music-now-seek-back` instead). Added the same
