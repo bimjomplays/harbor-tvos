@@ -208,6 +208,7 @@ struct MultiviewView: View {
                 Button { model.setLayout(l.id) } label: {
                     HStack(spacing: BP.px(6)) {
                         Image(systemName: l.id == "2x2" ? "square.grid.2x2" : l.id == "2v" ? "rectangle.split.1x2" : "square")
+                            .accessibilityHidden(true)
                         Text(l.id == "2v" ? T(l.title) : l.id)
                     }
                 }
@@ -347,21 +348,22 @@ struct MultiviewCell: View {
                     Text(ch.shownName).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                     if let nowTitle { Text(nowTitle).font(BP.sans(10)).foregroundStyle(BP.inkMuted).lineLimit(1) }
                 }
+                .accessibilityElement(children: .combine)
                 Spacer(minLength: BP.px(4))
                 Button(action: onPick) { Image(systemName: "arrow.2.squarepath") }
                     .buttonStyle(BPTabStyle(active: false))
-                    .accessibilityLabel("Change channel")
+                    .accessibilityLabel(T("Change channel"))
                 Button { if audio { onMute() } else { onFocus() } } label: {
                     Image(systemName: audio ? "speaker.wave.2.fill" : "speaker.slash.fill")
                 }
                 .buttonStyle(BPTabStyle(active: audio))
-                .accessibilityLabel(audio ? "Mute" : "Unmute this cell")
+                .accessibilityLabel(audio ? T("Mute") : T("Unmute this cell"))
                 Button(action: onFullScreen) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                     .buttonStyle(BPTabStyle(active: false))
-                    .accessibilityLabel("Full screen")
+                    .accessibilityLabel(T("Full screen"))
                 Button(action: onClose) { Image(systemName: "xmark") }
                     .buttonStyle(BPTabStyle(active: false))
-                    .accessibilityLabel("Close cell")
+                    .accessibilityLabel(T("Close cell"))
             }
             .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
             .background(BP.panel)
@@ -381,7 +383,7 @@ struct MultiviewCell: View {
                 }
                 .buttonStyle(MultiviewTileStyle(radius: 0))
                 .focused(focus, equals: .cell(slot))
-                .accessibilityLabel(audio ? ch.shownName + ", sound on" : ch.shownName)
+                .accessibilityLabel(audio ? T("%@, sound on", ch.shownName) : ch.shownName)
             }
             .clipped()
         }

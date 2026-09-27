@@ -49,6 +49,7 @@ struct GuidePortalView: View {
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 HStack(spacing: BP.px(5)) {
                     Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
+                        .accessibilityHidden(true)
                     Text("Live").font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1).foregroundStyle(BP.ink)
                 }
                 Text(program.map { $0.title.isEmpty ? T("No program info") : $0.title } ?? T("No program info"))
@@ -61,9 +62,11 @@ struct GuidePortalView: View {
                         ZStack(alignment: .leading) { Capsule().fill(BP.on); Capsule().fill(BP.live).frame(width: g.size.width * pct) }
                     }
                     .frame(height: BP.px(3))
+                    .bpProgressValue(pct)
                 }
             }
             .padding(BP.px(14))
+            .accessibilityElement(children: .combine)
         }
         .frame(width: Self.width, height: Self.height)
         .background(BP.panel)
@@ -90,11 +93,13 @@ struct GuidePortalView: View {
     @ViewBuilder private var art: some View {
         if let icon = program?.iconUrl, !icon.isEmpty {
             RemoteImage(url: icon).frame(width: Self.width, height: Self.height).clipped()
+                .accessibilityHidden(true)
         } else if let logo = channel.logo, !logo.isEmpty {
             ZStack {
                 RemoteImage(url: logo).frame(width: Self.width, height: Self.height).blur(radius: 24).opacity(0.5).clipped()
                 RemoteImage(url: logo, contentMode: .fit).frame(width: Self.width * 0.4, height: Self.height * 0.4)
             }
+            .accessibilityHidden(true)
         } else {
             BP.panel
         }

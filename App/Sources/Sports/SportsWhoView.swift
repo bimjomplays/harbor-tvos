@@ -36,6 +36,7 @@ struct SportsWhoView: View {
                                         Text(f.value).font(BP.display(26)).foregroundStyle(BP.ink).monospacedDigit()
                                         Text(f.name).font(BP.sans(11)).foregroundStyle(BP.inkSubtle)
                                     }
+                                    .accessibilityElement(children: .combine)
                                 }
                             }
                         }
@@ -50,6 +51,7 @@ struct SportsWhoView: View {
                                         Text(T(f.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(150), alignment: .leading)
                                         Text(f.value).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
                                     }
+                                    .accessibilityElement(children: .combine)
                                 }
                                 if !w.roster.isEmpty {
                                     Text("Roster").font(BP.sans(15, .bold)).foregroundStyle(BP.ink).padding(.top, BP.px(6))
@@ -58,6 +60,7 @@ struct SportsWhoView: View {
                                             Button { Task { await openPlayer(p) } } label: {
                                                 HStack(spacing: BP.px(8)) {
                                                     RemoteImage(url: p.image).frame(width: BP.px(30), height: BP.px(30)).clipShape(Circle())
+                                                        .accessibilityHidden(true)
                                                     VStack(alignment: .leading, spacing: 1) {
                                                         Text(p.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                                         Text([p.jersey.map { "#\($0)" }, p.position].compactMap { $0 }.joined(separator: " · ")).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
@@ -80,7 +83,7 @@ struct SportsWhoView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    if !w.art.isEmpty { RemoteImage(url: w.art, contentMode: .fit).frame(width: BP.px(420), height: BP.px(520)).clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous)) }
+                    if !w.art.isEmpty { RemoteImage(url: w.art, contentMode: .fit).frame(width: BP.px(420), height: BP.px(520)).clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous)).accessibilityHidden(true) }
                 }
                 .padding(BP.gutter).padding(.top, BP.px(40))
             } else if loading {

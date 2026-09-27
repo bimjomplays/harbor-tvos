@@ -640,6 +640,7 @@ struct LiveView: View {
                                 RemoteImage(url: flag, contentMode: .fill)
                                     .frame(width: BP.px(18), height: BP.px(12))
                                     .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+                                    .accessibilityHidden(true)
                             }
                             Text(c.label).lineLimit(1)
                             if c.count > 0 {
@@ -776,6 +777,7 @@ struct LiveChannelRow: View {
                     RemoteImage(url: channel.logo, contentMode: .fit)
                         .frame(width: BP.px(84), height: BP.px(46))
                         .background(RoundedRectangle(cornerRadius: BP.px(6), style: .continuous).fill(BP.void_.opacity(0.6)))
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: BP.px(2)) {
                         HStack(spacing: BP.px(6)) {
                             Text(channel.shownName).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
@@ -787,6 +789,7 @@ struct LiveChannelRow: View {
                     VStack(alignment: .leading, spacing: BP.px(4)) {
                         HStack(spacing: BP.px(8)) {
                             Circle().fill(BP.live).frame(width: BP.px(6), height: BP.px(6))
+                                .accessibilityHidden(true)
                             Text(nowNext?.now?.title ?? T(nowNext?.known == true ? "No program info" : "Live"))
                                 .font(BP.sans(13, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                             if let p = nowNext?.now { Text(Self.range(p)).font(BP.sans(11)).foregroundStyle(BP.inkMuted) }
@@ -799,6 +802,7 @@ struct LiveChannelRow: View {
                                 }
                             }
                             .frame(height: BP.px(3))
+                            .bpProgressValue(progress)
                         }
                         if let n = nowNext?.next {
                             Text(T("Next %@", Self.time(n.startMs)) + " · " + n.title).font(BP.sans(11)).foregroundStyle(BP.inkMuted).lineLimit(1)
@@ -820,7 +824,7 @@ struct LiveChannelRow: View {
                     .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
             }
             .buttonStyle(BPTileStyle(radius: BP.rSM))
-            .accessibilityLabel(channel.favorite ? "Remove from favorites" : "Add to favorites")
+            .accessibilityLabel(channel.favorite ? T("Remove from favorites") : T("Add to favorites"))
             if let pin {
                 // usePinnedOrder: a pinned channel sits just under the favourites in guide order.
                 Button(action: pin) {
@@ -831,7 +835,7 @@ struct LiveChannelRow: View {
                         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
                 }
                 .buttonStyle(BPTileStyle(radius: BP.rSM))
-                .accessibilityLabel(channel.pinned == true ? "Unpin channel" : "Pin channel")
+                .accessibilityLabel(channel.pinned == true ? T("Unpin channel") : T("Pin channel"))
             }
             if let match {
                 // guide-view.tsx "Match EPG": pick the guide channel when the tvg-id is wrong.
@@ -843,7 +847,7 @@ struct LiveChannelRow: View {
                         .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
                 }
                 .buttonStyle(BPTileStyle(radius: BP.rSM))
-                .accessibilityLabel("Match EPG")
+                .accessibilityLabel(T("Match EPG"))
             }
         }
     }

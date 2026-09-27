@@ -629,10 +629,12 @@ struct SportsEventView: View {
             if !sub.isEmpty { Text(sub).font(BP.sans(12)).foregroundStyle(BP.inkSubtle) }
         }
         .frame(width: BP.px(220)).padding(.vertical, BP.px(8))
+        .accessibilityElement(children: .combine)
         if opens {
             Button { who = WhoTarget(id: key) } label: { content }
                 .buttonStyle(BPTileStyle(radius: BP.rMD))
-                .accessibilityLabel("Open \(s.name)")
+                // bp-sports-event-hero.tsx: aria-label={t("Open {name}", { name: side.name })}.
+                .accessibilityLabel(T("Open %@", s.name))
         } else {
             content
         }

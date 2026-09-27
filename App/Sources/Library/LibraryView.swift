@@ -352,6 +352,7 @@ struct LibraryView: View {
                                         Text(T(s.label)).font(BP.sans(17, .semibold)).foregroundStyle(BP.ink)
                                         Text("\(s.total)").font(BP.sans(12)).foregroundStyle(BP.inkSubtle)
                                     }
+                                    .accessibilityElement(children: .combine)
                                 }
                                 LazyVGrid(columns: columns, alignment: .leading, spacing: BP.px(18)) {
                                     ForEach(s.items) { e in

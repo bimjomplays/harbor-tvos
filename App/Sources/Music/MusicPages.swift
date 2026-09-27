@@ -414,6 +414,8 @@ struct MusicNowPlayingView: View {
                         Button { sourcePickerOpen = true } label: { Image(systemName: "arrow.triangle.branch").font(.system(size: BP.px(15), weight: .semibold)) }
                             .buttonStyle(MusicIconStyle())
                             .accessibilityLabel(copy("music.source.another", "Try another source"))
+                            // UI tests (NavigationTests5): opens MusicSourcePickerView from the transport row.
+                            .accessibilityIdentifier("music-now-picker")
                         // music-dock.tsx's close: an X titled "Stop and close player". Icon-only now
                         // Shuffle and Repeat share the row (the labelled button no longer fit 560).
                         Button { player.close(); dismiss() } label: { Image(systemName: "xmark").font(.system(size: BP.px(16), weight: .semibold)) }
