@@ -924,7 +924,7 @@ struct MusicSourcePickerView: View {
             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
-        .accessibilityIdentifier("music-source-spotify")
+        .accessibilityIdentifier("music-picker-connect-spotify")
     }
 
     private func row(_ candidate: MusicSourceCandidate) -> some View {
@@ -954,7 +954,7 @@ struct MusicSourcePickerView: View {
         }
         .buttonStyle(BPTileStyle(radius: BP.rMD))
         .disabled(pending != nil)
-        .accessibilityIdentifier("music-source-\(candidate.connectorId)")
+        .accessibilityIdentifier("music-picker-source-\(candidate.connectorId)")
     }
 
     private func load() async {
