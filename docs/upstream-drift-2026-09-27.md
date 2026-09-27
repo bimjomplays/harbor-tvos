@@ -100,16 +100,16 @@ touch these; confirmed no import path.
 ## Recommendation
 
 **Worth re-syncing now (cheap, real value):**
-- Bump `reference/harbor` to `a821e273` and re-run `node build.mjs` / `node smoke.mjs --offline` —
-  the only functional change that reaches the bundle at all is `page-rows.ts`'s stable-insert fix,
-  and it's a pure, already-imported function (`applyPageRows`/`orderedRowKeys`). Free pickup, low
-  risk. Worth doing specifically to get this one fix; there's nothing else in the diff the bundler
-  would even touch (`engine`'s `upstreamFiles` filter in `build.mjs` only pulls in files actually
-  reached through the `@` alias, and everything else changed here is either capstan/plugin code or
-  music files the port reimplements rather than imports).
+- **Done (2026-09-27).** Bumped `reference/harbor` to `a821e273` and re-ran `node build.mjs` /
+  `node smoke.mjs --offline`: bundle 4653 KB → 4670 KB, smoke 1152/1152 passed both before and after
+  (0 failed) — no regression, no renamed/moved export under `src/lib/music`, `src/views/music`,
+  `src/lib/feed` or `src/views/big-picture` that any engine glue module (`music.ts`, `musicSources.ts`,
+  `musicRadio.ts`, `rooms.ts`, `kids.ts`) imports (confirmed by grep + a clean rebuild). The
+  `page-rows.ts` stable-insert fix (`orderedRowKeys`/`applyPageRows`) is now in the bundle, unchanged
+  function signatures, free pickup as predicted.
 - While re-syncing, hand-port `relatedLane`'s artist-dedup improvement into `engine/musicRadio.ts`'s
   equivalent lane-builder (small, self-contained, improves the existing "Start Radio" station's
-  variety — no new feature surface, no new UI).
+  variety — no new feature surface, no new UI). — tracked as its own step below.
 
 **Needs real port work (don't fold into a routine re-sync):**
 - The "More Like This" feature (replaces "Start Radio" in the track menu; new similar-tracks page,
