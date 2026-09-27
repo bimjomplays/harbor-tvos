@@ -136,15 +136,29 @@ async function deezerRadioLane(seed: Seed): Promise<[MusicTrack, number][]> {
 
 async function relatedLane(seed: Seed): Promise<[MusicTrack, number][]> {
   if (!seed.artistId) return [];
-  const related = rows((await deezer(`artist/${seed.artistId}/related?limit=8`)).data).slice(0, 6);
+  // radio.ts relatedLane (2026-09-26, a821e273): case-insensitive name dedup keeping the artist
+  // with the higher nb_fan, widened related pool 8 -> 14 candidates, 6 -> 12 kept after dedup.
+  const RELATED_DEPTH = 14;
+  const found = rows((await deezer(`artist/${seed.artistId}/related?limit=${RELATED_DEPTH}`)).data);
+  const best = new Map<string, Obj>();
+  for (const artist of found) {
+    const name = text(artist.name).toLowerCase();
+    if (!name) continue;
+    const held = best.get(name);
+    if (!held || (num(artist.nb_fan) ?? 0) > (num(held.nb_fan) ?? 0)) best.set(name, artist);
+  }
+  const related = [...best.values()].slice(0, 12);
   const tops = await Promise.all(
     related.map((artist, rank) =>
-      deezer(`artist/${num(artist.id)}/top?limit=8`)
+      deezer(`artist/${num(artist.id)}/top?limit=5`)
         .then((page) =>
           rows(page.data)
             .map(deezerTrack)
             .filter((track): track is MusicTrack => !!track)
-            .map((track, index): [MusicTrack, number] => [track, (1 - rank / 8) * (1 - index / 10)]),
+            .map((track, index): [MusicTrack, number] => [
+              track,
+              (1 - rank / RELATED_DEPTH) * (1 - index / 10),
+            ]),
         )
         .catch(() => [] as [MusicTrack, number][]),
     ),
@@ -281,6 +295,49 @@ export async function loadTrackRadio(track: MusicTrack, familiar: MusicTrack[]):
   const following = await build([seed], new Set([trackKey(track)]), STATION_SIZE, familiar);
   if (following.length < 5) throw new Error("music.radio.error");
   return [{ ...track, mediaKind: "audio" }, ...following];
+}
+
+const SEED_ARTIST_TARGET = 4;
+
+/**
+ * radio.ts withSeedArtist (a821e273): wanting more of a song usually means wanting a little more
+ * of who made it, not a solo mix -- top up the seed artist's own tracks toward a minimum share.
+ */
+async function withSeedArtist(seed: Seed, track: MusicTrack, mix: MusicTrack[]): Promise<MusicTrack[]> {
+  if (!seed.artistId) return mix;
+  const credited = new Set(
+    [track.artist, ...artistCreditParts(track.artist)].map(normalizeName).filter(Boolean),
+  );
+  const held = mix.filter((entry) => credited.has(leadOf(entry))).length;
+  const want = SEED_ARTIST_TARGET - held;
+  if (want <= 0) return mix;
+  const seen = new Set([trackKey(track), ...mix.map(trackKey)]);
+  const page = await deezer(`artist/${seed.artistId}/top?limit=12`).catch(() => ({}) as Obj);
+  const extra: MusicTrack[] = [];
+  for (const entry of rows(page.data)) {
+    const candidate = deezerTrack(entry);
+    if (!candidate || seen.has(trackKey(candidate))) continue;
+    seen.add(trackKey(candidate));
+    extra.push({ ...candidate, mediaKind: "audio" });
+    if (extra.length >= want) break;
+  }
+  if (!extra.length) return mix;
+  const out = [...mix];
+  extra.forEach((entry, index) => out.splice(Math.min(out.length, 3 + index * 6), 0, entry));
+  return out;
+}
+
+/**
+ * radio.ts loadSimilarTracks (a821e273): music-track-menu.tsx's "More Like This" mix, replacing
+ * Start Radio -- the same lane builder, without the seed track itself, topped up with the seed
+ * artist's own tracks. Throws the same internal "music.radio.error" marker upstream does; the
+ * caller (engine/music.ts similarTracks) translates it to the similar-mix copy.
+ */
+export async function loadSimilarTracks(track: MusicTrack, familiar: MusicTrack[]): Promise<MusicTrack[]> {
+  const seed = await resolveSeed(track);
+  const following = await build([seed], new Set([trackKey(track)]), STATION_SIZE, familiar);
+  if (following.length < 5) throw new Error("music.radio.error");
+  return withSeedArtist(seed, track, following);
 }
 
 /**

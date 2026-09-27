@@ -100,23 +100,48 @@ touch these; confirmed no import path.
 ## Recommendation
 
 **Worth re-syncing now (cheap, real value):**
-- Bump `reference/harbor` to `a821e273` and re-run `node build.mjs` / `node smoke.mjs --offline` —
-  the only functional change that reaches the bundle at all is `page-rows.ts`'s stable-insert fix,
-  and it's a pure, already-imported function (`applyPageRows`/`orderedRowKeys`). Free pickup, low
-  risk. Worth doing specifically to get this one fix; there's nothing else in the diff the bundler
-  would even touch (`engine`'s `upstreamFiles` filter in `build.mjs` only pulls in files actually
-  reached through the `@` alias, and everything else changed here is either capstan/plugin code or
-  music files the port reimplements rather than imports).
-- While re-syncing, hand-port `relatedLane`'s artist-dedup improvement into `engine/musicRadio.ts`'s
-  equivalent lane-builder (small, self-contained, improves the existing "Start Radio" station's
-  variety — no new feature surface, no new UI).
+- **Done (2026-09-27).** Bumped `reference/harbor` to `a821e273` and re-ran `node build.mjs` /
+  `node smoke.mjs --offline`: bundle 4653 KB → 4670 KB, smoke 1152/1152 passed both before and after
+  (0 failed) — no regression, no renamed/moved export under `src/lib/music`, `src/views/music`,
+  `src/lib/feed` or `src/views/big-picture` that any engine glue module (`music.ts`, `musicSources.ts`,
+  `musicRadio.ts`, `rooms.ts`, `kids.ts`) imports (confirmed by grep + a clean rebuild). The
+  `page-rows.ts` stable-insert fix (`orderedRowKeys`/`applyPageRows`) is now in the bundle, unchanged
+  function signatures, free pickup as predicted.
+- **Done (2026-09-27).** Hand-ported `relatedLane`'s artist-dedup improvement into
+  `engine/musicRadio.ts`'s `relatedLane`: case-insensitive name dedup keeping the higher-`nb_fan`
+  artist, related pool widened 8 → 14, kept-after-dedup 6 → 12, per-artist top-tracks limit 8 → 5
+  (matches upstream `radio.ts` at `a821e273` exactly, `RELATED_DEPTH` weighting included). New smoke
+  check in `engine/smoke.mjs` (a case-insensitive "Justice"/"JUSTICE" duplicate with different
+  `nb_fan`) asserts the lower-fan duplicate's top-tracks endpoint is never fetched and its track never
+  reaches the station. `loadSimilarTracks`/`withSeedArtist` (the same upstream commit) were **not**
+  ported here — they belong to "More Like This" (see below), not this dedup fix.
 
 **Needs real port work (don't fold into a routine re-sync):**
-- The "More Like This" feature (replaces "Start Radio" in the track menu; new similar-tracks page,
-  recent-contexts band, up-next row). This changes an existing, already-ported affordance
-  (`MusicView.swift`'s Start Radio entry) as well as adding new screens — treat as its own
-  parity-gap item with a design decision (keep Start Radio as-is, add More Like This alongside, or
-  replace it to match upstream) before writing Swift.
+- The "More Like This" **menu action is done (2026-09-27)**: `music-track-menu.tsx`'s replacement of
+  `onStartRadio` with `onMoreLikeThis` is ported minimally — `engine/musicRadio.ts` gained
+  `loadSimilarTracks`/`withSeedArtist` (ported verbatim from upstream `radio.ts`), `engine/music.ts`
+  wraps it as `similarTracks()` (localizes the internal `music.radio.error` marker to
+  `t("music.similar.error")`, same pattern as `radio()`), registered in `engine/entry.ts`.
+  `App/Sources/Music/MusicView.swift`'s `MusicTrackMenuItems` (shared by every track row, the album
+  page and Spotify library — confirmed the only Swift call site) now shows **More Like This**
+  (`copy("music.card.moreLikeThis", …)`, `sparkles` icon) instead of Start Radio, calling new
+  `MusicPlayer.startSimilar(_:)` (same `radioStatus` loading/failed UI as `startRadio`, but never
+  arms the queue-extension — `loadSimilarTracks` is a fixed mix, not a growing station, matching
+  upstream). Two copy keys added (`music.card.moreLikeThis`, `music.similar.error`); both already
+  exist in every upstream locale catalog (`src/lib/i18n/locales/*/music-similar.ts`, reached through
+  the same `@` alias `en.ts` → `en/music.ts` → `music-similar.ts` chain), so no translation work was
+  needed. Two smoke checks added (dedup already covered above is separate; this feature's check
+  proves the seed track is excluded and the mix is topped up to 4 seed-artist tracks).
+  **Not built:** the new `music-similar-page.tsx` (a dedicated "Songs like X" browse page with
+  Play all / Save as playlist) and `recordMusicSimilarPlayback`/`playback-origin.ts`'s `"similar"`
+  kind — out of scope per the task ("keep the identifier/label pattern of the surrounding buttons");
+  on the TV, tapping **More Like This** plays the mix immediately into the existing queue/Now
+  Playing UI instead of opening a browse page first. `startRadio`/`radioArmed`/`extendRadioIfDue`
+  (the queue-growing "armed" mechanic) are now unreferenced from any UI button, same as upstream (its
+  own `startRadio`/`onStartRadio` are gone too — only `up-next.ts`'s suggestions still call the
+  underlying `musicRadioTracks`/`radio()` station builder) — left in place as harmless dead code
+  rather than removed, to keep this change minimal; a future pass could either wire a real "Radio"
+  entry point back in or delete the mechanic.
 - Recent-contexts band / up-next row / video-transport surface / hidden-recents unhide-on-replay:
   net-new Music UI, no current TV equivalent. Bundle into a future Music feature pass rather than
   this drift check.

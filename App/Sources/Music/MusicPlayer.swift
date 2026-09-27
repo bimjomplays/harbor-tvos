@@ -1072,6 +1072,29 @@ final class MusicPlayer: ObservableObject {
         }
     }
 
+    // MARK: - More Like This (radio.ts loadSimilarTracks via engine/musicRadio.ts, a821e273)
+
+    /// music-track-menu.tsx onMoreLikeThis: build the mix and play it. Reuses radioStatus's
+    /// loading/failed UI, but never arms the extension -- loadSimilarTracks is a fixed mix, not
+    /// a growing station like Start Radio.
+    func startSimilar(_ track: MusicTrack) {
+        radioRequest += 1
+        let ticket = radioRequest
+        radioStatus = .loading
+        Task {
+            do {
+                let mix: [MusicTrack] = try await HarborEngine.shared.call("music.similarTracks", [track])
+                guard ticket == radioRequest else { return }
+                guard let first = mix.first else { throw MusicPlaybackError.message("music.similar.error") }
+                radioStatus = nil
+                play(first, queue: mix)
+            } catch {
+                guard ticket == radioRequest else { return }
+                radioStatus = .failed(MusicCopy.shared("music.similar.error", "Could not build a mix."))
+            }
+        }
+    }
+
     private func disarmRadio() {
         radioArmed = false
         radioExtending = false

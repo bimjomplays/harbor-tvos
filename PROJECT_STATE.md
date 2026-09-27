@@ -3,6 +3,49 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — upstream drift part 3/3)
+2026-09-27 UTC: Ported upstream's Music "More Like This" (a821e273, `music-track-menu.tsx`
+`onStartRadio` → `onMoreLikeThis`) minimally into the track/album menu. `engine/musicRadio.ts`:
+`loadSimilarTracks`/`withSeedArtist` (ported verbatim from `radio.ts`). `engine/music.ts`:
+`similarTracks()` wrapper (localizes to `music.similar.error`), two new copy keys
+(`music.card.moreLikeThis`, `music.similar.error` — both already in every upstream locale catalog,
+free via the `@` alias, no translation work needed). `engine/entry.ts`: registered
+`music.similarTracks`. `App/Sources/Music/MusicView.swift`'s `MusicTrackMenuItems` (the one shared
+menu for every track row, album page and Spotify library — grepped every `.musicTrackMenu(` caller,
+7 hits, all this one component) now shows **More Like This** (`sparkles` icon) instead of Start
+Radio, calling new `App/Sources/Music/MusicPlayer.swift` `startSimilar(_:)` (same `radioStatus`
+loading/failed UI as `startRadio`, never arms the extension — a fixed mix, not a growing station,
+matching upstream). `node build.mjs` 4671 KB → 4672 KB; `node smoke.mjs --offline` 1153 → 1154
+checks passed, 0 failed (new check: seed track excluded from the mix, topped up to 4 seed-artist
+tracks). `startRadio`/`radioArmed`/`extendRadioIfDue` are now unreferenced from any UI button
+(matches upstream — its own `onStartRadio` is gone too, only `up-next.ts` still uses the underlying
+station builder) — left in place as harmless dead code, not removed, per the task's minimal-scope
+instruction. Not built: `music-similar-page.tsx`'s dedicated browse page (Play all/Save as
+playlist) or `playback-origin.ts`'s `"similar"` kind — out of scope; the TV plays the mix straight
+into the existing queue instead. All three upstream-drift-2026-09-27.md follow-ups now done. No
+Swift compiler here — every signature change was grepped for callers by hand; unverified: device/CI.
+
+## Status (2026-09-27, subagent — upstream drift part 2/3)
+2026-09-27 UTC: Ported upstream `radio.ts`'s `relatedLane` artist-dedup (a821e273) into
+`engine/musicRadio.ts`'s `relatedLane`: case-insensitive name dedup keeping the higher-`nb_fan`
+artist, related pool 8→14, kept-after-dedup 6→12, per-artist top-tracks limit 8→5. Added a smoke
+check (a case-insensitive "Justice"/"JUSTICE" duplicate, different `nb_fan`) proving the lower-fan
+duplicate's `/top` endpoint is never fetched and its track never reaches the station. `node build.mjs`
+4670 KB → 4671 KB; `node smoke.mjs --offline` 1152 → 1153 checks passed, 0 failed. `loadSimilarTracks`/
+`withSeedArtist` from the same upstream commit intentionally left for part 3 (More Like This).
+
+## Status (2026-09-27, subagent — upstream drift part 1/3)
+2026-09-27 UTC: Bumped `reference/harbor` pin `770ca0bd4` → `a821e273` (docs/upstream-drift-2026-09-27.md's
+follow-up 1). `node build.mjs` 4653 KB → 4670 KB (within the ≈4.66 MB expectation, no new inlined lazy
+`import()`); `node smoke.mjs --offline` 1152/1152 passed both before and after the bump (0 failed, no
+regression). Checked `git -C reference/harbor diff 770ca0bd4..a821e273 --stat -- src/lib/music
+src/views/music src/lib/feed src/views/big-picture`: zero changes under `feed`/`big-picture`; the
+`page-rows.ts` stable-insert fix (`orderedRowKeys`/`applyPageRows`) is bundled unchanged (same
+signatures, `rooms.ts`/`kids.ts` import it straight from `@/lib/page-rows`) — confirmed in. No
+renamed/moved export touches any engine glue module (`music.ts`, `musicSources.ts`, `musicRadio.ts`,
+`rooms.ts` all still resolve). Parts 2 (relatedLane dedup) and 3 (More Like This) of the same
+follow-up are next in this session. Unverified: device/CI (no Mac, no compiler here).
+
 ## Status (2026-09-23 09:25 EDT)
 > **Times:** the `HH:MM (09-24)` / `HH:MM (09-25)` labels on the entries from the overnight session are a running sequence, not wall-clock times. That session really ran 2026-09-23 23:30 → 2026-09-24 06:44 UTC (149 commits; `git log` has the real times), so every entry labelled (09-25) happened on 09-24 UTC. New entries from 2026-09-25 on use real UTC times (the commit time of the log commit).
 2026-09-27 08:27 UTC: Accessibility pass 2 (Stage 14, 5 parallel subagents + this session's review).

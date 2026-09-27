@@ -347,8 +347,9 @@ struct MusicTrackMenuItems: View {
         if let addToPlaylist {
             Button { addToPlaylist(track) } label: { Label(copy("music.card.addToPlaylist", "Add to playlist"), systemImage: "text.badge.plus") }
         }
-        // music-track-menu.tsx "Start radio" (radio.ts): a station seeded by this track.
-        Button { player.startRadio(track) } label: { Label(copy("music.card.startRadio", "Start radio"), systemImage: "dot.radiowaves.left.and.right") }
+        // music-track-menu.tsx "More Like This" (radio.ts loadSimilarTracks, a821e273): replaces
+        // the upstream "Start radio" entry with a fixed mix seeded by this track.
+        Button { player.startSimilar(track) } label: { Label(copy("music.card.moreLikeThis", "More like this"), systemImage: "sparkles") }
         Button { player.toggleLiked(track) } label: {
             player.isLiked(track)
                 ? Label(copy("music.unsaveTrack", "Remove from saved tracks"), systemImage: "heart.slash")
