@@ -158,7 +158,7 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 - [ ] Music mast → "Playlists" → create, rename, delete a Harbor playlist; hold Select on any track → "Add to playlist" (also with Spotify connected: its own destination) and "Credits"; both work from inside a playlist too. (`0a2262d`, `7a81d32`)
 - [ ] Hold Select on a track → "More like this" → the "Songs like <track>" page lists a mix; Play all, Add to queue and Save as playlist work; Menu closes it. Start radio is gone from the menu, matching upstream. (`d3a8ade`, `b3a02ce`)
-- [ ] Now Playing on a 1080p set: the transport row is fully visible with the error/resolving note showing; the three tabs read on one line; with nothing queued, Right from the seek or transport row reaches the tab row. (`136b410`, `bf6f0bc`)
+- [ ] Now Playing on a 1080p set: the transport row is fully visible with the error/resolving note showing; the three tabs read on one line; with nothing queued, Right from the seek or transport row reaches the tab row. (`136b410`, `7dda75e`)
 - [ ] Plex music: play a track from a Plex library → Plex shows it as now playing, and marks it played past the scrobble point. (`0a2262d`)
 - [ ] Open Now Playing from the dock → the ring is on Play/Pause (the simulator lands on the seek row instead: `ef2a2eb`; if the device does the same, the prefersDefaultFocus seed needs an explicit FocusState fallback).
 - [ ] eBook Detail (AniList signed in) → "Mark as Read" in the action row → the corner badge reads Read, AniList shows the entry completed; press again → unread; signed out → "Saved locally; AniList sync is pending" and the push lands after signing in. (`892e7eb`)
