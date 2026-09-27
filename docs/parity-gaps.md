@@ -101,6 +101,21 @@ closed these Big Picture behaviours that were outside the table:
 - TMDB episode titles on Continue Watching cards (not ported with H2).
 - O2: avatar and name write-back to the Harbor account (owner decision).
 
+**Added 2026-09-27 (from reconciling `parity-audit-2026-09-23.md` and `parity-audit-2026-09-24.md`
+against the current code — see those files' own "Reconciliation" sections for the full evidence).**
+An earlier draft of that reconciliation also flagged SH-11 (hero pips), AN-1 (anime hero actions) and
+the SR-7/ST-2 phone-handoff wiring as open here; all three turned out to be Ported once the actual
+call sites were traced (a literal-string grep had missed a wrapper component each time —
+`BPHeroPips`/`HeroPips` not "heroPip", `RoomView.swift`'s `animeActions(lead:)` calling
+`AnimeHeroActionsView` for the anime room's own hero, and `PhoneTypingSheet`/`ConnectPane` wrapping
+`TvHandoff` for Search and Settings respectively) — see `parity-audit-2026-09-23.md`'s Reconciliation
+section for the corrected pointers. Only these two are genuinely still open:
+- SH-1: the ambient backdrop's cross-fade to the focused title's own art with glow tint covers Home's
+  hero and some bands, but the generic layer every other screen uses is still a poster mosaic plus a
+  static gradient. Size M.
+- SP-9: TheSportsDB artwork fallback is ported; upstream's further fallback (a fixed scenery photo per
+  sport when even TheSportsDB has nothing, `SCENERY_GROUPS` in `bp-sports-art.ts`) is not. Size S.
+
 **Still open: smaller behaviour differences** (logged as "Open" in the Status lines; low):
 - Detail's Play with no resume point starts the first episode of the season chip on screen and
   says so ("Play S3 E1"); upstream's bp-resume-mark plays the first regular episode whatever the
@@ -425,10 +440,16 @@ owner (see below).
   `bp-trailer.tsx`, need yt-dlp), seek thumbnails (`use-trickplay.ts`), subtitle Auto sync
   (`bp-subtitle-tune.tsx` "Auto sync" / "Use it" / "Revert", needs subsync + audio extraction),
   YouTube Music.
+- **Blocked on the owner** (`parity-audit-2026-09-24.md` #12, HANDOFF.md): Top Shelf — needs a second
+  signed target, an App Group and its provisioning profile in App Store Connect. Size M.
+- **Desktop-only, no BP consumer** (`parity-audit-2026-09-24.md` #13): the "Harbor on TV" settings
+  mirror (`views/settings/tv-panel/*`) is stored by `engine/sync.ts` and applied nowhere on the TV;
+  upstream's own Big Picture has no consumer for it either, so it is a loose end, not a visible gap.
+  Size M if ever picked up.
 - **Owner decisions or deliberate differences** (PROJECT_STATE, HANDOFF.md): TV collection edits are
   not published; curfew "Switch profile" without the parent PIN; a deep link under a kid profile
-  opening any title; Collections with no TMDB key keeps the feed (upstream shows BpConnect); Top
-  Shelf (needs a second signed target); sports odds (`bp-sports-extra-odds.tsx`, deliberately left
+  opening any title; Collections with no TMDB key keeps the feed (upstream shows BpConnect); sports
+  odds (`bp-sports-extra-odds.tsx`, deliberately left
   out in `engine/sportsEvent.ts:178`, off by default upstream); Download for offline
   (`use-bp-detail-actions.ts`, PLAN §5); Settings "Phone setup is off / Turn on phone setup" (the
   port's LAN page starts on demand).
