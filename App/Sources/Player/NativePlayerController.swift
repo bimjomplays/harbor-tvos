@@ -953,7 +953,8 @@ final class NativePlayerController: UIViewController {
 
     private func push(_ line: String) {
         status.log.append(line)
-        if status.log.count > 8 { status.log.removeFirst() }
+        // (device diagnostics) 10, not 8: PlayerDiagnosticsOverlay shows the last 10 lines on the TV.
+        if status.log.count > 10 { status.log.removeFirst() }
     }
 
     /// Delivered on the next main-queue turn, never inside a SwiftUI update (as MPVPlayerController).

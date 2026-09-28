@@ -70,6 +70,14 @@ final class SettingsBridge: ObservableObject {
         var resumePlayback: Bool? = true
         var resumePrompt: Bool? = false
         var playerConfirmLeave: Bool? = true
+        /// (device diagnostics) TV-only setting, no upstream key: Settings → Playback "Player
+        /// diagnostics overlay" (PlayerDiagnosticsOverlay). Off by default; the owner turns it on to
+        /// read the engine, source and the last mpv/AVPlayer log lines straight off the TV, with no
+        /// Mac to pull MPVPlayerController.status.log from. Rides the same settings.patchFor path as
+        /// every other Slice key (it merges any key, so an unrecognised one still round-trips fine),
+        /// which also means it syncs to other devices like any other setting — harmless since it only
+        /// gates an on-screen readout.
+        var playerDiagnostics: Bool? = false
         // Skip pill (skip-pill-container.tsx; settings/defaults.ts:310-315): auto-skip per kind, the
         // pill itself, and the seconds before it hides (0 = stays; load.ts migrates unset to 14).
         var autoSkipIntro: Bool? = false
@@ -432,6 +440,7 @@ extension SettingsBridge.Slice {
         resumePlayback = c.lenient("resumePlayback")
         resumePrompt = c.lenient("resumePrompt")
         playerConfirmLeave = c.lenient("playerConfirmLeave")
+        playerDiagnostics = c.lenient("playerDiagnostics")
         autoSkipIntro = c.lenient("autoSkipIntro")
         autoSkipRecap = c.lenient("autoSkipRecap")
         autoSkipOutro = c.lenient("autoSkipOutro")

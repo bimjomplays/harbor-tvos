@@ -441,6 +441,13 @@ struct PlayerScreen: View {
                     .transition(.opacity)
             }
             if pipActive { pipPlacard.transition(.opacity) }
+            // (device diagnostics) Settings → Playback "Player diagnostics overlay": drawn last so it
+            // sits over everything else, gone only under the Watch Together room (which already
+            // covers the whole screen itself). Refreshed by `status`, which applyStatus already
+            // updates every second off the controller's own poll timer — no new timer here.
+            if SettingsBridge.shared.slice.playerDiagnostics ?? false, !roomOpen {
+                PlayerDiagnosticsOverlay(engine: engine, url: playURL, status: status)
+            }
         }
         // media-session.ts mediaKeyGate: a press that also reaches us as a remote command toggles once.
         .onPlayPauseCommand { if VideoNowPlaying.shared.mediaKeyGate() { playPausePressed() } }
@@ -2400,6 +2407,19 @@ struct PlayerScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { focus = target }
     }
 
+    /// (device diagnostics) The white-screen device report (build 291) had nothing in status.error:
+    /// mpv can log the real reason (a vo:/vulkan/MoltenVK setup failure, or any other "failed" line)
+    /// without ever reaching an end-file error, so a stream can look like it just silently never
+    /// started. Falls back to the last matching log line so sourceErrorCard never says nothing.
+    private var sourceErrorDetail: String? {
+        if let e = endedEarly ?? status.error { return e }
+        let needles = ["vo:", "vulkan", "moltenvk", "failed"]
+        return status.log.last { line in
+            let l = line.lowercased()
+            return needles.contains { l.contains($0) }
+        }
+    }
+
     /// source-error-card.tsx: the stream would not open; pick another source, retry, or leave.
     private var sourceErrorCard: some View {
         VStack(alignment: .leading, spacing: BP.px(12)) {
@@ -2409,7 +2429,7 @@ struct PlayerScreen: View {
                 Text("Harbor couldn't play this source").font(BP.display(30)).foregroundStyle(BP.ink)
             }
             Text("The source responded but the stream would not open. Try a different one.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
-            if let e = endedEarly ?? status.error { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
+            if let e = sourceErrorDetail { Text(T("Source said") + ": " + e).font(BP.sans(12)).foregroundStyle(BP.inkSubtle).lineLimit(1) }
             HStack(spacing: BP.px(10)) {
                 if canPickAnother {
                     chip("Pick another source", "list.bullet") { pickAnotherSource() }
