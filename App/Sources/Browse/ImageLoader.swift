@@ -241,7 +241,7 @@ enum PosterSizing {
         // MAL's own ~318x449 "large_image_url" at the same path. A digit right before the extension
         // means neither suffix is present yet; skip anything already ending in a letter (l or t).
         if url.contains("cdn.myanimelist.net"),
-           let r = url.range(of: #"\d+\.(jpe?g|png|webp)$"#, options: .regularExpression),
+           let r = url.range(of: #"\d+\.jpe?g$"#, options: .regularExpression),
            let dot = url[r].lastIndex(of: ".") {
             var out = url
             out.insert("l", at: dot)
