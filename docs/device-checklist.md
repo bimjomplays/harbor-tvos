@@ -27,6 +27,14 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Test first (highest risk)
 
+- [ ] **White screen on stream start (build 291).** Settings → Playback → turn on "Player
+  diagnostics overlay", then start any stream → a small black-backed readout appears top-left over
+  the video (engine, source host/extension, state, vo/hwdec/video-params, the mpv drawable size, and
+  the last log lines) and never takes focus or blocks the remote. On the title that showed the white
+  screen, read what it says right as the screen goes white — vo/drawable/hwdec first (a 1×1 or
+  otherwise wrong drawable size, or an mpv `vo:`/vulkan/MoltenVK line, is the leading suspect) — and
+  check whether the source-error card, if one comes up, now shows a "Source said" line instead of
+  nothing (it falls back to the last matching log line when mpv never set an end-file error).
 - [ ] During a film press Sources on the player rail → "Switch source" opens as a card over the playing film, the ring on the first row, Menu closes it back onto Sources. (`f819778`, `7f0d67a`)
 - [ ] In that switcher pick another row, on mpv, on AVPlayer and on a P2P row (the P2P dialog draws inline) → the stream swaps in place at the same spot; the player never leaves the screen; the old torrent is released. (`f819778`)
 - [ ] Pick the "Now playing" row in the switcher → it resolves again and reloads at the resume spot; a failed resolve keeps the panel open with the reason. (`0979e99`)

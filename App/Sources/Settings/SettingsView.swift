@@ -122,6 +122,11 @@ struct SettingsView: View {
                         onOff("Ask before resuming", settings.slice.resumePrompt ?? false, key: "resumePrompt")
                         onOff("Confirm before leaving the player", settings.slice.playerConfirmLeave ?? true, key: "playerConfirmLeave")
                     }
+                    // (device diagnostics) No upstream key: a small on-screen readout the owner can
+                    // turn on to see the engine, source, mpv/AVPlayer state and the last log lines
+                    // directly on the TV, with no Mac to read them off the device otherwise.
+                    row("Player diagnostics overlay", detail: "Shows the player engine, source and the last mpv/AVPlayer log lines on screen. Turn on to check a stream that plays wrong.")
+                    onOff("Player diagnostics overlay", settings.slice.playerDiagnostics ?? false, key: "playerDiagnostics")
                 }
                 // views/settings/library-panel/detail-tab.tsx "Spoilers" section: the Detail page's
                 // episode strip already masks per lib/spoilers.ts (DetailView.EpisodeCell); this is

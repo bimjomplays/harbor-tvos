@@ -3,6 +3,57 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-28, subagent — player diagnostics overlay for the white-screen device report)
+2026-09-28 UTC: The owner's Apple TV shows a solid white screen when any stream starts (build 291),
+and there was no way to see what libmpv/AVPlayer are actually doing on the TV itself (the mpv log
+only ever lived in `MPVPlayerController.status.log`, an in-memory array, unreadable without a Mac).
+Added an opt-in, on-device diagnostics overlay instead of guessing at the cause blind:
+- **Settings → Playback → "Player diagnostics overlay"** (off by default): a new
+  `playerDiagnostics: Bool?` key on `SettingsBridge.Slice` (TV-only, no upstream key), added to the
+  lenient decoder too, and a toggle in `SettingsView.swift`'s Playback section using the section's
+  own `onOff(...)` pattern (`settings.patch(["playerDiagnostics": .bool(...)])`, the same
+  `settings.patchFor` path every other Slice key rides — confirmed against
+  `reference/harbor/src/lib/settings/load.ts` `parseStoredSettings`, which spreads `...parsed` before
+  its explicit per-field overrides, so an unrecognised key round-trips through a save/reload
+  unharmed rather than being dropped).
+- **`App/Sources/Player/PlayerDiagnosticsOverlay.swift`** (new file): a small always-on, black-backed,
+  monospaced readout drawn top-left over the video when the toggle is on — engine (mpv/AVPlayer), the
+  source's host + file extension (never the full URL, which can carry a debrid/addon token), mpv/
+  AVPlayer `state` (+ `error` if any), `vo`/`hwdec`, `video-params` (or AVPlayer's presentationSize)
+  + the mpv drawable size, and the last 10 log lines — 4 header lines + up to 10 log lines, within
+  the ~14-line/45%-width budget. `.allowsHitTesting(false)`, `.accessibilityHidden(true)`, no
+  focusable controls (Text only): it can never take the ring or eat a remote press. Refreshed by the
+  existing `status` `@State` (`applyStatus`), which the controllers' own 1 s poll timers already
+  drive — no new timer.
+- **`MPVPlayerController.swift`**: `Status` gained `vo` (mpv's read-only `current-vo`, not the `vo`
+  option, which only ever reads back "gpu-next") and `drawableSize` (the Metal layer's actual
+  `drawableSize` next to its `frame.size`, run through `clampedInt` per the repo's own bare-`Int()`
+  rule) — exactly the kind of thing a 1×1 or otherwise mismatched drawable (see the file's own
+  MoltenVK-workaround comment on `MPVMetalLayer`) would explain a white screen, and there was
+  previously no way to see it at all. Both controllers' log now keeps the last 10 lines, not 8
+  (`NativePlayerController.swift` too, for the same overlay).
+- **`PlayerScreen.swift`**: wired the overlay in as the last layer of the player's `ZStack` (so it
+  draws over everything else), gated on the setting and `!roomOpen` (Watch Together already covers
+  the whole screen). Independent of the toggle: `sourceErrorCard`'s "Source said" detail line
+  (`sourceErrorDetail`, extracted from the existing `endedEarly ?? status.error` check) now falls
+  back to the last log line containing "vo:"/"vulkan"/"moltenvk"/"failed" (case-insensitive) when mpv
+  never set an end-file error, so a failure like the white screen — which never triggers END_FILE —
+  no longer shows a card with an empty reason.
+- **How to turn it on:** Settings → Playback → "Player diagnostics overlay" → On. It shows on every
+  stream (VOD and live, mpv and AVPlayer) until turned off again.
+- Files: `App/Sources/Player/PlayerDiagnosticsOverlay.swift` (new),
+  `App/Sources/Player/PlayerScreen.swift`, `App/Sources/Player/MPVPlayerController.swift`,
+  `App/Sources/Player/NativePlayerController.swift`, `App/Sources/Settings/SettingsBridge.swift`,
+  `App/Sources/Settings/SettingsView.swift`.
+- **Could not verify:** no Swift compiler/simulator here — every edit was read-checked against the
+  repo's own compile-safety rules (brace counts balanced per file, no trailing-comment code, no bare
+  `Int()` on the two new mpv-layer reads, no `T(` inside a generic scope, no modifiers chained onto
+  an `if` block, no `.accessibilityIdentifier` or focus logic touched) but never built or run. Did
+  not verify on a real device that the white screen actually produces a readable `vo:`/vulkan/
+  MoltenVK line — that's the owner's next device check (`docs/device-checklist.md` → "Test first" →
+  new top item). No engine (`engine/`) files changed, so `node build.mjs` / `node smoke.mjs
+  --offline` were not re-run (nothing for them to catch here).
+
 ## Status (2026-09-27, subagent — blurry/low-res posters bug pass)
 2026-09-27 UTC: Owner's first real-TV run (build 291) reported Home/Movies/Shows/Anime posters
 blurry, anime "by far the worst." Root cause was three upstream anime image providers each baking a

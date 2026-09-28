@@ -16,6 +16,14 @@ final class MPVPlayerController: UIViewController {
         var log: [String] = []
         /// mpv's end-file error (source-error-card.tsx): the stream never opened or died mid-way.
         var error: String?
+        /// (device diagnostics) mpv's active video output (PlayerDiagnosticsOverlay); "" for the
+        /// AVPlayer engine, which has no vo concept.
+        var vo = ""
+        /// (device diagnostics) the Metal layer's actual drawableSize next to its view frame — the
+        /// white-screen device report (build 291) is exactly the kind of thing a 1×1/mismatched
+        /// drawable (see MPVMetalLayer's MoltenVK workaround) would explain, and there was no way to
+        /// see it on the TV itself before. "" for the AVPlayer engine.
+        var drawableSize = ""
     }
 
     var onStatus: ((Status) -> Void)?
@@ -798,6 +806,12 @@ final class MPVPlayerController: UIViewController {
         status.videoParams = [string("video-params/w"), string("video-params/h"), string("video-codec"), string("video-params/primaries"), string("video-params/gamma")]
             .compactMap { $0 }.joined(separator: " ")
         status.hwdec = string("hwdec-current") ?? ""
+        // (device diagnostics) current-vo is mpv's read-only "what's actually running" property
+        // (vo itself only ever reads back "gpu-next", the option we set); drawableSize is read off
+        // our own layer, not mpv, since mpv has no notion of the CAMetalLayer size we hand it.
+        status.vo = string("current-vo") ?? ""
+        let d = layer.drawableSize, f = layer.frame.size
+        status.drawableSize = "\(clampedInt(Double(d.width)))×\(clampedInt(Double(d.height))) (frame \(clampedInt(Double(f.width)))×\(clampedInt(Double(f.height))))"
         status.fps = "\(string("estimated-vf-fps") ?? "?") fps · \(string("time-pos") ?? "0")s / \(string("duration") ?? "?")s"
         status.dropped = "dropped \(string("frame-drop-count") ?? "0") · cache \(string("demuxer-cache-duration") ?? "?")s"
         if let core = string("core-idle"), let eof = string("eof-reached"), string("time-pos") != nil {
@@ -835,7 +849,8 @@ final class MPVPlayerController: UIViewController {
         // poll's writes can corrupt the log array. Everything lands on main.
         guard Thread.isMainThread else { DispatchQueue.main.async { self.push(line) }; return }
         status.log.append(line)
-        if status.log.count > 8 { status.log.removeFirst() }
+        // (device diagnostics) 10, not 8: PlayerDiagnosticsOverlay shows the last 10 lines on the TV.
+        if status.log.count > 10 { status.log.removeFirst() }
     }
 
     private func report() {
