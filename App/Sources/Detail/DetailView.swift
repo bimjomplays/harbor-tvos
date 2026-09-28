@@ -47,6 +47,10 @@ struct DetailView: View {
     /// (review 27) Set by "Try again" while its load runs: the ring goes to Play when the message leaves.
     @State private var retryHandsPlay = false
     @Environment(\.dismiss) private var dismiss
+    /// (bug pass, 4K posters) The hero backdrop is sized like a tile's art (PosterSizing): unsized,
+    /// it stayed at whatever fixed tier the catalog (or, for anime, jikan.ts/kitsu.ts/anilist's own
+    /// small-web-card default) gave, however large the box drawing it actually was.
+    @Environment(\.displayScale) private var heroDisplayScale
     /// (bug pass) Every fullScreenCover over this page (the picker, the player, a dialog) makes it
     /// disappear and re-appear, which re-runs `.task`. The reload is kept (resume and marks refresh
     /// after playback), but the hint season and autoPlay act once: an autoPlay page re-opened the
@@ -594,7 +598,13 @@ struct DetailView: View {
         ZStack {
             BP.void_
             GeometryReader { g in
-                RemoteImage(url: model.meta.background ?? model.meta.poster)
+                // components/poster.tsx / PosterSizing: sized like a browse tile's art, not shown as
+                // the catalog (or, for anime, jikan.ts/kitsu.ts/anilist's small-web-card default) gave
+                // it — this box is most of the screen, far past any fixed tile size a poster's tier
+                // was ever chosen for.
+                let sized = PosterSizing.sized(model.meta.background ?? model.meta.poster, width: g.size.width * 0.76,
+                                                scale: heroDisplayScale, quality: SettingsBridge.shared.slice.posterQuality)
+                RemoteImage(url: sized)
                     .frame(width: g.size.width * 0.76, height: g.size.height * 0.75)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .mask(LinearGradient(colors: [.clear, .black, .black], startPoint: .leading, endPoint: .init(x: 0.45, y: 0.5)))

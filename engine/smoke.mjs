@@ -658,6 +658,54 @@ r.ok("benchmark still works", (() => {
   again.dispose();
 }
 
+// ---------------------- (bug pass, 4K posters) anime poster tiers upstream under-asks for
+// jikan.ts bestPoster (Anime room SPECS rows, animeTopPicks.ts) never exceeds MAL_CARD_WANT (266px),
+// so it is always the ~225x319 "image_url" default, reused as the backdrop too; kitsu.ts pickPoster
+// (Anime detail) and search.ts kitsuAnimeSearch try posterImage.medium (~390x554) before large/original;
+// anilist/to-meta.ts, franchise-root.ts and browse.ts all try coverImage.large (AniList's own "large"
+// GraphQL field, which the CDN serves at a /cover/medium/ path) before .extraLarge (the CDN's
+// /cover/large/ path, the biggest AniList gives). None of the three take a width or scale — a fixed
+// web-card default no browse tile or hero backdrop ever asked to be bigger. Since reference/harbor is
+// read-only, the TV corrects this once downstream, in App/Sources/Browse/ImageLoader.swift's
+// PosterSizing.upgradeFixedTierArt (used by every tile via BPTileView.art and by DetailView's hero
+// backdrop): it rewrites each of these three CDNs' own URL to the biggest file they already serve at
+// the very same path, the way TMDB/Google/Deezer URLs are already rewritten by tier/size. This proves
+// what the engine hands Swift for each source (search.fanOut reaches the exact same upstream
+// jikan.ts/kitsu.ts/anilist functions the Anime room and Home rows call) — a submodule bump that
+// changes a field name here should fail this before it ships a blurrier poster.
+{
+  const sr = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  sr.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url.startsWith("https://api.jikan.moe/v4/anime?q=")) {
+      return json({ data: [{ mal_id: 21, title: "Jikan Pick", type: "TV", year: 2002, score: 8,
+        images: { jpg: { image_url: "https://cdn.myanimelist.net/images/anime/4/19644.jpg", large_image_url: "https://cdn.myanimelist.net/images/anime/4/19644l.jpg" } } }] });
+    }
+    if (req.url.startsWith("https://kitsu.io/api/edge/anime?filter")) {
+      return json({ data: [{ id: "813", attributes: { canonicalTitle: "Kitsu Pick", subtype: "TV", startDate: "2002-10-03", synopsis: "x", averageRating: "80",
+        posterImage: { medium: "https://media.kitsu.app/anime/poster_images/813/medium.jpg", large: "https://media.kitsu.app/anime/poster_images/813/large.jpg" },
+        coverImage: { large: "https://media.kitsu.app/anime/813/cover_image/large-hash.jpeg" } } }] });
+    }
+    if (req.url === "https://graphql.anilist.co" && req.method === "POST") {
+      return json({ data: { Page: { media: [{ id: 20, idMal: 20, format: "TV", title: { romaji: "AniList Pick", english: "AniList Pick" },
+        coverImage: { extraLarge: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/b20-hash.jpg", large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b20-hash.jpg" },
+        bannerImage: "https://s4.anilist.co/file/anilistcdn/media/anime/banner/20-hash.jpg", seasonYear: 2002, averageScore: 80, description: "x", countryOfOrigin: "JP" }] } } });
+    }
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const hits = await sr.engine.search.fanOut("some anime", "default", true, null);
+  const by = (name) => hits.anime.find((a) => a.name === name);
+  r.eq("search.fanOut/jikan.ts: MAL poster is the ~225x319 default (image_url), not large_image_url, at the same path Swift's PosterSizing.upgradeFixedTierArt asks again with an 'l' before the extension",
+    by("Jikan Pick")?.poster, "https://cdn.myanimelist.net/images/anime/4/19644.jpg");
+  r.eq("search.fanOut/kitsu.ts+search.ts: Kitsu poster is posterImage.medium, not .large, at the same poster_images path Swift's PosterSizing.upgradeFixedTierArt swaps to /large/",
+    by("Kitsu Pick")?.poster, "https://media.kitsu.app/anime/poster_images/813/medium.jpg");
+  r.eq("search.fanOut/anilist to-meta+browse.ts: AniList poster is coverImage.large (the CDN's /cover/medium/ file), not .extraLarge, at the same s4.anilist.co path Swift's PosterSizing.upgradeFixedTierArt swaps to /cover/large/",
+    by("AniList Pick")?.poster, "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b20-hash.jpg");
+  sr.dispose();
+}
+
 // --------------------------- (player parity pass 2) content advisory toast (use-content-advisory.ts), fixtures
 {
   const adv = loadEngine({ storage: new Map([

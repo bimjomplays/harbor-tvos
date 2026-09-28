@@ -191,10 +191,18 @@ enum PosterSizing {
 
     static func sized(_ url: String?, width: CGFloat, scale: CGFloat, quality: String?) -> String? {
         guard let url, !url.isEmpty else { return url }
+        // jikan.ts bestPoster, kitsu.ts pickPoster and anilist/to-meta.ts anilistMediaToMeta each bake
+        // a fixed, small-web-card file into every anime poster no matter how big the caller's tile is
+        // (MAL: MAL_CARD_WANT 266 never exceeds MAL_SMALL_MAX 300, so it is always image_url, ~225x319,
+        // even reused as the hero backdrop; Kitsu: pickPoster tries medium, ~390x554, before large or
+        // original; AniList: coverImage.large before .extraLarge). None of those three take a width, so
+        // "quality" and tile size cannot help the way they do for a TMDB tier; upgrade them unconditionally
+        // to the biggest fixed file the same CDN already serves at a sibling path, before the quality gate.
+        let upgraded = upgradeFixedTierArt(url)
         let mult = multiplier(quality)
-        guard mult > 0, width > 0 else { return url }
+        guard mult > 0, width > 0 else { return upgraded }
         let target = Int((Double(width) * Double(min(2, max(1, scale))) * mult).rounded(.up))
-        return sizeImageUrl(url, target)
+        return sizeImageUrl(upgraded, target)
     }
 
     /// img-size.ts sizeImageUrl.
@@ -220,6 +228,39 @@ enum PosterSizing {
         if url.contains("dzcdn.net"), let r = url.range(of: #"/\d+x\d+-"#, options: .regularExpression) {
             let size = min(1000, max(targetPx, 1))
             return url.replacingCharacters(in: r, with: "/\(size)x\(size)-")
+        }
+        return url
+    }
+
+    /// The three anime image hosts upstream's own providers under-ask by design (a small web card
+    /// never needs more): each serves a bigger file of the very same picture at a sibling path, so
+    /// unlike TMDB/Google/Deezer this needs no target size, only the file that was already picked.
+    static func upgradeFixedTierArt(_ url: String) -> String {
+        // jikan.ts JikanAnime.images: cdn.myanimelist.net/images/anime/{a}/{id}.jpg is the ~225x319
+        // "image_url" default (or ".../{id}t.jpg", the ~100x140 search thumbnail); ".../{id}l.jpg" is
+        // MAL's own ~318x449 "large_image_url" at the same path. A digit right before the extension
+        // means neither suffix is present yet; skip anything already ending in a letter (l or t).
+        if url.contains("cdn.myanimelist.net"),
+           let r = url.range(of: #"\d+\.(jpe?g|png|webp)$"#, options: .regularExpression),
+           let dot = url[r].lastIndex(of: ".") {
+            var out = url
+            out.insert("l", at: dot)
+            return out
+        }
+        // kitsu.ts pickPoster: media.kitsu.{io,app}/anime/poster_images/{id}/{tiny|small|medium}.ext;
+        // "large" (the biggest kitsu ever gives a posterImage, kitsu.ts never asks for "original")
+        // sits at the same path with the size word swapped.
+        if url.contains("/poster_images/"),
+           let r = url.range(of: #"/(tiny|small|medium)\.\w+$"#, options: .regularExpression),
+           let dot = url[r].firstIndex(of: ".") {
+            return url.replacingCharacters(in: r, with: "/large\(url[dot...])")
+        }
+        // anilist/to-meta.ts, franchise-root.ts, browse.ts: coverImage.large before .extraLarge, but
+        // AniList's own "large" GraphQL field is the CDN's `/cover/medium/` file and "extraLarge" is
+        // `/cover/large/`, the biggest AniList serves; s4.anilist.co never uses "extralarge" in a path.
+        if url.contains("s4.anilist.co"),
+           let r = url.range(of: #"/cover/(small|medium)/"#, options: .regularExpression) {
+            return url.replacingCharacters(in: r, with: "/cover/large/")
         }
         return url
     }

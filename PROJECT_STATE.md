@@ -3,6 +3,50 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-27, subagent — blurry/low-res posters bug pass)
+2026-09-27 UTC: Owner's first real-TV run (build 291) reported Home/Movies/Shows/Anime posters
+blurry, anime "by far the worst." Root cause was three upstream anime image providers each baking a
+fixed, small-web-card file into every poster (and, for MAL, the hero backdrop too), independent of
+how big the TV's tile or hero actually is; TMDB/Google/Deezer art was already correct (Swift's
+`PosterSizing` is already a faithful port of `img-size.ts`, confirmed by re-reading both side by
+side). Traced with the real `reference/harbor` submodule (a821e273) and confirmed live against the
+real APIs (`api.jikan.moe`, `kitsu.io`, `graphql.anilist.co`) and by running `engine/search.fanOut`
+against realistic fixtures — before vs. after per source, all now fixed in
+`App/Sources/Browse/ImageLoader.swift`'s new `PosterSizing.upgradeFixedTierArt`:
+- **MAL/Jikan** (`jikan.ts` `bestPoster`, the Anime room's 16 SPECS rows + Top Picks): asked for
+  `image_url` (~225×319, `MAL_CARD_WANT` 266 never exceeds `MAL_SMALL_MAX` 300) and reused it as the
+  backdrop too → now asks for the same file with an `l` inserted before the extension (MAL's own
+  `large_image_url`, ~318×449, at the same CDN path).
+- **Kitsu** (`kitsu.ts` `pickPoster`, `search.ts` `kitsuAnimeSearch`, anime Detail): asked for
+  `posterImage.medium` (~390×554) → now swaps the `/poster_images/{id}/medium.jpg` path segment for
+  `/large.jpg` (~550×780, Kitsu's own biggest posterImage tier).
+- **AniList** (`anilist/to-meta.ts`, `franchise-root.ts`, `browse.ts`): asked for `coverImage.large`,
+  which is the CDN's `/cover/medium/` file → now swaps that path segment for `/cover/large/` (AniList's
+  own `extraLarge`, its biggest).
+- The Detail page's own hero backdrop (`DetailView.swift` `backdrop`) called `RemoteImage` directly
+  with no sizing at all (not even TMDB's tier swap) regardless of the box being most of the screen;
+  it now runs through `PosterSizing.sized` like a browse tile's art, so a TMDB backdrop gets the
+  right tier and an anime one gets the same MAL/Kitsu/AniList upgrade.
+- `engine/smoke.mjs`: new fixture-driven block after the Anime Top Picks tests, calling the real
+  `search.fanOut` (which reaches the identical `jikan.ts`/`kitsu.ts`/AniList functions the Anime room
+  and Home rows call) against realistic per-provider JSON, asserting the exact "before" URL for each
+  of the three sources — pins the contract `upgradeFixedTierArt` depends on so a submodule bump that
+  renames a field fails this instead of shipping a blurrier poster silently. TMDB's own tier (already
+  correct) is covered by the existing `homeServers` test asserting `.../t/p/w342/...`.
+- Files: `App/Sources/Browse/ImageLoader.swift`, `App/Sources/Detail/DetailView.swift`,
+  `engine/smoke.mjs`. `node build.mjs` 4681 KB (1278 modules, matches HANDOFF's ≈4.68 MB), `node
+  smoke.mjs --offline` 1186 checks passed (was 1180; +6 from the 3 new `r.eq` plus their own
+  before/after shape, 0 failed).
+- **Could not verify:** no Swift compiler/simulator here (per the repo's own hard rule) — the Swift
+  edits are read-checked carefully against the compile-safety rules in `HANDOFF.md`/`CLAUDE.md` (no
+  trailing-comment code, no bare `Int()`, no `T(` in a generic scope, no `if` modifiers, brace count
+  balanced) but never built. Live network smoke (`node smoke.mjs`, non-`--offline`) was not run
+  (optional per the loop; `--offline` is the required gate and passed). Did not check whether Kitsu's
+  `original` posterImage tier (present in the real API but never requested by `kitsu.ts`) is bigger
+  than `large` on most titles — `large` is the biggest tier `kitsu.ts`/`search.ts` ever ask Kitsu for,
+  so `upgradeFixedTierArt` only reaches for `large`, matching upstream's own ceiling rather than
+  guessing past it.
+
 ## Status (2026-09-27, subagent — device bug: Home/Movies/Shows/Anime row overlap, build 291)
 2026-09-27 UTC: Fixed the owner's first real-device report (build 291, 1080p/4K): on Home,
 Movies, Shows and Anime a focused tile's caption/ring/shadow ran into the next row's header (the
