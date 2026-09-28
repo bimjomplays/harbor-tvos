@@ -1266,8 +1266,22 @@ struct PlayerScreen: View {
     // MARK: chrome
 
     private var chromeView: some View {
-        VStack(alignment: .leading, spacing: BP.px(14)) {
+        VStack(alignment: .leading, spacing: 0) {
             Spacer()
+            chromeBody
+            // bp-player-shell.tsx: BpHintBar (HINTS = ["select", "back"]) always sits under the rail
+            // while the chrome is up — this surface has no top bar, so it never carries the "nav"
+            // hint. The player drew no hint bar at all; decorative only (HintBarView has no
+            // focusable/accessibilityIdentifier of its own), so this touches no focus logic.
+            HintBarView(actions: [.select, .back])
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.75), BP.void_.opacity(0.95)], startPoint: .init(x: 0.5, y: 0.45), endPoint: .bottom))
+        .ignoresSafeArea()
+    }
+
+    private var chromeBody: some View {
+        VStack(alignment: .leading, spacing: BP.px(14)) {
             HStack(alignment: .lastTextBaseline, spacing: BP.px(14)) {
                 VStack(alignment: .leading, spacing: BP.px(4)) {
                     Text(shownTitle).font(BP.display(26)).foregroundStyle(BP.ink)
@@ -1285,67 +1299,73 @@ struct PlayerScreen: View {
                 PlayerClockReader(clock) { c in scrubReadout(c) }
             }
             // bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed
-            // when there is none; VOD gets Back / Forward by the seek step.
-            HStack(spacing: BP.px(10)) {
-                // bp-player-controls `series = hasPrevEpisode || hasNextEpisode` (both gated by canChangeEpisode).
-                if hasPrevEpisodeNow || hasNextEpisodeNow {
-                    iconChip("prev", "backward.end.fill", label: T("Previous episode")) { previousEpisode() }
-                        .disabled(!hasPrevEpisodeNow)
+            // when there is none; VOD gets Back / Forward by the seek step. bp-player-shell.tsx wraps
+            // this row `overflow-x-auto` (`data-bp-scroll-x`); a plain HStack with no scroll ran every
+            // chip off the right edge of the screen with no way to reach the rest once there were more
+            // than fit (five-plus is common: prev/rewind/play/forward/next).
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: BP.px(10)) {
+                    // bp-player-controls `series = hasPrevEpisode || hasNextEpisode` (both gated by canChangeEpisode).
+                    if hasPrevEpisodeNow || hasNextEpisodeNow {
+                        iconChip("prev", "backward.end.fill", label: T("Previous episode")) { previousEpisode() }
+                            .disabled(!hasPrevEpisodeNow)
+                    }
+                    if !isLive { iconChip("rewind", "gobackward", label: T("Back %llds", Int(prefs.seekBackStepSec))) { seekBy(-prefs.seekBackStepSec) } }
+                    chip(isPaused ? "Play" : "Pause", isPaused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
+                    if !isLive { iconChip("forward", "goforward", label: T("Forward %llds", Int(prefs.seekForwardStepSec))) { seekBy(prefs.seekForwardStepSec) } }
+                    if hasPrevEpisodeNow || hasNextEpisodeNow {
+                        iconChip("next", "forward.end.fill", label: T("Next episode")) { playNext() }
+                            .disabled(!hasNextEpisodeNow)
+                    }
                 }
-                if !isLive { iconChip("rewind", "gobackward", label: T("Back %llds", Int(prefs.seekBackStepSec))) { seekBy(-prefs.seekBackStepSec) } }
-                chip(isPaused ? "Play" : "Pause", isPaused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
-                if !isLive { iconChip("forward", "goforward", label: T("Forward %llds", Int(prefs.seekForwardStepSec))) { seekBy(prefs.seekForwardStepSec) } }
-                if hasPrevEpisodeNow || hasNextEpisodeNow {
-                    iconChip("next", "forward.end.fill", label: T("Next episode")) { playNext() }
-                        .disabled(!hasNextEpisodeNow)
-                }
-                Spacer()
             }
+            .scrollClipDisabled()
             .focusSection()
-            // bp-player-rail.tsx: Back, one chip per panel, then the mute toggle.
-            HStack(spacing: BP.px(10)) {
-                chip("Back", "chevron.backward") { requestClose() }
-                chip("Subtitles", "captions.bubble") { open(.subtitles) }
-                chip("Audio", "waveform") { open(.audio) }
-                // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
-                // (perf pass 4) The chip observes the sleep timer itself (PlayerSleepReader).
-                PlayerSleepReader { t in speedChip(t) }
-                // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
-                // mpv cannot, so the control is not there on that engine.
-                if controller?.supportsPictureInPicture == true {
-                    chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
+            // bp-player-rail.tsx: Back, one chip per panel, then the mute toggle. Same overflow risk as
+            // the transport row above (worse: live TV alone can put Back/Subtitles/Audio/Speed/Sources/
+            // TV Guide/Previous channel/Mute/LIVE on one row, 9+ chips), so it gets the same scroll wrap.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: BP.px(10)) {
+                    chip("Back", "chevron.backward") { requestClose() }
+                    chip("Subtitles", "captions.bubble") { open(.subtitles) }
+                    chip("Audio", "waveform") { open(.audio) }
+                    // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
+                    // (perf pass 4) The chip observes the sleep timer itself (PlayerSleepReader).
+                    PlayerSleepReader { t in speedChip(t) }
+                    // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
+                    // mpv cannot, so the control is not there on that engine.
+                    if controller?.supportsPictureInPicture == true {
+                        chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
+                    }
+                    if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
+                    // (P8) bp-ten-foot.tsx sources slot: the switcher opens over the film and swaps the
+                    // stream in place. Where it can't (a home-server copy), the picker reopens at this spot.
+                    if canSwitchInPlace { chip("Sources", "list.bullet") { open(.sources) } }
+                    else if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
+                    // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
+                    if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
+                    // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
+                    if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
+                    // use-player-hotkeys playerPrevChannel: back to the last channel watched.
+                    if isLive, !prevChannels.isEmpty { chip("Previous channel", "arrow.uturn.backward", id: "prevchannel") { goPrevChannel() } }
+                    if isLive, let add = onAddToMultiview, let ch = currentChannel {
+                        chip("Add to Multiview", "rectangle.split.2x2", id: "multiview") { finish(natural: false); add(ch) }
+                    }
+                    // Watch Together: the room panel (chat, people) over the playing video.
+                    if together.inSession { chip("Room", "person.2.fill") { roomOpen = true } }
+                    // bp-player-rail: the mute toggle ("Muted" / "Sound on").
+                    chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
+                        controller?.setMuted(!muted)
+                        muted.toggle()
+                    }
+                    if isLive { Text("LIVE").font(BP.sans(14, .semibold)).foregroundStyle(BP.live) }
                 }
-                if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
-                // (P8) bp-ten-foot.tsx sources slot: the switcher opens over the film and swaps the
-                // stream in place. Where it can't (a home-server copy), the picker reopens at this spot.
-                if canSwitchInPlace { chip("Sources", "list.bullet") { open(.sources) } }
-                else if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
-                // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
-                if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
-                // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
-                if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
-                // use-player-hotkeys playerPrevChannel: back to the last channel watched.
-                if isLive, !prevChannels.isEmpty { chip("Previous channel", "arrow.uturn.backward", id: "prevchannel") { goPrevChannel() } }
-                if isLive, let add = onAddToMultiview, let ch = currentChannel {
-                    chip("Add to Multiview", "rectangle.split.2x2", id: "multiview") { finish(natural: false); add(ch) }
-                }
-                // Watch Together: the room panel (chat, people) over the playing video.
-                if together.inSession { chip("Room", "person.2.fill") { roomOpen = true } }
-                // bp-player-rail: the mute toggle ("Muted" / "Sound on").
-                chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
-                    controller?.setMuted(!muted)
-                    muted.toggle()
-                }
-                Spacer()
-                if isLive { Text("LIVE").font(BP.sans(14, .semibold)).foregroundStyle(BP.live) }
             }
+            .scrollClipDisabled()
             .focusSection()
         }
         .padding(BP.gutter)
         .padding(.bottom, BP.px(10))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.75), BP.void_.opacity(0.95)], startPoint: .init(x: 0.5, y: 0.45), endPoint: .bottom))
-        .ignoresSafeArea()
     }
 
     /// bp-player-scrub.tsx: buffered fill under the played fill; while presses accumulate, a
