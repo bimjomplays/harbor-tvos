@@ -214,8 +214,11 @@ struct DetailView: View {
         ZStack(alignment: .topLeading) {
             backdrop
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: BP.px(26)) {
-                    VStack(alignment: .leading, spacing: BP.px(26)) {
+                // bp-detail.tsx: the rows column sits mt-[clamp(44px,5.5vh,88px)] under the hero, then
+                // each row (episodes included, the first entry in `rows`) is --bp-row-gap
+                // (clamp(20px,2.6vh,40px)) apart — two different gaps, not one (was 26/26 for both).
+                VStack(alignment: .leading, spacing: BP.px(20)) {
+                    VStack(alignment: .leading, spacing: BP.px(44)) {
                         hero
                         if model.isSeries { episodes }
                     }
@@ -625,13 +628,17 @@ struct DetailView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
             if let logo = model.meta.logo, !logo.isEmpty {
-                RemoteImage(url: logo, contentMode: .fit).frame(maxWidth: BP.px(380), maxHeight: BP.px(140), alignment: .leading)
+                // bp-detail-hero.tsx data-bp-detail-logo: max-h-[clamp(107px,16.7vh,160px)]
+                // max-w-[min(28vw,320px)] — was sized like the Home spotlight's own (larger) logo box.
+                RemoteImage(url: logo, contentMode: .fit).frame(maxWidth: BP.px(320), maxHeight: BP.px(107), alignment: .leading)
                     // The title logo is the page's heading: VoiceOver reads the name it draws.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(verbatim: model.meta.name))
                     .accessibilityAddTraits(.isHeader)
             } else {
-                Text(model.meta.name).font(BP.display(52)).foregroundStyle(BP.ink).lineLimit(2).frame(maxWidth: BP.px(700), alignment: .leading)
+                // bp-detail-hero.tsx no-logo h1: max-w-[min(36vw,410px)] (was 700, ~70% too wide,
+                // let a long title run far past where upstream wraps it to a second line).
+                Text(model.meta.name).font(BP.display(52)).foregroundStyle(BP.ink).lineLimit(2).frame(maxWidth: BP.px(410), alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
             }
             HStack(spacing: BP.px(12)) {
@@ -694,15 +701,17 @@ struct DetailView: View {
             // the eBook" for a light novel while the eBook tab is on (MangaHeroEntry picks which).
             if model.isAnimeId, SettingsBridge.shared.mangaOn || UserDefaults.standard.bool(forKey: EBookGate.key) { MangaHeroEntry(meta: model.meta) }
             if let tag = model.extras?.tagline, !tag.isEmpty {
-                Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(620), alignment: .leading)
+                // bp-detail-hero.tsx data-bp-detail-tagline: max-w-[min(36vw,410px)] (was 620, ~50% too wide).
+                Text(tag).font(BP.sans(14, .semibold)).italic().foregroundStyle(BP.inkMuted).lineLimit(1).frame(maxWidth: BP.px(410), alignment: .leading)
             }
             synopsis
             // bp-hero-notes BpTmdbKeyNote (bp-detail-hero; the anime hero has none).
             if !model.isAnimeId, SettingsBridge.shared.slice.tmdbKey.isEmpty {
+                // bp-hero-notes.tsx BpTmdbKeyNote: max-w-[min(46vw,820px)], same column as the synopsis.
                 Text(verbatim: T("Add a TMDB key in Settings to see the cast, crew, and details."))
                     .font(BP.sans(12.5, .medium)).foregroundStyle(BP.inkSubtle).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: BP.px(620), alignment: .leading)
+                    .frame(maxWidth: BP.px(524), alignment: .leading)
             }
             if let providers = model.extras?.watchOn, !providers.isEmpty { watchOn(providers) }
             credits
@@ -716,9 +725,10 @@ struct DetailView: View {
     /// cut anything (useBpSynopsis: scrollHeight against clientHeight, more than 2 px).
     private var synopsis: some View {
         let text: String = overviewText
+        // bp-synopsis.tsx BpSynopsis: line-clamp-3 (was 4) at max-w-[min(46vw,820px)] (was 620).
         return Text(verbatim: text).font(BP.sans(13, .regular)).foregroundStyle(BP.inkMuted).lineSpacing(4)
-            .lineLimit(synopsisExpanded ? nil : 4)
-            .frame(maxWidth: BP.px(620), alignment: .leading)
+            .lineLimit(synopsisExpanded ? nil : 3)
+            .frame(maxWidth: BP.px(524), alignment: .leading)
             .background(alignment: .topLeading) {
                 GeometryReader { g in
                     ZStack(alignment: .topLeading) {

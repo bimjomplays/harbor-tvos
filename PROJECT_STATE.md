@@ -3,6 +3,47 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-28, subagent — streaming-screens geometry audit, Detail page)
+2026-09-28 UTC (reasoning-only pass, no Swift compiler/device): owner called build 291's UI "kinda
+messed up"/"needs polishing"; audited Detail (`App/Sources/Detail/DetailView.swift`) against
+upstream's actual clamp/min() floors (`reference/harbor/src/views/big-picture/detail/bp-detail-hero.tsx`,
+`bp-synopsis.tsx`, `bp-hero-notes.tsx`, and `bp-detail.tsx`'s row layout), converting each upstream
+"1140-canvas px" floor through the same `BP.px()` (`k = 1920/1140`) the rest of the port already
+uses — not vibes, the actual resolved numbers. Fixed (all read-checked, none touch
+`.accessibilityIdentifier`/focus, commit next):
+- **Hero logo** (line ~630): `maxWidth/maxHeight` `BP.px(380)/BP.px(140)` → `BP.px(320)/BP.px(107)`.
+  Upstream `data-bp-detail-logo` is `max-h-[clamp(107px,16.7vh,160px)] max-w-[min(28vw,320px)]`
+  (floors 107/320); ours had copied the *Home spotlight's* larger logo box (380/140), rendering
+  every title logo on Detail ~19% wider and ~31% taller than upstream draws it.
+- **No-logo fallback title** (line ~638): `maxWidth` `BP.px(700)` → `BP.px(410)`. Upstream's h1 is
+  `max-w-[min(36vw,410px)]`; 700 let a long title (the "long titles" edge case this audit was asked
+  to check) run ~70% wider before wrapping to line 2 than upstream's own column.
+- **Tagline** (line ~703): `maxWidth` `BP.px(620)` → `BP.px(410)` (same `min(36vw,410px)` column as
+  the title/logo; was ~50% too wide).
+- **Synopsis** (`synopsis`, line ~727): `lineLimit` `4` → `3` (upstream `BpSynopsis` is
+  `line-clamp-3`, not 4 — a real behavioural mismatch, not just width: a 4th line was shown that
+  upstream never does, and the "canExpand" measurement was gated on the wrong clamp height) and
+  `maxWidth` `BP.px(620)` → `BP.px(524)` (upstream `max-w-[min(46vw,820px)]`, floor 524).
+- **TMDB-key note** (line ~712): `maxWidth` `BP.px(620)` → `BP.px(524)` (same `min(46vw,820px)`
+  column as the synopsis).
+- **Block spacing** (line ~217): the hero and the rows below it were one `VStack(spacing: 26)`
+  nested in another `VStack(spacing: 26)`, so the hero→episodes gap and every row→row gap resolved
+  to the same 26 canvas-px. Upstream uses two different gaps: hero→rows-container is
+  `mt-[clamp(44px,5.5vh,88px)]` (floor 44), row→row is `--bp-row-gap: clamp(20px,2.6vh,40px)` (floor
+  20). Split them: inner `VStack` (hero→episodes) now `BP.px(44)`, outer `VStack` (episodes/hero
+  group→first row, and every row→row after) now `BP.px(20)`.
+Left as-is (real gaps, not fixed — outside "clear geometry/spacing error" or too large to do safely
+without a compiler): the on-page order of `tmdbRows` (characters, awards, a gallery row, cast,
+collection, recommendations, similar, videos, facts) doesn't match `bp-detail.tsx`'s `rows[]` order
+(crew, cast, characters, collection, recommendations, similar, videos, awards, facts, then 3 gallery
+rows) — reordering touches every row's rail-index position, too risky to do blind; and TMDB/Cinemeta
+**crew** renders as stacked label:name text lines cramped into the hero's own text column
+(`credits`, line ~995) instead of upstream's `BpCrewRow`, a full-width horizontal-scroll rail of
+individual person cells like Cast/Awards/Videos already are here — an architecture gap, not a
+number to tweak. The backdrop mask/fade shape and the episode-still card width (230 vs upstream's
+floor 212, ~8% over) were within normal rounding/taste and left alone. Could not verify on device;
+read-checked only (brace/paren counts, no other call site reads these literals).
+
 ## Status (2026-09-28, subagent — device bug: white screen on stream start, build 291)
 2026-09-28 UTC (reasoning-only pass, no Swift compiler / no device): Owner's first real-TV run
 (build 291) also reported the whole screen going solid white the instant any stream starts (no
