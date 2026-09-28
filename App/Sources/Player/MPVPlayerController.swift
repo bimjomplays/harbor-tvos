@@ -1,6 +1,7 @@
 import UIKit
 import AVKit
 import AVFoundation
+import CoreMedia
 import Libmpv
 import os
 
@@ -780,7 +781,15 @@ final class MPVPlayerController: UIViewController {
         guard Self.matchFrameRate else { return }
         guard ownsDisplay, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1 else { return }
         displayCriteriaApplied = true
-        let criteria = AVDisplayCriteria(refreshRate: Float(fps), videoDynamicRange: .sdr)
+        // The SDK on CI has no `init(refreshRate:videoDynamicRange:)`; the format-description form
+        // is the one every tvOS since 11.2 offers. A plain description (codec + size, no HDR colour
+        // extensions) asks for the frame rate only and never an HDR mode.
+        var desc: CMVideoFormatDescription?
+        let w = Int32(Double(string("video-params/w") ?? "1920") ?? 1920)
+        let h = Int32(Double(string("video-params/h") ?? "1080") ?? 1080)
+        CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: kCMVideoCodecType_HEVC, width: w, height: h, extensions: nil, formatDescriptionOut: &desc)
+        guard let desc else { push("display: no format description, frame-rate match skipped"); return }
+        let criteria = AVDisplayCriteria(refreshRate: Float(fps), formatDescription: desc)
         // The window this player is in: the app's own, or the PiP browse layer's (PiPBrowse) for a
         // film opened from there.
         let own = viewIfLoaded?.window
