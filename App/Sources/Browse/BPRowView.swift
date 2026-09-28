@@ -269,7 +269,7 @@ struct BPRailView<Lead: View>: View {
     /// rail fakes upstream's boundary with `topInset` + this mask; keep the two in the same
     /// neighbourhood as `railFade` below, or a parked row again lands inside the fade instead of
     /// past it.
-    private static let railFade: CGFloat = BP.px(60)
+    private var railFade: CGFloat { BP.px(60) }
     /// Where the focused row's top parks: just under the spotlight copy (use-bp-rail shifts the
     /// active row's top to the rail's top edge, right under the hero).
     private var parkOffset: CGFloat { topInset + BP.px(6) }
@@ -363,9 +363,9 @@ struct BPRailView<Lead: View>: View {
             // own bottom edge, so a row is invisible until the last moment it slides into place.
             .mask(
                 VStack(spacing: 0) {
-                    Color.clear.frame(height: max(0, topInset - Self.railFade))
+                    Color.clear.frame(height: max(0, topInset - railFade))
                     LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: min(topInset, Self.railFade))
+                        .frame(height: min(topInset, railFade))
                     Color.black
                 }
             )
