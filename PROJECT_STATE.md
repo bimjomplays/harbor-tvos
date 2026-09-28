@@ -3,6 +3,103 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-28, subagent — streaming-screens geometry audit, Play picker + Player chrome)
+2026-09-28 UTC (reasoning-only pass, no Swift compiler/device): continuing the by-numbers audit
+(see the Detail entry below) on the two other screens the owner will use most.
+**Play picker** (`App/Sources/Streams/PlayPickerView.swift`, vs. `bp-streams.tsx`, `bp-stream-row.tsx`,
+`bp-stream-dialogs.tsx`, `bp-stream-chips.tsx`): read every dimension against upstream's resolved
+`clamp()`/`min()` values (the canvas is fixed at 1140×641 for the TV build, so every clamp resolves
+to one exact number, not a guessed floor — confirmed `BP.gutter = px(85.5)` is exactly `7.5vw` of
+1140, which validated the method). The in-player switch card (`switchCard`, `BP.px(1049)×BP.px(551)`)
+matches upstream's `SWITCH_SURFACE`/`CARD` (`min(92vw,1180)×min(86vh,900)` = 1048.8×551.26) exactly,
+as does the dialog shell width (`StreamDialogShell`, `BP.px(720)` vs upstream's `min(88vw,720px)` =
+720). Row padding, pill sizes and chip heights are all within ~10-15% of upstream's floors (already
+tuned by eye) — not touched. One real architecture difference: upstream's picker (`bp-streams.tsx`)
+has no poster/title sidebar at all (a single full-width column: header, chips, list); this port adds
+a left `VStack` (poster + title + status, `BP.px(300)` wide) beside the list. That's an intentional
+addition (visual continuity with what's about to play), not a numeric error to revert, and the
+list's own row layout (`PickerFlowRow`) already wraps onto a new line under less width rather than
+clipping, so the narrower column doesn't truncate anything. **No changes made** — audited, no clear
+geometry/spacing/truncation bug found beyond that documented, intentional taste difference.
+**Player chrome** (`App/Sources/Player/PlayerScreen.swift`, vs. `bp-player-shell.tsx`,
+`bp-player-rail.tsx`, `bp-player-controls.tsx`, `bp-up-next.tsx`, `bp-skip-pill.tsx`): the panels
+(Subtitles/Audio/Sources) already center correctly (each has its own full-screen scrim + a ZStack
+with default center alignment around the shared 1049×551 card — matches upstream's
+`items-center justify-center` exactly; an early read of a `.topTrailing` frame nearby turned out to
+belong to the unrelated Anime4K corner pill, not the panels). Two real bugs, fixed:
+- **No hint bar.** Upstream's `bp-player-shell.tsx` always renders its own `BpHintBar` (`["select",
+  "back"]`) under the rail while the chrome is up — the player is its own portal outside the normal
+  shell tree, so it can't rely on the shell's global one (confirmed: `HintBarView`, the exact same
+  component `ShellView` already uses for every room, was never once called from `PlayerScreen`).
+  Fixed: split `chromeView` into `chromeView` (frame/background/hint bar) + `chromeBody` (the
+  existing title/scrub/transport/rail content, unchanged) and added `HintBarView(actions: [.select,
+  .back])` under it. `HintBarView` has no focusable element or accessibility identifier of its own
+  (pure decoration), so this touches no focus logic.
+- **Transport and rail rows had no scroll.** Both were plain `HStack`s with a trailing `Spacer()`;
+  upstream wraps both (`bp-player-controls`, `bp-player-rail`) in `overflow-x-auto` /
+  `data-bp-scroll-x`. A live channel alone can put Back/Subtitles/Audio/Speed/Sources/TV
+  Guide/Previous channel/Mute/LIVE on the rail — 9+ chips at `BP.tabItem`-ish width plus `BP.px(10)`
+  gaps comfortably exceeds the ~1632pt available between the two `BP.gutter` insets on a 1920pt-wide
+  screen, so the last chips (and on some titles, "LIVE" itself) would run off the right edge with no
+  way to reach them (a `Spacer()` inside an unbounded `HStack` doesn't fix that — it only matters
+  when the row is narrower than the screen). Fixed: wrapped both rows in
+  `ScrollView(.horizontal, showsIndicators: false) { ... }.scrollClipDisabled()`, same pattern
+  already used for chip rows elsewhere (`PlayPickerView.chips`, `PlayerPanelParts.PlayerChipRow`);
+  dropped the now-meaningless trailing `Spacer()`s. No `.focused($focus, equals: .chip(...))` target
+  or accessibility identifier changed — same buttons, same `.focusSection()`, just a scrollable
+  container around them.
+Left as-is (real gaps, not fixed — feature additions, not geometry, or too large without a
+compiler): the player's title area never shows the title's clearlogo image (`BpPlayerIdentity` does,
+falling back to text only when there is none; this port always shows text, `BP.display(26)` vs
+upstream's floor `22`, a ~18% oversize on its own — borderline, left alone since the bigger gap is
+the missing logo image entirely, which is a feature add, not a spacing fix); the up-next/skip-pill's
+chrome-dependent bottom offset (`chrome ? BP.px(300) : BP.px(40)`) is a static approximation of
+upstream's dynamically-measured `--bp-player-dock` (chrome's real height + 14px) — already
+reasonable (~16% under when up, ~33% over when down, both small in absolute pt) and not obviously
+wrong enough to re-tune blind. Could not verify on device; read-checked only (brace/paren counts
+balanced before and after, `chromeBody`'s only caller is the unchanged `chromeView`).
+
+## Status (2026-09-28, subagent — streaming-screens geometry audit, Detail page)
+2026-09-28 UTC (reasoning-only pass, no Swift compiler/device): owner called build 291's UI "kinda
+messed up"/"needs polishing"; audited Detail (`App/Sources/Detail/DetailView.swift`) against
+upstream's actual clamp/min() floors (`reference/harbor/src/views/big-picture/detail/bp-detail-hero.tsx`,
+`bp-synopsis.tsx`, `bp-hero-notes.tsx`, and `bp-detail.tsx`'s row layout), converting each upstream
+"1140-canvas px" floor through the same `BP.px()` (`k = 1920/1140`) the rest of the port already
+uses — not vibes, the actual resolved numbers. Fixed (all read-checked, none touch
+`.accessibilityIdentifier`/focus, commit next):
+- **Hero logo** (line ~630): `maxWidth/maxHeight` `BP.px(380)/BP.px(140)` → `BP.px(320)/BP.px(107)`.
+  Upstream `data-bp-detail-logo` is `max-h-[clamp(107px,16.7vh,160px)] max-w-[min(28vw,320px)]`
+  (floors 107/320); ours had copied the *Home spotlight's* larger logo box (380/140), rendering
+  every title logo on Detail ~19% wider and ~31% taller than upstream draws it.
+- **No-logo fallback title** (line ~638): `maxWidth` `BP.px(700)` → `BP.px(410)`. Upstream's h1 is
+  `max-w-[min(36vw,410px)]`; 700 let a long title (the "long titles" edge case this audit was asked
+  to check) run ~70% wider before wrapping to line 2 than upstream's own column.
+- **Tagline** (line ~703): `maxWidth` `BP.px(620)` → `BP.px(410)` (same `min(36vw,410px)` column as
+  the title/logo; was ~50% too wide).
+- **Synopsis** (`synopsis`, line ~727): `lineLimit` `4` → `3` (upstream `BpSynopsis` is
+  `line-clamp-3`, not 4 — a real behavioural mismatch, not just width: a 4th line was shown that
+  upstream never does, and the "canExpand" measurement was gated on the wrong clamp height) and
+  `maxWidth` `BP.px(620)` → `BP.px(524)` (upstream `max-w-[min(46vw,820px)]`, floor 524).
+- **TMDB-key note** (line ~712): `maxWidth` `BP.px(620)` → `BP.px(524)` (same `min(46vw,820px)`
+  column as the synopsis).
+- **Block spacing** (line ~217): the hero and the rows below it were one `VStack(spacing: 26)`
+  nested in another `VStack(spacing: 26)`, so the hero→episodes gap and every row→row gap resolved
+  to the same 26 canvas-px. Upstream uses two different gaps: hero→rows-container is
+  `mt-[clamp(44px,5.5vh,88px)]` (floor 44), row→row is `--bp-row-gap: clamp(20px,2.6vh,40px)` (floor
+  20). Split them: inner `VStack` (hero→episodes) now `BP.px(44)`, outer `VStack` (episodes/hero
+  group→first row, and every row→row after) now `BP.px(20)`.
+Left as-is (real gaps, not fixed — outside "clear geometry/spacing error" or too large to do safely
+without a compiler): the on-page order of `tmdbRows` (characters, awards, a gallery row, cast,
+collection, recommendations, similar, videos, facts) doesn't match `bp-detail.tsx`'s `rows[]` order
+(crew, cast, characters, collection, recommendations, similar, videos, awards, facts, then 3 gallery
+rows) — reordering touches every row's rail-index position, too risky to do blind; and TMDB/Cinemeta
+**crew** renders as stacked label:name text lines cramped into the hero's own text column
+(`credits`, line ~995) instead of upstream's `BpCrewRow`, a full-width horizontal-scroll rail of
+individual person cells like Cast/Awards/Videos already are here — an architecture gap, not a
+number to tweak. The backdrop mask/fade shape and the episode-still card width (230 vs upstream's
+floor 212, ~8% over) were within normal rounding/taste and left alone. Could not verify on device;
+read-checked only (brace/paren counts, no other call site reads these literals).
+
 ## Status (2026-09-28, subagent — player diagnostics overlay for the white-screen device report)
 2026-09-28 UTC: The owner's Apple TV shows a solid white screen when any stream starts (build 291),
 and there was no way to see what libmpv/AVPlayer are actually doing on the TV itself (the mpv log
