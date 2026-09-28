@@ -1134,13 +1134,34 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 - Build: XcodeGen + GitHub Actions macOS → TestFlight internal only. CI simulator screenshots for UI review.
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
-## Next (pick up here — updated 2026-09-27 14:40 UTC, everything on `main`)
-**Where things stand**
-- `main` is the trunk; `Build` runs on every push (compile + 43 simulator UI tests, 2 of them skip in the simulator (NavigationTests7: the track context menu never opens there), `App/UITests/ScreenshotTests.swift` + `NavigationTests.swift`…`NavigationTests7.swift`); TestFlight is owner-dispatched (`gh workflow run Build -f testflight=true`) after a green run. Green run 36325141113 (14:35 UTC); **TestFlight build 291 uploaded** from run 36327952413 (15:15 UTC) — the first upload since the morning's build, carrying everything below. After it on main: the Music dock safe-area inset, eBook detail Menu handling, NavigationTests8 (45 tests, 2 simulator skips).
-- Upstream pin: `a821e273` (bumped 09-27). Engine: `node build.mjs` ≈ 4.68 MB, `node smoke.mjs --offline` = 1181 checks.
-- 09-27 landed on main: Spoilers panel (+ the Slice-decoder fix that made it work), sweep 4, eBook browse/NYT/collections + AniList Mark as Read + read-position restore, music About/Source picker + Harbor playlists + Plex timeline + Credits + More like this ("Songs like" page), deep links over covers, kids parity (kid-profile setup) + Manage profiles for the primary, Watch Together sweep, accessibility passes 1+2 (VoiceOver labels app-wide), translations (all 15 languages ≈ 89%, 14 code sites fixed), SP-9 scenery, SH-1 ambient cross-fade (all upstream TITLE_ART_ROUTES), NavigationTests5/6/7 (+11 tests), the CI-fix batch (see the 08:05 UTC entry: See-all `.disabled` gate, eBook gate reset, Now Playing fits 1080p, right column focus section), audit reconciliation (`docs/parity-audit-*.md` now match the code).
-- Owner: run `docs/device-checklist.md` (start with "Next TestFlight build"); nothing since the Stage 0 spike has run on real hardware. New today: Spoilers toggles, kid profile editor + Manage profiles, eBook Mark as Read, Songs like page, Now Playing seed/layout, deep links, Together invite over Detail, ambient cross-fade, sports scenery.
+## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
+**Owner's direction (2026-09-27 evening, after the first real Apple TV run of build 291):** work only on
+streaming films / series / anime — Home, Discover, Shows, Movies, Anime, Detail, the stream picker,
+the player. Sports, Live TV, Music, eBook, Manga, Calendar, Collections and profile extras are parked
+(their UI tests that were still flaky are `XCTSkip`ped: NavigationTests5 eBook ×2, NavigationTests7 ×2,
+NavigationTests8 manage-profiles). Settings → Tabs has a "Streaming only" button that hides the parked tabs.
+**Device findings from build 291 (owner):** (1) every stream shows a WHOLE-SCREEN WHITE from the first
+frame (default dark theme, engine "auto" → libmpv); (2) posters blurry, anime worst; (3) the focused
+tile's title/spotlight text runs into the next row's header ("Top 10").
+**Fixed since (in the build after 291, run 36375073384 + the next):** posters (anime providers asked for
+web-card sizes; Detail backdrop unsized), row spacing + rank-cell height, the rail's park/mask (focused
+row header sat inside the spotlight; rows scrolled under it stayed readable; Movies' first row parked
+under the tab bar), Detail's backdrop hard edge and the grey plate behind logos, the player's video-slot
+fallback (black), and — the best-supported white-screen cause — the mpv-side tvOS display-mode switch
+(HDR criteria + frame-rate match, new since the device-verified spike): now fully OFF by default
+(`harbor.mpvMatchFrameRate` UserDefaults gate, no UI). mpv's log mirrors to os.Logger
+(subsystem com.dltnp.harbor, category player).
 **Then**
-1. Watch the current `Build` run (`gh run list --branch main --limit 1`); red → `gh run view <id> --log-failed | grep '##\[error\]'`; UI-test failures: `gh run download <id> -n screens` and read the `failure-hierarchy_*.txt` / `failure-screen_*.png` for the test (the export step's log maps attachment UUIDs to tests). Green → dispatch TestFlight (owner).
-2. Still open (all sized in `docs/parity-gaps.md` "Still open"): deep links opening ON TOP of an open cover (L, needs nested presentation from the topmost controller), PiP surviving a live reconnect (L, the reload path recreates the controller), Top Shelf (owner: second signed target + App Group), desktop "Harbor on TV" settings mirror (no upstream consumer), subtitle auto-sync / hero trailers / seek thumbnails / YouTube Music (blocked on tvOS). Follow-ups: NavigationTests for the Manage-profiles editor writes and the eBook reader restore; VoiceOver walk of the two accessibility passes on a device; remove the now-dead `MusicPlayer.startSimilar`/`MusicRadioStatusNote.failed` path once the Songs like page is device-checked.
-3. Keep the pattern: batch → `cd engine && node build.mjs` (≈4.68 MB; a jump of several MB = an inlined lazy import needing a stub in bundle-config.mjs) → `node smoke.mjs --offline` (1181) → commit → push → watch `Build` → fix red before starting anything new. Subagents: worktree isolation, merge with `git merge --no-edit worktree-agent-<id>`, resolve `PROJECT_STATE.md` conflicts by keeping both entries, fresh-context Sonnet review of every merge, then push. Lessons from 09-27: any new `Slice` field needs a line in the lenient decoder; never call `T("…")` inside a generic `<T>` scope; `.focusable(gate)` on a Button swallows Select (use `.disabled`); fixture state in UserDefaults leaks between test launches (reset it in Fixtures.swift); lazy stacks only contain cells near the viewport, so tests walk with focus, never `exists` past the fold; XCUITest cannot type into a tvOS TextField (seed via a launch argument).
+1. Owner: install the next TestFlight build; play any stream. If it is still white: Settings → Playback →
+   "Player diagnostics overlay" (if that agent's work landed) shows the engine and mpv's last log lines
+   on the TV — read them out; also try Settings → Playback → Player engine → native (AVPlayer) on an
+   MP4/HLS source to bisect renderer vs. overlay. If it plays: check HDR10/DV titles too (spike parity).
+2. If still white with no useful log: next suspects in order — `MPVMetalLayer.drawableSize` clamp vs a
+   real mode switch, `target-colorspace-hint=yes` on an SDR-only signal path (try "no"), hwdec
+   `videotoolbox` → `no` for a test, then wire the Stage-0 `PlayerSpikeView` debug log back in.
+3. Confirm on device: Home/Movies/Anime rows (no overlap, headers below the spotlight, sharp posters),
+   Detail page (backdrop fade, logo without plate), Streaming-only tabs.
+4. Keep the loop: batch → `cd engine && node build.mjs` (≈4.68 MB) → `node smoke.mjs --offline` (1186)
+   → commit → push → watch `Build` → `gh workflow run Build -f testflight=true`. CI screenshots
+   (`gh run download <id> -n screens`, ScreenshotTests "18-home-rail", "19-home-rail-second-row",
+   "20-movies-top10", "26-detail", "27-play-picker") are the fastest visual check without a device.

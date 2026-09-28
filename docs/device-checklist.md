@@ -27,6 +27,10 @@ walked in the simulator by `App/UITests/NavigationTests*.swift` on every CI run,
 
 ### Test first (highest risk)
 
+- [ ] **Build after 291:** start any stream → picture, not a white screen (mpv's tvOS display-mode switch is now off by default). Still white → Settings → Playback → Player engine → native on an MP4/HLS source; note whether audio plays under the white; read the diagnostics overlay if present. (`b79802f`, `23766b4`)
+- [ ] Home / Movies / Anime: focused tile never overlaps the next row's header; the row header sits below the spotlight text; rows scrolling up fade out under it; Movies "Top 10" first row starts below the spotlight, header visible. (`6795f19`, `b7ef69a`)
+- [ ] Anime room and anime Detail: posters sharp (MAL/Kitsu/AniList large variants); Detail backdrop sharp with a soft left fade; title logo without a grey box. (`51a8e3a`, `39fbe67`)
+- [ ] Settings → Tabs → "Streaming only" hides Sports/Live TV/Music/eBook/Manga/Calendar/Collections; "Show all tabs" restores. (`91609f2`)
 - [ ] During a film press Sources on the player rail → "Switch source" opens as a card over the playing film, the ring on the first row, Menu closes it back onto Sources. (`f819778`, `7f0d67a`)
 - [ ] In that switcher pick another row, on mpv, on AVPlayer and on a P2P row (the P2P dialog draws inline) → the stream swaps in place at the same spot; the player never leaves the screen; the old torrent is released. (`f819778`)
 - [ ] Pick the "Now playing" row in the switcher → it resolves again and reloads at the resume spot; a failed resolve keeps the panel open with the reason. (`0979e99`)
