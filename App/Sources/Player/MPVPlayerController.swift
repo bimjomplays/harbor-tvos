@@ -1,7 +1,5 @@
 import UIKit
 import AVFoundation
-import AVKit
-import CoreMedia
 import Libmpv
 
 /// Minimal libmpv host: gpu-next over MoltenVK into a CAMetalLayer, VideoToolbox decode.
@@ -739,41 +737,35 @@ final class MPVPlayerController: UIViewController {
         return String(cString: c)
     }
 
-    /// Ask tvOS to match the display to the stream (takes effect only when the viewer has
-    /// Settings → Video and Audio → Match Content on). Upstream relies on mpv for this on desktop;
-    /// on Apple TV the OS owns the HDMI mode, so we hand it fps + dynamic range once known.
+    /// Ask tvOS to match the display's refresh rate to the stream (takes effect only when the
+    /// viewer has Settings → Video and Audio → Match Content on). Upstream relies on mpv for this
+    /// on desktop; on Apple TV the OS owns the HDMI mode, so we hand it the fps once known.
+    ///
+    /// (build 291 device report: the whole screen went white from the first frame and stayed
+    /// that way, on the first real Apple TV run since anything in this file changed.) This used
+    /// to also build a CMVideoFormatDescription with PQ/HLG colour extensions and hand tvOS an
+    /// `AVDisplayCriteria(refreshRate:formatDescription:)`, asking the OS to switch the physical
+    /// HDMI signal into an HDR (PQ/HLG) mode for HDR sources. That is a second, independent HDR
+    /// signal on top of the one mpv already sends: `target-colorspace-hint` below hands HDR
+    /// content straight to CAMetalLayer as EDR (its gpu-next/MoltenVK context sets
+    /// wantsExtendedDynamicRangeContent + edr metadata itself), and that EDR path is exactly what
+    /// the Stage 0 spike (commit ce65c7a) verified HDR10 / HDR10+ / Dolby Vision P5/P8 through on
+    /// this same TV, with no OS-level display-criteria switch at all. Asking AVDisplayManager to
+    /// also renegotiate the HDMI mode to PQ/HLG for the same frame risks the two signals
+    /// disagreeing about what the wire actually carries mid-switch — reinterpreting ordinary
+    /// tone-mapped/EDR pixel values through a PQ curve blows highlights out to white, which
+    /// matches the report. Until this is proven safe on a device, only match the refresh rate
+    /// (unrelated to colour, and the same thing AVPlayer gets for free from
+    /// `appliesPreferredDisplayCriteriaAutomatically` in NativePlayerController) and always
+    /// declare `.sdr`, so this path never asks for an HDR mode switch; HDR display keeps going
+    /// through the CAMetalLayer/EDR route the spike already proved.
     private var displayCriteriaApplied = false
     /// Where the criteria went, so the reset clears that window's (not another player's).
     private weak var displayWindow: UIWindow?
     private func applyDisplayCriteria() {
-        guard ownsDisplay, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1,
-              let w = Int32(string("video-params/w") ?? ""), let h = Int32(string("video-params/h") ?? ""), w > 0, h > 0 else { return }
+        guard ownsDisplay, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1 else { return }
         displayCriteriaApplied = true
-        // AVDisplayCriteria(refreshRate:formatDescription:) is the public tvOS initializer; the
-        // format description's colour extensions tell tvOS whether the content is HDR10 / HLG.
-        let gamma = string("video-params/gamma") ?? ""
-        let primaries = string("video-params/primaries") ?? ""
-        let codec = (string("video-codec") ?? "").lowercased()
-        var ext: [CFString: Any] = [:]
-        if primaries == "bt.2020" {
-            ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCMFormatDescriptionColorPrimaries_ITU_R_2020
-            ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCMFormatDescriptionYCbCrMatrix_ITU_R_2020
-        } else {
-            ext[kCMFormatDescriptionExtension_ColorPrimaries] = kCMFormatDescriptionColorPrimaries_ITU_R_709_2
-            ext[kCMFormatDescriptionExtension_YCbCrMatrix] = kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2
-        }
-        switch gamma {
-        case "pq": ext[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ
-        case "hlg": ext[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG
-        default: ext[kCMFormatDescriptionExtension_TransferFunction] = kCMFormatDescriptionTransferFunction_ITU_R_709_2
-        }
-        let codecType: CMVideoCodecType = codec.contains("hevc") || codec.contains("h265") ? kCMVideoCodecType_HEVC
-            : codec.contains("av1") ? kCMVideoCodecType_AV1 : kCMVideoCodecType_H264
-        var desc: CMVideoFormatDescription?
-        let status = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: codecType, width: w, height: h,
-                                                    extensions: ext as CFDictionary, formatDescriptionOut: &desc)
-        guard status == noErr, let desc else { push("display: format description failed (\(status))"); return }
-        let criteria = AVDisplayCriteria(refreshRate: Float(fps), formatDescription: desc)
+        let criteria = AVDisplayCriteria(refreshRate: Float(fps), videoDynamicRange: .sdr)
         // The window this player is in: the app's own, or the PiP browse layer's (PiPBrowse) for a
         // film opened from there.
         let own = viewIfLoaded?.window
@@ -782,7 +774,7 @@ final class MPVPlayerController: UIViewController {
             guard let window = own ?? HarborOverlayWindow.mainWindow else { return }
             window.avDisplayManager.preferredDisplayCriteria = criteria
         }
-        push("display: \(fps) fps \(gamma) \(primaries)")
+        push("display: \(fps) fps (frame-rate match only, see applyDisplayCriteria doc comment)")
     }
 
     private func resetDisplayCriteria() {
