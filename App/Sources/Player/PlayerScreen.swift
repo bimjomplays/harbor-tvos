@@ -1281,6 +1281,7 @@ struct PlayerScreen: View {
             // hint. The player drew no hint bar at all; decorative only (HintBarView has no
             // focusable/accessibilityIdentifier of its own), so this touches no focus logic.
             HintBarView(actions: [.select, .back])
+                .padding(.top, BP.px(10))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.75), BP.void_.opacity(0.95)], startPoint: .init(x: 0.5, y: 0.45), endPoint: .bottom))
@@ -1371,8 +1372,10 @@ struct PlayerScreen: View {
             .scrollClipDisabled()
             .focusSection()
         }
-        .padding(BP.gutter)
-        .padding(.bottom, BP.px(10))
+        // (review) No bottom margin here any more: the hint bar now follows as a sibling and would
+        // otherwise sit a gutter-and-a-bit below the rail instead of right under it.
+        .padding(.horizontal, BP.gutter)
+        .padding(.top, BP.gutter)
     }
 
     /// bp-player-scrub.tsx: buffered fill under the played fill; while presses accumulate, a
