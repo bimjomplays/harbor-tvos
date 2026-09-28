@@ -262,6 +262,14 @@ struct BPRailView<Lead: View>: View {
     /// The row that holds focus right now (focusedRow keeps the last one after focus moves on).
     @State private var heldRow: String?
     private static var topID: String { "bp-rail-top" }
+    /// (device build 291, CI screenshots 19/20/25) reference/harbor bp-catalog-page.tsx never
+    /// overlaps the two at all: `data-bp-hero` is a `shrink-0` flex sibling ABOVE a `flex-1
+    /// min-h-0 overflow-hidden` rail, so a row can never sit under the hero in the first place.
+    /// This port draws them as ZStack layers instead (for the backdrop wash under both), so the
+    /// rail fakes upstream's boundary with `topInset` + this mask; keep the two in the same
+    /// neighbourhood as `railFade` below, or a parked row again lands inside the fade instead of
+    /// past it.
+    private static let railFade: CGFloat = BP.px(60)
     /// Where the focused row's top parks: just under the spotlight copy (use-bp-rail shifts the
     /// active row's top to the rail's top edge, right under the hero).
     private var parkOffset: CGFloat { topInset + BP.px(6) }
@@ -342,16 +350,36 @@ struct BPRailView<Lead: View>: View {
                     Color.clear.frame(height: BP.hintHeight + BP.px(40))
                 }
             }
-            // Rows scrolling up pass under the spotlight copy; fade them out there.
+            // (device build 291, CI screenshots 19/20/25) Rows scrolling up pass under the
+            // spotlight copy; hide them there, not just fade them. A gradient over the WHOLE
+            // topInset (the old code) turns close to opaque well before its bottom edge, so a row
+            // parked (or merely scrolled) anywhere in the lower half of the inset was still fully
+            // readable exactly where the spotlight's own title/meta/synopsis sit (Home's second
+            // row, "Trending This Week", parking at y≈390 with "Jump back in" still visible at
+            // y≈100–290 under the hero copy). Upstream never needs this at all — bp-catalog-page.tsx
+            // stacks the hero and the rail as non-overlapping flex siblings, so a row can never be
+            // under the hero in the first place — so this rebuilds that boundary instead of
+            // softening it: fully hidden for the whole inset except one short `railFade` at its
+            // own bottom edge, so a row is invisible until the last moment it slides into place.
             .mask(
                 VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: topInset)
+                    Color.clear.frame(height: max(0, topInset - Self.railFade))
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: min(topInset, Self.railFade))
                     Color.black
                 }
             )
             .onChange(of: focusedRow) { _, key in
                 guard let key else { return }
-                withAnimation(BP.easeSlow) { park(key, proxy) }
+                // (device build 291, CI screenshots 19/20) Deferred a runloop, matching parkEntry
+                // and the rows-changed re-park below: the marker's alignment guide reads the
+                // height of every lazy sibling above this row (a lead still growing into its real
+                // size, or — worst case, "Top 10 Movies Today" on a fresh Movies room — nothing
+                // above it having settled at all yet, this row's own first-ever paint). Calling
+                // scrollTo in the SAME update that set focusedRow read that geometry before layout
+                // had settled, landing the row's header far short of topInset: under the tab bar on
+                // Discover's rails (topInset = barHeight + 10), under the spotlight everywhere else.
+                DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
             }
             // use-bp-rail parks every rail row, the lead ones too. Up from a parked row onto
             // Continue Watching, Live or the anime actions left them where they were: in the top

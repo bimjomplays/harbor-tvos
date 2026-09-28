@@ -3,6 +3,55 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-28, subagent — device bug: rail header under the spotlight/tab bar, build 291 follow-up)
+2026-09-28 UTC: b7ef69a (row overlap) and 51a8e3a (blurry posters) did not fix the owner's actual
+"Top 10 header overlaps the selected show's title" report; CI's own screenshots proved it's a
+different bug in the same area. Evidence, all `BPRailView` (`App/Sources/Browse/BPRowView.swift`
+~240–404): "20-movies-top10" (Movies, first tile of "Top 10 Movies Today" focused) — the row's
+header sits at y≈20, UNDER the tab bar, with the spotlight's title/meta/synopsis (y≈240–405) drawn
+over its tiles (y≈100–490); "19-home-rail-second-row" (Home, "Trending This Week" focused) — its
+header parks at y≈390, inside the spotlight box, and the row above it ("Jump back in") is still
+fully readable at y≈100–290 under the hero copy; "25-discover-rails" (Discover, an award card
+focused) — the "Awards" header+subtitle sit at y≈40–85, under the tab bar, cards from y≈130.
+Root cause, two parts, both in the one shared `BPRailView` every room (Home, Movies, Shows, Anime,
+Discover) renders through — confirmed against `reference/harbor/src/views/big-picture/bp-catalog-page.tsx`,
+which has no such bug class at all: upstream stacks `data-bp-hero` (`shrink-0`) and the rail
+(`flex-1 min-h-0 overflow-hidden`) as non-overlapping flex siblings, so a row can never be under the
+hero in the first place; this port draws both as ZStack layers instead (for the shared backdrop
+wash) and fakes upstream's boundary with `topInset` + a mask + a per-row scroll-park marker, and
+both parts of that fake were wrong:
+1. **Mask faded over the WHOLE `topInset`**, not just its own edge:
+   `LinearGradient([.clear, .black]).frame(height: topInset)` reaches near-opaque well before its
+   own bottom, so any row scrolled into (or parked in) the lower half of the inset was still fully
+   visible exactly where the spotlight's title/meta/synopsis are drawn — the "19" evidence above.
+   Fixed: hidden (`Color.clear`) for the whole inset except one short `railFade` (`BP.px(60)`) right
+   at its bottom edge, so a row is invisible until the last moment it slides into place — matching
+   upstream's actual boundary instead of softening it.
+2. **The focus-driven park ran in the SAME update that set `focusedRow`**, one runloop before the
+   marker's alignment guide (which reads the height of every lazy sibling above the target row: the
+   lead, and every row before it) had a settled layout to read — worst on a row's own first-ever
+   paint with nothing above it stabilized yet, which is exactly the "20" case (Movies' first,
+   heaviest row) and, less severely, the "19"/"25" cases (a row reached shortly after mount).
+   `parkEntry` and the rows-changed re-park already deferred this by a runloop
+   (`DispatchQueue.main.async`) for exactly this reason (their own comments: "the row is lazy...");
+   the common `.onChange(of: focusedRow)` path — the one every Up/Down press and every seeded first
+   focus goes through — did not. Now deferred the same way.
+   Commit: <PENDING — see `git log -1` after this entry lands>.
+   Files: `App/Sources/Browse/BPRowView.swift` only (`BPRailView.body`'s `.mask` and
+   `.onChange(of: focusedRow)`). No accessibility identifiers or focus logic touched (the deferral
+   changes only *when* the existing scroll animation fires, not any focus target); the 43 UI tests
+   don't reference the rail's park/mask internals. `railFade` (`BP.px(60)`) is a new shared constant
+   kept next to `parkOffset` so the two can't drift apart again.
+   **Could not verify:** no Swift compiler/simulator here. Read-checked (brace/paren counts balanced,
+   no trailing-comment code, `Self.railFade`/`Self.topID`/`Self.parkID` follow the same static-member
+   pattern already used in this file) but never built. **Next CI screenshot to check** (same
+   `ScreenshotTests` run, "20-movies-top10"): the "Top 10 Movies Today" header should sit clearly
+   below the spotlight's synopsis (past y≈405, with real clearance — `topInset` here is ≈465pt at
+   1920×1080, i.e. header comfortably in the 470s or below), tiles starting below that, and no
+   spotlight text overlapping any tile or header; cross-check "19-home-rail-second-row" (header
+   clear of "Jump back in") and "25-discover-rails" (Awards header clear of the tab bar) at the same
+   time, since all three came from the one fix.
+
 ## Status (2026-09-27, subagent — blurry/low-res posters bug pass)
 2026-09-27 UTC: Owner's first real-TV run (build 291) reported Home/Movies/Shows/Anime posters
 blurry, anime "by far the worst." Root cause was three upstream anime image providers each baking a
