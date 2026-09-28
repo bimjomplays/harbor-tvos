@@ -768,7 +768,15 @@ final class MPVPlayerController: UIViewController {
     private var displayCriteriaApplied = false
     /// Where the criteria went, so the reset clears that window's (not another player's).
     private weak var displayWindow: UIWindow?
+    /// Off unless `harbor.mpvMatchFrameRate` is set in UserDefaults (no UI yet): the Stage 0 spike
+    /// that rendered correctly on the owner's Apple TV never asked tvOS for a display-mode switch,
+    /// and build 291 (which did, for HDR AND frame rate) showed a white screen from the first frame.
+    /// Spike parity first; the frame-rate match comes back behind a Settings toggle once a device
+    /// run confirms the video itself is fine.
+    static var matchFrameRate: Bool { UserDefaults.standard.bool(forKey: "harbor.mpvMatchFrameRate") }
+
     private func applyDisplayCriteria() {
+        guard Self.matchFrameRate else { return }
         guard ownsDisplay, !displayCriteriaApplied, let fpsText = string("container-fps"), let fps = Double(fpsText), fps > 1 else { return }
         displayCriteriaApplied = true
         let criteria = AVDisplayCriteria(refreshRate: Float(fps), videoDynamicRange: .sdr)
