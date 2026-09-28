@@ -1,6 +1,7 @@
 import UIKit
 import AVFoundation
 import Libmpv
+import os
 
 /// Minimal libmpv host: gpu-next over MoltenVK into a CAMetalLayer, VideoToolbox decode.
 /// Adapted from MPVKit's tvOS demo. Stage 4 replaces this with the real player.
@@ -60,6 +61,11 @@ final class MPVPlayerController: UIViewController {
     private let queue = DispatchQueue(label: "mpv", qos: .userInitiated)
     private var status = Status()
     private var timer: Timer?
+    /// Mirrors `push()` into the system log (EngineHost.logger's subsystem/category convention),
+    /// so a device run's mpv setup/errors/display-criteria log survives even though nothing in
+    /// PlayerScreen shows `status.log` on screen (the Stage 0 spike's debug view did; the shipped
+    /// player never wired it up). Sysdiagnose / Console can read this after the fact.
+    private let logger = Logger(subsystem: "com.dltnp.harbor", category: "player")
     private var tornDown = false
 
     override func viewDidLoad() {
@@ -828,6 +834,9 @@ final class MPVPlayerController: UIViewController {
         guard Thread.isMainThread else { DispatchQueue.main.async { self.push(line) }; return }
         status.log.append(line)
         if status.log.count > 8 { status.log.removeFirst() }
+        // Mirrored to the system log (see `logger`'s doc comment): none of this is personal data,
+        // just mpv setup/property/error text, so it is safe to mark public.
+        logger.info("\(line, privacy: .public)")
     }
 
     private func report() {
