@@ -36,7 +36,7 @@ both parts of that fake were wrong:
    (`DispatchQueue.main.async`) for exactly this reason (their own comments: "the row is lazy...");
    the common `.onChange(of: focusedRow)` path — the one every Up/Down press and every seeded first
    focus goes through — did not. Now deferred the same way.
-   Commit: <PENDING — see `git log -1` after this entry lands>.
+   Commit: 6795f19.
    Files: `App/Sources/Browse/BPRowView.swift` only (`BPRailView.body`'s `.mask` and
    `.onChange(of: focusedRow)`). No accessibility identifiers or focus logic touched (the deferral
    changes only *when* the existing scroll animation fires, not any focus target); the 43 UI tests
