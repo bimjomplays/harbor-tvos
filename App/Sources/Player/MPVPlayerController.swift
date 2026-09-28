@@ -865,15 +865,11 @@ final class MPVPlayerController: UIViewController {
         // poll's writes can corrupt the log array. Everything lands on main.
         guard Thread.isMainThread else { DispatchQueue.main.async { self.push(line) }; return }
         status.log.append(line)
-<<<<<<< HEAD
-        if status.log.count > 8 { status.log.removeFirst() }
+        // (device diagnostics) 10, not 8: PlayerDiagnosticsOverlay shows the last 10 lines on the TV.
+        if status.log.count > 10 { status.log.removeFirst() }
         // Mirrored to the system log (see `logger`'s doc comment): none of this is personal data,
         // just mpv setup/property/error text, so it is safe to mark public.
         logger.info("\(line, privacy: .public)")
-=======
-        // (device diagnostics) 10, not 8: PlayerDiagnosticsOverlay shows the last 10 lines on the TV.
-        if status.log.count > 10 { status.log.removeFirst() }
->>>>>>> worktree-agent-a26c696cc57b9d596
     }
 
     private func report() {
