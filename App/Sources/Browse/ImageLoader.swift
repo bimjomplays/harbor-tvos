@@ -298,7 +298,9 @@ struct RemoteImage: View {
 
     var body: some View {
         ZStack {
-            BP.ink.opacity(0.07)
+            // The plate only while nothing is loaded: drawn under the picture it showed through
+            // transparent art (a title logo on Detail sat in a grey box, CI screenshot 26-detail).
+            if image == nil { BP.ink.opacity(0.07) }
             if let image {
                 // (accessibility pass) Art is decoration: VoiceOver said "image" on every poster and
                 // backdrop. A caller that names the picture wraps it in its own labelled element.

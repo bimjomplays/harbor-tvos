@@ -604,11 +604,14 @@ struct DetailView: View {
                 // was ever chosen for.
                 let sized = PosterSizing.sized(model.meta.background ?? model.meta.poster, width: g.size.width * 0.76,
                                                 scale: heroDisplayScale, quality: SettingsBridge.shared.slice.posterQuality)
+                // The fades are masked on the still ITSELF (before it is pinned top-trailing): masked
+                // after, the gradient ran over the whole page and the still's own left edge showed as
+                // a hard vertical line at 24 % of the width (CI screenshot 26-detail).
                 RemoteImage(url: sized)
                     .frame(width: g.size.width * 0.76, height: g.size.height * 0.75)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .mask(LinearGradient(colors: [.clear, .black, .black], startPoint: .leading, endPoint: .init(x: 0.45, y: 0.5)))
                     .mask(LinearGradient(colors: [.black, .black, .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.9)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             LinearGradient(colors: [BP.void_.opacity(0.85), BP.void_.opacity(0.4), .clear], startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
                 // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
