@@ -42,7 +42,12 @@ struct ContinueRowView: View {
                             .onLongPressGesture(minimumDuration: 0.6) { onQuick?(item) }
                     }
                 }
-                .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
+                .padding(.horizontal, BP.gutter).padding(.top, BP.px(14))
+                // (layout pass, 2026-09-27 device bug, build 291) Same fix as BPRowView's track: a
+                // bigger bottom-only reserve so a focused card's lift/ring/shadow settles inside this
+                // row before the next rail row's header starts (see BPRowView.swift for the full
+                // upstream citation — bp-row.tsx's own 60px-canvas bottom padding for exactly this).
+                .padding(.bottom, BP.px(26))
             }
             .scrollClipDisabled()
         }

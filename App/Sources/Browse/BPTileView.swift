@@ -18,8 +18,16 @@ struct BPTileView: View {
     static let wideWidth = BP.px(230)
     static var posterSize: CGSize { CGSize(width: posterWidth, height: (posterWidth * 1.5).rounded()) }
     static var wideSize: CGSize { CGSize(width: wideWidth, height: (wideWidth * 9 / 16).rounded()) }
-    /// Rank cell: poster covers the right 60 %, cell aspect 10:9, height = poster box × 0.9.
-    static var rankSize: CGSize { CGSize(width: (posterWidth / 0.6).rounded(), height: (posterWidth * 1.5 * 0.9).rounded()) }
+    /// (layout pass, 2026-09-27 device bug) Rank cell: poster covers the right 60% of the cell
+    /// width, cell aspect 10:9 (bp-tile.tsx RANK_CELL_RATIO). bp-tile.tsx's own comment: "0.6 of
+    /// the width at 2/3 is 0.9, so the cell ends exactly where the poster does and a ranked row
+    /// keeps the same height as its neighbours in the rail" — i.e. height = cellWidth × 0.9 =
+    /// (posterWidth / 0.6) × 0.9 = posterWidth × 1.5, which is exactly `posterSize.height`. This
+    /// used to multiply by an extra × 0.9 on top of that (posterWidth × 1.5 × 0.9), making a "Top
+    /// 10" row ~10% shorter than its poster-shaped neighbours (a 10:8.1 cell, not 10:9) — the rank
+    /// row and the numbered tile's numeral both undersized, and misaligned against the rest of the
+    /// rail.
+    static var rankSize: CGSize { CGSize(width: (posterWidth / 0.6).rounded(), height: posterSize.height) }
     /// bp-service-row.tsx: clamp(150px, 12.4vw, 244px) wide, 1.2:1.
     static var brandSize: CGSize { CGSize(width: BP.px(238), height: (BP.px(238) / 1.2).rounded()) }
     /// bp-collections-row.tsx CELL_WIDTH clamp(230px, 19vw, 340px) at the 1140 canvas, 16:9.
