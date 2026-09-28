@@ -3,6 +3,73 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-09-28, subagent — device bug: white screen on stream start, build 291)
+2026-09-28 UTC (reasoning-only pass, no Swift compiler / no device): Owner's first real-TV run
+(build 291) also reported the whole screen going solid white the instant any stream starts (no
+video at all, from frame 1, stays white; default dark theme, so not the light-theme `BP.void_`
+fallback slab `606f1ec` already fixed the same day). mpv (`engine/player.ts pickEngine`'s "auto"
+default) plays almost everything on this TV, so this is squarely the mpv/MoltenVK path.
+Read every commit touching `App/Sources/Player/MPVPlayerController.swift` /
+`MPVMetalLayer.swift` / `MPVPlayerView.swift` / `PlayerScreen.swift` and `rust`/`harbor-ffi`/`ci`
+since the Stage 0 spike (`ce65c7a`, verified HEVC/HDR10/HDR10+/Dolby Vision P5/P8/PGS/SRT on this
+same TV). No mpv/libplacebo/MoltenVK build or flag changed in `ci`/`project.yml`/`rust` since the
+spike — the regression is Swift-side.
+**Ranked causes:**
+1. **(fixed) `applyDisplayCriteria()`'s hand-rolled HDR display-criteria switch** — new since the
+   spike (`1a5b22f`, reworked in `aed8f77`/`ad4771e`), never run on real hardware before build 291,
+   and unlike `NativePlayerController` (which gets the same feature for free and safely from
+   AVKit's `appliesPreferredDisplayCriteriaAutomatically`) it hand-built a
+   `CMVideoFormatDescription` with PQ/HLG colour extensions and handed tvOS
+   `AVDisplayCriteria(refreshRate:formatDescription:)`, asking `AVDisplayManager` to switch the
+   physical HDMI signal to an HDR mode — a *second*, independent HDR signal on top of the EDR one
+   mpv's own `gpu-next`/MoltenVK context already sends the `CAMetalLayer` via
+   `target-colorspace-hint` (unchanged since the spike, and the exact path the spike proved HDR10
+   /HDR10+/Dolby Vision through, with no OS-level display-criteria switch at all). Two
+   independent HDR signals for the same frame, mid an HDMI mode renegotiation, disagreeing about
+   what the wire carries — reinterpreting ordinary tone-mapped/EDR pixel values through a PQ EOTF
+   blows highlights to white — matches the report closely, and a real-world precedent
+   (`kingslay/KSPlayer#633`) shows `AVDisplayCriteria(formatDescription:)` misbehaving on Dolby
+   Vision content in exactly this construction (extensions describing HDR10 only, no DV profile).
+   Also explains why 45 green simulator UI tests never caught it: the simulator can't renegotiate
+   a real HDMI signal. **Fix (`b79802f`):** `applyDisplayCriteria()` now only matches refresh rate
+   and always declares `.sdr`, so it never asks for an HDR mode switch; HDR keeps going through
+   the CAMetalLayer/EDR route alone, as at the spike.
+2. Anime4K glsl-shaders (`setShaders`, MPVPlayerController.swift) — off by default
+   (`playerAnime4k` false; confirmed in `engine/smoke.mjs`), so unlikely for a first/default-state
+   run, but if the owner had turned it on: `PlayerScreen.swift`'s existing log-driven fallback
+   (checks `status.log` for a shader/glsl/hook + error/fail/invalid/could-not match and calls
+   `c.setShaders([])`) already covers a MoltenVK shader-compile failure; left as is.
+3. Everything else in the diff (subtitle/audio filters, crop/`panscan`, `PictureFill.pictureEq`
+   brightness/contrast/gamma/saturation, `target-colorspace-hint` itself, `vo`/`gpu-api`/
+   `gpu-context`, the `MPVMetalLayer.drawableSize` clamp) is either unchanged since the spike or
+   guarded to a no-op unless a setting the owner would have to turn on explicitly is set; not
+   ranked as a live cause for a first-run default-state test.
+**Also fixed (`f83bd1c`):** `MPVPlayerController.push()`'s log (mpv setup, property errors,
+end-file errors, the display-criteria decision above) only ever lived in an in-memory
+`status.log` — the Stage 0 spike's debug view showed it on screen; the shipped `PlayerScreen`
+never wires it up anywhere. Mirrored every `push()` line into a
+`Logger(subsystem: "com.dltnp.harbor", category: "player")` (matches `EngineHost.logger`'s
+convention) so a device run's mpv log is recoverable from Console/sysdiagnose without a debug
+view.
+**Device checklist for the next build:** (a) play a plain 1080p SDR file start to finish — confirm
+no white screen and Match Content (if the tester has it on) still only changes refresh rate;
+(b) play an HDR10 file and a Dolby Vision file (the spike's own test titles are the known-good
+baseline) — confirm colour is correct and no white/blown-out frames, with or without Match Content
+on in tvOS Settings → Video and Audio; (c) if a white screen still reproduces on any of these,
+pull the device's Console log for subsystem `com.dltnp.harbor` category `player` (now populated by
+this pass) and read the last `push()` lines before it went white — `MPVPlayerController.push()` at
+`App/Sources/Player/MPVPlayerController.swift` is the tap point; (d) turn Anime4K on for an anime
+title as a lower-priority check now that shader failures already fall back to no shaders.
+**Open / uncertain:** never verified on a real device (no Mac/compiler here) — reasoned from
+libmpv/MoltenVK/AVFoundation/tvOS `AVDisplayCriteria` behaviour and one external report
+(KSPlayer#633) of the same construction misbehaving on Dolby Vision, not a device repro of this
+exact fix. If the white screen still reproduces after this fix, the next likely spot is the
+`MPVMetalLayer.drawableSize` clamp (`w >= 2 && h >= 2`) interacting badly with a real display-mode
+change tvOS still does on its own (frame-rate-only `AVDisplayCriteria` can still switch modes) —
+worth trying `ownsDisplay`-gated `preview`/no-op of `applyDisplayCriteria()` entirely as a next
+step, or wiring the Stage-0 debug log view back into `PlayerScreen` behind a hidden toggle so the
+owner can read `status.log` live on the TV.
+
 ## Status (2026-09-28, subagent — device bug: rail header under the spotlight/tab bar, build 291 follow-up)
 2026-09-28 UTC: b7ef69a (row overlap) and 51a8e3a (blurry posters) did not fix the owner's actual
 "Top 10 header overlaps the selected show's title" report; CI's own screenshots proved it's a
