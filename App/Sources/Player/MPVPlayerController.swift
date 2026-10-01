@@ -453,7 +453,7 @@ final class MPVPlayerController: UIViewController {
         // lifted with the rest while the chrome is up (a few seconds), signs included.
         let base: Int = Int(pos) ?? 100
         guard subLift else { return pos }
-        return String(max(0, base - 24))
+        return String(max(0, base - 34))
     }
 
     /// sub-style.ts assMargins / reposition / sub-pos.
