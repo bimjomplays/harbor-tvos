@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 14:10 UTC — 1.2.0 (337) verified)
+**Verified on 1.2.0:** TestFlight shows "1.2.0 Build 337". Steel Ball Run opens as itself: title,
+own backdrop, 12 episodes, Season 6 chip selected (was Stone Ocean Part 3). Search's result count sits
+clear of the chips. Test history cleared again (Settings → Clear Continue Watching → 1 item); Home has
+no Continue Watching row — the owner's clean slate.
+Local since 1.2.0 (goes with the next upload as 1.2.1): anime Play reads "Play Episode N"; "Cleared 1
+item" singular.
+Open: Search chip strip is clipped at the keyboard column's edge ("s 14" peeking) when scrolled.
+
 ## Status (2026-10-01 13:20 UTC — 330 verified; 1.2.0 out)
 **Verified on 330 (0.1.0):** swipe-scrub works both ways (+6 min right, −4 min left; syslog showed
 the pan's translation starts around −1360 pt, which is why the first version jumped to 0:00);
