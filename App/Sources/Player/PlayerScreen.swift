@@ -1737,7 +1737,8 @@ struct PlayerScreen: View {
         var bits: [String] = []
         if let r = resolutionLabel { bits.append(r) }
         if tokens.count >= 3 {
-            let c: String = tokens[2].uppercased()
+            // mpv's video-codec is a long name with spaces ("Google VP9", "H.265 / HEVC …").
+            let c: String = tokens.dropFirst(2).joined(separator: " ").uppercased()
             if c.contains("265") || c.contains("HEVC") { bits.append("HEVC") }
             else if c.contains("264") || c.contains("AVC") { bits.append("H.264") }
             else if c.contains("AV1") { bits.append("AV1") }
