@@ -1337,6 +1337,17 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
+
+**Overnight 2026-10-01 (newest first; owner asleep, nothing needs the owner yet):**
+- Builds tonight: 305 (focusEffectDisabled — platter still there), 307 (batch 1: rail park, hint fade,
+  posters 158, CW card, Detail backdrop), 311 (batches 2+3: Apple TV player chrome, tile focus, hint bar
+  only with a pad, bare stage button = the real platter fix, Down → Play/Pause, Resume width), and the
+  batch-4 dispatch at 04:02 UTC (picker rows/badges, re-park after tvOS focus scroll, rail back to rest
+  when focus goes to the top bar, CW empty-art strings).
+- Verified on the TV (307): facts line no longer indented; Popular Movies parks under the hero with the
+  hero copy fully readable; the player plays 4K HEVC with subtitles once nothing covers it.
+- To verify next on the TV: 311's player (no platter, round controls, Down reaches Play/Pause), tile
+  focus look, Detail Resume width, then batch 4.
 **Owner's direction (2026-09-27 evening, after the first real Apple TV run of build 291):** work only on
 streaming films / series / anime — Home, Discover, Shows, Movies, Anime, Detail, the stream picker,
 the player. Sports, Live TV, Music, eBook, Manga, Calendar, Collections and profile extras are parked
