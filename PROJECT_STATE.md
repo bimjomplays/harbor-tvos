@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 15:27 UTC — 1.3.0 (343) verified)
+**Verified on 1.3.0:** Detail row = Resume, Sources, Watchlist, Watched, Trailer, More; More opens tvOS's
+action sheet (Add to favorites, Rate this, Add to list, Read more, Cancel); Rate this from the sheet
+opens the rating panel (0.6 s hand-off works).
+**Found, fixed locally (next upload 1.3.1):** Unabomber still offered "Resume" after Clear Continue
+Watching — the local resume store (harbor.resume) survived; it is cleared too now. Watchlist and
+Watched both drew a plain checkmark — Watched is an eye now.
+
 ## Status (2026-10-01 15:00 UTC — 1.3.0 batch)
 - Detail hero: Play + Sources / Watchlist / Watched or Remind me / Trailer + **More** (Favourite, Rate,
   Add to list, trackers, Trakt, Read more in tvOS's action sheet); the Back cell is gone (Menu goes back).
