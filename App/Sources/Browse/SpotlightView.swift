@@ -67,6 +67,8 @@ struct SpotlightView: View {
             if let d = meta?.description, !d.isEmpty {
                 Text(d)
                     .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(5)
+                    // Legible where the scrim thins out over bright key art.
+                    .shadow(color: Color.black.opacity(0.7), radius: 6, y: 1)
                     .lineLimit(2).frame(maxWidth: BP.px(520), alignment: .leading)
             }
             if let pips {
@@ -104,7 +106,7 @@ struct SpotlightView: View {
             // (device build 345) The synopsis' line ends ran over bright key art (The Rookie's yellow
             // sun): a deeper side scrim under the copy's column, still clear by 3/4 across.
             LinearGradient(stops: [.init(color: BP.void_.opacity(0.9), location: 0), .init(color: BP.void_.opacity(0.72), location: 0.32),
-                                   .init(color: BP.void_.opacity(0.3), location: 0.58), .init(color: .clear, location: 1)],
+                                   .init(color: BP.void_.opacity(0.5), location: 0.62), .init(color: .clear, location: 1)],
                            startPoint: .leading, endPoint: .init(x: 0.75, y: 0.5))
                 // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
                 .flipsForRightToLeftLayoutDirection(true)
