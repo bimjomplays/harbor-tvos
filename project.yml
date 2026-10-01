@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     # App/Locales: 15 upstream catalogs; binary plists are smaller and faster to load than UTF-16.
     STRINGS_FILE_OUTPUT_ENCODING: binary
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "3"
 packages:
