@@ -1299,6 +1299,10 @@ fallback (black), and — the best-supported white-screen cause — the mpv-side
 (HDR criteria + frame-rate match, new since the device-verified spike): now fully OFF by default
 (`harbor.mpvMatchFrameRate` UserDefaults gate, no UI). mpv's log mirrors to os.Logger
 (subsystem com.dltnp.harbor, category player).
+**Uploads (2026-09-28 morning UTC):** run 36381724285 (green, uploaded: posters, rail park/mask, Detail
+fixes, mpv display-switch off, Streaming-only tabs) and run 36387831799 (dispatched from the green run
+36384721975: diagnostics overlay, Detail hero sizes, player hint bar + scrolling rails). Build numbers
+= the run numbers on the TestFlight page; install the newest.
 **Then**
 1. Owner: install the next TestFlight build; play any stream. If it is still white: Settings → Playback →
    "Player diagnostics overlay" (if that agent's work landed) shows the engine and mpv's last log lines
