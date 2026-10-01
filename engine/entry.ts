@@ -484,6 +484,7 @@ export const rooms = {
   continueWatchingWithExtras: roomBuilders.continueWatchingWithExtras,
   cwExtras: roomBuilders.cwExtras,
   dismissContinueWatching: roomBuilders.dismissContinueWatching,
+  clearContinueWatching: roomBuilders.clearContinueWatching,
   cwEpisodeTitle: roomBuilders.cwEpisodeTitle,
   anime: roomBuilders.anime,
   TOP10_ROW_KEY: roomBuilders.BP_TOP10_ROW_KEY,

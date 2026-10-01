@@ -70,6 +70,52 @@ struct HomeRowsPanel: View {
 
     private var profile: (id: String, linked: Bool) { let p = ProfilesStore.shared.active; return (p?.id ?? "default", p?.linked ?? true) }
 
+    /// (TV, owner request 2026-10-01) "Clear Continue Watching": every row item dismissed as the
+    /// quick panel's Remove does one, on this TV and in the Stremio library (engine
+    /// rooms.clearContinueWatching), plus this TV's saved resume frames. Asks once before it runs.
+    @State private var clearAsk = false
+    @State private var clearing = false
+    @State private var clearedCount: Int?
+
+    @ViewBuilder private var clearCwControls: some View {
+        HStack(spacing: BP.px(8)) {
+            if clearAsk {
+                Text(T("Clear everything you're watching, here and in your Stremio library?")).font(BP.sans(14)).foregroundStyle(BP.ink).lineLimit(2)
+                Button(T("Clear")) { Task { await clearCw() } }
+                    .buttonStyle(BPActionStyle(primary: true, busy: clearing))
+                    .focused($focus, equals: "cw-clear-yes")
+                Button(T("Cancel")) { clearAsk = false; focus = "cw-clear" }
+                    .buttonStyle(BPActionStyle())
+            } else {
+                Button(T("Clear Continue Watching")) {
+                    clearedCount = nil
+                    clearAsk = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "cw-clear-yes" }
+                }
+                .buttonStyle(BPActionStyle())
+                .focused($focus, equals: "cw-clear")
+                if let n = clearedCount {
+                    Text(verbatim: T("Cleared %lld items", n)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                }
+            }
+        }
+    }
+
+    private func clearCw() async {
+        guard !clearing else { return }
+        clearing = true
+        let p = ProfilesStore.shared.active
+        let id: String = p?.id ?? "default"
+        let linked: Bool = p?.linked ?? true
+        let authKey: String? = p.flatMap { ProfilesStore.shared.stremioSession(for: $0.id)?.authKey }
+        let n: Int = (try? await HarborEngine.shared.call("rooms.clearContinueWatching", [AnyJSON.string(id), AnyJSON.bool(linked), authKey.map { AnyJSON.string($0) } ?? AnyJSON.null])) ?? 0
+        ExitSnapshotStore.shared.clearAll()
+        clearing = false
+        clearAsk = false
+        clearedCount = n
+        focus = "cw-clear"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             if let s = layout {
@@ -106,6 +152,7 @@ struct HomeRowsPanel: View {
                         Button(T("Timer")) { Task { await call("homeCwSetting", [.string("animeCwEnd"), .string("timer")]) } }
                             .buttonStyle(BPActionStyle(primary: cw.animeCwEnd == "timer")).bpSelected(cw.animeCwEnd == "timer")
                     }
+                    clearCwControls
                 }
                 Text(T("Rows")).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted)
                 if s.rows.isEmpty {

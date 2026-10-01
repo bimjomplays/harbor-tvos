@@ -24,7 +24,7 @@ import { collectionPageIds } from "@/lib/page-collection-rows";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 import { advanceCw } from "./cwAdvance";
-import { cwAdvanceSettings, cwWatchedSources } from "./rooms";
+import { cwAdvanceSettings, cwWatchedSources, detectCwAnime } from "./rooms";
 import { animeTopPicks } from "./animeTopPicks";
 import { manualWatchedLibraryItems } from "@/lib/manual-watched";
 import { simklWatchedForId, statusForId, type WatchlistStatus } from "@/lib/simkl/list-status";
@@ -242,6 +242,9 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   const hideSharedCw = !!s.cwPerProfile && anyProfileSharesStremioWith(active, blob.profiles ?? []);
   const simkl = simklConnected() ? await fetchSimklPlaybackItems().then((list) => list.filter(isAnimeCwItem)).catch(() => [] as LibraryItem[]) : [];
   const libItems = await cloudItems(authKey, force);
+  // (TV) Anime under IMDb ids join the anime row once detected (rooms.detectCwAnime); only the
+  // library items Continue Watching could show are checked.
+  await detectCwAnime(libItems.filter((i) => isCwMember(i)));
   const cwRaw = animeCw(libItems, simkl, hideSharedCw);
   // use-bp-anime.ts:106-120 useCwAdvance(cwBase.raw, …, "only", no Trakt set, …).
   const conf = cwAdvanceSettings(s);

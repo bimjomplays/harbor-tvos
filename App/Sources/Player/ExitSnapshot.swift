@@ -100,6 +100,15 @@ final class ExitSnapshotStore: @unchecked Sendable {
         return dir.appendingPathComponent(e.file)
     }
 
+    /// (TV) Settings → Clear Continue Watching: every saved frame goes with the row it drew on.
+    func clearAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        for (_, e) in loadedIndex() { drop(e.file) }
+        index = [:]
+        Task { @MainActor in ExitSnapshotVersion.shared.bump() }
+    }
+
     /// snapshots.ts saveSnapshot: the frame replaces the title's last one; expired frames go, then
     /// the oldest beyond MAX_ENTRIES, then the oldest while the total runs over MAX_TOTAL_BYTES
     /// (never the frame just saved). True when it was written.

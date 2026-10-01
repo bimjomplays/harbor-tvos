@@ -12,7 +12,7 @@ import { applyHomeRowCustomization } from "@/lib/home-customization";
 import { applyPageRows, loadPageRows } from "@/lib/page-rows";
 import { CATALOG_REQUEST_TIMEOUT_MS, withTimeout } from "@/lib/progressive-rows";
 import { recentlyPlayed } from "@/lib/playback-history";
-import { metaLooksAnime } from "@/lib/anime-detect";
+import { metaLooksAnime, detectAnimeForCw, isDetectedAnime } from "@/lib/anime-detect";
 import { buildShowHero } from "@/views/shows/hero-curation";
 import { showSpecs } from "@/views/shows/show-specs";
 import { buildMovieHero, HERO_POOL_TARGET, movieSpecs, rotateDaily } from "@/views/movies/movie-specs";
@@ -20,7 +20,7 @@ import type { Settings } from "@/lib/settings/types";
 import { loadEffective } from "@/lib/settings/profile-store";
 import { ANIME_CLOUD_ID, library, cwSortKey, isCwMember, isAnimeCwItem, type LibraryItem } from "@/lib/stremio";
 import { isCwDismissed } from "@/lib/cw-dismiss";
-import { listLocalCw, type LocalCwEntry } from "@/lib/local-cw";
+import { listLocalCw, clearLocalCw, type LocalCwEntry } from "@/lib/local-cw";
 import { listExternalCw, refreshExternalCw, setExternalCwSources } from "@/lib/feed/external-cw";
 import { hasNewEpisode } from "@/lib/new-episodes";
 import { fetchWatchedKeySet } from "@/lib/trakt/history";
@@ -445,10 +445,23 @@ export async function cwExtras(items: LibraryItem[], activeProfileId: string | n
   }));
 }
 
+/**
+ * (TV, owner report 2026-10-01) home.tsx / use-bp-anime-cw run detectAnimeForCw over the row so an
+ * anime that lives under an IMDb id (Mushoku Tensei from Cinemeta) counts as anime; the port never
+ * did, so such titles sat in Shows' row and never in the Anime room's. Bounded: the row never waits
+ * more than `ms` for Cinemeta.
+ */
+export async function detectCwAnime(items: Array<{ _id: string; type: string }>, ms = 4000): Promise<void> {
+  const tt = items.filter((i) => /^tt\d+$/.test(i._id) && !isDetectedAnime(i._id)).map((i) => ({ _id: i._id, type: i.type }));
+  if (tt.length === 0) return;
+  await Promise.race([detectAnimeForCw(tt).catch(() => undefined), new Promise((r) => setTimeout(r, ms))]);
+}
+
 /** rooms.continueWatchingFor with the card extras attached as `_cw` on each item. */
 export async function continueWatchingWithExtras(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<Array<LibraryItem & { _cw: CwExtras }>> {
   const s = loadEffective(profileId, linked);
   const pool = await continueWatchingPool(authKey, s, limit);
+  await detectCwAnime(pool.items);
   // settings.cwAdvanceNext / cwHideCaughtUp / animeCwEnd (use-cw-advance.ts).
   const items = await advanceHomeCw(profileId, pool.items, pool.cloud, pool.local, s).catch(() => pool.items);
   const extras = await cwExtras(items, profileId);
@@ -462,6 +475,27 @@ export async function dismissContinueWatching(profileId: string, linked: boolean
   if (!item) return false;
   dismissCw(item, authKey);
   return true;
+}
+
+/**
+ * (TV, Settings → Playback "Clear Continue Watching") Every row item dismissed the way the quick
+ * panel's "Remove from Continue watching" does one (lib/cw-dismiss: hidden here, resume cleared,
+ * the cloud library item's timeOffset set to 0 so it stays gone on every device), plus this TV's own
+ * resume entries. Saved / watchlist items stay in the library. Returns how many items went.
+ */
+export async function clearContinueWatching(profileId: string, linked: boolean, authKey: string | null): Promise<number> {
+  const s = loadEffective(profileId, linked);
+  // Anime too, wherever this profile shows it.
+  const all: Settings = { ...s, animeOnlyInAnimeRoom: false, hideContent: { ...(s.hideContent ?? {}), anime: false } } as Settings;
+  const pool = await continueWatchingPool(authKey, all, 1000);
+  const ids = new Set<string>();
+  for (const i of [...pool.items, ...pool.local]) {
+    if (ids.has(i._id)) continue;
+    ids.add(i._id);
+    dismissCw(i, authKey);
+  }
+  for (const e of listLocalCw()) clearLocalCw(e.id);
+  return ids.size;
 }
 
 export function continueWatchingFor(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<LibraryItem[]> {
