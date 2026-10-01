@@ -3,6 +3,12 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 16:10 UTC — GitHub macOS runner outage)
+Run 36884214520 (and its rerun) never got a machine: "The job was not acquired by Runner of type
+hosted even after multiple attempts" / "capacity constraints … macOS arm64". Not our code; the last
+real test run (36880274297, 1.3.0) is green. Retry the push run (and the 1.3.1 upload) when GitHub's
+macOS capacity is back.
+
 ## Status (2026-10-01 15:51 UTC — owner setting)
 Owner asked: Settings → Home rows → "When the latest episode ends" = **Timer** (set on the TV): a
 caught-up show keeps its Continue Watching card with "Next in …" until the next episode airs, then
