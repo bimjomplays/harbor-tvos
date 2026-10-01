@@ -3,6 +3,18 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 07:44 UTC, overnight — batch 10 green; batch 11 out)
+- Batch 10 runs 36827593246 + 36827600864 green (build 323).
+- Batch 11 from a design critique of tonight's screenshots (Sonnet, image-reading): no title caption
+  over a focused poster under a spotlight hero (`bpTileCaptions` env, off in BPRailView); numbered skip
+  glyphs (gobackward.10); deeper player wash, brighter/larger times; Leave dialog = centred frosted
+  card with full-width buttons; Detail hero 214 px canvas from the top (was 250) so a series' season
+  strip reaches the first screen. Pushed (36832006688) and dispatched (36832015530, upload #10).
+- Critique items not done (bigger or taste calls for the owner): stream picker fixed two-line rows;
+  Detail action row trimmed to Play + 3 circles + "…"; top bar without Wi-Fi/clock and with text pills;
+  Subtitles panel as a right-docked sheet; "NEW" badge noise; Top 10 rank numerals; Library toolbar
+  regrouping.
+
 ## Status (2026-10-01 07:20 UTC, overnight — build 323 verified: every reported bug fixed)
 **Verified on the TV (323):** a cold launch restores focus to the Top 10 row and the watchdog parks it
 under the hero (the last open Home bug). Everything the owner listed is now fixed and seen fixed on the
