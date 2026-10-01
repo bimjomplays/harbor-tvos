@@ -347,14 +347,28 @@ struct KenBurnsImage: View {
     var drift = true
     @State private var phase = 0
 
+    /// (owner report 2026-10-01) A wide banner (AniList's are ~4.75:1) filled to the full screen
+    /// height was scaled ~3x and cropped to its middle third, so the characters sat down behind the
+    /// rows (Death Note's Light and Ryuk). A banner is drawn across the top instead, tall enough to
+    /// cover the hero copy, and fades out at its foot; 16:9 backdrops keep the full-screen fill.
+    private var aspect: CGFloat { image.size.height > 0 ? image.size.width / image.size.height : 16.0 / 9.0 }
+
     var body: some View {
         GeometryReader { g in
+            let banner: Bool = aspect >= 2.0
+            let h: CGFloat = banner ? min(g.size.height, max(g.size.width / aspect, g.size.height * 0.62)) : g.size.height
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
-                .frame(width: g.size.width, height: g.size.height)
+                .frame(width: g.size.width, height: h)
+                .clipped()
+                .mask(
+                    LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: banner ? 0.62 : 1),
+                                           .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
+                )
                 .offset(x: phase == 1 ? -0.011 * g.size.width : 0, y: phase == 1 ? -0.007 * g.size.height : 0)
                 .scaleEffect(phase == 1 ? 1.075 : 1)
+                .frame(width: g.size.width, height: g.size.height, alignment: .top)
         }
         .task {
             guard drift else { return }
