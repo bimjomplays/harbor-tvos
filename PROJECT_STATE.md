@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 05:00 UTC, overnight — build 316 uploaded; batch 7 local)
+- 316 = batch 6 (subtitle lift/hide), the CI-312 fix (rail reset only for the top bar), hero soften.
+- Upload count today (UTC): 305, 307, 311, 313, 314, 316 — six. Apple's daily cap (code 90382) is "a
+  handful"; from here batches are bigger and uploads rarer.
+- Batch 7 (committed, waits for main's test run 36816581007): episode cells' focus edge hugs the still
+  (title/overview lift outside it); rail top fade 60 → 20 px canvas (the row above a parked one ghosted
+  behind the hero synopsis on Movies); Library and Search start clear of the focused tab's name pill.
+
 ## Status (2026-10-01 04:46 UTC, overnight — CI red on run 312 (dispatch of batch 4), fixed)
 - `NavigationTests…testDetailOneSeasonEpisodesAndBack` failed: "after Detail closed the ring was not back
   on tile-series-2 (focus: cw-cw1)". Cause: batch 4's "rail back to rest when focus leaves it" also fired
