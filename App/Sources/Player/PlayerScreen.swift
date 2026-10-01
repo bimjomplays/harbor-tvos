@@ -341,6 +341,11 @@ struct PlayerScreen: View {
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
+                // (device 2026-09-30, build 303) THE white screen: tvOS still draws its focus
+                // effect for a `.plain` button, and with a screen-sized clear label that effect is a
+                // screen-sized light-grey platter with a shadow, painted over the video from the
+                // first frame (seen live over the developer tunnel). No system focus effect here.
+                .focusEffectDisabled()
                 .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading || stillPrompt || xrayOpen)
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
