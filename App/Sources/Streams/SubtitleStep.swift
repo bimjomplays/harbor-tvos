@@ -230,7 +230,7 @@ struct SubtitleStepView: View {
             .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(isOn ? BP.glass : BP.panel))
             .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(isOn ? Color.clear : BP.edge, lineWidth: 1))
         }
-        .buttonStyle(BPTileStyle(radius: BP.rMD))
+        .buttonStyle(BPTileStyle(radius: BP.rMD, lift: 1.012))
         .bpSelected(isOn)
         .focused($focus, equals: "row:" + id)
     }

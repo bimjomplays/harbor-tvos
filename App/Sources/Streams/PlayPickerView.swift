@@ -985,6 +985,9 @@ struct PlayPickerView: View {
                     Color.clear.frame(height: BP.px(60))
                 }
                 .padding(.vertical, BP.px(6))
+                // (device build 305) Room for the focused row's lift and edge: the scroll view
+                // clipped them at its sides, leaving two stray white lines above and below the row.
+                .padding(.horizontal, BP.px(8))
             }
             .focusSection()
         }
@@ -1113,7 +1116,7 @@ struct PlayPickerView: View {
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(highlight ? BP.accent.opacity(0.6) : BP.edge, lineWidth: 1))
             .opacity(failedIds.contains(s.id) ? 0.7 : 1)
         }
-        .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .buttonStyle(BPTileStyle(radius: BP.rSM, lift: 1.012))
         // (focus pass) Was .disabled(resolving != nil): the pressed row turned unfocusable the moment
         // its resolve began, so the ring was thrown onto the filter chips and stayed there when the
         // link failed ("Unavailable, try another."), a whole list away from the next row to try.
@@ -1167,7 +1170,8 @@ struct PlayPickerView: View {
     /// image is missing from the bundle.
     @ViewBuilder private func formatBadge(_ b: ScoredStream.Labels.Format) -> some View {
         if let art = StreamBadgeArt.image(b.file) {
-            let height: CGFloat = BP.px(32)
+            // (device build 305) 32 px canvas (54 pt) badges pushed half the row onto a second line.
+            let height: CGFloat = BP.px(22)
             let aspect: CGFloat = art.size.height > 0 ? art.size.width / art.size.height : 1
             let width: CGFloat = min(BP.px(75.6), height * aspect)
             Image(uiImage: art).resizable().scaledToFit()
@@ -1276,7 +1280,7 @@ struct PlayPickerView: View {
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel))
             .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge, lineWidth: 1))
         }
-        .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .buttonStyle(BPTileStyle(radius: BP.rSM, lift: 1.012))
         .focused($rowFocus, equals: "copy:" + c.key)
     }
 

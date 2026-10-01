@@ -283,7 +283,7 @@ struct BPSettingsView: View {
             .frame(width: BP.px(368), height: BP.px(54), alignment: .leading)
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(model.active == c.id ? BP.on : .clear))
         }
-        .buttonStyle(BPTileStyle(radius: BP.rSM, onFocus: { model.select(c.id) }))
+        .buttonStyle(BPTileStyle(radius: BP.rSM, lift: 1.03, onFocus: { model.select(c.id) }))
         .focused($focus, equals: "cat:\(c.id)")
         .bpSelected(model.active == c.id)
         // UI tests (NavigationTests): the category column's cells, for the Back-steps check.

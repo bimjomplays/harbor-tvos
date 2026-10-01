@@ -1022,7 +1022,7 @@ struct DetailView: View {
             .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
         }
         // bp-facts-dialog: Select opens every row in a scrollable sheet.
-        .buttonStyle(BPTileStyle(radius: BP.rSM))
+        .buttonStyle(BPTileStyle(radius: BP.rSM, lift: 1.02))
         .padding(.horizontal, BP.gutter)
     }
 
