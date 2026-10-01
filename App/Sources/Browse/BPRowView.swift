@@ -261,6 +261,8 @@ struct BPRailView<Lead: View>: View {
     @State private var focusedRow: String?
     /// The row that holds focus right now (focusedRow keeps the last one after focus moves on).
     @State private var heldRow: String?
+    /// `leadHeld` as state, for the delayed scrolls to read its current value.
+    @State private var leadNow = false
     private static var topID: String { "bp-rail-top" }
     /// (device build 291, CI screenshots 19/20/25) reference/harbor bp-catalog-page.tsx never
     /// overlaps the two at all: `data-bp-hero` is a `shrink-0` flex sibling ABOVE a `flex-1
@@ -395,12 +397,14 @@ struct BPRailView<Lead: View>: View {
                 // had settled, landing the row's header far short of topInset: under the tab bar on
                 // Discover's rails (topInset = barHeight + 10), under the spotlight everywhere else.
                 DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
-                // (device build 307) tvOS's own focus scroll (bringing a tile below the fold into
-                // view) can land after this park and leave the row a step behind; park once more
-                // when that has settled.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    guard focusedRow == key else { return }
-                    withAnimation(BP.easeSlow) { park(key, proxy) }
+                // (device builds 307/311) A scrollTo issued while tvOS's own focus scroll is still
+                // animating is dropped: the rail ended a step behind (the row before parked, the
+                // focused one under the hero or below the fold). Park again once that has settled.
+                for delay in [0.45, 0.9] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        guard focusedRow == key else { return }
+                        withAnimation(BP.easeSlow) { park(key, proxy) }
+                    }
                 }
             }
             // The parked row (or lead section) measured late or changed height (a lazy row's first
@@ -427,9 +431,18 @@ struct BPRailView<Lead: View>: View {
             // Continue Watching, Live or the anime actions left them where they were: in the top
             // band, under the spotlight copy (drawn over the rail). The rail goes back to rest.
             .onChange(of: leadHeld) { _, held in
-                guard held, focusedRow != nil else { return }
+                leadNow = held
+                guard held else { return }
                 focusedRow = nil
                 withAnimation(BP.easeSlow) { proxy.scrollTo(Self.topID, anchor: .top) }
+                // (device build 311) Dropped under tvOS's own focus scroll like a park: Jump back in
+                // kept the ring while it sat under the hero copy. Again once that has settled.
+                for delay in [0.45, 0.9] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        guard leadNow, focusedRow == nil else { return }
+                        withAnimation(BP.easeSlow) { proxy.scrollTo(Self.topID, anchor: .top) }
+                    }
+                }
             }
             // (home device pass) Rows that arrive or leave above the focused one (Home's late extra
             // rows, a synced row edit, the anime bursts) moved it off its park: down under the hint
