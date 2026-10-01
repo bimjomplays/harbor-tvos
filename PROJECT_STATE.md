@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 22:10 UTC — 1.3.4 (355) verified)
+Owner: anime banners cut off, characters behind the cards (Death Note). 1.3.3 drew ≥2:1 banners across
+the top — not the cause (these are 16:9 metahub/AniList art). 1.3.4: anime hero art (KenBurnsImage
+fitWidth for mal:/kitsu:/anilist:/anidb: ids) is drawn whole at the frame's width from the top and
+fades at its foot; films/shows keep the full-height fill. Verified on the TV: Light and Ryuk sit fully
+above the row; AoT, FMA:B, One-Punch Man, Demon Slayer, MHA show more of their art. Owner artifacts:
+launch stills, anime backdrops (before/after). Next upload 1.3.5.
+
 ## Status (2026-10-01 19:50 UTC — 1.3.2 batch, player checked on 1.3.1)
 On the TV (1.3.1): the Subtitles sheet docks right with the film visible beside it; the Leave card;
 scrubber focus with knob; rail captions. Note for testing: `atv press a b c` in one call sends too fast
