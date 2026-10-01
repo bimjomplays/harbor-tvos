@@ -50,9 +50,9 @@ struct DetailView: View {
     /// (device build 303, real Apple TV) The hero's top on screen. The backdrop is fixed behind the
     /// scrolling page, so episodes and rows scrolled up over bright art were unreadable; it dims as
     /// the hero leaves (fully dimmed by the time the episodes reach the top).
-    @State private var heroTop: CGFloat = BP.px(250)
+    @State private var heroTop: CGFloat = BP.px(214)
     private var backdropDim: Double {
-        let gone: CGFloat = (BP.px(250) - heroTop) / BP.px(300)
+        let gone: CGFloat = (BP.px(214) - heroTop) / BP.px(300)
         return Double(min(1, max(0, gone))) * 0.86
     }
     /// (bug pass, 4K posters) The hero backdrop is sized like a tile's art (PosterSizing): unsized,
@@ -237,7 +237,9 @@ struct DetailView: View {
                     tmdbRows
                     Color.clear.frame(height: BP.px(60))
                 }
-                .padding(.top, BP.px(250))
+                // (overnight polish) 250 left a series' season chips on the bottom edge of the first
+                // screen with no episode in view; 214 brings the strip's top up into it.
+                .padding(.top, BP.px(214))
             }
         }
         .background(DetailPageProbeView(probe: pageProbe))
