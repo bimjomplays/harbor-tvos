@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 06:48 UTC, overnight — build 321 verified; batch 10 local)
+**Verified on 321 (the owner's original Home bug, fixed):** Down from the bar parks Popular Movies right
+under the hero copy, the rows above fully hidden, hero text readable, no hint bar, new tile focus.
+**Still seen:** after a cold launch Home restores last session's focus (a Top 10 tile) and that row stays
+unparked at the bottom until the first press — the onChange(initial:) / park-on-hold changes did not
+cure it. **Batch 10:** a park watchdog in BPRailView (row top tracked in `.scrollView` space; for ~4 s
+after a row takes the ring it re-parks while the row is >24 pt off its park).
+
 ## Status (2026-10-01 06:17 UTC, overnight — CI green on batch 8; batch 9 pushed + uploading)
 - Runs 36820345866 (push) and 36820352880 (dispatch → build 319) both green: 45 UI tests, 5 skips.
 - Batch 9 pushed (run 36823975823) and dispatched (36823981734, the 8th upload today).
