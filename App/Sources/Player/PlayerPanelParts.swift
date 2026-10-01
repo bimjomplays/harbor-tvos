@@ -45,6 +45,26 @@ struct PlayerOrbStyle: ButtonStyle {
     }
 }
 
+/// (overnight polish) The player's floating actions (Skip Intro, Next Episode, the ✕ beside them):
+/// frosted glass with a hairline edge, white with black text when focused, like Apple's own skip.
+struct PlayerPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        BPFocusReader { focused in
+            configuration.label
+                .font(BP.sans(15, .semibold))
+                .foregroundStyle(focused ? Color.black : Color.white)
+                .padding(.horizontal, BP.px(16)).padding(.vertical, BP.px(10))
+                .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous)
+                    .fill(focused ? AnyShapeStyle(Color.white) : AnyShapeStyle(.ultraThinMaterial)))
+                .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous)
+                    .stroke(Color.white.opacity(focused ? 0 : 0.35), lineWidth: 1))
+                .scaleEffect(configuration.isPressed ? 0.96 : (focused ? 1.06 : 1))
+                .shadow(color: Color.black.opacity(focused ? 0.4 : 0), radius: 12, y: 5)
+                .animation(BP.easeFast, value: focused)
+        }
+    }
+}
+
 /// bp-subtitle-parts.tsx Chip: a pill; `on` is filled with --bp-on, off is an edge hairline,
 /// and focus floods it bright.
 struct PlayerChipStyle: ButtonStyle {

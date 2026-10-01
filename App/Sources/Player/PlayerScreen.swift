@@ -939,14 +939,12 @@ struct PlayerScreen: View {
                 } label: {
                     HStack(spacing: BP.px(8)) {
                         Image(systemName: outroNext ? "chevron.forward.2" : "forward.fill")
-                        Text(T(outroNext ? "Next Episode" : seg.label)).font(BP.sans(14, .semibold))
+                        Text(T(outroNext ? "Next Episode" : seg.label))
                     }
-                    .foregroundStyle(BP.ink)
-                    .padding(.horizontal, BP.px(14)).padding(.vertical, BP.px(10))
-                    .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.void_.opacity(0.92)))
-                    .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                // (overnight polish) Was `.plain` with a drawn plate: tvOS laid its own milky focus
+                // highlight over it. Apple-style frosted pill, white when focused.
+                .buttonStyle(PlayerPillStyle())
                 .focused($focus, equals: .chip("skip"))
                 if let dismissKey {
                     Button {
@@ -955,12 +953,8 @@ struct PlayerScreen: View {
                         wake()
                     } label: {
                         Image(systemName: "xmark").font(.system(size: BP.px(14), weight: .bold))
-                            .foregroundStyle(BP.inkSubtle)
-                            .padding(BP.px(12))
-                            .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.void_.opacity(0.92)))
-                            .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PlayerPillStyle())
                     .focused($focus, equals: .chip("skip-dismiss"))
                     .accessibilityLabel(Text(T("Hide this Skip button")))
                 }
