@@ -2383,8 +2383,14 @@ struct PlayerScreen: View {
             .focusSection()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(BP.gutter).padding(.bottom, BP.px(20))
-        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .padding(BP.gutter).padding(.bottom, BP.px(34))
+        // (device build 311) The picture (and its burned-in subtitles) stayed bright behind the
+        // question and ran through the buttons; the whole frame now dims under it, deepest at the foot.
+        .background(
+            Color.black.opacity(0.5)
+                .overlay(LinearGradient(colors: [.clear, Color.black.opacity(0.45), Color.black.opacity(0.85)], startPoint: .top, endPoint: .bottom))
+                .ignoresSafeArea()
+        )
     }
 
     // MARK: Picture in Picture (use-pip-mode.ts)
@@ -2636,8 +2642,14 @@ struct PlayerScreen: View {
             .focusSection()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(BP.gutter).padding(.bottom, BP.px(20))
-        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.55), BP.void_.opacity(0.92)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .padding(BP.gutter).padding(.bottom, BP.px(34))
+        // (device build 311) The picture (and its burned-in subtitles) stayed bright behind the
+        // question and ran through the buttons; the whole frame now dims under it, deepest at the foot.
+        .background(
+            Color.black.opacity(0.5)
+                .overlay(LinearGradient(colors: [.clear, Color.black.opacity(0.45), Color.black.opacity(0.85)], startPoint: .top, endPoint: .bottom))
+                .ignoresSafeArea()
+        )
     }
 
     /// use-queue-nav playPrev: the previous episode's picker opens once the player has closed.
