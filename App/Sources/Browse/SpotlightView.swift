@@ -76,7 +76,9 @@ struct SpotlightView: View {
             }
         }
         .padding(.leading, BP.gutter)
-        .padding(.bottom, BP.px(27))
+        // (device build 349) With the row parked just under the copy, a two-line synopsis touched
+        // the row's header (Anime: Holo Graffiti, Chiikawa); the copy sits a little higher.
+        .padding(.bottom, BP.px(36))
         .frame(height: boxHeight, alignment: .bottomLeading)
         .animation(.easeOut(duration: 0.26), value: meta?.id)
         // bp-spotlight MetaAwardsCorner: bottom-end of the hero box (bottom-10 end-10),
