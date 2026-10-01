@@ -289,7 +289,7 @@ struct DetailView: View {
             ForEach(moreActions) { a in
                 Button(T(a.label)) {
                     let run: () -> Void = a.run
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { run() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { run() }
                 }
             }
             Button(T("Cancel"), role: .cancel) {}
