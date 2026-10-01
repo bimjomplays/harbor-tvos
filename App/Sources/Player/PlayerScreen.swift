@@ -1298,8 +1298,8 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         // (overnight polish) Apple TV's player: a soft black wash rising from the bottom edge, no
         // hint bar (upstream's BpHintBar suits a gamepad; the Siri Remote's own buttons need none).
-        .background(LinearGradient(stops: [.init(color: .clear, location: 0.38), .init(color: Color.black.opacity(0.5), location: 0.66),
-                                           .init(color: Color.black.opacity(0.88), location: 1)], startPoint: .top, endPoint: .bottom))
+        .background(LinearGradient(stops: [.init(color: .clear, location: 0.36), .init(color: Color.black.opacity(0.62), location: 0.66),
+                                           .init(color: Color.black.opacity(0.92), location: 1)], startPoint: .top, endPoint: .bottom))
         .ignoresSafeArea()
     }
 
@@ -1353,9 +1353,9 @@ struct PlayerScreen: View {
                 orb("prev", "backward.end.fill", title: T("Previous episode"), below: true) { previousEpisode() }
                     .disabled(!hasPrevEpisodeNow)
             }
-            if !isLive { orb("rewind", "gobackward", title: T("Back %llds", Int(prefs.seekBackStepSec)), below: true) { seekBy(-prefs.seekBackStepSec) } }
+            if !isLive { orb("rewind", Self.stepGlyph("gobackward", prefs.seekBackStepSec), title: T("Back %llds", Int(prefs.seekBackStepSec)), below: true) { seekBy(-prefs.seekBackStepSec) } }
             orb("playpause", isPaused ? "play.fill" : "pause.fill", title: T(isPaused ? "Play" : "Pause"), large: true, below: true) { togglePause() }
-            if !isLive { orb("forward", "goforward", title: T("Forward %llds", Int(prefs.seekForwardStepSec)), below: true) { seekBy(prefs.seekForwardStepSec) } }
+            if !isLive { orb("forward", Self.stepGlyph("goforward", prefs.seekForwardStepSec), title: T("Forward %llds", Int(prefs.seekForwardStepSec)), below: true) { seekBy(prefs.seekForwardStepSec) } }
             if hasPrevEpisodeNow || hasNextEpisodeNow {
                 orb("next", "forward.end.fill", title: T("Next episode"), below: true) { playNext() }
                     .disabled(!hasNextEpisodeNow)
@@ -1410,6 +1410,13 @@ struct PlayerScreen: View {
         .onMoveCommand { dir in
             if dir == .down { focus = .chip("playpause") }
         }
+    }
+
+    /// (overnight polish) Apple's numbered skip glyphs ("gobackward.10") for the steps SF Symbols
+    /// draws; any other step keeps the plain arrow.
+    static func stepGlyph(_ base: String, _ seconds: Double) -> String {
+        let n: Int = Int(seconds.rounded())
+        return [5, 10, 15, 30, 45, 60, 75, 90].contains(n) ? "\(base).\(n)" : base
     }
 
     /// A chrome control (PlayerOrbStyle). `id` is the focus id the chip of the same control had
@@ -1477,17 +1484,17 @@ struct PlayerScreen: View {
         let remaining: Double = duration > 0 ? max(0, duration - shown) : 0
         let params: String = status.state == "loading" ? T("Loading…") : streamFacts
         return HStack(spacing: BP.px(10)) {
-            Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? Color.white.opacity(0.75) : Color.white)
+            Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? Color.white.opacity(0.9) : Color.white)
             if !params.isEmpty { Text(params).font(BP.sans(11.5, .medium)).foregroundStyle(Color.white.opacity(0.4)) }
             Spacer()
             if duration > 0 {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(Color.white.opacity(0.5))
                 }
-                Text(verbatim: "−" + fmt(remaining)).foregroundStyle(Color.white.opacity(0.75))
+                Text(verbatim: "−" + fmt(remaining)).foregroundStyle(Color.white.opacity(0.9))
             }
         }
-        .font(BP.sans(14, .semibold))
+        .font(BP.sans(15, .semibold))
         .monospacedDigit()
         // Position, "{n} left" and "Ends {time}" are one readout: read as a single stop, not three.
         .accessibilityElement(children: .combine)
