@@ -466,6 +466,8 @@ struct PlayerScreen: View {
                 PlayerDiagnosticsOverlay(engine: engine, url: playURL, status: status)
             }
         }
+        // (overnight polish) Subtitles rise over the chrome while it is up (mpv only).
+        .onChange(of: chromeShown) { _, up in (controller as? MPVPlayerController)?.setSubtitleLift(up) }
         // media-session.ts mediaKeyGate: a press that also reaches us as a remote command toggles once.
         .onPlayPauseCommand { if VideoNowPlaying.shared.mediaKeyGate() { playPausePressed() } }
         .onExitCommand {

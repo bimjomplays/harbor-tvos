@@ -429,7 +429,24 @@ final class MPVPlayerController: UIViewController {
         let placement = Self.assPlacement(mode: Self.assOverride(s.subAssOverride), assShown: assShown, marginY: s.subMarginY ?? 12)
         check(mpv_set_property_string(mpv, "sub-ass-force-margins", placement.margins))
         check(mpv_set_property_string(mpv, "sub-use-margins", placement.margins))
-        check(mpv_set_property_string(mpv, "sub-pos", placement.pos))
+        check(mpv_set_property_string(mpv, "sub-pos", liftedPos(placement.pos)))
+    }
+
+    /// (overnight polish) Apple TV's player lifts the subtitles over its info panel while it is up:
+    /// the chrome here covers the bottom fifth of the frame, and the lines ran through the title.
+    /// An ASS track that keeps its own placement (sub-pos 100, override "no") is left alone.
+    private var subLift = false
+    func setSubtitleLift(_ lifted: Bool) {
+        guard subLift != lifted else { return }
+        subLift = lifted
+        applyAssPlacement()
+    }
+
+    private func liftedPos(_ pos: String) -> String {
+        let base: Int = Int(pos) ?? 100
+        let keepsOwn: Bool = assShown && Self.assOverride(SettingsBridge.shared.slice.subAssOverride) == "no"
+        guard subLift, !keepsOwn else { return pos }
+        return String(max(0, base - 24))
     }
 
     /// sub-style.ts assMargins / reposition / sub-pos.
@@ -624,7 +641,7 @@ final class MPVPlayerController: UIViewController {
         set("sub-ass-override", assMode)
         set("sub-ass-force-margins", placement.margins)
         set("sub-use-margins", placement.margins)
-        set("sub-pos", placement.pos)
+        set("sub-pos", liftedPos(placement.pos))
         set("sub-filter-sdh", sdhFilterOn ? "yes" : "no")
         set("sub-filter-sdh-harder", "no")
     }
