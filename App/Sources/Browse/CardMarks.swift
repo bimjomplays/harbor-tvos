@@ -125,12 +125,17 @@ struct CardMarksOverlay: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
+    /// (overnight polish, design critique) A bright white chip on nearly every poster ("NEW") read as
+    /// noise over the art. The chip is a quiet dark glass label now; an award reads in gold.
     private func chipView(_ text: String) -> some View {
-        Text(text)
+        let up: String = text.uppercased()
+        let award: Bool = ["OSCAR", "EMMY", "BAFTA", "GLOBE", "WINNER", "CANNES", "PALME", "AWARD"].contains { up.contains($0) }
+        return Text(text)
             .font(BP.sans(9.8, .bold)).textCase(.uppercase).tracking(0.5).lineLimit(1)
-            .foregroundStyle(BP.canvas)
+            .foregroundStyle(award ? Color(red: 0.96, green: 0.80, blue: 0.40) : Color.white)
             .padding(.horizontal, BP.px(6)).padding(.vertical, BP.px(3))
-            .background(RoundedRectangle(cornerRadius: BP.px(4), style: .continuous).fill(BP.ink))
+            .background(RoundedRectangle(cornerRadius: BP.px(4), style: .continuous).fill(Color.black.opacity(0.62)))
+            .overlay(RoundedRectangle(cornerRadius: BP.px(4), style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
             .frame(maxWidth: size.width - BP.px(56), alignment: .leading)
     }
 
