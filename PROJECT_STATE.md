@@ -3,6 +3,31 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 12:00 UTC, owner awake — requests batch)
+Owner asked (2026-10-01 morning): sources from "The Addon" first; Home = everything in progress, Anime =
+anime only, Shows without anime; JoJo part 6 shown when part 7 was played; reset watch history to a
+clean slate; then keep polishing; rows "jump" when moving Left/Right; the progress bar must be
+focusable and scrub with Siri Remote swipes; anime heroes should get real backdrops like films.
+Done in this push (CI 36858761309, upload 36858767978):
+- Settings → Addons → **Sources first** (settings.streamPriority, honoured by upstream's pipeline; the
+  engine now orders the picker's addon groups by it too: `prioritisedOrder`).
+- **Anime under IMDb ids** (Mushoku Tensei from Cinemeta) detected for Continue Watching
+  (`rooms.detectCwAnime` → upstream detectAnimeForCw): Shows' row drops them, the Anime room gets them.
+- Settings → Home rows → **Clear Continue Watching** (`rooms.clearContinueWatching`: every row item
+  dismissed as the quick panel does — hidden, resume cleared, cloud timeOffset 0 — plus local resume
+  entries and exit frames). Owner chose "everywhere, keep saved/watchlist". To run on the TV once
+  this build is installed.
+- **Jumping row**: tvOS's own focus scroll nudged a low-parked row up on each Left/Right and the
+  re-parks pulled it back. Rooms now park the focused row just under the hero copy (`parkAt`), posters
+  150 px, watchdog only for rows >80 pt off.
+- **Focusable progress bar** (Down from the rail; Left/Right step; Select plays/pauses or lands a seek;
+  knob while focused) and **Siri Remote swipe scrubbing** (RemoteScrub.swift, a window-level indirect
+  pan, 15 % of the film per full swipe, deadzone, lands 0.5 s after lift).
+- **Anime hero backdrops** (Sonnet worktree agent): engine/animeArt.ts — metahub 16:9 via ani.zip's IMDb
+  id (HEAD-verified), else AniList bannerImage, else Kitsu cover; BPTitleArt asks for anime ids whose
+  background is missing or the poster. Smoke 1194/1194.
+Open: JoJo 6 vs 7 to re-check after the clean slate (likely franchise-root dedupe or an old cloud entry).
+
 ## Status (2026-10-01 08:55 UTC, overnight — main green at HEAD)
 - Run 36834800319 (HEAD: subtitle lift −34) green. Main is green and everything is pushed; the only
   change not on TestFlight is that one-line subtitle lift (rides along with the next upload).
