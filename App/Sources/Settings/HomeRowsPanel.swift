@@ -98,7 +98,7 @@ struct HomeRowsPanel: View {
                 .buttonStyle(BPActionStyle())
                 .focused($focus, equals: "cw-clear")
                 if let n = clearedCount {
-                    Text(verbatim: T("Cleared %lld items", n)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
+                    Text(verbatim: n == 1 ? T("Cleared 1 item") : T("Cleared %lld items", n)).font(BP.sans(13)).foregroundStyle(BP.inkMuted)
                 }
             }
         }
