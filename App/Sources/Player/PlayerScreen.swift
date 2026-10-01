@@ -2651,32 +2651,48 @@ struct PlayerScreen: View {
     }
 
     /// bp-leave-confirm.tsx: Keep watching / Leave / Don't ask again.
+    /// (overnight polish) A centred frosted card over the dimmed frame, buttons stacked full width,
+    /// as tvOS asks its own questions; it floated bare over the picture at the bottom left.
     private var leaveConfirmView: some View {
-        VStack(alignment: .leading, spacing: BP.px(12)) {
-            Spacer()
-            Text("Leave the show?").font(BP.display(34)).foregroundStyle(BP.ink)
-            Text("We'll save your spot so you can pick up right where you left off.").font(BP.sans(16)).foregroundStyle(BP.inkMuted)
-            HStack(spacing: BP.px(10)) {
-                chip("Keep watching", "play.fill") { keepWatching() }
-                chip("Leave", "rectangle.portrait.and.arrow.right") {
-                    if leaveRemember { Task { try? await SettingsBridge.shared.patch(["playerConfirmLeave": .bool(false)]) } }
-                    leaveConfirm = false
-                    finish(natural: false)
+        ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea()
+            VStack(spacing: BP.px(12)) {
+                Text("Leave the show?").font(BP.display(28)).foregroundStyle(Color.white).multilineTextAlignment(.center)
+                Text("We'll save your spot so you can pick up right where you left off.").font(BP.sans(14.5))
+                    .foregroundStyle(Color.white.opacity(0.7)).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: BP.px(9)) {
+                    leaveButton("Keep watching", "play.fill", primary: true) { keepWatching() }
+                    leaveButton("Leave", "rectangle.portrait.and.arrow.right") {
+                        if leaveRemember { Task { try? await SettingsBridge.shared.patch(["playerConfirmLeave": .bool(false)]) } }
+                        leaveConfirm = false
+                        finish(natural: false)
+                    }
+                    leaveButton("Don't ask again", leaveRemember ? "checkmark.circle.fill" : "circle", active: leaveRemember) { leaveRemember.toggle() }
                 }
-                chip("Don't ask again", leaveRemember ? "checkmark.circle.fill" : "circle") { leaveRemember.toggle() }
-                    .bpSelected(leaveRemember)
+                .padding(.top, BP.px(8))
+                .focusSection()
             }
-            .focusSection()
+            .padding(BP.px(30))
+            .frame(width: BP.px(440))
+            .background(
+                RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(.ultraThinMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(Color.black.opacity(0.35)))
+            )
+            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.6), radius: 40, y: 20)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(BP.gutter).padding(.bottom, BP.px(34))
-        // (device build 311) The picture (and its burned-in subtitles) stayed bright behind the
-        // question and ran through the buttons; the whole frame now dims under it, deepest at the foot.
-        .background(
-            Color.black.opacity(0.5)
-                .overlay(LinearGradient(colors: [.clear, Color.black.opacity(0.45), Color.black.opacity(0.85)], startPoint: .top, endPoint: .bottom))
-                .ignoresSafeArea()
-        )
+    }
+
+    /// One full-width button of the Leave card; its focus id is the same `.chip(label)` the old
+    /// chip row used (the card's appearance puts the ring on "Keep watching").
+    private func leaveButton(_ label: String, _ icon: String, primary: Bool = false, active: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: { action(); wake() }) {
+            Label(T(label), systemImage: icon).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(BPActionStyle(primary: primary))
+        .bpSelected(active)
+        .focused($focus, equals: .chip(label))
     }
 
     /// use-queue-nav playPrev: the previous episode's picker opens once the player has closed.
