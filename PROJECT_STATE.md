@@ -1594,11 +1594,10 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 
 ## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
 
-**OWNER (big win, 2 min):** the TMDB key saved on the TV is refused by TMDB ("Invalid API key",
-seen in the device log 2026-10-01). Get a new free key (themoviedb.org → account Settings → API → the
-"API Key", not the long token) and enter it in Harbor → Settings → Setup → Accounts and TMDB (phone QR
-or "Type a key on this TV"). That brings back Detail's cast, More Like This, trailers and facts rows,
-TMDB scores and the Trending / In Theaters rows.
+**TMDB (done 2026-10-01 23:50 UTC):** the owner's valid key was delivered to the TV through the
+hand-off LAN API; Home shows Trending / In Theaters, Detail shows TMDB score, tagline, crew, cast,
+More Like This. Newly visible to polish: "Cinematography" label wraps, cast focus ring is a stadium
+outline that cuts the character line, crew pills are heavy.
 
 **Versions (owner request 2026-10-01):** every TestFlight upload gets a real x.y.z version
 (`MARKETING_VERSION` in project.yml; the build number stays the CI run number). Bump the patch
