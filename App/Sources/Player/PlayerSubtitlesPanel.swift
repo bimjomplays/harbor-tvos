@@ -120,7 +120,8 @@ struct PlayerSubtitlesPanel: View {
                         }
                     }
                     .padding(.horizontal, BP.px(12))
-                    .padding(.top, BP.px(8)).padding(.bottom, BP.px(24))
+                    // (device build 345) The first chip row's top was cut by the scroller's edge.
+                    .padding(.top, BP.px(16)).padding(.bottom, BP.px(24))
                 }
                 // (layout pass) A full-width line (1.01 lift on ~1 640 pt, ring 9.5 pt out) reaches ~18 pt
                 // past its sides; 10 pt of padding let the scroller's clip cut both sides of the ring.
