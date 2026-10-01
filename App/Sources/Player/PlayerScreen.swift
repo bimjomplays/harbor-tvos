@@ -1549,8 +1549,8 @@ struct PlayerScreen: View {
     }
 
     /// (owner request 2026-10-01) Siri Remote swipe scrubbing (RemoteScrubCatcher): the playhead
-    /// follows the swipe, a full swipe across the touch surface moving 15 % of the film (90 s to
-    /// 15 min); it lands half a second after the finger lifts, with the time bubble over the bar.
+    /// follows the swipe; it lands half a second after the finger lifts, with the time bubble over
+    /// the bar.
     private func scrubSwipe(_ fraction: CGFloat) {
         let duration: Double = clock.snap.duration
         guard controller != nil, duration > 0 else { return }
@@ -1559,7 +1559,9 @@ struct PlayerScreen: View {
             seekCommit?.cancel()
             scrubBase = pendingSeek ?? clock.snap.position
         }
-        let span: Double = min(900, max(90, duration * 0.15))
+        // (device build 328) A 40 % swipe on the remote read as half the screen's width; a full
+        // swipe now moves 10 % of the film (1 to 10 minutes).
+        let span: Double = min(600, max(60, duration * 0.1))
         let target: Double = (scrubBase ?? 0) + Double(fraction) * span
         pendingSeek = max(0, min(duration - 1, target))
         wake()

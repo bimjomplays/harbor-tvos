@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import os
 
 /// (owner request 2026-10-01) Siri Remote touch-surface scrubbing, as Apple's own player does it:
 /// a horizontal swipe on the clickpad moves the playhead in proportion to the swipe. SwiftUI on
@@ -52,6 +53,10 @@ struct RemoteScrubCatcher: UIViewRepresentable {
         private weak var host: UIView?
         private var active = false
         private var scrubbing = false
+        /// The swipe's travel so far, summed from per-event steps (see `handle`).
+        private var travel: CGFloat = 0
+        private var lastX: CGFloat = 0
+        private let log = Logger(subsystem: "com.dltnp.harbor", category: "scrub")
 
         func attach(to window: UIWindow) {
             guard pan == nil else { return }
@@ -82,14 +87,23 @@ struct RemoteScrubCatcher: UIViewRepresentable {
             switch recognizer.state {
             case .began:
                 active = enabled
+                travel = 0
+                lastX = recognizer.translation(in: recognizer.view).x
                 if active { onBegan() }
             case .changed:
                 guard active, enabled else { return }
                 let t: CGPoint = recognizer.translation(in: recognizer.view)
+                // (device build 328) Summed per-event steps, with any single step over a quarter of
+                // the surface dropped: one remote swipe arrived with a jump that sent the film to 0:00.
+                let dx: CGFloat = t.x - lastX
+                lastX = t.x
+                log.debug("scrub step dx=\(Double(dx), privacy: .public) tx=\(Double(t.x), privacy: .public) ty=\(Double(t.y), privacy: .public) w=\(Double(width), privacy: .public)")
+                guard abs(dx) < width * 0.25 else { return }
                 // A mostly vertical swipe is focus movement, not a scrub.
                 guard abs(t.x) > abs(t.y) * 1.2 else { return }
+                travel += dx
                 // A deadzone: a click's small jiggle on the clickpad is not a scrub.
-                let f: CGFloat = t.x / width
+                let f: CGFloat = travel / width
                 guard abs(f) > 0.02 || scrubbing else { return }
                 scrubbing = true
                 onChanged(f)
