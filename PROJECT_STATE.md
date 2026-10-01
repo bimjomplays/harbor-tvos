@@ -3,6 +3,12 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 06:58 UTC, overnight — batch 9 green; batch 10 out)
+- Run 36823975823 (batch 9) green. Batch 10 (park watchdog, hardened after a Sonnet review: tops in a
+  non-reactive box, samples after the regular parks, two agreeing samples, stops when a park moves
+  nothing) pushed (36827593246) and dispatched (36827600864, upload #9 today: 305, 307, 311, 313, 314,
+  316, 319, 321, this).
+
 ## Status (2026-10-01 06:48 UTC, overnight — build 321 verified; batch 10 local)
 **Verified on 321 (the owner's original Home bug, fixed):** Down from the bar parks Popular Movies right
 under the hero copy, the rows above fully hidden, hero text readable, no hint bar, new tile focus.
