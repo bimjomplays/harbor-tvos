@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 15:00 UTC — 1.3.0 batch)
+- Detail hero: Play + Sources / Watchlist / Watched or Remind me / Trailer + **More** (Favourite, Rate,
+  Add to list, trackers, Trakt, Read more in tvOS's action sheet); the Back cell is gone (Menu goes back).
+- Library: Refresh and Repair are icon buttons; the chip row fits the screen.
+- Subtitles panel: a frosted sheet docked at the right over a lightly dimmed picture (was a near
+  full-screen card on 88 % black).
+- Search chips fade at their leading edge; card chips quiet dark glass, awards gold (1.2.1).
+Version 1.3.0 for this upload.
+
 ## Status (2026-10-01 14:40 UTC — 1.2.1 (340) installed and checked)
 Home on 1.2.1: NEW chips are quiet dark-glass labels, the restored first focus parks under the hero,
 no Continue Watching (owner's clean slate kept). Next upload: 1.2.2 (patch) or 1.3.0 (features).
