@@ -3,6 +3,20 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 13:20 UTC — 330 verified; 1.2.0 out)
+**Verified on 330 (0.1.0):** swipe-scrub works both ways (+6 min right, −4 min left; syslog showed
+the pan's translation starts around −1360 pt, which is why the first version jumped to 0:00);
+Menu after swipes shows the Leave card (no app exit); The Addon's sources lead the source list
+("THE ADDON" rows first, now playing from it).
+**JoJo part 6 vs 7, root cause found:** upstream animeDetails sends every ONA/OVA/special to its
+franchise's main TV series; Steel Ball Run (2026 Netflix ONA, 12 eps) opened as "Stone Ocean Part 3".
+Fixed with a bundle-time patch in engine/bundle-config.mjs (redirect only entries of ≤3 episodes;
+build fails if upstream's line changes). Node check: kitsu:49847 and mal:61469 now load SBR, 12 eps,
+IMDb season 6.
+Also: the ring stays on the scrubber through a swipe; toggled player controls (Anime4K on, mute, sleep)
+get a dot, not a ring that read as focus; Search's result count no longer collides with the chips.
+Version **1.2.0** (owner's pick) for this upload.
+
 ## Status (2026-10-01 12:40 UTC — build 328 verified on the TV; follow-up out)
 **Verified on 328:** Settings → Addons → Sources first → **The Addon** selected (owner's request).
 Settings → Home rows → **Clear Continue Watching → "Cleared 4 items"**; Home and Anime rows empty
