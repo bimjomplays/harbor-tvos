@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 05:10 UTC, overnight — build 316 verified)
+**Verified on the TV (316):** subtitles hidden under the Leave dialog; series transport (prev/next
+episode) and episode line "S2 E19 · Desert Journey" over the title. **Found:** styled ASS anime subtitles
+kept their own placement and ran through the transport (the lift skipped ASS) → now lifted too while the
+chrome is up; the transport's focus caption reached past the bottom safe area → chrome raised a little.
+Batch 7 (local, waiting for main's tests) also has: "4K · HEVC · HDR" stream line, frosted Skip/Next
+Episode pill (was `.plain` = system platter), frosted Up Next card.
+
 ## Status (2026-10-01 05:00 UTC, overnight — build 316 uploaded; batch 7 local)
 - 316 = batch 6 (subtitle lift/hide), the CI-312 fix (rail reset only for the top bar), hero soften.
 - Upload count today (UTC): 305, 307, 311, 313, 314, 316 — six. Apple's daily cap (code 90382) is "a
