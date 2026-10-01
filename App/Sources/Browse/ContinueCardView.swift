@@ -15,7 +15,9 @@ struct ContinueCardView: View {
 
     var body: some View {
         let snap: String? = snapshotArt
-        let art: String? = item.background ?? item.poster
+        // (device build 307) A local resume entry can carry "" for a field it had nothing for, and
+        // `?? poster` never looked past an empty background: the card drew no art at all.
+        let art: String? = [item.background, item.poster].compactMap { $0 }.first { !$0.isEmpty }
         ZStack(alignment: .bottomLeading) {
             // (device build 303, Anime room) Unsized, a fill image took the art's own aspect and
             // widened the ZStack past the card: the title and pill, anchored bottom-leading in that
