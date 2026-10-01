@@ -356,7 +356,12 @@ struct BPRailView<Lead: View>: View {
                                   onSeeAll: seeAllAction(row), seeAllLabel: seeAllLabel?(row) ?? "See all", onQuick: onQuick,
                                   restoreRoute: restoreRoute, restoreCell: entry?.row == row.key ? entry?.cell : nil,
                                   onHold: { held in
-                                      if held { heldRow = row.key } else if heldRow == row.key { heldRow = nil }
+                                      if held {
+                                          heldRow = row.key
+                                          // Belt and braces for the seed (device build 319): holding
+                                          // the ring parks the row even if no tile focus was reported.
+                                          if focusedRow != row.key { focusedRow = row.key }
+                                      } else if heldRow == row.key { heldRow = nil }
                                       onHold?(row.key, held)
                                   },
                                   onNavEdge: navEdge(row),
