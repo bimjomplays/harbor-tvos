@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 07:20 UTC, overnight — build 323 verified: every reported bug fixed)
+**Verified on the TV (323):** a cold launch restores focus to the Top 10 row and the watchdog parks it
+under the hero (the last open Home bug). Everything the owner listed is now fixed and seen fixed on the
+device: video plays with no grey/white platter; Home's first row sits under the hero copy, not behind
+it; the hero/Detail backdrops have no hard edge; no hint bar over posters (none with the Siri Remote);
+rows line up under the hero on Home/Movies/Shows/Anime.
+
 ## Status (2026-10-01 06:58 UTC, overnight — batch 9 green; batch 10 out)
 - Run 36823975823 (batch 9) green. Batch 10 (park watchdog, hardened after a Sonnet review: tops in a
   non-reactive box, samples after the regular parks, two agreeing samples, stops when a park moves
@@ -1430,6 +1437,24 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
+
+**MORNING SUMMARY (2026-10-01, overnight session) — install build 323 or newer from TestFlight.**
+- Owner, nothing is blocked on you. Two Apple TV settings were changed for unattended work: Screen
+  Saver → Start After = Never (was 5 min) and Remotes and Devices → Control TVs and Receivers = Off
+  (you OK'd it; it stopped the TV switching inputs). Put them back if you like. One recent search
+  ("steel ball run") was cleared by a blind remote press on Search — sorry.
+- Builds tonight: 305, 307, 311, 313, 314, 316, 319, 321, 323 (9 uploads; Apple never refused one).
+  CI green on the last three test runs.
+- Biggest wins: the full-screen grey platter over video (tvOS `.plain` button highlight on the
+  player's stage — fixed with a bare ButtonStyle); rail parking (scrollTo on nested ids never worked;
+  now an anchor from the measured row height, re-issued after tvOS's focus scroll, plus a watchdog);
+  Apple-TV-style player (round glass controls, white scrubber, "4K · HEVC · HDR", centred transport,
+  subtitles lift over the chrome, frosted Skip/Up Next); tile focus (lift + soft shadow + fine edge).
+- Worth a look by you: player on your own content (HDR/DV, live TV parked), the stream picker rows,
+  Detail episodes, Collections/Library/Search spacing.
+- Known open: Leave dialog copy is upstream's "Leave the show?" for films too; the Detail page of a
+  film with no TMDB rows ends in empty space; anime hero art is a soft upscaled poster when the
+  catalogue has no backdrop (softened on purpose).
 
 **Overnight 2026-10-01 (newest first; owner asleep, nothing needs the owner yet):**
 - Builds tonight: 305 (focusEffectDisabled — platter still there), 307 (batch 1: rail park, hint fade,
