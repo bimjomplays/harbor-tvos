@@ -469,6 +469,15 @@ struct PlayerScreen: View {
                 PlayerDiagnosticsOverlay(engine: engine, url: playURL, status: status)
             }
         }
+        // (device build 328) After a run of swipes the ring was nowhere in the player, and the next
+        // Menu went to tvOS, which closed the app mid-film. A ring that falls out of the player goes
+        // back to the stage.
+        .onChange(of: focus == nil) { _, lost in
+            guard lost, !finishing else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                if focus == nil, !finishing { focus = .surface }
+            }
+        }
         // Siri Remote touch-surface scrubbing (RemoteScrub.swift).
         .background(RemoteScrubCatcher(enabled: scrubEnabled, onBegan: { lastScrubAt = Date() }, onChanged: { f in scrubSwipe(f) }, onEnded: { scrubSwipeEnded() }))
         // (overnight polish) Subtitles rise over the chrome while it is up (mpv only).
