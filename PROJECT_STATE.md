@@ -3,6 +3,10 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 06:17 UTC, overnight — CI green on batch 8; batch 9 pushed + uploading)
+- Runs 36820345866 (push) and 36820352880 (dispatch → build 319) both green: 45 UI tests, 5 skips.
+- Batch 9 pushed (run 36823975823) and dispatched (36823981734, the 8th upload today).
+
 ## Status (2026-10-01 06:00 UTC, overnight — build 319 verified; batch 9 local)
 **Verified on 319:** stream picker rows are one tidy line of badges at 22 px, the focused row's edge is
 whole (no clipping); Library/Search clear of the tab pill; hero logo stays under the bar.
