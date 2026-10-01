@@ -185,7 +185,8 @@ struct AnimeHeroActionsView: View {
             HStack(spacing: BP.px(10)) {
                 if let i = info {
                     if !i.topLine.isEmpty { Text(i.topLine).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.accent) }
-                    if let s = i.score, !s.isEmpty { Text(i.fromMal == true ? "MAL \(s)" : s).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink) }
+                    // (device build 316) The score already sits in the spotlight's chip line right above
+                    // ("MAL 8.1"); repeated here it read as a stray "8.1" over Start Watching.
                     if i.dub { Text("Sub and Dub").font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                     if !i.country.isEmpty { Text(i.country).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
                     if resume != nil, !i.episode.isEmpty { Text(i.episode + (i.minutesLeft.isEmpty ? "" : " · \(i.minutesLeft)")).font(BP.sans(12)).foregroundStyle(BP.inkMuted) }
