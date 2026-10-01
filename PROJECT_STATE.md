@@ -3,7 +3,7 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
-## Status (2026-10-01 23:20 UTC — 1.3.5 batch out, run 36939995031)
+## Status (2026-10-01 23:36 UTC — 1.3.5 = both batches, dispatch run 36941608648)
 - Seen on the TV (1.3.4) and fixed: tile art wider than 2:3 (Cyberpunk: Edgerunners) filled past the
   card, widened the tile stack and pushed the marks overlay off it (cut NEW chip) — art framed to the
   tile (BPTileView.art). Anime hero's lone "NEW" over Start Watching is a glass chip (award in gold).
@@ -16,6 +16,10 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
   saved key refused; connect page, Settings row and a note on Detail say so), Library Stats chip
   icon-only (title count ran past the right margin), setup code shrinks to fit ("MGV3 G39J NF…"),
   "Signed in as" with an empty Stremio name reads "Signed in".
+- Sonnet review of both batches: no compile issues; fixed its logic finds (Left from the profile chip
+  onto the last tab, or a tab's long-press menu closing, no longer jump to the room's tab; barRequested
+  clears itself; a test of a new TMDB key no longer marks the saved key refused). The first 1.3.5
+  dispatch was cancelled and re-dispatched with everything.
 
 ## Status (2026-10-01 22:10 UTC — 1.3.4 (355) verified)
 Owner: anime banners cut off, characters behind the cards (Death Note). 1.3.3 drew ≥2:1 banners across
