@@ -1260,8 +1260,12 @@ struct PlayerScreen: View {
                 }
                 .padding(BP.px(18))
                 .frame(width: BP.px(600), alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel2))
-                .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                // (overnight polish) Frosted over the picture, as Apple's own up-next card is.
+                .background(
+                    RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(.ultraThinMaterial)
+                        .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(Color.black.opacity(0.35)))
+                )
+                .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
                 .shadow(color: .black.opacity(0.9), radius: 60, y: 40)
                 .focusSection()
             }
