@@ -395,6 +395,13 @@ struct BPRailView<Lead: View>: View {
                 // had settled, landing the row's header far short of topInset: under the tab bar on
                 // Discover's rails (topInset = barHeight + 10), under the spotlight everywhere else.
                 DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
+                // (device build 307) tvOS's own focus scroll (bringing a tile below the fold into
+                // view) can land after this park and leave the row a step behind; park once more
+                // when that has settled.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard focusedRow == key else { return }
+                    withAnimation(BP.easeSlow) { park(key, proxy) }
+                }
             }
             // The parked row (or lead section) measured late or changed height (a lazy row's first
             // layout, a lead band whose cards arrived): its anchor was worked out from the old
