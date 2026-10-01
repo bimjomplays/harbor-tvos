@@ -101,8 +101,11 @@ struct SpotlightView: View {
                                          startPoint: .leading, endPoint: .trailing))
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            LinearGradient(colors: [BP.void_.opacity(0.82), BP.void_.opacity(0.52), BP.void_.opacity(0.16), .clear],
-                           startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
+            // (device build 345) The synopsis' line ends ran over bright key art (The Rookie's yellow
+            // sun): a deeper side scrim under the copy's column, still clear by 3/4 across.
+            LinearGradient(stops: [.init(color: BP.void_.opacity(0.9), location: 0), .init(color: BP.void_.opacity(0.72), location: 0.32),
+                                   .init(color: BP.void_.opacity(0.3), location: 0.58), .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .init(x: 0.75, y: 0.5))
                 // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
                 .flipsForRightToLeftLayoutDirection(true)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.3), BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom)
