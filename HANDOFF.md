@@ -5,6 +5,33 @@ This file is for a new Claude Code session (on any machine, any Claude account) 
 point), then `PLAN.md`. Do not read the whole `reference/` tree up front; open upstream files as
 you need them.
 
+## Eyes and hands on the real Apple TV (2026-09-30) — USE THIS, do not guess from code
+The owner's Apple TV ("Bedroom", 10.0.0.230, tvOS 26) is paired to this PC. Helper: `~/ai/atv/atv`
+(outside the repo; credentials are private, never commit them):
+- `~/ai/atv/atv shot` → a real 4K screenshot + a 1280px `_small.png` copy (Read it). This is how the
+  build-291/303 "white screen" was found in one minute: tvOS's focus platter on the player's
+  invisible `.plain` Button (fixed with `.focusEffectDisabled()`, commit after 303).
+- `~/ai/atv/atv press up|down|left|right|select|menu|home|play_pause` → remote presses (AirPlay +
+  Companion pairings). `~/ai/atv/atv launch com.dltnp.harbor` relaunches Harbor.
+- The developer tunnel must be up for `shot`/`launch`: it runs in tmux session `atvtun`; if a shot
+  hangs or the tmux session is gone, run `~/ai/atv/atv tunnel` (pkexec is passwordless) — it prints
+  "host port" and stores it in `~/ai/atv/rsd`. If a shot still hangs, the TV's HDMI is unplugged (the
+  Apple TV stops rendering with no display): ask the owner to plug it in; TV panel off is fine.
+- Apple TV Sleep After = Never and TestFlight automatic updates are ON (set 2026-09-30), so a
+  dispatched build installs itself; `~/ai/atv/atv launch com.dltnp.harbor` after ~15–25 min and
+  `atv shot` to confirm (TestFlight app on the TV shows the build number; Settings → General →
+  About in Harbor too if present).
+- Loop: fix → `cd engine && node build.mjs && node smoke.mjs --offline` (if engine) → commit → push
+  → `gh run watch <id>` → green → `gh workflow run Build -f testflight=true` → wait for the upload
+  run → TestFlight auto-install → `atv launch` + `atv shot` → read the screenshot → next batch.
+  Batch several fixes per build (one build ≈ 45 min CI + 15 min upload + install).
+- Owner is asleep: never ask questions; decide and log in PROJECT_STATE.md. If something truly
+  needs the owner (new PIN pairing, HDMI unplugged, TestFlight stuck), write it as the first line
+  of PROJECT_STATE.md's Next section and keep working on what does not need them.
+- Direction: streaming only (Home, Discover, Shows, Movies, Anime, Detail, picker, player). Make it
+  look and feel like a proper tvOS video app: fix every visual bug you can SEE in screenshots
+  (overlaps, clipping, blurry art, misaligned rows, hint bar over content, hard edges), then polish.
+
 ## What this is
 A native Apple TV (tvOS) port of the open-source Stremio client **Harbor** (`harborstremio/harbor`,
 beta-branch). Upstream's TypeScript is bundled by esbuild (`engine/`) and runs inside the app in
