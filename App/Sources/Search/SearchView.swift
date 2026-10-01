@@ -371,11 +371,11 @@ struct SearchView: View {
             Text(resultsLabel)
                 .font(BP.sans(11, .semibold)).textCase(.uppercase).tracking(1.6).foregroundStyle(BP.inkSubtle)
                 .lineLimit(1).fixedSize()
-                .padding(.leading, BP.px(28))
+                .padding(.leading, BP.px(56))
                 .padding(.trailing, BP.gutter)
                 .frame(maxHeight: .infinity)
                 .background(
-                    LinearGradient(stops: [.init(color: BP.void_.opacity(0), location: 0), .init(color: BP.void_, location: 0.35)],
+                    LinearGradient(stops: [.init(color: BP.void_.opacity(0), location: 0), .init(color: BP.void_.opacity(0.85), location: 0.3), .init(color: BP.void_, location: 0.45)],
                                    startPoint: .leading, endPoint: .trailing)
                 )
                 .zIndex(1)
