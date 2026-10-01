@@ -706,6 +706,49 @@ r.ok("benchmark still works", (() => {
   sr.dispose();
 }
 
+// ---------------------- anime landscape backdrops (engine/animeArt.ts): metahub, else AniList banner, else Kitsu cover
+// Jikan metas carry background = the poster, so the Spotlight hero behind an anime card was the poster blurred.
+// animeArt.backdrop asks ani.zip for the IMDb id, verifies the metahub still (HEAD, an unknown tt is a 404),
+// then AniList bannerImage, then the Kitsu coverImage; each id is cached, a failure is null.
+{
+  const aa = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+  ]) });
+  const hits = [];
+  let down = false;
+  aa.node.host.fetch = async (req) => {
+    hits.push(`${req.method} ${req.url}`);
+    if (down) throw new Error("offline");
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    const maps = { "mal_id=1": { kitsu_id: 11, mal_id: 1, anilist_id: 101, imdb_id: "tt0000001" }, "mal_id=2": { kitsu_id: 12, mal_id: 2, anilist_id: 102, imdb_id: "tt0000002" },
+      "mal_id=3": { kitsu_id: 13, mal_id: 3, anilist_id: 103 }, "mal_id=4": { kitsu_id: 14, mal_id: 4, anilist_id: 104 }, "kitsu_id=15": { kitsu_id: 15, mal_id: 5, anilist_id: 105, imdb_id: "tt0000009" } };
+    const z = /^https:\/\/api\.ani\.zip\/mappings\?(.+)$/.exec(req.url);
+    if (z) return maps[z[1]] ? json({ mappings: maps[z[1]] }) : { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+    const mh = /^https:\/\/images\.metahub\.space\/background\/medium\/(tt\d+)\/img$/.exec(req.url);
+    if (mh) return mh[1] === "tt0000001" ? { status: 200, statusText: "OK", headers: { "content-type": "image/jpeg" }, url: req.url, body: "" } : { status: 404, statusText: "Not Found", headers: { "content-type": "text/plain" }, url: req.url, body: "" };
+    if (req.url === "https://graphql.anilist.co" && req.method === "POST") {
+      const { variables } = JSON.parse(req.body);
+      const banners = { 102: "https://s4.anilist.co/banner/102.jpg" };
+      return json({ data: { Media: { bannerImage: banners[variables.id] ?? null } } });
+    }
+    if (req.url.startsWith("https://kitsu.io/api/edge/anime/14?")) return json({ data: { id: "14", attributes: { coverImage: { large: "https://media.kitsu.app/anime/14/cover_image/large.jpg" } } } });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const AA = aa.engine.animeArt;
+  r.eq("animeArt.backdrop: an IMDb id from ani.zip gives the metahub 16:9 background", await AA.backdrop("mal:1", "One"), "https://images.metahub.space/background/medium/tt0000001/img");
+  const before = hits.length;
+  r.eq("animeArt.backdrop: cached per id (no second request)", [await AA.backdrop("mal:1", "One"), hits.length], ["https://images.metahub.space/background/medium/tt0000001/img", before]);
+  r.eq("animeArt.backdrop: metahub 404 falls through to the AniList bannerImage", await AA.backdrop("mal:2", "Two"), "https://s4.anilist.co/banner/102.jpg");
+  r.eq("animeArt.backdrop: no IMDb id and no banner falls through to the Kitsu coverImage", await AA.backdrop("mal:4", "Four"), "https://media.kitsu.app/anime/14/cover_image/large.jpg");
+  r.eq("animeArt.backdrop: nothing anywhere is null", await AA.backdrop("mal:3", "Three"), null);
+  r.eq("animeArt.backdrop: a passed IMDb id wins (metahub verified)", await AA.backdrop("kitsu:15", "Fifteen", "tt0000001"), "https://images.metahub.space/background/medium/tt0000001/img");
+  r.eq("animeArt.backdrop: not an anime id is null, no request", [await AA.backdrop("tmdb:5", "x"), await AA.backdrop("", "x")], [null, null]);
+  down = true;
+  r.eq("animeArt.backdrop: a network failure is null, never a throw", await AA.backdrop("mal:99", "Gone"), null);
+  down = false;
+  aa.dispose();
+}
+
 // --------------------------- (player parity pass 2) content advisory toast (use-content-advisory.ts), fixtures
 {
   const adv = loadEngine({ storage: new Map([

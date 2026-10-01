@@ -172,11 +172,30 @@ struct BPTitleArt: View {
         .task(id: key) { await commit() }
     }
 
+    /// Anime ids whose metas carry no real backdrop: Jikan sets `background` to the poster itself,
+    /// Kitsu / AniList / AniDB often set none, so the hero was the poster, upscaled and blurred.
+    private static let animeIdPrefixes: [String] = ["mal:", "kitsu:", "anilist:", "anidb:"]
+
+    private static func wantsAnimeBackdrop(_ m: Meta) -> Bool {
+        guard animeIdPrefixes.contains(where: { m.id.hasPrefix($0) }) else { return false }
+        let bg = m.background ?? ""
+        return bg.isEmpty || bg == m.poster
+    }
+
     private func commit() async {
-        let list = candidates
+        var list = candidates
         guard !list.isEmpty else { return }
         try? await Task.sleep(for: Self.settle)
         guard !Task.isCancelled else { return }
+        // engine/animeArt.ts: metahub's 16:9 background (what Movies / Shows show), else the AniList
+        // banner, else the Kitsu cover; null when none, and then the poster path below runs as before.
+        if let m = meta, Self.wantsAnimeBackdrop(m) {
+            let found: String? = try? await HarborEngine.shared.call("animeArt.backdrop", [m.id, m.name, String?.none])
+            guard !Task.isCancelled else { return }
+            if let found, !found.isEmpty {
+                list.insert(Candidate(url: Self.heroSized(found), portrait: false), at: 0)
+            }
+        }
         for wide in [true, false] {
             for c in list where !(wide && c.portrait) {
                 guard let u = URL(string: c.url) else { continue }
