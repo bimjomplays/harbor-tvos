@@ -35,8 +35,29 @@ struct BPTileStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader(onFocus: onFocus) { focused in
             configuration.label
-                .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius))
+                .modifier(BPTileFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius))
         }
+    }
+}
+
+/// (overnight polish, Apple TV look) A focused card the way tvOS lifts one: a clear grow, a deep soft
+/// shadow and a fine bright edge, instead of Big Picture's thick double ring (which read as a web
+/// focus outline on the TV and crowded the next row). Buttons and chips keep BPFocusModifier.
+struct BPTileFocusModifier: ViewModifier {
+    let focused: Bool
+    let pressed: Bool
+    var radius: CGFloat = BP.rXS
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(Color.white.opacity(focused ? 0.85 : 0), lineWidth: 2.5)
+            }
+            .shadow(color: .black.opacity(focused ? 0.7 : 0), radius: focused ? 26 : 0, y: focused ? 18 : 0)
+            .scaleEffect(focused ? (pressed ? 1.07 * BP.press : 1.07) : 1)
+            .animation(pressed ? .timingCurve(0.5, 0, 0.75, 0, duration: 0.09) : BP.ease, value: focused)
+            .animation(.timingCurve(0.5, 0, 0.75, 0, duration: 0.09), value: pressed)
     }
 }
 
