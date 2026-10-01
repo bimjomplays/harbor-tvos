@@ -6,6 +6,10 @@ struct ScoreChipsView: View {
     let meta: Meta?
     var surface = "card"
     var limit = 4
+    /// The gap after the chips, drawn only while there are chips. (device build 303) Callers used
+    /// to put it in their HStack's spacing, which SwiftUI keeps even for an empty chip row: a title
+    /// with no provider scores had its facts line indented by the gap.
+    var trailingGap: CGFloat = 0
     @State private var badges: [Badge] = []
     @State private var loadedFor: String?
     struct Badge: Decodable {
@@ -47,6 +51,7 @@ struct ScoreChipsView: View {
                 .accessibilityElement(children: .combine)
             }
         }
+        .padding(.trailing, badges.isEmpty ? 0 : trailingGap)
         .task(id: meta?.id) {
             guard let meta, loadedFor != meta.id else { return }
             // Focus glides across a rail; wait for it to settle before asking five providers.

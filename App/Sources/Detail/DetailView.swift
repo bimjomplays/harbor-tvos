@@ -610,10 +610,23 @@ struct DetailView: View {
                 // The fades are masked on the still ITSELF (before it is pinned top-trailing): masked
                 // after, the gradient ran over the whole page and the still's own left edge showed as
                 // a hard vertical line at 24 % of the width (CI screenshot 26-detail).
+                // (device build 303, real Apple TV) The two alpha masks left the still's bottom as a
+                // hard horizontal line on bright art (the fill image ran past its frame unclipped, so
+                // the masks never covered all of it). Clipped to its box, it now fades into the
+                // page's own void with opaque scrims on its leading and bottom edges, so no edge of
+                // the box can show whatever the art is.
                 RemoteImage(url: sized)
-                    .frame(width: g.size.width * 0.76, height: g.size.height * 0.75)
-                    .mask(LinearGradient(colors: [.clear, .black, .black], startPoint: .leading, endPoint: .init(x: 0.45, y: 0.5)))
-                    .mask(LinearGradient(colors: [.black, .black, .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.9)))
+                    .frame(width: g.size.width * 0.76, height: g.size.height * 0.8)
+                    .clipped()
+                    .overlay(
+                        LinearGradient(stops: [.init(color: BP.void_, location: 0), .init(color: BP.void_.opacity(0.55), location: 0.22),
+                                               .init(color: .clear, location: 0.5)], startPoint: .leading, endPoint: .trailing)
+                            .flipsForRightToLeftLayoutDirection(true)
+                    )
+                    .overlay(
+                        LinearGradient(stops: [.init(color: .clear, location: 0.3), .init(color: BP.void_.opacity(0.7), location: 0.7),
+                                               .init(color: BP.void_, location: 0.97)], startPoint: .top, endPoint: .bottom)
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             LinearGradient(colors: [BP.void_.opacity(0.85), BP.void_.opacity(0.4), .clear], startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
@@ -641,12 +654,13 @@ struct DetailView: View {
                 Text(model.meta.name).font(BP.display(52)).foregroundStyle(BP.ink).lineLimit(2).frame(maxWidth: BP.px(410), alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
             }
-            HStack(spacing: BP.px(12)) {
+            HStack(spacing: 0) {
                 // bp-detail: every provider the detail settings allow (use-bp-card-badges "detail").
-                ScoreChipsView(meta: model.meta, surface: "detail", limit: 6)
+                ScoreChipsView(meta: model.meta, surface: "detail", limit: 6, trailingGap: BP.px(12))
                 Text(model.meta.facts).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
+                    .padding(.trailing, BP.px(12))
                 // bp-hero-notes BpHeroMarks: one mark per connected server that has this title.
-                ForEach(model.titleServers) { server in MediaServerMark(server: server) }
+                ForEach(model.titleServers) { server in MediaServerMark(server: server).padding(.trailing, BP.px(12)) }
                 // BpHeroMarks origin?.name: the addon that served this title, its logo and name.
                 if let origin = model.meta.addonOrigin, !origin.name.isEmpty { AddonOriginMark(origin: origin) }
             }

@@ -52,10 +52,10 @@ struct SpotlightView: View {
                     .font(BP.display(36)).foregroundStyle(BP.ink)
                     .lineLimit(2).shadow(color: .black.opacity(0.5), radius: 12, y: 4)
             }
-            HStack(spacing: BP.px(10)) {
+            HStack(spacing: 0) {
                 // bp-spotlight: provider chips from use-bp-card-badges, then TMDB's own score, then facts.
-                ScoreChipsView(meta: meta, surface: "card", limit: 3)
-                if let s = meta?.tmdbScore, s > 0 { scoreChip("TMDB", String(format: "%.1f", s)) }
+                ScoreChipsView(meta: meta, surface: "card", limit: 3, trailingGap: BP.px(10))
+                if let s = meta?.tmdbScore, s > 0 { scoreChip("TMDB", String(format: "%.1f", s)).padding(.trailing, BP.px(10)) }
                 if let f = meta?.facts, !f.isEmpty {
                     Text(f).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
                 }
@@ -137,9 +137,17 @@ struct BPTitleArt: View {
     private var candidates: [Candidate] {
         guard let m = meta else { return [] }
         var out: [Candidate] = []
-        if let b = m.background, !b.isEmpty { out.append(Candidate(url: b, portrait: false)) }
-        if let p = m.poster, !p.isEmpty { out.append(Candidate(url: p, portrait: true)) }
+        if let b = m.background, !b.isEmpty { out.append(Candidate(url: Self.heroSized(b), portrait: false)) }
+        if let p = m.poster, !p.isEmpty { out.append(Candidate(url: Self.heroSized(p), portrait: true)) }
         return out
+    }
+
+    /// (device build 303) The hero art filled ~1460 pt of a 4K screen from whatever file the catalog
+    /// named: a TMDB w780 backdrop, or an anime card's small fixed-tier poster (MAL ~225 px wide),
+    /// drawn soft and blocky. Ask for TMDB's w1280 tier and the anime CDNs' biggest sibling file,
+    /// as the poster tiles already do (PosterSizing).
+    static func heroSized(_ url: String) -> String {
+        PosterSizing.sizeImageUrl(PosterSizing.upgradeFixedTierArt(url), 1280)
     }
 
     private var key: String { candidates.map { $0.url }.joined(separator: "|") }

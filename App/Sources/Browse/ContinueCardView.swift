@@ -17,7 +17,12 @@ struct ContinueCardView: View {
         let snap: String? = snapshotArt
         let art: String? = item.background ?? item.poster
         ZStack(alignment: .bottomLeading) {
+            // (device build 303, Anime room) Unsized, a fill image took the art's own aspect and
+            // widened the ZStack past the card: the title and pill, anchored bottom-leading in that
+            // wider stack, started off the card's left edge ("e Adventure: Stone Ocean…").
             RemoteImage(url: snap ?? art, fallback: snap != nil ? art : nil)
+                .frame(width: Self.size.width, height: Self.size.height)
+                .clipped()
             LinearGradient(colors: [.clear, BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.4), endPoint: .bottom)
             VStack(alignment: .leading, spacing: BP.px(4)) {
                 if let logo = item.logo, !logo.isEmpty {
@@ -60,6 +65,7 @@ struct ContinueCardView: View {
                 .padding(.top, BP.px(4))
             }
             .padding(BP.px(11))
+            .frame(width: Self.size.width, alignment: .leading)
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))

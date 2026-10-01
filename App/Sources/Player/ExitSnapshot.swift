@@ -68,7 +68,12 @@ final class ExitSnapshotStore: @unchecked Sendable {
 
     init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        dir = caches.appendingPathComponent("harbor-cw-snapshots", isDirectory: true)
+        // (device build 303) "-v2": frames saved before the blank-frame check (FrameGrab.isBlank)
+        // were often a black or white plate (the mpv white-screen builds), drawn on Continue
+        // Watching as an empty card with no art. They are dropped once; the card's own art returns.
+        dir = caches.appendingPathComponent("harbor-cw-snapshots-v2", isDirectory: true)
+        let old: URL = caches.appendingPathComponent("harbor-cw-snapshots", isDirectory: true)
+        DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: old) }
     }
 
     /// The file a title's frame is under: its id hashed (ids carry ":" and "/").
@@ -237,6 +242,32 @@ enum FrameGrab {
         return jpeg(cg, fullQuality: fullQuality)
     }
 
+    /// (device build 303) A frame with no picture in it: every sampled pixel within a few levels
+    /// of the same brightness (a black frame before the first decode, the white plate of the mpv
+    /// display-switch bug). Saving it would replace the card's art with an empty plate.
+    static func isBlank(_ ctx: CGContext) -> Bool {
+        guard let base = ctx.data, ctx.width > 0, ctx.height > 0, ctx.bitsPerPixel == 32 else { return false }
+        let bytes = base.assumingMemoryBound(to: UInt8.self)
+        let row: Int = ctx.bytesPerRow
+        var lo = 255
+        var hi = 0
+        let stepX: Int = max(1, ctx.width / 24)
+        let stepY: Int = max(1, ctx.height / 14)
+        var y = 0
+        while y < ctx.height {
+            var x = 0
+            while x < ctx.width {
+                let p: Int = y * row + x * 4
+                let luma: Int = (Int(bytes[p]) * 3 + Int(bytes[p + 1]) * 6 + Int(bytes[p + 2])) / 10
+                lo = min(lo, luma)
+                hi = max(hi, luma)
+                x += stepX
+            }
+            y += stepY
+        }
+        return hi - lo < 14
+    }
+
     /// The frame drawn at the target width (height by the frame's aspect), then JPEG.
     static func jpeg(_ image: CGImage, fullQuality: Bool) -> Data? {
         guard image.width > 0, image.height > 0 else { return nil }
@@ -247,7 +278,7 @@ enum FrameGrab {
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info) else { return nil }
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let small = ctx.makeImage() else { return nil }
+        guard !isBlank(ctx), let small = ctx.makeImage() else { return nil }
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out as CFMutableData, "public.jpeg" as CFString, 1, nil) else { return nil }
         let quality: Double = fullQuality ? fullJpegQuality : thumbJpegQuality

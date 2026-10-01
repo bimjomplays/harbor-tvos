@@ -273,21 +273,34 @@ struct BPRailView<Lead: View>: View {
     /// Where the focused row's top parks: just under the spotlight copy (use-bp-rail shifts the
     /// active row's top to the rail's top edge, right under the hero).
     private var parkOffset: CGFloat { topInset + BP.px(6) }
-    /// (layout pass) scrollTo(id, anchor: UnitPoint(y: a)) lines up the point at `a` of the ROW's
-    /// own height with the point at `a` of the viewport, so the old `parkOffset / 1080` anchor put
-    /// a ~580 pt poster row's top ~250 pt higher than meant: its header and posters sat under the
-    /// hero title and description, and in the rail's top fade. Each row now carries a marker
-    /// `parkOffset` above its top; scrolling that marker to the top parks the row's top exactly.
-    private static func parkID(_ key: String) -> String { BPRail.parkID(key) }
+    /// (layout pass) An anchor of `parkOffset / 1080` ignored the row's own height, and the marker
+    /// that replaced it (a 1 pt view parkOffset above each row's top) never worked either:
+    /// (device build 303, real Apple TV + CI screenshot 19) inside a
+    /// LazyVStack, scrollTo(id) on a view nested in a row's background scrolls the row itself, so
+    /// every parked row landed with its top at the screen's top edge, its header and most of its
+    /// posters under the spotlight copy. Parking now scrolls the row (or lead section) by its own
+    /// id, with the anchor worked out from its measured height: scrollTo lines up the point at `a`
+    /// of the row with the point at `a` of the viewport, so rowTop = a × (viewport − rowHeight);
+    /// a = parkOffset / (viewport − rowHeight) puts the row's top exactly at parkOffset.
+    @State private var heights: [String: CGFloat] = [:]
+    @State private var viewport: CGFloat = 1080
+
+    static func parkAnchor(offset: CGFloat, height: CGFloat?, viewport: CGFloat) -> UnitPoint {
+        guard let h = height, h > 0, viewport > 0, abs(viewport - h) > 1 else { return .top }
+        return UnitPoint(x: 0.5, y: offset / (viewport - h))
+    }
 
     private func park(_ key: String, _ proxy: ScrollViewProxy) {
-        proxy.scrollTo(Self.parkID(key), anchor: .top)
+        let isRow: Bool = rows.contains { $0.key == key }
+        let target: String = isRow ? key : BPRail.parkID(key)
+        proxy.scrollTo(target, anchor: Self.parkAnchor(offset: parkOffset, height: heights[key], viewport: viewport))
     }
 
     /// What a lead section needs to park itself like a row (BPRailLeadMark): the rows' park
     /// offset, and the same focusedRow → park path the rows take.
     private var parking: BPRailParking {
-        BPRailParking(offset: parkOffset, park: { key in focusedRow = key })
+        BPRailParking(offset: parkOffset, park: { key in focusedRow = key },
+                      report: { key, h in if heights[key] != h { heights[key] = h } })
     }
 
     private func seeAllAction(_ row: BrowseRow) -> (() -> Void)? {
@@ -324,7 +337,7 @@ struct BPRailView<Lead: View>: View {
                 LazyVStack(alignment: .leading, spacing: BP.px(26)) {
                     Color.clear.frame(height: topInset).id(Self.topID)
                     // Continue Watching / Live sit here: over the plain rows below them.
-                    lead().id("lead").zIndex(1)
+                    lead().zIndex(1)
                         .environment(\.bpRailParking, parking)
                     ForEach(rows.uniquedById()) { row in   // (bug pass) duplicate row keys
                         BPRowView(row: row, onFocus: { m in focusedRow = row.key; onFocus(m, row) }, onSelect: onSelect,
@@ -337,12 +350,9 @@ struct BPRailView<Lead: View>: View {
                                   onNavEdge: navEdge(row),
                                   onSeeAllHold: { on in onSeeAllHold?(row.key, on) })
                             .id(row.key)
-                            .background(alignment: .top) {
-                                // The park marker: parkOffset above the row's top edge.
-                                Color.clear.frame(width: 1, height: 1)
-                                    .alignmentGuide(.top) { [off = parkOffset] _ in off }
-                                    .id(Self.parkID(row.key))
-                                    .accessibilityHidden(true)
+                            // The row's height, for its park anchor (parkAnchor).
+                            .onGeometryChange(for: CGFloat.self) { g in g.size.height } action: { [key = row.key] h in
+                                if heights[key] != h { heights[key] = h }
                             }
                             // The row holding focus draws its lifted tile and caption over the row below.
                             .zIndex(heldRow == row.key ? 2 : 0)
@@ -361,12 +371,17 @@ struct BPRailView<Lead: View>: View {
             // under the hero in the first place — so this rebuilds that boundary instead of
             // softening it: fully hidden for the whole inset except one short `railFade` at its
             // own bottom edge, so a row is invisible until the last moment it slides into place.
+            .onGeometryChange(for: CGFloat.self) { g in g.size.height } action: { h in viewport = h }
             .mask(
                 VStack(spacing: 0) {
                     Color.clear.frame(height: max(0, topInset - railFade))
                     LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
                         .frame(height: min(topInset, railFade))
                     Color.black
+                    // (device build 303) The shell's hint bar sits over the screen's bottom edge:
+                    // rows passing under it fade out first instead of running under the chips.
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: BP.hintHeight + BP.px(24))
                 }
             )
             .onChange(of: focusedRow) { _, key in
@@ -413,6 +428,8 @@ enum BPRail {
 struct BPRailParking {
     var offset: CGFloat
     var park: (String) -> Void
+    /// A lead section's measured height (its park anchor, BPRailView.parkAnchor).
+    var report: (String, CGFloat) -> Void
 }
 
 private struct BPRailParkingKey: EnvironmentKey { static let defaultValue: BPRailParking? = nil }
@@ -434,13 +451,11 @@ struct BPRailLeadMark: ViewModifier {
     @Environment(\.bpRailParking) private var parking
 
     func body(content: Content) -> some View {
-        let off: CGFloat = parking?.offset ?? 0
-        return content
-            .background(alignment: .top) {
-                Color.clear.frame(width: 1, height: 1)
-                    .alignmentGuide(.top) { _ in off }
-                    .id(BPRail.parkID(key))
-                    .accessibilityHidden(true)
+        content
+            // The section is its own lazy child of the rail: parking scrolls it by this id.
+            .id(BPRail.parkID(key))
+            .onGeometryChange(for: CGFloat.self) { g in g.size.height } action: { h in
+                parking?.report(key, h)
             }
             .onChange(of: held) { _, now in
                 guard now, let rail = parking else { return }
