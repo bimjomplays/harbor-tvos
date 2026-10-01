@@ -35,6 +35,7 @@ import { persistEffective } from "@/lib/settings/profile-store";
 import { markSettingsPatched } from "./sync";
 import { titleTokensPresent } from "@/lib/streams/trust";
 import { isAddonRanked } from "@/lib/streams/addon-detect";
+import { addonKey, declaresStream } from "@/lib/streams/addon-priority";
 import { isStreamDead } from "@/lib/dead-streams";
 import { readPlayback, savePlayback, streamMatchesEntry, streamMatchesSource } from "@/lib/playback-history";
 import { readSeasonLock, saveSeasonLock } from "@/lib/season-lock";
@@ -225,6 +226,45 @@ function pickedStream(token: string, streamIndex: number, key: string | null | u
 }
 
 /**
+ * (TV, owner request 2026-10-01) The picker groups rows by `addonOrder`, so settings.streamPriority
+ * (Settings → Stream priority: the addons whose sources lead) goes first there too; the rest keep
+ * the installed order. Upstream applies the same preference in applyStreamPriority.
+ */
+function prioritisedOrder(addons: Addon[], settings: Settings): string[] {
+  const prefs = settings.streamPriority ?? [];
+  if (prefs.length === 0) return addons.map((a) => a.transportUrl);
+  const pos = new Map(prefs.map((p, i) => [p.key, i] as const));
+  return addons
+    .map((a, i) => ({ url: a.transportUrl, rank: pos.get(addonKey(a)) ?? prefs.length + i }))
+    .sort((x, y) => x.rank - y.rank)
+    .map((x) => x.url);
+}
+
+/** Settings → Stream priority: the stream addons this profile can reorder, current order first. */
+export async function priorityList(profileId: string, linked: boolean, authKey: string | null): Promise<Array<{ key: string; name: string; first: boolean }>> {
+  const settings = loadEffective(profileId, linked);
+  const addons = (await gatherStreamAddons(authKey, settings)).filter(declaresStream);
+  const firstKey = settings.streamPriority?.[0]?.key ?? null;
+  const seen = new Set<string>();
+  return addons.flatMap((a) => {
+    const key = addonKey(a);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ key, name: a.manifest?.name ?? key, first: key === firstKey }];
+  });
+}
+
+/** Puts one addon's sources first (null clears the preference). */
+export function setPriorityFirst(profileId: string, linked: boolean, key: string | null, name: string | null): boolean {
+  const settings = loadEffective(profileId, linked);
+  const rest = (settings.streamPriority ?? []).filter((p) => p.key !== key);
+  const next = key ? [{ key, name: name ?? key }, ...rest] : [];
+  persistEffective({ ...settings, streamPriority: next }, profileId, linked);
+  markSettingsPatched(["streamPriority"]);
+  return true;
+}
+
+/**
  * Runs the whole picker pipeline for a title. Partial results arrive as
  * `harbor-tvos:streams` events `{ token, phase: "partial" | "progress", ... }`; the returned
  * value is the final result. `cancelSearch(token)` aborts.
@@ -286,7 +326,7 @@ export async function search(
     finished = true;
     lastResults.set(token, result);
     const seasonLock = !!settings.seasonSourceLock && (meta.type === "series" || /^(kitsu|mal|anilist|anidb):/.test(meta.id));
-    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: addons.map((a) => a.transportUrl), debridCount: debridsFor(settings).length, seasonLock, addonRanked: addons.some((a) => isAddonRanked(a)), setup };
+    return { token, imdb, streamIds, addonCount: addons.length, result, addonOrder: prioritisedOrder(addons, settings), debridCount: debridsFor(settings).length, seasonLock, addonRanked: addons.some((a) => isAddonRanked(a)), setup };
   } catch (e) {
     return { token, imdb: UNRESOLVED, streamIds: [], addonCount: 0, result: null, error: (e as Error).message };
   } finally {

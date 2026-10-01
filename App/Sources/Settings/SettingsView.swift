@@ -84,6 +84,7 @@ struct SettingsView: View {
                 section("Addons") {
                     row("Stream and catalog addons", detail: "Installed on this TV plus the ones on your Stremio account")
                     Button("Manage addons") { sheet = .addons }.buttonStyle(BPActionStyle(primary: true))
+                    StreamPriorityPanel()
                 }
                 section("Artwork and rows") {
                     row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB key saved",

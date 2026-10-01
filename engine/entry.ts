@@ -597,6 +597,9 @@ export const streamsRoom = {
   setActiveStreamFilter: streamGlue.setActiveStreamFilter,
   /** bp-stream-filters setSort: settings.streamSort ("addon" | "harbor"). */
   setStreamSort: streamGlue.setStreamSort,
+  /** Settings → Stream priority (settings.streamPriority): the stream addons, and the one put first. */
+  priorityList: streamGlue.priorityList,
+  setPriorityFirst: streamGlue.setPriorityFirst,
   /** bp-stream-filters setStreamMode: settings.streamMode ("both" | "addons" | "p2p"). */
   setStreamMode: streamGlue.setStreamMode,
   /** (player parity pass 2) use-bp-streams hostMatch: scoreSourceMatch per row against the room host's source. */
