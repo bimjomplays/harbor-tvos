@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 05:34 UTC, overnight — batch 8 + upload #7 of the day)
+- Batch 8: hero logo capped at 72 px canvas (Toy Story 5's logo climbed under the top bar), anime hero
+  actions no longer repeat the score ("8.1" floating over Start Watching).
+- Checked on 316: Anime room CW cards keep their text on the card; Shows/Movies parks look right.
+- Open: Anime Continue Watching shows JoJo twice (two entries, "Episode 2 · 25m left" and "· 23m left" —
+  probably a cloud and a local entry under different ids); not touched.
+- Dispatch 36820352880 uploads batches 7+8 (the 7th upload today).
+
 ## Status (2026-10-01 05:31 UTC, overnight — CI GREEN; batch 7 pushed)
 - Run 36816586333 (dispatch of the CI-312 fix, build 316) passed the simulator UI tests: **green**.
 - Batch 7 pushed to main (run 36820148360, tests only; next upload bundles more): episode focus edge on
