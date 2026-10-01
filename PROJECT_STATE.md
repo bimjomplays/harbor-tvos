@@ -3,6 +3,11 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 17:25 UTC — 1.3.1 (345) verified)
+Installed 1.3.1; Timer setting survived the update. Clear Continue Watching ("Cleared 0 items", the
+row was already empty) wiped the saved positions: The Ministry of Ungentlemanly Warfare, which had
+"1h 45m left", now opens on **Play**, not Resume. Mark watched shows the eye glyph. Next upload: 1.3.2.
+
 ## Status (2026-10-01 16:10 UTC — GitHub macOS runner outage)
 Run 36884214520 (and its rerun) never got a machine: "The job was not acquired by Runner of type
 hosted even after multiple attempts" / "capacity constraints … macOS arm64". Not our code; the last
