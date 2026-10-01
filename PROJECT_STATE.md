@@ -3,6 +3,24 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 04:15 UTC, overnight — build 311 verified on the TV; batch 5)
+**Verified on the Apple TV (build 311):** the white/grey platter over video is GONE (bare stage button):
+a 4K HEVC film plays clean from the first frame. The new player chrome renders as designed (title +
+round glass rail on one line, white scrubber, elapsed · video params / Ends · −remaining, centred
+transport with the bigger Play/Pause). Down from the stage lands on Play/Pause. Detail's Resume is
+compact. No hint bar anywhere with the Siri Remote.
+**Found on 311 and fixed in batch 5** (branch `overnight`, dispatched as its own upload so main's test
+run is not cancelled):
+- Focus captions drew over their own button (alignment guides ignored) → padded overlay anchored to the
+  far edge; chrome bottom padding raised into the safe area.
+- Up from the centred transport found nothing (rail is at the far right) → explicit Up → Subtitles,
+  Down from the rail → Play/Pause.
+- Leave dialog: the bright frame and burned-in subtitles ran through its buttons → whole-frame dim.
+- Rail parks and back-to-top were dropped while tvOS's own focus scroll animated (the rail ended a
+  step behind; Jump back in kept the ring while hidden under the hero) → re-issued at 0.45 s and 0.9 s.
+Open: Home's seeded first focus still lands unparked until the first move (should be covered by the
+re-issue); the Leave dialog says "Leave the show?" for films too (upstream copy).
+
 ## Status (2026-10-01 03:50 UTC, overnight — batch 3: the real white-screen fix)
 - **The grey/milky full-screen platter over video was still there on build 305** (seen on the TV: it
   covers the picture until a dialog disables the stage). `.focusEffectDisabled()` does not remove
