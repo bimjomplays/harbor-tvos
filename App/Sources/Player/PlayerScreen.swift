@@ -1415,6 +1415,7 @@ struct PlayerScreen: View {
     /// (overnight polish) Apple's numbered skip glyphs ("gobackward.10") for the steps SF Symbols
     /// draws; any other step keeps the plain arrow.
     static func stepGlyph(_ base: String, _ seconds: Double) -> String {
+        guard seconds.isFinite, seconds > 0, seconds < 1000 else { return base }
         let n: Int = Int(seconds.rounded())
         return [5, 10, 15, 30, 45, 60, 75, 90].contains(n) ? "\(base).\(n)" : base
     }
