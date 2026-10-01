@@ -6,7 +6,7 @@ point), then `PLAN.md`. Do not read the whole `reference/` tree up front; open u
 you need them.
 
 ## Eyes and hands on the real Apple TV (2026-09-30) — USE THIS, do not guess from code
-The owner's Apple TV ("Bedroom", 10.0.0.230, tvOS 26) is paired to this PC. Helper: `~/ai/atv/atv`
+The owner's Apple TV (tvOS 26, on the home LAN) is paired to this PC. Helper: `~/ai/atv/atv`
 (outside the repo; credentials are private, never commit them):
 - `~/ai/atv/atv shot` → a real 4K screenshot + a 1280px `_small.png` copy (Read it). This is how the
   build-291/303 "white screen" was found in one minute: tvOS's focus platter on the player's
