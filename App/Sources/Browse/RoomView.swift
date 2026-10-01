@@ -100,7 +100,7 @@ struct RoomView: View {
                                // bp-quick-panel acts on a title; band tiles (services, addons, collections) have none.
                                guard !["service", "addon", "collection"].contains(m.type) else { return }
                                BPSound.shared.open(); quickFromCw = false; quick = m
-                           }, topInset: heroHeight, parkAt: heroHeight - BP.px(18),
+                           }, topInset: heroHeight, parkAt: heroHeight - BP.px(10),
                            restoreRoute: model.restoreKey, entry: model.entry,
                            onHold: { key, held in model.hold(key, held) },
                            onSeeAllHold: { key, on in model.seeAllHold(key, on) },
