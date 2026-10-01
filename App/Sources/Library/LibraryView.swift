@@ -404,7 +404,8 @@ struct LibraryView: View {
                     BPNote(text: errorText, tone: BP.danger).padding(.top, BP.px(10))
                 }
             }
-            .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(16)).padding(.bottom, BP.hintHeight + BP.px(40))
+            // (device build 314) +16 put the chip row under the focused tab's name pill.
+            .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(34)).padding(.bottom, BP.hintHeight + BP.px(40))
         }
         .task { await model.start() }
         // bp-view-state: the tab is kept for the next visit (the filters are this visit's own).
