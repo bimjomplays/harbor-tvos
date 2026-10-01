@@ -3,6 +3,11 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 15:51 UTC — owner setting)
+Owner asked: Settings → Home rows → "When the latest episode ends" = **Timer** (set on the TV): a
+caught-up show keeps its Continue Watching card with "Next in …" until the next episode airs, then
+it reads Up Next. Hide-mode resurfacing (45-day window, 6 h checks) is the fallback.
+
 ## Status (2026-10-01 15:27 UTC — 1.3.0 (343) verified)
 **Verified on 1.3.0:** Detail row = Resume, Sources, Watchlist, Watched, Trailer, More; More opens tvOS's
 action sheet (Add to favorites, Rate this, Add to list, Read more, Cancel); Rate this from the sheet
