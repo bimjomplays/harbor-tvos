@@ -2754,7 +2754,8 @@ struct PlayerScreen: View {
         ZStack {
             Color.black.opacity(0.55).ignoresSafeArea()
             VStack(spacing: BP.px(12)) {
-                Text("Leave the show?").font(BP.display(28)).foregroundStyle(Color.white).multilineTextAlignment(.center)
+                // (device build 345) A film asked "Leave the show?"; upstream's copy fits an episode.
+                Text(T(context?.meta.type == "movie" ? "Leave the movie?" : "Leave the show?")).font(BP.display(28)).foregroundStyle(Color.white).multilineTextAlignment(.center)
                 Text("We'll save your spot so you can pick up right where you left off.").font(BP.sans(14.5))
                     .foregroundStyle(Color.white.opacity(0.7)).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
