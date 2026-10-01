@@ -87,6 +87,9 @@ struct PlayerScreen: View {
     @State private var muted = false
     /// bp-player-scrub nudge(): presses accumulate into one seek committed 420 ms after the last.
     @State private var pendingSeek: Double?
+    /// Touch-surface scrubbing (scrubSwipe): where the swipe began, and when it last moved.
+    @State private var scrubBase: Double?
+    @State private var lastScrubAt = Date.distantPast
     @State private var seekRun = 0
     @State private var seekCommit: Task<Void, Never>?
     /// player.tsx autoNextCancelled: "Keep watching" on the up-next card.
@@ -466,6 +469,8 @@ struct PlayerScreen: View {
                 PlayerDiagnosticsOverlay(engine: engine, url: playURL, status: status)
             }
         }
+        // Siri Remote touch-surface scrubbing (RemoteScrub.swift).
+        .background(RemoteScrubCatcher(enabled: scrubEnabled, onChanged: { f in scrubSwipe(f) }, onEnded: { scrubSwipeEnded() }))
         // (overnight polish) Subtitles rise over the chrome while it is up (mpv only).
         .onChange(of: chromeShown) { _, up in (controller as? MPVPlayerController)?.setSubtitleLift(up) }
         .onChange(of: leaveConfirm) { _, up in (controller as? MPVPlayerController)?.setSubtitlesHidden(up) }
@@ -1324,7 +1329,7 @@ struct PlayerScreen: View {
             }
             if !isLive {
                 // (perf pass 4) Both observe the clock themselves.
-                PlayerClockReader(clock) { c in seekBar(c) }
+                scrubberControl
             }
             ZStack {
                 if isLive {
@@ -1365,7 +1370,7 @@ struct PlayerScreen: View {
         // (device build 311) The rail sits at the far right, outside Up's reach from the centred
         // transport: the press found nothing. Up goes to the rail's Subtitles, Down from the rail back.
         .onMoveCommand { dir in
-            if dir == .up { focus = .chip("Subtitles") }
+            if dir == .up { focus = .chip(isLive ? "Subtitles" : "scrubber") }
         }
     }
 
@@ -1408,7 +1413,7 @@ struct PlayerScreen: View {
         }
         .focusSection()
         .onMoveCommand { dir in
-            if dir == .down { focus = .chip("playpause") }
+            if dir == .down { focus = .chip(isLive ? "playpause" : "scrubber") }
         }
     }
 
@@ -1430,7 +1435,7 @@ struct PlayerScreen: View {
 
     /// bp-player-scrub.tsx: buffered fill under the played fill; while presses accumulate, a
     /// marker stays where playback really is.
-    private func seekBar(_ c: PlayerClock) -> some View {
+    private func seekBar(_ c: PlayerClock, focused: Bool = false) -> some View {
         let at: Double = c.snap.position
         let duration: Double = c.snap.duration
         let shown: Double = pendingSeek ?? at
@@ -1453,9 +1458,17 @@ struct PlayerScreen: View {
                         .fixedSize()
                         .position(x: bubbleX(g.size.width * fraction(shown, of: duration), width: g.size.width, edge: edge), y: -BP.px(18))
                 }
+                // The focused scrubber shows its playhead, as Apple's does.
+                if focused {
+                    Circle().fill(Color.white)
+                        .frame(width: BP.px(15), height: BP.px(15))
+                        .shadow(color: Color.black.opacity(0.5), radius: 6, y: 2)
+                        .position(x: g.size.width * fraction(shown, of: duration), y: g.size.height / 2)
+                }
             }
         }
-        .frame(height: BP.px(6))
+        .frame(height: BP.px(focused ? 9 : 6))
+        .animation(BP.easeFast, value: focused)
         .padding(.vertical, BP.px(3))
         // bp-player-scrub.tsx draws the track from the physical left (left-0, left: %) under rtl too;
         // mirrored, the fill ran from the right and the pending-seek mark's offset left the bar.
@@ -1505,6 +1518,8 @@ struct PlayerScreen: View {
     /// the last; a held direction ramps the step 1× → 3× (after 10) → 6× (after 26).
     private func nudgeSeek(ahead: Bool) {
         guard controller != nil else { return }
+        // A swipe on the touch surface also arrives as a move command: the scrub owns it.
+        if Date().timeIntervalSince(lastScrubAt) < 0.35 { return }
         let run = seekRun
         seekRun = run + 1
         let scale: Double = run < 10 ? 1 : (run < 26 ? 3 : 6)
@@ -1513,9 +1528,14 @@ struct PlayerScreen: View {
         let cap = clock.snap.duration > 0 ? clock.snap.duration - 1 : base + delta
         pendingSeek = max(0, min(cap, base + delta))
         wake()
+        commitSeek(after: 420)
+    }
+
+    /// The pending seek lands `ms` after the last press or swipe (0: now).
+    private func commitSeek(after ms: Int) {
         seekCommit?.cancel()
         seekCommit = Task {
-            try? await Task.sleep(for: .milliseconds(420))
+            if ms > 0 { try? await Task.sleep(for: .milliseconds(ms)) }
             if Task.isCancelled { return }
             if let target = pendingSeek {
                 if !together.interceptSeek(to: target, controller: controller) {
@@ -1526,6 +1546,63 @@ struct PlayerScreen: View {
             pendingSeek = nil
             seekRun = 0
         }
+    }
+
+    /// (owner request 2026-10-01) Siri Remote swipe scrubbing (RemoteScrubCatcher): the playhead
+    /// follows the swipe, a full swipe across the touch surface moving 15 % of the film (90 s to
+    /// 15 min); it lands half a second after the finger lifts, with the time bubble over the bar.
+    private func scrubSwipe(_ fraction: CGFloat) {
+        let duration: Double = clock.snap.duration
+        guard controller != nil, duration > 0 else { return }
+        lastScrubAt = Date()
+        if scrubBase == nil {
+            seekCommit?.cancel()
+            scrubBase = pendingSeek ?? clock.snap.position
+        }
+        let span: Double = min(900, max(90, duration * 0.15))
+        let target: Double = (scrubBase ?? 0) + Double(fraction) * span
+        pendingSeek = max(0, min(duration - 1, target))
+        wake()
+    }
+
+    private func scrubSwipeEnded() {
+        lastScrubAt = Date()
+        scrubBase = nil
+        if pendingSeek != nil { commitSeek(after: 500) }
+    }
+
+    /// Scrubbing makes sense while the video or the scrubber holds the ring, with nothing over them.
+    private var scrubEnabled: Bool {
+        guard !isLive, panel == nil, !leaveConfirm, resumePending == nil, !roomOpen, !pipActive, !stillPrompt else { return false }
+        return focus == .surface || focus == .chip("scrubber")
+    }
+
+    /// Select on the focused scrubber: lands a pending seek at once, else play / pause.
+    private func scrubberSelect() {
+        if pendingSeek != nil { commitSeek(after: 0) } else { togglePause() }
+        wake()
+    }
+
+    /// (owner request 2026-10-01) The progress bar takes the ring like any control (Apple's player):
+    /// Down from the rail lands on it, Left / Right step through the film, Select plays / pauses or
+    /// lands a pending seek, and touch-surface swipes scrub while it is focused.
+    private var scrubberControl: some View {
+        Button { scrubberSelect() } label: {
+            PlayerClockReader(clock) { c in seekBar(c, focused: focus == .chip("scrubber")) }
+        }
+        .buttonStyle(BPBareButtonStyle())
+        .focused($focus, equals: .chip("scrubber"))
+        .onMoveCommand { dir in
+            switch dir {
+            case .left: nudgeSeek(ahead: false)
+            case .right: nudgeSeek(ahead: true)
+            case .up: focus = .chip("Subtitles")
+            case .down: focus = .chip("playpause")
+            default: break
+            }
+        }
+        .accessibilityLabel(Text(T("Seek")))
+        .modifier(PlayerSeekValue(clock: clock, isLive: isLive, pending: pendingSeek))
     }
 
     private func chip(_ label: String, _ icon: String, id: String? = nil, active: Bool = false, action: @escaping () -> Void) -> some View {
