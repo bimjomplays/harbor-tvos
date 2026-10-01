@@ -85,8 +85,11 @@ struct PlayerSubtitlesPanel: View {
     @State private var seededEmpty = false
 
     var body: some View {
-        ZStack {
-            BP.void_.opacity(0.88).ignoresSafeArea()
+        // (owner request 2026-10-01, Apple TV look) A sheet docked at the right over a lightly dimmed
+        // picture, instead of a near full-screen card over a 88 % black: the video stays in view.
+        ZStack(alignment: .trailing) {
+            LinearGradient(colors: [Color.black.opacity(0.25), Color.black.opacity(0.7)], startPoint: .leading, endPoint: .trailing)
+                .ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: BP.px(5)) {
                     Label("Subtitles", systemImage: "captions.bubble").font(BP.display(26)).foregroundStyle(BP.ink)
@@ -126,9 +129,15 @@ struct PlayerSubtitlesPanel: View {
                 .focusSection()
             }
             .padding(.horizontal, BP.px(30))
-            .frame(width: BP.px(1049), height: BP.px(551), alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(BP.panel))
-            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(BP.edge, lineWidth: 1))
+            .frame(width: BP.px(700), alignment: .topLeading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(.ultraThinMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(Color.black.opacity(0.45)))
+            )
+            .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .padding(.vertical, BP.px(28))
+            .padding(.trailing, BP.px(28))
         }
         .onAppear {
             if target == nil { target = home; query = context?.meta.name ?? title }
