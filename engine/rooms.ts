@@ -330,7 +330,14 @@ async function continueWatchingPool(authKey: string | null, settings: Settings, 
     .map((i) => ({ i, k: cwSortKey(i) }))
     .sort((a, b) => b.k - a.k)
     .map((e) => e.i)
-    .filter((i) => (seen.has(i._id) ? false : (seen.add(i._id), true)));
+    .filter((i) => (seen.has(i._id) ? false : (seen.add(i._id), true)))
+    // (TV, device build 316) The same anime under two catalogue ids (a cloud entry keyed kitsu:, a
+    // local one keyed mal:) showed twice in the row with the same episode. Newest wins (sorted above).
+    .filter((i) => {
+      if (!isAnimeCwItem(i) || !i.name) return true;
+      const key = "anime-name:" + i.name.trim().toLowerCase();
+      return seen.has(key) ? false : (seen.add(key), true);
+    });
   return { items: merged.slice(0, limit), cloud, local };
 }
 
