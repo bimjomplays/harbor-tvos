@@ -410,6 +410,19 @@ struct BPRailView<Lead: View>: View {
                 guard old != new, let key = focusedRow else { return }
                 DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
             }
+            // (device build 307) Focus left the rail altogether (Up to the top bar): the rail went on
+            // showing whatever the last park or tvOS's own focus scroll left, Jump back in half under
+            // the hero copy. It goes back to rest, as a page does when its first row is left upward.
+            .onChange(of: heldRow == nil && !leadHeld) { _, away in
+                guard away else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // A lead section that parked itself (Discover's bands) holds focusedRow; leave it.
+                    let onRow: Bool = focusedRow.map { k in rows.contains { $0.key == k } } ?? true
+                    guard heldRow == nil, onRow else { return }
+                    focusedRow = nil
+                    withAnimation(BP.easeSlow) { proxy.scrollTo(Self.topID, anchor: .top) }
+                }
+            }
             // use-bp-rail parks every rail row, the lead ones too. Up from a parked row onto
             // Continue Watching, Live or the anime actions left them where they were: in the top
             // band, under the spotlight copy (drawn over the rail). The rail goes back to rest.
