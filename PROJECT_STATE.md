@@ -3,6 +3,30 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 03:25 UTC, overnight session — streaming polish on the real Apple TV)
+Eyes on the device (`~/ai/atv/atv shot`) on build 303 found, and commits `49f09a6` + the re-park follow-up fix:
+- **Rows parked under the hero** (Home/Movies/Shows/Anime, also CI screenshot 19): the park marker (a 1 pt view
+  `parkOffset` above each row, scrolled to with `anchor: .top`) never worked — inside a LazyVStack, scrollTo on a
+  nested id scrolls the row itself, so every focused row's top went to y≈0, header and most posters under the hero
+  copy. BPRailView now measures each row / lead section (`onGeometryChange`) and scrolls it by its own id with
+  `anchor.y = parkOffset / (viewport − rowHeight)`; re-parks when the parked row's height changes. Discover's lead
+  sections carry `.id(parkID)` themselves now (the `"lead"` id is gone).
+- **Hint bar over posters:** the rail fades out over the bottom `hintHeight + 24px`.
+- **Posters 177 → 158 px canvas** (266×399 pt): a parked poster row, its caption and the next header fit.
+- **Continue Watching card text off the card's left edge** (unsized fill image widened the ZStack): art framed + clipped.
+- **Empty CW cards:** exit snapshots that are a blank plate (black/white frame) are no longer saved
+  (`FrameGrab.isBlank`); the store moved to `harbor-cw-snapshots-v2`, old frames deleted once.
+- **Facts line indented** when a title has no provider scores (HStack spacing kept for an empty ScoreChipsView):
+  `trailingGap` on ScoreChipsView; Spotlight + Detail use spacing 0.
+- **Blurry hero art:** BPTitleArt asks for TMDB w1280 and the anime CDNs' biggest sibling file.
+- **Detail backdrop hard bottom edge** on bright art: clipped + opaque void scrims instead of alpha masks; the
+  fixed backdrop **dims as the page scrolls** (episode text over bright art was unreadable).
+- Apple TV setting (owner OK'd): Control TVs and Receivers = Off (CEC switched the TV input on every remote press).
+- Process: the TestFlight dispatch's Archive job does not wait for the simulator job (it runs in parallel, ~15 min),
+  so from now on the upload is dispatched as soon as a batch is pushed; the push run's tests still gate the next batch.
+Open: Shows' "Top Series" first tile looked empty; Home "Neagley"-style focused tiles with black art; anime hero art
+is still a small portrait poster when there is no backdrop. Device check: next build.
+
 ## Status (2026-09-28, subagent — streaming-screens geometry audit, Play picker + Player chrome)
 2026-09-28 UTC (reasoning-only pass, no Swift compiler/device): continuing the by-numbers audit
 (see the Detail entry below) on the two other screens the owner will use most.
