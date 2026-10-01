@@ -32,6 +32,7 @@ struct SettingsView: View {
     @FocusState private var returnFocus: String?
 
     @EnvironmentObject private var settings: SettingsBridge
+    @ObservedObject private var tmdbHealth = TmdbHealth.shared
     /// The eBook tab (EBook/EBookModels.swift EBookGate): a choice for this TV.
     @AppStorage(EBookGate.key) private var ebookOn = false
     enum Sheet: Identifiable { case harbor, stremio, pin, removePin, spikes, tmdb, addons, subLangs, newProfile, editProfile, manageProfiles, connect; var id: Int { hashValue } }
@@ -61,7 +62,7 @@ struct SettingsView: View {
                 section("Stremio") {
                     if let p = profiles.active {
                         if let s = profiles.stremioSession(for: p.id) {
-                            row(T("Signed in as %@", s.user.fullname ?? s.user.email), detail: T("For the %@ profile", p.name))
+                            row(Self.stremioLine(s.user.fullname, s.user.email), detail: T("For the %@ profile", p.name))
                             // (device-flow pass 5) The column's Setup summary, "Accounts and TMDB" detail
                             // and preview name the Stremio account (engine settingsRoom facts): they are
                             // read again, as a sign-in's closing cover already has them (bp-settings
@@ -87,7 +88,7 @@ struct SettingsView: View {
                     StreamPriorityPanel()
                 }
                 section("Artwork and rows") {
-                    row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : "TMDB key saved",
+                    row(settings.slice.tmdbKey.isEmpty ? "Running on Cinemeta" : (tmdbHealth.rejected ? T("TMDB refused the saved key") : "TMDB key saved"),
                         detail: settings.slice.tmdbKey.isEmpty ? "Add a free TMDB key for Trending, In Theaters, Top Rated and service rows" : T("Saved on this device only (%lld characters)", settings.slice.tmdbKey.count))
                     HStack(spacing: BP.px(12)) {
                         Button(settings.slice.tmdbKey.isEmpty ? "Connect TMDB" : "Use a different key") { sheet = .tmdb }.buttonStyle(BPActionStyle(primary: settings.slice.tmdbKey.isEmpty))
@@ -350,6 +351,12 @@ struct SettingsView: View {
         default:
             break
         }
+    }
+
+    /// (device build 355) An empty full name read "Signed in as" with nothing after it.
+    private static func stremioLine(_ fullname: String?, _ email: String) -> String {
+        let name: String = [fullname ?? "", email].map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+        return name.isEmpty ? T("Signed in") : T("Signed in as %@", name)
     }
 
     private func testSavedKey() async {

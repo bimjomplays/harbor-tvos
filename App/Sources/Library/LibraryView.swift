@@ -507,7 +507,9 @@ struct LibraryView: View {
                     .focused($focusedChip, equals: "repair")
                     .accessibilityIdentifier("library-repair")
                 if statsEnabled {
-                    Button { showStats = true } label: { Label("Stats", systemImage: "chart.bar") }.buttonStyle(BPActionStyle())
+                    // (device build 355) With "Stats" spelled out the title count ran past the right margin.
+                    Button { showStats = true } label: { Image(systemName: "chart.bar") }.buttonStyle(BPActionStyle())
+                        .accessibilityLabel(Text(T("Stats")))
                 }
                 // bp-library.tsx: visible.length > 0 ? t("{n} titles") : "" (no "0 titles" over an empty tab).
                 if let f = model.shownFeed, f.matched > 0 { Text("\(f.matched) titles").font(BP.sans(12)).foregroundStyle(BP.inkSubtle).padding(.leading, BP.px(8)) }

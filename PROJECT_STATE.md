@@ -3,6 +3,20 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 23:20 UTC — 1.3.5 batch out, run 36939995031)
+- Seen on the TV (1.3.4) and fixed: tile art wider than 2:3 (Cyberpunk: Edgerunners) filled past the
+  card, widened the tile stack and pushed the marks overlay off it (cut NEW chip) — art framed to the
+  tile (BPTileView.art). Anime hero's lone "NEW" over Start Watching is a glass chip (award in gold).
+  Long Detail names ("I Want to Love You Till Your Dying Day") shrink to fit instead of "Dyi…".
+  Up from a room landed on the tab above the card (Home from the first Movies poster): entering the
+  bar now lands on the room's own tab unless a row named one (TopBarView.barRequested).
+- Found: Detail pages for movies/shows had no cast, More Like This, trailers or facts rows. The device
+  log says why: `[tmdb] 401 … Invalid API key` — the saved key is refused, while Settings said "TMDB:
+  On / Connected". Owner item (Next). Next batch (local): TmdbHealth (engine's 401 log line marks the
+  saved key refused; connect page, Settings row and a note on Detail say so), Library Stats chip
+  icon-only (title count ran past the right margin), setup code shrinks to fit ("MGV3 G39J NF…"),
+  "Signed in as" with an empty Stremio name reads "Signed in".
+
 ## Status (2026-10-01 22:10 UTC — 1.3.4 (355) verified)
 Owner: anime banners cut off, characters behind the cards (Death Note). 1.3.3 drew ≥2:1 banners across
 the top — not the cause (these are 16:9 metahub/AniList art). 1.3.4: anime hero art (KenBurnsImage
@@ -1575,6 +1589,12 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
 ## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
+
+**OWNER (big win, 2 min):** the TMDB key saved on the TV is refused by TMDB ("Invalid API key",
+seen in the device log 2026-10-01). Get a new free key (themoviedb.org → account Settings → API → the
+"API Key", not the long token) and enter it in Harbor → Settings → Setup → Accounts and TMDB (phone QR
+or "Type a key on this TV"). That brings back Detail's cast, More Like This, trailers and facts rows,
+TMDB scores and the Trending / In Theaters rows.
 
 **Versions (owner request 2026-10-01):** every TestFlight upload gets a real x.y.z version
 (`MARKETING_VERSION` in project.yml; the build number stays the CI run number). Bump the patch

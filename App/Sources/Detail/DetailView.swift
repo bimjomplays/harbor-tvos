@@ -5,6 +5,7 @@ import Combine
 /// Detail page (bp-detail): hero with backdrop, logo/title, facts, actions, synopsis; then episodes.
 struct DetailView: View {
     @StateObject private var model: DetailModel
+    @ObservedObject private var tmdbHealth = TmdbHealth.shared
     @State private var picker: (meta: Meta, episode: AnyJSON?)?
     /// use-bp-stream-play autoPlay: Play and auto-advance fire the best source; "Sources" never does.
     @State private var pickerAuto = false
@@ -1091,9 +1092,18 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: BP.px(3)) {
                 if !director.isEmpty { creditLine(model.isSeries ? "Created by" : "Directed by", director.prefix(3).joined(separator: ", ")) }
                 if !cast.isEmpty { creditLine("Cast", cast.prefix(6).joined(separator: ", ")) }
+                if model.extras == nil && tmdbHealth.rejected { tmdbRejectedNote }
             }
             .frame(maxWidth: BP.px(620), alignment: .leading)
         }
+    }
+
+    /// (device build 355) Without this the page just ended under the credits, with no sign why
+    /// the cast, More Like This and trailer rows never came.
+    private var tmdbRejectedNote: some View {
+        Label(T("TMDB refused the saved key, so cast and More Like This are off. Add a new key in Settings → Setup."), systemImage: "exclamationmark.triangle")
+            .font(BP.sans(12.5, .medium)).foregroundStyle(BP.inkSubtle)
+            .padding(.top, BP.px(10))
     }
 
     private func creditLine(_ label: String, _ value: String) -> some View {

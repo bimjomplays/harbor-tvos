@@ -103,7 +103,9 @@ struct HandoffPanel: View {
 
             VStack(alignment: .leading, spacing: BP.px(10)) {
                 if let code = handoff.codeDisplay {
-                    Text(code).font(BP.display(40)).tracking(4).foregroundStyle(BP.ink).lineLimit(1)
+                    // (device build 355) The grouped code ran past its column ("MGV3 G39J NF…"): it shrinks
+                    // to fit instead, since a cut code cannot be typed.
+                    Text(code).font(BP.display(40)).tracking(4).foregroundStyle(BP.ink).lineLimit(1).minimumScaleFactor(0.5)
                 } else {
                     Text(T(handoffWaitingLabel(handoff.phase))).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkSubtle)
                 }
@@ -251,6 +253,7 @@ struct ConnectPane: View {
     @EnvironmentObject private var profiles: ProfilesStore
     @EnvironmentObject private var settings: SettingsBridge
     @StateObject private var handoff = TvHandoff(mode: .setup(HandoffStep.allCases))
+    @ObservedObject private var tmdbHealth = TmdbHealth.shared
     @State private var typing = false
     @FocusState private var typeKeyFocused: Bool
     /// (review 26) "Show a new code" holds the ring: it goes when the hand-off completes.
@@ -262,7 +265,9 @@ struct ConnectPane: View {
     private var hasKey: Bool { !settings.slice.tmdbKey.trimmingCharacters(in: .whitespaces).isEmpty }
     private var stremioName: String? {
         guard let p = profiles.active, let s = profiles.stremioSession(for: p.id) else { return nil }
-        return s.user.fullname ?? s.user.email
+        // (device build 355) An empty full name read as "Signed in as" with nothing after it.
+        let names: [String] = [s.user.fullname, s.user.email].compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+        return names.first { !$0.isEmpty } ?? ""
     }
 
     var body: some View {
@@ -272,11 +277,14 @@ struct ConnectPane: View {
                 if !hasKey {
                     Text("Harbor needs a TMDB key for artwork, rows and collections. It is free.")
                         .font(BP.sans(17)).foregroundStyle(BP.inkMuted)
+                } else if tmdbHealth.rejected {
+                    Text(T("TMDB refused the saved key. Add a new free key for artwork, rows and collections."))
+                        .font(BP.sans(17)).foregroundStyle(BP.danger)
                 }
                 HStack(alignment: .top, spacing: BP.px(56)) {
                     VStack(alignment: .leading, spacing: BP.px(18)) {
-                        status("TMDB", T(hasKey ? "Connected" : "Artwork, rows and collections"), on: hasKey)
-                        status("Stremio", stremioName.map { T("Signed in as %@", $0) } ?? T("Your Stremio library"), on: stremioName != nil)
+                        status("TMDB", tmdbHealth.rejected ? T("Key refused") : T(hasKey ? "Connected" : "Artwork, rows and collections"), on: hasKey && !tmdbHealth.rejected)
+                        status("Stremio", stremioName.map { $0.isEmpty ? T("Signed in") : T("Signed in as %@", $0) } ?? T("Your Stremio library"), on: stremioName != nil)
                         status("Harbor account", account.session.map { T("Signed in as %@", $0.user.username) } ?? T("Sync, themes and friends"), on: account.isSignedIn)
                     }
                     VStack(alignment: .leading, spacing: BP.px(12)) {

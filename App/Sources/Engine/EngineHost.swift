@@ -590,6 +590,7 @@ final class HarborEngine {
     // MARK: - Logging
 
     private func record(level: String, message: String) {
+        TmdbHealth.noteLog(message)
         switch level {
         case "error": logger.error("\(message, privacy: .public)")
         case "warn": logger.warning("\(message, privacy: .public)")
