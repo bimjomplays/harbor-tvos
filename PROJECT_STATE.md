@@ -3,6 +3,20 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 03:50 UTC, overnight — batch 3: the real white-screen fix)
+- **The grey/milky full-screen platter over video was still there on build 305** (seen on the TV: it
+  covers the picture until a dialog disables the stage). `.focusEffectDisabled()` does not remove
+  it — the highlight belongs to tvOS's `.plain` button style. The stage button (and the two other
+  screen-sized catch buttons: Detail gallery lightbox, Harbor's screensaver) now use
+  `BPBareButtonStyle` (draws the label only).
+- **The ring could never reach the player's controls**: the stage fills the screen, so Down/Up found
+  nothing; they now wake the chrome and put the ring on Play/Pause.
+- **Detail: Resume stretched to ~580 pt** (its progress GeometryReader sat in a VStack beside the
+  label); the bar now lives in the label's overlay.
+- Video itself plays fine on device (4K HEVC film, subtitles drawn) once nothing covers it.
+- Uploads tonight: 305 (stage focusEffectDisabled, still platter), 307 (batch 1), then the dispatch at
+  03:50 UTC (batches 2+3: player chrome, tile focus, hint bar, this fix).
+
 ## Status (2026-10-01 03:45 UTC, overnight — batch 2: Apple TV style player + no hint bar)
 - **Player chrome rebuilt to read like Apple's player** (`PlayerScreen.chromeView/chromeBody`, new
   `PlayerOrbStyle` in PlayerPanelParts): episode line over the title bottom-left; the panel controls
