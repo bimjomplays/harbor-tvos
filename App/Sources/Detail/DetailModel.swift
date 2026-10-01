@@ -793,6 +793,9 @@ final class DetailModel: ObservableObject {
             if isSeries, let s = r.season, let e = r.episode { return T("Resume S%lld:E%lld", s, e) }
             if r.positionMs > 60_000 { return T("Resume") }
         }
+        // (owner 2026-10-01) An anime counts its episodes in one run (Kitsu numbering), so "S1 E1"
+        // on Steel Ball Run (the franchise's season 6) read wrong: anime say the episode alone.
+        if isSeries, isAnimeId, let t = playTarget { return "\(T("Play")) \(T("Episode %lld", t.episode))" }
         if isSeries, let t = playTarget { return "\(T("Play")) S\(t.season) E\(t.episode)" }
         return T("Play")
     }
