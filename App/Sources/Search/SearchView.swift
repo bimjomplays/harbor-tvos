@@ -356,10 +356,19 @@ struct SearchView: View {
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
             }
             .scrollClipDisabled()
+            // (device build 330) The chips scroll unclipped (for their focus lift) and ran under the
+            // count: it sits over them on the page's own black, faded in from the left.
             Text(resultsLabel)
                 .font(BP.sans(11, .semibold)).textCase(.uppercase).tracking(1.6).foregroundStyle(BP.inkSubtle)
                 .lineLimit(1).fixedSize()
+                .padding(.leading, BP.px(28))
                 .padding(.trailing, BP.gutter)
+                .frame(maxHeight: .infinity)
+                .background(
+                    LinearGradient(stops: [.init(color: BP.void_.opacity(0), location: 0), .init(color: BP.void_, location: 0.35)],
+                                   startPoint: .leading, endPoint: .trailing)
+                )
+                .zIndex(1)
         }
         .frame(minHeight: BP.px(56))
         .focusSection()
