@@ -544,6 +544,13 @@ struct HintBarView: View {
     }
 
     var body: some View {
+        // (overnight polish, Apple TV look) With the Siri Remote the bar only repeated what its two
+        // buttons already say, and it sat over the bottom row of every page; Apple TV apps show
+        // none. It comes back while a game controller is in use, where the glyphs do teach something.
+        if pads.usingPad { bar }
+    }
+
+    private var bar: some View {
         HStack(spacing: BP.px(18)) {
             Spacer()
             ForEach(hints) { h in
