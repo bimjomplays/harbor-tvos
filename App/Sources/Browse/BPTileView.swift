@@ -20,9 +20,9 @@ struct BPTileView: View {
 
     /// (device build 303, tvOS polish) bp-tile's 177 px canvas poster made a 298×447 pt card: a
     /// parked poster row then ran from under the hero into the hint bar, and only five and a half
-    /// fit across. 158 px (266×399 pt) keeps a full row, its caption and the next header on screen,
-    /// close to the Apple TV app's own poster shelves.
-    static let posterWidth = BP.px(158)
+    /// fit across. 150 px (253×379 pt) keeps a full row, its caption and the next header on screen,
+    /// close to the Apple TV app's own poster shelves, and clear of tvOS's focus-scroll margin.
+    static let posterWidth = BP.px(150)
     static let wideWidth = BP.px(230)
     static var posterSize: CGSize { CGSize(width: posterWidth, height: (posterWidth * 1.5).rounded()) }
     static var wideSize: CGSize { CGSize(width: wideWidth, height: (wideWidth * 9 / 16).rounded()) }

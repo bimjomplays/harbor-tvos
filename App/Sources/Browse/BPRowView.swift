@@ -251,6 +251,9 @@ struct BPRailView<Lead: View>: View {
     var seeAllShown: ((BrowseRow) -> Bool)? = nil
     var onQuick: ((Meta) -> Void)? = nil
     var topInset: CGFloat = 0
+    /// Where a focused row's top parks, when not just under `topInset` (RoomView: a little higher,
+    /// see `parkOffset`).
+    var parkAt: CGFloat? = nil
     /// bp-restore: the route rows remember their cells under, and the position to re-enter at.
     var restoreRoute: String? = nil
     var entry: BPRestore.Position? = nil
@@ -287,7 +290,15 @@ struct BPRailView<Lead: View>: View {
     private var railFade: CGFloat { BP.px(20) }
     /// Where the focused row's top parks: just under the spotlight copy (use-bp-rail shifts the
     /// active row's top to the rail's top edge, right under the hero).
-    private var parkOffset: CGFloat { topInset + BP.px(6) }
+    /// (owner report 2026-10-01, build 325) With the row's top at topInset + 6 its posters ended
+    /// ~120 pt above the screen's bottom edge, and tvOS's own focus scroll, which wants a focused
+    /// item farther from the edge than that, nudged the whole row up on every Left / Right press
+    /// (~55 pt, header half under the hero) — and the re-parks pulled it back down: the "jumping"
+    /// row. RoomView now parks higher (`parkAt`, just under the hero copy) with smaller posters,
+    /// so the focused row already sits where tvOS leaves it alone.
+    private var parkOffset: CGFloat { parkAt ?? topInset + BP.px(6) }
+    /// The rail's own top edge for the mask: the inset, or a park line above it.
+    private var maskTop: CGFloat { min(topInset, parkOffset) }
     /// (layout pass) An anchor of `parkOffset / 1080` ignored the row's own height, and the marker
     /// that replaced it (a 1 pt view parkOffset above each row's top) never worked either:
     /// (device build 303, real Apple TV + CI screenshot 19) inside a
@@ -400,9 +411,9 @@ struct BPRailView<Lead: View>: View {
             .environment(\.bpTileCaptions, false)
             .mask(
                 VStack(spacing: 0) {
-                    Color.clear.frame(height: max(0, topInset - railFade))
+                    Color.clear.frame(height: max(0, maskTop - railFade))
                     LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                        .frame(height: min(topInset, railFade))
+                        .frame(height: min(maskTop, railFade))
                     Color.black
                     // (device build 303) The shell's hint bar sits over the screen's bottom edge:
                     // rows passing under it fade out first instead of running under the chips.
@@ -446,7 +457,9 @@ struct BPRailView<Lead: View>: View {
                 for _ in 0..<6 {
                     guard !Task.isCancelled, (heldRow ?? focusedRow) == key, !leadNow else { return }
                     let y: CGFloat? = rowTops.y[key]
-                    if let y, let prev = last, abs(y - prev) < 2, abs(y - parkOffset) > 24 {
+                    // Only a row well off its park (the unparked seed at the bottom of the screen);
+                    // small offsets are tvOS's own focus scroll, which a re-park would fight.
+                    if let y, let prev = last, abs(y - prev) < 2, abs(y - parkOffset) > 80 {
                         if let from = parkedFrom, abs(from - y) < 1 { return }
                         parkedFrom = y
                         withAnimation(BP.easeSlow) { park(key, proxy) }
