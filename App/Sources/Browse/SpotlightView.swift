@@ -60,9 +60,13 @@ struct SpotlightView: View {
                     Text(f).font(BP.sans(14, .medium)).foregroundStyle(BP.inkMuted)
                 }
             }
-            Text(meta?.description ?? "")
-                .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(5)
-                .lineLimit(2).frame(maxWidth: BP.px(520), alignment: .leading)
+            // (device build 316) An empty synopsis still took a line, leaving a gap between the
+            // title's facts and the hero pips.
+            if let d = meta?.description, !d.isEmpty {
+                Text(d)
+                    .font(BP.sans(16)).foregroundStyle(BP.inkMuted).lineSpacing(5)
+                    .lineLimit(2).frame(maxWidth: BP.px(520), alignment: .leading)
+            }
             if let pips {
                 BPHeroPipsView(pips: pips).padding(.top, BP.px(4)).transition(.opacity)
             }
