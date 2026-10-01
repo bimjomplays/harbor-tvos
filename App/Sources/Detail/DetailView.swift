@@ -869,15 +869,20 @@ struct DetailView: View {
             Text("Videos").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).padding(.horizontal, BP.gutter).accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: BP.trackGap) {
-                    ForEach(clips) { c in
+                    ForEach(Array(clips.enumerated()), id: \.element.id) { i, c in
                         Button { trailer = TrailerPick(ytId: c.ytId, name: c.name) } label: {
                             VStack(alignment: .leading, spacing: 0) {
-                                RemoteImage(url: "https://img.youtube.com/vi/\(c.ytId)/mqdefault.jpg")
+                                // (device build 355) mqdefault is 320 px wide, soft on a 4K TV: the
+                                // 1280 px still first, mqdefault when YouTube has none (it 404s).
+                                RemoteImage(url: "https://img.youtube.com/vi/\(c.ytId)/maxresdefault.jpg",
+                                            fallback: "https://img.youtube.com/vi/\(c.ytId)/mqdefault.jpg")
                                     .frame(width: BP.px(300), height: BP.px(169)).clipped()
                                 VStack(alignment: .leading, spacing: BP.px(3)) {
                                     Text(T(c.type)).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.inkSubtle).lineLimit(1)
                                     // bp-videos-row.tsx: the engine's unnamed extra trailers are t("Trailer").
-                                    Text(c.name == "Trailer" ? T("Trailer") : c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                    // (device build 355) Four cards all read "TRAILER / Trailer": unnamed
+                                    // ones are numbered after the lead trailer ("Trailer 2", "Trailer 3").
+                                    Text(c.name == "Trailer" ? "\(T("Trailer")) \(i + 2)" : c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                 }
                                 .padding(BP.px(10)).frame(width: BP.px(300), alignment: .leading)
                             }
@@ -1018,20 +1023,8 @@ struct DetailView: View {
                 LazyHStack(spacing: BP.trackGap) {
                     // (bug pass) TMDB lists an actor once per role (same person id): unique ids for ForEach.
                     ForEach(cast.uniquedById()) { person in
-                        Button { self.person = person } label: {
-                            VStack(spacing: BP.px(8)) {
-                                ZStack {
-                                    Circle().fill(BP.panel2)
-                                    // bp-cast-row.tsx img alt="": the name and character below already name the cell.
-                                    if let p = person.profile { RemoteImage(url: p).clipShape(Circle()).accessibilityHidden(true) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
-                                }
-                                .frame(width: BP.px(110), height: BP.px(110))
-                                Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
-                                Text(person.character).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
-                            }
-                            .frame(width: BP.px(130))
-                        }
-                        .buttonStyle(BPTileStyle(radius: BP.px(55)))
+                        Button { self.person = person } label: { CastCell(person: person) }
+                            .buttonStyle(BPPortraitStyle())
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(14))
@@ -1070,16 +1063,18 @@ struct DetailView: View {
         let cast = (model.meta.cast ?? []).filter { !$0.isEmpty }
         if let crew = model.extras?.crew, !crew.isEmpty {
             // bp-crew-row: each name is a cell into the Person page when TMDB knows the person.
-            VStack(alignment: .leading, spacing: BP.px(6)) {
+            VStack(alignment: .leading, spacing: BP.px(2)) {
                 ForEach(crew.prefix(5)) { c in
                     HStack(alignment: .top, spacing: BP.px(8)) {
-                        Text(T(c.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).frame(width: BP.px(80), alignment: .leading)
-                        HStack(spacing: BP.px(6)) {
+                        // (device build 355) 80 px broke "Cinematography" over two lines.
+                        Text(T(c.label)).font(BP.sans(12, .bold)).foregroundStyle(BP.inkSubtle).lineLimit(1).frame(width: BP.px(118), alignment: .leading)
+                            .padding(.top, BP.px(4))
+                        HStack(spacing: BP.px(2)) {
                             ForEach(Array((c.people ?? c.names.map { DetailModel.Extras.Crew.Person(id: nil, name: $0) }).enumerated()), id: \.offset) { _, p in
                                 if let id = p.id {
-                                    Button(p.name) { person = DetailModel.Extras.Cast(id: id, name: p.name, character: "", profile: nil) }.buttonStyle(BPActionStyle())
+                                    Button(p.name) { person = DetailModel.Extras.Cast(id: id, name: p.name, character: "", profile: nil) }.buttonStyle(BPTextLinkStyle())
                                 } else {
-                                    Text(p.name).font(BP.sans(12)).foregroundStyle(BP.inkMuted)
+                                    Text(p.name).font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted).padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
                                 }
                             }
                         }
@@ -1693,5 +1688,30 @@ struct MarkPolygon: Shape {
         }
         path.closeSubpath()
         return path
+    }
+}
+
+/// bp-cast-row cell: the portrait lifts with its own ring and shadow; the name brightens.
+private struct CastCell: View {
+    let person: DetailModel.Extras.Cast
+    @Environment(\.isFocused) private var focused
+    @Environment(\.bpPortraitPressed) private var pressed
+
+    var body: some View {
+        VStack(spacing: BP.px(8)) {
+            ZStack {
+                Circle().fill(BP.panel2)
+                // bp-cast-row.tsx img alt="": the name and character below already name the cell.
+                if let p = person.profile { RemoteImage(url: p).clipShape(Circle()).accessibilityHidden(true) } else { Image(systemName: "person.fill").font(.system(size: BP.px(30))).foregroundStyle(BP.inkSubtle).accessibilityHidden(true) }
+            }
+            .frame(width: BP.px(110), height: BP.px(110))
+            .overlay(Circle().stroke(Color.white.opacity(focused ? 0.85 : 0), lineWidth: 2.5))
+            .shadow(color: .black.opacity(focused ? 0.7 : 0), radius: focused ? 22 : 0, y: focused ? 14 : 0)
+            .scaleEffect(focused ? (pressed ? 1.1 * BP.press : 1.1) : 1)
+            Text(person.name).font(BP.sans(12, .semibold)).foregroundStyle(focused ? BP.ink : BP.inkMuted).lineLimit(1)
+            Text(person.character).font(BP.sans(10)).foregroundStyle(BP.inkSubtle).lineLimit(1)
+        }
+        .frame(width: BP.px(130))
+        .animation(BP.ease, value: focused)
     }
 }

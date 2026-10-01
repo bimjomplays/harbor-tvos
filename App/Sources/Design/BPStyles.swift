@@ -258,3 +258,46 @@ struct BPBareButtonStyle: ButtonStyle {
         configuration.label
     }
 }
+
+/// (device build 355, TMDB rows) A name in Detail's crew lines: plain text at rest, a white pill
+/// with dark text when focused, like the text buttons in Apple's TV app. The full action chips
+/// made five rows of heavy buttons above the cast.
+struct BPTextLinkStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        BPTextLinkBody(configuration: configuration)
+    }
+}
+
+private struct BPTextLinkBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isFocused) private var focused
+
+    var body: some View {
+        configuration.label
+            .font(BP.sans(13, focused ? .semibold : .medium))
+            .foregroundStyle(focused ? Color.black : BP.inkMuted)
+            .lineLimit(1)
+            .padding(.horizontal, BP.px(10)).padding(.vertical, BP.px(4))
+            .background(Capsule(style: .continuous).fill(Color.white.opacity(focused ? 0.94 : 0)))
+            .shadow(color: .black.opacity(focused ? 0.45 : 0), radius: focused ? 12 : 0, y: focused ? 6 : 0)
+            .scaleEffect(focused ? (configuration.isPressed ? 1.06 * BP.press : 1.06) : 1)
+            .animation(BP.easeFast, value: focused)
+    }
+}
+
+/// (device build 355, TMDB rows) A cast portrait that lifts on its own, as in Apple's TV app: the
+/// ring and shadow follow the circle, and the name under it brightens. BPTileStyle's rounded
+/// outline went round the whole cell and cut the character line.
+struct BPPortraitStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.environment(\.bpPortraitPressed, configuration.isPressed)
+    }
+}
+
+private struct BPPortraitPressedKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var bpPortraitPressed: Bool {
+        get { self[BPPortraitPressedKey.self] }
+        set { self[BPPortraitPressedKey.self] = newValue }
+    }
+}
