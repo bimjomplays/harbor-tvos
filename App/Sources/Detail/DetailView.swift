@@ -19,6 +19,8 @@ struct DetailView: View {
     @State private var switchFromSec: Double?
     @State private var related: Meta?
     @State private var listDialog = false
+    /// The hero's "More" sheet (leadActions).
+    @State private var moreOpen = false
     @State private var factsDialog = false
     struct TrailerPick: Identifiable { let ytId: String; let name: String?; var id: String { ytId } }
     @State private var trailer: TrailerPick?
@@ -181,9 +183,26 @@ struct DetailView: View {
                 synopsisExpanded.toggle()
             })
         }
-        out.append(HeroAction(key: "back", label: "Back", icon: "chevron.backward") { dismiss() })
         return out
     }
+
+    /// (owner request 2026-10-01, Apple TV look) Play plus the few actions people reach for — Sources,
+    /// Watchlist, Watched / Remind me, Trailer — and a "More" cell for the rest (Favourite, Rate, Add
+    /// to list, trackers, Trakt, Read more). Nine bare icons in a row (Back among them, though Menu
+    /// already goes back) read as clutter. Same actions, same order, same focus keys.
+    private static let leadKeys: Set<String> = ["sources", "watchlist", "watched", "reminder", "trailer"]
+
+    private var leadActions: [HeroAction] {
+        let all: [HeroAction] = heroActions
+        var out: [HeroAction] = all.filter { Self.leadKeys.contains($0.key) }
+        let rest: [HeroAction] = all.filter { !Self.leadKeys.contains($0.key) }
+        if !rest.isEmpty {
+            out.append(HeroAction(key: "more", label: "More", icon: "ellipsis", active: rest.contains { $0.active }) { moreOpen = true })
+        }
+        return out
+    }
+
+    private var moreActions: [HeroAction] { heroActions.filter { !Self.leadKeys.contains($0.key) } }
 
     struct PlayTarget: Identifiable {
         var id: String { url.absoluteString }
@@ -264,6 +283,17 @@ struct DetailView: View {
         // The invited title opens as a further cover from this page (chained presenting works;
         // presenting straight from the shell while this page already covers it does not).
         .fullScreenCover(item: $foreignOpen) { o in DetailView(meta: o.meta, autoPlay: true, roomEpisode: o.episode, roomPick: o.guestPick) }
+        // The hero's "More" (leadActions): the rest of the actions as tvOS's own action sheet. A pick
+        // that opens a dialog of its own waits for the sheet to go first.
+        .confirmationDialog(Text(verbatim: model.meta.name), isPresented: $moreOpen, titleVisibility: .visible) {
+            ForEach(moreActions) { a in
+                Button(T(a.label)) {
+                    let run: () -> Void = a.run
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { run() }
+                }
+            }
+            Button(T("Cancel"), role: .cancel) {}
+        }
         .task {
             model.episodeHintSeason = roomEpisode?["season"]?.number.map { Int($0) } ?? episodeHint?.season
             // A Continue Watching one-press resume names its episode only for that one play (bp-detail
@@ -710,7 +740,7 @@ struct DetailView: View {
                 // The resume bar under Play, read as "{n}% watched" when it is drawn.
                 .bpProgressValue(model.resumeIsPlayTarget ? model.resume?.progress : nil)
                 // bp-detail-actions BpSecondaryAction: icon cells; the line under the row names the focused one.
-                ForEach(heroActions) { a in
+                ForEach(leadActions) { a in
                     Button { a.run() } label: {
                         if let badge = a.badge {
                             Text(badge).font(BP.sans(13.4, .bold)).monospacedDigit()
@@ -728,7 +758,7 @@ struct DetailView: View {
             }
             .focusSection()
             // BP_ACTION_HINT: the focused icon's label; blank when Play or nothing in the row has focus.
-            Text(heroActions.first(where: { $0.key == heroFocus }).map { T($0.label) } ?? " ")
+            Text(leadActions.first(where: { $0.key == heroFocus }).map { T($0.label) } ?? " ")
                 .font(BP.sans(12.5, .semibold)).tracking(0.5).foregroundStyle(BP.inkSubtle)
                 .frame(height: BP.px(16), alignment: .leading)
             // bp-hero-manga: "Read the Manga" on an anime while the manga reader is on, and "Read
