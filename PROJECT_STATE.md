@@ -3,6 +3,20 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 12:40 UTC — build 328 verified on the TV; follow-up out)
+**Verified on 328:** Settings → Addons → Sources first → **The Addon** selected (owner's request).
+Settings → Home rows → **Clear Continue Watching → "Cleared 4 items"**; Home and Anime rows empty
+afterwards. Mushoku Tensei now reads "Episode 19" (anime detection). Rows stay put on Left/Right (four
+frames, header y identical). Anime hero: Holo Graffiti / Black Clover show real landscape banners.
+Scrubber takes focus (knob, thicker bar), "4K · HEVC · HDR".
+**Found on 328, fixed in the follow-up (CI 36863122187, upload 36863131952):** a companion-emulated
+swipe sent the film to 0:00 (now summed per-event steps with jump rejection, span 10 % of the film,
+`Logger` category "scrub" readable with `pymobiledevice3 syslog live`); after the swipes the ring fell
+out of the player and Menu closed the app (ring now returns to the stage); Anime row header touched a
+two-line synopsis (park line 8 px lower).
+Note: I played Unabomber for these tests, so it is back in Continue Watching — clear it again
+(Settings → Home rows → Clear Continue Watching) once the follow-up is verified.
+
 ## Status (2026-10-01 12:00 UTC, owner awake — requests batch)
 Owner asked (2026-10-01 morning): sources from "The Addon" first; Home = everything in progress, Anime =
 anime only, Shows without anime; JoJo part 6 shown when part 7 was played; reset watch history to a
