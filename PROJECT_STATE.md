@@ -3,6 +3,22 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 03:45 UTC, overnight — batch 2: Apple TV style player + no hint bar)
+- **Player chrome rebuilt to read like Apple's player** (`PlayerScreen.chromeView/chromeBody`, new
+  `PlayerOrbStyle` in PlayerPanelParts): episode line over the title bottom-left; the panel controls
+  (Back, Subtitles, Audio, Speed & sleep, PiP, Anime4K, Sources, Quality, TV Guide…, Mute) as round
+  ultra-thin-material buttons on the same line at the right, white when focused with a caption naming
+  them; full-width white scrubber on a translucent track with a time bubble while presses add up;
+  elapsed · video params on the left, "Ends …" and −remaining on the right, the transport (prev,
+  −10, Play/Pause bigger, +10, next) centred between them, captions under it. Same focus ids, same two
+  focus sections; the player's hint bar is gone. Device check pending (needs a stream on the TV).
+- **Shell hint bar only while a game controller is in use** (`HintBarView`): with the Siri Remote it sat
+  over the bottom row of every page (Collections, Library, rails).
+- Apple TV settings changed tonight for unattended work: Screen Saver → Start After = Never (was 5 min;
+  it blanked the screenshots). Control TVs and Receivers = Off (owner OK'd). Revert if wanted.
+- My mistake while driving the remote blind: on Search, a press sequence landed on the Recent row's
+  trash button and cleared the one recent search ("steel ball run"). Now I screenshot between moves.
+
 ## Status (2026-10-01 03:25 UTC, overnight session — streaming polish on the real Apple TV)
 Eyes on the device (`~/ai/atv/atv shot`) on build 303 found, and commits `49f09a6` + the re-park follow-up fix:
 - **Rows parked under the hero** (Home/Movies/Shows/Anime, also CI screenshot 19): the park marker (a 1 pt view
