@@ -270,8 +270,9 @@ struct BPRailView<Lead: View>: View {
     @State private var heldRow: String?
     /// `leadHeld` as state, for the delayed scrolls to read its current value.
     @State private var leadNow = false
-    /// The held row's top in the viewport, kept by its geometry (the park watchdog below).
-    @State private var parkedY: CGFloat?
+    /// Every row's top in the viewport (the park watchdog below). A reference box: written on every
+    /// frame of a scroll, it must not invalidate the rail's body.
+    @State private var rowTops = BPRailTops()
     private static var topID: String { "bp-rail-top" }
     /// (device build 291, CI screenshots 19/20/25) reference/harbor bp-catalog-page.tsx never
     /// overlaps the two at all: `data-bp-hero` is a `shrink-0` flex sibling ABOVE a `flex-1
@@ -375,7 +376,7 @@ struct BPRailView<Lead: View>: View {
                             }
                             // Where the parked row's top sits in the viewport now (the park watchdog).
                             .onGeometryChange(for: CGFloat.self) { g in g.frame(in: .scrollView).minY } action: { [key = row.key] y in
-                                if key == (heldRow ?? focusedRow) { parkedY = y }
+                                rowTops.y[key] = y
                             }
                             // The row holding focus draws its lifted tile and caption over the row below.
                             .zIndex(heldRow == row.key ? 2 : 0)
@@ -432,15 +433,24 @@ struct BPRailView<Lead: View>: View {
             // lands while the rail is still settling, and every park issued then was lost: the row
             // stayed at the bottom of the screen with the ring on it until the first press. For a few
             // seconds after a row takes the ring, a row that is not where a park puts it parks again.
+            // Samples only once the regular parks (to 0.9 s) have run, acts only on two agreeing samples
+            // (not a row still gliding), and gives up when a park moved nothing (a last row that can
+            // never reach the park line).
             .task(id: heldRow ?? focusedRow) {
                 guard let key = heldRow ?? focusedRow, rows.contains(where: { $0.key == key }) else { return }
-                parkedY = nil
+                try? await Task.sleep(for: .milliseconds(1200))
+                var last: CGFloat?
+                var parkedFrom: CGFloat?
                 for _ in 0..<6 {
-                    try? await Task.sleep(for: .milliseconds(700))
                     guard !Task.isCancelled, (heldRow ?? focusedRow) == key, !leadNow else { return }
-                    if let y = parkedY, abs(y - parkOffset) > 24 {
+                    let y: CGFloat? = rowTops.y[key]
+                    if let y, let prev = last, abs(y - prev) < 2, abs(y - parkOffset) > 24 {
+                        if let from = parkedFrom, abs(from - y) < 1 { return }
+                        parkedFrom = y
                         withAnimation(BP.easeSlow) { park(key, proxy) }
                     }
+                    last = y
+                    try? await Task.sleep(for: .milliseconds(600))
                 }
             }
             // The parked row (or lead section) measured late or changed height (a lazy row's first
@@ -497,6 +507,11 @@ struct BPRailView<Lead: View>: View {
     }
 }
 
+
+/// BPRailView's row tops in its viewport, kept outside SwiftUI's state tracking on purpose.
+final class BPRailTops {
+    var y: [String: CGFloat] = [:]
+}
 
 /// The rail's park marker id, for a row or a parkable lead section.
 enum BPRail {
