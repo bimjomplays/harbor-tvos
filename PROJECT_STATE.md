@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 19:50 UTC — 1.3.2 batch, player checked on 1.3.1)
+On the TV (1.3.1): the Subtitles sheet docks right with the film visible beside it; the Leave card;
+scrubber focus with knob; rail captions. Note for testing: `atv press a b c` in one call sends too fast
+for tvOS — press one at a time, and within the chrome's 4.6 s auto-hide.
+1.3.2: deeper hero side scrim (bright key art), room above the Subtitles sheet's first chip row (it was
+clipped), "Leave the movie?" for films. Unabomber played for this test → clear CW after verifying.
+
 ## Status (2026-10-01 17:25 UTC — 1.3.1 (345) verified)
 Installed 1.3.1; Timer setting survived the update. Clear Continue Watching ("Cleared 0 items", the
 row was already empty) wiped the saved positions: The Ministry of Ungentlemanly Warfare, which had
