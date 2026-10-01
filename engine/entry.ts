@@ -94,6 +94,7 @@ import * as addonsManagerGlue from "./addonsManager";
 import * as animeDetailGlue from "./animeDetail";
 import * as deadStreamsGlue from "./deadStreams";
 import * as animeSeasonsGlue from "./animeSeasons";
+import * as animeArtGlue from "./animeArt";
 import { fetchHeroFeed } from "@/lib/feed/hero-pool";
 import * as skipGlue from "./skip";
 import * as traktGlue from "./trakt";
@@ -843,6 +844,13 @@ export const animeRoom = {
   /** (bug pass) per-profile LRU of hero / picks ids for the hide-watched lookups (tests). */
   lateIds: animeGlue.lateIdsForTest,
   resetTopPicks: topPicksGlue.resetAnimeTopPicks,
+};
+
+/** engine/animeArt.ts: a landscape backdrop for an anime id (metahub, else AniList banner, else Kitsu cover). */
+export const animeArt = {
+  backdrop: animeArtGlue.backdrop,
+  peek: animeArtGlue.peek,
+  reset: animeArtGlue.reset,
 };
 
 /** Streaming services: the Home band tiles, poster mosaics and the per-service page rows. */

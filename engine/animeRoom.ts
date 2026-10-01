@@ -26,6 +26,7 @@ import { anilist as anilistGlue, mal as malGlue } from "./trackers";
 import { advanceCw } from "./cwAdvance";
 import { cwAdvanceSettings, cwWatchedSources, detectCwAnime } from "./rooms";
 import { animeTopPicks } from "./animeTopPicks";
+import { withBackdrops } from "./animeArt";
 import { manualWatchedLibraryItems } from "@/lib/manual-watched";
 import { simklWatchedForId, statusForId, type WatchlistStatus } from "@/lib/simkl/list-status";
 import { isAuthenticated as anilistConnectedNow } from "@/lib/anilist/session";
@@ -322,7 +323,7 @@ export async function page(profileId: string, linked: boolean, authKey: string |
   // use-bp-anime.ts:238: failure is "every feed answered with nothing", never "every row hidden".
   const fetched = SPECS.reduce((n, sp) => n + (rowsByKey[sp.key]?.metas.length ?? 0), 0) + addonRows.reduce((n, r) => n + r.metas.length, 0);
   return {
-    rows, hero: hero.metas.slice(0, 8), picks: topPicks, cw: withCardExtras(cw),
+    rows, hero: withBackdrops(hero.metas.slice(0, 8), notify), picks: topPicks, cw: withCardExtras(cw),
     loading: pending > 0, ready, total: SPECS.length,
     failed: ready === SPECS.length && fetched === 0 && cw.length === 0,
   };
