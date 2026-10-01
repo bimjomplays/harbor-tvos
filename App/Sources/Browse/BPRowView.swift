@@ -208,7 +208,10 @@ struct BPRowView: View {
         .onChange(of: endGuard) { _, on in
             if on { endCatch() }
         }
-        .onChange(of: focusedId) { _, id in
+        // (device build 319) initial: Home's first focus (the seed) can land on a tile in the same
+        // update the row appears, before a plain onChange is listening: the rail never heard of it
+        // and the focused row stayed unparked at the bottom of the screen.
+        .onChange(of: focusedId, initial: true) { _, id in
             if let id { lastHeld = id }
             if let id, let m = row.metas.first(where: { $0.id == id }) {
                 if let route = restoreRoute { BPRestore.remember(route: route, row: row.key, cell: id) }
@@ -220,7 +223,11 @@ struct BPRowView: View {
         // contains focus. Since Right off the last tile reaches See all, the row reported losing the
         // ring there: Home's band let go (the spotlight crossfaded back in over a services or addons
         // row) and the rail dropped the row's zIndex, then both came back on Left.
-        .onChange(of: focusedId != nil || seeAllFocused || endGuard) { _, held in onHold?(held) }
+        // initial (as above): a row that appears already holding the ring reports it; the first call
+        // passes old == new, so rows appearing without it report nothing.
+        .onChange(of: focusedId != nil || seeAllFocused || endGuard, initial: true) { old, held in
+            if old != held || held { onHold?(held) }
+        }
         .onChange(of: seeAllFocused) { _, on in
             onSeeAllHold?(on)
             // (fix 2026-09-27) Disarm the moment the ring leaves the chip (Left off it, or any other
