@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 04:45 UTC, overnight — build 314 verified; batch 6)
+**Verified on the TV (314):** Home rail parks under the hero on Down and goes back to rest on Up (Jump
+back in fully visible, ring on the card); Mushoku Tensei's Continue Watching card has its art (empty
+art strings); new tile focus (lift, soft shadow, fine white edge) reads well; player: Up from the
+transport reaches the rail with a "Subtitles" caption above the button; Leave dialog dims the frame.
+**Batch 6:** mpv subtitles rise (sub-pos −24) while the chrome is up (they ran through the title), and
+are hidden under the Leave dialog (sub-visibility, touched nowhere else).
+
 ## Status (2026-10-01 04:15 UTC, overnight — build 311 verified on the TV; batch 5)
 **Verified on the Apple TV (build 311):** the white/grey platter over video is GONE (bare stage button):
 a 4K HEVC film plays clean from the first frame. The new player chrome renders as designed (title +
