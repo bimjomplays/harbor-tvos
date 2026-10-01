@@ -278,7 +278,7 @@ struct ScreensaverView: View {
             ClockView().padding(BP.gutter).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             // The whole surface is one focusable target so the waking press never reaches a tile.
             Button { model.wake() } label: { Color.clear.contentShape(Rectangle()) }
-                .buttonStyle(.plain)
+                .buttonStyle(BPBareButtonStyle())
                 .focused($focused)
                 // The one focus stop over the saver: VoiceOver names it instead of an empty button.
                 .accessibilityLabel(Text(T("Screensaver")))

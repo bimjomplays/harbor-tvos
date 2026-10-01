@@ -68,7 +68,7 @@ struct LightboxView: View {
                 Spacer()
                 Text("\(index + 1) / \(images.count) · Left and Right browse · Menu closes").font(BP.sans(13)).foregroundStyle(BP.inkMuted).padding(.bottom, BP.px(30))
             }
-            Button { } label: { Color.clear.contentShape(Rectangle()) }.buttonStyle(.plain)
+            Button { } label: { Color.clear.contentShape(Rectangle()) }.buttonStyle(BPBareButtonStyle())
                 .onMoveCommand { dir in
                     if dir == .left { index = (index - 1 + images.count) % images.count }
                     else if dir == .right { index = (index + 1) % images.count }

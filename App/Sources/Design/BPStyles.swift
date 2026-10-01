@@ -241,3 +241,12 @@ extension View {
         return accessibilityValue(Text(verbatim: text))
     }
 }
+
+/// A full-screen invisible catch button (the player's stage, the gallery lightbox, the screensaver):
+/// draws its label (clear) and nothing else. tvOS's `.plain` style paints its own focus highlight,
+/// which on a screen-sized label is a screen-sized milky platter (device builds 303/305, over video).
+struct BPBareButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}

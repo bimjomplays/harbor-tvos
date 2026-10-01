@@ -340,11 +340,13 @@ struct PlayerScreen: View {
             }
             // The invisible surface holds focus while the chrome is down so remote presses reach us.
             Button { togglePause() } label: { Color.clear.contentShape(Rectangle()) }
-                .buttonStyle(.plain)
-                // (device 2026-09-30, build 303) THE white screen: tvOS still draws its focus
-                // effect for a `.plain` button, and with a screen-sized clear label that effect is a
-                // screen-sized light-grey platter with a shadow, painted over the video from the
-                // first frame (seen live over the developer tunnel). No system focus effect here.
+                // (device 2026-09-30, builds 303 and 305) THE white screen: tvOS's `.plain` button
+                // style draws its own focus highlight, and with a screen-sized clear label that is a
+                // screen-sized milky platter over the video from the first frame (seen live over the
+                // developer tunnel). `.focusEffectDisabled()` alone did not remove it (build 305): the
+                // highlight belongs to the style, not to the focus effect. A bare custom style draws
+                // the label and nothing else.
+                .buttonStyle(BPBareButtonStyle())
                 .focusEffectDisabled()
                 .disabled(panel != nil || resumePending != nil || leaveConfirm || roomOpen || pipActive || kidsLoading || stillPrompt || xrayOpen)
                 .focused($focus, equals: .surface)
@@ -356,7 +358,17 @@ struct PlayerScreen: View {
                     case .up where activeSkip != nil: StillWatching.reset(); focus = .chip("skip")
                     case .up where mismatchNow != nil: focus = DurationMismatch.entry
                     case .up where xrayMeta != nil: focus = PlayerXRayOverlay.entry
-                    default: wake()
+                    default:
+                        // (device build 305) The surface fills the screen, so the focus engine finds
+                        // nothing above or below it: Up and Down only woke the chrome and the ring could
+                        // never reach a control. They now wake it and put the ring on Play / Pause.
+                        let shownBefore: Bool = chromeShown
+                        wake()
+                        if !isKid {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + (shownBefore ? 0.02 : 0.15)) {
+                                if focus == .surface, chromeShown { focus = .chip("playpause") }
+                            }
+                        }
                     }
                 }
                 // bp-player-scrub.tsx role="slider" aria-label t("Seek") aria-valuetext={fmtTime(position)}:
@@ -2716,3 +2728,4 @@ struct PlayerScreen: View {
 private final class PlayerCloseFlag {
     var done = false
 }
+

@@ -682,18 +682,25 @@ struct DetailView: View {
                     if model.isSeries { picker = (model.meta, model.playTarget?.playEpisode ?? model.premiereEpisode) }
                     else { picker = (model.meta, nil) }
                 } label: {
-                    VStack(spacing: 0) {
-                        Label(model.playLabel, systemImage: "play.fill")
-                        // Progress under Play, only mid-way through (0.01 < progress < 0.97).
-                        // Hidden when an AI search episode pick names another episode (it plays from its start),
-                        // or an anime's next-up is the target instead of the local resume point.
-                        if let r = model.resume, model.resumeIsPlayTarget, r.progress > 0.01, r.progress < 0.97 {
-                            GeometryReader { g in
-                                Capsule().fill(BP.accent).frame(width: g.size.width * r.progress, height: BP.px(3))
+                    // Progress under Play, only mid-way through (0.01 < progress < 0.97).
+                    // Hidden when an AI search episode pick names another episode (it plays from its start),
+                    // or an anime's next-up is the target instead of the local resume point.
+                    // (device build 305) As a VStack sibling the GeometryReader took every pt the row
+                    // offered and stretched Resume to ~580 pt; drawn in the label's overlay it is as
+                    // wide as "Resume" itself.
+                    Label(model.playLabel, systemImage: "play.fill")
+                        .overlay(alignment: .bottomLeading) {
+                            if let r = model.resume, model.resumeIsPlayTarget, r.progress > 0.01, r.progress < 0.97 {
+                                GeometryReader { g in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(BP.canvas.opacity(0.25))
+                                        Capsule().fill(BP.accent).frame(width: g.size.width * r.progress)
+                                    }
+                                }
+                                .frame(height: BP.px(3))
+                                .offset(y: BP.px(9))
                             }
-                            .frame(height: BP.px(3))
                         }
-                    }
                 }
                 .buttonStyle(BPActionStyle(primary: true))
                 .focused($heroFocus, equals: "play")
