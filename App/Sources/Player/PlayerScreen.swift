@@ -1477,7 +1477,7 @@ struct PlayerScreen: View {
         let duration: Double = c.snap.duration
         let shown: Double = pendingSeek ?? c.snap.position
         let remaining: Double = duration > 0 ? max(0, duration - shown) : 0
-        let params: String = status.state == "loading" ? T("Loading…") : status.videoParams.split(separator: " ").prefix(3).joined(separator: " ")
+        let params: String = status.state == "loading" ? T("Loading…") : streamFacts
         return HStack(spacing: BP.px(10)) {
             Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? Color.white.opacity(0.75) : Color.white)
             if !params.isEmpty { Text(params).font(BP.sans(11.5, .medium)).foregroundStyle(Color.white.opacity(0.4)) }
@@ -1734,6 +1734,24 @@ struct PlayerScreen: View {
     private var kidsResumePrompt: some View {
         KidsResumePrompt(title: shownTitle, focus: $focus, onResume: { acknowledgeResume(true) }, onStartOver: { acknowledgeResume(false) })
             .onAppear { controller?.setPaused(true); if let c = controller { takeSnap(c.snapshot()) } }
+    }
+
+    /// (overnight polish) The readout's quiet stream line, the way Apple's player names a picture:
+    /// "4K · HEVC · HDR" rather than mpv's raw "3840 1604 H.265".
+    private var streamFacts: String {
+        let tokens: [String] = status.videoParams.split(separator: " ").map { String($0) }
+        var bits: [String] = []
+        if let r = resolutionLabel { bits.append(r) }
+        if tokens.count >= 3 {
+            let c: String = tokens[2].uppercased()
+            if c.contains("265") || c.contains("HEVC") { bits.append("HEVC") }
+            else if c.contains("264") || c.contains("AVC") { bits.append("H.264") }
+            else if c.contains("AV1") { bits.append("AV1") }
+            else if c.contains("VP9") { bits.append("VP9") }
+        }
+        let lower: [String] = tokens.map { $0.lowercased() }
+        if lower.contains("pq") { bits.append("HDR") } else if lower.contains("hlg") { bits.append("HLG") }
+        return bits.joined(separator: " · ")
     }
 
     /// resolution-label.ts realQualityLabel from the decoded picture ("w h codec…" in status).
