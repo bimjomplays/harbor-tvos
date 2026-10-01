@@ -472,6 +472,14 @@ struct PlayerScreen: View {
         // (device build 328) After a run of swipes the ring was nowhere in the player, and the next
         // Menu went to tvOS, which closed the app mid-film. A ring that falls out of the player goes
         // back to the stage.
+        // (device build 330) The touch-surface swipe that scrubs is also a focus move for tvOS, which
+        // carried the ring off the scrubber (to the stage or a transport button) mid-scrub. Within a
+        // moment of a swipe, the ring stays where the swipe began.
+        .onChange(of: focus) { old, new in
+            guard Date().timeIntervalSince(lastScrubAt) < 0.8, old == .chip("scrubber") || old == .surface, new != old else { return }
+            let back: FocusTarget? = old
+            DispatchQueue.main.async { if Date().timeIntervalSince(lastScrubAt) < 1.2 { focus = back } }
+        }
         .onChange(of: focus == nil) { _, lost in
             guard lost, !finishing else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {

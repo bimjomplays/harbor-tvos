@@ -24,7 +24,14 @@ struct PlayerOrbStyle: ButtonStyle {
                 .foregroundStyle(focused ? Color.black : Color.white)
                 .frame(width: d, height: d)
                 .background(Circle().fill(focused ? AnyShapeStyle(Color.white) : AnyShapeStyle(.ultraThinMaterial)))
-                .overlay(Circle().stroke(active && !focused ? Color.white.opacity(0.9) : Color.white.opacity(0.12), lineWidth: active && !focused ? 2 : 1))
+                // (device build 330) A ring for "on" (Anime4K, mute, a sleep timer) read as the focus
+                // ring; it is a small dot under the button instead, as Apple marks a toggled control.
+                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                .overlay(alignment: .bottom) {
+                    Circle().fill(Color.white).frame(width: BP.px(4), height: BP.px(4))
+                        .offset(y: BP.px(7))
+                        .opacity(active ? 1 : 0)
+                }
                 .opacity(enabled ? 1 : 0.4)
                 // (device build 311) Alignment guides left the caption over the button itself; the
                 // overlay is anchored to the far edge instead and padded past the button.
