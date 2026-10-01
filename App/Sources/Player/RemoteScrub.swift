@@ -10,6 +10,7 @@ import UIKit
 struct RemoteScrubCatcher: UIViewRepresentable {
     var enabled: Bool
     /// Horizontal travel since the swipe began, as a fraction of the window's width (−1…1+).
+    var onBegan: () -> Void = {}
     var onChanged: (CGFloat) -> Void
     var onEnded: () -> Void
 
@@ -24,6 +25,7 @@ struct RemoteScrubCatcher: UIViewRepresentable {
 
     func updateUIView(_ uiView: CatcherView, context: Context) {
         context.coordinator.enabled = enabled
+        context.coordinator.onBegan = onBegan
         context.coordinator.onChanged = onChanged
         context.coordinator.onEnded = onEnded
     }
@@ -40,13 +42,16 @@ struct RemoteScrubCatcher: UIViewRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var enabled = false
+        var onBegan: () -> Void = {}
         var onChanged: (CGFloat) -> Void = { _ in }
         var onEnded: () -> Void = {}
         private var pan: UIPanGestureRecognizer?
         private weak var host: UIView?
         private var active = false
+        private var scrubbing = false
 
         func attach(to window: UIWindow) {
             guard pan == nil else { return }
@@ -77,15 +82,21 @@ struct RemoteScrubCatcher: UIViewRepresentable {
             switch recognizer.state {
             case .began:
                 active = enabled
+                if active { onBegan() }
             case .changed:
                 guard active, enabled else { return }
                 let t: CGPoint = recognizer.translation(in: recognizer.view)
                 // A mostly vertical swipe is focus movement, not a scrub.
                 guard abs(t.x) > abs(t.y) * 1.2 else { return }
-                onChanged(t.x / width)
+                // A deadzone: a click's small jiggle on the clickpad is not a scrub.
+                let f: CGFloat = t.x / width
+                guard abs(f) > 0.02 || scrubbing else { return }
+                scrubbing = true
+                onChanged(f)
             case .ended, .cancelled, .failed:
-                if active { onEnded() }
+                if active && scrubbing { onEnded() }
                 active = false
+                scrubbing = false
             default:
                 break
             }

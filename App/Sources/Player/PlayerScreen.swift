@@ -470,7 +470,7 @@ struct PlayerScreen: View {
             }
         }
         // Siri Remote touch-surface scrubbing (RemoteScrub.swift).
-        .background(RemoteScrubCatcher(enabled: scrubEnabled, onChanged: { f in scrubSwipe(f) }, onEnded: { scrubSwipeEnded() }))
+        .background(RemoteScrubCatcher(enabled: scrubEnabled, onBegan: { lastScrubAt = Date() }, onChanged: { f in scrubSwipe(f) }, onEnded: { scrubSwipeEnded() }))
         // (overnight polish) Subtitles rise over the chrome while it is up (mpv only).
         .onChange(of: chromeShown) { _, up in (controller as? MPVPlayerController)?.setSubtitleLift(up) }
         .onChange(of: leaveConfirm) { _, up in (controller as? MPVPlayerController)?.setSubtitlesHidden(up) }

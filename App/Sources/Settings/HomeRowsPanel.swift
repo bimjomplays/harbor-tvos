@@ -84,7 +84,10 @@ struct HomeRowsPanel: View {
                 Button(T("Clear")) { Task { await clearCw() } }
                     .buttonStyle(BPActionStyle(primary: true, busy: clearing))
                     .focused($focus, equals: "cw-clear-yes")
-                Button(T("Cancel")) { clearAsk = false; focus = "cw-clear" }
+                Button(T("Cancel")) {
+                    clearAsk = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "cw-clear" }
+                }
                     .buttonStyle(BPActionStyle())
             } else {
                 Button(T("Clear Continue Watching")) {
@@ -113,7 +116,7 @@ struct HomeRowsPanel: View {
         clearing = false
         clearAsk = false
         clearedCount = n
-        focus = "cw-clear"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focus = "cw-clear" }
     }
 
     var body: some View {
