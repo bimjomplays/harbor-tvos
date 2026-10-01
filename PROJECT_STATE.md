@@ -3,6 +3,10 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 14:40 UTC — 1.2.1 (340) installed and checked)
+Home on 1.2.1: NEW chips are quiet dark-glass labels, the restored first focus parks under the hero,
+no Continue Watching (owner's clean slate kept). Next upload: 1.2.2 (patch) or 1.3.0 (features).
+
 ## Status (2026-10-01 14:10 UTC — 1.2.0 (337) verified)
 **Verified on 1.2.0:** TestFlight shows "1.2.0 Build 337". Steel Ball Run opens as itself: title,
 own backdrop, 12 episodes, Season 6 chip selected (was Stone Ocean Part 3). Search's result count sits
