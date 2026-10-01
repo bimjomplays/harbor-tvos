@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 04:46 UTC, overnight — CI red on run 312 (dispatch of batch 4), fixed)
+- `NavigationTests…testDetailOneSeasonEpisodesAndBack` failed: "after Detail closed the ring was not back
+  on tile-series-2 (focus: cw-cw1)". Cause: batch 4's "rail back to rest when focus leaves it" also fired
+  when a Detail cover took focus. Now it waits for a top-bar tab to hold the ring
+  (`ShellFocus.barHasFocus`, set by TopBarView). 44 other tests passed on that run.
+- Also in this push: hero art under 1100 px drawn through a light soften (HeroBlur.softenIfSmall) —
+  the anime episode stills used as backdrops showed JPEG blocks at 4K.
+- Pushed to main (run 36816581007, left to finish this time) + upload dispatch 36816586333.
+
 ## Status (2026-10-01 04:45 UTC, overnight — build 314 verified; batch 6)
 **Verified on the TV (314):** Home rail parks under the hero on Down and goes back to rest on Up (Jump
 back in fully visible, ring on the card); Mushoku Tensei's Continue Watching card has its art (empty
