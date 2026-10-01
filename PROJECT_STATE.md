@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 06:00 UTC, overnight — build 319 verified; batch 9 local)
+**Verified on 319:** stream picker rows are one tidy line of badges at 22 px, the focused row's edge is
+whole (no clipping); Library/Search clear of the tab pill; hero logo stays under the bar.
+**Still seen on 319:** Home's seeded first focus (Top 10 tile) leaves the row unparked at the bottom.
+**Batch 9 (local):** rows report focus/hold that landed as they appeared (`onChange(initial: true)`),
+and the rail parks a row on hold as well as on tile focus — both aimed at that seed; picker rows show
+the addon name's first line whole and drop separator-only description lines / trailing slashes;
+engine: anime Continue Watching de-duplicated by title (smoke 1186/1186).
+
 ## Status (2026-10-01 05:34 UTC, overnight — batch 8 + upload #7 of the day)
 - Batch 8: hero logo capped at 72 px canvas (Toy Story 5's logo climbed under the top bar), anime hero
   actions no longer repeat the score ("8.1" floating over Start Watching).
