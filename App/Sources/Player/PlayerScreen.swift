@@ -1339,7 +1339,8 @@ struct PlayerScreen: View {
         }
         .padding(.horizontal, BP.gutter)
         .padding(.top, BP.gutter)
-        .padding(.bottom, BP.px(30))
+        // Inside the TV's safe area, with room under the transport for its focus caption.
+        .padding(.bottom, BP.px(54))
     }
 
     /// bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed

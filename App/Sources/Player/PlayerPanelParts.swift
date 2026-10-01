@@ -26,14 +26,15 @@ struct PlayerOrbStyle: ButtonStyle {
                 .background(Circle().fill(focused ? AnyShapeStyle(Color.white) : AnyShapeStyle(.ultraThinMaterial)))
                 .overlay(Circle().stroke(active && !focused ? Color.white.opacity(0.9) : Color.white.opacity(0.12), lineWidth: active && !focused ? 2 : 1))
                 .opacity(enabled ? 1 : 0.4)
-                .overlay(alignment: below ? .bottom : .top) {
+                // (device build 311) Alignment guides left the caption over the button itself; the
+                // overlay is anchored to the far edge instead and padded past the button.
+                .overlay(alignment: below ? .top : .bottom) {
                     Text(verbatim: title)
                         .font(BP.sans(12.5, .semibold)).foregroundStyle(Color.white)
                         .lineLimit(1).fixedSize()
                         .padding(.horizontal, BP.px(9)).padding(.vertical, BP.px(4))
                         .background(Capsule().fill(Color.black.opacity(0.6)))
-                        .alignmentGuide(.top) { g in g[.bottom] + BP.px(12) }
-                        .alignmentGuide(.bottom) { g in g[.top] - BP.px(12) }
+                        .padding(below ? .top : .bottom, d + BP.px(10))
                         .opacity(focused ? 1 : 0)
                         .accessibilityHidden(true)
                 }
