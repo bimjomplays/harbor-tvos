@@ -442,6 +442,13 @@ final class MPVPlayerController: UIViewController {
         applyAssPlacement()
     }
 
+    /// (overnight polish) Hidden under a dialog that covers the frame (Leave the show?), whose
+    /// buttons the lines otherwise ran through. Never touched anywhere else.
+    func setSubtitlesHidden(_ hidden: Bool) {
+        guard let mpv else { return }
+        check(mpv_set_property_string(mpv, "sub-visibility", hidden ? "no" : "yes"))
+    }
+
     private func liftedPos(_ pos: String) -> String {
         let base: Int = Int(pos) ?? 100
         let keepsOwn: Bool = assShown && Self.assOverride(SettingsBridge.shared.slice.subAssOverride) == "no"
