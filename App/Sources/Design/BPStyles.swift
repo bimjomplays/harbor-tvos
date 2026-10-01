@@ -33,12 +33,15 @@ struct BPTileStyle: ButtonStyle {
     /// How far a focused tile grows: posters 1.07; a full-width row (the stream picker's) only a
     /// little, or its lift runs out of the list's sides.
     var lift: CGFloat = 1.07
+    /// The fine white edge around the whole label; off where the card draws its own around its art
+    /// (an episode cell: still on top, title and overview under it).
+    var edge = true
     /// bp-settings-parts.tsx onCellFocus: runs when the tile takes focus.
     var onFocus: (() -> Void)? = nil
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader(onFocus: onFocus) { focused in
             configuration.label
-                .modifier(BPTileFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius, lift: lift))
+                .modifier(BPTileFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius, lift: lift, edge: edge))
         }
     }
 }
@@ -51,12 +54,13 @@ struct BPTileFocusModifier: ViewModifier {
     let pressed: Bool
     var radius: CGFloat = BP.rXS
     var lift: CGFloat = 1.07
+    var edge = true
 
     func body(content: Content) -> some View {
         content
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(Color.white.opacity(focused ? 0.85 : 0), lineWidth: 2.5)
+                    .stroke(Color.white.opacity(focused && edge ? 0.85 : 0), lineWidth: 2.5)
             }
             .shadow(color: .black.opacity(focused ? 0.7 : 0), radius: focused ? 26 : 0, y: focused ? 18 : 0)
             .scaleEffect(focused ? (pressed ? lift * BP.press : lift) : 1)

@@ -1140,7 +1140,7 @@ struct DetailView: View {
                                         spoiler: model.spoilerMask(for: ep), showRating: model.showEpisodeRating, showDescription: model.showEpisodeDescription,
                                         progress: model.progress(for: ep))
                         }
-                            .buttonStyle(BPTileStyle())
+                            .buttonStyle(BPTileStyle(lift: 1.05, edge: false))
                             .focused($stripFocus, equals: ep.id)
                             .bpProgressValue(model.progress(for: ep))
                             // episode-watched-menu.tsx on hold-Select, plus use-mark-season's season toggle.
@@ -1507,6 +1507,9 @@ struct EpisodeCell: View {
             }
             .frame(width: Self.size.width, height: Self.size.height)
             .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
+            // (overnight polish) The focus edge hugs the still, as tvOS draws it on an episode; the
+            // title and overview under it lift with the cell but stay outside the frame.
+            .overlay(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous).stroke(Color.white.opacity(focused ? 0.85 : 0), lineWidth: 2.5))
             Text(episode.title).font(BP.sans(12, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 .blur(radius: hideTitle ? BP.px(6) : 0)
                 .animation(BP.easeFast, value: hideTitle)
