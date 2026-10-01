@@ -270,6 +270,8 @@ struct BPRailView<Lead: View>: View {
     @State private var heldRow: String?
     /// `leadHeld` as state, for the delayed scrolls to read its current value.
     @State private var leadNow = false
+    /// The held row's top in the viewport, kept by its geometry (the park watchdog below).
+    @State private var parkedY: CGFloat?
     private static var topID: String { "bp-rail-top" }
     /// (device build 291, CI screenshots 19/20/25) reference/harbor bp-catalog-page.tsx never
     /// overlaps the two at all: `data-bp-hero` is a `shrink-0` flex sibling ABOVE a `flex-1
@@ -371,6 +373,10 @@ struct BPRailView<Lead: View>: View {
                             .onGeometryChange(for: CGFloat.self) { g in g.size.height } action: { [key = row.key] h in
                                 if heights[key] != h { heights[key] = h }
                             }
+                            // Where the parked row's top sits in the viewport now (the park watchdog).
+                            .onGeometryChange(for: CGFloat.self) { g in g.frame(in: .scrollView).minY } action: { [key = row.key] y in
+                                if key == (heldRow ?? focusedRow) { parkedY = y }
+                            }
                             // The row holding focus draws its lifted tile and caption over the row below.
                             .zIndex(heldRow == row.key ? 2 : 0)
                     }
@@ -418,6 +424,21 @@ struct BPRailView<Lead: View>: View {
                 for delay in [0.45, 0.9] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                         guard focusedRow == key else { return }
+                        withAnimation(BP.easeSlow) { park(key, proxy) }
+                    }
+                }
+            }
+            // (device builds 319/321) Park watchdog. Home's restored first focus (last session's row)
+            // lands while the rail is still settling, and every park issued then was lost: the row
+            // stayed at the bottom of the screen with the ring on it until the first press. For a few
+            // seconds after a row takes the ring, a row that is not where a park puts it parks again.
+            .task(id: heldRow ?? focusedRow) {
+                guard let key = heldRow ?? focusedRow, rows.contains(where: { $0.key == key }) else { return }
+                parkedY = nil
+                for _ in 0..<6 {
+                    try? await Task.sleep(for: .milliseconds(700))
+                    guard !Task.isCancelled, (heldRow ?? focusedRow) == key, !leadNow else { return }
+                    if let y = parkedY, abs(y - parkOffset) > 24 {
                         withAnimation(BP.easeSlow) { park(key, proxy) }
                     }
                 }
