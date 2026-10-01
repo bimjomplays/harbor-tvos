@@ -396,6 +396,8 @@ struct BPRailView<Lead: View>: View {
             // softening it: fully hidden for the whole inset except one short `railFade` at its
             // own bottom edge, so a row is invisible until the last moment it slides into place.
             .onGeometryChange(for: CGFloat.self) { g in g.size.height } action: { h in viewport = h }
+            // The spotlight above names the focused title; posters stay clean (BPTileView).
+            .environment(\.bpTileCaptions, false)
             .mask(
                 VStack(spacing: 0) {
                     Color.clear.frame(height: max(0, topInset - railFade))

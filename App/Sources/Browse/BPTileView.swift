@@ -9,6 +9,10 @@ struct BPTileView: View {
     @ObservedObject private var marks = CardMarksStore.shared
     /// poster.tsx sizes the art to the card at devicePixelRatio (PosterSizing).
     @Environment(\.displayScale) private var displayScale
+    /// (overnight polish) Off under a spotlight hero (BPRailView), which already names the focused
+    /// title in large type: the caption over the poster art only repeated it, over the poster's own
+    /// lettering. Grids without a hero (Search, Library, See all) keep it.
+    @Environment(\.bpTileCaptions) private var tileCaptions
     /// (review 21 fixes) The art url that drew nothing (its fallback too). bp-tile's art.url goes
     /// empty once useBpArt's chain runs out, and the title stands on the plate again; kept as the
     /// url rather than a flag so a reused tile with other art is not held to an old failure.
@@ -174,7 +178,7 @@ struct BPTileView: View {
                     .multilineTextAlignment(.center).padding(BP.px(10))
                     .frame(width: size.width, height: size.height)
             }
-            if caption && hasArt {
+            if caption && hasArt && tileCaptions {
                 // bp-tile.tsx: --bp-scrim-up over the lower half, then the title (line-clamp-2,
                 // px-2.5 pb-2), both only on focus; the marks draw after them, unwashed.
                 LinearGradient(stops: [.init(color: BP.void_, location: 0), .init(color: BP.void_.opacity(0.88), location: 0.18),
@@ -227,4 +231,13 @@ enum CardMark {
     private static let dayFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); return f
     }()
+}
+
+private struct BPTileCaptionsKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    /// Whether a focused poster prints its title over its art (BPTileView).
+    var bpTileCaptions: Bool {
+        get { self[BPTileCaptionsKey.self] }
+        set { self[BPTileCaptionsKey.self] = newValue }
+    }
 }
