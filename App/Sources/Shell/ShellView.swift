@@ -368,6 +368,8 @@ struct TopBarView: View {
     @ObservedObject private var parental = ParentalGate.shared
     @AppStorage(EBookGate.key) private var ebookOn = false
     @FocusState private var focusedTab: Room?
+    /// focusBar placed the ring itself (a row named a tab): the landing is not redirected.
+    @State private var barRequested = false
     /// ShellView's latest "ring to the bar" request (a row's Left off its start).
     var request = BPBarRequest(serial: 0, tab: nil)
 
@@ -431,6 +433,15 @@ struct TopBarView: View {
         // (review 6) use-bp-focus stops seeding once the viewer has moved: a room's seed now waits
         // for Continue Watching (up to 3 s), and it pulled the ring off the bar the viewer was walking.
         .onChange(of: focusedTab) { old, new in
+            // (device build 355) Up from a room landed on whichever tab sat above the card (Home
+            // from the first Movies poster), so Up, Right opened the wrong room. As on Apple's own
+            // tab bar, entering the bar lands on the room on screen unless a row asked for a tab.
+            if old == nil, let new, !barRequested, new != app.room, new != .settings, onBar(app.room) {
+                focusedTab = app.room
+                ShellFocus.shared.barHasFocus = true
+                return
+            }
+            barRequested = false
             if old != nil { ShellFocus.shared.barMovedAt = Date() }
             ShellFocus.shared.barHasFocus = new != nil
         }
@@ -443,9 +454,12 @@ struct TopBarView: View {
 
     /// bp-focus-core focusBpTopBar / bpChromeOrder: the tab the row named when it is on the bar,
     /// else the active tab (the cog for Settings), else the first tab.
+    private func onBar(_ r: Room) -> Bool {
+        r == .settings || Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout).contains(r)
+    }
+
     private func focusBar(_ wanted: Room?) {
         let order: [Room] = Room.shellTabs(sportsDeclined: settings.sportsDeclined, mangaOn: settings.mangaOn, ebookOn: ebookOn, gate: parental, nav: settings.navLayout)
-        let onBar: (Room) -> Bool = { r in r == .settings || order.contains(r) }
         let target: Room?
         if let wanted, onBar(wanted) {
             target = wanted
@@ -455,6 +469,7 @@ struct TopBarView: View {
             target = order.first
         }
         guard let target else { return }
+        barRequested = focusedTab == nil
         focusedTab = target
     }
 

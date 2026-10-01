@@ -180,11 +180,23 @@ struct AnimeHeroActionsView: View {
     @FocusState private var focus: Int?
     struct HeroMeta: Decodable { var topLine: String; var score: String?; var fromMal: Bool?; var dub: Bool; var country: String; var episode: String; var minutesLeft: String }
 
+    private func topChip(_ text: String) -> some View {
+        let award: Bool = text.uppercased() != T("New").uppercased()
+        return Text(text)
+            .font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).lineLimit(1)
+            .foregroundStyle(award ? Color(red: 0.96, green: 0.80, blue: 0.40) : Color.white)
+            .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(4))
+            .background(RoundedRectangle(cornerRadius: BP.px(5), style: .continuous).fill(Color.black.opacity(0.55)))
+            .overlay(RoundedRectangle(cornerRadius: BP.px(5), style: .continuous).stroke(Color.white.opacity(0.16), lineWidth: 1))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(8)) {
             HStack(spacing: BP.px(10)) {
                 if let i = info {
-                    if !i.topLine.isEmpty { Text(i.topLine).font(BP.sans(11, .bold)).textCase(.uppercase).tracking(0.8).foregroundStyle(BP.accent) }
+                    // (device build 355) A bare "NEW" floated alone over Start Watching; it reads as a
+                    // quiet glass chip now, matching the cards' marks (an award in gold).
+                    if !i.topLine.isEmpty { topChip(i.topLine) }
                     // (device build 316) The score already sits in the spotlight's chip line right above
                     // ("MAL 8.1"); repeated here it read as a stray "8.1" over Start Watching.
                     if i.dub { Text("Sub and Dub").font(BP.sans(12)).foregroundStyle(BP.inkMuted) }

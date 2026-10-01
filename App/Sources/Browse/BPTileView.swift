@@ -173,6 +173,9 @@ struct BPTileView: View {
             RemoteImage(url: drawn, fallback: override == nil ? nil : sized, onResult: { shown, ok in
                 if !ok { deadArt = shown } else if deadArt == shown { deadArt = nil }
             })
+            // (device build 355) Art wider than the tile (Cyberpunk: Edgerunners) filled past it and
+            // widened the stack, so the marks overlay sat off the card and the NEW chip was cut.
+            .frame(width: size.width, height: size.height).clipped()
             if !hasArt && plateText && showTitle {
                 Text(meta.name).font(BP.sans(12, .semibold)).foregroundStyle(BP.inkMuted)
                     .multilineTextAlignment(.center).padding(BP.px(10))

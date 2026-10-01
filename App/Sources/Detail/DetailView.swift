@@ -695,7 +695,11 @@ struct DetailView: View {
             } else {
                 // bp-detail-hero.tsx no-logo h1: max-w-[min(36vw,410px)] (was 700, ~70% too wide,
                 // let a long title run far past where upstream wraps it to a second line).
-                Text(model.meta.name).font(BP.display(52)).foregroundStyle(BP.ink).lineLimit(2).frame(maxWidth: BP.px(410), alignment: .leading)
+                // (device build 355) A long name ("I Want to Love You Till Your Dying Day") was cut to
+                // "Your Dyi…": long names set smaller and wider, then shrink to fit two lines.
+                let long: Bool = model.meta.name.count > 26
+                Text(model.meta.name).font(BP.display(long ? 40 : 52)).foregroundStyle(BP.ink).lineLimit(2).minimumScaleFactor(0.6)
+                    .frame(maxWidth: BP.px(long ? 500 : 410), alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
             }
             HStack(spacing: 0) {
