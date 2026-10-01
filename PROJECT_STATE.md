@@ -3,6 +3,10 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 08:55 UTC, overnight — main green at HEAD)
+- Run 36834800319 (HEAD: subtitle lift −34) green. Main is green and everything is pushed; the only
+  change not on TestFlight is that one-line subtitle lift (rides along with the next upload).
+
 ## Status (2026-10-01 08:12 UTC, overnight — build 325 verified)
 **Verified on the TV (325):** cold launch parks the restored Top 10 row under the hero; no caption over
 the focused poster; player shows "4K · HEVC · HDR" and the numbered ±10 glyphs; Menu with the chrome
