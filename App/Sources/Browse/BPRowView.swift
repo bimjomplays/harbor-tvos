@@ -396,6 +396,13 @@ struct BPRailView<Lead: View>: View {
                 // Discover's rails (topInset = barHeight + 10), under the spotlight everywhere else.
                 DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
             }
+            // The parked row (or lead section) measured late or changed height (a lazy row's first
+            // layout, a lead band whose cards arrived): its anchor was worked out from the old
+            // height, so it parks again.
+            .onChange(of: focusedRow.flatMap { heights[$0] }) { old, new in
+                guard old != new, let key = focusedRow else { return }
+                DispatchQueue.main.async { withAnimation(BP.easeSlow) { park(key, proxy) } }
+            }
             // use-bp-rail parks every rail row, the lead ones too. Up from a parked row onto
             // Continue Watching, Live or the anime actions left them where they were: in the top
             // band, under the spotlight copy (drawn over the rail). The rail goes back to rest.

@@ -47,6 +47,14 @@ struct DetailView: View {
     /// (review 27) Set by "Try again" while its load runs: the ring goes to Play when the message leaves.
     @State private var retryHandsPlay = false
     @Environment(\.dismiss) private var dismiss
+    /// (device build 303, real Apple TV) The hero's top on screen. The backdrop is fixed behind the
+    /// scrolling page, so episodes and rows scrolled up over bright art were unreadable; it dims as
+    /// the hero leaves (fully dimmed by the time the episodes reach the top).
+    @State private var heroTop: CGFloat = BP.px(250)
+    private var backdropDim: Double {
+        let gone: CGFloat = (BP.px(250) - heroTop) / BP.px(300)
+        return Double(min(1, max(0, gone))) * 0.86
+    }
     /// (bug pass, 4K posters) The hero backdrop is sized like a tile's art (PosterSizing): unsized,
     /// it stayed at whatever fixed tier the catalog (or, for anime, jikan.ts/kitsu.ts/anilist's own
     /// small-web-card default) gave, however large the box drawing it actually was.
@@ -220,6 +228,8 @@ struct DetailView: View {
                 VStack(alignment: .leading, spacing: BP.px(20)) {
                     VStack(alignment: .leading, spacing: BP.px(44)) {
                         hero
+                            // Where the hero sits now: the backdrop dims as it scrolls away.
+                            .onGeometryChange(for: CGFloat.self) { g in g.frame(in: .global).minY } action: { y in heroTop = y }
                         if model.isSeries { episodes }
                     }
                     .padding(.horizontal, BP.gutter)
@@ -632,6 +642,7 @@ struct DetailView: View {
             LinearGradient(colors: [BP.void_.opacity(0.85), BP.void_.opacity(0.4), .clear], startPoint: .leading, endPoint: .init(x: 0.7, y: 0.5))
                 // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
                 .flipsForRightToLeftLayoutDirection(true)
+            BP.void_.opacity(backdropDim)
         }
         .ignoresSafeArea()
         // hero-backdrop.tsx: the layered still is alt="" aria-hidden; the logo/title over it names the page.
