@@ -1504,7 +1504,7 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 **Versions (owner request 2026-10-01):** every TestFlight upload gets a real x.y.z version
 (`MARKETING_VERSION` in project.yml; the build number stays the CI run number). Bump the patch
 (0.2.1, 0.2.2…) for fixes, the minor (0.3.0) for a batch of new features, before dispatching the
-upload. History: 0.1.0 = builds 3–329; **0.2.0** = the next upload (scrub fix, focus safety, park line).
+upload. History: 0.1.0 = builds 3–329 (every stage, the overnight polish); owner asked to start further along, so the next upload is **0.9.0** (a near-complete beta; 1.0.0 when the owner calls it ready).
 
 **MORNING SUMMARY (2026-10-01, overnight session) — install build 325 or newer from TestFlight.**
 - Owner, nothing is blocked on you. Two Apple TV settings were changed for unattended work: Screen
