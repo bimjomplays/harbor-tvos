@@ -335,7 +335,7 @@ async function continueWatchingPool(authKey: string | null, settings: Settings, 
     // local one keyed mal:) showed twice in the row with the same episode. Newest wins (sorted above).
     .filter((i) => {
       if (!isAnimeCwItem(i) || !i.name) return true;
-      const key = "anime-name:" + i.name.trim().toLowerCase();
+      const key = "anime-name:" + i.type + ":" + i.name.trim().toLowerCase();
       return seen.has(key) ? false : (seen.add(key), true);
     });
   return { items: merged.slice(0, limit), cloud, local };
