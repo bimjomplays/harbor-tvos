@@ -1361,6 +1361,11 @@ struct PlayerScreen: View {
             }
         }
         .focusSection()
+        // (device build 311) The rail sits at the far right, outside Up's reach from the centred
+        // transport: the press found nothing. Up goes to the rail's Subtitles, Down from the rail back.
+        .onMoveCommand { dir in
+            if dir == .up { focus = .chip("Subtitles") }
+        }
     }
 
     /// bp-player-rail.tsx: Back, one control per panel, then the mute toggle. Round buttons a few
@@ -1401,6 +1406,9 @@ struct PlayerScreen: View {
             }
         }
         .focusSection()
+        .onMoveCommand { dir in
+            if dir == .down { focus = .chip("playpause") }
+        }
     }
 
     /// A chrome control (PlayerOrbStyle). `id` is the focus id the chip of the same control had
