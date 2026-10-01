@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 08:12 UTC, overnight — build 325 verified)
+**Verified on the TV (325):** cold launch parks the restored Top 10 row under the hero; no caption over
+the focused poster; player shows "4K · HEVC · HDR" and the numbered ±10 glyphs; Menu with the chrome
+up just hides it (Apple behaviour); the Leave card is centred and frosted with full-width buttons; back
+on Home the ring returns to the Continue Watching card at rest.
+**Found and fixed (local, pushed to main for tests, not uploaded):** two-line subtitles still touched the
+title with the chrome up → lift −24 → −34.
+
 ## Status (2026-10-01 07:44 UTC, overnight — batch 10 green; batch 11 out)
 - Batch 10 runs 36827593246 + 36827600864 green (build 323).
 - Batch 11 from a design critique of tonight's screenshots (Sonnet, image-reading): no title caption
@@ -1450,7 +1458,7 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 
 ## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
 
-**MORNING SUMMARY (2026-10-01, overnight session) — install build 323 or newer from TestFlight.**
+**MORNING SUMMARY (2026-10-01, overnight session) — install build 325 or newer from TestFlight.**
 - Owner, nothing is blocked on you. Two Apple TV settings were changed for unattended work: Screen
   Saver → Start After = Never (was 5 min) and Remotes and Devices → Control TVs and Receivers = Off
   (you OK'd it; it stopped the TV switching inputs). Put them back if you like. One recent search
