@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-01 05:31 UTC, overnight — CI GREEN; batch 7 pushed)
+- Run 36816586333 (dispatch of the CI-312 fix, build 316) passed the simulator UI tests: **green**.
+- Batch 7 pushed to main (run 36820148360, tests only; next upload bundles more): episode focus edge on
+  the still, rail fade 20 px, Library/Search top padding, "4K · HEVC · HDR" stream line, frosted
+  Skip/Next pill and Up Next card, ASS subtitles lifted over the chrome, chrome raised into the safe area,
+  no empty synopsis line in the hero.
+
 ## Status (2026-10-01 05:10 UTC, overnight — build 316 verified)
 **Verified on the TV (316):** subtitles hidden under the Leave dialog; series transport (prev/next
 episode) and episode line "S2 E19 · Desert Journey" over the title. **Found:** styled ASS anime subtitles
