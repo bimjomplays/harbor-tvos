@@ -59,7 +59,8 @@ struct SearchView: View {
                     if !ai.aiMode { statusLine }
                 }
                 .padding(.leading, BP.gutter)
-                .padding(.top, BP.barHeight + BP.px(20))
+                // (device build 314) Clear of the focused tab's name pill, like Library.
+                .padding(.top, BP.barHeight + BP.px(34))
                 .frame(width: BP.px(560), alignment: .leading)
                 results
             }
@@ -505,7 +506,7 @@ struct SearchView: View {
     private var resultsScroll: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: BP.rowGap) {
-                Color.clear.frame(height: BP.barHeight + BP.px(20))
+                Color.clear.frame(height: BP.barHeight + BP.px(34))
                 // search-overlay.tsx: in AI mode the AI section replaces the regular results.
                 if ai.aiMode && !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
                     AISearchSection(ai: ai, query: model.query.trimmingCharacters(in: .whitespaces),
