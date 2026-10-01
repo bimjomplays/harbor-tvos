@@ -271,7 +271,10 @@ struct BPRailView<Lead: View>: View {
     /// rail fakes upstream's boundary with `topInset` + this mask; keep the two in the same
     /// neighbourhood as `railFade` below, or a parked row again lands inside the fade instead of
     /// past it.
-    private var railFade: CGFloat { BP.px(60) }
+    /// (device build 314) 60 px canvas (101 pt) left the bottom of the row above a parked one
+    /// showing as faint rectangles behind the hero synopsis; the row gap above a parked row is ~44 pt,
+    /// so the fade fits inside it.
+    private var railFade: CGFloat { BP.px(20) }
     /// Where the focused row's top parks: just under the spotlight copy (use-bp-rail shifts the
     /// active row's top to the rail's top edge, right under the hero).
     private var parkOffset: CGFloat { topInset + BP.px(6) }
