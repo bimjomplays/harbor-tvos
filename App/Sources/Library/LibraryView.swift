@@ -496,10 +496,14 @@ struct LibraryView: View {
                 .buttonStyle(BPActionStyle(primary: model.showSearch || !model.query.isEmpty))
                 .focused($focusedChip, equals: "search")
                 .accessibilityIdentifier("library-search")
-                Button { Task { await model.load(force: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }.buttonStyle(BPActionStyle())
+                // (owner 2026-10-01, Apple TV look) Refresh and Repair are maintenance, not views: icons
+                // only, named by the hint under them and by VoiceOver, so the row fits the screen.
+                Button { Task { await model.load(force: true) } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(BPActionStyle())
+                    .accessibilityLabel(Text(T("Refresh")))
                     .accessibilityIdentifier("library-refresh")
                 // library-repair-rows.tsx lives in desktop Settings → Advanced; the TV keeps it beside the library.
-                Button { model.showRepair.toggle() } label: { Label("Repair library", systemImage: "wrench.and.screwdriver") }.buttonStyle(BPActionStyle(primary: model.showRepair))
+                Button { model.showRepair.toggle() } label: { Image(systemName: "wrench.and.screwdriver") }.buttonStyle(BPActionStyle(primary: model.showRepair))
+                    .accessibilityLabel(Text(T("Repair library")))
                     .focused($focusedChip, equals: "repair")
                     .accessibilityIdentifier("library-repair")
                 if statsEnabled {
