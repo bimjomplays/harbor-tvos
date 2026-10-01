@@ -169,7 +169,7 @@ struct BPTitleArt: View {
         ZStack {
             ForEach(Array(layers.enumerated()), id: \.element.id) { i, layer in
                 let top = i == layers.count - 1
-                KenBurnsImage(image: layer.image, drift: drift && !reduceMotion)
+                KenBurnsImage(image: layer.image, drift: drift && !reduceMotion, fitWidth: Self.isAnime(meta))
                     .opacity(top ? 1 : 0)
                     .zIndex(top ? 0 : 1)
                     .transition(.identity)
@@ -182,6 +182,11 @@ struct BPTitleArt: View {
     /// Anime ids whose metas carry no real backdrop: Jikan sets `background` to the poster itself,
     /// Kitsu / AniList / AniDB often set none, so the hero was the poster, upscaled and blurred.
     private static let animeIdPrefixes: [String] = ["mal:", "kitsu:", "anilist:", "anidb:"]
+
+    static func isAnime(_ m: Meta?) -> Bool {
+        guard let id = m?.id else { return false }
+        return animeIdPrefixes.contains(where: { id.hasPrefix($0) })
+    }
 
     private static func wantsAnimeBackdrop(_ m: Meta) -> Bool {
         guard animeIdPrefixes.contains(where: { m.id.hasPrefix($0) }) else { return false }
@@ -345,6 +350,10 @@ final class HeroBlur: @unchecked Sendable {
 struct KenBurnsImage: View {
     let image: UIImage
     var drift = true
+    /// (owner report 2026-10-01, Death Note) Anime key art puts full-length characters across the
+    /// whole frame, and filled to the screen's height their lower halves sat behind the rows. Anime
+    /// art is drawn whole at the frame's width instead, from the top, fading out at its foot.
+    var fitWidth = false
     @State private var phase = 0
 
     /// (owner report 2026-10-01) A wide banner (AniList's are ~4.75:1) filled to the full screen
@@ -355,8 +364,9 @@ struct KenBurnsImage: View {
 
     var body: some View {
         GeometryReader { g in
-            let banner: Bool = aspect >= 2.0
-            let h: CGFloat = banner ? min(g.size.height, max(g.size.width / aspect, g.size.height * 0.62)) : g.size.height
+            let banner: Bool = aspect >= 2.0 || fitWidth
+            let floor: CGFloat = fitWidth ? 0.5 : 0.62
+            let h: CGFloat = banner ? min(g.size.height, max(g.size.width / aspect, g.size.height * floor)) : g.size.height
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
