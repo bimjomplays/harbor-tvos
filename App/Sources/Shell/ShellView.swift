@@ -10,6 +10,9 @@ final class ShellFocus {
     /// (review 6) When the ring last left a top-bar tab (walking the bar, or on to the profile chip
     /// or the cog). A room's first-focus seed that lands later leaves the ring there (RoomView).
     var barMovedAt: Date?
+    /// A top-bar tab holds the ring right now (BPRailView goes back to rest only then, not when a
+    /// page or panel opened over the room took focus away).
+    var barHasFocus = false
 }
 
 private struct ShellFocusNamespaceKey: EnvironmentKey { static let defaultValue: Namespace.ID? = nil }
@@ -427,8 +430,9 @@ struct TopBarView: View {
         .focusSection()
         // (review 6) use-bp-focus stops seeding once the viewer has moved: a room's seed now waits
         // for Continue Watching (up to 3 s), and it pulled the ring off the bar the viewer was walking.
-        .onChange(of: focusedTab) { old, _ in
+        .onChange(of: focusedTab) { old, new in
             if old != nil { ShellFocus.shared.barMovedAt = Date() }
+            ShellFocus.shared.barHasFocus = new != nil
         }
         .onChange(of: request) { _, r in focusBar(r.tab) }
         .background(

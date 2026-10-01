@@ -422,7 +422,10 @@ struct BPRailView<Lead: View>: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     // A lead section that parked itself (Discover's bands) holds focusedRow; leave it.
                     let onRow: Bool = focusedRow.map { k in rows.contains { $0.key == k } } ?? true
-                    guard heldRow == nil, onRow else { return }
+                    // (CI run 312, NavigationTests) Only for the top bar: a Detail page opened over the
+                    // room also takes focus, and resetting under it sent the ring back to Jump back in
+                    // instead of the tile it left from.
+                    guard heldRow == nil, onRow, ShellFocus.shared.barHasFocus else { return }
                     focusedRow = nil
                     withAnimation(BP.easeSlow) { proxy.scrollTo(Self.topID, anchor: .top) }
                 }
