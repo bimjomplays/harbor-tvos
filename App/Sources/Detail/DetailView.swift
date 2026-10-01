@@ -165,7 +165,8 @@ struct DetailView: View {
         out.append(HeroAction(key: "lists", label: "Add to list", icon: "square.stack.3d.up") { listDialog = true })
         if model.isMovie, hero?.showWatchedButton ?? true {
             let watched = model.movieWatched
-            out.append(HeroAction(key: "watched", label: watched ? "Marked watched" : "Mark watched", icon: "checkmark", active: watched) {
+            // (device build 343) Its own glyph: two plain checkmarks (Watchlist and Watched) read alike.
+            out.append(HeroAction(key: "watched", label: watched ? "Marked watched" : "Mark watched", icon: watched ? "eye.fill" : "eye", active: watched) {
                 Task { await model.toggleWatched() }
             })
         }

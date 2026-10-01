@@ -495,6 +495,10 @@ export async function clearContinueWatching(profileId: string, linked: boolean, 
     dismissCw(i, authKey);
   }
   for (const e of listLocalCw()) clearLocalCw(e.id);
+  // (device build 343) Detail still offered "Resume" on a cleared film: its local resume point
+  // (lib/resume.ts, harbor.resume) outlived the row. The owner asked for a clean slate, so every
+  // saved resume position goes too (watched marks and the library stay).
+  try { localStorage.removeItem("harbor.resume"); } catch { /* storage unavailable */ }
   return ids.size;
 }
 
