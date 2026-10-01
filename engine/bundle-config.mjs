@@ -66,6 +66,20 @@ export const upstreamRevFull = (() => {
 export const stubs = {
   name: "harbor-stubs",
   setup(b) {
+    // --- TV source patches -------------------------------------------------------------------
+    // (owner report 2026-10-01) providers/anime-detail.ts animeDetails sends every ONA / OVA /
+    // special to its franchise's main TV series (kitsuMainTvSeries). A full season released as an
+    // ONA (Steel Ball Run, Netflix 2026, 12 episodes) opened as "Stone Ocean Part 3" with Stone
+    // Ocean's episodes. The TV keeps the redirect for short side entries only (3 episodes or fewer,
+    // or no count): reference/harbor stays untouched, the patch is applied as the file is bundled,
+    // and the build fails loudly if upstream's line ever changes (so the patch is re-checked).
+    b.onLoad({ filter: /[\\/]lib[\\/]providers[\\/]anime-detail\.ts$/ }, (a) => {
+      const src = fs.readFileSync(a.path, "utf8");
+      const from = "if (anime && SIDE_ENTRY_SUBTYPES.has((anime.subtype ?? \"\").toLowerCase())) {";
+      if (!src.includes(from)) throw new Error("harbor-tvos patch: anime-detail.ts side-entry line changed upstream; re-check the ONA patch");
+      const to = "if (anime && SIDE_ENTRY_SUBTYPES.has((anime.subtype ?? \"\").toLowerCase()) && !((anime.episodeCount ?? 0) > 3)) {";
+      return { contents: src.replace(from, to), loader: "ts" };
+    });
     // --- Tauri desktop shell -------------------------------------------------------------
     b.onResolve({ filter: /^@tauri-apps\// }, (a) => ({ path: a.path, namespace: "tauri-stub" }));
     b.onLoad({ filter: /.*/, namespace: "tauri-stub" }, (a) => ({
