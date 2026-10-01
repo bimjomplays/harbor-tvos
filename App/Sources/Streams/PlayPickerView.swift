@@ -1085,11 +1085,13 @@ struct PlayPickerView: View {
                     if resolving == s.id { ProgressView().tint(BP.inkMuted).scaleEffect(0.7).accessibilityHidden(true) }
                 }
                 let headline = s.tvRow?.headline ?? s.parsedTitle ?? s.title ?? s.name ?? "Stream"
-                Text(headline).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                // (device build 319) A multi-line addon name ("[RD+] Torrentio\n4k") drew as
+                // "[RD+] Torrentio…": the first line alone, whole.
+                Text(Self.firstLine(headline)).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                 // bp-stream-row.tsx: the addon's whole description (fullStreamDescription), else the
                 // one-line summary; both with the pictographs dropped (engine stampPickerRows).
                 if let text = s.tvRow, SettingsBridge.shared.slice.fullStreamDescription ?? true, !text.description.isEmpty {
-                    Text(verbatim: text.description).font(BP.sans(12, .medium)).foregroundStyle(BP.inkMuted).lineLimit(8)
+                    Text(verbatim: Self.tidy(text.description)).font(BP.sans(12, .medium)).foregroundStyle(BP.inkMuted).lineLimit(8)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let text = s.tvRow, !text.detail.isEmpty {
                     Text(verbatim: text.detail).font(BP.sans(12, .medium)).foregroundStyle(BP.inkMuted).lineLimit(1)
@@ -1123,6 +1125,25 @@ struct PlayPickerView: View {
         .focused($rowFocus, equals: "stream:" + s.id)
         .bpSelected(highlight)
         .accessibilityIdentifier("stream-\(s.index)")
+    }
+
+    static func firstLine(_ text: String) -> String {
+        let line: Substring = text.split(whereSeparator: { $0.isNewline }).first ?? Substring(text)
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// (device build 319) With the pictographs dropped (engine stampPickerRows) an addon description
+    /// kept their separators: a line of "////" and trailing " /". Lines of punctuation alone go, and
+    /// a trailing separator is trimmed.
+    static func tidy(_ text: String) -> String {
+        let junk = CharacterSet(charactersIn: "/|·•-–—_ ").union(.whitespaces)
+        let lines: [String] = text.split(whereSeparator: { $0.isNewline }).compactMap { raw in
+            var line: String = String(raw).trimmingCharacters(in: .whitespaces)
+            while let last = line.unicodeScalars.last, junk.contains(last) { line.removeLast() }
+            let hasContent: Bool = line.unicodeScalars.contains { !junk.contains($0) }
+            return hasContent ? line : nil
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// bp-stream-row.tsx META: the quality pill (showQualityBadge), the addon's name, the DUB/SUB
