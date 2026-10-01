@@ -2,6 +2,48 @@ import SwiftUI
 
 // bp-subtitle-parts.tsx / bp-player-sources.tsx: the pieces the in-player dialogs share.
 
+/// (overnight polish, Apple TV player look) The player chrome's controls: a round glass button
+/// with the icon alone; focus floods it white, lifts it, and names it in a small caption above.
+/// `active` rings an unfocused one (muted, a sleep timer, a changed speed). The label stays the
+/// button's accessibility name (`Label` with an icon-only style).
+struct PlayerOrbStyle: ButtonStyle {
+    let title: String
+    var active = false
+    var large = false
+    /// The caption goes under the button (the transport, whose top edge sits close under the scrubber).
+    var captionBelow = false
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        let d: CGFloat = large ? BP.px(46) : BP.px(38)
+        let below: Bool = captionBelow
+        let glyph: CGFloat = large ? BP.px(19) : BP.px(15.5)
+        return BPFocusReader { focused in
+            configuration.label
+                .labelStyle(.iconOnly)
+                .font(.system(size: glyph, weight: .semibold))
+                .foregroundStyle(focused ? Color.black : Color.white)
+                .frame(width: d, height: d)
+                .background(Circle().fill(focused ? AnyShapeStyle(Color.white) : AnyShapeStyle(.ultraThinMaterial)))
+                .overlay(Circle().stroke(active && !focused ? Color.white.opacity(0.9) : Color.white.opacity(0.12), lineWidth: active && !focused ? 2 : 1))
+                .opacity(enabled ? 1 : 0.4)
+                .overlay(alignment: below ? .bottom : .top) {
+                    Text(verbatim: title)
+                        .font(BP.sans(12.5, .semibold)).foregroundStyle(Color.white)
+                        .lineLimit(1).fixedSize()
+                        .padding(.horizontal, BP.px(9)).padding(.vertical, BP.px(4))
+                        .background(Capsule().fill(Color.black.opacity(0.6)))
+                        .alignmentGuide(.top) { g in g[.bottom] + BP.px(12) }
+                        .alignmentGuide(.bottom) { g in g[.top] - BP.px(12) }
+                        .opacity(focused ? 1 : 0)
+                        .accessibilityHidden(true)
+                }
+                .scaleEffect(configuration.isPressed ? 0.94 : (focused ? 1.12 : 1))
+                .shadow(color: Color.black.opacity(focused ? 0.45 : 0), radius: 14, y: 6)
+                .animation(BP.easeFast, value: focused)
+        }
+    }
+}
+
 /// bp-subtitle-parts.tsx Chip: a pill; `on` is filled with --bp-on, off is an edge hairline,
 /// and focus floods it bright.
 struct PlayerChipStyle: ButtonStyle {

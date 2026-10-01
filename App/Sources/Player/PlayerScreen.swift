@@ -1281,106 +1281,121 @@ struct PlayerScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
             chromeBody
-            // bp-player-shell.tsx: BpHintBar (HINTS = ["select", "back"]) always sits under the rail
-            // while the chrome is up — this surface has no top bar, so it never carries the "nav"
-            // hint. The player drew no hint bar at all; decorative only (HintBarView has no
-            // focusable/accessibilityIdentifier of its own), so this touches no focus logic.
-            HintBarView(actions: [.select, .back])
-                .padding(.top, BP.px(10))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .background(LinearGradient(colors: [.clear, BP.void_.opacity(0.75), BP.void_.opacity(0.95)], startPoint: .init(x: 0.5, y: 0.45), endPoint: .bottom))
+        // (overnight polish) Apple TV's player: a soft black wash rising from the bottom edge, no
+        // hint bar (upstream's BpHintBar suits a gamepad; the Siri Remote's own buttons need none).
+        .background(LinearGradient(stops: [.init(color: .clear, location: 0.38), .init(color: Color.black.opacity(0.5), location: 0.66),
+                                           .init(color: Color.black.opacity(0.88), location: 1)], startPoint: .top, endPoint: .bottom))
         .ignoresSafeArea()
     }
 
+    /// (overnight polish, Apple TV player look) The episode line over the title at the bottom left,
+    /// the panel controls as round glass buttons on the same line at the right, the full-width
+    /// scrubber, then the times with the transport centred between them. Same buttons, the same
+    /// focus ids and the same two focus sections (rail above, transport below) as before.
     private var chromeBody: some View {
         VStack(alignment: .leading, spacing: BP.px(14)) {
-            HStack(alignment: .lastTextBaseline, spacing: BP.px(14)) {
-                VStack(alignment: .leading, spacing: BP.px(4)) {
-                    Text(shownTitle).font(BP.display(26)).foregroundStyle(BP.ink)
+            HStack(alignment: .bottom, spacing: BP.px(20)) {
+                VStack(alignment: .leading, spacing: BP.px(5)) {
                     // (open-items sweep) A tuned channel's line watches the guide (TunedChannelSubtitle).
                     if let live = liveGuide, let t = tuned { TunedChannelSubtitle(live: live, channel: t) }
-                    else if let s = shownSubtitle { Text(s).font(BP.sans(15, .semibold)).foregroundStyle(BP.inkMuted) }
+                    else if let s = shownSubtitle {
+                        Text(s).font(BP.sans(14, .semibold)).foregroundStyle(Color.white.opacity(0.72)).lineLimit(1)
+                    }
+                    Text(shownTitle).font(BP.display(28)).foregroundStyle(Color.white).lineLimit(1)
+                        .shadow(color: Color.black.opacity(0.45), radius: 10, y: 2)
                 }
-                Spacer()
-                Text(status.state == "loading" ? T("Loading…") : status.videoParams.split(separator: " ").prefix(3).joined(separator: " "))
-                    .font(BP.sans(12, .medium)).foregroundStyle(BP.inkSubtle)
+                Spacer(minLength: BP.px(20))
+                railRow.fixedSize()
             }
             if !isLive {
                 // (perf pass 4) Both observe the clock themselves.
                 PlayerClockReader(clock) { c in seekBar(c) }
-                PlayerClockReader(clock) { c in scrubReadout(c) }
             }
-            // bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed
-            // when there is none; VOD gets Back / Forward by the seek step. bp-player-shell.tsx wraps
-            // this row `overflow-x-auto` (`data-bp-scroll-x`); a plain HStack with no scroll ran every
-            // chip off the right edge of the screen with no way to reach the rest once there were more
-            // than fit (five-plus is common: prev/rewind/play/forward/next).
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: BP.px(10)) {
-                    // bp-player-controls `series = hasPrevEpisode || hasNextEpisode` (both gated by canChangeEpisode).
-                    if hasPrevEpisodeNow || hasNextEpisodeNow {
-                        iconChip("prev", "backward.end.fill", label: T("Previous episode")) { previousEpisode() }
-                            .disabled(!hasPrevEpisodeNow)
+            ZStack {
+                if isLive {
+                    HStack {
+                        Text("LIVE").font(BP.sans(13, .bold)).foregroundStyle(BP.live)
+                        Spacer()
                     }
-                    if !isLive { iconChip("rewind", "gobackward", label: T("Back %llds", Int(prefs.seekBackStepSec))) { seekBy(-prefs.seekBackStepSec) } }
-                    chip(isPaused ? "Play" : "Pause", isPaused ? "play.fill" : "pause.fill", id: "playpause") { togglePause() }
-                    if !isLive { iconChip("forward", "goforward", label: T("Forward %llds", Int(prefs.seekForwardStepSec))) { seekBy(prefs.seekForwardStepSec) } }
-                    if hasPrevEpisodeNow || hasNextEpisodeNow {
-                        iconChip("next", "forward.end.fill", label: T("Next episode")) { playNext() }
-                            .disabled(!hasNextEpisodeNow)
-                    }
+                } else {
+                    PlayerClockReader(clock) { c in scrubReadout(c) }
                 }
+                transportRow
             }
-            .scrollClipDisabled()
-            .focusSection()
-            // bp-player-rail.tsx: Back, one chip per panel, then the mute toggle. Same overflow risk as
-            // the transport row above (worse: live TV alone can put Back/Subtitles/Audio/Speed/Sources/
-            // TV Guide/Previous channel/Mute/LIVE on one row, 9+ chips), so it gets the same scroll wrap.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: BP.px(10)) {
-                    chip("Back", "chevron.backward") { requestClose() }
-                    chip("Subtitles", "captions.bubble") { open(.subtitles) }
-                    chip("Audio", "waveform") { open(.audio) }
-                    // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
-                    // (perf pass 4) The chip observes the sleep timer itself (PlayerSleepReader).
-                    PlayerSleepReader { t in speedChip(t) }
-                    // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
-                    // mpv cannot, so the control is not there on that engine.
-                    if controller?.supportsPictureInPicture == true {
-                        chip("Picture in Picture", "pip.enter", id: "pip") { controller?.startPictureInPicture() }
-                    }
-                    if !isLive, engine == .mpv { chip(anime4kChipLabel, "sparkles", id: "anime4k") { open(.anime4k) } }
-                    // (P8) bp-ten-foot.tsx sources slot: the switcher opens over the film and swaps the
-                    // stream in place. Where it can't (a home-server copy), the picker reopens at this spot.
-                    if canSwitchInPlace { chip("Sources", "list.bullet") { open(.sources) } }
-                    else if onSwitchSource != nil { chip("Sources", "list.bullet") { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
-                    // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
-                    if !isLive, context?.homeServer != nil { chip("Quality", "dial.medium", id: "hsquality") { open(.homeServerQuality) } }
-                    // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
-                    if isLive, liveGuide != nil { chip("TV Guide", "list.bullet.rectangle", id: "tvguide") { open(.channels) } }
-                    // use-player-hotkeys playerPrevChannel: back to the last channel watched.
-                    if isLive, !prevChannels.isEmpty { chip("Previous channel", "arrow.uturn.backward", id: "prevchannel") { goPrevChannel() } }
-                    if isLive, let add = onAddToMultiview, let ch = currentChannel {
-                        chip("Add to Multiview", "rectangle.split.2x2", id: "multiview") { finish(natural: false); add(ch) }
-                    }
-                    // Watch Together: the room panel (chat, people) over the playing video.
-                    if together.inSession { chip("Room", "person.2.fill") { roomOpen = true } }
-                    // bp-player-rail: the mute toggle ("Muted" / "Sound on").
-                    chip(muted ? "Muted" : "Sound on", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", id: "mute", active: muted) {
-                        controller?.setMuted(!muted)
-                        muted.toggle()
-                    }
-                    if isLive { Text("LIVE").font(BP.sans(14, .semibold)).foregroundStyle(BP.live) }
-                }
-            }
-            .scrollClipDisabled()
-            .focusSection()
         }
-        // (review) No bottom margin here any more: the hint bar now follows as a sibling and would
-        // otherwise sit a gutter-and-a-bit below the rail instead of right under it.
         .padding(.horizontal, BP.gutter)
         .padding(.top, BP.gutter)
+        .padding(.bottom, BP.px(30))
+    }
+
+    /// bp-player-controls.tsx: the transport. A series gets Previous / Next episode, each dimmed
+    /// when there is none; VOD gets Back / Forward by the seek step; Play / Pause is the big one.
+    private var transportRow: some View {
+        HStack(spacing: BP.px(16)) {
+            // bp-player-controls `series = hasPrevEpisode || hasNextEpisode` (both gated by canChangeEpisode).
+            if hasPrevEpisodeNow || hasNextEpisodeNow {
+                orb("prev", "backward.end.fill", title: T("Previous episode"), below: true) { previousEpisode() }
+                    .disabled(!hasPrevEpisodeNow)
+            }
+            if !isLive { orb("rewind", "gobackward", title: T("Back %llds", Int(prefs.seekBackStepSec)), below: true) { seekBy(-prefs.seekBackStepSec) } }
+            orb("playpause", isPaused ? "play.fill" : "pause.fill", title: T(isPaused ? "Play" : "Pause"), large: true, below: true) { togglePause() }
+            if !isLive { orb("forward", "goforward", title: T("Forward %llds", Int(prefs.seekForwardStepSec)), below: true) { seekBy(prefs.seekForwardStepSec) } }
+            if hasPrevEpisodeNow || hasNextEpisodeNow {
+                orb("next", "forward.end.fill", title: T("Next episode"), below: true) { playNext() }
+                    .disabled(!hasNextEpisodeNow)
+            }
+        }
+        .focusSection()
+    }
+
+    /// bp-player-rail.tsx: Back, one control per panel, then the mute toggle. Round buttons a few
+    /// pt wide each, so even a live channel's longest rail fits beside the title without a scroll.
+    private var railRow: some View {
+        HStack(spacing: BP.px(12)) {
+            orb("Back", "chevron.backward", title: T("Back")) { requestClose() }
+            orb("Subtitles", "captions.bubble", title: T("Subtitles")) { open(.subtitles) }
+            orb("Audio", "waveform", title: T("Audio")) { open(.audio) }
+            // speed-menu.tsx "Speed & sleep": its face shows the sleep countdown, else a changed rate.
+            // (perf pass 4) The control observes the sleep timer itself (PlayerSleepReader).
+            PlayerSleepReader { t in speedChip(t) }
+            // control-renderer.tsx "pip": only when the engine can (capabilities().pictureInPicture);
+            // mpv cannot, so the control is not there on that engine.
+            if controller?.supportsPictureInPicture == true {
+                orb("pip", "pip.enter", title: T("Picture in Picture")) { controller?.startPictureInPicture() }
+            }
+            if !isLive, engine == .mpv { orb("anime4k", "sparkles", title: T(anime4kChipLabel), active: anime4k?.active == true) { open(.anime4k) } }
+            // (P8) bp-ten-foot.tsx sources slot: the switcher opens over the film and swaps the
+            // stream in place. Where it can't (a home-server copy), the picker reopens at this spot.
+            if canSwitchInPlace { orb("Sources", "list.bullet", title: T("Sources")) { open(.sources) } }
+            else if onSwitchSource != nil { orb("Sources", "list.bullet", title: T("Sources")) { let go = onSwitchSource; let at = switchSpot; finish(natural: false, reopening: true); go?(at) } }
+            // bp-ten-foot.tsx home-server-quality slot: a Plex/Jellyfin/Emby copy switches quality in place.
+            if !isLive, context?.homeServer != nil { orb("hsquality", "dial.medium", title: T("Quality")) { open(.homeServerQuality) } }
+            // control-renderer.tsx: on a live channel the pick-another control is the "TV Guide".
+            if isLive, liveGuide != nil { orb("tvguide", "list.bullet.rectangle", title: T("TV Guide")) { open(.channels) } }
+            // use-player-hotkeys playerPrevChannel: back to the last channel watched.
+            if isLive, !prevChannels.isEmpty { orb("prevchannel", "arrow.uturn.backward", title: T("Previous channel")) { goPrevChannel() } }
+            if isLive, let add = onAddToMultiview, let ch = currentChannel {
+                orb("multiview", "rectangle.split.2x2", title: T("Add to Multiview")) { finish(natural: false); add(ch) }
+            }
+            // Watch Together: the room panel (chat, people) over the playing video.
+            if together.inSession { orb("Room", "person.2.fill", title: T("Room")) { roomOpen = true } }
+            // bp-player-rail: the mute toggle ("Muted" / "Sound on").
+            orb("mute", muted ? "speaker.slash.fill" : "speaker.wave.2.fill", title: T(muted ? "Muted" : "Sound on"), active: muted) {
+                controller?.setMuted(!muted)
+                muted.toggle()
+            }
+        }
+        .focusSection()
+    }
+
+    /// A chrome control (PlayerOrbStyle). `id` is the focus id the chip of the same control had
+    /// (panels hand the ring back to it on close), `title` the already-translated name.
+    private func orb(_ id: String, _ icon: String, title: String, active: Bool = false, large: Bool = false, below: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: { action(); wake() }) { Label(title, systemImage: icon) }
+            .buttonStyle(PlayerOrbStyle(title: title, active: active, large: large, captionBelow: below))
+            .focused($focus, equals: .chip(id))
     }
 
     /// bp-player-scrub.tsx: buffered fill under the played fill; while presses accumulate, a
@@ -1391,17 +1406,26 @@ struct PlayerScreen: View {
         let shown: Double = pendingSeek ?? at
         let bufferedEnd: Double = max(c.buffered, shown)
         let marked: Bool = pendingSeek != nil
+        let edge: CGFloat = BP.px(32)
+        // (overnight polish) Apple TV's scrubber: a taller translucent track, white played fill, and
+        // while presses add up a white time bubble over the spot playback will jump to.
         return GeometryReader { g in
             ZStack(alignment: .leading) {
-                Capsule().fill(BP.edge2)
-                Capsule().fill(BP.ink.opacity(0.3)).frame(width: g.size.width * fraction(bufferedEnd, of: duration))
-                Capsule().fill(BP.ink).frame(width: g.size.width * fraction(shown, of: duration))
+                Capsule().fill(Color.white.opacity(0.22))
+                Capsule().fill(Color.white.opacity(0.38)).frame(width: g.size.width * fraction(bufferedEnd, of: duration))
+                Capsule().fill(Color.white).frame(width: g.size.width * fraction(shown, of: duration))
                 if marked {
                     Capsule().fill(BP.accent).frame(width: 3).offset(x: g.size.width * fraction(at, of: duration) - 1.5)
+                    Text(fmt(shown))
+                        .font(BP.sans(13, .bold)).monospacedDigit().foregroundStyle(Color.black)
+                        .padding(.horizontal, BP.px(8)).padding(.vertical, BP.px(3))
+                        .background(Capsule().fill(Color.white))
+                        .fixedSize()
+                        .position(x: bubbleX(g.size.width * fraction(shown, of: duration), width: g.size.width, edge: edge), y: -BP.px(18))
                 }
             }
         }
-        .frame(height: BP.px(5))
+        .frame(height: BP.px(6))
         .padding(.vertical, BP.px(3))
         // bp-player-scrub.tsx draws the track from the physical left (left-0, left: %) under rtl too;
         // mirrored, the fill ran from the right and the pending-seek mark's offset left the bar.
@@ -1409,6 +1433,12 @@ struct PlayerScreen: View {
         // Decorative: the invisible stage surface (bp-player-scrub role="slider") already carries the
         // real position as its VoiceOver value (PlayerSeekValue); this drawn track would only repeat it.
         .accessibilityHidden(true)
+    }
+
+    /// The seek bubble's centre: over the playhead, kept inside the track's ends.
+    private func bubbleX(_ x: CGFloat, width: CGFloat, edge: CGFloat) -> CGFloat {
+        let hi: CGFloat = max(edge, width - edge)
+        return min(max(x, edge), hi)
     }
 
     private func fraction(_ sec: Double, of duration: Double) -> CGFloat {
@@ -1423,17 +1453,19 @@ struct PlayerScreen: View {
         let duration: Double = c.snap.duration
         let shown: Double = pendingSeek ?? c.snap.position
         let remaining: Double = duration > 0 ? max(0, duration - shown) : 0
+        let params: String = status.state == "loading" ? T("Loading…") : status.videoParams.split(separator: " ").prefix(3).joined(separator: " ")
         return HStack(spacing: BP.px(10)) {
-            Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? BP.inkSubtle : BP.ink)
+            Text(fmt(shown)).foregroundStyle(pendingSeek == nil ? Color.white.opacity(0.75) : Color.white)
+            if !params.isEmpty { Text(params).font(BP.sans(11.5, .medium)).foregroundStyle(Color.white.opacity(0.4)) }
             Spacer()
             if duration > 0 {
-                Text("\(fmt(remaining)) left").foregroundStyle(BP.inkSubtle)
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(BP.inkMuted)
+                    Text("Ends \(Date().addingTimeInterval(remaining).formatted(date: .omitted, time: .shortened))").foregroundStyle(Color.white.opacity(0.5))
                 }
+                Text(verbatim: "−" + fmt(remaining)).foregroundStyle(Color.white.opacity(0.75))
             }
         }
-        .font(BP.sans(13, .semibold))
+        .font(BP.sans(14, .semibold))
         .monospacedDigit()
         // Position, "{n} left" and "Ends {time}" are one readout: read as a single stop, not three.
         .accessibilityElement(children: .combine)
@@ -1480,14 +1512,6 @@ struct PlayerScreen: View {
         if together.interceptSeek(to: clamped, controller: controller) { return }
         controller?.seek(to: clamped)
         clock.seeked(to: clamped)
-    }
-
-    /// bp-player-controls.tsx BpControl: an icon-only transport button, named by its aria-label.
-    private func iconChip(_ id: String, _ icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: { action(); wake() }) { Image(systemName: icon) }
-            .buttonStyle(BPActionStyle())
-            .focused($focus, equals: .chip(id))
-            .accessibilityLabel(Text(verbatim: label))
     }
 
     // MARK: panels (audio / subtitle tracks)
@@ -2111,8 +2135,8 @@ struct PlayerScreen: View {
     /// speed-menu.tsx "Speed & sleep" control, drawn inside PlayerSleepReader.
     private func speedChip(_ timer: SleepTimer) -> some View {
         let changedRate: Bool = !isLive && abs(rate - 1) > 0.01
-        return chip(speedChipLabel(timer), timer.isActive ? "clock" : "speedometer", id: "speed",
-                    active: timer.isActive || changedRate) { open(.speed) }
+        return orb("speed", timer.isActive ? "clock" : "speedometer", title: T(speedChipLabel(timer)),
+                   active: timer.isActive || changedRate) { open(.speed) }
     }
 
     /// speed-menu.tsx trigger face: the sleep countdown while a timer is armed, else a changed rate.
