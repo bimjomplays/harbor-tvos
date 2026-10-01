@@ -352,9 +352,21 @@ final class SettingsBridge: ObservableObject {
     /// On failure returns what the engine logged for TMDB, so the screen can say why.
     func verifyTmdb(key: String) async -> (ok: Bool, reason: String?) {
         let before = HarborEngine.shared.logMark   // (bug pass) was recentLogs.count: blind once the 200-line ring was full
+        let saved: Bool = key.trimmingCharacters(in: .whitespaces) == slice.tmdbKey.trimmingCharacters(in: .whitespaces)
+        // TmdbHealth marks the saved key refused from TMDB's 401 line; a test of another key logs
+        // one too. Its mark lands on the main actor after this call, so it is cleared a beat later.
+        defer {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(500))
+                if !saved { TmdbHealth.shared.forgive() }
+            }
+        }
         do {
             let metas: [Meta] = try await HarborEngine.shared.call("tmdb.trending", [key, "movie", "week", 1])
-            if !metas.isEmpty { return (true, nil) }
+            if !metas.isEmpty {
+                if saved { TmdbHealth.shared.forgive() }
+                return (true, nil)
+            }
         } catch {
             return (false, error.localizedDescription)
         }

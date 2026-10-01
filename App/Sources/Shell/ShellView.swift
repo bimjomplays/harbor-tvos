@@ -370,6 +370,13 @@ struct TopBarView: View {
     @FocusState private var focusedTab: Room?
     /// focusBar placed the ring itself (a row named a tab): the landing is not redirected.
     @State private var barRequested = false
+    /// The bar's other buttons (profile chip, account menu): Left from them onto a tab is a walk
+    /// along the bar, not an entry from a room.
+    @FocusState private var chromeFocus: String?
+    @State private var chromeLeftAt: Date = .distantPast
+    /// The tab that last held the ring: focus coming back to it (a tab's long-press menu closing)
+    /// is not an entry from a room either.
+    @State private var lastTab: Room?
     /// ShellView's latest "ring to the bar" request (a row's Left off its start).
     var request = BPBarRequest(serial: 0, tab: nil)
 
@@ -410,12 +417,14 @@ struct TopBarView: View {
                     .frame(height: BP.tabItem)
                 }
                 .buttonStyle(BPTabStyleWide())
+                .focused($chromeFocus, equals: "profile")
                 .accessibilityIdentifier("profile-chip")
                 // bp-profile-menu.tsx: `${t("Switch profile")}: ${name}` (the colon and the name need no translation).
                 .accessibilityLabel(Text(verbatim: "\(T("Switch profile")): \(p.name)"))
             }
             // Stage 10 account area: profile, notifications, activity, groups, Watch together.
             AccountMenuButton().environmentObject(app)
+                .focused($chromeFocus, equals: "account")
             Button { app.room = .settings } label: { Image(systemName: Room.settings.icon).font(.system(size: BP.px(17), weight: .semibold)) }
                 .buttonStyle(BPTabStyle(active: app.room == .settings))
                 .focused($focusedTab, equals: .settings)
@@ -436,15 +445,18 @@ struct TopBarView: View {
             // (device build 355) Up from a room landed on whichever tab sat above the card (Home
             // from the first Movies poster), so Up, Right opened the wrong room. As on Apple's own
             // tab bar, entering the bar lands on the room on screen unless a row asked for a tab.
-            if old == nil, let new, !barRequested, new != app.room, new != .settings, onBar(app.room) {
+            let fromChrome: Bool = chromeFocus != nil || Date().timeIntervalSince(chromeLeftAt) < 0.5
+            if old == nil, let new, !barRequested, !fromChrome, new != lastTab, new != app.room, new != .settings, onBar(app.room) {
                 focusedTab = app.room
                 ShellFocus.shared.barHasFocus = true
                 return
             }
             barRequested = false
+            if let new { lastTab = new }
             if old != nil { ShellFocus.shared.barMovedAt = Date() }
             ShellFocus.shared.barHasFocus = new != nil
         }
+        .onChange(of: chromeFocus) { old, new in if old != nil && new == nil { chromeLeftAt = Date() } }
         .onChange(of: request) { _, r in focusBar(r.tab) }
         .background(
             LinearGradient(colors: [BP.void_.opacity(0.95), BP.void_.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
@@ -471,6 +483,11 @@ struct TopBarView: View {
         guard let target else { return }
         barRequested = focusedTab == nil
         focusedTab = target
+        // A move the focus engine drops (the bar disabled under a cover) fires no change to clear it.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            barRequested = false
+        }
     }
 
     /// context-menu.tsx nav items: "Hide this tab", "Show all tabs", "Reset layout".

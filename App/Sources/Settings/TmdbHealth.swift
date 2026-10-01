@@ -19,6 +19,10 @@ final class TmdbHealth: ObservableObject {
         return !key.isEmpty && key == refusedKey
     }
 
+    /// A key test (Settings, the TMDB sheet) logs TMDB's 401 for the key it tried, which may not be
+    /// the saved one: SettingsBridge.verifyTmdb clears the mark afterwards unless the saved key failed.
+    func forgive() { if refusedKey != nil { refusedKey = nil } }
+
     /// EngineHost's log hook: TMDB's 401 line names the saved key as refused.
     nonisolated static func noteLog(_ message: String) {
         guard message.contains("[tmdb] 401") else { return }
