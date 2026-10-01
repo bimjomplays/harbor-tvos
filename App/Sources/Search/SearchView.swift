@@ -356,6 +356,16 @@ struct SearchView: View {
                 .padding(.horizontal, BP.gutter).padding(.vertical, BP.px(6))
             }
             .scrollClipDisabled()
+            // (device build 337) Scrolled along, a chip peeked out half-cut at the keyboard column's
+            // edge ("s 14"). The strip fades out at its own leading edge instead; the mask is taller
+            // than the strip so a focused chip's lift and shadow still draw.
+            .mask(
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: BP.gutter)
+                    Color.black
+                }
+                .padding(.vertical, -BP.px(24))
+            )
             // (device build 330) The chips scroll unclipped (for their focus lift) and ran under the
             // count: it sits over them on the page's own black, faded in from the left.
             Text(resultsLabel)
