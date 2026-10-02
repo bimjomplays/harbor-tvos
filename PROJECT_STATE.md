@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 09:35 UTC — 1.4.2 (386) installed + verified)
+- Verified on the TV: Menu from the 5th Home row brings the ring to the Home tab with the rows back
+  at rest; Menu on the bar leaves the app. Library → Search shows one native field (no box in a
+  box). Addon tiles: OpenSubtitles shows the puzzle glyph.
+- Pushed after 1.4.2 (next upload): screensaver clock shade, screensaver titles no longer cross-fade
+  on top of each other ("Digger" through "South Park").
+- Open: Re:ZERO's Jump back in card does not get the Cinemeta synopsis in the hero (Unabomber does;
+  Cinemeta has it) — unexplained; Library → Stats "Where it started" prints a raw release file name.
+
 ## Status (2026-10-02 08:55 UTC — 1.4.1 (381) installed + verified)
 - Detail → More → "Remove from Continue watching" now takes the card off Home (Unabomber gone; Jump
   back in holds only Re:ZERO again). A CW card's hero shows logo, facts and synopsis (Unabomber).
