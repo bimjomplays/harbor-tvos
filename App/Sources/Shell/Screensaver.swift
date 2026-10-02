@@ -266,6 +266,8 @@ struct ScreensaverView: View {
                 let item = model.items[model.at]
                 RemoteImage(url: item.bg).ignoresSafeArea().id(item.bg).transition(.opacity)
                 LinearGradient(colors: [.clear, BP.void_.opacity(0.35), BP.void_.opacity(0.9)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+                // (device build 375) Bright art (Scrubs' white wall) hid the clock: a corner shade under it.
+                RadialGradient(colors: [BP.void_.opacity(0.55), .clear], center: .topTrailing, startRadius: 0, endRadius: BP.px(420)).ignoresSafeArea()
                 VStack(alignment: .leading, spacing: BP.px(6)) {
                     Text(item.title).font(BP.display(38)).foregroundStyle(BP.ink).lineLimit(1)
                     if !item.sub.isEmpty { Text(item.sub).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted) }
@@ -275,7 +277,8 @@ struct ScreensaverView: View {
                 HarborMark(size: BP.px(120)).opacity(0.6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            ClockView().padding(BP.gutter).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            ClockView().shadow(color: .black.opacity(0.6), radius: 8, y: 2)
+                .padding(BP.gutter).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             // The whole surface is one focusable target so the waking press never reaches a tile.
             Button { model.wake() } label: { Color.clear.contentShape(Rectangle()) }
                 .buttonStyle(BPBareButtonStyle())
