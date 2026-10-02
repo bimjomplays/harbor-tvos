@@ -180,10 +180,9 @@ struct BPField: View {
                 .autocorrectionDisabled()
                 .textFieldStyle(.plain)
                 .modifier(BPFieldFocus(focus: focus))
-                .padding(.horizontal, BP.px(14))
-                .frame(height: BP.px(50))
-                .background(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).fill(BP.panel2))
-                .overlay(RoundedRectangle(cornerRadius: BP.rSM, style: .continuous).stroke(BP.edge2, lineWidth: 1))
+                // (device build 375) tvOS draws its own platter under a text field whatever its style,
+                // so the panel box around it showed a box inside a box (Library → Search). The
+                // system field alone, as in Apple's own apps: it lifts and turns light on focus.
                 if offersPhone {
                     Button { phoneOpen = true } label: {
                         Image(systemName: "iphone").font(.system(size: BP.px(18), weight: .semibold))
