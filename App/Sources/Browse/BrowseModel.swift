@@ -33,7 +33,32 @@ extension BrowseSource {
 @MainActor
 final class BrowseModel: ObservableObject {
     @Published private(set) var rows: [BrowseRow] = []
-    @Published private(set) var continueWatching: [ContinueItem] = []
+    @Published private(set) var continueWatching: [ContinueItem] = [] { didSet { prefetchEnrichment() } }
+
+    /// (device build 419) The first focus of a Jump back in card waited 6 s+ for its Cinemeta read
+    /// while the engine built the rows, so the hero sat bare. The row's titles are read ahead, so a
+    /// focus finds them in `enriched` at once.
+    private var prefetching = false
+    private func prefetchEnrichment() {
+        guard !prefetching else { return }
+        let ids: [(String, String)] = continueWatching.prefix(6).compactMap { c in
+            guard c.id.hasPrefix("tt"), enriched[c.id] == nil else { return nil }
+            return (c.id, c.type == "movie" ? "movie" : "series")
+        }
+        guard !ids.isEmpty else { return }
+        prefetching = true
+        Task { [weak self] in
+            for (id, kind) in ids {
+                let full: Meta? = try? await HarborEngine.shared.call("cinemeta.meta", [kind, id])
+                guard let self else { return }
+                if let full {
+                    self.enriched[id] = full
+                    if let cur = self.spotlight, cur.id == id, cur.description == nil { self.spotlight = self.withResolvedLogo(Self.apply(full, to: cur)) }
+                }
+            }
+            self?.prefetching = false
+        }
+    }
     @Published private(set) var loading = false
     @Published private(set) var failed: String?
     /// (device build 411) Enrichment runs for whatever lands in the hero, not only on a card's focus
