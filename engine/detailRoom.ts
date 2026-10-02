@@ -255,7 +255,11 @@ export async function episodeArt(meta: Meta, season: number, episodes: EpisodeAr
     const list = await artOnce(`eps:${tvId}:${season}:${lang}`, () => factsSeasonEpisodes(tmdbKey, tvId!, season)).catch(() => []);
     for (const e of list) if (e.stillPath) tmdb[`${e.seasonNumber}:${e.episodeNumber}`] = e.stillPath.startsWith("http") ? e.stillPath : `${ART_TMDB_IMG}/original${e.stillPath}`;
   }
-  const gaps = episodes.some((e) => !e.still && !tmdb[`${e.season}:${e.episode}`]);
+  // (owner report 2026-10-01, Re:ZERO S4) Cinemeta hands every episode a metahub thumbnail, and
+  // metahub has none yet for a new episode (404): counting those as stills meant "no gaps", so TVDB
+  // (which has them) was never asked and every card drew the numbered placeholder.
+  const realStill = (u: string | null | undefined) => !!u && !u.includes("episodes.metahub.space");
+  const gaps = episodes.some((e) => !realStill(e.still) && !tmdb[`${e.season}:${e.episode}`]);
   const anime = kitsuId != null;
   let aniZip: AniZipMapping | null = null;
   let proxy: TvdbImageMap = {};
