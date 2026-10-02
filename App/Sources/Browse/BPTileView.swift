@@ -105,6 +105,8 @@ struct BPTileView: View {
             // (device build 360) The rank numeral already says Top 10: the ribbon on top of it made
             // three labels on one card (numeral, NEW, TOP 10).
             art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height), caption: true, chain: true, ribbon: false)
+                .modifier(BPTileFocusModifier(focused: focused, pressed: false))
+                .zIndex(1)
         }
         .frame(width: Self.rankSize.width, height: Self.rankSize.height, alignment: .bottomTrailing)
     }

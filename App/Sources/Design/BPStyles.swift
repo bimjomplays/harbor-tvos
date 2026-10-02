@@ -38,10 +38,12 @@ struct BPTileStyle: ButtonStyle {
     var edge = true
     /// bp-settings-parts.tsx onCellFocus: runs when the tile takes focus.
     var onFocus: (() -> Void)? = nil
+    /// The label draws its own focus look (a rank cell lifts its poster, not its numeral).
+    var bare = false
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader(onFocus: onFocus) { focused in
             configuration.label
-                .modifier(BPTileFocusModifier(focused: focused, pressed: configuration.isPressed, radius: radius, lift: lift, edge: edge))
+                .modifier(BPTileFocusModifier(focused: focused && !bare, pressed: configuration.isPressed && !bare, radius: radius, lift: lift, edge: edge))
         }
     }
 }

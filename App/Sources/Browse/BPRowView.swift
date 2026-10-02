@@ -155,7 +155,9 @@ struct BPRowView: View {
                             Button { onSelect(meta) } label: {
                                 BPTileView(meta: meta, shape: row.shape, rank: i + 1, focused: focusedId == meta.id)
                             }
-                            .buttonStyle(BPTileStyle())
+                            // (device build 360) A rank cell lifted whole: its edge and shadow framed
+                            // the numeral too, on a black block. The cell lifts only its poster.
+                            .buttonStyle(BPTileStyle(bare: row.shape == .rank))
                             .focused($focusedId, equals: meta.id)
                             .prefersDefaultFocus(restoreCell == meta.id, in: shellNS ?? rowNS)
                             .accessibilityIdentifier("tile-\(row.key)-\(i)")
