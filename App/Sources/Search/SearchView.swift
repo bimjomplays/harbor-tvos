@@ -676,22 +676,29 @@ struct AIOpen: Identifiable {
 /// Top match (use-bp-search.ts slot 1): art on the right, title, facts and overview.
 struct TopMatchPanel: View {
     let meta: Meta
+    /// (device build 390) In Search's narrow results column the art took a third of the card and the
+    /// copy wrapped one genre per line (Naruto's "Animation, / Action & / Adventure…"). The art is the
+    /// card's backdrop now, under a scrim, and the copy has the card's width.
     var body: some View {
-        HStack(alignment: .top, spacing: BP.px(18)) {
-            VStack(alignment: .leading, spacing: BP.px(6)) {
-                Text("Top match").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                Text(meta.name).font(BP.display(26)).foregroundStyle(BP.ink).lineLimit(2)
-                if !meta.facts.isEmpty { Text(meta.facts).font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted) }
-                Text(meta.description ?? "").font(BP.sans(14)).foregroundStyle(BP.inkMuted).lineLimit(3)
-            }
-            Spacer(minLength: 0)
+        ZStack(alignment: .bottomLeading) {
+            BP.panel
             RemoteImage(url: meta.background ?? meta.poster)
-                .frame(width: BP.px(200), height: BP.px(112))
-                .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))
                 .accessibilityHidden(true)
+            LinearGradient(stops: [.init(color: BP.void_.opacity(0.92), location: 0), .init(color: BP.void_.opacity(0.7), location: 0.45),
+                                   .init(color: BP.void_.opacity(0.15), location: 1)], startPoint: .bottom, endPoint: .top)
+            VStack(alignment: .leading, spacing: BP.px(5)) {
+                Text("Top match").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+                Text(meta.name).font(BP.display(26)).foregroundStyle(BP.ink).lineLimit(1).minimumScaleFactor(0.7)
+                if !meta.facts.isEmpty { Text(meta.facts).font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted).lineLimit(1) }
+                if let d = meta.description, !d.isEmpty {
+                    Text(d).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                }
+            }
+            .shadow(color: .black.opacity(0.5), radius: 6, y: 1)
+            .padding(BP.px(16))
         }
-        .padding(BP.px(16))
-        .background(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).fill(BP.panel))
+        .frame(height: BP.px(190))
+        .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
         .animation(.easeOut(duration: 0.26), value: meta.id)
     }
