@@ -15,6 +15,10 @@ struct ContinueRowView: View {
     var onLibrary: (() -> Void)? = nil
     @FocusState private var focusedId: String?
     @FocusState private var libraryFocused: Bool
+    /// (device build 390) As BPRowView's See all: the link is reachable by Right off the last card
+    /// only. Ungated it caught every Up from the cards, so Up from Jump back in opened onto
+    /// "Your library" instead of the top bar (and a Select there opened the Library).
+    @State private var libraryArmed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -25,8 +29,15 @@ struct ContinueRowView: View {
                 if let onLibrary, focusedId != nil || libraryFocused {
                     Button(T("Your library"), action: onLibrary)
                         .buttonStyle(BPSeeAllStyle())
+                        // `.disabled`, not `.focusable`: a focusable modifier on a Button takes Select (BPRowView).
+                        .disabled(!(libraryArmed || libraryFocused))
                         .focused($libraryFocused)
                         .accessibilityIdentifier("seeall-cw")
+                        .onMoveCommand { dir in
+                            // Back to the row's last card, as bpSeeAllExit.
+                            guard dir == .left, let last = items.uniquedById().last else { return }
+                            DispatchQueue.main.async { focusedId = last.id }
+                        }
                 }
             }
             .padding(.horizontal, BP.gutter)
@@ -43,6 +54,12 @@ struct ContinueRowView: View {
                             // Play/Pause opens the same quick panel (Remove, Mark watched…): a hold
                             // is easy to miss on the clickpad.
                             .onPlayPauseCommand { onQuick?(item) }
+                            .onMoveCommand { dir in
+                                guard dir == .right, onLibrary != nil, item.id == items.uniquedById().last?.id else { return }
+                                libraryArmed = true
+                                DispatchQueue.main.async { libraryFocused = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { if !libraryFocused { libraryArmed = false } }
+                            }
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(14))
@@ -59,6 +76,7 @@ struct ContinueRowView: View {
             if let id, let i = items.first(where: { $0.id == id }) { onFocus(i) }
         }
         .onChange(of: focusedId != nil) { _, held in onHold?(held) }
+        .onChange(of: libraryFocused) { _, on in if !on { libraryArmed = false } }
         // (focus pass) "Remove from Continue watching" (the quick panel): the ring comes back to the
         // card as the panel closes and the row re-reads a moment later without it. The card that
         // takes its place (or the one before it, at the end) takes the ring rather than tvOS
