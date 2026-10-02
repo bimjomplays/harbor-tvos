@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 05:35 UTC — owner: 5-hour work window until 06:25 local; 1.3.9 out)
+- Found on the TV: with the TMDB key working, Shows/Movies rows are TMDB's (`tmdb:tv:…` ids) and
+  Cinemeta knows only IMDb ids, so every TMDB show's Detail said "Couldn't load this title" with no
+  episodes (East of Eden). 1.3.9 resolves the IMDb id (streamsRoom.resolveImdb) and reads Cinemeta
+  under it; the meta then carries the tt id. Checked locally: East of Eden → tt21097264, 7 videos.
+- Verified on 1.3.8: Shows' Top 10 lifts only the poster, no ribbon; crew text links under the cast.
+- 1.3.9 also: top scrim under the bar on bright hero art (Shin Chan made bell/cog unreadable);
+  Search keyboard letters first with the ring on q (UI test updated: key-1 → key-q).
+
 ## Status (2026-10-02 03:35 UTC — 1.3.8 (369) installed + verified)
 - Re:ZERO (tt) S4 episode cards show real stills (E15–E19). Home Jump back in: Re:ZERO + the test
   Unabomber card (owner to remove; long-press or Play/Pause on the Siri Remote).
