@@ -3,6 +3,11 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 08:55 UTC — 1.4.1 (381) installed + verified)
+- Detail → More → "Remove from Continue watching" now takes the card off Home (Unabomber gone; Jump
+  back in holds only Re:ZERO again). A CW card's hero shows logo, facts and synopsis (Unabomber).
+- Screensaver clock readable over bright art: pushed after 1.4.2 (next upload).
+
 ## Status (2026-10-02 08:40 UTC — 1.4.1 (381) uploaded green; 1.4.2 dispatched)
 - 1.4.2: Menu at Home goes to the top bar first (ShellView.backToHome + TopBarView barHeld binding),
   only Menu on the bar leaves the app (it exited from the 5th row down); BPField drops its panel box
