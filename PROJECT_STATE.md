@@ -3,6 +3,21 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 01:40 UTC — owner back: anime slideshow found and fixed → 1.3.7)
+- Owner: anime (Re:ZERO S4E17) played like a slideshow; other shows fine; subtitles off did nothing.
+  Device log: `shaders: 6 files` — Anime4K's HQ chain (Restore/Upscale CNN VL) at 4K. The synced
+  desktop settings have playerAnime4k on; it applies to anime only (genres Animation), hence "some
+  shows". Fix: the TV keeps its own Anime4K choice (UserDefaults harbor.tv.anime4k, default off;
+  the player's Anime4K panel and Settings → Anime4K set it) and always runs the fast tier
+  (engine anime4k.choose 6th arg; smoke +4). Not yet verified on the TV (needs 1.3.7).
+- Owner asks done: crew lines moved under the cast row ("Crew" section), the hero keeps only
+  Cinemeta's short credit lines; Home's Jump back in keeps anime regardless of the synced
+  animeOnlyInAnimeRoom (Re:ZERO had dropped off Home once detected as anime); episode stills: an
+  empty TVDB-proxy / ani.zip answer is no longer memoised for the session (S4 cards drew the
+  numbered placeholder; the proxy answers fine from the PC, TVDB has S4E15–18 stills).
+- Play/Pause on a Continue Watching card opens its quick panel (Remove…). My test playback of
+  Unabomber (48 s) landed in Home's Jump back in: remove it with that on 1.3.7.
+
 ## Status (2026-10-02 00:58 UTC — PAUSED by the owner after 1.3.6)
 - Owner: "stop after this next one until I tell you to start working again". The autopilot cron is
   deleted. 1.3.6 = Detail cast/crew/videos polish + rank cells lift only the poster, no Top 10 ribbon

@@ -855,6 +855,7 @@ struct DetailView: View {
         if !model.isAnimeId, !SettingsBridge.shared.slice.tmdbKey.isEmpty { GalleryRow(meta: model.meta) }
         if let x = model.extras {
             if !x.cast.isEmpty { castRow(x.cast) }
+            crewSection
             if let col = model.collectionRow { BPRowView(row: col, onFocus: { _ in }, onSelect: { related = $0 }) }
             if !x.recommendations.isEmpty { BPRowView(row: BrowseRow(key: "recommendations", title: T("More Like This"), metas: x.recommendations), onFocus: { _ in }, onSelect: { related = $0 }) }
             if !x.similar.isEmpty { BPRowView(row: BrowseRow(key: "similar", title: T("You Might Also Like"), metas: x.similar), onFocus: { _ in }, onSelect: { related = $0 }) }
@@ -1058,11 +1059,36 @@ struct DetailView: View {
     }
 
     /// Crew/cast lines from Cinemeta until TMDB cast cards arrive (detail-spec §1.1 rows 4-5).
+    /// (owner 2026-10-01: "not a fan of the big long list of directors, writers and producers being
+    /// there before you can even get to the episodes") The TMDB crew lines sit under the cast row,
+    /// like the Apple TV app's Cast & Crew; the hero keeps only Cinemeta's short credit lines.
+    @ViewBuilder private var crewSection: some View {
+        if let crew = model.extras?.crew, !crew.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(10)) {
+                Text("Crew").font(BP.sans(19, .bold)).foregroundStyle(BP.ink).accessibilityAddTraits(.isHeader)
+                crewLines(crew)
+            }
+            .padding(.horizontal, BP.gutter)
+        }
+    }
+
     @ViewBuilder private var credits: some View {
         let director = (model.meta.director ?? []).filter { !$0.isEmpty }
         let cast = (model.meta.cast ?? []).filter { !$0.isEmpty }
-        if let crew = model.extras?.crew, !crew.isEmpty {
-            // bp-crew-row: each name is a cell into the Person page when TMDB knows the person.
+        if model.extras?.crew.isEmpty == false {
+            EmptyView()
+        } else if !director.isEmpty || !cast.isEmpty {
+            VStack(alignment: .leading, spacing: BP.px(3)) {
+                if !director.isEmpty { creditLine(model.isSeries ? "Created by" : "Directed by", director.prefix(3).joined(separator: ", ")) }
+                if !cast.isEmpty { creditLine("Cast", cast.prefix(6).joined(separator: ", ")) }
+                if model.extras == nil && tmdbHealth.rejected { tmdbRejectedNote }
+            }
+            .frame(maxWidth: BP.px(620), alignment: .leading)
+        }
+    }
+
+    // bp-crew-row: each name is a cell into the Person page when TMDB knows the person.
+    private func crewLines(_ crew: [DetailModel.Extras.Crew]) -> some View {
             VStack(alignment: .leading, spacing: BP.px(2)) {
                 ForEach(crew.prefix(5)) { c in
                     HStack(alignment: .top, spacing: BP.px(8)) {
@@ -1081,16 +1107,8 @@ struct DetailView: View {
                     }
                 }
             }
-            .frame(maxWidth: BP.px(760), alignment: .leading)
+            .frame(maxWidth: BP.px(900), alignment: .leading)
             .focusSection()
-        } else if !director.isEmpty || !cast.isEmpty {
-            VStack(alignment: .leading, spacing: BP.px(3)) {
-                if !director.isEmpty { creditLine(model.isSeries ? "Created by" : "Directed by", director.prefix(3).joined(separator: ", ")) }
-                if !cast.isEmpty { creditLine("Cast", cast.prefix(6).joined(separator: ", ")) }
-                if model.extras == nil && tmdbHealth.rejected { tmdbRejectedNote }
-            }
-            .frame(maxWidth: BP.px(620), alignment: .leading)
-        }
     }
 
     /// (device build 355) Without this the page just ended under the credits, with no sign why

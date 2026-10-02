@@ -1660,7 +1660,10 @@ struct PlayerScreen: View {
         let display = Int(UIScreen.main.nativeBounds.width)
         let meta: AnyJSON = .object(["id": .string(context.meta.id), "genres": .array((context.meta.genres ?? []).map { .string($0) })])
         let p = ProfilesStore.shared.active
-        guard let choice: Anime4KChoice = try? await HarborEngine.shared.call("anime4k.choose", [p?.id ?? "default", p?.linked ?? true, meta, srcWidth, display]) else { return }
+        // (device report 2026-10-01) The TV's own choice, off until the viewer picks one here: the
+        // synced desktop setting ran the HQ chain at 4K and anime played like a slideshow.
+        let tvChoice: String = UserDefaults.standard.string(forKey: Self.anime4kKey) ?? "off"
+        guard let choice: Anime4KChoice = try? await HarborEngine.shared.call("anime4k.choose", [p?.id ?? "default", p?.linked ?? true, meta, srcWidth, display, tvChoice]) else { return }
         guard current() else { return }
         if choice.active {
             // (bug pass 2) The shaders live in Caches now: a set the system purged is fetched again here.
@@ -1683,20 +1686,21 @@ struct PlayerScreen: View {
         }
     }
 
+    /// This TV's Anime4K choice ("off", "auto" or a mode), kept on the device, never synced.
+    static let anime4kKey = "harbor.tv.anime4k"
+
     private func setAnime4k(_ override: String) {
-        Task {
-            try? await SettingsBridge.shared.patch(["playerAnime4kOverride": .string(override), "playerAnime4k": .bool(true)])
-            anime4kAppliedFor = -1
-            closePanel()
-        }
+        UserDefaults.standard.set(override, forKey: Self.anime4kKey)
+        anime4kAppliedFor = -1
+        closePanel()
     }
 
     private func anime4kPanel() -> some View {
-        let options: [(String, String, String)] = [("auto", "Auto", "Follows the Anime4K setting: anime only, or every title."), ("off", "Off", "No shaders for this title."),
+        let options: [(String, String, String)] = [("auto", "Auto", "Anime only, in the light tier this TV can run."), ("off", "Off", "No shaders (the TV's default)."),
                                                    ("A", "Mode A", "Restore + upscale. The best all-rounder for most anime."), ("B", "Mode B", "Softer restore. Kinder to compressed or noisy sources."),
                                                    ("C", "Mode C", "Denoise + upscale. Lightest, cleanest on already-sharp video."), ("AA", "Mode A+A", "Double restore. Sharpest detail, for high-quality sources."),
                                                    ("BB", "Mode B+B", "Double soft restore. For heavy compression artifacts."), ("CA", "Mode C+A", "Denoise then restore. Balanced cleanup and detail.")]
-        let current = anime4k?.choice ?? "auto"
+        let current = anime4k?.choice ?? (UserDefaults.standard.string(forKey: Self.anime4kKey) ?? "off")
         return HStack {
             Spacer()
             VStack(alignment: .leading, spacing: BP.px(8)) {

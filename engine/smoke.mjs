@@ -2184,6 +2184,17 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   r.ok("anime4k.choose drops the secondary pass at display width (AA → A) and honours fast tier", gated.mode === "A" && gated.tier === "fast" && gated.files.includes("Anime4K_Restore_CNN_M.glsl"), JSON.stringify(gated));
   engine.settings.patch({ playerAnime4kOverride: "C" });
   r.eq("anime4k.choose override C wins over auto", engine.anime4k.choose("default", true, { id: "tt1", genres: [] }, 1920, 3840).mode, "C");
+  engine.settings.patch({ playerAnime4k: true, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "AA" });
+  {
+    // The TV's own choice: off by default whatever the synced settings say, the fast tier always.
+    const tvOff = engine.anime4k.choose("default", true, { id: "kitsu:1", genres: ["Anime"] }, 1920, 3840, null);
+    r.eq("anime4k.choose (TV): off by default despite synced playerAnime4k + override", tvOff.active, false);
+    const tvAuto = engine.anime4k.choose("default", true, { id: "tt5607616", genres: ["Animation", "Drama"] }, 1920, 3840, "auto");
+    r.ok("anime4k.choose (TV): auto → anime only, mode A, fast tier (no VL shaders)", tvAuto.active && tvAuto.mode === "A" && tvAuto.tier === "fast" && !tvAuto.files.some((f) => f.includes("_VL")), JSON.stringify(tvAuto));
+    r.eq("anime4k.choose (TV): auto skips non-anime", engine.anime4k.choose("default", true, { id: "tt0111161", genres: ["Drama"] }, 1920, 3840, "auto").active, false);
+    const tvB = engine.anime4k.choose("default", true, { id: "tt1", genres: [] }, 1920, 3840, "B");
+    r.ok("anime4k.choose (TV): an explicit mode applies to any title, fast tier", tvB.active && tvB.mode === "B" && tvB.tier === "fast", JSON.stringify(tvB));
+  }
   engine.settings.patch({ playerAnime4k: false, playerAnime4kMode: "A", playerAnime4kTier: "hq", playerAnime4kOverride: "auto" });
 }
 

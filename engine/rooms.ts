@@ -459,7 +459,12 @@ export async function detectCwAnime(items: Array<{ _id: string; type: string }>,
 
 /** rooms.continueWatchingFor with the card extras attached as `_cw` on each item. */
 export async function continueWatchingWithExtras(profileId: string, linked: boolean, authKey: string | null, limit = 40): Promise<Array<LibraryItem & { _cw: CwExtras }>> {
-  const s = loadEffective(profileId, linked);
+  const synced = loadEffective(profileId, linked);
+  // (owner 2026-10-01: "home should have everything I'm currently watching") The synced
+  // animeOnlyInAnimeRoom kept anime off Home's row, so a show dropped off Home the moment it was
+  // detected as anime (Re:ZERO). Home keeps it; Shows filters anime out itself; a profile that hides
+  // anime (hideContent.anime) still does.
+  const s: Settings = { ...synced, animeOnlyInAnimeRoom: false } as Settings;
   const pool = await continueWatchingPool(authKey, s, limit);
   await detectCwAnime(pool.items);
   // settings.cwAdvanceNext / cwHideCaughtUp / animeCwEnd (use-cw-advance.ts).

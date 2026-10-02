@@ -40,6 +40,9 @@ struct ContinueRowView: View {
                             .zIndex(focusedId == item.id ? 1 : 0)
                             .accessibilityIdentifier("cw-\(item.id)")
                             .onLongPressGesture(minimumDuration: 0.6) { onQuick?(item) }
+                            // Play/Pause opens the same quick panel (Remove, Mark watched…): a hold
+                            // is easy to miss on the clickpad.
+                            .onPlayPauseCommand { onQuick?(item) }
                     }
                 }
                 .padding(.horizontal, BP.gutter).padding(.top, BP.px(14))

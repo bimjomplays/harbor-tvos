@@ -51,8 +51,13 @@ export function choose(
   meta: { id: string; genres?: string[] | null },
   srcWidth: number,
   displayWidth: number,
+  tvChoice?: string | null,
 ): { active: boolean; choice: Choice; mode: Anime4kMode | null; tier: Anime4kTier | null; files: string[]; indicator: boolean } {
   const s = loadEffective(profileId, linked);
+  // (device report 2026-10-01: anime played like a slideshow) The synced desktop settings turned
+  // Anime4K on in its HQ tier, and the VL CNN chain at 4K starves the Apple TV's GPU. The TV keeps
+  // its own choice (Swift passes it, default off) and always runs the fast tier.
+  if (tvChoice !== undefined) return chooseTv(s, meta, srcWidth, displayWidth, (tvChoice || "off") as Choice);
   const choice = ((s.playerAnime4kOverride as Choice) || "auto") as Choice;
   const off = { active: false, choice, mode: null, tier: null, files: [], indicator: s.playerAnime4kIndicator !== false };
   if (!s.playerAnime4k || choice === "off") return off;
@@ -64,6 +69,26 @@ export function choose(
   } else mode = choice;
   if (srcWidth > 0 && displayWidth > 0 && srcWidth >= displayWidth) mode = SECONDARY_TO_PRIMARY[mode] ?? mode;
   // The chain is built against a placeholder folder; the host prefixes its own directory.
+  const chain = anime4kChain("/", mode, tier).map((p) => p.slice(p.lastIndexOf("/") + 1));
+  return { active: true, choice, mode, tier, files: chain, indicator: s.playerAnime4kIndicator !== false };
+}
+
+function chooseTv(
+  s: ReturnType<typeof loadEffective>,
+  meta: { id: string; genres?: string[] | null },
+  srcWidth: number,
+  displayWidth: number,
+  choice: Choice,
+): ReturnType<typeof choose> {
+  const off = { active: false, choice, mode: null, tier: null, files: [], indicator: s.playerAnime4kIndicator !== false };
+  if (choice === "off") return off;
+  let mode: Anime4kMode;
+  if (choice === "auto") {
+    if (!isAnimeSrc(meta)) return off;
+    mode = (s.playerAnime4kMode as Anime4kMode) || "A";
+  } else mode = choice;
+  if (srcWidth > 0 && displayWidth > 0 && srcWidth >= displayWidth) mode = SECONDARY_TO_PRIMARY[mode] ?? mode;
+  const tier: Anime4kTier = "fast";
   const chain = anime4kChain("/", mode, tier).map((p) => p.slice(p.lastIndexOf("/") + 1));
   return { active: true, choice, mode, tier, files: chain, indicator: s.playerAnime4kIndicator !== false };
 }

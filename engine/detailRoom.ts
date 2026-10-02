@@ -263,8 +263,21 @@ export async function episodeArt(meta: Meta, season: number, episodes: EpisodeAr
   // Below TMDB nothing is fetched until a card is missing art; for anime ani.zip always is.
   const slot = anime ? `kitsu:${kitsuId}` : imdbId ? `imdb:${imdbId}` : "";
   if ((gaps || anime) && slot) {
-    const az = artOnce(`anizip:${slot}`, () => (kitsuId != null ? artAniZipByKitsu(kitsuId) : imdbId ? artAniZipByImdb(imdbId) : Promise.resolve(null))).catch(() => null);
-    const px = gaps ? artOnce(`proxy:${slot}:${seasonType}`, () => artTvdbProxy({ imdb: imdbId, kitsuId, type: seasonType })).catch(() => ({})) : Promise.resolve({});
+    const az = artOnce(`anizip:${slot}`, async () => {
+      const m = await (kitsuId != null ? artAniZipByKitsu(kitsuId) : imdbId ? artAniZipByImdb(imdbId) : Promise.resolve(null));
+      if (m == null) throw new Error("anizip-miss");
+      return m;
+    }).catch(() => null);
+    // (owner report 2026-10-01: Re:ZERO S4 cards drew the numbered placeholder) The proxy answers
+    // {} on any failure, and that empty map was kept for the whole session, so one bad answer left
+    // every card of the show without its still until the app restarted. An empty map is not kept.
+    const px = gaps
+      ? artOnce(`proxy:${slot}:${seasonType}`, async () => {
+          const map = await artTvdbProxy({ imdb: imdbId, kitsuId, type: seasonType });
+          if (!map || Object.keys(map).length === 0) throw new Error("tvdb-proxy-empty");
+          return map;
+        }).catch(() => ({}))
+      : Promise.resolve({});
     const od = gaps && tvdbKey
       ? artOnce(`order:${slot}:${seasonType}:k`, async () => {
           let seriesId = kitsuId != null ? await artKitsuToTvdb(kitsuId).catch(() => null) : null;
