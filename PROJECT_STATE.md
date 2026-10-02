@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 08:05 UTC — 1.4.0 (375) verified; 1.4.1 out, run 36981870362)
+- Verified on 1.4.0: Detail More menu lists "Remove from Continue watching" (Unabomber); picking it
+  turned Resume into Play. BUT the Home card stayed: the card was saved as tmdb:movie:… before 1.3.9
+  while the page now reads as tt…; 1.4.1 dismisses every id the title is known by (openedId kept).
+- 1.4.1 also: anime hero minutes refresh with the resume point; a CW card's hero gets logo, facts and
+  synopsis from Cinemeta; addon tiles whose logo fails show a glyph (OpenSubtitles was an empty
+  square); season labels no longer group digits ("Season 2,010" on Running Man).
+
 ## Status (2026-10-02 07:45 UTC — 1.4.0 (375) uploaded, CI green)
 - 1.4.0 = the 06:40 batch (Play/Pause + Library quick panel, season-ambiguous auto-pick fix) plus
   Detail More → "Remove from Continue watching" when the title has a resume point.
