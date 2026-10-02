@@ -45,7 +45,9 @@ struct SpotlightView: View {
                 RemoteImage(url: logo, contentMode: .fit, alignment: .leading)
                     // (device build 316) 90 px canvas let a tall logo (Toy Story 5) climb under the
                     // top bar and the focused tab's name pill.
-                    .frame(maxWidth: BP.px(300), maxHeight: BP.px(72), alignment: .leading)
+                    // (device build 406) 72 still reached the focused tab's name pill when the logo
+                    // sat over a two-line synopsis (Re:ZERO, Verity).
+                    .frame(maxWidth: BP.px(300), maxHeight: BP.px(60), alignment: .leading)
                     // The title logo reads as the name it draws.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(verbatim: meta?.name ?? ""))
