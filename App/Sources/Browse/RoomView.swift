@@ -34,6 +34,10 @@ struct RoomView: View {
     @State private var seeded = false
     /// When the first-focus seed ran (the late Continue Watching hand-over below measures from it).
     @State private var seededAt: Date?
+    /// (device build 406) Bumped to put the ring on Jump back in's first card directly. A cold launch
+    /// on the TV left the ring on the Home tab: resetFocus did not find the row's card as the
+    /// default (it does under the fixtures, where everything is in place at once).
+    @State private var cwFocusRequest = 0
     /// When this visit began (review 6): a walk along the top bar after it keeps the ring there.
     @State private var visitStart = Date()
     @Environment(\.shellFocusNamespace) private var shellNS
@@ -116,7 +120,7 @@ struct RoomView: View {
                                         onFocus: { bandWanted = nil; model.focus(Meta(continue: $0)) }, onSelect: { openContinue($0) },
                                         onQuick: { item in BPSound.shared.open(); quickFromCw = true; quick = Meta(continue: item) },
                                         onHold: { cwHeld = $0; model.hold("cw", $0) },
-                                        onLibrary: libraryLink)
+                                        onLibrary: libraryLink, focusRequest: cwFocusRequest)
                             .onDisappear { cwHeld = false; model.hold("cw", false) }
                     }
                     // bp-home: the Live TV row sits after Continue Watching; empty without playlists.
@@ -154,7 +158,7 @@ struct RoomView: View {
         .onChange(of: model.continueWatching.isEmpty) { wasEmpty, empty in
             guard wasEmpty, !empty, let at = seededAt, Date().timeIntervalSince(at) < 15,
                   ActivityMonitor.shared.last <= at, !pageUp else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { ShellFocus.shared.requestDefault() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { cwFocusRequest &+= 1 }
         }
         .task(id: model.rows.isEmpty) {
             guard !model.rows.isEmpty else { return }
@@ -380,7 +384,7 @@ struct RoomView: View {
             guard !model.tileHeld, !animeActionsHeld else { return }
             // (review 6) The viewer went along the bar meanwhile (use-bp-focus interactedRef).
             if let moved = ShellFocus.shared.barMovedAt, moved > since { return }
-            ShellFocus.shared.requestDefault()
+            if model.continueWatching.isEmpty || model.entry != nil { ShellFocus.shared.requestDefault() } else { cwFocusRequest &+= 1 }
             seededAt = Date()
         }
     }

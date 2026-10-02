@@ -13,6 +13,8 @@ struct ContinueRowView: View {
     /// bp-home / bp-shows lead `{ action: "Your library", tab: "library" }`: the row header's
     /// see-all, shown while the row holds the ring (bp-row-header BpRowSeeAll). nil = no link.
     var onLibrary: (() -> Void)? = nil
+    /// Bumped by the room to put the ring on the first card (the first-focus seed).
+    var focusRequest = 0
     @FocusState private var focusedId: String?
     @FocusState private var libraryFocused: Bool
     /// (device build 390) As BPRowView's See all: the link is reachable by Right off the last card
@@ -77,6 +79,10 @@ struct ContinueRowView: View {
         }
         .onChange(of: focusedId != nil || libraryFocused) { _, held in onHold?(held) }
         .onChange(of: libraryFocused) { _, on in if !on { libraryArmed = false } }
+        .onChange(of: focusRequest) { _, _ in
+            guard let first = items.uniquedById().first else { return }
+            DispatchQueue.main.async { focusedId = first.id }
+        }
         // (focus pass) "Remove from Continue watching" (the quick panel): the ring comes back to the
         // card as the panel closes and the row re-reads a moment later without it. The card that
         // takes its place (or the one before it, at the end) takes the ring rather than tvOS
