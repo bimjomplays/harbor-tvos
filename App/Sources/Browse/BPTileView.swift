@@ -124,7 +124,19 @@ struct BPTileView: View {
             if let logo = meta.providerBadge?.logo, !logo.isEmpty {
                 // bp-addon-card: the addon's own logo over its name.
                 VStack(spacing: BP.px(8)) {
-                    RemoteImage(url: logo, contentMode: .fit).frame(width: BP.px(56), height: BP.px(56)).clipShape(RoundedRectangle(cornerRadius: BP.px(12)))
+                    // (device build 375) A logo that fails (OpenSubtitles) left an empty grey square:
+                    // the addon glyph stands in.
+                    ZStack {
+                        if deadArt == logo {
+                            Image(systemName: "puzzlepiece.extension.fill").font(.system(size: BP.px(26), weight: .medium)).foregroundStyle(BP.inkMuted)
+                                .accessibilityHidden(true)
+                        } else {
+                            RemoteImage(url: logo, contentMode: .fit, onResult: { shown, ok in
+                                if !ok { deadArt = shown } else if deadArt == shown { deadArt = nil }
+                            })
+                        }
+                    }
+                    .frame(width: BP.px(56), height: BP.px(56)).clipShape(RoundedRectangle(cornerRadius: BP.px(12)))
                     Text(meta.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1).padding(.horizontal, BP.px(10))
                 }
             } else {
