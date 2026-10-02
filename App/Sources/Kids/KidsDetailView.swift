@@ -332,7 +332,7 @@ struct KidsDetailView: View {
             HStack(spacing: BP.px(8)) {
                 ForEach(seasons, id: \.seasonNumber) { s in
                     let on = s.seasonNumber == model.season
-                    Button { model.choose(s.seasonNumber) } label: { Text("Season \(s.seasonNumber)") }
+                    Button { model.choose(s.seasonNumber) } label: { Text(verbatim: T("Season %lld", s.seasonNumber)) }
                         .buttonStyle(KidsPillStyle(fill: on ? KidsTheme.teal : .white.opacity(0.7), ink: on ? .white : KidsTheme.deep))
                         .bpSelected(on)
                 }
@@ -352,7 +352,7 @@ struct KidsDetailView: View {
                         .accessibilityLabel(Text(T("Previous")))
                     Button { seasonGrid.toggle() } label: {
                         HStack(spacing: BP.px(8)) {
-                            Text("Season \(model.season)")
+                            Text(verbatim: T("Season %lld", model.season))
                             Image(systemName: seasonGrid ? "chevron.up" : "chevron.down")
                                 // The trait below already says whether the grid is open.
                                 .accessibilityHidden(true)

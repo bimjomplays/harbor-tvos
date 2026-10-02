@@ -100,7 +100,7 @@ struct SeasonsSheet: View {
                     VStack(alignment: .leading, spacing: BP.px(6)) {
                         ForEach(seasons, id: \.self) { s in
                             Button { season = s; dismiss() } label: {
-                                HStack { Text(s == 0 ? "Specials" : "Season \(s)"); Spacer(); Text("\(counts[s] ?? 0) episodes").foregroundStyle(BP.inkSubtle) }.frame(maxWidth: .infinity, alignment: .leading)
+                                HStack { Text(verbatim: s == 0 ? T("Specials") : T("Season %lld", s)); Spacer(); Text("\(counts[s] ?? 0) episodes").foregroundStyle(BP.inkSubtle) }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(BPActionStyle(primary: season == s)).bpSelected(season == s)
                             .focused($focus, equals: s)

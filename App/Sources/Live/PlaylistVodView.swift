@@ -515,7 +515,7 @@ struct VodSeriesDetail: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: BP.px(8)) {
                         ForEach(series.seasons, id: \.self) { s in
-                            Button("Season \(s)") { season = s }.buttonStyle(BPActionStyle(primary: currentSeason == s)).bpSelected(currentSeason == s)
+                            Button(T("Season %lld", s)) { season = s }.buttonStyle(BPActionStyle(primary: currentSeason == s)).bpSelected(currentSeason == s)
                         }
                     }
                     .padding(.vertical, BP.px(4))

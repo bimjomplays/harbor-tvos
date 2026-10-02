@@ -1175,7 +1175,7 @@ struct DetailView: View {
             } else if model.seasons.count > 1 {
                 HStack(spacing: BP.px(8)) {
                     ForEach(seasonChips, id: \.self) { s in
-                        Button(s == 0 ? "Specials" : "Season \(s)") { model.pickKitsuSeason(s) }
+                        Button(s == 0 ? T("Specials") : T("Season %lld", s)) { model.pickKitsuSeason(s) }
                             .buttonStyle(BPActionStyle(primary: model.season == s))
                             .bpSelected(model.season == s)
                             .focused($seasonFocus, equals: "kitsu-\(s)")
