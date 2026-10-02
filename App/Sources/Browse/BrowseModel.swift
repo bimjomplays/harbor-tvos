@@ -35,7 +35,29 @@ final class BrowseModel: ObservableObject {
     @Published private(set) var continueWatching: [ContinueItem] = []
     @Published private(set) var loading = false
     @Published private(set) var failed: String?
-    @Published var spotlight: Meta?
+    @Published var spotlight: Meta? { didSet { fillSpotlightLogo() } }
+
+    /// (TV, Apple TV look) The hero draws a title's logo where it has one; TMDB rows carry none, so
+    /// their heroes were a plain name. lib/logo resolveLogo (TMDB, curated, Cinemeta) fills it in.
+    private var logos: [String: String] = [:]
+    private var logoMisses: Set<String> = []
+    private func fillSpotlightLogo() {
+        guard let m = spotlight, m.logo == nil, m.type == "movie" || m.type == "series" || m.type == "anime" else { return }
+        if let hit = logos[m.id] { var withLogo = m; withLogo.logo = hit; spotlight = withLogo; return }
+        guard !logoMisses.contains(m.id) else { return }
+        Task { [weak self] in
+            let p = ProfilesStore.shared.active
+            let url: String? = try? await HarborEngine.shared.call("titleLogo.resolve", [m, p?.id ?? "default", p?.linked ?? true])
+            guard let self else { return }
+            guard let url, !url.isEmpty else { self.logoMisses.insert(m.id); return }
+            self.logos[m.id] = url
+            if let cur = self.spotlight, cur.id == m.id, cur.logo == nil {
+                var withLogo = cur
+                withLogo.logo = url
+                self.spotlight = withLogo
+            }
+        }
+    }
     /// bp-hero-pips: how many titles the hero cycles through and which one it shows (0 = no cycle).
     @Published private(set) var heroCount = 0
     @Published private(set) var heroIndex = 0

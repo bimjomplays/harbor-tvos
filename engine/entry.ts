@@ -38,6 +38,7 @@ import { profileFromDetail, profileFromMeta } from "@/lib/discover/profile";
 import { clearStore as discoverClear, getStore as discoverStore, trackEvent as discoverTrack } from "@/lib/discover/store";
 import { DEFAULT as SETTINGS_DEFAULT, STORAGE_KEY as SETTINGS_KEY } from "@/lib/settings/defaults";
 import { loadStoredSettings } from "@/lib/settings/load";
+import { resolveLogo as upstreamResolveLogo } from "@/lib/logo";
 import {
   MIRROR_KEY,
   SHARED_KEY,
@@ -191,6 +192,17 @@ export const addonStore = {
 
 // ================================================================================ cinemeta
 /** Cinemeta (v3-cinemeta.strem.io): the always-available fallback catalog and meta source. */
+/**
+ * (TV) lib/logo resolveLogo for the hero: a row title without a logo of its own (TMDB rows carry
+ * none) gets TMDB's / the curated / Cinemeta's title logo. Undefined when there is none.
+ */
+export const titleLogo = {
+  async resolve(meta: upstreamCinemeta.Meta, profileId: string, linked: boolean): Promise<string | null> {
+    const s = loadEffective(profileId, linked);
+    return (await upstreamResolveLogo(s.tmdbKey ?? "", meta).catch(() => undefined)) ?? null;
+  },
+};
+
 export const cinemeta = {
   topMovies: upstreamCinemeta.topMovies,
   topSeries: upstreamCinemeta.topSeries,
