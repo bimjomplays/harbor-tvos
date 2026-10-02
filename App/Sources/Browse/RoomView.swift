@@ -163,9 +163,14 @@ struct RoomView: View {
                 guard !Task.isCancelled else { return }
                 let quiet: Bool = ActivityMonitor.shared.last <= visitStart.addingTimeInterval(1)
                 let fresh: Bool = Date().timeIntervalSince(visitStart) < 25
-                Self.focusLog.notice("boot check onBar=\(ShellFocus.shared.barHasFocus) quiet=\(quiet) fresh=\(fresh) page=\(pageUp)")
+                // (device build 421) ShellFocus.barHasFocus read false with the ring on the Home tab (the
+                // launch's first focus never reached the bar's FocusState): the test is instead that
+                // nothing in this room holds the ring.
+                let roomHeld: Bool = model.tileHeld || cwHeld || animeActionsHeld || liveHot != nil
+                Self.focusLog.notice("boot check roomHeld=\(roomHeld) quiet=\(quiet) fresh=\(fresh) page=\(pageUp)")
                 guard fresh, quiet, !pageUp else { return }
-                if ShellFocus.shared.barHasFocus { cwFocusRequest &+= 1 } else { return }
+                if roomHeld { return }
+                cwFocusRequest &+= 1
             }
         }
         // (device build 390) A cold launch reads the cloud library for longer than the seed's 3 s:
