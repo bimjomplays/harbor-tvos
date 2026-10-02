@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import os
 import UIKit
 
 /// Where a room gets its rows. The engine (upstream logic in JavaScriptCore) implements this;
@@ -270,7 +271,9 @@ final class BrowseModel: ObservableObject {
     /// showed a bare title with no logo, facts or synopsis. The title's Cinemeta record (cached by
     /// the engine) fills them in while the card still holds the ring.
     private var enriched: [String: Meta] = [:]
+    private static let heroLog = Logger(subsystem: "com.dltnp.harbor", category: "hero")
     private func enrichSpotlight(_ meta: Meta, attempt: Int = 0) {
+        Self.heroLog.info("enrich \(meta.id, privacy: .public) type=\(meta.type, privacy: .public) attempt=\(attempt) hasDesc=\(meta.description != nil)")
         guard meta.description == nil, !meta.id.isEmpty, ["movie", "series", "anime"].contains(meta.type) else { return }
         if let full = enriched[meta.id] { spotlight = withResolvedLogo(Self.apply(full, to: meta)); return }
         let kind: String = meta.type == "movie" ? "movie" : "series"
@@ -285,12 +288,19 @@ final class BrowseModel: ObservableObject {
                 guard let id = r?.id, id.hasPrefix("tt"), r?.verified == true else { await self?.retryEnrich(meta, attempt); return }
                 imdb = id
             }
-            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, imdb]) else { await self?.retryEnrich(meta, attempt); return }
+            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, imdb]) else {
+                Self.heroLog.info("enrich cinemeta failed \(imdb, privacy: .public)")
+                await self?.retryEnrich(meta, attempt)
+                return
+            }
             guard let self else { return }
             self.enriched[meta.id] = full
             // Only over the card that asked: the hero cycle or another row may hold the same id by now.
             if let cur = self.spotlight, cur.id == meta.id, cur.poster == meta.poster, cur.background == meta.background, cur.description == nil {
+                Self.heroLog.info("enrich applied \(meta.id, privacy: .public)")
                 self.spotlight = self.withResolvedLogo(Self.apply(full, to: meta))
+            } else {
+                Self.heroLog.info("enrich skipped \(meta.id, privacy: .public) now=\(self.spotlight?.id ?? "nil", privacy: .public) desc=\(self.spotlight?.description != nil)")
             }
         }
     }
