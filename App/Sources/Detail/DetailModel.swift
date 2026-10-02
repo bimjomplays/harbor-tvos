@@ -687,6 +687,17 @@ final class DetailModel: ObservableObject {
         return out
     }
 
+    /// (remote pass) The quick panel's "Remove from Continue watching", reachable from the page too:
+    /// a hold on a Continue Watching card is the only other way, and it is easy to miss.
+    func removeFromContinueWatching() async -> Bool {
+        let p = ProfilesStore.shared.active
+        let ok: Bool = (try? await HarborEngine.shared.callJSON("rooms.dismissContinueWatching", [.string(p?.id ?? "default"), .bool(p?.linked ?? true), authKey.map { .string($0) } ?? .null, .string(meta.id)]))?.bool ?? false
+        guard ok else { return false }
+        HarborEngine.shared.emitEvent("harbor:cw-dismissed")
+        resume = nil
+        return true
+    }
+
     /// Cloud library entry first (Stremio), else the local resume store, like bpResumeMark.
     private func loadResume() async {
         struct Item: Decodable {

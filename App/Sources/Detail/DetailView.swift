@@ -164,6 +164,11 @@ struct DetailView: View {
         out.append(HeroAction(key: "rate", label: score.map { T("Your rating %lld/10", $0) } ?? "Rate this", icon: score == nil ? "star" : "star.fill",
                               active: score != nil, badge: score.map { String($0) }) { rateDialog = true })
         out.append(HeroAction(key: "lists", label: "Add to list", icon: "square.stack.3d.up") { listDialog = true })
+        if model.resume != nil {
+            out.append(HeroAction(key: "cw-remove", label: "Remove from Continue watching", icon: "xmark.circle") {
+                Task { _ = await model.removeFromContinueWatching() }
+            })
+        }
         if model.isMovie, hero?.showWatchedButton ?? true {
             let watched = model.movieWatched
             // (device build 343) Its own glyph: two plain checkmarks (Watchlist and Watched) read alike.
