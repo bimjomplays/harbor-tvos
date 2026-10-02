@@ -32,6 +32,8 @@ struct RoomView: View {
     @State private var animeActionsHeld = false
     /// bp-home seedRowRef: the first focus has been placed (once per visit).
     @State private var seeded = false
+    /// When the first-focus seed ran (the late Continue Watching hand-over below measures from it).
+    @State private var seededAt: Date?
     /// When this visit began (review 6): a walk along the top bar after it keeps the ring there.
     @State private var visitStart = Date()
     @Environment(\.shellFocusNamespace) private var shellNS
@@ -146,6 +148,14 @@ struct RoomView: View {
         // read takes a few seconds, so Home opened on the first catalog row and Jump back in then
         // appeared above the ring. The seed waits for both (at most 3 s after the rows).
         .onChange(of: seedReady) { _, ready in if ready { seedFocus() } }
+        // (device build 390) A cold launch reads the cloud library for longer than the seed's 3 s:
+        // Home opened on Trending and Jump back in then appeared above the ring. When the row lands
+        // within a few seconds of the seed and nothing was pressed since, the ring moves up to it.
+        .onChange(of: model.continueWatching.isEmpty) { wasEmpty, empty in
+            guard wasEmpty, !empty, let at = seededAt, Date().timeIntervalSince(at) < 15,
+                  ActivityMonitor.shared.last <= at, !pageUp else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { ShellFocus.shared.requestDefault() }
+        }
         .task(id: model.rows.isEmpty) {
             guard !model.rows.isEmpty else { return }
             try? await Task.sleep(for: .seconds(3))
@@ -363,6 +373,7 @@ struct RoomView: View {
     private func seedFocus() {
         guard !seeded, hasCards else { return }
         seeded = true
+        seededAt = Date()
         // A restored position needs its row parked and its track scrolled (both lazy) first.
         let wait = model.entry == nil ? 0.05 : 0.3
         let since: Date = visitStart
