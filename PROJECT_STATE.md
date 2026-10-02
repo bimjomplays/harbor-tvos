@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 16:56 UTC — 1.4.6 (411) installed + verified)
+- 1.4.6 needed three reruns (GitHub "job was not acquired by Runner", macOS arm64 capacity).
+- Verified: a cold launch now moves the ring to Jump back in once the row lands (was the Home tab).
+- Found: on that cold launch the CW hero stayed bare (no logo / synopsis) — the first engine reads
+  fail while it is busy. Pushed: enrichment + logo retry twice, 2.5 s apart, while still shown.
+  Also pushed after 1.4.6: screensaver shows title logos (feed.hero carries them).
+
 ## Status (2026-10-02 14:22 UTC — 1.4.5 (406) installed + verified)
 - Verified on the TV: Up from Jump back in → Home tab; Right off the last card → "Your library"
   (hero holds); Re:ZERO hero has logo + synopsis; TMDB-row heroes get logos (Verity).
