@@ -3,6 +3,15 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 20:55 UTC — 1.4.10 (green) uploaded; 1.4.11 building, run 37063255115)
+- Hero bare-card cause (device logs, 1.4.9): "enrich applied" logged 25 ms after the focus yet the
+  hero stayed bare. Fills were assigned to `spotlight` from inside its own didSet, which writes
+  @Published storage without objectWillChange. 1.4.11 runs them a runloop later.
+- Boot focus: ShellFocus.barHasFocus read false with the ring on the Home tab (the launch's first
+  focus never reaches the bar's FocusState). 1.4.11's rescue tests "nothing in the room holds it".
+- 1.4.10: Jump back in titles' Cinemeta records are read ahead (prefetch on continueWatching set).
+- Logs: category "hero" (spotlight changes, enrich) and "focus" (boot check), at notice level.
+
 ## Status (2026-10-02 18:48 UTC — 1.4.7 (415) installed; 1.4.8 building, run 37048062117)
 - 1.4.7 on the TV: screensaver logos; the CW hero is still bare after a cold launch / return to Home
   (a manual re-focus enriches it). 1.4.8 enriches in BrowseModel.spotlight didSet for any bare title
