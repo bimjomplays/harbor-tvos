@@ -35,7 +35,14 @@ final class BrowseModel: ObservableObject {
     @Published private(set) var continueWatching: [ContinueItem] = []
     @Published private(set) var loading = false
     @Published private(set) var failed: String?
-    @Published var spotlight: Meta? { didSet { fillSpotlightLogo() } }
+    /// (device build 411) Enrichment runs for whatever lands in the hero, not only on a card's focus
+    /// event: back on Home the ring was restored onto Jump back in without one, and the hero stayed bare.
+    @Published var spotlight: Meta? {
+        didSet {
+            fillSpotlightLogo()
+            if let m = spotlight, m.description == nil, m.id != oldValue?.id { enrichSpotlight(m) }
+        }
+    }
 
     /// (TV, Apple TV look) The hero draws a title's logo where it has one; TMDB rows carry none, so
     /// their heroes were a plain name. lib/logo resolveLogo (TMDB, curated, Cinemeta) fills it in.
@@ -253,8 +260,10 @@ final class BrowseModel: ObservableObject {
 
     func focus(_ meta: Meta) {
         cardFocused = true
+        let same: Bool = spotlight?.id == meta.id
         spotlight = meta
-        enrichSpotlight(meta)
+        // didSet asks for a new id; the same card focused again (a bare hero left over) asks here.
+        if same, meta.description == nil { enrichSpotlight(meta) }
     }
 
     /// (device build 375) A Continue Watching card carries only a name and art, so the hero over it
