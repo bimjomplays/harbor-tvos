@@ -1767,7 +1767,16 @@ the foreign-invite cover chaining, since this environment has no Swift compiler.
 - Build: XcodeGen + GitHub Actions macOS → TestFlight internal only. CI simulator screenshots for UI review.
 - Harbor account API: `harbor.site/identity/api/*`, sync `sync.harbor.site/sync/v1/{state,push}`. Sync client starts read-only.
 
-## Next (pick up here — updated 2026-09-28 05:00 UTC; STREAMING FIRST)
+## Next (pick up here — updated 2026-10-02 23:10 UTC; STREAMING FIRST)
+
+**Current (2026-10-02 evening):** TV runs 1.4.12 (431), verified. Owner said "keep going until I tell
+you to stop" (session cron, 20 min). Open / ideas: Unabomber sits in the owner's Saved + Watchlist —
+probably added by Claude's accidental test plays on 10-01; asked the owner, do NOT remove it unasked.
+Library History shows JoJo SBR twice (two catalogue ids: sub + "DUB") — upstream behaviour, left.
+Workflow: after a dispatch, push runs on main get cancelled by newer pushes (concurrency); a
+dispatch is not affected. GitHub macOS arm64 capacity sometimes fails a job with "not acquired by
+Runner": rerun after ~10 min (the watcher loop in this session does it).
+
 
 **TMDB (done 2026-10-01 23:50 UTC):** the owner's valid key was delivered to the TV through the
 hand-off LAN API; Home shows Trending / In Theaters, Detail shows TMDB score, tagline, crew, cast,
