@@ -3,6 +3,19 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 02:45 UTC — 1.3.7 (367) installed + verified; 1.3.8 out)
+- Verified on the TV (1.3.7): Re:ZERO S4E17 plays with `shaders cleared` in the log (was `shaders:
+  6 files`), frames move and the UI stays live (with the HQ chain the screen froze on Detail);
+  Home's Jump back in shows Re:ZERO again; the crew grid is gone from the hero (season chips right
+  under Watch on, Cast/Crew below the episodes).
+- Not fixed by 1.3.7: Re:ZERO (tt) S4 stills. Real cause: Cinemeta gives every episode a metahub
+  thumbnail (404 for new episodes), so "no gaps" and TVDB was never asked. 1.3.8 ignores metahub
+  thumbnails when deciding gaps (local engine run returns the TVDB stills).
+- 1.3.8 also: Spotlight long names (Anime hero ran two lines under the bar).
+- Open: the test Unabomber card in Home's Jump back in (Play/Pause via pyatv is a media command,
+  not a UIPress, so I could not open its quick panel; the owner can long-press / Play/Pause it).
+  Anime room showed no Jump back in / hero actions once on 1.3.5 — recheck on 1.3.8.
+
 ## Status (2026-10-02 01:40 UTC — owner back: anime slideshow found and fixed → 1.3.7)
 - Owner: anime (Re:ZERO S4E17) played like a slideshow; other shows fine; subtitles off did nothing.
   Device log: `shaders: 6 files` — Anime4K's HQ chain (Restore/Upscale CNN VL) at 4K. The synced
