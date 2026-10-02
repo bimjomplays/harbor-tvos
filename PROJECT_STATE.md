@@ -3,6 +3,17 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 13:10 UTC — 1.4.4 building; next batch pushed for 1.4.5)
+- Found on the TV: Up from a Jump back in card landed on its "Your library" link (a Select there
+  opened Library — it looked like tab Select failing). The link is now gated like See all (Right off
+  the last card; Left back). Tall title logos (Digger) floated mid-column: RemoteImage `alignment`,
+  logos .leading. Picker chip strip ran over the title column when scrolled: masked with a fade in
+  the gap. Hero logos for TMDB-row titles via engine titleLogo.resolve (lib/logo resolveLogo).
+- Sonnet review fixes applied (Top match overlays, re-seed guard, CW hold incl. the link, logo vs
+  enrichment race, enrichment only for titles, logo misses only on empty answers).
+- To check on device after 1.4.5: Right off the last Jump back in card reaches "Your library" (a
+  one-card row has no end catch like BPRowView's); first picker chip not dimmed by the fade.
+
 ## Status (2026-10-02 12:30 UTC — owner: "keep going until I tell you to stop"; cron d0f4b5e9)
 - TV has 1.4.3 (390) (TestFlight auto-updated). Pushed for the next upload: CW hero enrichment for
   anime cards (Kitsu/MAL ids resolve their tt id first; Re:ZERO's hero was bare); Home re-seeds
