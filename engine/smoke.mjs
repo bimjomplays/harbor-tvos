@@ -2408,6 +2408,32 @@ r.eq("rpdbPoster falls back on an unknown id", engine.providers.rpdbPoster("t0-f
   rec.dispose();
 }
 
+// ------------------------------- (owner report 2026-10-01) a season-less file is not S4E17's match
+{
+  const base = "https://direct2.example.invalid";
+  const manifest = { id: "org.example.direct2", version: "1.0.0", name: "Direct2", resources: ["stream"], types: ["series"], idPrefixes: ["tt"], catalogs: [] };
+  const rec = loadEngine({ storage: new Map([
+    ["harbor.profiles.v1", JSON.stringify({ activeId: "default", profiles: [{ id: "default", isPrimary: true }] })],
+    ["harbor.installed-addons.default", JSON.stringify([{ transportUrl: `${base}/manifest.json`, manifest }])],
+  ]) });
+  rec.node.host.fetch = async (req) => {
+    const json = (body) => ({ status: 200, statusText: "OK", headers: { "content-type": "application/json" }, url: req.url, body: JSON.stringify(body) });
+    if (req.url === `${base}/manifest.json`) return json(manifest);
+    if (req.url.startsWith(`${base}/stream/series/tt5607616`)) return json({ streams: [
+      { name: "[TB] Comet 1080p", description: "BluRay HEVC bonkai77\n10bit\n1.1 GB Comet|StremThru\nDual Audio\n[bonkai77].Re.Zero.-.Starting.Life.in.Another.World.Episode.17.Disgrace.in.the.Extreme.[BD.1080p.Dual.Audio.x265.HEVC.10bit].mkv", url: "https://cdn.example.invalid/bonkai.mkv", behaviorHints: { filename: "[bonkai77].Re.Zero.-.Starting.Life.in.Another.World.Episode.17.Disgrace.in.the.Extreme.[BD.1080p.Dual.Audio.x265.HEVC.10bit].mkv" } },
+      { name: "[TB] Comet 1080p", description: "WEB-DL HEVC ToonsHub\nAAC\n379 MB Comet|BitMagnet\nRe.ZERO.Starting.Life.in.Another.World.S04E17.Good.Loser.1080p.BILI.WEB-DL.JPN.AAC2.0.H.265.MSubs-ToonsHub.mkv", url: "https://cdn.example.invalid/s04e17.mkv", behaviorHints: { filename: "Re.ZERO.Starting.Life.in.Another.World.S04E17.Good.Loser.1080p.BILI.WEB-DL.JPN.AAC2.0.H.265.MSubs-ToonsHub.mkv" } },
+    ] });
+    return { status: 404, statusText: "Not Found", headers: {}, url: req.url, body: "" };
+  };
+  const e = rec.engine;
+  const show = { id: "tt5607616", type: "series", name: "Re:ZERO Starting Life in Another World" };
+  const found = await e.streamsRoom.search("rz", "default", true, null, show, { season: 4, episode: 17 });
+  const all = found.result?.picker.all ?? [];
+  const order = e.streamsRoom.autoCandidates("rz", "default", true, show, 4, 17, false, null).map((i) => (all[i]?.url ?? "").split("/").pop());
+  r.ok("autoCandidates: from season 2 on, a file naming S04E17 leads one that names no season", order[0] === "s04e17.mkv", JSON.stringify({ order, all: all.map((s) => [s.url, s.season, s.episode]) }));
+  rec.dispose();
+}
+
 // ------------------------------------- dead streams (lib/dead-streams, views/player.tsx stall skip)
 {
   const base = "https://direct.example.invalid";

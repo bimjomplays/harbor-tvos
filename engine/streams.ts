@@ -837,7 +837,12 @@ export function autoCandidates(token: string, profileId: string, linked: boolean
   const hasStrongAddon = all.some((s) => /mediafusion|comet/i.test(s.addonName ?? ""));
   const isTorrentio = (s: ScoredStream) => /torrentio/i.test(s.addonName ?? "");
 
-  const episodeExact = (s: ScoredStream) => episode != null && (season != null && s.season != null ? episodeSpanContains(s, season, episode) : s.episode === episode) && (season == null || s.season == null || s.season === season);
+  // (owner report 2026-10-01, Re:ZERO S4E17) "[bonkai77] … Episode.17.Disgrace.in.the.Extreme" names
+  // no season, so its "17" matched S4E17 exactly and it auto-played: it was season 1's episode 17.
+  // From season 2 on, a file that names no season is not an exact match; it ranks below the files
+  // that say S04E17, and a season lock or a remembered pick never forces it.
+  const seasonAmbiguous = (s: ScoredStream) => season != null && season > 1 && s.season == null && !s.seasonPack;
+  const episodeExact = (s: ScoredStream) => episode != null && !seasonAmbiguous(s) && (season != null && s.season != null ? episodeSpanContains(s, season, episode) : s.episode === episode) && (season == null || s.season == null || s.season === season);
   const episodeConflict = (s: ScoredStream) => {
     if (episode == null || s.episode == null) return false;
     if (season != null && s.season != null) return !episodeSpanContains(s, season, episode);
@@ -883,8 +888,8 @@ export function autoCandidates(token: string, profileId: string, linked: boolean
     out.push(i);
   };
   const instant = (i: number) => i >= 0 && (isCached(all[i]) || !!all[i].url);
-  if (lock) { const i = all.findIndex((s) => streamMatchesSource(s, lock)); if (instant(i)) push(i); }
-  if (previous) { const i = all.findIndex((s) => streamMatchesEntry(s, previous)); if (instant(i)) push(i); }
+  if (lock) { const i = all.findIndex((s) => streamMatchesSource(s, lock) && !seasonAmbiguous(s)); if (instant(i)) push(i); }
+  if (previous) { const i = all.findIndex((s) => streamMatchesEntry(s, previous) && !seasonAmbiguous(s)); if (instant(i)) push(i); }
   for (const { i } of sorted) push(i);
   return out;
 }
