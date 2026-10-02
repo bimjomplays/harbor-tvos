@@ -36,7 +36,13 @@ struct Meta: Codable, Identifiable, Equatable, Hashable {
 
     struct ProviderBadge: Codable, Equatable, Hashable { var name: String; var logo: String; var tint: String }
 
-    static func == (a: Meta, b: Meta) -> Bool { a.id == b.id && a.name == b.name && a.poster == b.poster }
+    /// (device build 429) Also the art and copy a view draws: with id / name / poster alone, a title
+    /// filled in later (the Jump back in hero getting its logo and synopsis) compared equal to the
+    /// bare one, so SwiftUI kept the bare SpotlightView on screen while the model held the full one.
+    static func == (a: Meta, b: Meta) -> Bool {
+        a.id == b.id && a.name == b.name && a.poster == b.poster && a.background == b.background
+            && a.logo == b.logo && a.description == b.description && a.releaseInfo == b.releaseInfo && a.genres == b.genres
+    }
     func hash(into h: inout Hasher) { h.combine(id) }
 
     /// "2024 · 1h 52m · Action, Drama" as upstream's `bpFacts` reads.
