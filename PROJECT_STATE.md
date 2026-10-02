@@ -3,6 +3,10 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 03:35 UTC — 1.3.8 (369) installed + verified)
+- Re:ZERO (tt) S4 episode cards show real stills (E15–E19). Home Jump back in: Re:ZERO + the test
+  Unabomber card (owner to remove; long-press or Play/Pause on the Siri Remote).
+
 ## Status (2026-10-02 02:45 UTC — 1.3.7 (367) installed + verified; 1.3.8 out)
 - Verified on the TV (1.3.7): Re:ZERO S4E17 plays with `shaders cleared` in the log (was `shaders:
   6 files`), frames move and the UI stays live (with the HQ chain the screen froze on Detail);
