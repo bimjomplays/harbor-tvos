@@ -223,6 +223,29 @@ final class BrowseModel: ObservableObject {
     func focus(_ meta: Meta) {
         cardFocused = true
         spotlight = meta
+        enrichSpotlight(meta)
+    }
+
+    /// (device build 375) A Continue Watching card carries only a name and art, so the hero over it
+    /// showed a bare title with no logo, facts or synopsis. The title's Cinemeta record (cached by
+    /// the engine) fills them in while the card still holds the ring.
+    private var enriched: [String: Meta] = [:]
+    private func enrichSpotlight(_ meta: Meta) {
+        guard meta.description == nil, meta.id.hasPrefix("tt") else { return }
+        if let hit = enriched[meta.id] { spotlight = hit; return }
+        let kind: String = meta.type == "movie" ? "movie" : "series"
+        Task { [weak self] in
+            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) else { return }
+            guard let self else { return }
+            var m = meta
+            m.description = full.description
+            if m.logo == nil { m.logo = full.logo }
+            if m.releaseInfo == nil { m.releaseInfo = full.releaseInfo }
+            if m.genres == nil { m.genres = full.genres }
+            if m.imdbRating == nil { m.imdbRating = full.imdbRating }
+            self.enriched[meta.id] = m
+            if self.spotlight?.id == meta.id { self.spotlight = m }
+        }
     }
 
     /// bp-anime-hero `lead`: heroSlide (the first hero slide with art and a logo, else with art),
