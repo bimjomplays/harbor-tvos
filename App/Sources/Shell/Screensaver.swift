@@ -135,7 +135,7 @@ final class PreviewGate: ObservableObject {
 final class ScreensaverModel: ObservableObject {
     /// One per app: RootView drives it, and live previews read `active` to stop streaming under it.
     static let shared = ScreensaverModel()
-    struct Item: Equatable { var bg: String; var title: String; var sub: String }
+    struct Item: Equatable { var bg: String; var title: String; var sub: String; var logo: String? = nil }
     @Published private(set) var active = false
     @Published private(set) var items: [Item] = []
     @Published private(set) var at = 0
@@ -240,7 +240,7 @@ final class ScreensaverModel: ObservableObject {
     private func load(source: String) async {
         let src = source == "classic" ? "trending" : source
         guard fetchedFor != src || items.isEmpty else { return }
-        struct Ranked: Decodable { var name: String?; var background: String?; var rank: Int?; var rankLabel: String? }
+        struct Ranked: Decodable { var name: String?; var background: String?; var logo: String?; var rank: Int?; var rankLabel: String? }
         let metas: [Ranked] = (try? await HarborEngine.shared.call("feed.hero", [src])) ?? []
         var out: [Item] = []
         var seen: Set<String> = []
@@ -248,7 +248,7 @@ final class ScreensaverModel: ObservableObject {
             guard let bg = m.background, !seen.contains(bg) else { continue }
             seen.insert(bg)
             let sub = (m.rank != nil && m.rankLabel != nil) ? "#\(m.rank!) in \(m.rankLabel!) today" : ""
-            out.append(Item(bg: bg, title: m.name ?? "", sub: sub))
+            out.append(Item(bg: bg, title: m.name ?? "", sub: sub, logo: (m.logo ?? "").isEmpty ? nil : m.logo))
             if out.count >= 16 { break }
         }
         if !out.isEmpty { items = out; fetchedFor = src }
@@ -269,7 +269,15 @@ struct ScreensaverView: View {
                 // (device build 375) Bright art (Scrubs' white wall) hid the clock: a corner shade under it.
                 RadialGradient(colors: [BP.void_.opacity(0.55), .clear], center: .topTrailing, startRadius: 0, endRadius: BP.px(420)).ignoresSafeArea()
                 VStack(alignment: .leading, spacing: BP.px(6)) {
-                    Text(item.title).font(BP.display(38)).foregroundStyle(BP.ink).lineLimit(1)
+                    // (Apple TV look) The title's logo where the feed has one, as the TV app's screensaver.
+                    if let logo = item.logo {
+                        RemoteImage(url: logo, contentMode: .fit, alignment: .bottomLeading)
+                            .frame(maxWidth: BP.px(380), maxHeight: BP.px(110), alignment: .bottomLeading)
+                            .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+                            .accessibilityLabel(Text(verbatim: item.title))
+                    } else {
+                        Text(item.title).font(BP.display(38)).foregroundStyle(BP.ink).lineLimit(1)
+                    }
                     if !item.sub.isEmpty { Text(item.sub).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted) }
                 }
                 .padding(BP.gutter).padding(.bottom, BP.px(30))
