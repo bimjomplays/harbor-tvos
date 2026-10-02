@@ -7,7 +7,11 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 - TV has 1.4.3 (390) (TestFlight auto-updated). Pushed for the next upload: CW hero enrichment for
   anime cards (Kitsu/MAL ids resolve their tt id first; Re:ZERO's hero was bare); Home re-seeds
   the ring onto Jump back in when the row lands within 15 s of the seed with no press since (cold
-  launch opened on Trending with Jump back in above).
+  launch opened on Trending with Jump back in above); anime season chips: the selected one is lit
+  (it was a dark fill reading as unselected); Search Top match: art as the card backdrop, copy at
+  full width (Naruto's genres wrapped one per line). → 1.4.4.
+- Tip: Search can be typed from the PC through the phone-typing API (Type on your phone → QR →
+  claim + {kind:"text", action:"submitText"} on :11471/api/remote). Clear the query afterwards.
 
 ## Status (2026-10-02 10:27 UTC — owner's 5-hour window over; work stopped)
 - On the TV: 1.4.2 (386). 1.4.3 (screensaver clock + title fix) dispatched, run 36991756647, not
