@@ -68,8 +68,16 @@ final class BrowseModel: ObservableObject {
             if spotlight?.id != oldValue?.id || (spotlight?.description == nil) != (oldValue?.description == nil) {
                 Self.heroLog.notice("spotlight \(oldValue?.id ?? "nil", privacy: .public)(\(oldValue?.description != nil)) → \(self.spotlight?.id ?? "nil", privacy: .public)(\(self.spotlight?.description != nil)) room=\(String(describing: self.room), privacy: .public)")
             }
-            fillSpotlightLogo()
-            if let m = spotlight, m.description == nil, m.id != oldValue?.id { enrichSpotlight(m) }
+            // A runloop later, never inside this observer: a value set from within its own didSet goes
+            // straight to @Published's storage without objectWillChange, so the hero kept drawing the
+            // bare card while the model already held its logo and synopsis (device build 421 logs).
+            let newID: String? = spotlight?.id
+            let enrich: Bool = spotlight?.description == nil && newID != oldValue?.id
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.spotlight?.id == newID else { return }
+                self.fillSpotlightLogo()
+                if enrich, let m = self.spotlight, m.description == nil { self.enrichSpotlight(m) }
+            }
         }
     }
 
