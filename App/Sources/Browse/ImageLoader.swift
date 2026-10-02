@@ -277,6 +277,8 @@ struct RemoteImage: View {
     /// (review 21 fixes) Told the url and whether anything drew (false: neither `url` nor `fallback`
     /// loaded), so a tile can print its title plate the way bp-tile does once its art chain runs out.
     var onResult: ((String, Bool) -> Void)? = nil
+    /// Where a fitted picture sits in its box (a title logo hugs the leading edge).
+    var alignment: Alignment = .center
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
     @State private var failed = false
@@ -297,7 +299,7 @@ struct RemoteImage: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: alignment) {
             // The plate only while nothing is loaded: drawn under the picture it showed through
             // transparent art (a title logo on Detail sat in a grey box, CI screenshot 26-detail).
             if image == nil { BP.ink.opacity(0.07) }

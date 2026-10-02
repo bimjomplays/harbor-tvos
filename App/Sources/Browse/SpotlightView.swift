@@ -42,7 +42,7 @@ struct SpotlightView: View {
                     .accessibilityHidden(true)
             }
             if let logo = meta?.logo, !logo.isEmpty {
-                RemoteImage(url: logo, contentMode: .fit)
+                RemoteImage(url: logo, contentMode: .fit, alignment: .leading)
                     // (device build 316) 90 px canvas let a tall logo (Toy Story 5) climb under the
                     // top bar and the focused tab's name pill.
                     .frame(maxWidth: BP.px(300), maxHeight: BP.px(72), alignment: .leading)

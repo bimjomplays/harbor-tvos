@@ -693,7 +693,7 @@ struct DetailView: View {
             if let logo = model.meta.logo, !logo.isEmpty {
                 // bp-detail-hero.tsx data-bp-detail-logo: max-h-[clamp(107px,16.7vh,160px)]
                 // max-w-[min(28vw,320px)] — was sized like the Home spotlight's own (larger) logo box.
-                RemoteImage(url: logo, contentMode: .fit).frame(maxWidth: BP.px(320), maxHeight: BP.px(107), alignment: .leading)
+                RemoteImage(url: logo, contentMode: .fit, alignment: .leading).frame(maxWidth: BP.px(320), maxHeight: BP.px(107), alignment: .leading)
                     // The title logo is the page's heading: VoiceOver reads the name it draws.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(verbatim: model.meta.name))
