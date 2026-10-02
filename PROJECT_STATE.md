@@ -3,6 +3,12 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 18:48 UTC — 1.4.7 (415) installed; 1.4.8 building, run 37048062117)
+- 1.4.7 on the TV: screensaver logos; the CW hero is still bare after a cold launch / return to Home
+  (a manual re-focus enriches it). 1.4.8 enriches in BrowseModel.spotlight didSet for any bare title
+  and logs to category "hero" (enrich / applied / skipped / cinemeta failed): read it with
+  `pymobiledevice3 syslog live --rsd H P | grep "Harbor{Harbor}"` after a cold launch to see why.
+
 ## Status (2026-10-02 16:56 UTC — 1.4.6 (411) installed + verified)
 - 1.4.6 needed three reruns (GitHub "job was not acquired by Runner", macOS arm64 capacity).
 - Verified: a cold launch now moves the ring to Jump back in once the row lands (was the Home tab).
