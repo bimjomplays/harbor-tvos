@@ -3,6 +3,16 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 06:40 UTC — 1.3.9 (371) installed + verified; next batch local)
+- Verified on 1.3.9: East of Eden (tmdb:tv) Detail shows its season with stills, runtimes and ratings
+  (was "Couldn't load this title"); Search opens with the ring on q, digits under the letters.
+- CI: 1.3.9's UI run failed only testSearchKeyTypesIntoQuery (NavigationTests.swift still expected
+  key-1); fixed, push run 36972860605 checking.
+- Local, next upload: Play/Pause on row tiles and Library tiles opens the quick panel (Library had no
+  quick panel; hold works there too); auto-pick: from season 2 on a file naming no season is not an
+  exact match and a season lock / remembered pick never forces it (bonkai77 "Episode.17" S1 rip
+  auto-played for Re:ZERO S4E17; smoke +1, proven to fail without the fix).
+
 ## Status (2026-10-02 05:35 UTC — owner: 5-hour work window until 06:25 local; 1.3.9 out)
 - Found on the TV: with the TMDB key working, Shows/Movies rows are TMDB's (`tmdb:tv:…` ids) and
   Cinemeta knows only IMDb ids, so every TMDB show's Detail said "Couldn't load this title" with no
