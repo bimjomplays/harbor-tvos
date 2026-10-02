@@ -911,6 +911,17 @@ struct PlayPickerView: View {
             .padding(.vertical, BP.px(6))
         }
         .scrollClipDisabled()
+        // (device build 390) Scrolled along to Refresh, the chips ran out of their column over the
+        // title on the left ("PLAY / Digger" under "All 6"). They fade out at the column's own
+        // leading edge; the mask is taller than the strip so a focused chip's lift still draws.
+        .mask(
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: BP.px(28))
+                Color.black
+            }
+            .padding(.vertical, -BP.px(24))
+            .padding(.trailing, -BP.gutter)
+        )
         .focusSection()
     }
 
