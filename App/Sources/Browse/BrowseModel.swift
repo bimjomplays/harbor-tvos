@@ -231,11 +231,21 @@ final class BrowseModel: ObservableObject {
     /// the engine) fills them in while the card still holds the ring.
     private var enriched: [String: Meta] = [:]
     private func enrichSpotlight(_ meta: Meta) {
-        guard meta.description == nil, meta.id.hasPrefix("tt") else { return }
+        guard meta.description == nil, !meta.id.isEmpty else { return }
         if let full = enriched[meta.id] { spotlight = Self.apply(full, to: meta); return }
         let kind: String = meta.type == "movie" ? "movie" : "series"
         Task { [weak self] in
-            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) else { return }
+            // (device build 386) An anime card is filed under its Kitsu / MAL id (Re:ZERO's hero stayed
+            // bare): its IMDb id first, as the stream search finds it.
+            var imdb: String = meta.id
+            if !imdb.hasPrefix("tt") {
+                struct Resolved: Decodable { var id: String?; var verified: Bool }
+                let key: String = SettingsBridge.shared.slice.tmdbKey
+                let r: Resolved? = try? await HarborEngine.shared.call("streamsRoom.resolveImdb", [meta, key])
+                guard let id = r?.id, id.hasPrefix("tt"), r?.verified == true else { return }
+                imdb = id
+            }
+            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, imdb]) else { return }
             guard let self else { return }
             self.enriched[meta.id] = full
             // Only over the card that asked: the hero cycle or another row may hold the same id by now.
