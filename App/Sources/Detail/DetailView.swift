@@ -711,7 +711,7 @@ struct DetailView: View {
             HStack(spacing: 0) {
                 // bp-detail: every provider the detail settings allow (use-bp-card-badges "detail").
                 ScoreChipsView(meta: model.meta, surface: "detail", limit: 6, trailingGap: BP.px(12))
-                Text(model.meta.facts).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
+                Text(heroFacts).font(BP.sans(13.4, .medium)).foregroundStyle(BP.inkMuted)
                     .padding(.trailing, BP.px(12))
                 // bp-hero-notes BpHeroMarks: one mark per connected server that has this title.
                 ForEach(model.titleServers) { server in MediaServerMark(server: server).padding(.trailing, BP.px(12)) }
@@ -791,6 +791,16 @@ struct DetailView: View {
             if let providers = model.extras?.watchOn, !providers.isEmpty { watchOn(providers) }
             credits
         }
+    }
+
+    /// bp-logic buildBpFacts: TMDB's runtime and genres first once they are in, else the meta's. The
+    /// hero read Cinemeta's "106 min" over Details' TMDB "129 min" (Digger).
+    private var heroFacts: String {
+        guard let x = model.extras else { return model.meta.facts }
+        var m = model.meta
+        if model.isMovie, let r = x.runtime, !r.isEmpty { m.runtime = r }
+        if !x.genres.isEmpty { m.genres = x.genres }
+        return m.facts
     }
 
     private var overviewText: String { model.meta.description ?? model.extras?.overview ?? "" }
