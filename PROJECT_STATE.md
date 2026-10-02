@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 07:45 UTC — 1.4.0 (375) uploaded, CI green)
+- 1.4.0 = the 06:40 batch (Play/Pause + Library quick panel, season-ambiguous auto-pick fix) plus
+  Detail More → "Remove from Continue watching" when the title has a resume point.
+- Pushed after 1.4.0 (next upload): anime hero "N min left" refreshes with the resume point.
+- The TV drops to the tvOS home screen after ~15–20 idle minutes: Harbor's process stays alive
+  (sysmon), so it is the Apple TV sleeping/waking to Home, not a Harbor exit.
+
 ## Status (2026-10-02 06:40 UTC — 1.3.9 (371) installed + verified; next batch local)
 - Verified on 1.3.9: East of Eden (tmdb:tv) Detail shows its season with stills, runtimes and ratings
   (was "Couldn't load this title"); Search opens with the ring on q, digits under the letters.
