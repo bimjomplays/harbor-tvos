@@ -273,6 +273,10 @@ struct ScreensaverView: View {
                     if !item.sub.isEmpty { Text(item.sub).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted) }
                 }
                 .padding(BP.gutter).padding(.bottom, BP.px(30))
+                // (device build 386) The old and new titles cross-faded on top of each other
+                // ("Digger" through "South Park"): the old line goes at once, the new one fades in.
+                .id(item.title + item.sub)
+                .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.5).delay(0.35)), removal: .identity))
             } else {
                 HarborMark(size: BP.px(120)).opacity(0.6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
