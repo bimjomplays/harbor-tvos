@@ -217,7 +217,9 @@ struct AnimeHeroActionsView: View {
         }
         .onChange(of: focus != nil) { _, held in onHold?(held) }
         .onDisappear { onHold?(false) }
-        .task(id: meta.id) {
+        // (device build 369) Keyed on the resume point too: back from the player the hero still said
+        // "25 min left" while the Jump back in card under it said "22m left".
+        .task(id: "\(meta.id)|\(Int(resume?.timeOffsetMs ?? 0) / 60000)") {
             let p = ProfilesStore.shared.active
             let cw: AnyJSON = resume.map { r in .object(["season": r.season.map { .number(Double($0)) } ?? .null, "episode": r.episode.map { .number(Double($0)) } ?? .null,
                                                           "duration": .number(r.durationMs), "timeOffset": .number(r.timeOffsetMs)]) } ?? .null
