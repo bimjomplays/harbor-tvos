@@ -3,6 +3,12 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 22:50 UTC — 1.4.12 (431) installed + verified)
+- Verified: a cold launch lands the ring on Jump back in AND its hero shows logo, facts and synopsis
+  (Re:ZERO) — the long-running bare-hero bug is fixed (Meta == was the cause).
+- Note: TestFlight's Update press sometimes doesn't take on the first try; check the installed
+  version (`pymobiledevice3 apps query com.dltnp.harbor`) and press again.
+
 ## Status (2026-10-02 22:05 UTC — 1.4.11 (429) installed; 1.4.12 building, run 37069012258)
 - Verified 1.4.11: a cold launch puts the ring on Jump back in (boot rescue / seed).
 - Real cause of the bare CW hero (logs: model held the enriched title): `Meta ==` compared only id,
