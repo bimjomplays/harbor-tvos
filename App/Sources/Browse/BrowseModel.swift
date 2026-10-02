@@ -273,7 +273,7 @@ final class BrowseModel: ObservableObject {
     private var enriched: [String: Meta] = [:]
     private static let heroLog = Logger(subsystem: "com.dltnp.harbor", category: "hero")
     private func enrichSpotlight(_ meta: Meta, attempt: Int = 0) {
-        Self.heroLog.info("enrich \(meta.id, privacy: .public) type=\(meta.type, privacy: .public) attempt=\(attempt) hasDesc=\(meta.description != nil)")
+        Self.heroLog.notice("enrich \(meta.id, privacy: .public) type=\(meta.type, privacy: .public) attempt=\(attempt) hasDesc=\(meta.description != nil)")
         guard meta.description == nil, !meta.id.isEmpty, ["movie", "series", "anime"].contains(meta.type) else { return }
         if let full = enriched[meta.id] { spotlight = withResolvedLogo(Self.apply(full, to: meta)); return }
         let kind: String = meta.type == "movie" ? "movie" : "series"
@@ -289,7 +289,7 @@ final class BrowseModel: ObservableObject {
                 imdb = id
             }
             guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, imdb]) else {
-                Self.heroLog.info("enrich cinemeta failed \(imdb, privacy: .public)")
+                Self.heroLog.notice("enrich cinemeta failed \(imdb, privacy: .public)")
                 await self?.retryEnrich(meta, attempt)
                 return
             }
@@ -297,10 +297,10 @@ final class BrowseModel: ObservableObject {
             self.enriched[meta.id] = full
             // Only over the card that asked: the hero cycle or another row may hold the same id by now.
             if let cur = self.spotlight, cur.id == meta.id, cur.poster == meta.poster, cur.background == meta.background, cur.description == nil {
-                Self.heroLog.info("enrich applied \(meta.id, privacy: .public)")
+                Self.heroLog.notice("enrich applied \(meta.id, privacy: .public)")
                 self.spotlight = self.withResolvedLogo(Self.apply(full, to: meta))
             } else {
-                Self.heroLog.info("enrich skipped \(meta.id, privacy: .public) now=\(self.spotlight?.id ?? "nil", privacy: .public) desc=\(self.spotlight?.description != nil)")
+                Self.heroLog.notice("enrich skipped \(meta.id, privacy: .public) now=\(self.spotlight?.id ?? "nil", privacy: .public) desc=\(self.spotlight?.description != nil)")
             }
         }
     }

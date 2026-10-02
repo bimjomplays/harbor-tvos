@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 /// Home / Movies / Shows: spotlight up top, Continue Watching, then the rail of rows.
 struct RoomView: View {
@@ -152,6 +153,21 @@ struct RoomView: View {
         // read takes a few seconds, so Home opened on the first catalog row and Jump back in then
         // appeared above the ring. The seed waits for both (at most 3 s after the rows).
         .onChange(of: seedReady) { _, ready in if ready { seedFocus() } }
+        // (device build 419) A cold launch could still leave the ring on the Home tab (the seed ran
+        // before the row's cards could take focus, or not at all). For the first seconds of a visit,
+        // while nothing was pressed and the ring sits on the bar, it is moved to Jump back in.
+        .task(id: model.continueWatching.isEmpty) {
+            guard !model.continueWatching.isEmpty else { return }
+            for wait in [0.6, 1.5, 3.0, 5.0] {
+                try? await Task.sleep(for: .seconds(wait))
+                guard !Task.isCancelled else { return }
+                let quiet: Bool = ActivityMonitor.shared.last <= visitStart.addingTimeInterval(1)
+                let fresh: Bool = Date().timeIntervalSince(visitStart) < 25
+                Self.focusLog.notice("boot check onBar=\(ShellFocus.shared.barHasFocus) quiet=\(quiet) fresh=\(fresh) page=\(pageUp)")
+                guard fresh, quiet, !pageUp else { return }
+                if ShellFocus.shared.barHasFocus { cwFocusRequest &+= 1 } else { return }
+            }
+        }
         // (device build 390) A cold launch reads the cloud library for longer than the seed's 3 s:
         // Home opened on Trending and Jump back in then appeared above the ring. When the row lands
         // within a few seconds of the seed and nothing was pressed since, the ring moves up to it.
@@ -366,6 +382,8 @@ struct RoomView: View {
         let otherPage: Bool = seeAll != nil || service != nil || addonPage != nil || collection != nil
         return titlePage || otherPage
     }
+
+    static let focusLog = Logger(subsystem: "com.dltnp.harbor", category: "focus")
 
     /// The first Continue Watching read is in, and the room has something to focus.
     private var seedReady: Bool { hasCards && model.cwResolved }
