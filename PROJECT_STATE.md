@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 08:40 UTC — 1.4.1 (381) uploaded green; 1.4.2 dispatched)
+- 1.4.2: Menu at Home goes to the top bar first (ShellView.backToHome + TopBarView barHeld binding),
+  only Menu on the bar leaves the app (it exited from the 5th row down); BPField drops its panel box
+  (tvOS draws its own platter: box-in-a-box in Library → Search); Sonnet review fixes (CW hero
+  enrichment caches only Cinemeta's record and never lands on a newer spotlight; Remove-from-CW
+  dedupes ids).
+
 ## Status (2026-10-02 08:05 UTC — 1.4.0 (375) verified; 1.4.1 out, run 36981870362)
 - Verified on 1.4.0: Detail More menu lists "Remove from Continue watching" (Unabomber); picking it
   turned Resume into Play. BUT the Home card stayed: the card was saved as tmdb:movie:… before 1.3.9
