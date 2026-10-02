@@ -41,14 +41,22 @@ final class BrowseModel: ObservableObject {
     /// their heroes were a plain name. lib/logo resolveLogo (TMDB, curated, Cinemeta) fills it in.
     private var logos: [String: String] = [:]
     private var logoMisses: Set<String> = []
-    private func fillSpotlightLogo() {
+    private func fillSpotlightLogo(attempt: Int = 0) {
         guard let m = spotlight, m.logo == nil, m.type == "movie" || m.type == "series" || m.type == "anime" else { return }
         if let hit = logos[m.id] { var withLogo = m; withLogo.logo = hit; spotlight = withLogo; return }
         guard !logoMisses.contains(m.id) else { return }
         Task { [weak self] in
             let p = ProfilesStore.shared.active
             let answer: String?? = try? await HarborEngine.shared.call("titleLogo.resolve", [m, p?.id ?? "default", p?.linked ?? true])
-            guard let self, let answer else { return }
+            guard let self else { return }
+            guard let answer else {
+                // (device build 411) The first focus of a cold launch asked while the engine was still
+                // loading the rows, and nothing asked again: a couple of retries while it is still up.
+                guard attempt < 2 else { return }
+                try? await Task.sleep(for: .seconds(2.5))
+                if self.spotlight?.id == m.id { self.fillSpotlightLogo(attempt: attempt + 1) }
+                return
+            }
             // A thrown call (engine busy, offline) may answer next time; an empty answer will not.
             guard let url = answer, !url.isEmpty else { self.logoMisses.insert(m.id); return }
             self.logos[m.id] = url
@@ -253,7 +261,7 @@ final class BrowseModel: ObservableObject {
     /// showed a bare title with no logo, facts or synopsis. The title's Cinemeta record (cached by
     /// the engine) fills them in while the card still holds the ring.
     private var enriched: [String: Meta] = [:]
-    private func enrichSpotlight(_ meta: Meta) {
+    private func enrichSpotlight(_ meta: Meta, attempt: Int = 0) {
         guard meta.description == nil, !meta.id.isEmpty, ["movie", "series", "anime"].contains(meta.type) else { return }
         if let full = enriched[meta.id] { spotlight = withResolvedLogo(Self.apply(full, to: meta)); return }
         let kind: String = meta.type == "movie" ? "movie" : "series"
@@ -265,10 +273,10 @@ final class BrowseModel: ObservableObject {
                 struct Resolved: Decodable { var id: String?; var verified: Bool }
                 let key: String = SettingsBridge.shared.slice.tmdbKey
                 let r: Resolved? = try? await HarborEngine.shared.call("streamsRoom.resolveImdb", [meta, key])
-                guard let id = r?.id, id.hasPrefix("tt"), r?.verified == true else { return }
+                guard let id = r?.id, id.hasPrefix("tt"), r?.verified == true else { await self?.retryEnrich(meta, attempt); return }
                 imdb = id
             }
-            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, imdb]) else { return }
+            guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, imdb]) else { await self?.retryEnrich(meta, attempt); return }
             guard let self else { return }
             self.enriched[meta.id] = full
             // Only over the card that asked: the hero cycle or another row may hold the same id by now.
@@ -276,6 +284,13 @@ final class BrowseModel: ObservableObject {
                 self.spotlight = self.withResolvedLogo(Self.apply(full, to: meta))
             }
         }
+    }
+
+    /// A failed read (a cold launch's engine still busy) tries again while the card is still shown.
+    private func retryEnrich(_ meta: Meta, _ attempt: Int) async {
+        guard attempt < 2 else { return }
+        try? await Task.sleep(for: .seconds(2.5))
+        if let cur = spotlight, cur.id == meta.id, cur.description == nil { enrichSpotlight(meta, attempt: attempt + 1) }
     }
 
     /// The logo the resolver already found wins over Cinemeta's (they fought mid-hover).
