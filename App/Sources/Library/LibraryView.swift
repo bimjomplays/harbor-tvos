@@ -288,6 +288,8 @@ struct LibraryView: View {
         _model = StateObject(wrappedValue: LibraryModel(tab: views.libraryTab))
     }
     @State private var detail: Meta?
+    /// bp-quick-panel over a library tile (hold or Play/Pause).
+    @State private var quick: Meta?
     @State private var draft = ""
     /// views/library.tsx "Stats" (settings.wrappedButton) opens the Wrapped view.
     @State private var statsEnabled = false
@@ -386,6 +388,10 @@ struct LibraryView: View {
                                         .accessibilityValue(Text(verbatim: tileValue(e)))
                                         // The lifted tile, ring and shadow draw over the next grid row.
                                         .zIndex(focusedKey == e.key ? 1 : 0)
+                                        // (remote pass) A hold or Play/Pause opens the quick panel (Play, Trailer,
+                                        // watchlist, lists, rating) as on every Home and room row; the library had none.
+                                        .onLongPressGesture(minimumDuration: 0.6) { BPSound.shared.open(); quick = e.meta }
+                                        .onPlayPauseCommand { BPSound.shared.open(); quick = e.meta }
                                     }
                                 }
                             }
@@ -469,6 +475,7 @@ struct LibraryView: View {
         // the ring back on the chip row. With none open, the press goes on to the shell (Home).
         .onExitCommand(perform: exitAction)
         .fullScreenCover(item: $detail) { m in DetailView(meta: m) }
+        .fullScreenCover(item: $quick) { m in QuickPanelView(meta: m) }
         .fullScreenCover(isPresented: $showStats) { WrappedView() }
         }
     }
