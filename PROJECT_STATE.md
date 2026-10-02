@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 00:36 UTC — 1.3.5 (360) installed and verified on the TV)
+- Verified on the TV: Up from Movies' first card lands on the Movies tab; Left from the profile chip
+  lands on Collections (no redirect); Anime hero "NEW" is a chip; Cyberpunk: Edgerunners' NEW chip
+  sits inside the card (and the 2nd card's "2026 NEW" chip, previously pushed off entirely, shows);
+  Library chip row ends inside the margin with the title count.
+- Next batch pushed (run on main): Detail cast portraits, crew text links, sharp video stills.
+
 ## Status (2026-10-01 23:36 UTC — 1.3.5 = both batches, dispatch run 36941608648)
 - Seen on the TV (1.3.4) and fixed: tile art wider than 2:3 (Cyberpunk: Edgerunners) filled past the
   card, widened the tile stack and pushed the marks overlay off it (cut NEW chip) — art framed to the
