@@ -203,10 +203,10 @@ final class NavigationTests: XCTestCase {
         remote.press(.select)
         require(app.buttons["key-q"].waitForExistence(timeout: 20), "the Search keyboard did not appear", app)
         // Search seeds the ring on the keyboard's first key.
-        require(waitForFocus(app, timeout: 10, where: { $0 == "key-1" }) != nil, "Search did not put the ring on the keyboard (focus: \(focusedId(app) ?? "none"))", app)
+        require(waitForFocus(app, timeout: 10, where: { $0 == "key-q" }) != nil, "Search did not put the ring on the keyboard (focus: \(focusedId(app) ?? "none"))", app)
         // Down to the letter row; whichever single-character key takes the ring is typed.
         remote.press(.down)
-        let key = waitForFocus(app, timeout: 5, where: { $0.hasPrefix("key-") && $0.count == 5 && $0 != "key-1" })
+        let key = waitForFocus(app, timeout: 5, where: { $0.hasPrefix("key-") && $0.count == 5 && $0 != "key-q" })
         require(key != nil, "Down on the keyboard left the keys (focus: \(focusedId(app) ?? "none"))", app)
         guard let key else { return }
         let ch = String(key.suffix(1))
