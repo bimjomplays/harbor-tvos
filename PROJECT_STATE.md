@@ -15,8 +15,8 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 - 1.4.0 = the 06:40 batch (Play/Pause + Library quick panel, season-ambiguous auto-pick fix) plus
   Detail More → "Remove from Continue watching" when the title has a resume point.
 - Pushed after 1.4.0 (next upload): anime hero "N min left" refreshes with the resume point.
-- The TV drops to the tvOS home screen after ~15–20 idle minutes: Harbor's process stays alive
-  (sysmon), so it is the Apple TV sleeping/waking to Home, not a Harbor exit.
+- Correction: the "home screen" shots after idle time ("Slow Horses · #4 in TV today", clock top
+  right) are Harbor's own screensaver, not tvOS. Nothing is exiting.
 
 ## Status (2026-10-02 06:40 UTC — 1.3.9 (371) installed + verified; next batch local)
 - Verified on 1.3.9: East of Eden (tmdb:tv) Detail shows its season with stills, runtimes and ratings
