@@ -1480,8 +1480,11 @@ struct AnimeSeasonChipStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         BPFocusReader { focused in
             configuration.label
-                .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(focused ? BP.ink : (selected ? BP.void_.opacity(0.72) : Color.clear)))
-                .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(selected || focused ? Color.clear : BP.edge, lineWidth: 1))
+                // (device build 390) The selected chip was a dark fill on the dark page, so it read as
+                // bare text while the others had outlines: the picked season looked unpicked. Now it is
+                // the lit one, like the order chips beside it.
+                .background(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).fill(focused ? BP.ink : (selected ? BP.ink.opacity(0.16) : Color.clear)))
+                .overlay(RoundedRectangle(cornerRadius: BP.rLG, style: .continuous).stroke(focused ? Color.clear : (selected ? BP.ink.opacity(0.4) : BP.edge), lineWidth: 1))
                 .modifier(BPFocusModifier(focused: focused, pressed: configuration.isPressed, radius: BP.rLG, lift: 1.02))
         }
     }
