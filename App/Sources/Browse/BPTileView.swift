@@ -102,7 +102,9 @@ struct BPTileView: View {
                 .clipped()
             // (open-items sweep 3) bp-tile.tsx: the ranked cell's card is the same button as a poster
             // tile's, scrim and title (data-bp-tile-title) on focus included; it drew neither.
-            art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height), caption: true, chain: true)
+            // (device build 360) The rank numeral already says Top 10: the ribbon on top of it made
+            // three labels on one card (numeral, NEW, TOP 10).
+            art(url: meta.poster ?? meta.background, size: CGSize(width: Self.rankSize.width * 0.6, height: Self.rankSize.height), caption: true, chain: true, ribbon: false)
         }
         .frame(width: Self.rankSize.width, height: Self.rankSize.height, alignment: .bottomTrailing)
     }
@@ -151,7 +153,7 @@ struct BPTileView: View {
         .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
     }
 
-    private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false, chain: Bool = false) -> some View {
+    private func art(url: String?, size: CGSize, plateText: Bool = true, caption: Bool = false, chain: Bool = false, ribbon: Bool = true) -> some View {
         // (perf pass 5) The settings slice read once: each read of `slice` copies the whole
         // ~140-field struct out of its @Published wrapper, and this runs for every tile on each redraw.
         let settings: SettingsBridge.Slice = SettingsBridge.shared.slice
@@ -201,7 +203,7 @@ struct BPTileView: View {
                         .animation(.easeOut(duration: 0.26), value: focused)
                 }
             }
-            CardMarksOverlay(marks: marks.byId[meta.id], fallbackChip: marks.byId[meta.id] == nil ? CardMark.identity(for: meta) : nil, size: size)
+            CardMarksOverlay(marks: marks.byId[meta.id], fallbackChip: marks.byId[meta.id] == nil ? CardMark.identity(for: meta) : nil, size: size, ribbon: ribbon)
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: BP.rXS, style: .continuous))

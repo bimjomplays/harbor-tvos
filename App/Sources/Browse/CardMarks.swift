@@ -83,6 +83,8 @@ struct CardMarksOverlay: View {
     /// Local fallback for screenshot fixtures and the moment before the engine answers.
     let fallbackChip: String?
     let size: CGSize
+    /// The Top 10 ribbon (off on a rank cell, whose numeral says it).
+    var ribbon: Bool = true
 
     private var chip: String? { marks?.chip ?? fallbackChip }
 
@@ -104,10 +106,10 @@ struct CardMarksOverlay: View {
             corner(.bottomLeading) {
                 if marks?.bookmark == "bottomStart" { circle("bookmark.fill") }
             }
-            if let side = marks?.top10, let ribbon = Self.ribbon(side: side) {
+            if ribbon, let side = marks?.top10, let tab = Self.ribbon(side: side) {
                 // bp-card-marks.tsx: no aria-label of its own upstream either; the tile that hosts
                 // this overlay already speaks its own name (and, where it applies, its marks).
-                Image(uiImage: ribbon)
+                Image(uiImage: tab)
                     .resizable().aspectRatio(contentMode: .fit)
                     .frame(width: min(max(size.width * 0.27, BP.px(34)), BP.px(72)))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: side == "left" ? .topLeading : .topTrailing)
