@@ -50,9 +50,15 @@ struct SpotlightView: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(verbatim: meta?.name ?? ""))
             } else {
-                Text(meta?.name ?? " ")
-                    .font(BP.display(36)).foregroundStyle(BP.ink)
-                    .lineLimit(2).shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+                // (device build 360) A long anime name ("Rich Girl Caretaker: I'm Secretly the
+                // Caregiver of…") ran two full-width lines up under the top bar: long names set
+                // smaller and shrink to fit.
+                let name: String = meta?.name ?? " "
+                Text(name)
+                    .font(BP.display(name.count > 40 ? 28 : 36)).foregroundStyle(BP.ink)
+                    .lineLimit(2).minimumScaleFactor(0.7)
+                    .frame(maxWidth: BP.px(760), alignment: .leading)
+                    .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
             }
             HStack(spacing: 0) {
                 // bp-spotlight: provider chips from use-bp-card-badges, then TMDB's own score, then facts.
