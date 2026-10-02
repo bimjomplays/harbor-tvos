@@ -162,6 +162,8 @@ struct BPRowView: View {
                             .prefersDefaultFocus(restoreCell == meta.id, in: shellNS ?? rowNS)
                             .accessibilityIdentifier("tile-\(row.key)-\(i)")
                             .onLongPressGesture(minimumDuration: 0.6) { onQuick?(meta) }
+                            // Play/Pause opens the same quick panel as a hold (Continue Watching cards do too).
+                            .onPlayPauseCommand { onQuick?(meta) }
                             // bp-row-see-all.ts / use-bp-focus stepAcross: both ends of a row lead on.
                             .onMoveCommand { dir in tileMove(dir, at: i, count: items.count) }
                             // The lifted tile, its ring, shadow and caption draw over its neighbours.
