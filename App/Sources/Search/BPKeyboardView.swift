@@ -13,7 +13,9 @@ struct BPKeyboardView: View {
     @State private var symbols = false
     @FocusState private var focusedKey: String?
 
-    private static let letters = ["1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm,.-"].map { $0.map(String.init) }
+    /// (device build 369, remote pass) Letters first, digits last: Search opened with the ring on
+    /// "1", one row away from every letter a title starts with.
+    private static let letters = ["qwertyuiop", "asdfghjkl'", "zxcvbnm,.-", "1234567890"].map { $0.map(String.init) }
     private static let symbolRows = ["!@#$%^&*()", "+=/\\|~`°£€", ":;\"?<>[]{}", "éèáàöüñçåø"].map { $0.map(String.init) }
     private let keySize = BP.px(44)
     /// (regression pass) Focus ids for the bottom row, so `onHold` covers the whole keyboard: with

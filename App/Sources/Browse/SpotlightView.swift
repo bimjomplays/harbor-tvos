@@ -119,6 +119,10 @@ struct SpotlightView: View {
                 // bp-tokens.ts --bp-scrim-side: the side scrim runs from the start edge (260deg under rtl).
                 .flipsForRightToLeftLayoutDirection(true)
             LinearGradient(colors: [.clear, BP.void_.opacity(0.3), BP.void_.opacity(0.88), BP.void_], startPoint: .init(x: 0.5, y: 0.35), endPoint: .bottom)
+            // (device build 369) White key art (Shin Chan) left the top bar's bell, cog and clock
+            // grey on near-white: a top scrim under the bar's own keeps them readable.
+            LinearGradient(stops: [.init(color: BP.void_.opacity(0.6), location: 0), .init(color: BP.void_.opacity(0.25), location: 0.12),
+                                   .init(color: .clear, location: 0.24)], startPoint: .top, endPoint: .bottom)
         }
         // bp-ambient-layers.tsx: the art stage is aria-hidden.
         .accessibilityHidden(true)

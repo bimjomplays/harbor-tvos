@@ -294,9 +294,9 @@ final class NavigationTests4: XCTestCase {
         require(seek("tab-search", app), "could not walk the top bar to Search (focus: \(focusNote(app)))", app)
         remote.press(.select)
         require(app.buttons["key-q"].waitForExistence(timeout: 20), "the Search keyboard did not appear", app)
-        require(waitForFocus(app, timeout: 10, where: { $0 == "key-1" }) != nil, "Search did not put the ring on the keyboard (focus: \(focusNote(app)))", app)
+        require(waitForFocus(app, timeout: 10, where: { $0 == "key-q" }) != nil, "Search did not put the ring on the keyboard (focus: \(focusNote(app)))", app)
         remote.press(.down)
-        let key = waitForFocus(app, timeout: 5, where: { $0.hasPrefix("key-") && $0.count == 5 && $0 != "key-1" })
+        let key = waitForFocus(app, timeout: 5, where: { $0.hasPrefix("key-") && $0.count == 5 && $0 != "key-q" })
         require(key != nil, "Down on the keyboard left the keys (focus: \(focusNote(app)))", app)
         guard let key else { return }
         let ch = String(key.suffix(1))
@@ -320,7 +320,7 @@ final class NavigationTests4: XCTestCase {
         require(seek("tab-search", app), "could not walk the top bar back to Search (focus: \(focusNote(app)))", app)
         remote.press(.select)
         require(app.buttons["key-q"].waitForExistence(timeout: 20), "the Search keyboard did not come back", app)
-        require(waitForFocus(app, timeout: 10, where: { $0 == "key-1" }) != nil, "Search opened again without the ring on the keyboard's first key (focus: \(focusNote(app)))", app)
+        require(waitForFocus(app, timeout: 10, where: { $0 == "key-q" }) != nil, "Search opened again without the ring on the keyboard's first key (focus: \(focusNote(app)))", app)
         let kept = waitUntil(timeout: 5) {
             fields.allElementsBoundByIndex.contains { ($0.value as? String) == ch }
         }
