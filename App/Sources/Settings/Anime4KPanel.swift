@@ -12,7 +12,8 @@ struct Anime4KPanel: View {
     @AppStorage(PlayerScreen.anime4kKey) private var tvChoice = "off"
     private var on: Bool { tvChoice != "off" }
     private var indicator: Bool { settings.slice.playerAnime4kIndicator ?? true }
-    private var mode: String { settings.slice.playerAnime4kMode ?? "A" }
+    /// The mode this TV runs: its own pick when it holds one, else the mode "auto" uses.
+    private var mode: String { modes.contains(tvChoice) ? tvChoice : (settings.slice.playerAnime4kMode ?? "A") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BP.px(10)) {
@@ -26,7 +27,7 @@ struct Anime4KPanel: View {
             HStack(spacing: BP.px(8)) {
                 Text("Mode").font(BP.sans(13, .semibold)).foregroundStyle(BP.inkMuted)
                 ForEach(modes, id: \.self) { m in
-                    Button(m.count == 2 ? "\(m.prefix(1))+\(m.suffix(1))" : m) { patch(["playerAnime4kMode": .string(m)]) }.buttonStyle(BPActionStyle(primary: mode == m)).bpSelected(mode == m)
+                    Button(m.count == 2 ? "\(m.prefix(1))+\(m.suffix(1))" : m) { if modes.contains(tvChoice) { tvChoice = m } else { patch(["playerAnime4kMode": .string(m)]) } }.buttonStyle(BPActionStyle(primary: mode == m)).bpSelected(mode == m)
                 }
             }
             HStack(spacing: BP.px(8)) {

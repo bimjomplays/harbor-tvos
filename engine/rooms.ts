@@ -475,7 +475,8 @@ export async function continueWatchingWithExtras(profileId: string, linked: bool
 
 /** bp-quick-panel "Remove from Continue watching" (lib/cw-dismiss): hides the item locally and in the cloud library. */
 export async function dismissContinueWatching(profileId: string, linked: boolean, authKey: string | null, metaId: string): Promise<boolean> {
-  const items = await continueWatching(authKey, loadEffective(profileId, linked), 200);
+  // Home shows anime whatever animeOnlyInAnimeRoom says (continueWatchingWithExtras): find it the same way.
+  const items = await continueWatching(authKey, { ...loadEffective(profileId, linked), animeOnlyInAnimeRoom: false } as Settings, 200);
   const item = items.find((i) => i._id === metaId);
   if (!item) return false;
   dismissCw(item, authKey);
