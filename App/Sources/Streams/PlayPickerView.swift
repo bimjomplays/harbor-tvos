@@ -909,6 +909,8 @@ struct PlayPickerView: View {
                 .buttonStyle(BPActionStyle())
             }
             .padding(.vertical, BP.px(6))
+            // The fade lives in the gap left of the column: the chips start where the rows do.
+            .padding(.leading, BP.px(28))
         }
         .scrollClipDisabled()
         // (device build 390) Scrolled along to Refresh, the chips ran out of their column over the
@@ -922,6 +924,7 @@ struct PlayPickerView: View {
             .padding(.vertical, -BP.px(24))
             .padding(.trailing, -BP.gutter)
         )
+        .padding(.leading, -BP.px(28))
         .focusSection()
     }
 
