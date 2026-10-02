@@ -281,7 +281,8 @@ struct ScreensaverView: View {
                 HarborMark(size: BP.px(120)).opacity(0.6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            ClockView().shadow(color: .black.opacity(0.6), radius: 8, y: 2)
+            // (device build 390) Still grey-on-sky over Coyote vs. Acme: full ink, larger.
+            ClockView(prominent: true).shadow(color: .black.opacity(0.7), radius: 10, y: 2)
                 .padding(BP.gutter).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             // The whole surface is one focusable target so the waking press never reaches a tile.
             Button { model.wake() } label: { Color.clear.contentShape(Rectangle()) }

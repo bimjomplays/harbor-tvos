@@ -564,10 +564,12 @@ struct StatusGlyphs: View {
 /// 30 s timer counted from when the view appeared showed the old minute for up to 30 s (upstream's
 /// 20 s interval, up to 20 s), and each rebuild (theme, language, a return to the shell) restarted it.
 struct ClockView: View {
+    /// The screensaver's clock sits over full-bleed art: larger and in full ink there.
+    var prominent = false
     var body: some View {
         TimelineView(.everyMinute) { context in
             Text(context.date, format: .dateTime.hour().minute())
-                .font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted)
+                .font(BP.sans(prominent ? 22 : 15, prominent ? .semibold : .medium)).foregroundStyle(prominent ? BP.ink : BP.inkMuted)
         }
     }
 }
