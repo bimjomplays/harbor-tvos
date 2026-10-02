@@ -3,6 +3,14 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 00:58 UTC — PAUSED by the owner after 1.3.6)
+- Owner: "stop after this next one until I tell you to start working again". The autopilot cron is
+  deleted. 1.3.6 = Detail cast/crew/videos polish + rank cells lift only the poster, no Top 10 ribbon
+  on rank cells. Dispatched only after the detail batch's CI run passes; NOT installed on the TV by
+  Claude (the owner is using it) — the owner updates from TestFlight when they like.
+- Resume: verify 1.3.6 on the TV (cast ring on the portrait, crew text links, "Cinematography" on
+  one line, numbered trailers, Top 10 row lifts only the poster).
+
 ## Status (2026-10-02 00:36 UTC — 1.3.5 (360) installed and verified on the TV)
 - Verified on the TV: Up from Movies' first card lands on the Movies tab; Left from the profile chip
   lands on Collections (no redirect); Anime hero "NEW" is a chip; Cyberpunk: Edgerunners' NEW chip
