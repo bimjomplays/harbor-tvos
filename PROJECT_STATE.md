@@ -10,8 +10,9 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
   card on device). Fixed for the next upload: the seed bumps ContinueRowView.focusRequest to put
   the ring on the first card directly. Hero logo max height 72 → 60 (it reached the tab pill).
   Library grid fades out under the top bar (posters ran under the wordmark).
-- Open: Anime room → Jump back in Re:ZERO hero shows IMDb 8.3 but no logo / synopsis (on Home the
-  same card has both): the anime room's CW id likely resolves to an IMDb record without them.
+- Anime room's Re:ZERO hero: logo + synopsis arrive on a re-focus (first resolve was slow); fine.
+  Screensaver clock (1.4.5, prominent) verified readable.
+- 1.4.6 dispatch 37020479182 failed on GitHub runner capacity ("not acquired by Runner"): rerun.
 
 ## Status (2026-10-02 13:10 UTC — 1.4.4 building; next batch pushed for 1.4.5)
 - Found on the TV: Up from a Jump back in card landed on its "Your library" link (a Select there
