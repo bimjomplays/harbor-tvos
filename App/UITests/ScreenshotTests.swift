@@ -54,8 +54,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launch("shell")
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         capture("14-shell-home")
-        // Home opens on Jump back in: the first Up lands on its "Your library" link, the second
-        // reaches the bar (Up in the bar stays there).
+        // Home opens on Jump back in: Up reaches the bar (a second Up in the bar stays there).
         XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.up)
         // Walk past every tab, the profile chip and the account bell to the cog; the cog is the last
@@ -202,7 +201,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["tab-home"].waitForExistence(timeout: 30))
         sleep(1)
         dump(app, "hierarchy-shell-initial")
-        // First Up lands on Jump back in's "Your library" link, second reaches the bar.
+        // Up from Jump back in reaches the bar; the second Up stays there.
         XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.up)
         XCUIRemote.shared.press(.right)
