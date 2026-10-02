@@ -470,7 +470,7 @@ final class DetailModel: ObservableObject {
             // `--fixtures detail` (NavigationTests3): the fixture title already carries its episode
             // list; Cinemeta has never heard of its id.
             fetched = true
-        } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) {
+        } else if let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, await cinemetaId()]) {
             // The addon that served the title (bp-hero-notes' mark) comes with the meta that opened
             // the page; Cinemeta's record never carries one.
             var merged = full
@@ -511,6 +511,19 @@ final class DetailModel: ObservableObject {
         await loadAwards()
         await loadTrackers()
         await loadTitleServers()
+    }
+
+    /// (device build 369) With a working TMDB key the Shows and Movies rows are TMDB's, keyed
+    /// `tmdb:tv:…` / `tmdb:movie:…`, and Cinemeta knows only IMDb ids: every TMDB show opened on
+    /// "Couldn't load this title" with no episodes. The page reads Cinemeta under the title's IMDb id
+    /// (and the meta then carries it, so watch state and Continue Watching file under the id Stremio uses).
+    private func cinemetaId() async -> String {
+        guard meta.id.hasPrefix("tmdb:") else { return meta.id }
+        struct Resolved: Decodable { var id: String?; var verified: Bool }
+        let key: String = SettingsBridge.shared.slice.tmdbKey
+        let r: Resolved? = try? await HarborEngine.shared.call("streamsRoom.resolveImdb", [meta, key])
+        if let id = r?.id, id.hasPrefix("tt"), r?.verified == true { return id }
+        return meta.id
     }
 
     /// use-bp-detail: TMDB lands independently of the meta; the franchise collection last.
