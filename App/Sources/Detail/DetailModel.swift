@@ -359,7 +359,10 @@ final class DetailModel: ObservableObject {
         var progress: Double { durationMs > 0 ? min(1, max(0, positionMs / durationMs)) : 0 }
     }
 
-    init(meta: Meta) { self.meta = meta }
+    init(meta: Meta) { self.meta = meta; openedId = meta.id }
+    /// The id the page was opened under. A TMDB title's meta takes its IMDb id once Cinemeta answers
+    /// (cinemetaId), but what was saved before that (Continue Watching, resume) sits under this one.
+    private let openedId: String
 
     var isSeries: Bool { meta.type == "series" || meta.type == "anime" }
     /// The strip: the anime season chip's episodes when the TVDB order resolved, else this season's.
@@ -684,6 +687,7 @@ final class DetailModel: ObservableObject {
         if !meta.id.hasPrefix("tt"), cloudOk { out.append(meta.id) }
         // Any other id last: "Add to Watchlist" (stremio.saveBookmark) files the page under it.
         if !out.contains(meta.id) { out.append(meta.id) }
+        if !out.contains(openedId), !openedId.hasPrefix("simkl:") { out.append(openedId) }
         return out
     }
 
@@ -691,7 +695,13 @@ final class DetailModel: ObservableObject {
     /// a hold on a Continue Watching card is the only other way, and it is easy to miss.
     func removeFromContinueWatching() async -> Bool {
         let p = ProfilesStore.shared.active
-        let ok: Bool = (try? await HarborEngine.shared.callJSON("rooms.dismissContinueWatching", [.string(p?.id ?? "default"), .bool(p?.linked ?? true), authKey.map { .string($0) } ?? .null, .string(meta.id)]))?.bool ?? false
+        // (device build 375) Every id the title is known by: a TMDB title saved before 1.3.9 sits in
+        // the row as tmdb:movie:…, while the page now reads as its tt id; removing only one left the card.
+        var ok = false
+        for id in [meta.id, openedId] + libraryCandidates where !id.isEmpty {
+            let one: Bool = (try? await HarborEngine.shared.callJSON("rooms.dismissContinueWatching", [.string(p?.id ?? "default"), .bool(p?.linked ?? true), authKey.map { .string($0) } ?? .null, .string(id)]))?.bool ?? false
+            ok = ok || one
+        }
         guard ok else { return false }
         HarborEngine.shared.emitEvent("harbor:cw-dismissed")
         resume = nil
