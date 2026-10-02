@@ -887,8 +887,8 @@ struct DetailView: View {
                                     Text(T(c.type)).font(BP.sans(10, .bold)).textCase(.uppercase).tracking(1.4).foregroundStyle(BP.inkSubtle).lineLimit(1)
                                     // bp-videos-row.tsx: the engine's unnamed extra trailers are t("Trailer").
                                     // (device build 355) Four cards all read "TRAILER / Trailer": unnamed
-                                    // ones are numbered after the lead trailer ("Trailer 2", "Trailer 3").
-                                    Text(c.name == "Trailer" ? "\(T("Trailer")) \(i + 2)" : c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
+                                    // ones are numbered within the row (the row opened on "Trailer 2").
+                                    Text(c.name == "Trailer" ? "\(T("Trailer")) \(clips.prefix(i + 1).filter { $0.name == "Trailer" }.count)" : c.name).font(BP.sans(14, .semibold)).foregroundStyle(BP.ink).lineLimit(1)
                                 }
                                 .padding(BP.px(10)).frame(width: BP.px(300), alignment: .leading)
                             }
