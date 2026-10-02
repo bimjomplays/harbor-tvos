@@ -3,6 +3,10 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 10:27 UTC — owner's 5-hour window over; work stopped)
+- On the TV: 1.4.2 (386). 1.4.3 (screensaver clock + title fix) dispatched, run 36991756647, not
+  installed by Claude. Crons deleted. Open items: see the 09:35 entry.
+
 ## Status (2026-10-02 09:35 UTC — 1.4.2 (386) installed + verified)
 - Verified on the TV: Menu from the 5th Home row brings the ring to the Home tab with the rows back
   at rest; Menu on the bar leaves the app. Library → Search shows one native field (no box in a
