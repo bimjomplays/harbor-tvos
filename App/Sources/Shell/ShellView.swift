@@ -55,6 +55,8 @@ struct ShellView: View {
     @AppStorage(EBookGate.key) private var ebookOn = false
     /// A row's Left off its start (BPRowView onNavEdge): the bar puts the ring on a tab.
     @State private var barRequest = BPBarRequest(serial: 0, tab: nil)
+    /// The ring is on the top bar (a tab, the profile chip, the account menu or the cog).
+    @State private var barHeld = false
     /// (device-flow pass 9) This shell's claim on GamepadMonitor's LB/RB hook (setOnTab / clearOnTab).
     @State private var hookOwner = UUID()
 
@@ -63,7 +65,7 @@ struct ShellView: View {
             room
                 .environment(\.bpFocusTopBar, { tab in requestBar(tab) })
             // (review 12) Up from an in-place layer (Collections' overlay) reached the bar behind it.
-            TopBarView(request: barRequest).disabled(app.roomLayer)
+            TopBarView(request: barRequest, barHeld: $barHeld).disabled(app.roomLayer)
             VStack { Spacer(); HintBarView(actions: hints) }
         }
         // bp-shell.tsx fallback → popBigPicture: a tab is [home, tab], so Back from a tab lands on
@@ -194,8 +196,12 @@ struct ShellView: View {
     private var backToHome: (() -> Void)? {
         // In the PiP browse layer, Back at Home returns to the player screen instead of leaving the app.
         if app.room == .home {
-            guard inBrowseLayer else { return nil }
-            return { PiPBrowse.shared.backToPlayer() }
+            if inBrowseLayer { return { PiPBrowse.shared.backToPlayer() } }
+            // (device build 375, remote pass) As in Apple's TV app, Menu deep in Home's rows first
+            // brings the ring back up to the bar (the rows return to rest under it); only Menu on
+            // the bar leaves the app. It quit straight from the fifth row down.
+            guard !barHeld else { return nil }
+            return { requestBar(.home) }
         }
         return { app.room = .home }
     }
@@ -379,6 +385,8 @@ struct TopBarView: View {
     @State private var lastTab: Room?
     /// ShellView's latest "ring to the bar" request (a row's Left off its start).
     var request = BPBarRequest(serial: 0, tab: nil)
+    /// Told whether anything on the bar holds the ring (Menu at Home leaves the app only then).
+    @Binding var barHeld: Bool
 
     var body: some View {
         HStack(spacing: BP.px(9)) {
@@ -457,6 +465,9 @@ struct TopBarView: View {
             ShellFocus.shared.barHasFocus = new != nil
         }
         .onChange(of: chromeFocus) { old, new in if old != nil && new == nil { chromeLeftAt = Date() } }
+        .onChange(of: focusedTab != nil || chromeFocus != nil, initial: true) { _, held in
+            if barHeld != held { barHeld = held }
+        }
         .onChange(of: request) { _, r in focusBar(r.tab) }
         .background(
             LinearGradient(colors: [BP.void_.opacity(0.95), BP.void_.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom)
