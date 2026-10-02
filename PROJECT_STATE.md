@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 14:22 UTC — 1.4.5 (406) installed + verified)
+- Verified on the TV: Up from Jump back in → Home tab; Right off the last card → "Your library"
+  (hero holds); Re:ZERO hero has logo + synopsis; TMDB-row heroes get logos (Verity).
+- Found: a cold launch leaves the ring on the Home tab (the seed's resetFocus never found the CW
+  card on device). Fixed for the next upload: the seed bumps ContinueRowView.focusRequest to put
+  the ring on the first card directly. Hero logo max height 72 → 60 (it reached the tab pill).
+
 ## Status (2026-10-02 13:10 UTC — 1.4.4 building; next batch pushed for 1.4.5)
 - Found on the TV: Up from a Jump back in card landed on its "Your library" link (a Select there
   opened Library — it looked like tab Select failing). The link is now gated like See all (Right off
