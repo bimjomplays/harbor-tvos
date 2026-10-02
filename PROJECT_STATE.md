@@ -9,6 +9,8 @@ Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor a
 - Found: on that cold launch the CW hero stayed bare (no logo / synopsis) — the first engine reads
   fail while it is busy. Pushed: enrichment + logo retry twice, 2.5 s apart, while still shown.
   Also pushed after 1.4.6: screensaver shows title logos (feed.hero carries them).
+- Verified on 1.4.6: Search Top match card (backdrop art, full-width copy: Breaking Bad); Detail
+  Cast portraits + Crew section under the episodes (East of Eden).
 
 ## Status (2026-10-02 14:22 UTC — 1.4.5 (406) installed + verified)
 - Verified on the TV: Up from Jump back in → Home tab; Right off the last card → "Your library"
