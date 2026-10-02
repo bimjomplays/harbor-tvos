@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-02 22:05 UTC — 1.4.11 (429) installed; 1.4.12 building, run 37069012258)
+- Verified 1.4.11: a cold launch puts the ring on Jump back in (boot rescue / seed).
+- Real cause of the bare CW hero (logs: model held the enriched title): `Meta ==` compared only id,
+  name and poster, so SwiftUI treated the filled-in title as unchanged and kept the bare
+  SpotlightView. 1.4.12 compares background, logo, description, releaseInfo and genres too
+  (Sonnet review: no loops; Home re-reads now republish when copy changes).
+
 ## Status (2026-10-02 20:55 UTC — 1.4.10 (green) uploaded; 1.4.11 building, run 37063255115)
 - Hero bare-card cause (device logs, 1.4.9): "enrich applied" logged 25 ms after the focus yet the
   hero stayed bare. Fills were assigned to `spotlight` from inside its own didSet, which writes
