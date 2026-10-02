@@ -698,7 +698,9 @@ final class DetailModel: ObservableObject {
         // (device build 375) Every id the title is known by: a TMDB title saved before 1.3.9 sits in
         // the row as tmdb:movie:…, while the page now reads as its tt id; removing only one left the card.
         var ok = false
-        for id in [meta.id, openedId] + libraryCandidates where !id.isEmpty {
+        var seen = Set<String>()
+        let ids: [String] = ([meta.id, openedId] + libraryCandidates).filter { !$0.isEmpty && seen.insert($0).inserted }
+        for id in ids {
             let one: Bool = (try? await HarborEngine.shared.callJSON("rooms.dismissContinueWatching", [.string(p?.id ?? "default"), .bool(p?.linked ?? true), authKey.map { .string($0) } ?? .null, .string(id)]))?.bool ?? false
             ok = ok || one
         }

@@ -232,20 +232,28 @@ final class BrowseModel: ObservableObject {
     private var enriched: [String: Meta] = [:]
     private func enrichSpotlight(_ meta: Meta) {
         guard meta.description == nil, meta.id.hasPrefix("tt") else { return }
-        if let hit = enriched[meta.id] { spotlight = hit; return }
+        if let full = enriched[meta.id] { spotlight = Self.apply(full, to: meta); return }
         let kind: String = meta.type == "movie" ? "movie" : "series"
         Task { [weak self] in
             guard let full: Meta = try? await HarborEngine.shared.call("cinemeta.meta", [kind, meta.id]) else { return }
             guard let self else { return }
-            var m = meta
-            m.description = full.description
-            if m.logo == nil { m.logo = full.logo }
-            if m.releaseInfo == nil { m.releaseInfo = full.releaseInfo }
-            if m.genres == nil { m.genres = full.genres }
-            if m.imdbRating == nil { m.imdbRating = full.imdbRating }
-            self.enriched[meta.id] = m
-            if self.spotlight?.id == meta.id { self.spotlight = m }
+            self.enriched[meta.id] = full
+            // Only over the card that asked: the hero cycle or another row may hold the same id by now.
+            if let cur = self.spotlight, cur.id == meta.id, cur.poster == meta.poster, cur.background == meta.background, cur.description == nil {
+                self.spotlight = Self.apply(full, to: meta)
+            }
         }
+    }
+
+    /// The card's own name and art, Cinemeta's facts.
+    private static func apply(_ full: Meta, to meta: Meta) -> Meta {
+        var m = meta
+        m.description = full.description
+        if m.logo == nil { m.logo = full.logo }
+        if m.releaseInfo == nil { m.releaseInfo = full.releaseInfo }
+        if m.genres == nil { m.genres = full.genres }
+        if m.imdbRating == nil { m.imdbRating = full.imdbRating }
+        return m
     }
 
     /// bp-anime-hero `lead`: heroSlide (the first hero slide with art and a logo, else with art),
