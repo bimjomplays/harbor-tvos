@@ -65,6 +65,9 @@ final class BrowseModel: ObservableObject {
     /// event: back on Home the ring was restored onto Jump back in without one, and the hero stayed bare.
     @Published var spotlight: Meta? {
         didSet {
+            if spotlight?.id != oldValue?.id || (spotlight?.description == nil) != (oldValue?.description == nil) {
+                Self.heroLog.notice("spotlight \(oldValue?.id ?? "nil", privacy: .public)(\(oldValue?.description != nil)) → \(self.spotlight?.id ?? "nil", privacy: .public)(\(self.spotlight?.description != nil)) room=\(String(describing: self.room), privacy: .public)")
+            }
             fillSpotlightLogo()
             if let m = spotlight, m.description == nil, m.id != oldValue?.id { enrichSpotlight(m) }
         }
