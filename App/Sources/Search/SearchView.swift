@@ -680,26 +680,29 @@ struct TopMatchPanel: View {
     /// copy wrapped one genre per line (Naruto's "Animation, / Action & / Adventure…"). The art is the
     /// card's backdrop now, under a scrim, and the copy has the card's width.
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            BP.panel
-            RemoteImage(url: meta.background ?? meta.poster)
-                .accessibilityHidden(true)
-            LinearGradient(stops: [.init(color: BP.void_.opacity(0.92), location: 0), .init(color: BP.void_.opacity(0.7), location: 0.45),
-                                   .init(color: BP.void_.opacity(0.15), location: 1)], startPoint: .bottom, endPoint: .top)
-            VStack(alignment: .leading, spacing: BP.px(5)) {
-                Text("Top match").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
-                Text(meta.name).font(BP.display(26)).foregroundStyle(BP.ink).lineLimit(1).minimumScaleFactor(0.7)
-                if !meta.facts.isEmpty { Text(meta.facts).font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted).lineLimit(1) }
-                if let d = meta.description, !d.isEmpty {
-                    Text(d).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(2)
-                }
+        BP.panel
+            .frame(height: BP.px(190))
+            // Overlays, not a ZStack: a filled picture reports its own aspect size and grew the stack
+            // past the card (the ContinueCardView device build 303 bug).
+            .overlay { RemoteImage(url: meta.background ?? meta.poster).accessibilityHidden(true) }
+            .overlay {
+                LinearGradient(stops: [.init(color: BP.void_.opacity(0.92), location: 0), .init(color: BP.void_.opacity(0.7), location: 0.45),
+                                       .init(color: BP.void_.opacity(0.15), location: 1)], startPoint: .bottom, endPoint: .top)
             }
-            .shadow(color: .black.opacity(0.5), radius: 6, y: 1)
-            .padding(BP.px(16))
-        }
-        .frame(height: BP.px(190))
-        .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: BP.px(5)) {
+                    Text("Top match").font(BP.sans(11, .bold)).foregroundStyle(BP.accent).textCase(.uppercase).tracking(1)
+                    Text(meta.name).font(BP.display(26)).foregroundStyle(BP.ink).lineLimit(1).minimumScaleFactor(0.7)
+                    if !meta.facts.isEmpty { Text(meta.facts).font(BP.sans(13, .medium)).foregroundStyle(BP.inkMuted).lineLimit(1) }
+                    if let d = meta.description, !d.isEmpty {
+                        Text(d).font(BP.sans(13)).foregroundStyle(BP.inkMuted).lineLimit(2)
+                    }
+                }
+                .shadow(color: .black.opacity(0.5), radius: 6, y: 1)
+                .padding(BP.px(16))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: BP.rMD, style: .continuous).stroke(BP.edge, lineWidth: 1))
         .animation(.easeOut(duration: 0.26), value: meta.id)
     }
 }

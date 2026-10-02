@@ -191,7 +191,6 @@ export const addonStore = {
 };
 
 // ================================================================================ cinemeta
-/** Cinemeta (v3-cinemeta.strem.io): the always-available fallback catalog and meta source. */
 /**
  * (TV) lib/logo resolveLogo for the hero: a row title without a logo of its own (TMDB rows carry
  * none) gets TMDB's / the curated / Cinemeta's title logo. Undefined when there is none.
@@ -203,6 +202,7 @@ export const titleLogo = {
   },
 };
 
+/** Cinemeta (v3-cinemeta.strem.io): the always-available fallback catalog and meta source. */
 export const cinemeta = {
   topMovies: upstreamCinemeta.topMovies,
   topSeries: upstreamCinemeta.topSeries,

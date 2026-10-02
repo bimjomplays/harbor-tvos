@@ -75,7 +75,7 @@ struct ContinueRowView: View {
         .onChange(of: focusedId) { _, id in
             if let id, let i = items.first(where: { $0.id == id }) { onFocus(i) }
         }
-        .onChange(of: focusedId != nil) { _, held in onHold?(held) }
+        .onChange(of: focusedId != nil || libraryFocused) { _, held in onHold?(held) }
         .onChange(of: libraryFocused) { _, on in if !on { libraryArmed = false } }
         // (focus pass) "Remove from Continue watching" (the quick panel): the ring comes back to the
         // card as the panel closes and the row re-reads a moment later without it. The card that

@@ -373,7 +373,6 @@ struct RoomView: View {
     private func seedFocus() {
         guard !seeded, hasCards else { return }
         seeded = true
-        seededAt = Date()
         // A restored position needs its row parked and its track scrolled (both lazy) first.
         let wait = model.entry == nil ? 0.05 : 0.3
         let since: Date = visitStart
@@ -382,6 +381,7 @@ struct RoomView: View {
             // (review 6) The viewer went along the bar meanwhile (use-bp-focus interactedRef).
             if let moved = ShellFocus.shared.barMovedAt, moved > since { return }
             ShellFocus.shared.requestDefault()
+            seededAt = Date()
         }
     }
 

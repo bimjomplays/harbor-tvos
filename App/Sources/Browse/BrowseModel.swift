@@ -47,9 +47,10 @@ final class BrowseModel: ObservableObject {
         guard !logoMisses.contains(m.id) else { return }
         Task { [weak self] in
             let p = ProfilesStore.shared.active
-            let url: String? = try? await HarborEngine.shared.call("titleLogo.resolve", [m, p?.id ?? "default", p?.linked ?? true])
-            guard let self else { return }
-            guard let url, !url.isEmpty else { self.logoMisses.insert(m.id); return }
+            let answer: String?? = try? await HarborEngine.shared.call("titleLogo.resolve", [m, p?.id ?? "default", p?.linked ?? true])
+            guard let self, let answer else { return }
+            // A thrown call (engine busy, offline) may answer next time; an empty answer will not.
+            guard let url = answer, !url.isEmpty else { self.logoMisses.insert(m.id); return }
             self.logos[m.id] = url
             if let cur = self.spotlight, cur.id == m.id, cur.logo == nil {
                 var withLogo = cur
@@ -253,8 +254,8 @@ final class BrowseModel: ObservableObject {
     /// the engine) fills them in while the card still holds the ring.
     private var enriched: [String: Meta] = [:]
     private func enrichSpotlight(_ meta: Meta) {
-        guard meta.description == nil, !meta.id.isEmpty else { return }
-        if let full = enriched[meta.id] { spotlight = Self.apply(full, to: meta); return }
+        guard meta.description == nil, !meta.id.isEmpty, ["movie", "series", "anime"].contains(meta.type) else { return }
+        if let full = enriched[meta.id] { spotlight = withResolvedLogo(Self.apply(full, to: meta)); return }
         let kind: String = meta.type == "movie" ? "movie" : "series"
         Task { [weak self] in
             // (device build 386) An anime card is filed under its Kitsu / MAL id (Re:ZERO's hero stayed
@@ -272,9 +273,17 @@ final class BrowseModel: ObservableObject {
             self.enriched[meta.id] = full
             // Only over the card that asked: the hero cycle or another row may hold the same id by now.
             if let cur = self.spotlight, cur.id == meta.id, cur.poster == meta.poster, cur.background == meta.background, cur.description == nil {
-                self.spotlight = Self.apply(full, to: meta)
+                self.spotlight = self.withResolvedLogo(Self.apply(full, to: meta))
             }
         }
+    }
+
+    /// The logo the resolver already found wins over Cinemeta's (they fought mid-hover).
+    private func withResolvedLogo(_ m: Meta) -> Meta {
+        guard let hit = logos[m.id] else { return m }
+        var out = m
+        out.logo = hit
+        return out
     }
 
     /// The card's own name and art, Cinemeta's facts.
