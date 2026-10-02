@@ -413,6 +413,15 @@ struct LibraryView: View {
             // (device build 314) +16 put the chip row under the focused tab's name pill.
             .padding(.horizontal, BP.gutter).padding(.top, BP.barHeight + BP.px(34)).padding(.bottom, BP.hintHeight + BP.px(40))
         }
+            // (device build 406) Scrolled down, the grid ran up under the top bar at full strength
+            // (posters behind the Harbor wordmark): it fades out under the bar instead.
+            .mask(
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: BP.barHeight + BP.px(24))
+                    Color.black
+                }
+                .ignoresSafeArea()
+            )
         .task { await model.start() }
         // bp-view-state: the tab is kept for the next visit (the filters are this visit's own).
         .onChange(of: model.tab) { _, t in views.libraryTab = t }
