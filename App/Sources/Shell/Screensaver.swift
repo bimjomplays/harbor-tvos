@@ -278,7 +278,8 @@ struct ScreensaverView: View {
                     } else {
                         Text(item.title).font(BP.display(38)).foregroundStyle(BP.ink).lineLimit(1)
                     }
-                    if !item.sub.isEmpty { Text(item.sub).font(BP.sans(15, .medium)).foregroundStyle(BP.inkMuted) }
+                    // (device build 431) Grey on South Park's snow was unreadable: a shadow under it.
+                    if !item.sub.isEmpty { Text(item.sub).font(BP.sans(15, .semibold)).foregroundStyle(BP.ink.opacity(0.85)).shadow(color: .black.opacity(0.7), radius: 6, y: 1) }
                 }
                 .padding(BP.gutter).padding(.bottom, BP.px(30))
                 // (device build 386) The old and new titles cross-faded on top of each other
