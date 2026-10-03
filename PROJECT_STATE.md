@@ -3,6 +3,13 @@
 ## Goal
 Native Apple TV app with full Harbor (beta-branch) feature parity, same Harbor account, shipped by TestFlight, no physical Mac.
 
+## Status (2026-10-03 01:23 UTC — 1.4.13 (436) installed + verified)
+- Verified: Videos row numbers from "Trailer 1"; Detail hero facts use TMDB runtime (The Uprising
+  128 min = Details). TestFlight showed "Install" (not Update) with 1.4.12 installed: pressing it
+  updated normally.
+- Seen once, not reproduced: after opening Movies the ring was invisible and the hero held a stale
+  title (Digger, gone from Top 10); Left/Right brought the ring back. Watch for it.
+
 ## Status (2026-10-02 22:50 UTC — 1.4.12 (431) installed + verified)
 - Verified: a cold launch lands the ring on Jump back in AND its hero shows logo, facts and synopsis
   (Re:ZERO) — the long-running bare-hero bug is fixed (Meta == was the cause).
